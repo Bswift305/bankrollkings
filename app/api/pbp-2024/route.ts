@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "../../backend/utils/http";
-import { listPbp2024 } from "../../backend/services/pbp2024";
+import { getLimitFromSearchParams } from "../../../backend/utils/http";
+import { listGameScripts } from "../../../backend/services/gameScripts";
 
 export async function GET(req: NextRequest) {
   try {
