@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+dist
+build
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# System
+.DS_Store
