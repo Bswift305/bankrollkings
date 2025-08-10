@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "../../backend/utils/http";
-import { listPropLines } from "../../backend/services/propsLines";
+import { getLimitFromSearchParams } from "../../../backend/utils/http";
+import { listPropLines } from "../../../backend/services/propsLines";
 
 export async function GET(req: NextRequest) {
   try {
