@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "../../../backend/utils/http";
-import { listInjuries } from "../../../backend/services/injuries";
+import { getLimitFromSearchParams } from "@backend/utils/http";
+import { listInjuries } from "@backend/services/injuries";
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,9 +8,6 @@ export async function GET(req: NextRequest) {
     const data = await listInjuries(limit);
     return NextResponse.json({ ok: true, data });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
