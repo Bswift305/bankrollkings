@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "../../../backend/utils/http";
-import { listOddsHistory } from "../../../backend/services/oddsHistory";
+import { getLimitFromSearchParams } from "@backend/utils/http";
+import { listOddsHistory } from "@backend/services/oddsHistory";
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,10 +8,7 @@ export async function GET(req: NextRequest) {
     const data = await listOddsHistory(limit);
     return NextResponse.json({ ok: true, data });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
 
