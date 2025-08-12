@@ -3,9 +3,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  const wr = sp.get('wr');
-  const cb = sp.get('cb');
-  const season = sp.get('season');
-  return NextResponse.json({ ok: true, route: 'wr-vs-cb', wr, cb, season });
+  return NextResponse.json({ ok: true, wr: sp.get('wr'), cb: sp.get('cb'), season: sp.get('season') });
 }
 
