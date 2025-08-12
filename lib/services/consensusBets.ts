@@ -1,14 +1,13 @@
-// lib/services/consensusBets.ts
 import { createServerSupabase } from "@/lib/supabase/server";
 
-type ConsensusBet = Record<string, any>;
+type ConsensusBet = Record<string, any>; // replace with real columns when ready
 
 export async function listConsensusBets(opts: { limit?: number }) {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
   const supabase = createServerSupabase();
 
   const { data, error } = await supabase
-    .from("consensus_bets") // TODO: change to your actual table name if different
+    .from("consensus_bets") // TODO: change to your real table
     .select("*")
     .limit(limit);
 
