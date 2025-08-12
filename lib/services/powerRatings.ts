@@ -1,20 +1,14 @@
-import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
-
-type PowerRating = Record<string, any>;
+import { orderOrFallback } from "@/lib/db/safeOrder";
 
 export async function listPowerRatings(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  const { data, error } = await supabase
-    .from("power_ratings") // TODO: update to your schema
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
-
+  const base = supabase.from("power_ratings").select("*").limit(limit);
+  const { data, error } = await orderOrFallback(base, ["created_at", "updated_at", "id"]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as PowerRating[];
+  return data;
 }
+
 
 
