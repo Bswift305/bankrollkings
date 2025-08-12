@@ -1,11 +1,18 @@
-import { supabaseServer } from "../utils/supabaseServer";
-export type PbpRow = Record<string, unknown>;
-export async function listPbp2024(limit = 50) {
-  const { data, error } = await supabaseServer
-    .from("pbp_2024")
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+
+type PbpRow = Record<string, any>;
+
+export async function listPbp2024(sp: URLSearchParams) {
+  const limit = getLimitFromSearchParams(sp, 50, 200);
+  const supabase = createServerSupabase();
+
+  const { data, error } = await supabase
+    .from("pbp_2024") // TODO: table name
     .select("*")
-    .order("play_id", { ascending: false }) // change to your actual key/timestamp
+    .order("id", { ascending: false })
     .limit(limit);
-  if (error) throw new Error(`listPbp2024 failed: ${error.message}`);
-  return data as PbpRow[];
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PbpRow[];
 }
