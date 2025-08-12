@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "@backend/utils/http";
-import { listConsensusBets } from "@backend/services/consensusBets";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+import { listConsensusBets } from "@/lib/services/consensusBets";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = getLimitFromSearchParams(req.nextUrl.searchParams);
-    const data = await listConsensusBets(limit);
+    const limit = getLimitFromSearchParams(req.nextUrl.searchParams, 50, 200);
+    const data = await listConsensusBets({ limit });
     return NextResponse.json({ ok: true, data });
-  } catch (e:any) {
-    return NextResponse.json({ ok:false, error:e?.message ?? "Unknown error" }, { status:500 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Unknown error" },
+      { status: 500 }
+    );
   }
 }
