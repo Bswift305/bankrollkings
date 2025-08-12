@@ -1,11 +1,18 @@
-import { supabaseServer } from "../utils/supabaseServer";
-export type OddsHistory = Record<string, unknown>;
-export async function listOddsHistory(limit = 20) {
-  const { data, error } = await supabaseServer
-    .from("odds_history")
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+
+type OddsRow = Record<string, any>;
+
+export async function listOddsHistory(sp: URLSearchParams) {
+  const limit = getLimitFromSearchParams(sp, 50, 200);
+  const supabase = createServerSupabase();
+
+  const { data, error } = await supabase
+    .from("odds_history") // TODO: table name
     .select("*")
-    .order("created_at", { ascending: false }) // adjust if your timestamp column differs
+    .order("id", { ascending: false })
     .limit(limit);
-  if (error) throw new Error(`listOddsHistory failed: ${error.message}`);
-  return data as OddsHistory[];
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as OddsRow[];
 }
