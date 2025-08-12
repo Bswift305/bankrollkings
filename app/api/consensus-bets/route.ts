@@ -10,9 +10,6 @@ export async function GET(req: NextRequest) {
     const data = await listConsensusBets({ limit });
     return NextResponse.json({ ok: true, data });
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: err?.message ?? "Unknown error" }, { status: 500 });
   }
 }
