@@ -1,18 +1,12 @@
-import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
-
-type Injury = Record<string, any>;
+import { orderOrFallback } from "@/lib/db/safeOrder";
 
 export async function listInjuries(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  const { data, error } = await supabase
-    .from("injuries") // TODO: schema
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
-
+  const base = supabase.from("injuries").select("*").limit(limit);
+  const { data, error } = await orderOrFallback(base, ["updated_at", "created_at", "id"]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as Injury[];
+  return data;
 }
+
