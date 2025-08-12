@@ -1,18 +1,11 @@
-import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
-
-type WeatherRow = Record<string, any>; // adjust to your schema
+import { orderOrFallback } from "@/lib/db/safeOrder";
 
 export async function listWeather(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  const { data, error } = await supabase
-    .from("weather") // TODO: match your table
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
-
+  const base = supabase.from("weather").select("*").limit(limit);
+  const { data, error } = await orderOrFallback(base, ["observed_at", "created_at", "id"]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as WeatherRow[];
+  return data;
 }
