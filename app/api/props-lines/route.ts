@@ -1,0 +1,14 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+import { listPropLines } from "@/lib/services/propsLines";
+
+export async function GET(req: NextRequest) {
+  try {
+    const limit = getLimitFromSearchParams(req.nextUrl.searchParams, 20, 200);
+    const data = await listPropLines(limit);
+    return NextResponse.json({ ok: true, data });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+  }
+}
+
