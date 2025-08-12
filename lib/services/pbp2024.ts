@@ -1,18 +1,11 @@
-import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
+import { orderOrFallback } from "@/lib/db/safeOrder";
 
-type PbpRow = Record<string, any>;
-
-export async function listPbp2024(sp: URLSearchParams) {
+export async function listOddsHistory(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  const { data, error } = await supabase
-    .from("pbp_2024") // TODO: table name
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
-
+  const base = supabase.from("odds_history").select("*").limit(limit);
+  const { data, error } = await orderOrFallback(base, ["created_at", "updated_at", "id"]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as PbpRow[];
+  return data;
 }
