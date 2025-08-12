@@ -1,7 +1,7 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import { getLimitFromSearchParams } from "@/lib/http/params";
 
-type PlayerStat = Record<string, any>; // replace with real columns when ready
+type PlayerStat = Record<string, any>; // adjust to your schema
 
 export async function listPlayerStats(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
