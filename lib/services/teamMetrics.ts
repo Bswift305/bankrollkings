@@ -1,12 +1,19 @@
-import { supabaseServer } from "../utils/supabaseServer";
+import { createServerSupabase } from "@/lib/supabase/server";
 
-export type TeamMetric = {
-  id: number;
-  team?: string | null;
+type TeamMetric = {
+  team_id: string;
+  redzone_pct: number | null;
+  goal_line_td_pct: number | null;
+  third_down_stop_pct: number | null;
 };
 
-export async function getTeamMetrics(limit = 5) {
-  const { data, error } = await supabaseServer.from("team_metrics").select("*").limit(limit);
-  if (error) throw new Error(`getTeamMetrics failed: ${error.message}`);
-  return data as TeamMetric[];
+export async function listTeamMetrics() {
+  const supabase = createServerSupabase();
+  const { data, error } = await supabase
+    .from("team_metrics") // TODO: match your schema
+    .select("team_id, redzone_pct, goal_line_td_pct, third_down_stop_pct")
+    .order("team_id", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TeamMetric[];
 }
