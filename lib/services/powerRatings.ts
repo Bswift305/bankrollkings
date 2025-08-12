@@ -17,3 +17,4 @@ export async function listPowerRatings(sp: URLSearchParams) {
   return (data ?? []) as PowerRating[];
 }
 
+
