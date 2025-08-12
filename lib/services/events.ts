@@ -1,11 +1,19 @@
-import { supabaseServer } from "../utils/supabaseServer";
-export type EventRow = Record<string, unknown>;
-export async function listEvents(limit = 20) {
-  const { data, error } = await supabaseServer
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+
+type EventRow = Record<string, any>; // adjust to your schema
+
+export async function listEvents(sp: URLSearchParams) {
+  const limit = getLimitFromSearchParams(sp, 50, 200);
+  const supabase = createServerSupabase();
+
+  // TODO: replace "events" and selected columns with your actual schema
+  const { data, error } = await supabase
     .from("events")
     .select("*")
-    .order("created_at", { ascending: false }) // adjust if needed
+    .order("id", { ascending: false })
     .limit(limit);
-  if (error) throw new Error(`listEvents failed: ${error.message}`);
-  return data as EventRow[];
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as EventRow[];
 }
