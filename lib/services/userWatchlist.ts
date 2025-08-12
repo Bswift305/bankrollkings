@@ -1,7 +1,7 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import { getLimitFromSearchParams } from "@/lib/http/params";
 
-type WatchItem = Record<string, any>; // replace with real columns when ready
+type WatchItem = Record<string, any>; // adjust to your schema
 
 export async function listUserWatchlist(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
@@ -9,15 +9,19 @@ export async function listUserWatchlist(sp: URLSearchParams) {
 
   const supabase = createServerSupabase();
 
-  let query = supabase
-    .from("user_watchlist") // TODO: match your table name
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
+  // Base query
+  let base = supabase.from("user_watchlist").select("*").limit(limit);
+  if (userId) base = base.eq("user_id", userId);
 
-  if (userId) query = query.eq("user_id", userId);
+  // Try ordering by created_at first; if that column doesn't exist, retry without ordering.
+  let { data, error } = await base.order("created_at", { ascending: false });
+  if (error && /column .* does not exist/i.test(error.message)) {
+    // Retry without ordering
+    const retry = await base;
+    data = retry.data;
+    error = retry.error;
+  }
 
-  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as WatchItem[];
 }
