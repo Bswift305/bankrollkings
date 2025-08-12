@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
 import { listWeather } from "@/lib/services/weather";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = getLimitFromSearchParams(req.nextUrl.searchParams, 50, 200);
-    const data = await listWeather(limit);
+    const data = await listWeather(req.nextUrl.searchParams);
     return NextResponse.json({ ok: true, data });
-  } catch (e:any) {
-    return NextResponse.json({ ok:false, error:e?.message ?? "Unknown error" }, { status:500 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Unknown error" },
+      { status: 500 }
+    );
   }
 }
