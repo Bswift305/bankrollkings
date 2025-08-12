@@ -7,9 +7,8 @@ export async function listEvents(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  // TODO: replace "events" and selected columns with your actual schema
   const { data, error } = await supabase
-    .from("events")
+    .from("events") // TODO: replace with your actual table name
     .select("*")
     .order("id", { ascending: false })
     .limit(limit);
