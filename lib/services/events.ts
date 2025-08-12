@@ -1,18 +1,12 @@
-import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
-
-type EventRow = Record<string, any>; // adjust to your schema
+import { orderOrFallback } from "@/lib/db/safeOrder";
 
 export async function listEvents(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
   const supabase = createServerSupabase();
 
-  const { data, error } = await supabase
-    .from("events") // TODO: replace with your actual table name
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(limit);
-
+  const base = supabase.from("events").select("*").limit(limit);
+  const { data, error } = await orderOrFallback(base, ["event_time", "created_at", "updated_at", "id"]);
   if (error) throw new Error(error.message);
-  return (data ?? []) as EventRow[];
+  return data;
 }
+
