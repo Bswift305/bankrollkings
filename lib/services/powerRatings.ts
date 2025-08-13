@@ -1,11 +1,18 @@
-import { supabaseServer } from "../utils/supabaseServer";
-export type PowerRating = Record<string, unknown>;
-export async function listPowerRatings(limit = 32) {
-  const { data, error } = await supabaseServer
-    .from("power_ratings")
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getLimitFromSearchParams } from "@/lib/http/params";
+
+type PowerRating = Record<string, any>;
+
+export async function listPowerRatings(sp: URLSearchParams) {
+  const limit = getLimitFromSearchParams(sp, 50, 200);
+  const supabase = createServerSupabase();
+
+  const { data, error } = await supabase
+    .from("power_ratings") // TODO: update to your schema
     .select("*")
-    .order("rating", { ascending: false }) // adjust if your column differs
+    .order("created_at", { ascending: false })
     .limit(limit);
-  if (error) throw new Error(`listPowerRatings failed: ${error.message}`);
-  return data as PowerRating[];
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PowerRating[];
 }
