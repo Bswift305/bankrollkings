@@ -10,14 +10,11 @@ export async function listPlayerStats(sp: URLSearchParams) {
   const { data, error } = await supabase
     .from("player_stats") // TODO: update if your table differs
     .select("*")
-    .order("created_at", { ascending: false }) // safe default; change to your best column
+    .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(error.message);
+  }
   return (data ?? []) as PlayerStat[];
-}
-
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as TeamMetric[];
 }
