@@ -7,14 +7,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    // this service currently accepts an object with { limit }
     const limit = getLimitFromSearchParams(req.nextUrl.searchParams, 50, 200);
     const data = await listConsensusBets({ limit });
     return NextResponse.json({ ok: true, data });
-  } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
 
