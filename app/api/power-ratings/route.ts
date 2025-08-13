@@ -6,13 +6,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // pass the SearchParams; the service computes/clamps `limit` internally
     const data = await listPowerRatings(req.nextUrl.searchParams);
     return NextResponse.json({ ok: true, data });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
+
