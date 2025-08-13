@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
-import { listPropLines } from "@/lib/services/propsLines";
+import { listPropsLines } from "@/lib/services/propsLines";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = getLimitFromSearchParams(req.nextUrl.searchParams, 20, 200);
-    const data = await listPropLines(limit);
+    // Pass URLSearchParams; service handles limit clamping internally
+    const data = await listPropsLines(req.nextUrl.searchParams);
     return NextResponse.json({ ok: true, data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message ?? "Unknown error" },
+      { status: 500 }
+    );
   }
 }
 
