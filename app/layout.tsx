@@ -1,18 +1,10 @@
-import type { Metadata } from "next";
+export const metadata = { title: "BankrollKings", description: "Next.js + Supabase starter" };
+import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "BankrollKings",
-  description: "Next.js + Supabase starter",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body className="bg-zinc-950 text-zinc-100 antialiased">{children}</body>
     </html>
   );
 }
