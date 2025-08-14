@@ -1,9 +1,7 @@
-# (re)write postcss config in case it also got heredoc lines
-cat > postcss.config.js <<'JS'
+// postcss.config.js
 module.exports = {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
   },
 };
-JS
