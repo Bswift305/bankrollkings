@@ -34,7 +34,17 @@ const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ")
 
 const fetchJSON = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(await res.text());
+  const ct = res.headers.get("content-type") || "";
+  if (!res.ok) {
+    // Avoid dumping huge HTML into the UI
+    let snippet = "";
+    try { snippet = (await res.text()).slice(0, 240); } catch {}
+    const msg = `${res.status} ${res.statusText} for ${url}` + (snippet && !snippet.startsWith("<") ? ` — ${snippet}` : "");
+    throw new Error(msg);
+  }
+  if (!ct.includes("application/json")) {
+    throw new Error(`Expected JSON but got ${ct || "unknown content type"} from ${url}`);
+  }
   return res.json() as Promise<T>;
 };
 
