@@ -1,4 +1,5 @@
-// tailwind.config.ts (at repo root)
+# tailwind.config.ts (root)
+cat > tailwind.config.ts <<'TS'
 import type { Config } from "tailwindcss";
 
 export default {
@@ -6,3 +7,14 @@ export default {
   theme: { extend: {} },
   plugins: [],
 } satisfies Config;
+TS
+
+# postcss.config.js (root)
+cat > postcss.config.js <<'JS'
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+JS
