@@ -2,7 +2,7 @@
 // BankrollKings — Phase 1 NFL Dashboard (server component)
 // - Black/red/gray theme with four widgets: Props, Consensus, Injuries, Weather
 // - Fetches from your existing API routes with no caching
-// - Avoids typedRoutes issues by using <a> for raw JSON API links
+// - Uses <a> for API links to avoid typedRoutes constraints
 
 import React from "react";
 import Link from "next/link";
@@ -111,7 +111,6 @@ function Section({
           <h2 className="text-xl font-semibold text-white md:text-2xl">{title}</h2>
           {subtitle && <p className="mt-1 text-sm text-neutral-400">{subtitle}</p>}
         </div>
-        {/* Use <a> so typedRoutes doesn’t complain about dynamic template */}
         <a href={apiHref} className="text-xs text-neutral-400 hover:text-neutral-200">
           API
         </a>
@@ -279,12 +278,10 @@ export default async function Home() {
           {/* Left column */}
           <div className="space-y-6">
             <Section id="props" title="Props & Odds" subtitle="Player markets & quick edges">
-              {/* @ts-expect-error Server Component */}
               <OddsPropsWidget />
             </Section>
 
             <Section id="injuries" title="Injuries" subtitle="Skill positions first">
-              {/* @ts-expect-error Server Component */}
               <InjuriesWidget />
             </Section>
           </div>
@@ -292,12 +289,10 @@ export default async function Home() {
           {/* Right column */}
           <div className="space-y-6">
             <Section id="consensus" title="Consensus" subtitle="Public % vs. market">
-              {/* @ts-expect-error Server Component */}
               <ConsensusWidget />
             </Section>
 
             <Section id="weather" title="Weather" subtitle="Games with potential impact">
-              {/* @ts-expect-error Server Component */}
               <WeatherWidget />
             </Section>
           </div>
