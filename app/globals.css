@@ -1,7 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* app/globals.css */
+@import "tailwindcss";
+@source "./app/**/*.{ts,tsx}" "./components/**/*.{ts,tsx}";
 
-/* Optional tweaks */
 :root { color-scheme: dark; }
 
