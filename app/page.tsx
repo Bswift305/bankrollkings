@@ -83,7 +83,7 @@ const defaultFilters: Filters = {
   propType: "rush_yds",
 };
 
-export function FiltersBar({
+function FiltersBar({
   value,
   onChange,
 }: {
@@ -252,7 +252,7 @@ export function FiltersBar({
 // Leaderboard
 // ---------------------------------------------
 
-export function Leaderboard({ filters }: { filters: Filters }) {
+function Leaderboard({ filters }: { filters: Filters }) {
   const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -342,7 +342,7 @@ export function Leaderboard({ filters }: { filters: Filters }) {
 // HitRateCard
 // ---------------------------------------------
 
-export function HitRateCard({ filters }: { filters: Filters }) {
+function HitRateCard({ filters }: { filters: Filters }) {
   const [data, setData] = useState<HitRate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
