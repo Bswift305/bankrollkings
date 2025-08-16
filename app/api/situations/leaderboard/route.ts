@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
       "season",
       "category",
       "def_tier",
+      "team_abbr",
       "total_yards",
       "games",
       "per_game",
