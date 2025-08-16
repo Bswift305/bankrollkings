@@ -1,34 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
 
-const schema = z.object({
-  position: z.enum(["RB","WR","TE","QB"]),
-  stat: z.enum(["rush_yards","rec_yards","receptions","pass_yards"]),
-  seasonFrom: z.coerce.number().int(),
-  seasonTo: z.coerce.number().int(),
-  defCat: z.enum(["rush","pass","overall"]),
-  tier: z.enum(["top10","bottom10","mid"]),
-  limit: z.coerce.number().int().max(100).default(50),
-});
+// Use public anon key if available; fall back to service role on the server.
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+function q(params: Record<string, string | undefined>) {
+  const ps = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) ps.set(k, v);
+  return ps;
+}
 
 export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const parse = schema.safeParse(Object.fromEntries(url.searchParams));
-  if (!parse.success) return NextResponse.json({ error: parse.error.format() }, { status: 400 });
+  try {
+    const url = new URL(req.url);
 
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    const position   = url.searchParams.get("position") ?? undefined;    // e.g. RB | WR | QB | TE
+    const category   = url.searchParams.get("category") ?? undefined;    // 'rush' | 'pass'
+    const defTier    = url.searchParams.get("defTier") ?? undefined;     // 'top10' | 'middle' | 'bottom10'
+    const seasonFrom = url.searchParams.get("seasonFrom") ?? undefined;  // e.g. '2023'
+    const seasonTo   = url.searchParams.get("seasonTo") ?? undefined;    // e.g. '2025'
+    const limit      = url.searchParams.get("limit") ?? "25";
 
-  const { data, error } = await supabase.rpc("api_leaderboard_situational", {
-    p_position: parse.data.position,
-    p_stat: parse.data.stat,
-    p_season_from: parse.data.seasonFrom,
-    p_season_to: parse.data.seasonTo,
-    p_def_cat: parse.data.defCat,
-    p_def_tier: parse.data.tier,
-    p_limit: parse.data.limit,
-  });
+    // Build PostgREST query against the view
+    const sel = [
+      "player_id",
+      "full_name",
+      "position",
+      "season",
+      "category",
+      "def_tier",
+      "total_yards",
+      "games",
+      "per_game",
+    ].join(",");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ rows: data ?? [] }, { headers: { "cache-control": "no-store" } });
+    const params = q({
+      select: sel,
+      ...(position   ? { position:   `eq.${position}` }   : {}),
+      ...(category   ? { category:   `eq.${category}` }   : {}),
+      ...(defTier    ? { def_tier:   `eq.${defTier}` }    : {}),
+      ...(seasonFrom ? { season:     `gte.${seasonFrom}` } : {}),
+      ...(seasonTo   ? { "season2":  `lte.${seasonTo}` }   : {}), // temp key; we’ll replace below
+      order: "per_game.desc.nullslast",
+      limit,
+    });
+
+    // PostgREST doesn’t support duplicate 'season' keys via URLSearchParams,
+    // so stitch manually for season range:
+    let query = params.toString().replace("season2=", "season=");
+
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/v_situational_leaderboard?${query}`,
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      return NextResponse.json(
+        { error: `supabase error ${resp.status}`, details: text },
+        { status: 500 }
+      );
+    }
+
+    const rows = await resp.json();
+    return NextResponse.json({ rows });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "internal", details: String(err?.message ?? err) },
+      { status: 500 }
+    );
+  }
 }
