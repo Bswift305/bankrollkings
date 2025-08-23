@@ -38,17 +38,15 @@ export default function NFLSituationalPage() {
   const [error, setError] = useState<string | null>(null);
   const [rawApiResponse, setRawApiResponse] = useState<any>(null); // Debug
   
-  const [filters, setFilters] = useState({
-  position: 'WR',
-  category: 'pass',
-  defTier: '',
-  homeAway: '',
-  primeTime: '',
-  season: '2024',
-  team: '',
-  weather: '',
-  situation: ''    // ✅ Add this line
-});
+  const [filters, setFilters] = useState<Filters>({
+    position: '',
+    situation: '',
+    defTier: '',
+    homeAway: '',
+    primeTime: '',
+    team: '',
+    weather: ''
+  });
 
   useEffect(() => {
     fetchSituationalData();
@@ -66,9 +64,9 @@ export default function NFLSituationalPage() {
         if (value) {
           // Map some parameters for backend compatibility
           if (key === 'defTier') {
-            searchParams.set('tier', value);
+            searchParams.set('defTier', value);
           } else if (key === 'position') {
-            searchParams.set('defCat', value); // Assuming this maps to position
+            searchParams.set('position', value);
           } else {
             searchParams.set(key, value);
           }
@@ -77,7 +75,7 @@ export default function NFLSituationalPage() {
 
       console.log('Fetching with params:', searchParams.toString());
       
-      const response = await fetch(`/api/situations/leaderboard?${searchParams.toString()}`);
+      const response = await fetch(`/api/situations?${searchParams.toString()}`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -88,9 +86,9 @@ export default function NFLSituationalPage() {
       
       setRawApiResponse(result); // Store for debugging
       
-      if (result.data && Array.isArray(result.data)) {
+      if (result.rows && Array.isArray(result.rows)) {
         // Transform data to ensure we have the right fields
-        const transformedData = result.data.map((item: any) => ({
+        const transformedData = result.rows.map((item: any) => ({
           ...item,
           total: item.total || item.total_yards || 0,
           team: item.team || item.team_abbr || item.team_name || 'N/A',
@@ -251,16 +249,9 @@ export default function NFLSituationalPage() {
 
         <button
           onClick={() => setFilters({
-  position: '', 
-  category: 'pass',    // ✅ Add this
-  defTier: '', 
-  homeAway: '', 
-  primeTime: '', 
-  season: '2024',     // ✅ Add this
-  team: '', 
-  weather: '',
-  situation: ''
-})}
+            position: '', situation: '', defTier: '', homeAway: '', 
+            primeTime: '', team: '', weather: ''
+          })}
           className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
         >
           🔄 Clear All Filters
