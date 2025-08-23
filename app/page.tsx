@@ -267,17 +267,17 @@ function Leaderboard({ filters }: { filters: Filters }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // ✅ FIXED: Correct API URL and parameter mapping
   const qs = useMemo(() => {
     const p = new URLSearchParams({
       position: filters.position,
-      stat: filters.stat,
+      category: filters.defCat,        // ✅ API expects 'category', not 'defCat'
+      defTier: filters.tier,           // ✅ API expects 'defTier', not 'tier'
       seasonFrom: String(filters.seasonFrom),
       seasonTo: String(filters.seasonTo),
-      defCat: filters.defCat,
-      tier: filters.tier,
       limit: String(50),
     });
-    return `/api/situations/leaderboard?${p.toString()}`;
+    return `/api/situations?${p.toString()}`; // ✅ Correct URL
   }, [filters]);
 
   useEffect(() => {
@@ -349,7 +349,7 @@ function Leaderboard({ filters }: { filters: Filters }) {
 }
 
 // ---------------------------------------------
-// HitRateCard
+// HitRateCard (unchanged - this API call was correct)
 // ---------------------------------------------
 
 function HitRateCard({ filters }: { filters: Filters }) {
@@ -440,7 +440,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 // ---------------------------------------------
-// Example page (optional): drop-in to app/page.tsx
+// Main Page Component
 // ---------------------------------------------
 
 export default function BKHomeExample() {
