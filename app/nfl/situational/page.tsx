@@ -251,9 +251,16 @@ export default function NFLSituationalPage() {
 
         <button
           onClick={() => setFilters({
-            position: '', situation: '', defTier: '', homeAway: '', 
-            primeTime: '', team: '', weather: ''
-          })}
+  position: '', 
+  category: 'pass',    // ✅ Add this
+  defTier: '', 
+  homeAway: '', 
+  primeTime: '', 
+  season: '2024',     // ✅ Add this
+  team: '', 
+  weather: '',
+  situation: ''
+})}
           className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
         >
           🔄 Clear All Filters
