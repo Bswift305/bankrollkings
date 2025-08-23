@@ -45,8 +45,9 @@ export default function NFLSituationalPage() {
   homeAway: '',
   primeTime: '',
   season: '2024',
-  team: '',        // ✅ Add this line
-  weather: ''      // ✅ Add this line too
+  team: '',
+  weather: '',
+  situation: ''    // ✅ Add this line
 });
 
   useEffect(() => {
