@@ -39,12 +39,14 @@ export default function NFLSituationalPage() {
   const [rawApiResponse, setRawApiResponse] = useState<any>(null); // Debug
   
   const [filters, setFilters] = useState({
-  position: 'WR',      // Start with WRs instead of empty
-  category: 'pass',    // Show receiving data
+  position: 'WR',
+  category: 'pass',
   defTier: '',
   homeAway: '',
   primeTime: '',
-  season: '2024'       // Current season
+  season: '2024',
+  team: '',        // ✅ Add this line
+  weather: ''      // ✅ Add this line too
 });
 
   useEffect(() => {
