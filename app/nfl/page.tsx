@@ -27,29 +27,23 @@ export default function NFLPage() {
           </p>
         </Link>
 
-        <Link 
-          href="/nfl/props" 
-          className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-        >
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <div className="bg-gray-100 rounded-lg shadow-md p-6 opacity-75">
+          <h3 className="text-lg font-semibold text-gray-600 mb-2">
             Prop Betting Trends
           </h3>
-          <p className="text-gray-600">
-            Historical prop hit rates and line movement
+          <p className="text-gray-500">
+            Coming soon - Historical prop hit rates and line movement
           </p>
-        </Link>
+        </div>
 
-        <Link 
-          href="/nfl/matchups" 
-          className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-        >
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <div className="bg-gray-100 rounded-lg shadow-md p-6 opacity-75">
+          <h3 className="text-lg font-semibold text-gray-600 mb-2">
             Matchup Analysis
           </h3>
-          <p className="text-gray-600">
-            WR vs CB and RB vs defense breakdowns
+          <p className="text-gray-500">
+            Coming soon - WR vs CB and RB vs defense breakdowns
           </p>
-        </Link>
+        </div>
       </div>
     </div>
   );
