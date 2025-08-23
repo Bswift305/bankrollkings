@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLimitFromSearchParams } from "@/lib/http/params";
+import { getLimitFromSearchParams } from "@/lib/http/params"; // ✅ FIXED
 import { listConsensusBets } from "@/lib/services/consensusBets";
 
 export const runtime = "nodejs";
