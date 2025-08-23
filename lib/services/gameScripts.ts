@@ -1,6 +1,6 @@
 // lib/services/gameScripts.ts
 import { createServerSupabase } from "@/lib/supabase/server";
-import { getLimitFromSearchParams } from "@/lib/utils/http";
+import { getLimitFromSearchParams } from "@/lib/http"; // ✅ Fixed import path
 
 export async function listGameScripts(sp: URLSearchParams) {
   const limit = getLimitFromSearchParams(sp, 50, 200);
@@ -9,7 +9,7 @@ export async function listGameScripts(sp: URLSearchParams) {
   const { data, error } = await supabase
     .from("game_scripts")
     .select("*")
-    .order("game_id", { ascending: false }) // <— CHANGED from "id" → "game_id"
+    .order("game_id", { ascending: false })
     .limit(limit);
 
   if (error) throw new Error(error.message);
