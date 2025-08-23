@@ -38,15 +38,14 @@ export default function NFLSituationalPage() {
   const [error, setError] = useState<string | null>(null);
   const [rawApiResponse, setRawApiResponse] = useState<any>(null); // Debug
   
-  const [filters, setFilters] = useState<Filters>({
-    position: '',
-    situation: '',
-    defTier: '',
-    homeAway: '',
-    primeTime: '',
-    team: '',
-    weather: ''
-  });
+  const [filters, setFilters] = useState({
+  position: 'WR',      // Start with WRs instead of empty
+  category: 'pass',    // Show receiving data
+  defTier: '',
+  homeAway: '',
+  primeTime: '',
+  season: '2024'       // Current season
+});
 
   useEffect(() => {
     fetchSituationalData();
