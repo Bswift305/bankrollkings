@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Filter, TrendingUp, Target, Zap, Award, Clock, MapPin, Cloud } from 'lucide-react';
+// Using emoji icons instead of lucide-react for compatibility
 
 const NFL_SITUATIONAL_ANALYSIS = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [debugExpanded, setDebugExpanded] = useState(false);
   const [rawResponse, setRawResponse] = useState(null);
   
@@ -42,7 +42,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
       if (selectedPosition !== 'All Positions') params.append('position', selectedPosition);
       if (selectedTeam !== 'All Teams') params.append('team', selectedTeam);
       if (selectedDefenseTier !== 'All Defense Tiers') {
-        const tierMap = {
+        const tierMap: { [key: string]: string } = {
           '🔥 Elite': 'elite',
           '✅ Good': 'good', 
           '📊 Average': 'average',
@@ -63,7 +63,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         setData([]);
       }
     } catch (err) {
-      setError(`Network error: ${err.message}`);
+      setError(`Network error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setData([]);
       setRawResponse(null);
     } finally {
@@ -81,8 +81,8 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
     setSelectedWeather('All Weather');
   };
 
-  const getDefenseTierColor = (tier) => {
-    const colors = {
+  const getDefenseTierColor = (tier: string) => {
+    const colors: { [key: string]: string } = {
       'top10': 'from-red-500 to-pink-600',
       'bottom10': 'from-green-400 to-emerald-500',
       'middle': 'from-yellow-400 to-orange-500'
@@ -90,8 +90,8 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
     return colors[tier] || 'from-gray-400 to-gray-500';
   };
 
-  const getDefenseTierLabel = (tier) => {
-    const labels = {
+  const getDefenseTierLabel = (tier: string) => {
+    const labels: { [key: string]: string } = {
       'top10': '🔥 Elite',
       'bottom10': '📉 Poor', 
       'middle': '📊 Average'
@@ -115,7 +115,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-3 mb-4">
             <div className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg">
-              <TrendingUp className="h-8 w-8 text-white" />
+              <span className="text-2xl">📈</span>
             </div>
             <h1 className="text-5xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
               BANKROLLKINGS
@@ -137,7 +137,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
               onClick={() => setDebugExpanded(!debugExpanded)}
               className="flex items-center gap-3 text-purple-300 hover:text-purple-200 transition-colors group"
             >
-              <Zap className="h-5 w-5 group-hover:text-yellow-400 transition-colors" />
+              <span className="text-purple-400 text-xl">⚡</span>
               <span className="font-semibold">Debug Info: View Raw API Response</span>
               <span className="text-xs bg-purple-500/20 px-2 py-1 rounded-full">
                 {debugExpanded ? 'Hide' : 'Click to expand'}
@@ -160,8 +160,8 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         {/* Filters Section */}
         <div className="max-w-7xl mx-auto mb-8">
           <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl p-8 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <Filter className="h-6 w-6 text-purple-400" />
+              <div className="flex items-center gap-3 mb-6">
+              <span className="text-purple-400 text-2xl">🔍</span>
               <h2 className="text-2xl font-bold text-white">Filter Matchups</h2>
             </div>
             
@@ -240,7 +240,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
             <div className="mb-8 p-6 bg-red-500/10 backdrop-blur-sm border border-red-500/20 rounded-2xl shadow-2xl">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-red-500/20 rounded-lg">
-                  <Target className="h-6 w-6 text-red-400" />
+                  <span className="text-2xl">🎯</span>
                 </div>
                 <div>
                   <h3 className="text-red-400 font-bold text-lg">System Alert</h3>
@@ -256,7 +256,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg">
-                    <Award className="h-8 w-8 text-white" />
+                    <span className="text-2xl">🏆</span>
                   </div>
                   <div>
                     <h2 className="text-3xl font-black text-white mb-2">Performance Leaderboard</h2>
@@ -307,7 +307,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
                 <div className="p-12 text-center">
                   <div className="inline-flex flex-col items-center gap-4">
                     <div className="p-4 bg-purple-500/10 rounded-2xl">
-                      <Target className="h-12 w-12 text-purple-400" />
+                      <span className="text-4xl">🎯</span>
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-white mb-2">No Matchups Found</h3>
@@ -392,7 +392,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
           <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl p-8 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-gradient-to-r from-orange-500 to-red-600 rounded-lg">
-                <Clock className="h-6 w-6 text-white" />
+                <span className="text-white text-xl">🔧</span>
               </div>
               <h3 className="text-2xl font-bold text-white">Next Development Steps</h3>
             </div>
@@ -400,7 +400,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
             <div className="grid md:grid-cols-2 gap-8">
               <div>
                 <h4 className="text-purple-300 font-bold text-lg mb-4 flex items-center gap-2">
-                  <Target className="h-5 w-5" />
+                  <span className="text-xl">🎯</span>
                   Data Issues to Fix:
                 </h4>
                 <ul className="space-y-3 text-purple-200">
@@ -425,7 +425,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
               
               <div>
                 <h4 className="text-purple-300 font-bold text-lg mb-4 flex items-center gap-2">
-                  <Zap className="h-5 w-5" />
+                  <span className="text-xl">⚡</span>
                   Features to Add:
                 </h4>
                 <ul className="space-y-3 text-purple-200">
