@@ -9,10 +9,26 @@ interface PlayerData {
   games: number;
   total_yards: number;
   defense_tier: string;
+  per_game?: number;
+}
+
+interface RawPlayerData {
+  player_id: string;
+  full_name: string;
+  position: string;
+  season: number;
+  category: string;
+  def_tier: string;
+  team_abbr: string;
+  total_yards: number;
+  games: number;
+  per_game: number;
 }
 
 const NFL_SITUATIONAL_ANALYSIS = () => {
   const [data, setData] = useState<PlayerData[]>([]);
+  const [rawData, setRawData] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<'aggregated' | 'situational'>('aggregated');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [debugExpanded, setDebugExpanded] = useState(false);
@@ -76,6 +92,53 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   const injuryStatus = ['All Status', '✅ Healthy', '🟡 Questionable', '🟠 Doubtful', '❌ Out', '🔄 Return from IR'];
   const experience = ['All Experience', '🌟 Rookie', '👶 2nd Year', '💪 Veteran (3-7)', '👑 Elite Vet (8+)'];
 
+  // Data aggregation function
+  const aggregatePlayerData = (rawData: RawPlayerData[]): PlayerData[] => {
+    if (viewMode === 'situational') {
+      // Show situational breakdown by defense tier
+      return rawData.map(row => ({
+        player_name: row.full_name,
+        team: row.team_abbr,
+        position: row.position,
+        games: row.games,
+        total_yards: row.total_yards,
+        defense_tier: row.def_tier,
+        per_game: row.per_game
+      }));
+    } else {
+      // Aggregate across all defense tiers for season totals
+      const playerMap = new Map<string, PlayerData>();
+      
+      rawData.forEach(row => {
+        const key = `${row.full_name}-${row.team_abbr}-${row.position}`;
+        
+        if (playerMap.has(key)) {
+          const existing = playerMap.get(key)!;
+          existing.total_yards += row.total_yards;
+          existing.games += row.games;
+        } else {
+          playerMap.set(key, {
+            player_name: row.full_name,
+            team: row.team_abbr,
+            position: row.position,
+            games: row.games,
+            total_yards: row.total_yards,
+            defense_tier: 'season_total',
+            per_game: 0 // Will calculate below
+          });
+        }
+      });
+      
+      // Calculate per_game averages and sort by total yards
+      return Array.from(playerMap.values())
+        .map(player => ({
+          ...player,
+          per_game: player.games > 0 ? player.total_yards / player.games : 0
+        }))
+        .sort((a, b) => b.total_yards - a.total_yards);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [
@@ -84,6 +147,14 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
     selectedGameResult, selectedTimeOfDay, selectedSurface, selectedTemperature, selectedDivision,
     selectedConference, minYards, maxYards, minGames, selectedInjuryStatus, selectedRookieVet
   ]);
+
+  useEffect(() => {
+    // Re-aggregate data when view mode changes
+    if (rawData.length > 0) {
+      const aggregatedData = aggregatePlayerData(rawData);
+      setData(aggregatedData);
+    }
+  }, [viewMode, rawData]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -97,32 +168,19 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
       if (selectedTeam !== 'All Teams') params.append('team', selectedTeam);
       if (selectedDefenseTier !== 'All Defense Tiers') {
         const tierMap: { [key: string]: string } = {
-          '🔥 Elite (Top 5)': 'elite',
+          '🔥 Elite (Top 5)': 'top10',
           '✅ Good (6-15)': 'good', 
-          '📊 Average (16-25)': 'average',
-          '📉 Poor (26-32)': 'poor'
+          '📊 Average (16-25)': 'middle',
+          '📉 Poor (26-32)': 'bottom10'
         };
         params.append('defense_tier', tierMap[selectedDefenseTier]);
       }
       
-      // Advanced filters
+      // Advanced filters - for future implementation
       if (selectedYear !== '2024') params.append('year', selectedYear);
-      if (selectedWeek !== 'All Weeks') params.append('week', selectedWeek);
-      if (selectedMonth !== 'All Months') params.append('month', selectedMonth);
-      if (selectedOpponent !== 'All Opponents') params.append('opponent', selectedOpponent);
-      if (selectedGameResult !== 'All Results') params.append('game_result', selectedGameResult);
-      if (selectedTimeOfDay !== 'All Times') params.append('time_of_day', selectedTimeOfDay);
-      if (selectedSurface !== 'All Surfaces') params.append('surface', selectedSurface);
-      if (selectedTemperature !== 'All Temps') params.append('temperature', selectedTemperature);
-      if (selectedDivision !== 'All Divisions') params.append('division', selectedDivision);
-      if (selectedConference !== 'All Conferences') params.append('conference', selectedConference);
-      if (selectedInjuryStatus !== 'All Status') params.append('injury_status', selectedInjuryStatus);
-      if (selectedRookieVet !== 'All Experience') params.append('experience', selectedRookieVet);
       
-      // Range filters
-      if (minYards) params.append('min_yards', minYards);
-      if (maxYards) params.append('max_yards', maxYards);
-      if (minGames) params.append('min_games', minGames);
+      // Increase limit significantly for more players
+      params.append('limit', '200');
       
       const response = await fetch(`/api/situations?${params.toString()}`);
       const result = await response.json();
@@ -130,14 +188,18 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
       setRawResponse(result);
       
       if (response.ok && result.rows) {
-        setData(result.rows);
+        setRawData(result.rows);
+        const aggregatedData = aggregatePlayerData(result.rows);
+        setData(aggregatedData);
       } else {
         setError(`HTTP ${response.status}: ${result.error || 'Unknown error'}`);
         setData([]);
+        setRawData([]);
       }
     } catch (err) {
       setError(`Network error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setData([]);
+      setRawData([]);
       setRawResponse(null);
     } finally {
       setLoading(false);
@@ -730,7 +792,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
                       <div className="text-center">
                         <div className="flex flex-col items-center gap-1">
                           <span className="text-xl font-bold text-cyan-400">
-                            {(player.total_yards / player.games).toFixed(1)}
+                            {player.per_game ? player.per_game.toFixed(1) : (player.total_yards / player.games).toFixed(1)}
                           </span>
                           <div className="text-xs text-purple-400 uppercase tracking-wide">avg</div>
                         </div>
@@ -738,9 +800,15 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
                       
                       {/* Defense Tier */}
                       <div className="text-center">
-                        <span className={`inline-flex items-center px-3 py-2 bg-gradient-to-r ${getDefenseTierColor(player.defense_tier)} rounded-full text-white font-bold text-sm shadow-lg transform group-hover:scale-110 transition-all`}>
-                          {getDefenseTierLabel(player.defense_tier)}
-                        </span>
+                        {viewMode === 'aggregated' ? (
+                          <span className="inline-flex items-center px-3 py-2 bg-gradient-to-r from-purple-600/20 to-pink-600/20 rounded-full text-purple-300 font-bold text-sm border border-purple-500/30">
+                            🏆 Season Total
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center px-3 py-2 bg-gradient-to-r ${getDefenseTierColor(player.defense_tier)} rounded-full text-white font-bold text-sm shadow-lg transform group-hover:scale-110 transition-all`}>
+                            {getDefenseTierLabel(player.defense_tier)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
