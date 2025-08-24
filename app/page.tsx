@@ -29,7 +29,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   const [data, setData] = useState<PlayerData[]>([]);
   const [rawData, setRawData] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'aggregated' | 'situational'>('aggregated');
-  const [sortBy, setSortBy] = useState<'games' | 'total_yards' | 'per_game'>('total_yards');
+  const [sortBy, setSortBy] = useState<'games' | 'total_yards' | 'per_game' | 'player_name'>('total_yards');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +121,7 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         if (playerMap.has(key)) {
           const existing = playerMap.get(key)!;
           existing.total_yards += (row.total_yards || 0);
-          existing.games += (row.games || 0);
+          existing.games = Math.max(existing.games, row.games || 0); // Take MAX games, not sum
         } else {
           playerMap.set(key, {
             player_name: playerName,
@@ -156,6 +156,11 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
           aValue = a.per_game || 0;
           bValue = b.per_game || 0;
           break;
+        case 'player_name':
+          // String sorting for names
+          return sortOrder === 'desc' 
+            ? (b.player_name || '').localeCompare(a.player_name || '')
+            : (a.player_name || '').localeCompare(b.player_name || '');
         case 'total_yards':
         default:
           aValue = a.total_yards;
@@ -167,14 +172,14 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
     });
   };
 
-  const handleSort = (column: 'games' | 'total_yards' | 'per_game') => {
+  const handleSort = (column: 'games' | 'total_yards' | 'per_game' | 'player_name') => {
     if (sortBy === column) {
       // Toggle sort order if same column
       setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
     } else {
-      // New column, default to desc
+      // New column, set appropriate default
       setSortBy(column);
-      setSortOrder('desc');
+      setSortOrder(column === 'player_name' ? 'asc' : 'desc'); // Names default A-Z, numbers default high-low
     }
   };
 
@@ -748,7 +753,17 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
             <div className="bg-black/60 px-8 py-4 border-b border-purple-500/10">
               <div className="grid grid-cols-8 gap-4 text-purple-300 text-sm font-bold uppercase tracking-wider">
                 <div className="text-center">#</div>
-                <div>Player</div>
+                <div>
+                  <button 
+                    onClick={() => handleSort('player_name')}
+                    className="hover:text-white transition-colors flex items-center gap-1"
+                  >
+                    Player
+                    {sortBy === 'player_name' && (
+                      <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                    )}
+                  </button>
+                </div>
                 <div className="text-center">Team</div>
                 <div className="text-center">Pos</div>
                 <div className="text-center">
