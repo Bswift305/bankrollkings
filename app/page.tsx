@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
 import { Filter, TrendingUp, Target, Zap, Award, Clock, MapPin, Cloud } from 'lucide-react';
 
