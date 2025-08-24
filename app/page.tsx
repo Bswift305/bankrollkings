@@ -29,6 +29,8 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   const [data, setData] = useState<PlayerData[]>([]);
   const [rawData, setRawData] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'aggregated' | 'situational'>('aggregated');
+  const [sortBy, setSortBy] = useState<'games' | 'total_yards' | 'per_game'>('total_yards');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [debugExpanded, setDebugExpanded] = useState(false);
@@ -92,11 +94,13 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   const injuryStatus = ['All Status', '✅ Healthy', '🟡 Questionable', '🟠 Doubtful', '❌ Out', '🔄 Return from IR'];
   const experience = ['All Experience', '🌟 Rookie', '👶 2nd Year', '💪 Veteran (3-7)', '👑 Elite Vet (8+)'];
 
-  // Data aggregation function
+  // Data aggregation and sorting function
   const aggregatePlayerData = (rawData: any[]): PlayerData[] => {
+    let processedData: PlayerData[];
+    
     if (viewMode === 'situational') {
       // Show situational breakdown by defense tier
-      return rawData.map(row => ({
+      processedData = rawData.map(row => ({
         player_name: row.full_name || row.player_name,
         team: row.team_abbr || row.team,
         position: row.position,
@@ -130,14 +134,47 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         }
       });
       
-      // Calculate per_game averages and sort by total yards
-      return Array.from(playerMap.values())
+      // Calculate per_game averages
+      processedData = Array.from(playerMap.values())
         .filter(player => player.player_name && player.player_name !== '') // Remove entries with no names
         .map(player => ({
           ...player,
           per_game: player.games > 0 ? player.total_yards / player.games : 0
-        }))
-        .sort((a, b) => b.total_yards - a.total_yards);
+        }));
+    }
+    
+    // Apply sorting
+    return processedData.sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (sortBy) {
+        case 'games':
+          aValue = a.games;
+          bValue = b.games;
+          break;
+        case 'per_game':
+          aValue = a.per_game || 0;
+          bValue = b.per_game || 0;
+          break;
+        case 'total_yards':
+        default:
+          aValue = a.total_yards;
+          bValue = b.total_yards;
+          break;
+      }
+      
+      return sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
+    });
+  };
+
+  const handleSort = (column: 'games' | 'total_yards' | 'per_game') => {
+    if (sortBy === column) {
+      // Toggle sort order if same column
+      setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+    } else {
+      // New column, default to desc
+      setSortBy(column);
+      setSortOrder('desc');
     }
   };
 
@@ -151,12 +188,12 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   ]);
 
   useEffect(() => {
-    // Re-aggregate data when view mode changes
+    // Re-aggregate and sort data when view mode or sorting changes
     if (rawData.length > 0) {
       const aggregatedData = aggregatePlayerData(rawData);
       setData(aggregatedData);
     }
-  }, [viewMode, rawData]);
+  }, [viewMode, rawData, sortBy, sortOrder]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -714,9 +751,39 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
                 <div>Player</div>
                 <div className="text-center">Team</div>
                 <div className="text-center">Pos</div>
-                <div className="text-center">Games</div>
-                <div className="text-center">Total</div>
-                <div className="text-center">Per Game</div>
+                <div className="text-center">
+                  <button 
+                    onClick={() => handleSort('games')}
+                    className="hover:text-white transition-colors flex items-center gap-1 mx-auto"
+                  >
+                    Games
+                    {sortBy === 'games' && (
+                      <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                    )}
+                  </button>
+                </div>
+                <div className="text-center">
+                  <button 
+                    onClick={() => handleSort('total_yards')}
+                    className="hover:text-white transition-colors flex items-center gap-1 mx-auto"
+                  >
+                    Total
+                    {sortBy === 'total_yards' && (
+                      <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                    )}
+                  </button>
+                </div>
+                <div className="text-center">
+                  <button 
+                    onClick={() => handleSort('per_game')}
+                    className="hover:text-white transition-colors flex items-center gap-1 mx-auto"
+                  >
+                    Per Game
+                    {sortBy === 'per_game' && (
+                      <span className="text-xs">{sortOrder === 'desc' ? '↓' : '↑'}</span>
+                    )}
+                  </button>
+                </div>
                 <div className="text-center">Def Tier</div>
               </div>
             </div>
