@@ -93,12 +93,12 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
   const experience = ['All Experience', '🌟 Rookie', '👶 2nd Year', '💪 Veteran (3-7)', '👑 Elite Vet (8+)'];
 
   // Data aggregation function
-  const aggregatePlayerData = (rawData: RawPlayerData[]): PlayerData[] => {
+  const aggregatePlayerData = (rawData: any[]): PlayerData[] => {
     if (viewMode === 'situational') {
       // Show situational breakdown by defense tier
       return rawData.map(row => ({
-        player_name: row.full_name,
-        team: row.team_abbr,
+        player_name: row.full_name || row.player_name,
+        team: row.team_abbr || row.team,
         position: row.position,
         games: row.games,
         total_yards: row.total_yards,
@@ -106,31 +106,33 @@ const NFL_SITUATIONAL_ANALYSIS = () => {
         per_game: row.per_game
       }));
     } else {
-      // Aggregate across all defense tiers for season totals
+      // Aggregate across defense tiers for each individual player
       const playerMap = new Map<string, PlayerData>();
       
       rawData.forEach(row => {
-        const key = `${row.full_name}-${row.team_abbr}-${row.position}`;
+        const playerName = row.full_name || row.player_name;
+        const teamName = row.team_abbr || row.team;
+        const key = `${playerName}-${teamName}`;
         
         if (playerMap.has(key)) {
           const existing = playerMap.get(key)!;
-          existing.total_yards += row.total_yards;
-          existing.games += row.games;
+          existing.total_yards += (row.total_yards || 0);
+          existing.games += (row.games || 0);
         } else {
           playerMap.set(key, {
-            player_name: row.full_name,
-            team: row.team_abbr,
+            player_name: playerName,
+            team: teamName,
             position: row.position,
-            games: row.games,
-            total_yards: row.total_yards,
-            defense_tier: 'season_total',
-            per_game: 0 // Will calculate below
+            games: row.games || 0,
+            total_yards: row.total_yards || 0,
+            defense_tier: 'season_total'
           });
         }
       });
       
       // Calculate per_game averages and sort by total yards
       return Array.from(playerMap.values())
+        .filter(player => player.player_name && player.player_name !== '') // Remove entries with no names
         .map(player => ({
           ...player,
           per_game: player.games > 0 ? player.total_yards / player.games : 0
