@@ -3,8 +3,17 @@
 import React, { useState, useEffect } from 'react';
 // Using emoji icons instead of lucide-react for compatibility
 
+interface PlayerData {
+  player_name: string;
+  team: string;
+  position: string;
+  games: number;
+  total_yards: number;
+  defense_tier: string;
+}
+
 const NFL_SITUATIONAL_ANALYSIS = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<PlayerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [debugExpanded, setDebugExpanded] = useState(false);
