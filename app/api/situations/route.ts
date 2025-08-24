@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
     const seasonTo   = url.searchParams.get("seasonTo") ?? undefined;    // e.g. '2025'
     const limit      = url.searchParams.get("limit") ?? "25";
 
+    console.log('Query params:', { position, category, defTier, seasonFrom, seasonTo });
+
     // Build PostgREST query against the view
     const sel = [
       "player_id",
@@ -56,6 +58,8 @@ export async function GET(req: NextRequest) {
     // so stitch manually for season range:
     let query = params.toString().replace("season2=", "season=");
 
+    console.log('Final query:', query);
+
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/v_situational_leaderboard?${query}`,
       {
@@ -70,6 +74,7 @@ export async function GET(req: NextRequest) {
 
     if (!resp.ok) {
       const text = await resp.text();
+      console.error('Supabase error:', text);
       return NextResponse.json(
         { error: `supabase error ${resp.status}`, details: text },
         { status: 500 }
@@ -77,18 +82,33 @@ export async function GET(req: NextRequest) {
     }
 
     const rawRows = await resp.json();
+    console.log('Raw DB response (first 2):', rawRows.slice(0, 2));
     
-    // ✅ FIXED: Transform data to match frontend expectations
+    // ✅ FIXED: Transform data with ALL fields including team
     const rows = rawRows.map((row: any) => ({
       player_id: row.player_id,
       full_name: row.full_name,
-      total: row.total_yards,  // Map total_yards to total
-      per_game: row.per_game,
-      games: row.games,
+      position: row.position,
+      team: row.team_abbr,                        // ✅ NOW INCLUDES TEAM!
+      total: parseInt(row.total_yards) || 0,      // ✅ Convert string to number
+      per_game: parseFloat(row.per_game) || 0,    // ✅ Convert string to number
+      games: row.games || 1,
+      def_tier: row.def_tier,
+      category: row.category,
+      season: row.season,
+      
+      // Additional compatibility fields
+      player_name: row.full_name,
+      total_yards: parseInt(row.total_yards) || 0,
+      avg_per_attempt: parseFloat(row.per_game) || 0,
+      id: row.player_id
     }));
+
+    console.log('Transformed response (first 2):', rows.slice(0, 2));
 
     return NextResponse.json({ rows });
   } catch (err: any) {
+    console.error('API Error:', err);
     return NextResponse.json(
       { error: "internal", details: String(err?.message ?? err) },
       { status: 500 }

@@ -1,470 +1,467 @@
-"use client";
+'use client';
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState, useEffect } from 'react';
+import { Filter, TrendingUp, Target, Zap, Award, Clock, MapPin, Cloud } from 'lucide-react';
 
-// ---------------------------------------------
-// Types
-// ---------------------------------------------
+const NFL_SITUATIONAL_ANALYSIS = () => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [debugExpanded, setDebugExpanded] = useState(false);
+  const [rawResponse, setRawResponse] = useState(null);
+  
+  // Filter states
+  const [selectedPosition, setSelectedPosition] = useState('All Positions');
+  const [selectedTeam, setSelectedTeam] = useState('All Teams');
+  const [selectedDefenseTier, setSelectedDefenseTier] = useState('All Defense Tiers');
+  const [selectedSituation, setSelectedSituation] = useState('All Situations');
+  const [selectedHomeAway, setSelectedHomeAway] = useState('All Games');
+  const [selectedGameType, setSelectedGameType] = useState('All Games');
+  const [selectedWeather, setSelectedWeather] = useState('All Weather');
 
-type Tier = "top10" | "bottom10" | "mid";
-type DefCat = "rush" | "pass" | "overall";
-type Position = "RB" | "WR" | "TE" | "QB";
+  // Filter options
+  const positions = ['All Positions', 'RB', 'WR', 'TE', 'QB'];
+  const teams = ['All Teams', 'Buffalo', 'Miami', 'New England', 'NY Jets', 'Baltimore', 'Cincinnati', 'Cleveland', 'Pittsburgh', 'Houston', 'Indianapolis', 'Jacksonville', 'Tennessee', 'Denver', 'Kansas City', 'Las Vegas', 'LA Chargers'];
+  const defenseTiers = ['All Defense Tiers', '🔥 Elite', '✅ Good', '📊 Average', '📉 Poor'];
+  const situations = ['All Situations', '🎯 Red Zone', '3️⃣ 3rd Down', '🏁 Goal Line', '⏰ 2-Min Drill', '4️⃣ 4th Down'];
+  const homeAwayOptions = ['🏠 Home/Away', '🏠 Home', '✈️ Away'];
+  const gameTypes = ['All Games', '🌙 Prime Time', '☀️ Regular'];
+  const weatherOptions = ['🌤️ All Weather', '🏟️ Dome', '☀️ Clear', '🌧️ Rain', '❄️ Snow', '💨 Windy'];
 
-type LeaderboardRow = {
-  player_id: string;
-  full_name: string;
-  total: number;
-  per_game: number;
-  games: number;
-};
+  useEffect(() => {
+    fetchData();
+  }, [selectedPosition, selectedTeam, selectedDefenseTier, selectedSituation, selectedHomeAway, selectedGameType, selectedWeather]);
 
-type HitRate = {
-  attempts: number;
-  hits: number;
-  hit_rate_pct: number;
-};
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = new URLSearchParams();
+      
+      if (selectedPosition !== 'All Positions') params.append('position', selectedPosition);
+      if (selectedTeam !== 'All Teams') params.append('team', selectedTeam);
+      if (selectedDefenseTier !== 'All Defense Tiers') {
+        const tierMap = {
+          '🔥 Elite': 'elite',
+          '✅ Good': 'good', 
+          '📊 Average': 'average',
+          '📉 Poor': 'poor'
+        };
+        params.append('defense_tier', tierMap[selectedDefenseTier]);
+      }
+      
+      const response = await fetch(`/api/situations?${params.toString()}`);
+      const result = await response.json();
+      
+      setRawResponse(result);
+      
+      if (response.ok && result.rows) {
+        setData(result.rows);
+      } else {
+        setError(`HTTP ${response.status}: ${result.error || 'Unknown error'}`);
+        setData([]);
+      }
+    } catch (err) {
+      setError(`Network error: ${err.message}`);
+      setData([]);
+      setRawResponse(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-// ---------------------------------------------
-// Utilities
-// ---------------------------------------------
+  const clearAllFilters = () => {
+    setSelectedPosition('All Positions');
+    setSelectedTeam('All Teams');
+    setSelectedDefenseTier('All Defense Tiers');
+    setSelectedSituation('All Situations');
+    setSelectedHomeAway('All Games');
+    setSelectedGameType('All Games');
+    setSelectedWeather('All Weather');
+  };
 
-const isUUID = (v?: string) => !!v && /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(v);
+  const getDefenseTierColor = (tier) => {
+    const colors = {
+      'top10': 'from-red-500 to-pink-600',
+      'bottom10': 'from-green-400 to-emerald-500',
+      'middle': 'from-yellow-400 to-orange-500'
+    };
+    return colors[tier] || 'from-gray-400 to-gray-500';
+  };
 
-const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
-
-const fetchJSON = async <T,>(url: string): Promise<T> => {
-  const res = await fetch(url);
-  const ct = res.headers.get("content-type") || "";
-  if (!res.ok) {
-    // Avoid dumping huge HTML into the UI
-    let snippet = "";
-    try { snippet = (await res.text()).slice(0, 240); } catch {}
-    const msg = `${res.status} ${res.statusText} for ${url}` + (snippet && !snippet.startsWith("<") ? ` — ${snippet}` : "");
-    throw new Error(msg);
-  }
-  if (!ct.includes("application/json")) {
-    throw new Error(`Expected JSON but got ${ct || "unknown content type"} from ${url}`);
-  }
-  return res.json() as Promise<T>;
-};
-
-// Convert tri-state dropdown to query param
-const boolParam = (s: "any" | "only" | "exclude"): boolean | null =>
-  s === "any" ? null : s === "only" ? true : false;
-
-// ---------------------------------------------
-// FiltersBar
-// ---------------------------------------------
-
-type Filters = {
-  position: Position;
-  stat: "rush_yards" | "rec_yards" | "receptions" | "pass_yards";
-  seasonFrom: number;
-  seasonTo: number;
-  defCat: DefCat;
-  tier: Tier;
-  prime: "any" | "only" | "exclude"; // tri-state -> null/true/false
-  dome: "any" | "only" | "exclude";
-  windy: "any" | "only" | "exclude";
-  homeAway?: "home" | "away" | "any";
-  playerUUID?: string; // For HitRateCard
-  propType?:
-    | "rush_yds"
-    | "rec_yds"
-    | "receptions"
-    | "pass_yds"
-    | "rush_tds"
-    | "rec_tds"
-    | "pass_tds";
-};
-
-const defaultFilters: Filters = {
-  position: "RB",
-  stat: "rush_yards",
-  seasonFrom: new Date().getFullYear() - 2, // last 3 seasons by default
-  seasonTo: new Date().getFullYear(),
-  defCat: "rush",
-  tier: "top10",
-  prime: "any",
-  dome: "any",
-  windy: "any",
-  homeAway: "any",
-  playerUUID: "",
-  propType: "rush_yds",
-};
-
-function FiltersBar({
-  value,
-  onChange,
-}: {
-  value: Filters;
-  onChange: (f: Filters) => void;
-}) {
-  const [local, setLocal] = useState<Filters>(value);
-
-  useEffect(() => setLocal(value), [value]);
-
-  const update = (patch: Partial<Filters>) => {
-    const next = { ...local, ...patch };
-    setLocal(next);
-    onChange(next);
+  const getDefenseTierLabel = (tier) => {
+    const labels = {
+      'top10': '🔥 Elite',
+      'bottom10': '📉 Poor', 
+      'middle': '📊 Average'
+    };
+    return labels[tier] || tier;
   };
 
   return (
-    <div className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {/* Position */}
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Position</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.position}
-            onChange={(e) => update({ position: e.target.value as Position })}
-          >
-            {(["RB", "WR", "TE", "QB"] as Position[]).map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* Stat (Leaderboard) */}
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Leaderboard Stat</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.stat}
-            onChange={(e) => update({ stat: e.target.value as Filters["stat"] })}
-          >
-            <option value="rush_yards">Rush Yards</option>
-            <option value="rec_yards">Rec Yards</option>
-            <option value="receptions">Receptions</option>
-            <option value="pass_yards">Pass Yards</option>
-          </select>
-        </label>
-
-        {/* Seasons */}
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">From Season</span>
-          <input
-            type="number"
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.seasonFrom}
-            onChange={(e) => update({ seasonFrom: Number(e.target.value) })}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">To Season</span>
-          <input
-            type="number"
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.seasonTo}
-            onChange={(e) => update({ seasonTo: Number(e.target.value) })}
-          />
-        </label>
-
-        {/* Defense Category & Tier */}
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Defense Category</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.defCat}
-            onChange={(e) => update({ defCat: e.target.value as DefCat })}
-          >
-            <option value="rush">Rush</option>
-            <option value="pass">Pass</option>
-            <option value="overall">Overall</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Defense Tier</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.tier}
-            onChange={(e) => update({ tier: e.target.value as Tier })}
-          >
-            <option value="top10">Top 10</option>
-            <option value="mid">Mid</option>
-            <option value="bottom10">Bottom 10</option>
-          </select>
-        </label>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Animated Background */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -inset-10 opacity-20">
+          <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
+          <div className="absolute top-0 -right-4 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-2000"></div>
+          <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-4000"></div>
+        </div>
       </div>
 
-      {/* Situational Toggles */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {(
-          [
-            { key: "prime", label: "Prime Time" },
-            { key: "dome", label: "Dome" },
-            { key: "windy", label: "Wind ≥ 15mph" },
-          ] as const
-        ).map(({ key, label }) => (
-          <label key={key} className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-zinc-400">{label}</span>
-            <select
-              className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-              value={local[key]}
-              onChange={(e) => update({ [key]: e.target.value as Filters[typeof key] } as any)}
+      <div className="relative z-10 px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-3 mb-4">
+            <div className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg">
+              <TrendingUp className="h-8 w-8 text-white" />
+            </div>
+            <h1 className="text-5xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+              BANKROLLKINGS
+            </h1>
+          </div>
+          <p className="text-xl text-purple-200 font-light">
+            Advanced player vs defense matchup analysis for prop betting insights
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-black/30 backdrop-blur-sm rounded-full border border-purple-500/20">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-green-400 text-sm font-medium">LIVE DATA</span>
+          </div>
+        </div>
+
+        {/* Debug Panel */}
+        <div className="max-w-7xl mx-auto mb-8">
+          <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl p-6 shadow-2xl">
+            <button 
+              onClick={() => setDebugExpanded(!debugExpanded)}
+              className="flex items-center gap-3 text-purple-300 hover:text-purple-200 transition-colors group"
             >
-              <option value="any">Any</option>
-              <option value="only">Only</option>
-              <option value="exclude">Exclude</option>
-            </select>
-          </label>
-        ))}
-
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Home/Away</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.homeAway}
-            onChange={(e) => update({ homeAway: e.target.value as Filters["homeAway"] })}
-          >
-            <option value="any">Any</option>
-            <option value="home">Home</option>
-            <option value="away">Away</option>
-          </select>
-        </label>
-
-        {/* Player (UUID) + Prop Type for HitRateCard */}
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Player UUID (for Hit Rate)</span>
-          <input
-            placeholder="00000000-0000-0000-0000-000000000000"
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 placeholder-zinc-600"
-            value={local.playerUUID}
-            onChange={(e) => update({ playerUUID: e.target.value })}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-zinc-400">Prop Type</span>
-          <select
-            className="rounded-xl border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-            value={local.propType}
-            onChange={(e) => update({ propType: e.target.value as NonNullable<Filters["propType"]> })}
-          >
-            <option value="rush_yds">Rush Yards</option>
-            <option value="rec_yds">Rec Yards</option>
-            <option value="receptions">Receptions</option>
-            <option value="pass_yds">Pass Yards</option>
-            <option value="rush_tds">Rush TDs</option>
-            <option value="rec_tds">Rec TDs</option>
-            <option value="pass_tds">Pass TDs</option>
-          </select>
-        </label>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------
-// Leaderboard
-// ---------------------------------------------
-
-function Leaderboard({ filters }: { filters: Filters }) {
-  const [rows, setRows] = useState<LeaderboardRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // ✅ FIXED: Correct API URL and parameter mapping
-  const qs = useMemo(() => {
-    const p = new URLSearchParams({
-      position: filters.position,
-      category: filters.defCat,        // ✅ API expects 'category', not 'defCat'
-      defTier: filters.tier,           // ✅ API expects 'defTier', not 'tier'
-      seasonFrom: String(filters.seasonFrom),
-      seasonTo: String(filters.seasonTo),
-      limit: String(50),
-    });
-    return `/api/situations?${p.toString()}`; // ✅ Correct URL
-  }, [filters]);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    setError(null);
-    fetchJSON<{ rows: LeaderboardRow[] }>(qs)
-      .then((d) => mounted && setRows(d.rows || []))
-      .catch((e) => mounted && setError(e.message))
-      .finally(() => mounted && setLoading(false));
-    return () => {
-      mounted = false;
-    };
-  }, [qs]);
-
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-zinc-100">
-          Leaderboard — {filters.position} vs {filters.defCat.toUpperCase()} {filters.tier}
-        </h3>
-        <span className="text-xs text-zinc-400">
-          {filters.seasonFrom}-{filters.seasonTo}
-        </span>
-      </div>
-
-      {loading && <div className="animate-pulse text-zinc-400">Loading…</div>}
-      {error && (
-        <div className="rounded-xl border border-red-800 bg-red-950/40 p-3 text-sm text-red-200">
-          {error}
+              <Zap className="h-5 w-5 group-hover:text-yellow-400 transition-colors" />
+              <span className="font-semibold">Debug Info: View Raw API Response</span>
+              <span className="text-xs bg-purple-500/20 px-2 py-1 rounded-full">
+                {debugExpanded ? 'Hide' : 'Click to expand'}
+              </span>
+            </button>
+            
+            {debugExpanded && (
+              <div className="mt-4 p-4 bg-black/60 rounded-xl border border-green-500/20">
+                <div className="text-green-400 font-mono text-sm whitespace-pre-wrap max-h-64 overflow-auto">
+                  {rawResponse ? JSON.stringify(rawResponse, null, 2) : 'null'}
+                </div>
+                <p className="text-green-300 text-xs mt-2 font-medium">
+                  This shows exactly what your API is returning so we can fix data mapping issues
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-      )}
 
-      {!loading && !error && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-y-6">
-            <thead className="text-left text-xs uppercase tracking-wide text-zinc-400">
-              <tr>
-                <th className="w-12 px-2">#</th>
-                <th className="px-2">Player</th>
-                <th className="w-24 px-2 text-right">Games</th>
-                <th className="w-28 px-2 text-right">Total</th>
-                <th className="w-28 px-2 text-right">Per Game</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows?.map((r, idx) => (
-                <tr key={r.player_id} className="rounded-xl bg-zinc-950/60">
-                  <td className="px-2 text-zinc-400">{idx + 1}</td>
-                  <td className="px-2 font-medium text-zinc-100">{r.full_name}</td>
-                  <td className="px-2 text-right text-zinc-200">{r.games}</td>
-                  <td className="px-2 text-right text-zinc-200">{Math.round(r.total)}</td>
-                  <td className="px-2 text-right text-zinc-100">{r.per_game.toFixed(2)}</td>
-                </tr>
-              ))}
-              {!rows?.length && (
-                <tr>
-                  <td colSpan={5} className="px-2 text-center text-sm text-zinc-400">
-                    No results for these filters.
-                  </td>
-                </tr>
+        {/* Filters Section */}
+        <div className="max-w-7xl mx-auto mb-8">
+          <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl p-8 shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <Filter className="h-6 w-6 text-purple-400" />
+              <h2 className="text-2xl font-bold text-white">Filter Matchups</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Position Filter */}
+              <div className="space-y-2">
+                <label className="text-purple-300 font-semibold text-sm uppercase tracking-wide">Position</label>
+                <select 
+                  value={selectedPosition} 
+                  onChange={(e) => setSelectedPosition(e.target.value)}
+                  className="w-full bg-black/60 border border-purple-500/30 text-white rounded-xl px-4 py-3 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all hover:border-purple-400/50"
+                >
+                  {positions.map(pos => (
+                    <option key={pos} value={pos} className="bg-slate-800">{pos}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Team Filter */}
+              <div className="space-y-2">
+                <label className="text-purple-300 font-semibold text-sm uppercase tracking-wide">Team</label>
+                <select 
+                  value={selectedTeam} 
+                  onChange={(e) => setSelectedTeam(e.target.value)}
+                  className="w-full bg-black/60 border border-purple-500/30 text-white rounded-xl px-4 py-3 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all hover:border-purple-400/50"
+                >
+                  {teams.map(team => (
+                    <option key={team} value={team} className="bg-slate-800">{team}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Defense Tier Filter */}
+              <div className="space-y-2">
+                <label className="text-purple-300 font-semibold text-sm uppercase tracking-wide">Defense Tier</label>
+                <select 
+                  value={selectedDefenseTier} 
+                  onChange={(e) => setSelectedDefenseTier(e.target.value)}
+                  className="w-full bg-black/60 border border-purple-500/30 text-white rounded-xl px-4 py-3 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all hover:border-purple-400/50"
+                >
+                  {defenseTiers.map(tier => (
+                    <option key={tier} value={tier} className="bg-slate-800">{tier}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Situations Filter */}
+              <div className="space-y-2">
+                <label className="text-purple-300 font-semibold text-sm uppercase tracking-wide">Situations</label>
+                <select 
+                  value={selectedSituation} 
+                  onChange={(e) => setSelectedSituation(e.target.value)}
+                  className="w-full bg-black/60 border border-purple-500/30 text-white rounded-xl px-4 py-3 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all hover:border-purple-400/50"
+                >
+                  {situations.map(situation => (
+                    <option key={situation} value={situation} className="bg-slate-800">{situation}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button 
+                onClick={clearAllFilters}
+                className="px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-pink-700 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-red-500/25"
+              >
+                🔄 Clear All Filters
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Results Section */}
+        <div className="max-w-7xl mx-auto">
+          {error && (
+            <div className="mb-8 p-6 bg-red-500/10 backdrop-blur-sm border border-red-500/20 rounded-2xl shadow-2xl">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/20 rounded-lg">
+                  <Target className="h-6 w-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-red-400 font-bold text-lg">System Alert</h3>
+                  <p className="text-red-300">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Performance Header */}
+            <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 p-8 border-b border-purple-500/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg">
+                    <Award className="h-8 w-8 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black text-white mb-2">Performance Leaderboard</h2>
+                    <div className="flex items-center gap-4 text-purple-200">
+                      <span className="font-semibold">{data.length} players found</span>
+                      <span>•</span>
+                      <span>Situational matchup analysis</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden md:flex items-center gap-6">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-400">{data.length}</div>
+                    <div className="text-xs text-purple-300 uppercase tracking-wide">Active Players</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-400">LIVE</div>
+                    <div className="text-xs text-purple-300 uppercase tracking-wide">Data Feed</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Table Header */}
+            <div className="bg-black/60 px-8 py-4 border-b border-purple-500/10">
+              <div className="grid grid-cols-8 gap-4 text-purple-300 text-sm font-bold uppercase tracking-wider">
+                <div className="text-center">#</div>
+                <div>Player</div>
+                <div className="text-center">Team</div>
+                <div className="text-center">Pos</div>
+                <div className="text-center">Games</div>
+                <div className="text-center">Total</div>
+                <div className="text-center">Per Game</div>
+                <div className="text-center">Def Tier</div>
+              </div>
+            </div>
+
+            {/* Table Body */}
+            <div className="divide-y divide-purple-500/10">
+              {loading ? (
+                <div className="p-12 text-center">
+                  <div className="inline-flex items-center gap-4">
+                    <div className="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+                    <span className="text-purple-300 text-lg font-medium">Loading elite matchups...</span>
+                  </div>
+                </div>
+              ) : data.length === 0 ? (
+                <div className="p-12 text-center">
+                  <div className="inline-flex flex-col items-center gap-4">
+                    <div className="p-4 bg-purple-500/10 rounded-2xl">
+                      <Target className="h-12 w-12 text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white mb-2">No Matchups Found</h3>
+                      <p className="text-purple-300">Adjust your filters to find player matchups</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                data.map((player, index) => (
+                  <div key={`${player.player_name}-${index}`} 
+                       className="group hover:bg-purple-500/5 transition-all duration-300 hover:scale-[1.01] hover:shadow-lg hover:shadow-purple-500/10">
+                    <div className="grid grid-cols-8 gap-4 px-8 py-6 items-center">
+                      {/* Rank */}
+                      <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full shadow-lg group-hover:shadow-purple-500/50 transition-all">
+                          <span className="text-white font-bold">{index + 1}</span>
+                        </div>
+                      </div>
+                      
+                      {/* Player Name */}
+                      <div>
+                        <div className="font-bold text-white text-lg group-hover:text-purple-300 transition-colors">
+                          {player.player_name}
+                        </div>
+                      </div>
+                      
+                      {/* Team */}
+                      <div className="text-center">
+                        <span className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-full border border-blue-500/30 text-blue-300 font-bold text-sm">
+                          {player.team}
+                        </span>
+                      </div>
+                      
+                      {/* Position */}
+                      <div className="text-center">
+                        <span className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-green-600/20 to-emerald-600/20 rounded-full border border-green-500/30 text-green-300 font-bold text-sm">
+                          {player.position}
+                        </span>
+                      </div>
+                      
+                      {/* Games */}
+                      <div className="text-center">
+                        <span className="text-white font-bold text-lg">{player.games}</span>
+                      </div>
+                      
+                      {/* Total Yards */}
+                      <div className="text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-2xl font-black text-transparent bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text">
+                            {player.total_yards}
+                          </span>
+                          <div className="text-xs text-purple-400 uppercase tracking-wide">yards</div>
+                        </div>
+                      </div>
+                      
+                      {/* Per Game */}
+                      <div className="text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-xl font-bold text-cyan-400">
+                            {(player.total_yards / player.games).toFixed(1)}
+                          </span>
+                          <div className="text-xs text-purple-400 uppercase tracking-wide">avg</div>
+                        </div>
+                      </div>
+                      
+                      {/* Defense Tier */}
+                      <div className="text-center">
+                        <span className={`inline-flex items-center px-3 py-2 bg-gradient-to-r ${getDefenseTierColor(player.defense_tier)} rounded-full text-white font-bold text-sm shadow-lg transform group-hover:scale-110 transition-all`}>
+                          {getDefenseTierLabel(player.defense_tier)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
               )}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
-      )}
-    </div>
-  );
-}
 
-// ---------------------------------------------
-// HitRateCard (unchanged - this API call was correct)
-// ---------------------------------------------
-
-function HitRateCard({ filters }: { filters: Filters }) {
-  const [data, setData] = useState<HitRate | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const canQuery = isUUID(filters.playerUUID) && !!filters.propType;
-
-  const qs = useMemo(() => {
-    if (!canQuery) return null;
-    const p = new URLSearchParams({
-      playerId: filters.playerUUID!,
-      propType: filters.propType!,
-      seasonFrom: String(filters.seasonFrom),
-      seasonTo: String(filters.seasonTo),
-    });
-    if (filters.defCat) p.set("defCat", filters.defCat);
-    if (filters.tier) p.set("tier", filters.tier);
-    const prime = boolParam(filters.prime);
-    const dome = boolParam(filters.dome);
-    const windy = boolParam(filters.windy);
-    if (prime !== null) p.set("prime", String(prime));
-    if (dome !== null) p.set("dome", String(dome));
-    if (windy !== null) p.set("windy", String(windy));
-    return `/api/props/hit-rate?${p.toString()}`;
-  }, [filters, canQuery]);
-
-  useEffect(() => {
-    let mounted = true;
-    if (!qs) {
-      setData(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    fetchJSON<{ rows: HitRate[] }>(qs)
-      .then((d) => mounted && setData(d.rows?.[0] ?? null))
-      .catch((e) => mounted && setError(e.message))
-      .finally(() => mounted && setLoading(false));
-    return () => {
-      mounted = false;
-    };
-  }, [qs]);
-
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 shadow-lg">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-zinc-100">Prop Hit Rate</h3>
-        <span className="text-xs text-zinc-400">{filters.propType}</span>
-      </div>
-
-      {!isUUID(filters.playerUUID) && (
-        <div className="mb-2 rounded-xl border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200">
-          Enter a valid Player UUID to compute hit rate.
-        </div>
-      )}
-
-      {loading && <div className="animate-pulse text-zinc-400">Loading…</div>}
-      {error && (
-        <div className="rounded-xl border border-red-800 bg-red-950/40 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {data && !error && !loading && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Stat label="Attempts" value={data.attempts} />
-          <Stat label="Hits" value={data.hits} />
-          <Stat label="Hit Rate" value={`${data.hit_rate_pct.toFixed(1)}%`} />
-        </div>
-      )}
-
-      {!loading && !error && !data && isUUID(filters.playerUUID) && (
-        <div className="text-sm text-zinc-400">No data for this player/prop with current filters.</div>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-center">
-      <div className="text-xs uppercase tracking-wide text-zinc-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-zinc-100">{value}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------
-// Main Page Component
-// ---------------------------------------------
-
-export default function BKHomeExample() {
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
-
-  return (
-    <main className="mx-auto grid max-w-6xl gap-6 p-4 md:p-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold text-zinc-100">BankrollKings — Situational Edge</h1>
-        <p className="text-sm text-zinc-400">
-          Slice historical performance by defense tiers, weather, and venue to inform props, DFS, and fantasy decisions.
-        </p>
-      </header>
-
-      <FiltersBar value={filters} onChange={setFilters} />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Leaderboard filters={filters} />
-        </div>
-        <div className="lg:col-span-1">
-          <HitRateCard filters={filters} />
+        {/* Development Notes */}
+        <div className="max-w-7xl mx-auto mt-12">
+          <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-2xl p-8 shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-gradient-to-r from-orange-500 to-red-600 rounded-lg">
+                <Clock className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold text-white">Next Development Steps</h3>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-8">
+              <div>
+                <h4 className="text-purple-300 font-bold text-lg mb-4 flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  Data Issues to Fix:
+                </h4>
+                <ul className="space-y-3 text-purple-200">
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-red-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Add team names to database/API response</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-red-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Fix total yards calculation (showing 0s)</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-red-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Add more situational contexts</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-red-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Implement weather data integration</span>
+                  </li>
+                </ul>
+              </div>
+              
+              <div>
+                <h4 className="text-purple-300 font-bold text-lg mb-4 flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Features to Add:
+                </h4>
+                <ul className="space-y-3 text-purple-200">
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>WR vs CB specific matchups</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Defense-specific filtering</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Historical trend analysis</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-green-400 rounded-full mt-2 flex-shrink-0"></div>
+                    <span>Prop line suggestions</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </main>
+
+      <style jsx>{`
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+      `}</style>
+    </div>
   );
-}
+};
+
+export default NFL_SITUATIONAL_ANALYSIS;

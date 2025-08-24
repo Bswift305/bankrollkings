@@ -1,13 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export function createClient() {
+// Export with the name your services are importing
+export function createServerSupabase() {
   const cookieStore = cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    // Fix: Use correct environment variable name
-    process.env.SUPABASE_SERVICE_ROLE_KEY!, // Changed from SUPABASE_SERVICE_ROLE
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
         get(name: string) {
@@ -23,3 +23,6 @@ export function createClient() {
     }
   );
 }
+
+// Keep both exports for flexibility
+export const createClient = createServerSupabase;
