@@ -1,0 +1,649 @@
+{% extends "base.html" %}
+{% block title %}{% if filter_type == 'floor' %}Floor Plays - Bankroll Kings{% else %}Props Screener - Bankroll Kings{% endif %}{% endblock %}
+
+{% block content %}
+{% set floor_guide = get_method_guide('floor_plays') %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    .props-page {
+        --fp-card: #111520;
+        --fp-elevated: #171d2b;
+        --fp-border: rgba(255,255,255,0.07);
+        --fp-accent: #2dd4bf;
+        --fp-gold: #facc15;
+        --fp-copper: #c9803a;
+        --fp-muted: #7a8499;
+        --fp-head: 'Barlow Condensed', sans-serif;
+        --fp-body: 'DM Sans', sans-serif;
+        --fp-mono: 'JetBrains Mono', monospace;
+    }
+
+    .props-page, .props-page * { font-family: var(--fp-body); }
+    .props-page h1, .props-page .card-title, .props-page .btn, .props-page .page-kicker, .props-page th { font-family: var(--fp-head); }
+    .props-page .card { border-radius: 12px; border-color: var(--fp-border); background: var(--fp-card); box-shadow: none; }
+
+    .props-page.floor-mode .page-hero {
+        padding: 20px 22px 18px;
+        border-radius: 14px;
+        border: 1px solid rgba(250,204,21,0.18);
+        background:
+            radial-gradient(circle at 16% 12%, rgba(250,204,21,0.09) 0%, transparent 24%),
+            radial-gradient(circle at 84% 18%, rgba(45,212,191,0.08) 0%, transparent 21%),
+            linear-gradient(135deg, rgba(17,21,32,0.98) 0%, rgba(23,29,43,0.96) 100%);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.24);
+        margin-bottom: 16px;
+    }
+
+    .props-page.floor-mode .page-hero h1 {
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: 0.4px;
+    }
+
+    .props-page.floor-mode .page-subtitle { color: var(--fp-muted); max-width: 760px; }
+    .props-page.floor-mode .hero-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .props-page.floor-mode .btn-primary { background: rgba(250,204,21,0.12); border-color: rgba(250,204,21,0.34); color: var(--fp-gold); }
+    .props-page.floor-mode .btn-secondary { background: var(--fp-elevated); border-color: var(--fp-border); color: var(--fp-muted); }
+
+    .props-page.floor-mode .floor-method-panel {
+        background: var(--fp-card);
+        border: 1px solid rgba(250,204,21,0.18);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 16px;
+    }
+    .props-page.floor-mode .floor-method-header {
+        display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding:10px 14px;
+        border-bottom:1px solid rgba(250,204,21,0.12);
+        background: rgba(250,204,21,0.04);
+    }
+    .props-page.floor-mode .floor-method-title {
+        font-size:13px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color: var(--fp-gold);
+    }
+    .props-page.floor-mode .floor-method-grid {
+        display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .props-page.floor-mode .floor-method-cell {
+        padding:13px 14px; border-right:1px solid var(--fp-border);
+    }
+    .props-page.floor-mode .floor-method-cell:last-child { border-right:none; }
+    .props-page.floor-mode .floor-method-label {
+        font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color: var(--fp-copper); margin-bottom:6px;
+    }
+    .props-page.floor-mode .floor-method-body {
+        font-size:13px; color: var(--fp-muted); line-height:1.55;
+    }
+
+    .props-page.floor-mode .floor-stat-strip {
+        display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:10px; margin-bottom:16px;
+    }
+    .props-page.floor-mode .floor-stat-tile {
+        background: var(--fp-card); border:1px solid var(--fp-border); border-radius:12px; padding:12px 14px; position:relative; overflow:hidden;
+    }
+    .props-page.floor-mode .floor-stat-tile::before {
+        content:''; position:absolute; inset:0; background: linear-gradient(135deg, rgba(250,204,21,0.05) 0%, transparent 60%); pointer-events:none;
+    }
+    .props-page.floor-mode .floor-stat-kicker { font-size:10px; font-weight:700; letter-spacing:1.4px; color: var(--fp-copper); margin-bottom:5px; text-transform:uppercase; }
+    .props-page.floor-mode .floor-stat-value { font-family: var(--fp-head); font-size:20px; font-weight:700; color: var(--text-bright); line-height:1.1; margin-bottom:3px; }
+    .props-page.floor-mode .floor-stat-note { font-size:11px; color: var(--fp-muted); line-height:1.4; }
+</style>
+
+<div class="props-page {% if filter_type == 'floor' %}floor-mode{% endif %}">
+{% if filter_type == 'floor' %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Signature Method</div>
+        <h1>Floor <span class="accent">Plays</span></h1>
+        <div class="page-subtitle">Your safer anchor method for lower-volatility builds, stable roles, and stat targets that fit each player instead of forcing every prop through the same lens.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/props/floor?date={{ date_filter }}&direction=over&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/props/floor?date={{ date_filter }}&direction=over&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+    </div>
+</div>
+{% else %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <div>
+        <h1 style="margin-bottom: 6px;">Props <span class="accent">Screener</span></h1>
+        {% if model_debug %}
+        <div class="badge badge-accent" style="margin-bottom: 8px;">Debug Mode Active</div>
+        {% endif %}
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Board Terms ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#next-gen-tracking" class="btn btn-secondary btn-sm">Next Gen ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#samples-time-windows" class="btn btn-secondary btn-sm">Samples ?</a>
+        </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+    </div>
+</div>
+{% endif %}
+
+{% if filter_type != 'floor' %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}" class="btn btn-secondary btn-sm">Open Market Edge</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Read the price path</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Open, current, prior snapshot, and best-book context should frame the prop before the model score does.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How the role fits tonight</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Minutes, role, opponent environment, and game script decide whether this number fits the spot.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Support or sample trap?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Current-team history, line-history conflict, and streak quality help keep the board from chasing noise.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or caution</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use this board to decide whether the signals actually stack, not just whether a row looks hot.</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="p-16" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <div>
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 700; margin-bottom: 6px;">ANALYSIS SAMPLE</div>
+            <div style="font-size: 13px; color: var(--text-muted);">Use current-team logs for traded players, or widen back out to full-season form.</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+        </div>
+    </div>
+</div>
+
+{% if filter_type == 'floor' %}
+<div class="floor-method-panel">
+    <div class="floor-method-header">
+        <div class="floor-method-title">How To Use Floor Plays</div>
+        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#parlay-builder-language" class="btn btn-secondary btn-sm">Glossary</a>
+    </div>
+    <div class="floor-method-grid">
+        <div class="floor-method-cell">
+            <div class="floor-method-label">What It Is</div>
+            <div class="floor-method-body">{{ floor_guide.what_it_is }}</div>
+        </div>
+        <div class="floor-method-cell">
+            <div class="floor-method-label">Best Use Case</div>
+            <div class="floor-method-body">{{ floor_guide.best_use_case }}</div>
+        </div>
+        <div class="floor-method-cell">
+            <div class="floor-method-label">What Confirms It</div>
+            <div class="floor-method-body">{{ floor_guide.what_confirms_it }}</div>
+        </div>
+        <div class="floor-method-cell">
+            <div class="floor-method-label">What Makes It Risky</div>
+            <div class="floor-method-body">{{ floor_guide.what_makes_it_risky }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if filter_type == 'floor' %}
+<div class="floor-stat-strip">
+        <div class="floor-stat-tile">
+            <div class="floor-stat-kicker">Lines Refreshed</div>
+            <div class="floor-stat-value">{{ refresh_meta.last_updated }}</div>
+            <div class="floor-stat-note">{{ refresh_meta.row_count }} live prop rows loaded</div>
+        </div>
+        <div class="floor-stat-tile">
+            <div class="floor-stat-kicker">Market Source</div>
+            <div class="floor-stat-value">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
+            <div class="floor-stat-note">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
+        </div>
+        <div class="floor-stat-tile">
+            <div class="floor-stat-kicker">Confidence</div>
+            <div class="floor-stat-value">Normalized play strength</div>
+            <div class="floor-stat-note">A cleaner 50-99 score built from the adjusted hit-rate read so the board stays professional and comparable.</div>
+        </div>
+        <div class="floor-stat-tile">
+            <div class="floor-stat-kicker">Tier</div>
+            <div class="floor-stat-value">Parlay build quality</div>
+            <div class="floor-stat-note">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
+        </div>
+        <div class="floor-stat-tile">
+            <div class="floor-stat-kicker">Next Gen + Game Env</div>
+            <div class="floor-stat-value">Tracking is live</div>
+            <div class="floor-stat-note">Touches, drives, speed, TS%, plus spread and total context now feed the board and are shown directly in the rows.</div>
+        </div>
+    </div>
+{% else %}
+<div class="card mb-24">
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">LINES REFRESHED</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.last_updated }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ refresh_meta.row_count }} live prop rows loaded</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">MARKET SOURCE</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">CONFIDENCE</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Normalized play strength</div>
+            <div style="font-size: 11px; color: var(--text-muted);">A cleaner 50-99 score built from the adjusted hit-rate read so the board stays professional and comparable.</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">TIER</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Parlay build quality</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">NEXT GEN + GAME ENV</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Touches, drives, speed, TS%, plus spread and total context now feed the board and are shown directly in the rows.</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not refresh_meta.has_live_props %}
+<div class="card mb-24" style="border-color: rgba(255, 184, 0, 0.42); background: linear-gradient(135deg, rgba(64,46,10,0.92) 0%, rgba(44,37,21,0.94) 100%);">
+    <div class="p-16" style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
+        <div>
+            <div style="font-size: 12px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">LIVE FEED WARNING</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live NBA props are loaded right now.</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">{{ refresh_meta.warning }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="card mb-24">
+    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+        <!-- Date Filter -->
+        <div style="display: flex; gap: 4px; padding-right: 16px; border-right: 1px solid var(--border);">
+            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">WHEN:</span>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if date_filter == 'tomorrow' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">Tomorrow</a>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        </div>
+        
+        <!-- Direction Filter -->
+        <div style="display: flex; gap: 4px; padding-right: 16px; border-right: 1px solid var(--border);">
+            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">PLAY:</span>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'over' %}background: var(--accent); color: #000;{% endif %}">📈 Overs</a>
+            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'under' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Unders</a>
+        </div>
+        
+        <!-- Type Filter -->
+        <div style="display: flex; gap: 4px;">
+            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">TYPE:</span>
+            <a href="/props?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+            <a href="/props/locks?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'locks' %}background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f; border-color: rgba(184,115,51,0.55);{% endif %}">🔒 Locks</a>
+            <a href="/props/floor?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'floor' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">📉 Floor Plays</a>
+            <a href="/props/overs?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'overs' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'overs' %}background: var(--accent); color: #000;{% endif %}">📈 Best Overs</a>
+            <a href="/props/unders?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'unders' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'unders' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Best Unders</a>
+            <a href="/props/situational?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'situational' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">⚡ Situational</a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            {% if filter_type == 'locks' %}🔒 Locks (80%+ Confidence)
+            {% elif filter_type == 'floor' %}📉 Floor Plays
+            {% elif filter_type == 'overs' %}📈 Best Over Plays (70%+)
+            {% elif filter_type == 'unders' %}📉 Best Under Plays (70%+)
+            {% elif filter_type == 'situational' %}⚡ Situational Plays
+            {% else %}{{ (focus_mode_label + ' Props') if postseason_only else 'All Props' }}
+            {% endif %}
+        </div>
+        <span class="badge badge-accent">{{ props|length }} Props</span>
+    </div>
+    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">SORT:</span>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('player', 'asc')) }}" class="btn {% if sort_by == 'player' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Player A-Z</a>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('team', 'asc')) }}" class="btn {% if sort_by == 'team' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Team A-Z</a>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('stat', 'asc')) }}" class="btn {% if sort_by == 'stat' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Stat A-Z</a>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('confidence', 'desc')) }}" class="btn {% if sort_by == 'confidence' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Confidence</a>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('line', 'asc')) }}" class="btn {% if sort_by == 'line' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Lowest Line</a>
+        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('avg', 'desc')) }}" class="btn {% if sort_by == 'avg' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Avg</a>
+    </div>
+    {% if team_query or player_query or stat_query %}
+    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">ACTIVE FILTERS:</span>
+        {% if team_query %}<span class="badge badge-accent">Team {{ team_query }}</span>{% endif %}
+        {% if player_query %}<span class="badge badge-accent">Player {{ player_query }}</span>{% endif %}
+        {% if stat_query %}<span class="badge badge-accent">Stat {{ stat_query }}</span>{% endif %}
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left: auto;">Clear Filters</a>
+    </div>
+    {% endif %}
+    
+    {% if props %}
+    <div class="table-shell">
+    <table class="data-table compact-board">
+        <thead>
+            <tr>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('player', 'desc' if sort_by == 'player' and sort_dir == 'asc' else 'asc')) }}">Player{% if sort_by == 'player' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('team', 'desc' if sort_by == 'team' and sort_dir == 'asc' else 'asc')) }}">Team{% if sort_by == 'team' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                {% if filter_type == 'floor' and postseason_only %}<th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('matchup_games', 'asc' if sort_by == 'matchup_games' and sort_dir == 'desc' else 'desc')) }}">Matchup{% if sort_by == 'matchup_games' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>{% endif %}
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('stat', 'desc' if sort_by == 'stat' and sort_dir == 'asc' else 'asc')) }}">{{ glossary_hint('Stat', 'core-stats', show_icon=True) }}{% if sort_by == 'stat' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('line', 'desc' if sort_by == 'line' and sort_dir == 'asc' else 'asc')) }}">Line{% if sort_by == 'line' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('avg', 'asc' if sort_by == 'avg' and sort_dir == 'desc' else 'desc')) }}">Avg{% if sort_by == 'avg' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('direction', 'desc' if sort_by == 'direction' and sort_dir == 'asc' else 'asc')) }}">Play{% if sort_by == 'direction' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('weighted_over_rate', 'asc' if sort_by == 'weighted_over_rate' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('O/U Rates', 'betting-board-terms', show_icon=True) }}{% if sort_by == 'weighted_over_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('projected_minutes', 'asc' if sort_by == 'projected_minutes' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Proj', 'next-gen-tracking', show_icon=True, title='Open glossary for projection and minutes signals') }}{% if sort_by == 'projected_minutes' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('fair_price', 'asc' if sort_by == 'fair_price' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Fair', 'betting-board-terms', show_icon=True) }}{% if sort_by == 'fair_price' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('market_price', 'asc' if sort_by == 'market_price' and sort_dir == 'desc' else 'desc')) }}">Market{% if sort_by == 'market_price' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th>{{ glossary_hint('Game Env', 'betting-board-terms', show_icon=True) }}</th>
+                {% if filter_type == 'floor' and postseason_only %}<th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('matchup_over_rate', 'asc' if sort_by == 'matchup_over_rate' and sort_dir == 'desc' else 'desc')) }}">Vs Opp{% if sort_by == 'matchup_over_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>{% endif %}
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('over_streak', 'asc' if sort_by == 'over_streak' and sort_dir == 'desc' else 'desc')) }}">Streak{% if sort_by == 'over_streak' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th>Pressure</th>
+                <th>Situations</th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('confidence', 'asc' if sort_by == 'confidence' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Confidence', 'betting-board-terms', show_icon=True) }}{% if sort_by == 'confidence' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                <th><a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('game_day', 'desc' if sort_by == 'game_day' and sort_dir == 'asc' else 'asc')) }}">Game{% if sort_by == 'game_day' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for prop in props %}
+            <tr style="{% if prop.plays_today %}background: rgba(110,168,166,0.07);{% elif prop.plays_tomorrow %}background: rgba(184,115,51,0.07);{% endif %}">
+                <td>
+                    <a href="/player/{{ prop.player|urlencode }}?sample={{ sample_mode }}">{{ prop.player }}</a>
+                    {% if prop.has_injury_flag %}
+                    <div style="margin-top: 6px;">
+                        <span class="badge badge-injury" title="{{ prop.injury_reason }}">
+                            &#10010; {{ prop.injury_short_label or prop.injury_status }}
+                        </span>
+                    </div>
+                    {% endif %}
+                    {% if prop.is_multi_team %}
+                    <div style="font-size: 10px; color: var(--accent-copper); margin-top: 4px;">{{ prop.sample_label }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="player-team-meta" style="margin-top: 0;">{{ team_mark(prop.team, size='sm') }}</div>
+                    {% if prop.is_multi_team %}
+                    <div style="font-size: 10px; color: var(--text-muted);">{{ prop.team_history }}</div>
+                    {% endif %}
+                </td>
+                {% if filter_type == 'floor' and postseason_only %}
+                <td>
+                    {% if prop.matchup %}
+                    <div style="font-weight: 600;">{{ prop.matchup }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">{{ prop.matchup_games }} matchup games</div>
+                    {% else %}
+                    <span style="color: var(--text-muted);">-</span>
+                    {% endif %}
+                </td>
+                {% endif %}
+                <td><span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span></td>
+                <td><strong>{{ prop.line }}</strong></td>
+                <td>{{ prop.avg }}</td>
+                <td>
+                    {% if prop.play_verdict == 'PASS' %}
+                    <span class="play-pill-gloss" style="background: rgba(255,107,107,0.18); color: #FFB3B3; border: 1px solid rgba(255,107,107,0.35);">Pass</span>
+                    {% elif prop.play_verdict == 'CONFLICTED' %}
+                    <span class="play-pill-gloss" style="background: rgba(255,184,0,0.16); color: #FFD47A; border: 1px solid rgba(255,184,0,0.3);">{% if prop.direction == 'OVER' %}Lean Over{% else %}Lean Under{% endif %}</span>
+                    {% elif prop.direction == 'OVER' %}
+                    <span class="play-pill-gloss over">Over</span>
+                    {% else %}
+                    <span class="play-pill-gloss under">Under</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span style="color: var(--accent);">O:{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span>
+                    <span style="color: var(--text-muted);">/</span>
+                    <span style="color: #FF6B6B;">U:{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span>
+                </td>
+                <td style="font-size: 11px;">
+                    <div class="metric-stack">
+                        <div>{% if prop.projected_minutes is not none %}{{ prop.projected_minutes }} MIN{% else %}-{% endif %}</div>
+                        <div class="micro-cluster">
+                            {% if prop.usage_pct is not none %}<span class="micro-chip soft">{{ prop.usage_pct }} {{ glossary_hint('USG', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                            {% if prop.ts_pct is not none %}<span class="micro-chip blue">{{ prop.ts_pct }} {{ glossary_hint('TS', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                        </div>
+                        <div class="micro-cluster">
+                            {% if prop.touches is not none %}<span class="micro-chip soft">{{ prop.touches }} {{ glossary_hint('TCH', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                            {% if prop.drives is not none %}<span class="micro-chip copper">{{ prop.drives }} {{ glossary_hint('DRV', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                            {% if prop.avg_speed is not none %}<span class="micro-chip blue">{{ prop.avg_speed }} {{ glossary_hint('SPD', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <div style="color: {% if prop.snapshot_consistency and prop.snapshot_consistency >= 80 %}var(--accent){% elif prop.snapshot_consistency %}var(--text-muted){% else %}var(--text-muted){% endif %};">
+                        {% if prop.snapshot_signal %}{{ prop.snapshot_signal }}{% elif prop.snapshot_consistency %}Snap {{ prop.snapshot_consistency }}{% else %}-{% endif %}
+                    </div>
+                    {% if prop.is_multi_team %}
+                    <div style="color: var(--accent-copper);">{{ prop.sample_label }}</div>
+                    {% endif %}
+                </td>
+                <td style="font-size: 11px;">
+                    <div>{% if prop.fair_price %}{{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% else %}-{% endif %}</div>
+                    <div style="color: {% if prop.ev_pct is not none and prop.ev_pct > 0 %}var(--accent){% elif prop.ev_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                        {% if prop.ev_pct is not none %}{{ glossary_hint('EV', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.ev_pct }}%{% else %}No price{% endif %}
+                    </div>
+                    <div style="color: {% if prop.edge_pct is not none and prop.edge_pct > 0 %}var(--accent){% elif prop.edge_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                        {% if prop.edge_pct is not none %}{{ glossary_hint('Edge', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.edge_pct }}%{% else %}-{% endif %}
+                    </div>
+                    <div style="color: var(--text-muted);">
+                        {% if prop.model_prob is not none %}Model {{ prop.model_prob }}%{% else %}-{% endif %}
+                        {% if prop.implied_prob is not none %} • Book {{ prop.implied_prob }}%{% endif %}
+                    </div>
+                </td>
+                <td style="font-size: 11px;">
+                    <div>
+                        {% if prop.current_line is not none %}{{ prop.current_line }}{% else %}{{ prop.line }}{% endif %}
+                        {% if prop.market_price %}@ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% endif %}
+                    </div>
+                    <div style="color: var(--text-muted);">{{ prop.book or 'Manual' }}</div>
+                    {% if prop.book_count and prop.book_count > 1 %}
+                    <div style="color: var(--text-muted);">
+                        {{ prop.book_count }} books
+                        {% if prop.draftkings_line is not none or prop.vegas_line is not none %}
+                        • DK {{ prop.draftkings_line if prop.draftkings_line is not none else '-' }} / Vegas {{ prop.vegas_line if prop.vegas_line is not none else '-' }}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if prop.open_line is not none or prop.current_line is not none %}
+                    <div style="color: var(--text-muted);">
+                        Open {{ prop.open_line if prop.open_line is not none else '-' }}
+                        → Now {{ prop.current_line if prop.current_line is not none else '-' }}
+                    </div>
+                    {% endif %}
+                    {% if prop.close_line is not none %}
+                    <div style="color: var(--text-muted);">Prior {{ prop.close_line }}</div>
+                    {% endif %}
+                    <div style="color:
+                        {% if prop.market_view.tone == 'accent' %}var(--accent)
+                        {% elif prop.market_view.tone == 'copper' %}var(--accent-copper)
+                        {% elif prop.market_view.tone == 'danger' %}#FF6B6B
+                        {% elif prop.market_view.tone == 'blue' %}var(--accent-blue)
+                        {% else %}var(--text-muted){% endif %}; font-weight: 700;">
+                        {{ prop.market_view.label }}
+                    </div>
+                    <div style="color: {% if prop.clv_line is not none and prop.clv_line > 0 %}var(--accent){% elif prop.clv_line is not none and prop.clv_line < 0 %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                        {% if prop.clv_line is not none %}CLV {{ '+' if prop.clv_line > 0 }}{{ prop.clv_line }}{% elif prop.line_move is not none %}Move {{ '+' if prop.line_move > 0 }}{{ prop.line_move }}{% else %}-{% endif %}
+                    </div>
+                    <div style="color: var(--text-muted); line-height: 1.45;">{{ prop.market_view.note }}</div>
+                    {% if 'LINE HISTORY CAP' in prop.guardrail_tags or 'LINE HISTORY CONFLICT' in prop.guardrail_tags %}
+                    <div style="margin-top: 4px; color: #FFB800; font-weight: 700;">
+                        Line history conflict
+                    </div>
+                    {% if prop.live_line_over_rate is not none and prop.live_line_under_rate is not none and prop.live_line_games %}
+                    <div style="color: var(--text-muted); line-height: 1.45;">
+                        Season at this line: O {{ prop.live_line_over_rate }}% / U {{ prop.live_line_under_rate }}% ({{ prop.live_line_games }} games)
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                    {% if prop.line_low is not none and prop.line_high is not none and prop.line_low != prop.line_high %}
+                    <div style="color: var(--accent-copper);">Range {{ prop.line_low }} to {{ prop.line_high }}</div>
+                    {% endif %}
+                    {% if prop.best_book %}
+                    <div style="color: var(--accent-blue);">Best book: {{ prop.best_book }}</div>
+                    {% endif %}
+                    {% if prop.book_comparison_note %}
+                    <div style="color: var(--text-muted); line-height: 1.45;">{{ prop.book_comparison_note }}</div>
+                    {% endif %}
+                </td>
+                <td style="font-size: 11px;">
+                    <div class="metric-stack">
+                        <div class="micro-cluster">
+                                    {% if prop.game_total is not none %}<span class="micro-chip blue">{{ glossary_hint('O/U', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.game_total }}</span>{% endif %}
+                            {% if prop.team_spread is not none %}<span class="micro-chip copper">Team {{ '+' if prop.team_spread > 0 }}{{ prop.team_spread }}</span>{% endif %}
+                        </div>
+                        <div style="color: var(--accent);">{% if prop.game_environment %}{{ prop.game_environment }}{% elif prop.game_market_summary %}{{ prop.game_market_summary }}{% else %}-{% endif %}</div>
+                    </div>
+                </td>
+                {% if filter_type == 'floor' and postseason_only %}
+                <td>
+                    {% if prop.matchup_games %}
+                    <span style="color: var(--accent); font-weight: 700;">O:{{ prop.matchup_over_rate }}%</span>
+                    <span style="color: var(--text-muted);">/</span>
+                    <span style="color: #FF6B6B; font-weight: 700;">U:{{ prop.matchup_under_rate }}%</span>
+                    {% else %}
+                    <span style="color: var(--text-muted);">-</span>
+                    {% endif %}
+                </td>
+                {% endif %}
+                <td>
+                    {% if prop.current_run_side == 'over' and prop.current_streak >= 1 %}
+                    <span class="streak-hot">O{{ prop.current_streak }}</span>
+                    {% elif prop.current_run_side == 'under' and prop.current_streak >= 1 %}
+                    <span style="color: #FF6B6B; font-weight: 700;">U{{ prop.current_streak }}</span>
+                    {% else %}
+                    {{ prop.over_streak if prop.direction == 'OVER' else prop.under_streak }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% set pressure = namespace(tags=[]) %}
+                    {% for sit in prop.situations %}
+                        {% if sit in ['STAR ROLE', 'CORE ROLE', 'LOW ROLE', 'ROTATION', 'ROLE HOLD', 'ROLE SLIP', 'MIN STABLE', 'VOLATILE', 'TRAILING', 'AHEAD', 'ELIMINATION', 'CLOSEOUT', 'BOUNCE BACK', 'KEEP EDGE', 'WIN OR GO HOME'] or sit[:1] == 'G' %}
+                            {% set pressure.tags = pressure.tags + [sit] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% for sit in pressure.tags[:2] %}
+                    <span style="background: {% if sit in ['ELIMINATION', 'WIN OR GO HOME'] %}#FF6B6B{% elif sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}var(--accent){% else %}var(--bg-elevated){% endif %}; color: {% if sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}#000{% else %}#fff{% endif %}; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
+                    {% endfor %}
+                    {% if not pressure.tags %}
+                    <span style="color: var(--text-muted);">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% for sit in prop.situations %}
+                    <span style="background: {% if sit == 'B2B' %}#FFB800{% elif sit == 'COLD' %}#6B8AFF{% elif sit == 'HOT' %}var(--accent){% elif 'DEF' in sit %}#9B59B6{% else %}var(--bg-elevated){% endif %}; color: {% if sit == 'B2B' or sit == 'HOT' %}#000{% else %}#fff{% endif %}; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
+                    {% endfor %}
+                        {% if prop.public_trend_note %}
+                        <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ prop.public_trend_note }}</div>
+                        {% endif %}
+                        {% if 'LINE HISTORY CAP' in prop.guardrail_tags or 'LINE HISTORY CONFLICT' in prop.guardrail_tags %}
+                        <div style="font-size: 11px; color: #FFB800; line-height: 1.45; margin-top: 4px;">{{ prop.guardrail_note }}</div>
+                        {% endif %}
+                        {% if prop.injury_context_note %}
+                        <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ prop.injury_context_note }}</div>
+                        {% endif %}
+                        {% if prop.baseline_reason %}
+                        <div class="baseline-reason baseline-reason-{{ prop.baseline_reason_tone or 'neutral' }}">{{ prop.baseline_reason }}</div>
+                        {% if prop.core_volume_read %}
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ prop.core_volume_read }}</div>
+                        {% endif %}
+                        {% if prop.core_model_read %}
+                        <details class="model-read">
+                            <summary>Model Read</summary>
+                            <div class="model-read-body">{{ prop.core_model_read }}</div>
+                            {% if model_debug and prop.core_debug_lines %}
+                            <div class="model-debug-panel">
+                                {% for item in prop.core_debug_lines %}
+                                <div class="model-debug-row">
+                                    <span class="model-debug-label">{{ item.label }}</span>
+                                    <span class="model-debug-value">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </details>
+                        {% endif %}
+                        {% endif %}
+                </td>
+                <td>
+                    <span class="confidence-chip {% if prop.is_lock %}{% if prop.direction == 'OVER' %}lock-over{% else %}lock-under{% endif %}{% elif prop.confidence >= 75 %}{% if prop.direction == 'OVER' %}strong-over{% else %}strong-under{% endif %}{% endif %}">
+                        {{ prop.confidence|round|int }}%{% if prop.is_lock %} Lock{% endif %}
+                    </span>
+                    {% if prop.play_verdict_note %}
+                    <div class="lock-reason" style="color: {% if prop.play_verdict == 'PASS' %}#FF8C8C{% else %}#FFB800{% endif %};">{{ prop.play_verdict_note }}</div>
+                    {% endif %}
+                    {% if prop.rank_explanation %}
+                    <div class="lock-reason" style="color: var(--text-bright); line-height: 1.5;">{{ prop.rank_explanation }}</div>
+                    {% endif %}
+                    <div class="lock-reason" style="color: var(--text-muted);">
+                        Profile {{ (prop.weight_profile or 'regular')|replace('_', ' ')|upper }}
+                        {% if prop.series_game_number %} · G{{ prop.series_game_number }}{% endif %}
+                    </div>
+                    <div class="lock-reason" style="color: {% if prop.volatility_flag == 'HIGH' %}#FF8C8C{% elif prop.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %};">
+                        Volatility {{ prop.volatility_flag or 'STABLE' }}
+                    </div>
+                    <div class="lock-reason" style="color: {% if prop.market_gate == 'HOLD' %}#FF8C8C{% elif prop.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %};">
+                        Market Gate {{ prop.market_gate or 'CLEAR' }}
+                    </div>
+                    <details class="model-read" style="margin-top: 6px;">
+                        <summary>Why this ranked here</summary>
+                        <div class="model-read-body">
+                            {% if prop.rank_explanation %}<div>{{ prop.rank_explanation }}</div>{% endif %}
+                            {% if prop.novice_tag_sentence %}<div style="margin-top: 6px;">{{ prop.novice_tag_sentence }}</div>{% endif %}
+                            <div>Profile {{ (prop.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if prop.series_game_number %} · Game {{ prop.series_game_number }}{% endif %}</div>
+                            {% if prop.component_weights %}
+                            <div>Line history / sample: {{ prop.component_weights.get('line_history', 0) }}%</div>
+                            <div>Opponent / series: {{ prop.component_weights.get('opponent', 0) }}%{% if prop.series_weight %} (series weight {{ (prop.series_weight * 100)|round|int }}%){% endif %}</div>
+                            <div>Role / usage: {{ prop.component_weights.get('role_usage', 0) }}%</div>
+                            <div>Streak: {{ prop.component_weights.get('streak', 0) }}%</div>
+                            <div>Market: {{ prop.component_weights.get('market', 0) }}%</div>
+                            {% endif %}
+                            <div style="margin-top: 6px;">Volatility: {{ prop.volatility_flag or 'STABLE' }}</div>
+                            {% if prop.volatility_note %}<div>{{ prop.volatility_note }}</div>{% endif %}
+                            <div style="margin-top: 6px;">Market Gate: {{ prop.market_gate or 'CLEAR' }}</div>
+                            {% if prop.market_gate_note %}<div>{{ prop.market_gate_note }}</div>{% endif %}
+                            {% if prop.featured_risk_note %}<div style="margin-top: 6px;"><strong>What could break this:</strong> {{ prop.featured_risk_note }}</div>{% endif %}
+                        </div>
+                    </details>
+                    {% if 'LINE HISTORY CAP' in prop.guardrail_tags or 'LINE HISTORY CONFLICT' in prop.guardrail_tags %}
+                    <div class="lock-reason" style="color: #FFB800;">Line history conflict</div>
+                    {% endif %}
+                    {% if prop.is_lock %}
+                    <div class="lock-reason">{{ prop.lock_reason }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if prop.game_day == 'TODAY' %}
+                    <span class="status-pill today">Today</span>
+                    {% elif prop.game_day == 'TOMORROW' %}
+                    <span class="status-pill tomorrow">Tmr</span>
+                    {% elif prop.game_day %}
+                    <span class="status-pill upcoming">{{ prop.game_day }}</span>
+                    {% else %}
+                    <span style="color: var(--text-muted);">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every prop-board column.</div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No props found</div>
+        <div class="empty-state-copy">This filter combination did not return any props. Try widening the date range, clearing a player/team filter, or switching between current-team and full-season sample.</div>
+    </div>
+    {% endif %}
+</div>
+</div>
+{% endblock %}

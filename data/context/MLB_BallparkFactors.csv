@@ -1,0 +1,31 @@
+Team,Ballpark,ParkHRFactor,RoofType,FactorSource,LastReviewed
+Arizona Diamondbacks,Chase Field,1.04,retractable,seed_baseline,2026-05-24
+Athletics,Sutter Health Park,1.00,outdoor,seed_baseline,2026-05-24
+Atlanta Braves,Truist Park,1.03,outdoor,seed_baseline,2026-05-24
+Baltimore Orioles,Oriole Park at Camden Yards,0.95,outdoor,seed_baseline,2026-05-24
+Boston Red Sox,Fenway Park,1.05,outdoor,seed_baseline,2026-05-24
+Chicago Cubs,Wrigley Field,1.08,outdoor,seed_baseline,2026-05-24
+Chicago White Sox,Rate Field,1.02,outdoor,seed_baseline,2026-05-24
+Cincinnati Reds,Great American Ball Park,1.15,outdoor,seed_baseline,2026-05-24
+Cleveland Guardians,Progressive Field,0.98,outdoor,seed_baseline,2026-05-24
+Colorado Rockies,Coors Field,1.25,outdoor,seed_baseline,2026-05-24
+Detroit Tigers,Comerica Park,0.95,outdoor,seed_baseline,2026-05-24
+Houston Astros,Daikin Park,1.02,retractable,seed_baseline,2026-05-24
+Kansas City Royals,Kauffman Stadium,0.90,outdoor,seed_baseline,2026-05-24
+Los Angeles Angels,Angel Stadium,0.98,outdoor,seed_baseline,2026-05-24
+Los Angeles Dodgers,Dodger Stadium,0.98,outdoor,seed_baseline,2026-05-24
+Miami Marlins,loanDepot park,0.92,retractable,seed_baseline,2026-05-24
+Milwaukee Brewers,American Family Field,1.03,retractable,seed_baseline,2026-05-24
+Minnesota Twins,Target Field,0.99,outdoor,seed_baseline,2026-05-24
+New York Mets,Citi Field,0.96,outdoor,seed_baseline,2026-05-24
+New York Yankees,Yankee Stadium,1.12,outdoor,seed_baseline,2026-05-24
+Philadelphia Phillies,Citizens Bank Park,1.08,outdoor,seed_baseline,2026-05-24
+Pittsburgh Pirates,PNC Park,0.94,outdoor,seed_baseline,2026-05-24
+San Diego Padres,Petco Park,0.92,outdoor,seed_baseline,2026-05-24
+San Francisco Giants,Oracle Park,0.84,outdoor,seed_baseline,2026-05-24
+Seattle Mariners,T-Mobile Park,0.89,retractable,seed_baseline,2026-05-24
+St. Louis Cardinals,Busch Stadium,0.96,outdoor,seed_baseline,2026-05-24
+Tampa Bay Rays,George M. Steinbrenner Field,1.00,outdoor,seed_baseline,2026-05-24
+Texas Rangers,Globe Life Field,1.00,retractable,seed_baseline,2026-05-24
+Toronto Blue Jays,Rogers Centre,1.01,retractable,seed_baseline,2026-05-24
+Washington Nationals,Nationals Park,1.00,outdoor,seed_baseline,2026-05-24

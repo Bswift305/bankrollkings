@@ -1,0 +1,915 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <section class="page-hero">
+        <div class="page-hero-copy">
+            <span class="eyebrow">Bet Review</span>
+            <h1 class="page-title">Saved Ticket Review Lab</h1>
+            <p class="page-subtitle">Review what hit, what failed, which leg killed the ticket, and what structure would have been better in hindsight.</p>
+        </div>
+    </section>
+
+    <div class="board-shell" style="margin-bottom: 18px;">
+        <div class="board-header">
+            <div class="board-title">Review Lens</div>
+        </div>
+        <div style="padding:12px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px;">
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--accent-copper); font-weight:800; margin-bottom:6px;">Market Read</div>
+                <div style="font-size:13px; color:var(--text-bright); font-weight:700; margin-bottom:4px;">Did the structure deserve the risk?</div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">This board is meant to show whether the original ticket structure matched the strength of the legs.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--accent-copper); font-weight:800; margin-bottom:6px;">Matchup Read</div>
+                <div style="font-size:13px; color:var(--text-bright); font-weight:700; margin-bottom:4px;">Which leg really broke it?</div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">The point is to understand whether the ticket failed because of one weak read or because the whole build was too loose.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--accent-copper); font-weight:800; margin-bottom:6px;">Trend Read</div>
+                <div style="font-size:13px; color:var(--text-bright); font-weight:700; margin-bottom:4px;">What keeps repeating in hindsight?</div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">Round-robin survival, confidence buckets, and model review should teach us what ticket style holds up best.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--accent-copper); font-weight:800; margin-bottom:6px;">Verdict</div>
+                <div style="font-size:13px; color:var(--text-bright); font-weight:700; margin-bottom:4px;">Learn before the next card</div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">This page exists to improve the next decision, not just document the last result.</div>
+            </div>
+        </div>
+    </div>
+
+    {% if not current_user %}
+    <div class="board-shell">
+        <div class="board-header">
+            <div class="board-title">Sign In Required</div>
+        </div>
+        <div class="empty-state" style="padding: 16px;">
+            <div class="empty-state-title">This review lab is tied to your account</div>
+            <div class="empty-state-copy">Sign in so your saved tickets, results, ROI, and review lessons load with your profile.</div>
+            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+                <a href="/login?next=/bet-review" class="btn btn-secondary">Sign In</a>
+                <a href="/signup?next=/bet-review" class="btn btn-primary">Create Account</a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <div class="board-shell" style="margin-bottom: 18px;">
+        <div class="board-header">
+            <div class="board-title">Review Filters</div>
+        </div>
+    <div style="padding: 12px; display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+            <div>
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">Review Scope</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope=native&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if history_scope == 'native' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Native V2 ({{ history_counts.native }})</a>
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope=legacy&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if history_scope == 'legacy' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Legacy Compare ({{ history_counts.legacy }})</a>
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope=all&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if history_scope == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All ({{ history_counts.all }})</a>
+                </div>
+            </div>
+            <div>
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">Result State</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    {% for value, label in [('all','All'),('won-outright','Won'),('dead','Dead'),('alive','Alive'),('clean-so-far','Clean'),('pending','Pending')] %}
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ value }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if result_filter == value %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">Stat Type</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat=all&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if stat_filter == 'ALL' or stat_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+                    {% for stat in available_stats %}
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat={{ stat }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if stat_filter == stat %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ stat }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">Structure Verdict</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat={{ stat_filter }}&structure=all&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if structure_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+                    {% for label in available_structures %}
+                    <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ label|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn {% if structure_filter == label %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div style="padding: 0 12px 12px; display:flex; justify-content:space-between; gap:10px; align-items:end; flex-wrap:wrap;">
+            <form method="get" action="/bet-review" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+                <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+                <input type="hidden" name="history_scope" value="{{ history_scope }}">
+                <input type="hidden" name="result" value="{{ result_filter }}">
+                <input type="hidden" name="stat" value="{{ stat_filter }}">
+                <input type="hidden" name="structure" value="{{ structure_filter }}">
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">Start Date</div>
+                    <input type="date" name="start_date" value="{{ start_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 8px;">
+                </div>
+                <div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom:6px;">End Date</div>
+                    <input type="date" name="end_date" value="{{ end_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 8px;">
+                </div>
+                <button type="submit" class="btn btn-secondary btn-sm">Apply Dates</button>
+            </form>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <a href="/bet-review/export?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-secondary btn-sm">Export Ticket CSV</a>
+                <a href="/bet-review/model-export?postseason={{ 1 if postseason_only else 0 }}&history_scope={{ history_scope }}&result={{ result_filter }}&stat={{ stat_filter }}&structure={{ structure_filter|urlencode }}&start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-primary btn-sm">Export Leg Model CSV</a>
+            </div>
+        </div>
+    </div>
+
+    {% if history_scope == 'native' and history_counts.native == 0 %}
+    <div class="board-shell" style="margin-bottom:18px;">
+        <div style="padding:12px;">
+            <div class="parlay-surface-soft" style="padding:10px; border:1px solid rgba(255,196,122,0.28);">
+                <div style="font-size:11px; font-weight:800; color:var(--accent-copper); margin-bottom:4px;">No Native V2 Review History Yet</div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">
+                    The review lab is now defaulting to true `v2` history first, but there are no resolved native-scale tickets saved yet.
+                    Use `Legacy Compare` to inspect the translated older tickets, then let new results accumulate here so this page becomes a clean read on the rebuilt model.
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:14px; margin-bottom:16px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Top Lessons</div></div>
+            <div style="padding:12px; display:flex; flex-direction:column; gap:8px;">
+                {% for lesson in review.top_lessons %}
+                <div class="parlay-surface-soft" style="padding:8px 10px;">
+                    <div style="font-size:11px; color:var(--accent-copper); font-weight:700; margin-bottom:4px;">{{ lesson.title }}</div>
+                    <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">{{ lesson.body }}</div>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No lessons yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Round Robin Outcome Calculator</div></div>
+            <div style="padding:12px; display:grid; grid-template-columns:repeat(2,1fr); gap:8px;">
+                <div class="parlay-surface-soft" style="padding:8px 10px;">
+                    <div style="font-size:10px; color:var(--text-muted);">RR 2s Won</div>
+                    <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ review.rr_summary.rr2_won }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:8px 10px;">
+                    <div style="font-size:10px; color:var(--text-muted);">RR 2s Dead</div>
+                    <div style="font-size:24px; font-weight:800; color:var(--danger);">{{ review.rr_summary.rr2_dead }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:8px 10px;">
+                    <div style="font-size:10px; color:var(--text-muted);">RR 3s Won</div>
+                    <div style="font-size:24px; font-weight:800; color:var(--accent-blue);">{{ review.rr_summary.rr3_won }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:8px 10px;">
+                    <div style="font-size:10px; color:var(--text-muted);">RR 3s Dead</div>
+                    <div style="font-size:24px; font-weight:800; color:var(--danger);">{{ review.rr_summary.rr3_dead }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:8px 10px; grid-column:1 / -1;">
+                    <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">
+                        These counts treat each saved ticket as if it had been played as round robins too, so you can see whether 2s or 3s would have survived better than the full parlay.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="board-shell" style="margin-bottom: 18px;">
+        <div class="board-header">
+            <div class="board-title">Review Snapshot</div>
+            <span class="badge badge-accent">{{ review.totals.tickets }} Tickets</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px; padding:12px;">
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Won Outright</div>
+                <div style="font-size:28px; font-weight:800; color:var(--accent);">{{ review.totals.won }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Dead</div>
+                <div style="font-size:28px; font-weight:800; color:var(--danger);">{{ review.totals.dead }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Alive</div>
+                <div style="font-size:28px; font-weight:800; color:var(--accent-blue);">{{ review.totals.alive }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Pending</div>
+                <div style="font-size:28px; font-weight:800; color:var(--text-bright);">{{ review.totals.pending }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Total Tickets</div>
+                <div style="font-size:28px; font-weight:800; color:var(--accent-copper);">{{ review.totals.tickets }}</div>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:0 12px 12px;">
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Total Staked</div>
+                <div style="font-size:24px; font-weight:800; color:var(--text-bright);">${{ '%.2f'|format(review.money.staked) }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Total Payout</div>
+                <div style="font-size:24px; font-weight:800; color:var(--accent-blue);">${{ '%.2f'|format(review.money.payout) }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">Net Profit</div>
+                <div style="font-size:24px; font-weight:800; color:{% if review.money.profit > 0 %}var(--accent){% elif review.money.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(review.money.profit) }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="font-size:11px; color:var(--text-muted);">ROI</div>
+                <div style="font-size:24px; font-weight:800; color:{% if review.money.roi_pct and review.money.roi_pct > 0 %}var(--accent){% elif review.money.roi_pct and review.money.roi_pct < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">{% if review.money.roi_pct is not none %}{{ '%.1f'|format(review.money.roi_pct) }}%{% else %}--{% endif %}</div>
+            </div>
+        </div>
+    </div>
+    <div class="table-scroll-hint" style="margin-bottom:18px;">Wide review tables support left-to-right scroll so you can inspect every audit column.</div>
+
+    <div style="display:grid; grid-template-columns:1.1fr 1fr; gap:14px; margin-bottom:16px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Model Scorecard</div></div>
+            {% if review.model_scorecard.uses_recalibrated_history %}
+            <div style="padding: 10px 12px 0;">
+                <div class="parlay-surface-soft" style="padding:10px; border:1px solid rgba(255,196,122,0.28);">
+                    <div style="font-size:11px; font-weight:800; color:var(--accent-copper); margin-bottom:4px;">Recalibrated Review Scale</div>
+                    <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">
+                        {{ review.model_scorecard.legacy_ticket_count }} saved tickets and {{ review.model_scorecard.legacy_leg_count }} legs were graded on the older confidence scale.
+                        This review page keeps the original stored scores for history, but the scorecard and bucket audit are using recalibrated effective confidence so the model read stays comparable to the live board.
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <div style="padding:12px; display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Resolved Legs</div>
+                    <div style="font-size:26px; font-weight:800; color:var(--text-bright);">{{ review.model_scorecard.resolved_legs }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Model Win Rate</div>
+                    <div style="font-size:26px; font-weight:800; color:var(--accent);">
+                        {% if review.model_scorecard.win_rate is not none %}{{ '%.1f'|format(review.model_scorecard.win_rate) }}%{% else %}--{% endif %}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Avg Confidence</div>
+                    <div style="font-size:26px; font-weight:800; color:var(--accent-blue);">
+                        {% if review.model_scorecard.avg_confidence is not none %}{{ '%.1f'|format(review.model_scorecard.avg_confidence) }}{% else %}--{% endif %}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">85+ Win Rate</div>
+                    <div style="font-size:26px; font-weight:800; color:var(--accent-copper);">
+                        {% if review.model_scorecard.high_conf_win_rate is not none %}{{ '%.1f'|format(review.model_scorecard.high_conf_win_rate) }}%{% else %}--{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div style="padding:0 16px 16px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Wins Avg Conf</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--accent);">
+                        {% if review.model_scorecard.avg_confidence_wins is not none %}{{ '%.1f'|format(review.model_scorecard.avg_confidence_wins) }}{% else %}--{% endif %}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Losses Avg Conf</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--danger);">
+                        {% if review.model_scorecard.avg_confidence_losses is not none %}{{ '%.1f'|format(review.model_scorecard.avg_confidence_losses) }}{% else %}--{% endif %}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">85+ Loss Rate</div>
+                    <div style="font-size:22px; font-weight:800; color:{% if review.model_scorecard.high_conf_loss_rate and review.model_scorecard.high_conf_loss_rate > 25 %}var(--danger){% else %}var(--text-bright){% endif %};">
+                        {% if review.model_scorecard.high_conf_loss_rate is not none %}{{ '%.1f'|format(review.model_scorecard.high_conf_loss_rate) }}%{% else %}--{% endif %}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Legacy 100+ Legs</div>
+                    <div style="font-size:22px; font-weight:800; color:{% if review.model_scorecard.legacy_over_99 > 0 %}var(--danger){% else %}var(--accent){% endif %};">
+                        {{ review.model_scorecard.legacy_over_99 }}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Legacy Tickets</div>
+                    <div style="font-size:22px; font-weight:800; color:{% if review.model_scorecard.legacy_ticket_count > 0 %}var(--accent-copper){% else %}var(--accent){% endif %};">
+                        {{ review.model_scorecard.legacy_ticket_count }}
+                    </div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:12px;">
+                    <div style="font-size:11px; color:var(--text-muted);">Calibration Gap</div>
+                    <div style="font-size:22px; font-weight:800; color:{% if review.model_scorecard.calibration_gap is not none and review.model_scorecard.calibration_gap < -10 %}var(--danger){% elif review.model_scorecard.calibration_gap is not none and review.model_scorecard.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-bright){% endif %};">
+                        {% if review.model_scorecard.calibration_gap is not none %}{{ '%.1f'|format(review.model_scorecard.calibration_gap) }}{% else %}--{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Confidence Buckets</div></div>
+            <div style="padding: 12px 16px 0;">
+                <div style="font-size:10px; color:var(--text-muted); line-height:1.6;">
+                    Bucket labels and average confidence below are based on the recalibrated review scale, not the original stored legacy values.
+                </div>
+            </div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>BUCKET</th>
+                            <th>RES</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                            <th>GAP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.confidence_buckets %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                            <td style="color:{% if row.calibration_gap is not none and row.calibration_gap < -10 %}var(--danger){% elif row.calibration_gap is not none and row.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-muted){% endif %};">
+                                {% if row.calibration_gap is not none %}{{ '%.1f'|format(row.calibration_gap) }}{% else %}--{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No confidence buckets yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="board-shell" style="margin-bottom:18px;">
+        <div class="board-header"><div class="board-title">Model Alerts</div></div>
+        <div style="padding:14px; display:flex; flex-direction:column; gap:10px;">
+            {% for alert in review.model_alerts %}
+            <div class="parlay-surface-soft" style="padding:12px; border:1px solid {% if alert.tone == 'danger' %}rgba(255,107,107,0.35){% elif alert.tone == 'warn' %}rgba(255,196,122,0.35){% else %}rgba(166,233,229,0.18){% endif %};">
+                <div style="font-size:11px; font-weight:800; margin-bottom:4px; color:{% if alert.tone == 'danger' %}var(--danger){% elif alert.tone == 'warn' %}var(--accent-copper){% else %}var(--accent){% endif %};">
+                    {{ alert.title }}
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); line-height:1.6;">{{ alert.body }}</div>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-title">No major model alerts</div></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Legacy-Translated Buckets</div></div>
+            <div style="padding: 12px 16px 0;">
+                <div style="font-size:10px; color:var(--text-muted); line-height:1.6;">
+                    Historical legs saved on the older scale, translated onto the live review scale for a fair audit.
+                </div>
+            </div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>BUCKET</th>
+                            <th>RES</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                            <th>GAP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.legacy_confidence_buckets %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                            <td style="color:{% if row.calibration_gap is not none and row.calibration_gap < -10 %}var(--danger){% elif row.calibration_gap is not none and row.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-muted){% endif %};">
+                                {% if row.calibration_gap is not none %}{{ '%.1f'|format(row.calibration_gap) }}{% else %}--{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No legacy-translated bucket data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Native V2 Buckets</div></div>
+            <div style="padding: 12px 16px 0;">
+                <div style="font-size:10px; color:var(--text-muted); line-height:1.6;">
+                    Legs already scored on the current live scale, with no historical translation applied.
+                </div>
+            </div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>BUCKET</th>
+                            <th>RES</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                            <th>GAP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.native_confidence_buckets %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                            <td style="color:{% if row.calibration_gap is not none and row.calibration_gap < -10 %}var(--danger){% elif row.calibration_gap is not none and row.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-muted){% endif %};">
+                                {% if row.calibration_gap is not none %}{{ '%.1f'|format(row.calibration_gap) }}{% else %}--{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No native V2 bucket data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Stat-Family Model Scorecard</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>STAT</th>
+                            <th>RESOLVED</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.model_stat_scorecards %}
+                        <tr>
+                            <td>{{ row.stat }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No stat-family model scorecard yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">High-Confidence Misses</div></div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:10px;">
+                {% for miss in review.high_confidence_misses %}
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                        <div>
+                            <div style="font-size:12px; font-weight:700; color:var(--text-bright);">
+                                {{ miss.player }} {{ miss.direction }} {{ miss.stat }} {{ miss.line }}
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                                {{ miss.team }} • {{ miss.matchup }}{% if miss.game_date %} • {{ miss.game_date }}{% endif %}
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                                Actual: {{ miss.actual_value if miss.actual_value is not none else '--' }} • {{ miss.label }}
+                            </div>
+                        </div>
+                        <span class="badge" style="color:var(--danger);">{{ miss.confidence }}%</span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No 85+ misses yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Method Scorecard</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>METHOD</th>
+                            <th>RESOLVED</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                            <th>GAP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.method_scorecards %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                            <td style="color:{% if row.calibration_gap is not none and row.calibration_gap < -10 %}var(--danger){% elif row.calibration_gap is not none and row.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-muted){% endif %};">
+                                {% if row.calibration_gap is not none %}{{ '%.1f'|format(row.calibration_gap) }}{% else %}--{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No method scorecard yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Market Quality Audit</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>MARKET</th>
+                            <th>RESOLVED</th>
+                            <th>WIN%</th>
+                            <th>AVG CONF</th>
+                            <th>GAP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.market_quality_scorecards %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}--{% endif %}</td>
+                            <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}--{% endif %}</td>
+                            <td style="color:{% if row.calibration_gap is not none and row.calibration_gap < -10 %}var(--danger){% elif row.calibration_gap is not none and row.calibration_gap < -5 %}var(--accent-copper){% else %}var(--text-muted){% endif %};">
+                                {% if row.calibration_gap is not none %}{{ '%.1f'|format(row.calibration_gap) }}{% else %}--{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No market-quality audit yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Best Historical Tickets</div></div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:10px;">
+                {% for ticket in review.best_tickets %}
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div style="display:flex; justify-content:space-between; gap:8px;">
+                        <div>
+                            <div style="font-weight:700; color:var(--text-bright); font-size:12px;">{{ ticket.label }}</div>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                                {% if ticket.is_native_v2_ticket %}
+                                <span class="badge badge-accent">V2 Native</span>
+                                {% else %}
+                                <span class="badge">Legacy Compare</span>
+                                {% endif %}
+                                <span class="badge" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); color: var(--accent-blue);">Eff {{ ticket.avg_effective_confidence|round(1) }}%</span>
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted);">{{ ticket.leg_count }} legs • {{ ticket.analysis.results_summary.wins }} wins • {{ ticket.analysis.results_summary.losses }} losses</div>
+                        </div>
+                        <span class="badge" style="color:{{ ticket.analysis.grade_color }};">{{ ticket.analysis.grade }}</span>
+                    </div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-top:6px;">{{ ticket.analysis.hindsight_use.label }} • {{ ticket.analysis.model_review.label }}</div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                        <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}&sample={{ ticket.sample_mode }}&ticket_id={{ ticket.ticket_id }}" class="btn btn-secondary btn-sm">Open In Builder</a>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No reviewed tickets yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Killer Leg Types</div></div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:8px;">
+                {% for item in review.killer_stats %}
+                <div class="parlay-surface-soft" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:11px; color:var(--text-bright); font-weight:700;">{{ item.label }}</div>
+                    <span class="badge">{{ item.count }}</span>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No killer legs logged yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Better Use In Hindsight</div></div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:8px;">
+                {% for item in review.structure_insights %}
+                <div class="parlay-surface-soft" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:11px; color:var(--text-bright); font-weight:700;">{{ item.label }}</div>
+                    <span class="badge">{{ item.count }}</span>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No structure insights yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Stat Performance</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>STAT</th>
+                            <th>RESOLVED</th>
+                            <th>WINS</th>
+                            <th>LOSSES</th>
+                            <th>WIN RATE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.stat_performance %}
+                        <tr>
+                            <td>{{ row.stat }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{{ row.wins }}</td>
+                            <td>{{ row.losses }}</td>
+                            <td>{{ row.win_rate }}%</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="empty-cell">No resolved leg stats yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">Worst Misses</div></div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:10px;">
+                {% for ticket in review.worst_tickets %}
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div style="display:flex; justify-content:space-between; gap:8px;">
+                        <div>
+                            <div style="font-weight:700; color:var(--text-bright); font-size:12px;">{{ ticket.label }}</div>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                                {% if ticket.is_native_v2_ticket %}
+                                <span class="badge badge-accent">V2 Native</span>
+                                {% else %}
+                                <span class="badge">Legacy Compare</span>
+                                {% endif %}
+                                <span class="badge" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); color: var(--accent-blue);">Eff {{ ticket.avg_effective_confidence|round(1) }}%</span>
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted);">{{ ticket.analysis.results_summary.note }}</div>
+                        </div>
+                        <span class="badge" style="color:var(--danger);">{{ ticket.analysis.results_summary.losses }} L</span>
+                    </div>
+                    {% if ticket.analysis.results_summary.killed_by %}
+                    <div style="font-size:10px; color:var(--danger); margin-top:6px;">Killed by {{ ticket.analysis.results_summary.killed_by.title }}</div>
+                    {% endif %}
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                        <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}&sample={{ ticket.sample_mode }}&ticket_id={{ ticket.ticket_id }}" class="btn btn-secondary btn-sm">Open In Builder</a>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state"><div class="empty-state-title">No dead tickets yet</div></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="board-shell" style="margin-bottom:18px;">
+        <div class="board-header"><div class="board-title">ROI By Structure</div></div>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>STRUCTURE</th>
+                        <th>TICKETS</th>
+                        <th>STAKED</th>
+                        <th>PROFIT</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in review.roi_summary %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.count }}</td>
+                        <td>${{ '%.2f'|format(row.stake) }}</td>
+                        <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                        <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="empty-cell">No ROI data yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Stat</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>STAT</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_stat %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No stat ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Team</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>TEAM</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_team[:12] %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No team ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Direction</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>DIRECTION</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_direction %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No direction ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Tier Profile</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>TIER</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_tier %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No tier ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px;">
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Player</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>PLAYER</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_player[:15] %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No player ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="board-shell">
+            <div class="board-header"><div class="board-title">ROI By Matchup</div></div>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>MATCHUP</th>
+                            <th>RESOLVED</th>
+                            <th>PROFIT</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in review.roi_by_matchup[:15] %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                            <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="empty-cell">No matchup ROI data yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="board-shell" style="margin-bottom:18px;">
+        <div class="board-header"><div class="board-title">ROI By Ticket Label / Strategy</div></div>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>LABEL</th>
+                        <th>TICKETS</th>
+                        <th>STAKED</th>
+                        <th>PROFIT</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in review.roi_by_label %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.count }}</td>
+                        <td>${{ '%.2f'|format(row.stake) }}</td>
+                        <td style="color:{% if row.profit > 0 %}var(--accent){% elif row.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %};">${{ '%.2f'|format(row.profit) }}</td>
+                        <td>{% if row.roi_pct is not none %}{{ '%.1f'|format(row.roi_pct) }}%{% else %}--{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="empty-cell">No label ROI data yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

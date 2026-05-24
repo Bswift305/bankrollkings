@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container" style="max-width: 760px;">
+    <section class="page-hero">
+        <div class="page-hero-copy">
+            <span class="eyebrow">Accounts</span>
+            <h1 class="page-title">Create Your Account</h1>
+            <p class="page-subtitle">Set up a personal Bankroll Kings account so your saved tickets, review results, and chosen membership tier follow you every time you sign in.</p>
+        </div>
+    </section>
+
+    <div class="board-shell">
+        <div class="board-header">
+            <div class="board-title">Start Your Personal Record</div>
+        </div>
+        <form method="post" style="padding: 18px; display: grid; gap: 14px;">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <input type="hidden" name="billing_cycle" value="{{ selected_billing }}">
+            {% if gate_notice %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--accent); font-weight: 700;">{{ gate_notice }}</div>
+            {% endif %}
+            {% if next_url %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="detail-kicker">Return Destination</div>
+                <div style="font-size:12px; color:var(--text-muted); line-height:1.6; margin-top:6px; word-break:break-word;">After account creation, you will be sent back to {{ next_url }}.</div>
+            </div>
+            {% endif %}
+            {% if error %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--danger); font-weight: 700;">{{ error }}</div>
+            {% endif %}
+            <div>
+                <label for="signupName" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Display Name</label>
+                <input id="signupName" name="display_name" type="text" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="signupEmail" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Email</label>
+                <input id="signupEmail" name="email" type="email" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="signupPassword" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Password</label>
+                <input id="signupPassword" name="password" type="password" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="signupPlan" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Selected Plan</label>
+                <select id="signupPlan" name="plan" style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+                    {% for tier in pricing_tiers %}
+                    <option value="{{ tier.key }}" {% if selected_plan == tier.key %}selected{% endif %}>{{ tier.name }} - {{ tier.monthly_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="parlay-surface-soft" style="padding:14px;">
+                <div class="detail-kicker">Plan Selected</div>
+                <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">{{ selected_tier.name }} | {{ selected_tier.monthly_label }}</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:6px; line-height:1.6;">{{ selected_tier.summary }}</div>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted);">Use at least 6 characters. This first pass is local to this site install, so each person signing in here gets their own saved-ticket history and selected membership plan.</div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button type="submit" class="btn btn-primary">Create Account</button>
+                <a href="/pricing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Compare Plans</a>
+                <a href="/login{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Already Have an Account</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

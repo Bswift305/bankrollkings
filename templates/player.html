@@ -1,0 +1,892 @@
+{% extends "base.html" %}
+{% block title %}{{ player }} - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Player Intelligence</div>
+        <h1>{{ player }} <span class="accent">{{ team_mark(team, size='sm') }}</span></h1>
+        {% if injury_info %}
+        <div style="margin-top: 10px;">
+            <span class="badge badge-injury">
+                &#10010; {{ injury_info.short_label or injury_info.status }}
+            </span>
+            <span style="margin-left: 8px; font-size: 12px; color: var(--text-muted);">{{ injury_info.reason }}</span>
+        </div>
+        {% endif %}
+        <div class="page-subtitle">Use the player page to compare current-team form, broader season context, role stability, and line history before turning one name into a bet.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/props?postseason={{ 1 if postseason_only else 0 }}&sample={{ player_context.sample_mode }}&player={{ player|urlencode }}" class="btn btn-primary btn-sm">Open Player On Props Board</a>
+        <a href="/raw-data?postseason={{ 1 if postseason_only else 0 }}&sample={{ player_context.sample_mode }}&player={{ player|urlencode }}&team={{ team }}&stat={{ selected_stat }}" class="btn btn-secondary btn-sm">Open Raw Data</a>
+        <a href="/team/{{ team }}" class="btn btn-secondary btn-sm">View {{ team }} Roster</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">{{ player_context.sample_label }}</span>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">How the line fits this player</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Player pages should help you decide whether the market is pricing this role fairly, not just whether the name is familiar.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">What the role can support</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Minutes, touches, home-road splits, and opponent context should drive the read more than reputation.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Current sample or full season?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This page is built to show when the current-team sample tells a different story than the broader season history.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Build context before the click</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use this page as a decision-support layer before adding the player to a card or parlay ticket.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="p-16" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <div>
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 700; margin-bottom: 6px;">ANALYSIS SAMPLE</div>
+            <div style="font-size: 13px; color: var(--text-muted);">
+                {{ player_context.sample_label }}{% if player_context.is_multi_team %} · Team history {{ player_context.teams|join(' / ') }}{% endif %}
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a href="/player/{{ player|urlencode }}?sample=current&stat={{ selected_stat }}" class="btn {% if player_context.sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+            <a href="/player/{{ player|urlencode }}?sample=full&stat={{ selected_stat }}" class="btn {% if player_context.sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+        </div>
+    </div>
+    {% if player_context.is_multi_team %}
+    <div class="p-16" style="border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap;">
+        <span class="badge" style="background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f;">TRADED / MULTI-TEAM</span>
+        <span class="badge">Current {{ player_context.current_team }}</span>
+        <span class="badge">Current team games {{ player_context.current_team_games }}</span>
+    </div>
+    {% endif %}
+</div>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+    <div>
+        <div style="font-size: 14px; color: var(--text-muted);">{{ team }} · {{ total_games }} Games This Season</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.22);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Stat Trajectory</div>
+        <span class="badge badge-accent">{{ selected_stat }}</span>
+    </div>
+    <div class="p-16" style="display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border);">
+        {% for stat in stat_options %}
+        <a href="/player/{{ player|urlencode }}?sample={{ player_context.sample_mode }}&stat={{ stat }}" class="btn {% if selected_stat == stat %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ stat }}</a>
+        {% endfor %}
+    </div>
+    {% if stat_trajectory and stat_trajectory.points %}
+    <div class="grid-4 p-16" style="gap: 12px; border-bottom: 1px solid var(--border);">
+        <div class="stat-card">
+            <div class="stat-value">{{ stat_trajectory.latest }}</div>
+            <div class="stat-label">Latest {{ selected_stat }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stat_trajectory.recent_avg }}</div>
+            <div class="stat-label">Recent Avg</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stat_trajectory.high }}</div>
+            <div class="stat-label">Recent High</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: {% if stat_trajectory.delta >= 0 %}var(--accent){% else %}var(--danger){% endif %};">
+                {% if stat_trajectory.delta > 0 %}+{% endif %}{{ stat_trajectory.delta }}
+            </div>
+            <div class="stat-label">Game-to-Game Delta</div>
+        </div>
+    </div>
+    <div class="p-20">
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            {{ stat_trajectory.sample_size }}-game trajectory{% if stat_trajectory.line_value is not none %} with the current {{ selected_stat }} line at {{ stat_trajectory.line_value }}{% endif %}{% if stat_trajectory.overlay_lines %} and multi-book context layered in{% endif %}.
+        </div>
+        {% if player_prop_book_lines %}
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+            {% for stat, rows in player_prop_book_lines.items() %}
+                {% for item in rows %}
+                <span class="badge {% if stat == selected_stat %}badge-accent{% endif %}" style="border-color: {{ item.color }};">
+                    {{ stat }} {{ item.book }} {{ item.line }}
+                </span>
+                {% endfor %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div style="position: relative; height: 260px; padding: 14px 12px 28px 12px; border-radius: 16px; border: 1px solid rgba(132,215,210,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%), rgba(12,24,31,0.9);">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 200px; overflow: visible;">
+                <line x1="0" y1="100" x2="100" y2="100" stroke="rgba(255,255,255,0.15)" stroke-width="0.6"></line>
+                <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.08)" stroke-width="0.4" stroke-dasharray="2 2"></line>
+                <line x1="0" y1="0" x2="100" y2="0" stroke="rgba(255,255,255,0.06)" stroke-width="0.4"></line>
+                {% for overlay in stat_trajectory.overlay_lines %}
+                <line x1="0" y1="{{ overlay.y }}" x2="100" y2="{{ overlay.y }}" stroke="{{ overlay.color }}" stroke-width="0.55" stroke-dasharray="1.8 1.8" opacity="0.9"></line>
+                {% endfor %}
+                {% if stat_trajectory.line_y is not none %}
+                <line x1="0" y1="{{ stat_trajectory.line_y }}" x2="100" y2="{{ stat_trajectory.line_y }}" stroke="rgba(255,184,0,0.9)" stroke-width="0.8" stroke-dasharray="2 2"></line>
+                {% endif %}
+                <polyline fill="none" stroke="url(#trajectoryGradient)" stroke-width="2.2" points="{{ stat_trajectory.svg_points }}"></polyline>
+                <defs>
+                    <linearGradient id="trajectoryGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#6ea2ff"></stop>
+                        <stop offset="100%" stop-color="#84d7d2"></stop>
+                    </linearGradient>
+                </defs>
+                {% for point in stat_trajectory.points %}
+                <circle cx="{{ point.x }}" cy="{{ point.y }}" r="1.7" fill="{% if point.season_type == 'Playoffs' %}#ffb800{% else %}#84d7d2{% endif %}"></circle>
+                {% endfor %}
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat({{ stat_trajectory.points|length }}, minmax(0, 1fr)); gap: 4px; margin-top: 6px;">
+                {% for point in stat_trajectory.points %}
+                <div style="text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-bright); font-weight: 700;">{{ point.value }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">{{ point.label }}</div>
+                    <div style="font-size: 9px; color: {% if point.season_type == 'Playoffs' %}var(--accent-copper){% else %}var(--text-muted){% endif %};">{{ point.season_type or 'Regular' }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if stat_trajectory.overlay_lines %}
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+                {% for overlay in stat_trajectory.overlay_lines %}
+                <span class="badge" style="border-color: {{ overlay.color }}; color: var(--text-bright);">
+                    {{ overlay.book }} {{ overlay.line }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No Trajectory Yet</div>
+        <div class="empty-state-copy">There is not enough clean {{ selected_stat }} data in the current sample to draw a chart yet.</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if playoff_summary and playoff_summary.has_playoff_data %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">{{ playoff_summary.series_label or 'Current Playoff Run' }}</div>
+        <span class="badge badge-accent">{{ playoff_summary.wins }}-{{ playoff_summary.losses }}</span>
+    </div>
+    <div class="p-20">
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+            {{ playoff_summary.team }}{% if playoff_summary.opponent %} vs {{ playoff_summary.opponent }}{% endif %} · {{ playoff_summary.games }} playoff games in sample
+        </div>
+        <div class="grid-5" style="gap: 16px;">
+            <div class="stat-card">
+                <div class="stat-value">{{ playoff_summary.pts }}</div>
+                <div class="stat-label">Playoff PTS</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ playoff_summary.reb }}</div>
+                <div class="stat-label">Playoff REB</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ playoff_summary.ast }}</div>
+                <div class="stat-label">Playoff AST</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ playoff_summary.threes }}</div>
+                <div class="stat-label">Playoff 3PM</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ playoff_summary.min }}</div>
+                <div class="stat-label">Playoff MIN</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if split_sections %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Splits</div>
+        {% if upcoming_opponent %}
+        <span class="badge badge-accent">vs {{ team_mark(upcoming_opponent, size='xs') }}</span>
+        {% endif %}
+    </div>
+    <div class="p-20">
+        {% for section in split_sections %}
+        <div {% if not loop.last %}style="margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border);"{% endif %}>
+            <div style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px;">{{ section.title }}</div>
+            <div class="table-shell">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width: 150px;">Split</th>
+                            <th>GP</th>
+                            <th>MIN</th>
+                            <th>FGM</th>
+                            <th>FGA</th>
+                            <th>PTS</th>
+                            <th>REB</th>
+                            <th>AST</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in section.rows %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.gp }}</td>
+                            <td>{{ row.min if row.min is not none else '-' }}</td>
+                            <td>{{ row.fgm if row.fgm is not none else '-' }}</td>
+                            <td>{{ row.fga if row.fga is not none else '-' }}</td>
+                            <td>{{ row.pts if row.pts is not none else '-' }}</td>
+                            <td>{{ row.reb if row.reb is not none else '-' }}</td>
+                            <td>{{ row.ast if row.ast is not none else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Primary Stats -->
+<div style="font-size: 11px; color: var(--accent); letter-spacing: 2px; font-weight: 600; margin-bottom: 12px;">SEASON AVERAGES</div>
+<div class="grid-4 mb-24" style="gap: 16px;">
+    <div class="stat-card">
+        <div class="stat-value">{{ factors.PTS_SEASON|default(0) }}</div>
+        <div class="stat-label">Points</div>
+        {% if factors.PTS_TREND %}
+        <div style="margin-top: 8px; font-size: 12px; color: {% if factors.PTS_TREND == 'HOT' or factors.PTS_TREND == 'UP' %}var(--accent){% elif factors.PTS_TREND == 'COLD' or factors.PTS_TREND == 'DOWN' %}var(--danger){% else %}var(--text-muted){% endif %};">
+            {{ factors.PTS_TREND }} (L5: {{ factors.PTS_L5 }})
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ factors.REB_SEASON|default(0) }}</div>
+        <div class="stat-label">Rebounds</div>
+        {% if factors.REB_TREND %}
+        <div style="margin-top: 8px; font-size: 12px; color: {% if factors.REB_TREND == 'HOT' or factors.REB_TREND == 'UP' %}var(--accent){% elif factors.REB_TREND == 'COLD' or factors.REB_TREND == 'DOWN' %}var(--danger){% else %}var(--text-muted){% endif %};">
+            {{ factors.REB_TREND }} (L5: {{ factors.REB_L5 }})
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ factors.AST_SEASON|default(0) }}</div>
+        <div class="stat-label">Assists</div>
+        {% if factors.AST_TREND %}
+        <div style="margin-top: 8px; font-size: 12px; color: {% if factors.AST_TREND == 'HOT' or factors.AST_TREND == 'UP' %}var(--accent){% elif factors.AST_TREND == 'COLD' or factors.AST_TREND == 'DOWN' %}var(--danger){% else %}var(--text-muted){% endif %};">
+            {{ factors.AST_TREND }} (L5: {{ factors.AST_L5 }})
+        </div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ factors.get('3PM_SEASON', 0) }}</div>
+        <div class="stat-label">3-Pointers</div>
+    </div>
+</div>
+
+<!-- SHARP FACTORS SECTION -->
+<div style="font-size: 11px; color: #FFB800; letter-spacing: 2px; font-weight: 600; margin-bottom: 12px;">🎯 SHARP BETTING FACTORS</div>
+
+<div class="grid-2 mb-24" style="gap: 24px;">
+    <!-- Minutes Analysis -->
+    <div class="card" style="border-color: rgba(255,184,0,0.3);">
+        <div class="card-header">
+            <div class="card-title">Minutes Consistency</div>
+            <span class="badge" style="{% if factors.MIN_CONSISTENCY == 'ELITE' %}background: var(--accent); color: #000;{% elif factors.MIN_CONSISTENCY == 'VOLATILE' %}background: var(--danger);{% else %}background: var(--bg-elevated);{% endif %}">
+                {{ factors.MIN_CONSISTENCY|default('N/A') }}
+            </span>
+        </div>
+        <div class="p-20">
+            <div class="grid-3" style="gap: 12px; text-align: center; margin-bottom: 16px;">
+                <div>
+                    <div style="font-size: 24px; font-weight: 700; color: var(--danger);">{{ factors.MIN_FLOOR|default(0)|int }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">FLOOR</div>
+                </div>
+                <div>
+                    <div style="font-size: 24px; font-weight: 700; color: #fff;">{{ factors.MIN_AVG|default(0) }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">AVG</div>
+                </div>
+                <div>
+                    <div style="font-size: 24px; font-weight: 700; color: var(--accent);">{{ factors.MIN_CEIL|default(0)|int }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">CEILING</div>
+                </div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); text-align: center;">
+                {% if factors.MIN_CONSISTENCY == 'ELITE' %}
+                ✓ Locked into consistent minutes - props are safer
+                {% elif factors.MIN_CONSISTENCY == 'VOLATILE' %}
+                ⚠️ Minutes fluctuate significantly - higher prop risk
+                {% else %}
+                Standard minutes variation
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Home/Away Splits -->
+    <div class="card" style="border-color: rgba(255,184,0,0.3);">
+        <div class="card-header">
+            <div class="card-title">Home/Away Splits</div>
+        </div>
+        <div class="p-20">
+            <table style="width: 100%; font-size: 13px;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 8px 0; color: var(--text-muted);">Stat</th>
+                        <th style="text-align: center; padding: 8px; color: var(--text-muted);">Home</th>
+                        <th style="text-align: center; padding: 8px; color: var(--text-muted);">Away</th>
+                        <th style="text-align: right; padding: 8px 0; color: var(--text-muted);">Diff</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in ['PTS', 'REB', 'AST'] %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 8px 0; font-weight: 600;">{{ stat }}</td>
+                        <td style="text-align: center; padding: 8px;">{{ factors.get(stat + '_HOME', '-') }}</td>
+                        <td style="text-align: center; padding: 8px;">{{ factors.get(stat + '_AWAY', '-') }}</td>
+                        <td style="text-align: right; padding: 8px 0; color: {% if factors.get(stat + '_HOME_BOOST', 0) > 5 %}var(--accent){% elif factors.get(stat + '_HOME_BOOST', 0) < -5 %}var(--danger){% else %}var(--text-muted){% endif %};">
+                            {% if factors.get(stat + '_HOME_BOOST') %}{{ '+' if factors.get(stat + '_HOME_BOOST') > 0 else '' }}{{ factors.get(stat + '_HOME_BOOST') }}%{% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap: 24px;">
+    <!-- Hit Rate at Lines -->
+    <div class="card" style="border-color: rgba(255,184,0,0.3);">
+        <div class="card-header">
+            <div class="card-title">Hit Rates at Different Lines</div>
+        </div>
+        <div class="p-20">
+            <table style="width: 100%; font-size: 13px;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 8px 0; color: var(--text-muted);">Stat</th>
+                        <th style="text-align: center; padding: 8px; color: var(--text-muted);">@60%</th>
+                        <th style="text-align: center; padding: 8px; color: var(--text-muted);">@70%</th>
+                        <th style="text-align: center; padding: 8px; color: var(--text-muted);">@80%</th>
+                        <th style="text-align: right; padding: 8px 0; color: var(--accent);">Safe Line</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in ['PTS', 'REB', 'AST'] %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 8px 0; font-weight: 600;">{{ stat }}</td>
+                        <td style="text-align: center; padding: 8px;">
+                            <span class="{% if factors.get(stat + '_HR_60', 0) >= 90 %}hr-lock{% elif factors.get(stat + '_HR_60', 0) >= 80 %}hr-strong{% else %}hr-good{% endif %}">
+                                {{ factors.get(stat + '_HR_60', '-') }}{% if factors.get(stat + '_HR_60') %}%{% endif %}
+                            </span>
+                        </td>
+                        <td style="text-align: center; padding: 8px;">
+                            <span class="{% if factors.get(stat + '_HR_70', 0) >= 90 %}hr-lock{% elif factors.get(stat + '_HR_70', 0) >= 80 %}hr-strong{% else %}hr-good{% endif %}">
+                                {{ factors.get(stat + '_HR_70', '-') }}{% if factors.get(stat + '_HR_70') %}%{% endif %}
+                            </span>
+                        </td>
+                        <td style="text-align: center; padding: 8px;">
+                            <span class="{% if factors.get(stat + '_HR_80', 0) >= 90 %}hr-lock{% elif factors.get(stat + '_HR_80', 0) >= 80 %}hr-strong{% else %}hr-good{% endif %}">
+                                {{ factors.get(stat + '_HR_80', '-') }}{% if factors.get(stat + '_HR_80') %}%{% endif %}
+                            </span>
+                        </td>
+                        <td style="text-align: right; padding: 8px 0;">
+                            {% if factors.get(stat + '_SAFE_LINE') %}
+                            <span style="color: var(--accent); font-weight: 700;">{{ factors.get(stat + '_SAFE_LINE') }}</span>
+                            <span style="font-size: 10px; color: var(--text-muted);">({{ factors.get(stat + '_SAFE_HR', 0) }}%)</span>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted);">
+                Safe Line = Line with 85%+ hit rate
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Script Analysis -->
+    <div class="card" style="border-color: rgba(255,184,0,0.3);">
+        <div class="card-header">
+            <div class="card-title">Performance in Wins vs Losses</div>
+            <span class="badge" style="background: {% if factors.WIN_PCT|default(0) >= 60 %}var(--accent){% elif factors.WIN_PCT|default(0) <= 40 %}var(--danger){% else %}var(--bg-elevated){% endif %}; color: {% if factors.WIN_PCT|default(0) >= 60 %}#000{% else %}#fff{% endif %};">
+                {{ factors.WIN_PCT|default(0) }}% Win Rate
+            </span>
+        </div>
+        <div class="p-20">
+            <table style="width: 100%; font-size: 13px;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 8px 0; color: var(--text-muted);">Stat</th>
+                        <th style="text-align: center; padding: 8px; color: var(--accent);">In Wins</th>
+                        <th style="text-align: center; padding: 8px; color: var(--danger);">In Losses</th>
+                        <th style="text-align: right; padding: 8px 0; color: var(--text-muted);">Impact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in ['PTS', 'REB', 'AST', 'MIN'] %}
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 8px 0; font-weight: 600;">{{ stat }}</td>
+                        <td style="text-align: center; padding: 8px; color: var(--accent);">{{ factors.get(stat + '_IN_WINS', '-') }}</td>
+                        <td style="text-align: center; padding: 8px; color: var(--danger);">{{ factors.get(stat + '_IN_LOSSES', '-') }}</td>
+                        <td style="text-align: right; padding: 8px 0;">
+                            {% set diff = (factors.get(stat + '_IN_WINS', 0) - factors.get(stat + '_IN_LOSSES', 0))|round(1) %}
+                            {% if diff > 0 %}
+                            <span style="color: var(--accent);">+{{ diff }}</span>
+                            {% elif diff < 0 %}
+                            <span style="color: var(--danger);">{{ diff }}</span>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted);">
+                {% if factors.WIN_PCT|default(0) >= 60 %}
+                ✓ Team winning often - expect higher stat lines
+                {% elif factors.WIN_PCT|default(0) <= 40 %}
+                ⚠️ Team losing often - watch for blowout risk
+                {% else %}
+                Mixed results - check game spread before betting
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- B2B Analysis -->
+{% if factors.B2B_GAMES %}
+<div class="card mb-24" style="border-color: rgba(255,184,0,0.3);">
+    <div class="card-header">
+        <div class="card-title">Back-to-Back Performance</div>
+        <span class="badge">{{ factors.B2B_GAMES }} B2B Games</span>
+    </div>
+    <div class="p-20">
+        <div class="grid-3" style="gap: 24px; text-align: center;">
+            <div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--accent);">{{ factors.PTS_RESTED|default(0) }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">PTS (Rested)</div>
+            </div>
+            <div>
+                <div style="font-size: 28px; font-weight: 700; color: var(--danger);">{{ factors.PTS_B2B|default(0) }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">PTS (B2B)</div>
+            </div>
+            <div>
+                <div style="font-size: 28px; font-weight: 700; color: {% if factors.B2B_DROP|default(0) > 3 %}var(--danger){% else %}var(--text){% endif %};">
+                    -{{ factors.B2B_DROP|default(0) }}
+                </div>
+                <div style="font-size: 11px; color: var(--text-muted);">B2B DROP</div>
+            </div>
+        </div>
+        <div style="margin-top: 16px; text-align: center; font-size: 12px; color: var(--text-muted);">
+            {% if factors.B2B_DROP|default(0) > 5 %}
+            ⚠️ Significant B2B drop - lower your lines on back-to-backs
+            {% elif factors.B2B_DROP|default(0) > 2 %}
+            Moderate B2B impact - consider slight adjustment
+            {% else %}
+            ✓ Minimal B2B impact - plays well on short rest
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Floor/Ceiling -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Floor / Ceiling Analysis</div>
+    </div>
+    <div class="p-24">
+        <div class="grid-3" style="gap: 24px;">
+            {% for stat in ['PTS', 'REB', 'AST'] %}
+            <div style="text-align: center;">
+                <div style="font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 12px;">
+                    {{ stat }}
+                    {% if factors.get(stat + '_PREDICTABILITY') %}
+                    <span style="font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-left: 6px; background: {% if factors.get(stat + '_PREDICTABILITY') == 'HIGH' %}var(--accent){% elif factors.get(stat + '_PREDICTABILITY') == 'LOW' %}var(--danger){% else %}var(--bg-elevated){% endif %}; color: {% if factors.get(stat + '_PREDICTABILITY') == 'HIGH' %}#000{% else %}#fff{% endif %};">
+                        {{ factors.get(stat + '_PREDICTABILITY') }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div style="display: flex; justify-content: center; gap: 20px;">
+                    <div>
+                        <div style="font-size: 20px; font-weight: 600; color: var(--danger);">{{ factors.get(stat + '_FLOOR', 0) }}</div>
+                        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Floor</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 20px; font-weight: 600; color: var(--text);">{{ factors.get(stat + '_SEASON', 0) }}</div>
+                        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Avg</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 20px; font-weight: 600; color: var(--accent);">{{ factors.get(stat + '_CEIL', 0) }}</div>
+                        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Ceiling</div>
+                    </div>
+                </div>
+                <div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+                    Range: {{ factors.get(stat + '_RANGE', 0) }} | Streak: 
+                    {% if factors.get(stat + '_STREAK', 0) >= 3 %}
+                    <span style="color: var(--accent);">🔥{{ factors.get(stat + '_STREAK') }}</span>
+                    {% else %}
+                    {{ factors.get(stat + '_STREAK', 0) }}
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Historical Prop Performance -->
+{% if historical_prop_profile and historical_prop_profile.available %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Historical Prop Performance</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Resolved hit/miss profile from the review archive, split by stat and direction.</div>
+        </div>
+        <span class="badge {% if historical_prop_profile.overall.model_accuracy == 'OVERVALUED' %}badge-danger{% elif historical_prop_profile.overall.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">
+            {{ historical_prop_profile.overall.model_accuracy }}
+        </span>
+    </div>
+    <div class="control-panel" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; border-left:0; border-right:0; border-radius:0;">
+        <div class="stat-card">
+            <div class="page-kicker">Overall Hit Rate</div>
+            <div class="stat-value">{% if historical_prop_profile.overall.hit_rate is not none %}{{ historical_prop_profile.overall.hit_rate }}%{% else %}-{% endif %}</div>
+            <div class="stat-note">{{ historical_prop_profile.overall.hits }} hits / {{ historical_prop_profile.overall.misses }} misses</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Resolved</div>
+            <div class="stat-value">{{ historical_prop_profile.overall.resolved }}</div>
+            <div class="stat-note">graded player props</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Best Bucket</div>
+            <div class="stat-value" style="font-size:22px;">{% if historical_prop_profile.best %}{{ historical_prop_profile.best.stat }} {{ historical_prop_profile.best.direction }}{% else %}-{% endif %}</div>
+            <div class="stat-note">{% if historical_prop_profile.best %}{{ historical_prop_profile.best.hit_rate }}% over {{ historical_prop_profile.best.resolved }}{% else %}need more results{% endif %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Weak Bucket</div>
+            <div class="stat-value" style="font-size:22px;">{% if historical_prop_profile.worst %}{{ historical_prop_profile.worst.stat }} {{ historical_prop_profile.worst.direction }}{% else %}-{% endif %}</div>
+            <div class="stat-note">{% if historical_prop_profile.worst %}{{ historical_prop_profile.worst.hit_rate }}% over {{ historical_prop_profile.worst.resolved }}{% else %}need more results{% endif %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Recent Resolved</div>
+            <div class="stat-value" style="font-size:22px;">{{ historical_prop_profile.current_streak if historical_prop_profile.current_streak else '-' }}</div>
+            <div class="stat-note">
+                {% for row in historical_prop_profile.recent %}
+                {{ row.outcome[0:1] }}{% if not loop.last %} / {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% if historical_prop_profile.rows %}
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Sport</th>
+                    <th>Stat</th>
+                    <th>Dir</th>
+                    <th>Resolved</th>
+                    <th>Hits</th>
+                    <th>Misses</th>
+                    <th>Hit %</th>
+                    <th>Avg Line</th>
+                    <th>Avg Conf</th>
+                    <th>Model</th>
+                    <th>Reliability</th>
+                    <th>Line Split</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in historical_prop_profile.rows %}
+                <tr>
+                    <td>{{ row.sport }}</td>
+                    <td>{{ row.stat }}</td>
+                    <td><span class="badge">{{ row.direction }}</span></td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{{ row.hits }}</td>
+                    <td>{{ row.misses }}</td>
+                    <td>{{ row.hit_rate }}%</td>
+                    <td>{% if row.avg_line is not none %}{{ row.avg_line }}{% else %}-{% endif %}</td>
+                    <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}-{% endif %}</td>
+                    <td><span class="badge {% if row.model_accuracy == 'OVERVALUED' %}badge-danger{% elif row.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.model_accuracy }}</span></td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span></td>
+                    <td style="font-size:11px; color:var(--text-muted);">
+                        {{ row.line_note }}
+                        {% if row.low_line_hit_rate is not none and row.high_line_hit_rate is not none %}
+                        <div>Low {{ row.low_line_hit_rate }}% / High {{ row.high_line_hit_rate }}%</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No resolved player buckets yet</div>
+        <div class="empty-state-copy">This player is in the archive, but the stat/direction samples have not resolved deeply enough.</div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Prop Analysis -->
+{% if props %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Prop Analysis</div>
+        <span class="badge badge-accent">{{ props|length }} Props</span>
+    </div>
+    <div class="table-shell">
+    <table class="data-table" style="min-width: 1400px;">
+        <thead>
+            <tr>
+                <th>Stat</th>
+                <th>Line</th>
+                <th>Safe Line</th>
+                <th>Hit Rate</th>
+                <th>Streak</th>
+                <th>Trend</th>
+                <th>Verdict</th>
+                <th>Profile</th>
+                <th>Volatility</th>
+                <th>Market Gate</th>
+                <th>Market</th>
+                <th>Platform Score</th>
+                <th>Why It Ranked Here</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for prop in props %}
+            <tr>
+                <td><span class="badge">{{ prop.stat }}</span></td>
+                <td><strong>{{ prop.line }}</strong></td>
+                <td style="color: var(--accent);">{{ factors.get(prop.stat + '_SAFE_LINE', '-') }}</td>
+                <td>
+                    <span class="{% if prop.hit_rate >= 80 %}hr-lock{% elif prop.hit_rate >= 70 %}hr-strong{% else %}hr-good{% endif %}">
+                        {{ prop.hit_rate }}%
+                    </span>
+                </td>
+                <td>
+                    {% if prop.current_run_side == 'over' and prop.current_streak >= 1 %}
+                    <span class="streak-hot">O{{ prop.current_streak }}</span>
+                    {% elif prop.current_run_side == 'under' and prop.current_streak >= 1 %}
+                    <span style="color: #FF6B6B; font-weight: 700;">U{{ prop.current_streak }}</span>
+                    {% elif prop.streak >= 3 %}
+                    <span class="streak-hot">🔥{{ prop.streak }}</span>
+                    {% else %}
+                    {{ prop.streak }}
+                    {% endif %}
+                </td>
+                <td>
+                    <span style="color: {% if prop.trend == 'HOT' or prop.trend == 'UP' %}var(--accent){% elif prop.trend == 'COLD' or prop.trend == 'DOWN' %}var(--danger){% else %}var(--text-muted){% endif %};">
+                        {{ prop.trend }}
+                    </span>
+                </td>
+                <td>
+                    <span class="badge {% if prop.play_verdict == 'PASS' %}badge-danger{% elif prop.play_verdict == 'CONFLICTED' %}badge-warning{% else %}badge-accent{% endif %}">
+                        {{ prop.play_verdict }}
+                    </span>
+                </td>
+                <td style="font-size: 12px;">
+                    <div>{{ (prop.weight_profile or 'regular')|replace('_', ' ')|upper }}</div>
+                    {% if prop.series_game_number %}
+                    <div style="color: var(--text-muted); margin-top: 4px;">Game {{ prop.series_game_number }} · Series {{ (prop.series_weight * 100)|round|int }}%</div>
+                    {% endif %}
+                    {% if prop.component_weights %}
+                    <div style="color: var(--text-muted); margin-top: 4px;">
+                        L{{ prop.component_weights.get('line_history', 0) }} / O{{ prop.component_weights.get('opponent', 0) }} / R{{ prop.component_weights.get('role_usage', 0) }}
+                    </div>
+                    {% endif %}
+                </td>
+                <td style="font-size: 12px;">
+                    <span style="color: {% if prop.volatility_flag == 'HIGH' %}var(--danger){% elif prop.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">
+                        {{ prop.volatility_flag }}
+                    </span>
+                    {% if prop.volatility_note %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">{{ prop.volatility_note }}</div>
+                    {% endif %}
+                </td>
+                <td style="font-size: 12px;">
+                    <span style="color: {% if prop.market_gate == 'HOLD' %}var(--danger){% elif prop.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">
+                        {{ prop.market_gate }}
+                    </span>
+                    {% if prop.market_gate_note %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">{{ prop.market_gate_note }}</div>
+                    {% endif %}
+                </td>
+                <td style="font-size: 12px; min-width: 180px;">
+                    {% if prop.market_summary %}
+                    <div style="color: var(--text-bright); line-height: 1.45;">{{ prop.market_summary }}</div>
+                    {% endif %}
+                    {% if prop.market_detail_note %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">{{ prop.market_detail_note }}</div>
+                    {% elif prop.line_low is not none and prop.line_high is not none and prop.line_low != prop.line_high %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">Market range is spread across books.</div>
+                    {% elif prop.best_book %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">Anchor book: {{ prop.best_book }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="grade-badge" style="background: {% if prop.smart_score >= 90 %}var(--accent){% elif prop.smart_score >= 80 %}rgba(0,255,65,0.3){% else %}var(--bg-elevated){% endif %}; color: {% if prop.smart_score >= 90 %}#000{% else %}var(--text){% endif %};">
+                        {{ prop.smart_score }} ({{ prop.grade }})
+                    </span>
+                </td>
+                <td style="font-size: 12px; min-width: 280px;">
+                    {% if prop.rank_explanation %}
+                    <div style="color: var(--text-bright); line-height: 1.5;">{{ prop.rank_explanation }}</div>
+                    {% endif %}
+                    {% if prop.novice_tag_sentence %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">{{ prop.novice_tag_sentence }}</div>
+                    {% endif %}
+                    {% if prop.play_verdict_note %}
+                    <div style="color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}#FFB800{% endif %}; line-height: 1.45;">{{ prop.play_verdict_note }}</div>
+                    {% endif %}
+                    {% if prop.public_trend_note %}
+                    <div style="color: var(--text-bright); margin-top: 4px; line-height: 1.45;">{{ prop.public_trend_note }}</div>
+                    {% endif %}
+                    {% if prop.guardrail_note %}
+                    <div style="color: var(--text-muted); margin-top: 4px; line-height: 1.45;">{{ prop.guardrail_note }}</div>
+                    {% endif %}
+                    {% if prop.featured_risk_note %}
+                    <div style="color: var(--text-muted); margin-top: 6px; line-height: 1.45;"><strong>What could break this:</strong> {{ prop.featured_risk_note }}</div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see the full prop breakdown.</div>
+</div>
+{% endif %}
+
+{% if trend_profiles %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Streak Profile</div>
+        <span class="badge badge-accent">{{ trend_profiles|length }} Stats</span>
+    </div>
+    <div class="p-16" style="border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 12px; line-height: 1.6;">
+        Shows how often this player strings together 3+ game runs against the current reference line for each stat, how long those runs lasted, and the average number of games between them.
+    </div>
+    <div style="overflow-x: auto;">
+        <table class="data-table" style="min-width: 1100px;">
+            <thead>
+                <tr>
+                    <th>Stat</th>
+                    <th>Ref Line</th>
+                    <th>Games</th>
+                    <th>Over 3+ Runs</th>
+                    <th>Over Lengths</th>
+                    <th>Avg Gap</th>
+                    <th>Under 3+ Runs</th>
+                    <th>Under Lengths</th>
+                    <th>Avg Gap</th>
+                    <th>Current</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trend in trend_profiles %}
+                <tr>
+                    <td><span class="badge">{{ trend.stat }}</span></td>
+                    <td><strong>{{ trend.line }}</strong></td>
+                    <td>{{ trend.games }}</td>
+                    <td>
+                        <span class="{% if trend.over_count >= 4 %}hr-lock{% elif trend.over_count >= 2 %}hr-strong{% else %}hr-good{% endif %}">
+                            {{ trend.over_count }}
+                        </span>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Longest {{ trend.over_longest }}</div>
+                    </td>
+                    <td style="font-size: 12px; color: var(--text);">{{ trend.over_lengths }}</td>
+                    <td style="color: {% if trend.over_avg_gap != '-' and trend.over_avg_gap <= 5 %}var(--accent){% else %}var(--text-muted){% endif %};">{{ trend.over_avg_gap }}</td>
+                    <td>
+                        <span class="{% if trend.under_count >= 4 %}hr-lock{% elif trend.under_count >= 2 %}hr-strong{% else %}hr-good{% endif %}">
+                            {{ trend.under_count }}
+                        </span>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Longest {{ trend.under_longest }}</div>
+                    </td>
+                    <td style="font-size: 12px; color: var(--text);">{{ trend.under_lengths }}</td>
+                    <td style="color: {% if trend.under_avg_gap != '-' and trend.under_avg_gap <= 5 %}var(--accent){% else %}var(--text-muted){% endif %};">{{ trend.under_avg_gap }}</td>
+                    <td>
+                        <span class="grade-badge" style="background: {% if 'Over' in trend.current_label %}rgba(110,168,166,0.28){% elif 'Under' in trend.current_label %}rgba(255,107,107,0.28){% else %}var(--bg-elevated){% endif %}; color: var(--text-bright);">
+                            {{ trend.current_label }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Games -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Recent Games</div>
+        <span class="badge">{{ selected_stat }} highlighted</span>
+    </div>
+    <div style="overflow-x: auto;">
+        <table class="data-table" style="min-width: 900px;">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Date</th>
+                    <th>Opp</th>
+                    <th>H/A</th>
+                    <th>MIN</th>
+                    <th>PTS</th>
+                    <th>REB</th>
+                    <th>AST</th>
+                    <th>3PM</th>
+                    <th>STL</th>
+                    <th>BLK</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for game in recent_games %}
+                <tr>
+                    <td>
+                        <span class="badge {% if game.SeasonType == 'Playoffs' %}badge-accent{% endif %}">
+                            {{ game.SeasonType|default('Regular') }}
+                        </span>
+                    </td>
+                    <td style="color: var(--text-muted);">{{ game.Date }}</td>
+                    <td><strong>{{ game.Opp|default('-') }}</strong></td>
+                    <td style="color: var(--text-muted);">{% if 'vs.' in (game.Matchup|default('')) %}HOME{% else %}AWAY{% endif %}</td>
+                    <td style="{% if selected_stat == 'MIN' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.MIN|default('-') }}</td>
+                    <td style="{% if selected_stat == 'PTS' %}background: rgba(132,215,210,0.12); font-weight: 700;{% else %}font-weight: 600;{% endif %}">{{ game.PTS|default('-') }}</td>
+                    <td style="{% if selected_stat == 'REB' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.REB|default('-') }}</td>
+                    <td style="{% if selected_stat == 'AST' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.AST|default('-') }}</td>
+                    <td style="{% if selected_stat == '3PM' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.get('3PM', '-') }}</td>
+                    <td style="color: var(--accent); {% if selected_stat == 'STL' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.STL|default('-') }}</td>
+                    <td style="color: var(--accent); {% if selected_stat == 'BLK' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ game.BLK|default('-') }}</td>
+                    <td>
+                        <span style="color: {% if game.Result == 'W' %}var(--accent){% else %}var(--danger){% endif %};">
+                            {{ game.Result|default('-') }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

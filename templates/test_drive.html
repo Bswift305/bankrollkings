@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Test Drive - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Tester Workflow</div>
+        <h1>Test <span class="accent">Drive</span></h1>
+        <div class="page-subtitle">
+            Use this page as the outside-tester home base. It points people to the highest-value workflows and captures structured feedback so we can tighten the product fast.
+        </div>
+    </div>
+    <div class="hero-actions">
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary">Open Dashboard</a>
+        <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-secondary">Open Parlay Builder</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/info?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">How It Works</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Does the page explain the number?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Testers should understand what the board is saying about the line, not just which play is highlighted.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Does the page explain the spot?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The best tester notes usually come from whether the matchup context felt believable and understandable.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Does the support feel earned?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use feedback to flag places where confidence feels disconnected from the visible evidence.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">What should improve next?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This page exists to turn loose tester reactions into decision-support product improvements.</div>
+        </div>
+    </div>
+</div>
+
+{% if saved %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.34);">
+    <div class="p-16" style="color: var(--text-bright); font-weight: 600;">
+        Feedback saved. Keep the notes coming while the games are live.
+    </div>
+</div>
+{% endif %}
+
+<div class="grid-4 mb-24" style="gap: 16px;">
+    <div class="stat-card panel-glow">
+        <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 8px;">TOTAL NOTES</div>
+        <div class="stat-value">{{ feedback_summary.total }}</div>
+        <div class="stat-label">Logged tester comments</div>
+    </div>
+    <div class="stat-card panel-glow">
+        <div style="font-size: 11px; color: var(--accent-blue); letter-spacing: 1px; margin-bottom: 8px;">OPEN ITEMS</div>
+        <div class="stat-value" style="color: var(--accent-blue);">{{ feedback_summary.open }}</div>
+        <div class="stat-label">Still worth reviewing</div>
+    </div>
+    <div class="stat-card panel-glow">
+        <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 8px;">CRITICAL</div>
+        <div class="stat-value" style="color: var(--accent-copper);">{{ feedback_summary.critical }}</div>
+        <div class="stat-label">High-severity notes</div>
+    </div>
+    <div class="stat-card panel-glow">
+        <div style="font-size: 11px; color: var(--accent); letter-spacing: 1px; margin-bottom: 8px;">FOCUS</div>
+        <div class="stat-value" style="color: var(--accent);">Playoffs</div>
+        <div class="stat-label">Test while games are live</div>
+    </div>
+</div>
+
+<div class="grid-2" style="gap: 24px; align-items: start;">
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div class="card panel-glow">
+            <div class="card-header panel-header-gloss">
+                <div class="card-title">Suggested Tester Path</div>
+                <span class="badge badge-accent">{{ featured_pages|length }} Stops</span>
+            </div>
+            <div class="p-20">
+                <div class="grid-2" style="gap: 14px;">
+                    {% for page in featured_pages %}
+                    <a href="{{ page.href }}" class="matchup-card" style="min-height: 150px;">
+                        <div class="matchup-kicker">Test Flow {{ loop.index }}</div>
+                        <div class="matchup-teams" style="margin-bottom: 10px;">{{ page.label }}</div>
+                        <div class="matchup-meta" style="line-height: 1.6;">{{ page.note }}</div>
+                        <div style="margin-top: 16px; color: var(--accent); font-weight: 700; font-size: 13px;">Open Page →</div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card panel-glow">
+            <div class="card-header panel-header-gloss">
+                <div class="card-title">Recent Feedback</div>
+                <span class="badge">{{ feedback_summary.total }}</span>
+            </div>
+            {% if recent_feedback %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Page</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in recent_feedback %}
+                    <tr>
+                        <td style="font-size: 12px; color: var(--text-muted);">{{ item.SubmittedAt }}</td>
+                        <td>{{ item.Page }}</td>
+                        <td>{{ item.Category }}</td>
+                        <td><span class="badge {% if item.Severity|lower == 'critical' %}badge-accent{% endif %}">{{ item.Severity }}</span></td>
+                        <td style="max-width: 420px; line-height: 1.5;">{{ item.Feedback }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="p-20" style="color: var(--text-muted);">No feedback logged yet. This page is ready for your first testers.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div class="card panel-glow">
+            <div class="card-header panel-header-gloss">
+                <div class="card-title">Leave Feedback</div>
+            </div>
+            <form method="post" action="/feedback/save" class="p-20" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="grid-2" style="gap: 12px;">
+                    <div>
+                        <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Tester Name</label>
+                        <input type="text" name="tester_name" placeholder="Optional" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Page</label>
+                        <select name="page" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                            <option value="General">General</option>
+                            <option value="Home">Home</option>
+                            <option value="Dashboard">Dashboard</option>
+                            <option value="Props">Props</option>
+                            <option value="Smart Picks">Smart Picks</option>
+                            <option value="Parlay Builder">Parlay Builder</option>
+                            <option value="Heatmap">Heatmap</option>
+                            <option value="Trend Board">Trend Board</option>
+                            <option value="Season Review">Season Review</option>
+                            <option value="Team Page">Team Page</option>
+                            <option value="Player Page">Player Page</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid-2" style="gap: 12px;">
+                    <div>
+                        <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Category</label>
+                        <select name="category" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                            <option value="General">General</option>
+                            <option value="Design">Design</option>
+                            <option value="Data">Data</option>
+                            <option value="Bug">Bug</option>
+                            <option value="Performance">Performance</option>
+                            <option value="Clarity">Clarity</option>
+                            <option value="Feature Idea">Feature Idea</option>
+                            <option value="Trust">Trust / Confidence</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Severity</label>
+                        <select name="severity" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">What happened?</label>
+                    <textarea name="feedback" rows="7" required placeholder="What felt off, what felt sharp, what confused you, or what broke?" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright); line-height: 1.6; resize: vertical;"></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="font-size: 12px; color: var(--text-muted); max-width: 420px;">Keep it quick and specific. One great tester note is usually worth more than ten vague reactions.</div>
+                    <button type="submit" class="btn btn-primary">Save Feedback</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card panel-glow">
+            <div class="card-header panel-header-gloss">
+                <div class="card-title">What To Watch For</div>
+            </div>
+            <div class="p-20" style="display: grid; gap: 12px;">
+                <div class="parlay-surface-soft" style="padding: 14px;">
+                    <div class="parlay-section-label">Trust</div>
+                    <div class="parlay-meta-line">Do the surfaced plays feel believable, or does anything look noisy or random?</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding: 14px;">
+                    <div class="parlay-section-label">Speed</div>
+                    <div class="parlay-meta-line">Do the important pages load fast enough to use between live line moves?</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding: 14px;">
+                    <div class="parlay-section-label">Clarity</div>
+                    <div class="parlay-meta-line">Can someone understand why a play is strong without needing a walkthrough?</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding: 14px;">
+                    <div class="parlay-section-label">Flow</div>
+                    <div class="parlay-meta-line">Can a user move from discovery to bet-building without getting lost or overwhelmed?</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

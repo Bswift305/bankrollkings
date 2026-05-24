@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Injuries & Boost Plays - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1>Injuries & <span class="accent">Boost Plays</span></h1>
+    <div style="display: flex; gap: 12px; align-items: center;">
+        <span style="font-size: 12px; color: var(--text-muted);">Last updated: {{ last_updated }}</span>
+        <a href="/injuries" class="btn btn-secondary btn-sm">🔄 Refresh</a>
+    </div>
+</div>
+
+<!-- Status Summary -->
+<div class="grid-4 mb-24" style="gap: 16px;">
+    <div class="stat-card" style="border-color: var(--danger);">
+        <div class="stat-value" style="color: var(--danger);">{{ status_counts.get('OUT', 0) }}</div>
+        <div class="stat-label">OUT</div>
+    </div>
+    <div class="stat-card" style="border-color: #FF6B6B;">
+        <div class="stat-value" style="color: #FF6B6B;">{{ status_counts.get('DOUBTFUL', 0) }}</div>
+        <div class="stat-label">DOUBTFUL</div>
+    </div>
+    <div class="stat-card" style="border-color: #FFB800;">
+        <div class="stat-value" style="color: #FFB800;">{{ status_counts.get('QUESTIONABLE', 0) + status_counts.get('GTD', 0) }}</div>
+        <div class="stat-label">QUESTIONABLE</div>
+    </div>
+    <div class="stat-card" style="border-color: var(--accent);">
+        <div class="stat-value" style="color: var(--accent);">{{ total_boosts }}</div>
+        <div class="stat-label">BOOST PLAYS</div>
+    </div>
+</div>
+
+{% if role_changes %}
+<div class="card mb-24" style="border-color: rgba(255,107,107,0.35);">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(255,107,107,0.12) 0%, transparent 100%);">
+        <div class="card-title">Expected Role Changes</div>
+        <span class="badge badge-accent">{{ role_changes|length }}</span>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Team</th>
+                <th>Stat</th>
+                <th>Expected Shift</th>
+                <th>Opened By</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for role in role_changes %}
+            <tr>
+                <td><a href="/player/{{ role.player|urlencode }}">{{ role.player }}</a></td>
+                <td>{{ team_mark(role.team, size='xs') }}</td>
+                <td><span class="badge">{{ role.stat }}</span></td>
+                <td><span class="hr-strong">+{{ role.boost_pct }}% {{ role.expected_shift }}</span>{% if role.projected_starter %}<div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Projected starter</div>{% endif %}</td>
+                <td>{{ role.injured_player }} <span style="color: var(--text-muted);">({{ role.injury_status }})</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Boost Opportunities -->
+{% if top_boosts %}
+<div class="card mb-24" style="border-color: rgba(0,255,65,0.4);">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(0,255,65,0.1) 0%, transparent 100%);">
+        <div class="card-title">🚀 Active Boost Plays</div>
+        <span class="badge badge-accent">{{ top_boosts|length }} Opportunities</span>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Player to Target</th>
+                <th>Team</th>
+                <th>Stat</th>
+                <th>Normal Avg</th>
+                <th>Boosted Avg</th>
+                <th>Boost</th>
+                <th>Because</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for boost in top_boosts %}
+            <tr>
+                <td>
+                    <a href="/player/{{ boost.beneficiary|urlencode }}" style="font-weight: 600;">{{ boost.beneficiary }}</a>
+                </td>
+                <td>{{ team_mark(boost.team, size='xs') }}</td>
+                <td><span class="badge">{{ boost.stat }}</span></td>
+                <td>{{ boost.avg_with }}</td>
+                <td><strong style="color: var(--accent);">{{ boost.avg_without }}</strong></td>
+                <td>
+                    <span style="background: var(--accent); color: #000; padding: 4px 10px; border-radius: 4px; font-weight: 700;">
+                        +{{ boost.boost_pct }}%
+                    </span>
+                </td>
+                <td>
+                    <span style="color: var(--danger); font-weight: 600;">{{ boost.injured_player }}</span>
+                    <span style="background: var(--danger); color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 6px;">{{ boost.injury_status }}</span>
+                    {% if boost.injury_reason %}
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">{{ boost.injury_reason }}</div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card mb-24">
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">
+        <div style="font-size: 48px; margin-bottom: 16px;">🏥</div>
+        <div style="font-size: 18px; margin-bottom: 8px;">No active boost plays</div>
+        <div>Run <code>py fetch_injuries.py</code> to update injury data</div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Injury Report by Team -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📋 Full Injury Report</div>
+        <span class="badge">{{ total_injuries }} Players</span>
+    </div>
+    
+    {% if injuries_by_team %}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; padding: 20px;">
+        {% for team, players in injuries_by_team.items() %}
+        <div style="background: var(--bg-elevated); border-radius: 8px; padding: 16px; border: 1px solid var(--border);">
+            <div style="font-weight: 700; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+                <a href="/team/{{ team }}">{{ team_mark(team, size='sm') }}</a>
+                <span class="badge" style="margin-left: 8px;">{{ players|length }}</span>
+            </div>
+            {% for player in players %}
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; {% if not loop.last %}border-bottom: 1px solid var(--border);{% endif %}">
+                <div>
+                    <a href="/player/{{ player.player|urlencode }}" style="font-weight: 500;">{{ player.player }}</a>
+                    <div style="font-size: 11px; color: var(--text-muted);">{{ player.reason }}</div>
+                </div>
+                <span style="background: {% if player.status == 'OUT' %}var(--danger){% elif player.status == 'DOUBTFUL' %}#FF6B6B{% elif player.status in ['QUESTIONABLE', 'GTD'] %}#FFB800{% else %}var(--text-muted){% endif %}; color: {% if player.status in ['QUESTIONABLE', 'GTD'] %}#000{% else %}#fff{% endif %}; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;">
+                    {{ player.status }}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">
+        No injury data available. Run <code>py fetch_injuries.py</code> to fetch.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Instructions -->
+<div style="margin-top: 24px; padding: 20px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border);">
+    <h3 style="margin-bottom: 12px;">📖 How to Use Injury Data</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; font-size: 14px; color: var(--text-muted);">
+        <div>
+            <strong style="color: var(--accent);">1. Update Injuries</strong><br>
+            Run <code>py fetch_injuries.py</code> around 5-6 PM ET when official reports drop
+        </div>
+        <div>
+            <strong style="color: var(--accent);">2. Check Boosts</strong><br>
+            When a star is OUT, their teammates often see increased production
+        </div>
+        <div>
+            <strong style="color: var(--accent);">3. Target Overs</strong><br>
+            Boost plays suggest targeting OVER props for the beneficiary
+        </div>
+        <div>
+            <strong style="color: var(--accent);">4. Late Scratches</strong><br>
+            Re-check before tip-off - lines may not have adjusted yet
+        </div>
+    </div>
+</div>
+{% endblock %}

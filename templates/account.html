@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Account - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 820px;">
+    <section class="page-hero">
+        <div class="page-hero-copy">
+            <span class="eyebrow">Account</span>
+            <h1 class="page-title">Account Settings</h1>
+            <p class="page-subtitle">Manage the local sign-in details for this Bankroll Kings install.</p>
+        </div>
+    </section>
+
+    <div class="board-shell" style="margin-bottom: 18px;">
+        <div class="board-header">
+            <div class="board-title">Profile</div>
+        </div>
+        <div style="padding: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="detail-kicker">Name</div>
+                <div style="font-size: 16px; color: var(--text-bright); font-weight: 800; margin-top: 6px;">{{ current_user.display_name }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="detail-kicker">Email</div>
+                <div style="font-size: 13px; color: var(--text-bright); font-weight: 700; margin-top: 6px; word-break: break-word;">{{ current_user.email }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="detail-kicker">Plan</div>
+                <div style="font-size: 16px; color: var(--accent); font-weight: 800; margin-top: 6px;">{{ current_user.plan|default('free')|upper }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="board-shell">
+        <div class="board-header">
+            <div class="board-title">Change Password</div>
+        </div>
+        <form method="post" style="padding: 18px; display: grid; gap: 14px;">
+            {% if message %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--accent); font-weight: 800;">{{ message }}</div>
+            {% endif %}
+            {% if error %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--danger); font-weight: 800;">{{ error }}</div>
+            {% endif %}
+            <div>
+                <label for="currentPassword" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Current Password</label>
+                <input id="currentPassword" name="current_password" type="password" required style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="newPassword" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">New Password</label>
+                <input id="newPassword" name="new_password" type="password" required minlength="6" style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="confirmPassword" style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Confirm New Password</label>
+                <input id="confirmPassword" name="confirm_password" type="password" required minlength="6" style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button type="submit" class="btn btn-primary">Update Password</button>
+                <a href="/pricing" class="btn btn-secondary">Plan Details</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

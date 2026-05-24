@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Game Lines - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Market Board</div>
+        <h1>Game Lines <span class="accent">&amp; O/U</span></h1>
+        <div class="page-subtitle">A clean board for spreads, totals, and moneylines so the site feels complete beyond props.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/schedule?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Schedule</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">Market Read First</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Market Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use this board to catch the live spread, total, and moneyline before you drill into props or matchup pages.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Matchup Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Each row should feed the next question: does the number match the game environment, pace, injuries, and home-road story?</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Verdict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board is the clean market spine for sides and totals, not just a list of odds.</div>
+        </div>
+    </div>
+</div>
+
+{% for date, day_games in games_by_date.items() %}
+<div class="card mb-20">
+    <div class="card-header">
+        <div class="card-title">{{ date }}</div>
+        <span class="badge badge-accent">{{ day_games|length }} Games</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr><th>Matchup</th><th>Time</th><th>Spread</th><th>Total</th><th>Moneyline</th><th>Book</th></tr>
+            </thead>
+            <tbody>
+                {% for game in day_games %}
+                {% set market = game.market %}
+                <tr>
+                    <td><a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}">{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</a></td>
+                    <td>{{ game.Time if game.Time else '-' }}</td>
+                    <td>{% if market and market.spread is not none %}{{ team_mark(game.Home, size='xs') }} {{ '%+g'|format(market.spread|float) }}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}</td>
+                    <td>{% if market and market.total is not none %}{{ market.total }}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}</td>
+                    <td>
+                        {% if market and market.away_ml is not none and market.home_ml is not none %}
+                        {{ '%+d'|format(market.away_ml|int) }} / {{ '%+d'|format(market.home_ml|int) }}
+                        {% else %}
+                        <span style="color: var(--text-muted);">-</span>
+                        {% endif %}
+                    </td>
+                    <td>{% if market and market.book %}{{ market.book }}{% else %}<span style="color: var(--text-muted);">No line loaded</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every game-line column.</div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-title">No game lines loaded</div>
+        <div class="empty-state-copy">Refresh the game odds file to populate spreads, totals, and moneylines.</div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ team_display_name(team) }} - Bankroll Kings{% endblock %}
+
+{% block content %}
+<h1>{{ team_mark(team, size='lg') }} <span class="accent">Roster</span></h1>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Player Stats</div>
+        <span class="badge">{{ players|length }} Players</span>
+    </div>
+    <div style="overflow-x: auto;">
+        <table class="data-table" style="min-width: 1400px;">
+            <thead>
+                <tr>
+                    <th style="position: sticky; left: 0; background: var(--bg-elevated); z-index: 2;">Player</th>
+                    <th>GP</th>
+                    <th>MIN</th>
+                    <th style="border-left: 1px solid var(--border);">{{ glossary_hint('PTS', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th>{{ glossary_hint('REB', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th>{{ glossary_hint('AST', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th>{{ glossary_hint('3PM', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th style="border-left: 1px solid var(--border); color: var(--accent);">{{ glossary_hint('STL', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th style="color: var(--accent);">{{ glossary_hint('BLK', 'core-stats', show_icon=False, variant='quiet') }}</th>
+                    <th style="color: var(--accent);">STOCKS</th>
+                    <th style="border-left: 1px solid var(--border);">TOV</th>
+                    <th>FG%</th>
+                    <th style="border-left: 1px solid var(--border); color: #FFB800;">{{ glossary_hint('TCH', 'next-gen-tracking', show_icon=False, variant='quiet') }}</th>
+                    <th style="color: #FFB800;">{{ glossary_hint('DRV', 'next-gen-tracking', show_icon=False, variant='quiet') }}</th>
+                    <th style="color: #FFB800;">{{ glossary_hint('SPD', 'next-gen-tracking', show_icon=False, variant='quiet') }}</th>
+                    <th style="color: #FFB800;">{{ glossary_hint('USG%', 'next-gen-tracking', show_icon=False, variant='quiet') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for player in players %}
+                <tr>
+                    <td style="position: sticky; left: 0; background: var(--bg-card); z-index: 1;">
+                        <a href="/player/{{ player.name|urlencode }}">{{ player.name }}</a>
+                    </td>
+                    <td>{{ player.games }}</td>
+                    <td>{{ player.MIN|default('-') }}</td>
+                    <td style="border-left: 1px solid var(--border); font-weight: 600;">{{ player.PTS|default('-') }}</td>
+                    <td>{{ player.REB|default('-') }}</td>
+                    <td>{{ player.AST|default('-') }}</td>
+                    <td>{{ player.get('3PM', '-') }}</td>
+                    <td style="border-left: 1px solid var(--border); color: var(--accent);">{{ player.STL|default('-') }}</td>
+                    <td style="color: var(--accent);">{{ player.BLK|default('-') }}</td>
+                    <td style="color: var(--accent); font-weight: 600;">{{ player.STOCKS|default('-') }}</td>
+                    <td style="border-left: 1px solid var(--border);">{{ player.TOV|default('-') }}</td>
+                    <td>{% if player.FG_PCT %}{{ player.FG_PCT }}%{% else %}-{% endif %}</td>
+                    <td style="border-left: 1px solid var(--border); color: #FFB800;">{{ player.TOUCHES|default('-') }}</td>
+                    <td style="color: #FFB800;">{{ player.DRIVES|default('-') }}</td>
+                    <td style="color: #FFB800;">{{ player.AVG_SPEED|default('-') }}</td>
+                    <td style="color: #FFB800;">{% if player.USG_PCT %}{{ player.USG_PCT }}%{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border);">
+    <div style="font-size: 12px; color: var(--text-muted);">
+        <span style="color: var(--accent);">Green columns</span> = Defensive stats ({{ glossary_hint('STOCKS', 'core-stats', show_icon=False, variant='quiet') }} = {{ glossary_hint('STL', 'core-stats', show_icon=False, variant='quiet') }} + {{ glossary_hint('BLK', 'core-stats', show_icon=False, variant='quiet') }}) | 
+        <span style="color: #FFB800;">Yellow columns</span> = NextGen Tracking ({{ glossary_hint('TCH', 'next-gen-tracking', show_icon=False, variant='quiet') }} = Touches, {{ glossary_hint('DRV', 'next-gen-tracking', show_icon=False, variant='quiet') }} = Drives, {{ glossary_hint('SPD', 'next-gen-tracking', show_icon=False, variant='quiet') }} = Avg Speed mph, {{ glossary_hint('USG%', 'next-gen-tracking', show_icon=False, variant='quiet') }} = Usage Rate)
+    </div>
+</div>
+{% endblock %}

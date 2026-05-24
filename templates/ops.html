@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Operations Dashboard - Bankroll Kings{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div>
+            <div class="eyebrow">Owner Control Center</div>
+            <h1 style="font-size: 34px; margin-top: 6px;">Operations Dashboard</h1>
+            <p style="color: var(--text-muted); margin-top: 10px; max-width: 900px;">
+                This is the live operator view for refresh health, scorecard status, QC coverage, and calibration progress across the governed sports.
+            </p>
+        </div>
+        <div style="text-align: right; color: var(--text-muted); font-size: 13px;">
+            <div>Generated</div>
+            <div style="margin-top: 4px; color: var(--text-bright); font-weight: 700;">{{ generated_at }}</div>
+        </div>
+    </div>
+</section>
+
+<section class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div>
+            <div class="eyebrow">Platform Pulse</div>
+            <h2 style="font-size: 24px; margin-top: 6px;">Refresh + Guardrail Status</h2>
+        </div>
+    </div>
+    <div style="padding: 18px 24px 24px;">
+        <div class="compact-inline" style="margin-bottom: 18px;">
+            {% for item in ops_status['items'] %}
+            <span class="ops-pill {{ item.status }}" title="{{ item.detail }}">
+                <span class="ops-pill-status"></span>
+                <span>{{ item.label }}</span>
+                <span class="ops-pill-meta">{{ item.last_run }}</span>
+            </span>
+            {% endfor %}
+            <a href="/pricing" class="ops-summary {{ ops_status.overall }}" title="{{ ops_status.scorecard_note }}" style="text-decoration: none;">
+                <span>{{ ops_status.overall_label }}</span>
+                <span class="ops-pill-meta">Scorecard: {{ ops_status.scorecard_decision }}</span>
+            </a>
+        </div>
+        <div class="grid grid-3" style="gap: 16px;">
+            {% for check in global_checks %}
+            <div class="metric-card">
+                <div class="metric-label">{{ check.label }}</div>
+                <div class="metric-value" style="font-size: 20px;">{{ check.status_label }}</div>
+                <div class="metric-note">{{ check.last_run }}</div>
+                <div class="compact-stack" style="margin-top: 12px;">
+                    <div><strong>{{ check.detail }}</strong></div>
+                    {% if check.notes %}
+                    <div class="cell-meta">{{ check.notes }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% for sport in sports %}
+<section class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <div>
+            <div class="eyebrow">{{ sport.key }} Governance</div>
+            <h2 style="font-size: 24px; margin-top: 6px;">{{ sport.key }} Health Snapshot</h2>
+        </div>
+    </div>
+    <div style="padding: 18px 24px 24px;">
+        <div class="grid grid-3" style="gap: 16px; margin-bottom: 18px;">
+            <div class="metric-card">
+                <div class="metric-label">99% Scorecard</div>
+                <div class="metric-value" style="font-size: 20px;">{{ sport.scorecard.status_label }}</div>
+                <div class="metric-note">{{ sport.scorecard.last_run }}</div>
+                <div class="compact-stack" style="margin-top: 12px;">
+                    <div><strong>{{ sport.scorecard.decision }}</strong></div>
+                    <div class="cell-meta">{{ sport.scorecard.detail }}</div>
+                    <div class="cell-meta">Calibration progress: {{ sport.scorecard.meta }}</div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Calibration</div>
+                <div class="metric-value" style="font-size: 20px;">{{ sport.calibration.status_label }}</div>
+                <div class="metric-note">{{ sport.calibration.last_run }}</div>
+                <div class="compact-stack" style="margin-top: 12px;">
+                    <div><strong>{{ sport.calibration.note }}</strong></div>
+                    <div class="cell-meta">Buckets: {{ sport.calibration.bucket_rows }} | Lying: {{ sport.calibration.lying_count }} | Strong: {{ sport.calibration.strong_count }} | Watch: {{ sport.calibration.watch_count }}</div>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Top Calibration Buckets</div>
+                <div class="metric-value" style="font-size: 20px;">{{ sport.calibration.top_buckets|length }}</div>
+                <div class="metric-note">Most actionable rows</div>
+                <div class="compact-stack" style="margin-top: 12px;">
+                    {% if sport.calibration.top_buckets %}
+                        {% for bucket in sport.calibration.top_buckets %}
+                        <div>
+                            <strong>{{ bucket.classification }}</strong> {{ bucket.label }}{% if bucket.sample_size %} ({{ bucket.sample_size }}){% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <div class="cell-meta">No actionable buckets yet. This usually means we are still waiting on resolved result volume.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Check</th>
+                        <th>Status</th>
+                        <th>Last Run</th>
+                        <th>Counts</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for check in sport.checks %}
+                    <tr>
+                        <td><strong>{{ check.label }}</strong></td>
+                        <td>
+                            <span class="ops-pill {{ check.status }}">
+                                <span class="ops-pill-status"></span>
+                                <span>{{ check.status_label }}</span>
+                            </span>
+                        </td>
+                        <td>{{ check.last_run }}</td>
+                        <td>PASS {{ check.pass_count }} | WARN {{ check.warning_count }} | FAIL {{ check.failure_count }}</td>
+                        <td>{{ check.notes or check.detail }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endfor %}
+{% endblock %}

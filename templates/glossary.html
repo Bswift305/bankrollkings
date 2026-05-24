@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Glossary - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Tools</div>
+        <h1>Board <span class="accent">Glossary</span></h1>
+        <div class="page-subtitle">A quick reference for the stat abbreviations, model labels, tracking metrics, and workflow language used across Bankroll Kings.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/info?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">How It Works</a>
+        {% if show_ops_strip %}
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Test Drive</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">How To Use This Page</div>
+    </div>
+    <div class="p-20" style="color: var(--text-muted); line-height: 1.7;">
+        Use this as the site-wide cheat sheet whenever a board shows shorthand like <strong style="color: var(--text-bright);">USG%</strong>, <strong style="color: var(--text-bright);">Tier 1</strong>, <strong style="color: var(--text-bright);">EV</strong>, or <strong style="color: var(--text-bright);">L5 Fade</strong>. The goal is to help testers understand what the site is measuring, why it matters, and how each label fits into the betting workflow.
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/matchup-lens?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Matchup Lens</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Decode the board language</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use this page when labels like EV, CLV, book split, or move bucket need quick context.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Know what the tags mean</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This is the cheat sheet for role, environment, and continuity language across the platform.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Read the review labels faster</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Glossary terms are here so the boards can stay fast and compact without losing meaning.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Context before confidence</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is to help users understand the platform language before they trust the score.</div>
+        </div>
+    </div>
+</div>
+
+{% for section in glossary_sections %}
+<div class="card mb-24 panel-glow" id="{{ section['id'] }}">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">{{ section['title'] }}</div>
+        <span class="badge badge-accent">{{ section['items']|length }} Terms</span>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="data-table" style="min-width: 980px;">
+            <thead>
+                <tr>
+                    <th style="width: 18%;">Term</th>
+                    <th style="width: 34%;">Meaning</th>
+                    <th>Why It Matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in section['items'] %}
+                <tr>
+                    <td>
+                        <span class="badge badge-accent">{{ item.term }}</span>
+                    </td>
+                    <td style="color: var(--text-bright);">{{ item.meaning }}</td>
+                    <td style="color: var(--text-muted);">{{ item.why }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+<div class="legend-panel">
+    <div class="legend-row">
+        <span class="micro-chip blue">Stat Abbreviations</span>
+        <span class="micro-chip accent">Betting Terms</span>
+        <span class="micro-chip copper">Playoff Context</span>
+        <span class="micro-chip soft">Tracking + Next Gen</span>
+    </div>
+</div>
+{% endblock %}

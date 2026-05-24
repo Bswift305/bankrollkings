@@ -1,0 +1,1254 @@
+{% extends "base.html" %}
+{% block title %}Parlay Builder - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+    .parlay-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    .parlay-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 2.2fr) minmax(340px, 0.9fr);
+        gap: 20px;
+        align-items: start;
+    }
+
+    .parlay-main {
+        min-width: 0;
+    }
+
+    .parlay-side {
+        min-width: 0;
+    }
+
+    .parlay-hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 16px;
+        padding: 20px 22px 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(166, 233, 229, 0.28);
+        background:
+            radial-gradient(circle at 18% 10%, rgba(110, 162, 255, 0.22) 0%, transparent 24%),
+            radial-gradient(circle at 82% 18%, rgba(132, 215, 210, 0.16) 0%, transparent 20%),
+            linear-gradient(135deg, rgba(18, 44, 63, 0.96) 0%, rgba(25, 41, 54, 0.94) 48%, rgba(33, 44, 50, 0.96) 100%);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+
+    .parlay-hero-copy {
+        max-width: 760px;
+    }
+
+    .parlay-kicker {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1.8px;
+        font-weight: 700;
+        color: var(--accent-copper);
+        margin-bottom: 10px;
+    }
+
+    .parlay-subtitle {
+        font-size: 14px;
+        line-height: 1.7;
+        color: #c6d2dc;
+        max-width: 760px;
+    }
+
+    .parlay-control-strip {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(166, 233, 229, 0.24);
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 26%),
+            linear-gradient(135deg, rgba(19, 40, 56, 0.98) 0%, rgba(26, 43, 56, 0.96) 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .parlay-control-copy {
+        max-width: 760px;
+    }
+
+    .parlay-section-label {
+        font-size: 11px;
+        color: var(--accent-copper);
+        letter-spacing: 1.3px;
+        font-weight: 800;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+    }
+
+    .parlay-meta-line {
+        font-size: 13px;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+
+    .parlay-layout .table-shell {
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .parlay-layout .table-shell::-webkit-scrollbar {
+        height: 10px;
+    }
+
+    .parlay-layout .table-shell::-webkit-scrollbar-thumb {
+        background: rgba(132, 215, 210, 0.24);
+        border-radius: 999px;
+    }
+
+    .parlay-layout .table-shell::-webkit-scrollbar-track {
+        background: rgba(255,255,255,0.04);
+        border-radius: 999px;
+    }
+
+    @media (max-width: 1450px) {
+        .parlay-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .parlay-side {
+            order: -1;
+        }
+
+        .parlay-sticky-card {
+            position: static;
+        }
+    }
+
+    .parlay-btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .parlay-chip-label {
+        font-size: 11px;
+        color: rgba(255,255,255,0.74);
+        letter-spacing: 1.2px;
+        font-weight: 700;
+        text-transform: uppercase;
+        text-shadow: 0 0 10px rgba(255,255,255,0.16);
+    }
+
+    .parlay-sticky-card {
+        position: sticky;
+        top: 16px;
+        align-self: start;
+    }
+
+    .parlay-surface {
+        background:
+            radial-gradient(circle at 50% 42%, rgba(132,215,210,0.10) 0%, rgba(110,162,255,0.08) 30%, rgba(184,115,51,0.05) 52%, transparent 78%),
+            linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 28%),
+            linear-gradient(135deg, rgba(19,40,56,0.98) 0%, rgba(26,43,56,0.96) 100%);
+        border: 1px solid rgba(166,233,229,0.20);
+        border-radius: 14px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .parlay-surface-soft {
+        background:
+            radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%),
+            linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%);
+        border: 1px solid rgba(166,233,229,0.16);
+        border-radius: 12px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .parlay-side .empty-state {
+        padding: 12px;
+    }
+
+    .parlay-side .empty-state-copy {
+        max-width: 360px;
+    }
+</style>
+
+<div class="parlay-shell">
+<div class="parlay-hero">
+    <div class="parlay-hero-copy">
+        <div class="parlay-kicker">Floor Parlay System</div>
+        <h1 style="margin-bottom: 12px;">Parlay <span class="accent">Builder</span></h1>
+        {% if model_debug %}
+        <div class="badge badge-accent" style="margin-bottom: 10px;">Debug Mode Active</div>
+        {% endif %}
+        <div class="parlay-subtitle">Build cleaner anchor tickets, sharper round robins, and tighter playoff boards with stronger contrast between the page shell and the actual working surfaces.</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#parlay-builder-language" class="btn btn-secondary btn-sm">Parlay Terms ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Board Terms ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#samples-time-windows" class="btn btn-secondary btn-sm">Samples ?</a>
+        </div>
+    </div>
+    <div class="parlay-btn-row">
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+    </div>
+</div>
+
+<div class="parlay-control-strip">
+    <div class="parlay-control-copy">
+        <div class="parlay-section-label">Parlay Sample Mode</div>
+        <div class="parlay-meta-line">Anchor plays can lean on current-team-only samples when a player changed teams midseason, with a quick way back to full-season context if you want the larger body of work.</div>
+    </div>
+    <div class="parlay-btn-row">
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+    </div>
+</div>
+
+<div class="parlay-control-strip">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; width: 100%;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="parlay-section-label" style="margin-bottom: 4px;">Lines Refreshed</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.last_updated }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ refresh_meta.row_count }} live prop rows loaded</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="parlay-section-label" style="margin-bottom: 4px;">Market Source</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="parlay-section-label" style="margin-bottom: 4px;">Confidence</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Normalized play strength</div>
+            <div style="font-size: 11px; color: var(--text-muted);">A cleaner score built from the adjusted read so anchor candidates are easier to compare.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="parlay-section-label" style="margin-bottom: 4px;">Tier</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Build quality</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Tier comes from a deeper build-score that weighs minutes, role stability, edge, and trend quality.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="parlay-section-label" style="margin-bottom: 4px;">Next Gen + Game Env</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Touches, drives, speed, TS%, plus spread and total context now help grade anchor and RR builds.</div>
+        </div>
+    </div>
+</div>
+
+{% if not refresh_meta.has_live_props %}
+<div class="card mb-24" style="border-color: rgba(255, 184, 0, 0.42); background: linear-gradient(135deg, rgba(64,46,10,0.92) 0%, rgba(44,37,21,0.94) 100%);">
+    <div class="p-16" style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
+        <div>
+            <div class="parlay-section-label" style="margin-bottom: 6px;">Live Feed Warning</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live NBA props are loaded right now.</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">{{ refresh_meta.warning }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Floor Parlay Formula</div>
+        <span class="badge badge-accent">{{ strategy.tier_counts.tier1 }} Tier 1</span>
+    </div>
+    <div class="p-16">
+        <div style="padding: 18px; background: linear-gradient(135deg, rgba(110,162,255,0.14) 0%, rgba(132,215,210,0.10) 42%, rgba(184,115,51,0.12) 100%); border: 1px solid rgba(166,233,229,0.22); border-radius: 16px; margin-bottom: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+                <div>
+                    <div class="parlay-section-label">Slate Strength</div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <span style="font-size: 30px; font-weight: 800; color: {{ strategy.slate_strength.accent }}; text-shadow: 0 0 20px rgba(255,255,255,0.14);">{{ strategy.slate_strength.score }}</span>
+                        <span class="badge" style="background: {{ strategy.slate_strength.accent }}; color: #08110f; border-color: rgba(255,255,255,0.12); font-weight: 800;">{{ strategy.slate_strength.badge }}</span>
+                        <span style="font-size: 13px; color: var(--text-bright); font-weight: 700; text-shadow: 0 0 14px rgba(255,255,255,0.12);">{{ strategy.slate_strength.tier }}</span>
+                    </div>
+                    <div style="font-size: 13px; color: var(--text); margin-bottom: 6px;">{{ strategy.slate_strength.summary }}</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">{{ strategy.slate_strength.playbook }}</div>
+                </div>
+                <div style="min-width: 260px; flex: 1;">
+                    <div class="parlay-section-label">Model Read</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                        {% for component in strategy.slate_strength.components %}
+                        <div class="parlay-surface-soft" style="padding: 11px;">
+                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 3px;">{{ component.label }}</div>
+                            <div style="font-size: 18px; font-weight: 700; color: {% if component.value < 0 %}#FF6B6B{% else %}var(--text-bright){% endif %};">{{ '+' if component.value > 0 else '' }}{{ component.value }}</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">{{ component.detail }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: var(--text-muted);">
+                <strong style="color: var(--accent-copper);">Bankroll note:</strong> {{ strategy.slate_strength.bankroll_note }}
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 1</div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--accent);">{{ strategy.tier_counts.tier1 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Anchor-grade plays</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px; border-color: rgba(255,184,0,0.26);">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 2</div>
+                <div style="font-size: 24px; font-weight: 700; color: #FFB800;">{{ strategy.tier_counts.tier2 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Round-robin support</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px; border-color: rgba(107,138,255,0.26);">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 3</div>
+                <div style="font-size: 24px; font-weight: 700; color: #6B8AFF;">{{ strategy.tier_counts.tier3 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Watchlist only</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px; border-color: rgba(255,107,107,0.22);">
+                <div style="font-size: 11px; color: var(--text-muted);">Core Rule</div>
+                <div style="font-size: 16px; font-weight: 700;">4-6 legs</div>
+                <div style="font-size: 11px; color: var(--text-muted);">8-10 only as a tiny flyer</div>
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat({{ 4 if strategy.budget|length >= 4 else strategy.budget|length }}, minmax(0, 1fr)); gap: 12px;">
+            {% for item in strategy.budget %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div style="font-size: 11px; color: var(--text-muted);">{{ item.label }}</div>
+                <div style="font-size: 22px; font-weight: 700; color: var(--accent);">{{ item.share }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">{{ item.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="parlay-control-strip">
+    <div class="parlay-btn-row">
+        <span class="parlay-chip-label">Build For</span>
+        <a href="/parlay?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="/parlay?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="/parlay?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
+        <span class="parlay-chip-label">Play Type</span>
+        <a href="/parlay?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/parlay?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/parlay?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+    </div>
+</div>
+{% if team_query or player_query or stat_query %}
+<div class="parlay-control-strip">
+    <div class="parlay-btn-row">
+        <span class="parlay-chip-label">Active Filters</span>
+        {% if team_query %}<span class="badge badge-accent">Team {{ team_query }}</span>{% endif %}
+        {% if player_query %}<span class="badge badge-accent">Player {{ player_query }}</span>{% endif %}
+        {% if stat_query %}<span class="badge badge-accent">Stat {{ stat_query }}</span>{% endif %}
+    </div>
+    <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Clear Filters</a>
+</div>
+{% endif %}
+
+<div class="parlay-layout">
+    <div class="card parlay-main">
+        <div class="card-header">
+            <div class="card-title">{{ (focus_mode_label + ' Props (65%+)') if postseason_only else 'Available Props (65%+)' }}</div>
+            <span class="badge badge-accent">{{ props|length }}</span>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead style="position: sticky; top: 0; background: rgba(10,23,33,0.98); z-index: 1;">
+                    <tr>
+                        <th style="width: 40px;"></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('player', 'desc' if sort_by == 'player' and sort_dir == 'asc' else 'asc')) }}">Player{% if sort_by == 'player' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('stat', 'desc' if sort_by == 'stat' and sort_dir == 'asc' else 'asc')) }}">Prop{% if sort_by == 'stat' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('strategy_score', 'asc' if sort_by == 'strategy_score' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Tier', 'betting-board-terms', show_icon=True, title='Open glossary for tier') }}{% if sort_by == 'strategy_score' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('direction', 'desc' if sort_by == 'direction' and sort_dir == 'asc' else 'asc')) }}">Play{% if sort_by == 'direction' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('weighted_over_rate', 'asc' if sort_by == 'weighted_over_rate' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('O/U %', 'betting-board-terms', show_icon=True) }}{% if sort_by == 'weighted_over_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('projected_minutes', 'asc' if sort_by == 'projected_minutes' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Proj', 'next-gen-tracking', show_icon=True, title='Open glossary for projection and minutes signals') }}{% if sort_by == 'projected_minutes' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('fair_price', 'asc' if sort_by == 'fair_price' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Fair', 'betting-board-terms', show_icon=True) }}{% if sort_by == 'fair_price' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('market_price', 'asc' if sort_by == 'market_price' and sort_dir == 'desc' else 'desc')) }}">Market{% if sort_by == 'market_price' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                        <th>{{ glossary_hint('Game Env', 'betting-board-terms', show_icon=True) }}</th>
+                        <th><a href="{{ build_sort_link('/parlay', {'date': date_filter, 'direction': direction_filter, 'postseason': 1 if postseason_only else 0, 'sample': sample_mode, 'team': team_query or None, 'player': player_query or None, 'stat': stat_query or None}, ('confidence', 'asc' if sort_by == 'confidence' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Conf', 'betting-board-terms', show_icon=True, title='Open glossary for confidence') }}{% if sort_by == 'confidence' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for prop in props %}
+                    <tr style="{% if prop.plays_today %}background: rgba(110,168,166,0.08);{% elif prop.plays_tomorrow %}background: rgba(184,115,51,0.08);{% endif %}">
+                        <td>
+                            <input type="checkbox" class="prop-checkbox"
+                                data-player="{{ prop.player }}"
+                                data-team="{{ prop.team }}"
+                                data-stat="{{ prop.stat }}"
+                                data-line="{{ prop.line }}"
+                                data-direction="{{ prop.direction }}"
+                                data-confidence="{{ prop.confidence }}"
+                                data-matchup="{{ prop.matchup }}"
+                                data-tier="{{ prop.tier }}"
+                                style="width: 18px; height: 18px; cursor: pointer;">
+                        </td>
+                        <td>
+                            <a href="/player/{{ prop.player|urlencode }}?sample={{ sample_mode }}">{{ prop.player }}</a>
+                            <div class="player-team-meta">
+                                {{ team_mark(prop.team, size='sm') }}
+                            </div>
+                            {% if prop.is_multi_team %}
+                            <span style="font-size: 10px; color: var(--accent-copper); display: block; margin-top: 4px;">{{ prop.sample_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span>
+                            <strong style="margin-left: 4px;">{{ prop.line }}</strong>
+                        </td>
+                        <td>
+                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                <span style="background: {% if prop.tier == 'Tier 1' %}linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%){% elif prop.tier == 'Tier 2' %}#FFB800{% else %}#6B8AFF{% endif %}; color: {% if prop.tier in ['Tier 1', 'Tier 2'] %}#08110f{% else %}#fff{% endif %}; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap;">{{ glossary_hint(prop.tier, 'betting-board-terms', show_icon=False, variant='quiet') }}</span>
+                                <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Score {{ prop.strategy_score|round(1) }}</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top: 6px;">
+                                {% for chip in prop.rank_driver_chips or [] %}
+                                <span class="micro-chip {% if chip.tone == 'accent' %}blue{% elif chip.tone == 'copper' %}copper{% elif chip.tone == 'danger' %}{% else %}soft{% endif %}" style="{% if chip.tone == 'danger' %}background: rgba(255, 107, 107, 0.14); color: #ff8d8d; border-color: rgba(255, 107, 107, 0.28);{% endif %}">{{ chip.label }}</span>
+                                {% endfor %}
+                            </div>
+                            <div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">
+                                {% if prop.tier == 'Tier 1' %}
+                                Anchor-grade build material.
+                                {% elif prop.tier == 'Tier 2' %}
+                                Better for round-robin support.
+                                {% else %}
+                                Watchlist or small-flyer material.
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>
+                        </td>
+                        <td style="font-size: 12px;">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <div><span style="color: var(--accent);">{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span>/<span style="color: #FF6B6B;">{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span></div>
+                                {% if prop.public_trend_note %}
+                                <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45;">{{ prop.public_trend_note }}</div>
+                                {% endif %}
+                                {% if prop.injury_context_note %}
+                                <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ prop.injury_context_note }}</div>
+                                {% endif %}
+                                {% if prop.baseline_reason %}
+                                <div class="baseline-reason baseline-reason-{{ prop.baseline_reason_tone or 'neutral' }}" style="margin-top: 0;">{{ prop.baseline_reason }}</div>
+                        {% if prop.core_volume_read %}
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ prop.core_volume_read }}</div>
+                        {% endif %}
+                        {% if prop.core_model_read %}
+                        <details class="model-read">
+                            <summary>Model Read</summary>
+                            <div class="model-read-body">{{ prop.core_model_read }}</div>
+                            {% if model_debug and prop.core_debug_lines %}
+                            <div class="model-debug-panel">
+                                {% for item in prop.core_debug_lines %}
+                                <div class="model-debug-row">
+                                    <span class="model-debug-label">{{ item.label }}</span>
+                                    <span class="model-debug-value">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </details>
+                        {% endif %}
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div style="display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">
+                                <span style="font-weight:700;">{% if prop.projected_minutes is not none %}{{ prop.projected_minutes }} MIN{% else %}-{% endif %}</span>
+                                {% if prop.usage_pct is not none %}<span class="micro-chip soft">{{ prop.usage_pct }} {{ glossary_hint('USG', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if prop.ts_pct is not none %}<span class="micro-chip blue">{{ prop.ts_pct }} {{ glossary_hint('TS', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if prop.touches is not none %}<span class="micro-chip soft">{{ prop.touches }} {{ glossary_hint('TCH', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if prop.drives is not none %}<span class="micro-chip copper">{{ prop.drives }} {{ glossary_hint('DRV', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if prop.avg_speed is not none %}<span class="micro-chip blue">{{ prop.avg_speed }} {{ glossary_hint('SPD', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if prop.snapshot_signal %}<span style="color: {% if prop.snapshot_consistency and prop.snapshot_consistency >= 80 %}var(--accent){% else %}var(--text-muted){% endif %}; white-space: nowrap;">{{ prop.snapshot_signal }}</span>{% elif prop.snapshot_consistency %}<span style="color: {% if prop.snapshot_consistency and prop.snapshot_consistency >= 80 %}var(--accent){% else %}var(--text-muted){% endif %}; white-space: nowrap;">Snap {{ prop.snapshot_consistency }}</span>{% endif %}
+                            </div>
+                            {% if prop.is_multi_team %}
+                            <div style="color: var(--accent-copper);">{{ prop.team_history }}</div>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div>{% if prop.fair_price %}{{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% else %}-{% endif %}</div>
+                            <div style="color: {% if prop.ev_pct is not none and prop.ev_pct > 0 %}var(--accent){% elif prop.ev_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                                {% if prop.ev_pct is not none %}{{ glossary_hint('EV', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.ev_pct }}%{% else %}No price{% endif %}
+                            </div>
+                            <div style="color: var(--text-muted);">
+                                {% if prop.model_prob is not none %}Model {{ prop.model_prob }}%{% else %}-{% endif %}
+                                {% if prop.implied_prob is not none %} • Book {{ prop.implied_prob }}%{% endif %}
+                            </div>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div>
+                                {% if prop.current_line is not none %}{{ prop.current_line }}{% else %}{{ prop.line }}{% endif %}
+                                {% if prop.market_price %}@ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% endif %}
+                            </div>
+                            <div style="color: var(--text-muted);">{{ prop.book or 'Manual' }}</div>
+                            {% if prop.book_count and prop.book_count > 1 %}
+                            <div style="color: var(--text-muted);">
+                                {{ prop.book_count }} books
+                                {% if prop.draftkings_line is not none or prop.vegas_line is not none %}
+                                 • DK {{ prop.draftkings_line if prop.draftkings_line is not none else '-' }} / Vegas {{ prop.vegas_line if prop.vegas_line is not none else '-' }}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            <div style="color:
+                                {% if prop.market_view.tone == 'accent' %}var(--accent)
+                                {% elif prop.market_view.tone == 'copper' %}var(--accent-copper)
+                                {% elif prop.market_view.tone == 'danger' %}#FF6B6B
+                                {% elif prop.market_view.tone == 'blue' %}var(--accent-blue)
+                                {% else %}var(--text-muted){% endif %}; font-weight:700;">{{ prop.market_view.label }}</div>
+                            <div style="color: var(--text-muted); line-height:1.45;">{{ prop.market_view.note }}</div>
+                            {% if prop.line_low is not none and prop.line_high is not none and prop.line_low != prop.line_high %}
+                            <div style="color: var(--accent-copper);">Range {{ prop.line_low }} to {{ prop.line_high }}</div>
+                            {% endif %}
+                            {% if prop.book_comparison_note %}
+                            <div style="color: var(--text-muted); line-height:1.45;">{{ prop.book_comparison_note }}</div>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div class="metric-stack">
+                                <div class="micro-cluster">
+                                    {% if prop.game_total is not none %}<span class="micro-chip blue">{{ glossary_hint('O/U', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.game_total }}</span>{% endif %}
+                                    {% if prop.team_spread is not none %}<span class="micro-chip copper">Team {{ '+' if prop.team_spread > 0 }}{{ prop.team_spread }}</span>{% endif %}
+                                </div>
+                                <div style="color: var(--accent);">{% if prop.game_environment %}{{ prop.game_environment }}{% elif prop.game_market_summary %}{{ prop.game_market_summary }}{% else %}-{% endif %}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge {% if prop.is_lock %}badge-accent{% endif %}" style="{% if prop.is_lock %}box-shadow: 0 0 22px rgba(132,215,210,0.18);{% endif %}">{{ prop.confidence|round|int }}%</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card parlay-sticky-card parlay-side">
+        <div class="card-header" style="background: linear-gradient(135deg, rgba(78,120,194,0.16) 0%, rgba(184,115,51,0.10) 100%); padding: 10px 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div class="card-title" style="font-size: 13px;">Your Parlay</div>
+                <div style="font-size: 10px; color: var(--accent-copper);">{{ strategy.slate_strength.badge }}</div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; border-bottom: 1px solid rgba(255,255,255,0.06);">
+            <div style="text-align: center; padding: 10px 6px; border-right: 1px solid rgba(255,255,255,0.06);">
+                <div style="font-size: 18px; font-weight: 700; color: var(--accent-copper); line-height: 1;" id="legCount">0</div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Legs</div>
+            </div>
+            <div style="text-align: center; padding: 10px 6px; border-right: 1px solid rgba(255,255,255,0.06);">
+                <div style="font-size: 18px; font-weight: 700; color: var(--accent-copper); line-height: 1;" id="tier1Count">0</div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Tier 1</div>
+            </div>
+            <div style="text-align: center; padding: 10px 6px;">
+                <div style="font-size: 18px; font-weight: 700; color: #FF6B6B; line-height: 1;" id="avgConf">0%</div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Avg Conf</div>
+            </div>
+        </div>
+
+        <div style="padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+            <div>
+                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; margin-bottom: 3px;">BUILD GRADE</div>
+                <div id="buildGrade" style="font-size: 17px; font-weight: 800; color: var(--text-bright); line-height: 1.1;">Waiting</div>
+            </div>
+            <div style="flex: 1; text-align: right;">
+                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 600; letter-spacing: 0.8px; margin-bottom: 3px;">LIVE NOTE</div>
+                <div id="formulaStatus" style="font-size: 10px; color: var(--text-muted); line-height: 1.4;">Select 4 Tier 1 floor plays.</div>
+            </div>
+        </div>
+
+        <div style="padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; gap: 12px; align-items: flex-start;">
+            <div style="flex: 1;">
+                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; margin-bottom: 4px;">RULES</div>
+                <div style="font-size: 10px; color: var(--text-muted); line-height: 1.7;">
+                    <div id="rule1">1 per player &middot; 2 per game</div>
+                    <div id="rule3">4&ndash;6 legs for main build</div>
+                </div>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; margin-bottom: 4px;">FORMULA</div>
+                <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;"><strong style="color: var(--text);">4 Tier 1</strong> anchors + round robins for most bankroll.</div>
+            </div>
+        </div>
+
+        <details style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+            <summary style="padding: 7px 12px; font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                FLOOR PLAYS PRIMER <span style="font-size: 9px; color: var(--text-muted); font-weight: 400;">&#9658; expand</span>
+            </summary>
+            <div style="padding: 0 12px 8px; font-size: 10px; color: var(--text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: 4px;">
+                <div><strong style="color: var(--text-bright);">What:</strong> stat-specific low lines built from each player's own average and stability profile.</div>
+                <div><strong style="color: var(--text-bright);">When:</strong> stable minutes, defined role, clean matchup.</div>
+                <div><strong style="color: var(--text-bright);">Avoid:</strong> forcing Tier 3 or volatile plays just because confidence looks high.</div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+                    <a href="/props/floor?postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}" class="btn btn-secondary btn-sm">Floor Plays</a>
+                    <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#parlay-builder-language" class="btn btn-secondary btn-sm">Terms ?</a>
+                </div>
+            </div>
+        </details>
+
+        <div style="padding: 8px 12px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="border: 1px solid rgba(166,233,229,0.1); border-radius: 8px; overflow: hidden;">
+                <div style="padding: 7px 10px; font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; border-bottom: 1px solid rgba(255,255,255,0.05);">STAKE CALCULATOR</div>
+                <div style="padding: 8px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <div>
+                        <label for="bankrollInput" style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px;">Bankroll</label>
+                        <input id="bankrollInput" type="number" min="0" step="1" value="100" style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 6px; padding: 7px 8px; font-size: 12px;">
+                    </div>
+                    <div>
+                        <label for="riskInput" style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px;">Slate Risk %</label>
+                        <input id="riskInput" type="number" min="0" max="10" step="0.1" value="{% if strategy.slate_strength.badge == 'FULL FORMULA' %}2.5{% elif strategy.slate_strength.badge == 'ANCHOR + RR' %}2.0{% elif strategy.slate_strength.badge == 'RR ONLY' %}1.25{% else %}0.5{% endif %}" style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 6px; padding: 7px 8px; font-size: 12px;">
+                    </div>
+                </div>
+                <div style="padding: 0 10px 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <div style="background: rgba(255,255,255,0.04); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 10px; color: var(--text-muted);">Slate Budget</div>
+                        <div id="slateBudgetValue" style="font-size: 16px; font-weight: 700; color: var(--accent-copper);">$0.00</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.04); border-radius: 6px; padding: 8px;">
+                        <div style="font-size: 10px; color: var(--text-muted);">Risk Profile</div>
+                        <div style="font-size: 12px; font-weight: 700; color: {{ strategy.slate_strength.accent }};">{{ strategy.slate_strength.badge }}</div>
+                    </div>
+                </div>
+                <div id="stakePlan" style="display: flex; flex-direction: column; gap: 4px; padding: 0 10px 8px;"></div>
+            </div>
+
+            <div id="selectedProps" style="display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto;">
+                <div class="empty-state" style="padding: 12px;">
+                    <div class="empty-state-title" style="font-size: 13px;">Select props to build</div>
+                    <div class="empty-state-copy" style="font-size: 11px;">Pick plays from the board to calculate anchor quality and stake split.</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <div style="border: 1px solid rgba(166,233,229,0.1); border-radius: 8px; padding: 8px 10px;">
+                    <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">4-Leg Anchor</div>
+                    <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 6px;">{{ slate_scope_label }}</div>
+                    {% if strategy.anchor %}
+                        {% for prop in strategy.anchor %}
+                        <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;">{{ prop.player }} <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
+                        {% endfor %}
+                    {% else %}
+                        <div style="font-size: 10px; color: var(--text-muted);">Need 4 Tier 1 plays.</div>
+                    {% endif %}
+                </div>
+                <div style="border: 1px solid rgba(166,233,229,0.1); border-radius: 8px; padding: 8px 10px;">
+                    <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">RR Pool</div>
+                    <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 6px;">{{ slate_scope_label }}</div>
+                    {% for prop in strategy.rr_pool %}
+                    <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;">{{ prop.player }} <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div style="border: 1px solid rgba(166,233,229,0.1); border-radius: 8px; padding: 8px 10px;">
+                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 6px;">Save Ticket</div>
+                {% if current_user %}
+                <label for="saveLabelInput" style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px;">Label</label>
+                <input id="saveLabelInput" type="text" placeholder="Tonight's anchor / RR card" style="width: 100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 6px; padding: 7px 8px; font-size: 11px; margin-bottom: 6px;">
+                {% else %}
+                <div class="empty-state" style="padding: 12px; margin-bottom: 8px;">
+                    <div class="empty-state-title" style="font-size: 15px;">Sign in to save your picks</div>
+                    <div class="empty-state-copy" style="font-size: 12px;">Accounts let each bettor keep their own saved tickets and review history.</div>
+                    <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                        <a href="/login?next=/parlay" class="btn btn-secondary btn-sm">Sign In</a>
+                        <a href="/signup?next=/parlay" class="btn btn-primary btn-sm">Create Account</a>
+                    </div>
+                </div>
+                {% endif %}
+                <div id="saveStatus" style="font-size: 11px; color: var(--text-muted); min-height: 16px;"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <button onclick="saveParlayTicket()" class="btn btn-primary" style="width: 100%; padding: 7px;">Save Picks</button>
+                <button onclick="clearParlay()" class="btn btn-secondary" style="width: 100%; padding: 7px;">Clear All</button>
+            </div>
+        </div>
+
+        <div style="padding: 8px 12px;">
+            <div class="parlay-surface" style="padding: 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700;">Saved Tickets</div>
+                    <a href="/bet-review?history_scope=native&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Native V2 Review</a>
+                </div>
+                {% if saved_parlays %}
+                <div style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto;">
+                    {% for ticket in saved_parlays %}
+                    <div class="parlay-surface-soft" style="padding: 10px;" id="saved-ticket-{{ ticket.ticket_id }}">
+                        <div style="display: flex; justify-content: space-between; gap: 8px; align-items: flex-start;">
+                            <div>
+                                <div style="font-size: 12px; font-weight: 700; color: var(--text-bright);">{{ ticket.label }}</div>
+                                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                                    {% if ticket.is_native_v2_ticket %}
+                                    <span class="badge badge-accent">V2 Native</span>
+                                    {% else %}
+                                    <span class="badge">Legacy Compare</span>
+                                    {% endif %}
+                                    <span class="badge" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); color: var(--accent-blue);">Eff {{ ticket.avg_effective_confidence|round(1) }}%</span>
+                                </div>
+                                <div style="font-size: 10px; color: var(--text-muted);">{{ ticket.saved_at }} • {{ ticket.leg_count }} legs • {{ ticket.avg_confidence|round(1) }}%</div>
+                            </div>
+                            <span class="badge badge-accent">{{ ticket.tier1_count }} T1</span>
+                        </div>
+                        <div class="parlay-surface" style="padding: 10px; margin-top: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.6px;">TICKET ANALYSIS</div>
+                                <span class="badge" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); color: {{ ticket.analysis.grade_color }}; font-weight: 800;">{{ ticket.analysis.grade }}</span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">{{ ticket.analysis.profile }}</div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.5;">{{ ticket.analysis.recommendation }}</div>
+                            <div class="parlay-surface-soft" style="padding: 8px; margin-bottom: 8px;">
+                                <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 6px;">
+                                    <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700;">LEG RESULTS</div>
+                                    <span class="badge" style="background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); color: {% if ticket.analysis.results_summary.ticket_state in ['Won Outright', 'Clean So Far', 'Alive'] %}var(--accent){% elif ticket.analysis.results_summary.ticket_state == 'Dead' %}var(--danger){% else %}var(--text-bright){% endif %};">{{ ticket.analysis.results_summary.ticket_state }}</span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 6px;">
+                                    <div style="font-size: 10px; color: var(--text-muted);">Resolved <span style="color: var(--text-bright); font-weight: 700;">{{ ticket.analysis.results_summary.resolved }}</span></div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">Wins <span style="color: var(--accent); font-weight: 700;">{{ ticket.analysis.results_summary.wins }}</span></div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">Losses <span style="color: var(--danger); font-weight: 700;">{{ ticket.analysis.results_summary.losses }}</span></div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">Pushes <span style="color: var(--accent-blue); font-weight: 700;">{{ ticket.analysis.results_summary.pushes }}</span></div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">Pending <span style="color: var(--text-bright); font-weight: 700;">{{ ticket.analysis.results_summary.pending }}</span></div>
+                                </div>
+                                <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ ticket.analysis.results_summary.note }}</div>
+                                {% if ticket.analysis.results_summary.killed_by %}
+                                <div style="font-size: 10px; color: var(--danger); margin-top: 4px; font-weight: 700;">Killed by: {{ ticket.analysis.results_summary.killed_by.title }}</div>
+                                {% endif %}
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Model Review</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: {{ ticket.analysis.model_review.color }};">{{ ticket.analysis.model_review.label }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">{{ ticket.analysis.model_review.note }}</div>
+                                </div>
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Better Use In Hindsight</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: {{ ticket.analysis.hindsight_use.color }};">{{ ticket.analysis.hindsight_use.label }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">{{ ticket.analysis.hindsight_use.note }}</div>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px;">
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Best Use</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: {{ ticket.analysis.best_use.color }};">{{ ticket.analysis.best_use.label }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">{{ ticket.analysis.best_use.note }}</div>
+                                </div>
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Floor Play Fit</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: {{ ticket.analysis.floor_fit.color }};">{{ ticket.analysis.floor_fit.label }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">{{ ticket.analysis.floor_fit.note }}</div>
+                                </div>
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Correlation Risk</div>
+                                    <div style="font-size: 12px; font-weight: 800; color: {{ ticket.analysis.correlation_risk.color }};">{{ ticket.analysis.correlation_risk.label }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">{{ ticket.analysis.correlation_risk.note }}</div>
+                                </div>
+                            </div>
+                            <div style="display: grid; gap: 6px; margin-bottom: 8px;">
+                                {% if ticket.analysis.best_leg %}
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 10px; color: var(--accent); font-weight: 700; margin-bottom: 2px;">Best leg</div>
+                                    <div style="font-size: 10px; color: var(--text-bright); font-weight: 700;">{{ ticket.analysis.best_leg.title }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ ticket.analysis.best_leg.summary }}</div>
+                                </div>
+                                {% endif %}
+                                {% if ticket.analysis.weakest_leg %}
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 2px;">Weakest leg</div>
+                                    <div style="font-size: 10px; color: var(--text-bright); font-weight: 700;">{{ ticket.analysis.weakest_leg.title }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ ticket.analysis.weakest_leg.summary }}</div>
+                                </div>
+                                {% endif %}
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 10px; color: var(--accent); font-weight: 700; margin-bottom: 2px;">Why this ticket wins</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ ticket.analysis.why_this_wins }}</div>
+                                </div>
+                                <div class="parlay-surface-soft" style="padding: 8px;">
+                                    <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 2px;">Why this ticket fails</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ ticket.analysis.why_this_fails }}</div>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px;">
+                                {% for metric in ticket.analysis.metrics %}
+                                <div class="parlay-surface-soft" style="padding: 6px 8px;">
+                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">{{ metric.label }}</div>
+                                    <div style="font-size: 12px; color: var(--text-bright); font-weight: 700;">{{ metric.value }}</div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% if ticket.analysis.strengths %}
+                            <div style="margin-bottom: 6px;">
+                                <div style="font-size: 10px; color: var(--accent); font-weight: 700; margin-bottom: 4px;">Why it works</div>
+                                {% for note in ticket.analysis.strengths %}
+                                <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">• {{ note }}</div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if ticket.analysis.warnings %}
+                            <div>
+                                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">What to watch</div>
+                                {% for note in ticket.analysis.warnings %}
+                                <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">• {{ note }}</div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if ticket.analysis.validations %}
+                            <div style="margin-top: 8px;">
+                                <div style="font-size: 10px; color: var(--accent); font-weight: 700; margin-bottom: 4px;">Validated on the site</div>
+                                {% for item in ticket.analysis.validations %}
+                                <div class="parlay-surface-soft" style="padding: 8px; margin-bottom: 6px;">
+                                    <div style="font-size: 10px; color: var(--text-bright); font-weight: 700; margin-bottom: 2px;">{{ item.title }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ item.summary }}</div>
+                                    {% if item.tags %}
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px;">
+                                        {% for tag in item.tags %}
+                                        <span class="chip chip-neutral">{{ tag }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+                                        <a href="{{ item.links.player_url }}" class="btn btn-secondary btn-sm">Player</a>
+                                        {% if item.links.floor_url %}
+                                        <a href="{{ item.links.floor_url }}" class="btn btn-secondary btn-sm">Floor</a>
+                                        {% endif %}
+                                        {% if item.links.matchup_url %}
+                                        <a href="{{ item.links.matchup_url }}" class="btn btn-secondary btn-sm">Matchup</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if ticket.analysis.cautions %}
+                            <div style="margin-top: 8px;">
+                                <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Needs caution</div>
+                                {% for item in ticket.analysis.cautions %}
+                                <div class="parlay-surface-soft" style="padding: 8px; margin-bottom: 6px;">
+                                    <div style="font-size: 10px; color: var(--text-bright); font-weight: 700; margin-bottom: 2px;">{{ item.title }}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;">{{ item.summary }}</div>
+                                    {% if item.tags %}
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px;">
+                                        {% for tag in item.tags %}
+                                        <span class="chip chip-neutral">{{ tag }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+                                        <a href="{{ item.links.player_url }}" class="btn btn-secondary btn-sm">Player</a>
+                                        {% if item.links.board_url %}
+                                        <a href="{{ item.links.board_url }}" class="btn btn-secondary btn-sm">Board</a>
+                                        {% endif %}
+                                        {% if item.links.matchup_url %}
+                                        <a href="{{ item.links.matchup_url }}" class="btn btn-secondary btn-sm">Matchup</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0 4px;">
+                            <div style="font-size: 10px; color: var(--accent-copper);">$ {{ '%.2f'|format(ticket.stake) }} stake • {{ ticket.sample_mode|upper }}</div>
+                            <span class="badge {% if ticket.result == 'Win' %}badge-accent{% endif %}" style="background: {% if ticket.result == 'Win' %}rgba(132,215,210,0.24){% elif ticket.result == 'Loss' %}rgba(184,115,51,0.24){% elif ticket.result == 'Push' %}rgba(110,162,255,0.22){% else %}rgba(255,255,255,0.08){% endif %}; color: {% if ticket.result == 'Pending' %}var(--text-muted){% else %}var(--text-bright){% endif %}; border-color: rgba(255,255,255,0.08);">{{ ticket.result }}</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:8px;">
+                            <div>
+                                <label style="display:block; font-size:10px; color:var(--text-muted); margin-bottom:4px;">Stake</label>
+                                <input id="stake-{{ ticket.ticket_id }}" type="number" min="0" step="0.01" value="{{ '%.2f'|format(ticket.stake) }}" style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:10px; color:var(--text-muted); margin-bottom:4px;">Payout</label>
+                                <input id="payout-{{ ticket.ticket_id }}" type="number" min="0" step="0.01" value="{{ '%.2f'|format(ticket.payout) }}" style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 8px;">
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                            <button type="button" onclick="updateSavedTicketMoney('{{ ticket.ticket_id }}')" class="btn btn-secondary btn-sm">Update Money</button>
+                            <div style="font-size:10px; color:var(--text-muted);">
+                                Profit:
+                                <span style="color:{% if ticket.money.profit > 0 %}var(--accent){% elif ticket.money.profit < 0 %}var(--danger){% else %}var(--text-bright){% endif %}; font-weight:700;">${{ '%.2f'|format(ticket.money.profit) }}</span>
+                                {% if ticket.money.roi is not none %}
+                                • ROI <span style="font-weight:700;">{{ '%.1f'|format(ticket.money.roi) }}%</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 3px;">
+                            {% for pick in ticket.picks[:6] %}
+                            <div class="parlay-surface-soft" style="padding: 7px 8px;">
+                                <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center;">
+                                    <div style="font-size: 10px; color: var(--text-muted);">
+                                        <span style="color: var(--text-bright); font-weight: 700;">{{ pick.player }}</span>
+                                        {{ team_mark(pick.team, size='xs', show_name=False) }}
+                                        {{ pick.stat }} {{ pick.direction[0] }}{{ pick.line }}
+                                        <span style="color: var(--accent);">({{ pick.confidence|round|int }}%)</span>
+                                    </div>
+                                    <span class="badge" style="background: {% if pick.outcome_state == 'win' %}rgba(132,215,210,0.18){% elif pick.outcome_state == 'loss' %}rgba(255,107,107,0.16){% elif pick.outcome_state == 'push' %}rgba(110,162,255,0.18){% else %}rgba(255,255,255,0.08){% endif %}; color: {% if pick.outcome_state == 'win' %}var(--accent){% elif pick.outcome_state == 'loss' %}var(--danger){% elif pick.outcome_state == 'push' %}var(--accent-blue){% else %}var(--text-muted){% endif %}; border-color: rgba(255,255,255,0.08);">
+                                        {% if pick.outcome_state == 'win' %}Win{% elif pick.outcome_state == 'loss' %}Loss{% elif pick.outcome_state == 'push' %}Push{% else %}Pending{% endif %}
+                                    </span>
+                                </div>
+                                {% if pick.actual_value is not none %}
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 3px;">
+                                    Actual: <span style="color: var(--text-bright); font-weight: 700;">{{ pick.actual_value }}</span>
+                                    {% if pick.game_date %}<span style="margin-left: 6px;">{{ pick.game_date }}</span>{% endif %}
+                                </div>
+                                {% elif pick.game_date %}
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 3px;">{{ pick.game_date }}</div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            {% if ticket.picks|length > 6 %}
+                            <div style="font-size: 10px; color: var(--text-muted);">+{{ ticket.picks|length - 6 }} more legs</div>
+                            {% endif %}
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px;">
+                            <button type="button" onclick="loadSavedTicket('{{ ticket.ticket_id }}')" class="btn btn-secondary btn-sm" style="width: 100%;">Load</button>
+                            <button type="button" onclick="deleteSavedTicket('{{ ticket.ticket_id }}')" class="btn btn-secondary btn-sm" style="width: 100%;">Delete</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px;">
+                            <button type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Pending')" class="btn btn-secondary btn-sm" style="width: 100%;">Pending</button>
+                            <button type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Win')" class="btn btn-secondary btn-sm" style="width: 100%;">Win</button>
+                            <button type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Loss')" class="btn btn-secondary btn-sm" style="width: 100%;">Loss</button>
+                            <button type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Push')" class="btn btn-secondary btn-sm" style="width: 100%;">Push</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 10px 4px;">
+                    <div class="empty-state-title" style="font-size: 15px;">{% if current_user %}No saved tickets yet{% else %}Sign in to load your saved tickets{% endif %}</div>
+                    <div class="empty-state-copy" style="font-size: 12px;">{% if current_user %}Save an anchor or round-robin build here and it will stay available for later review, grading, and reload.{% else %}Once you sign in, your saved parlays and review history will show up here automatically.{% endif %}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedProps = [];
+const budgetPlan = {{ strategy.budget|tojson }};
+const savedParlayMap = {{ saved_parlays|tojson }};
+const selectedTicketId = {{ selected_ticket_id|tojson }};
+
+document.querySelectorAll('.prop-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const prop = {
+            player: this.dataset.player,
+            team: this.dataset.team,
+            stat: this.dataset.stat,
+            line: this.dataset.line,
+            direction: this.dataset.direction,
+            confidence: parseFloat(this.dataset.confidence),
+            matchup: this.dataset.matchup,
+            tier: this.dataset.tier
+        };
+
+        if (this.checked) {
+            selectedProps.push(prop);
+        } else {
+            selectedProps = selectedProps.filter(p => !(p.player === prop.player && p.stat === prop.stat));
+        }
+        updateParlay();
+    });
+});
+
+document.getElementById('bankrollInput').addEventListener('input', updateStakePlan);
+document.getElementById('riskInput').addEventListener('input', updateStakePlan);
+
+function updateParlay() {
+    const container = document.getElementById('selectedProps');
+    const legCount = document.getElementById('legCount');
+    const avgConf = document.getElementById('avgConf');
+    const tier1Count = document.getElementById('tier1Count');
+    const formulaStatus = document.getElementById('formulaStatus');
+    const buildGrade = document.getElementById('buildGrade');
+    const buildGradeNote = document.getElementById('buildGradeNote');
+
+    legCount.textContent = selectedProps.length;
+    tier1Count.textContent = selectedProps.filter(p => p.tier === 'Tier 1').length;
+
+    if (selectedProps.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 16px;"><div class="empty-state-title" style="font-size: 15px;">Select props to build parlay</div><div class="empty-state-copy" style="font-size: 12px;">Choose a few board plays on the left and the builder will calculate your live anchor quality, average confidence, and stake split.</div></div>';
+        avgConf.textContent = '0%';
+        formulaStatus.textContent = 'Select 4 Tier 1 floor plays for your anchor ticket.';
+        buildGrade.textContent = 'Waiting';
+        buildGrade.style.color = 'var(--text-bright)';
+        buildGradeNote.textContent = 'Select props and the builder will grade the ticket quality, not just count the legs.';
+        return;
+    }
+
+    const totalConf = selectedProps.reduce((sum, p) => sum + p.confidence, 0);
+    avgConf.textContent = Math.round(totalConf / selectedProps.length) + '%';
+
+    let html = '';
+    selectedProps.forEach(prop => {
+        const isOver = prop.direction === 'OVER';
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-elevated); border-radius: 6px; border-left: 3px solid ${isOver ? 'var(--accent-copper)' : '#FF6B6B'};">
+                <div>
+                    <div style="font-weight: 600; font-size: 12px;">${prop.player}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">${prop.stat} ${isOver ? 'O' : 'U'}${prop.line} • ${prop.tier}</div>
+                </div>
+                <span style="font-size: 11px; color: ${isOver ? 'var(--accent-copper)' : '#FF6B6B'}; font-weight: 600;">${Math.round(prop.confidence)}%</span>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+    checkRules();
+
+    const tier1 = selectedProps.filter(p => p.tier === 'Tier 1').length;
+    const avgConfidence = totalConf / selectedProps.length;
+    const playerCounts = {};
+    const matchupCounts = {};
+    selectedProps.forEach(p => {
+        playerCounts[p.player] = (playerCounts[p.player] || 0) + 1;
+        if (p.matchup && p.matchup !== 'N/A') matchupCounts[p.matchup] = (matchupCounts[p.matchup] || 0) + 1;
+    });
+    const duplicatePlayers = Object.values(playerCounts).some(c => c > 1);
+    const overloadedGames = Object.values(matchupCounts).some(c => c > 2);
+    let grade = 'C';
+    let gradeColor = 'var(--accent-copper)';
+    let gradeNote = 'Playable, but not clean enough to be a core anchor yet.';
+
+    if (selectedProps.length >= 4 && selectedProps.length <= 6 && tier1 >= Math.min(4, selectedProps.length) && avgConfidence >= 90 && !duplicatePlayers && !overloadedGames) {
+        grade = 'A';
+        gradeColor = 'var(--accent)';
+        gradeNote = 'Anchor-grade build. This is clean enough to be the center of the card.';
+    } else if (selectedProps.length >= 3 && tier1 >= 2 && avgConfidence >= 84 && !duplicatePlayers) {
+        grade = 'B';
+        gradeColor = 'var(--accent-blue)';
+        gradeNote = 'Usable build. Better for round robins or a smaller anchor than a full send.';
+    } else if (selectedProps.length >= 8) {
+        grade = 'D';
+        gradeColor = '#FF6B6B';
+        gradeNote = 'Too long for a serious build. Treat this like a tiny flyer only.';
+    }
+
+    buildGrade.textContent = grade;
+    buildGrade.style.color = gradeColor;
+    buildGradeNote.textContent = gradeNote;
+
+    if (selectedProps.length <= 4 && tier1 === selectedProps.length && selectedProps.length >= 3) {
+        formulaStatus.textContent = 'Strong anchor build. Add one more Tier 1 leg or stop here.';
+    } else if (selectedProps.length >= 5 && selectedProps.length <= 6) {
+        formulaStatus.textContent = 'Good booster range. Put most bankroll on round robins, not this ticket.';
+    } else if (selectedProps.length >= 8) {
+        formulaStatus.textContent = 'Moonshot only. Keep this stake tiny.';
+    } else {
+        formulaStatus.textContent = 'Aim for 4 Tier 1 plays for the anchor, then use round robins for the rest.';
+    }
+}
+
+function updateStakePlan() {
+    const bankroll = parseFloat(document.getElementById('bankrollInput').value) || 0;
+    const riskPct = parseFloat(document.getElementById('riskInput').value) || 0;
+    const slateBudget = bankroll * (riskPct / 100);
+    const slateBudgetValue = document.getElementById('slateBudgetValue');
+    const stakePlan = document.getElementById('stakePlan');
+
+    slateBudgetValue.textContent = `$${slateBudget.toFixed(2)}`;
+
+    if (!budgetPlan.length || slateBudget <= 0) {
+        stakePlan.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);">Enter a bankroll and slate risk to see exact bet sizing.</div>';
+        return;
+    }
+
+    stakePlan.innerHTML = budgetPlan.map(item => {
+        const pct = parseFloat(String(item.share).replace('%', '')) || 0;
+        const amount = slateBudget * (pct / 100);
+        return `
+            <div style="display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--bg-elevated); border-radius: 8px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-bright);">${item.label}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">${item.note}</div>
+                </div>
+                <div style="text-align: right; min-width: 72px;">
+                    <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700;">${item.share}</div>
+                    <div style="font-size: 15px; font-weight: 800; color: var(--text-bright);">$${amount.toFixed(2)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function checkRules() {
+    const playerCounts = {};
+    selectedProps.forEach(p => { playerCounts[p.player] = (playerCounts[p.player] || 0) + 1; });
+    const rule1Pass = Object.values(playerCounts).every(c => c <= 1);
+    document.getElementById('rule1').textContent = (rule1Pass ? '✓ ' : '⚠ ') + 'Max 1 per player';
+    document.getElementById('rule1').style.color = rule1Pass ? 'var(--text-muted)' : 'var(--danger)';
+
+    const matchupCounts = {};
+    selectedProps.forEach(p => { if (p.matchup && p.matchup !== 'N/A') matchupCounts[p.matchup] = (matchupCounts[p.matchup] || 0) + 1; });
+    const rule2Pass = Object.values(matchupCounts).every(c => c <= 2);
+    document.getElementById('rule2').textContent = (rule2Pass ? '✓ ' : '⚠ ') + 'Max 2 per game';
+    document.getElementById('rule2').style.color = rule2Pass ? 'var(--text-muted)' : 'var(--danger)';
+
+    const rule3Pass = selectedProps.length <= 6;
+    document.getElementById('rule3').textContent = (rule3Pass ? '✓ ' : '💡 ') + '4-6 legs for main build';
+    document.getElementById('rule3').style.color = rule3Pass ? 'var(--text-muted)' : '#FFB800';
+}
+
+function clearParlay() {
+    selectedProps = [];
+    document.querySelectorAll('.prop-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('saveLabelInput').value = '';
+    updateParlay();
+}
+
+async function saveParlayTicket() {
+    const saveStatus = document.getElementById('saveStatus');
+    const bankroll = parseFloat(document.getElementById('bankrollInput').value) || 0;
+    const riskPct = parseFloat(document.getElementById('riskInput').value) || 0;
+    const slateBudget = bankroll * (riskPct / 100);
+    const label = document.getElementById('saveLabelInput').value.trim();
+
+    if (!selectedProps.length) {
+        saveStatus.textContent = 'Select at least one prop before saving.';
+        saveStatus.style.color = 'var(--accent-copper)';
+        return;
+    }
+
+    saveStatus.textContent = 'Saving ticket...';
+    saveStatus.style.color = 'var(--text-muted)';
+
+    try {
+        const response = await fetch('/parlay/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                label,
+                mode: '{{ focus_mode_label if postseason_only else regular_mode_label }} Parlay Builder',
+                date_filter: '{{ date_filter }}',
+                direction_filter: '{{ direction_filter }}',
+                sample_mode: '{{ sample_mode }}',
+                postseason_only: {{ 'true' if postseason_only else 'false' }},
+                bankroll,
+                risk_pct: riskPct,
+                slate_budget: slateBudget,
+                picks: selectedProps
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+            throw new Error(result.error || 'Unable to save ticket.');
+        }
+
+        saveStatus.textContent = result.message + ' Refresh to see it in Saved Tickets.';
+        saveStatus.style.color = 'var(--accent)';
+        if (!label) {
+            document.getElementById('saveLabelInput').value = result.label;
+        }
+    } catch (error) {
+        saveStatus.textContent = error.message || 'Unable to save ticket.';
+        saveStatus.style.color = 'var(--danger)';
+    }
+}
+
+function loadSavedTicket(ticketId) {
+    const ticket = savedParlayMap.find(item => item.ticket_id === ticketId);
+    const saveStatus = document.getElementById('saveStatus');
+    if (!ticket) {
+        saveStatus.textContent = 'Saved ticket not found.';
+        saveStatus.style.color = 'var(--danger)';
+        return;
+    }
+
+    selectedProps = ticket.picks.map(pick => ({
+        player: pick.player,
+        team: pick.team,
+        stat: pick.stat,
+        line: String(pick.line),
+        direction: pick.direction,
+        confidence: parseFloat(pick.confidence || 0),
+        matchup: pick.matchup || '',
+        tier: pick.tier || ''
+    }));
+
+    document.querySelectorAll('.prop-checkbox').forEach(cb => {
+        cb.checked = selectedProps.some(p =>
+            p.player === cb.dataset.player &&
+            p.stat === cb.dataset.stat &&
+            String(p.line) === String(cb.dataset.line) &&
+            p.direction === cb.dataset.direction
+        );
+    });
+
+    document.getElementById('saveLabelInput').value = ticket.label || '';
+    if (ticket.bankroll) document.getElementById('bankrollInput').value = ticket.bankroll;
+    if (ticket.risk_pct) document.getElementById('riskInput').value = ticket.risk_pct;
+    updateStakePlan();
+    updateParlay();
+    saveStatus.textContent = `Loaded ${ticket.leg_count}-leg saved ticket.`;
+    saveStatus.style.color = 'var(--accent)';
+}
+
+async function deleteSavedTicket(ticketId) {
+    const saveStatus = document.getElementById('saveStatus');
+    saveStatus.textContent = 'Deleting saved ticket...';
+    saveStatus.style.color = 'var(--text-muted)';
+    try {
+        const response = await fetch('/parlay/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_id: ticketId })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to delete ticket.');
+        const card = document.getElementById(`saved-ticket-${ticketId}`);
+        if (card) card.remove();
+        saveStatus.textContent = result.message;
+        saveStatus.style.color = 'var(--accent)';
+    } catch (error) {
+        saveStatus.textContent = error.message || 'Unable to delete ticket.';
+        saveStatus.style.color = 'var(--danger)';
+    }
+}
+
+async function setSavedTicketResult(ticketId, resultLabel) {
+    const saveStatus = document.getElementById('saveStatus');
+    saveStatus.textContent = `Updating ticket to ${resultLabel}...`;
+    saveStatus.style.color = 'var(--text-muted)';
+    try {
+        const response = await fetch('/parlay/result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_id: ticketId, result: resultLabel })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to update result.');
+        saveStatus.textContent = result.message + ' Refresh to see the updated badge.';
+        saveStatus.style.color = 'var(--accent)';
+    } catch (error) {
+        saveStatus.textContent = error.message || 'Unable to update result.';
+        saveStatus.style.color = 'var(--danger)';
+    }
+}
+
+async function updateSavedTicketMoney(ticketId) {
+    const saveStatus = document.getElementById('saveStatus');
+    const stake = document.getElementById(`stake-${ticketId}`)?.value;
+    const payout = document.getElementById(`payout-${ticketId}`)?.value;
+    saveStatus.textContent = 'Updating ticket money...';
+    saveStatus.style.color = 'var(--text-muted)';
+    try {
+        const response = await fetch('/parlay/money', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_id: ticketId, stake, payout })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to update money.');
+        saveStatus.textContent = result.message + ' Refresh the page to see updated ROI.';
+        saveStatus.style.color = 'var(--accent)';
+    } catch (error) {
+        saveStatus.textContent = error.message || 'Unable to update money.';
+        saveStatus.style.color = 'var(--danger)';
+    }
+}
+
+updateStakePlan();
+
+if (selectedTicketId) {
+    loadSavedTicket(selectedTicketId);
+}
+</script>
+{% endblock %}

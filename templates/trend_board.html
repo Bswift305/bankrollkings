@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+{% block title %}Trend Board - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+.trend-metric-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    min-width: 0;
+}
+
+.trend-metric-detail {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.trend-metric-detail.wrap {
+    white-space: normal;
+}
+
+.trend-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    line-height: 1.1;
+}
+
+.trend-data-table td {
+    vertical-align: top;
+}
+
+.trend-freeze-frame {
+    position: relative;
+}
+
+.trend-freeze-frame > .table-top-scroll {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    background: linear-gradient(180deg, rgba(24, 47, 66, 0.98) 0%, rgba(24, 47, 66, 0.94) 100%);
+    border-bottom: 1px solid rgba(166, 233, 229, 0.12);
+    padding-top: 10px;
+    margin-bottom: 0;
+}
+
+.trend-scroll-shell {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
+    touch-action: pan-x;
+    padding-bottom: 8px;
+    max-height: min(68vh, 760px);
+}
+
+.trend-scroll-shell::-webkit-scrollbar {
+    height: 10px;
+}
+
+.trend-scroll-shell::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.04);
+    border-radius: 999px;
+}
+
+.trend-scroll-shell::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, rgba(110,162,255,0.55) 0%, rgba(132,215,210,0.72) 100%);
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.trend-scroll-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+.trend-data-table td:nth-child(8),
+.trend-data-table td:nth-child(9),
+.trend-data-table td:nth-child(10),
+.trend-data-table td:nth-child(11),
+.trend-data-table td:nth-child(13),
+.trend-data-table td:nth-child(14) {
+    min-width: 110px;
+}
+
+.trend-data-table td:nth-child(8) > div,
+.trend-data-table td:nth-child(9) > div,
+.trend-data-table td:nth-child(10) > div,
+.trend-data-table td:nth-child(11) > div,
+.trend-data-table td:nth-child(14) > div {
+    margin-bottom: 5px;
+}
+
+.trend-data-table td:nth-child(8) > div:last-child,
+.trend-data-table td:nth-child(9) > div:last-child,
+.trend-data-table td:nth-child(10) > div:last-child,
+.trend-data-table td:nth-child(11) > div:last-child,
+.trend-data-table td:nth-child(14) > div:last-child {
+    margin-bottom: 0;
+}
+
+.trend-data-table td:nth-child(8) .hr-lock,
+.trend-data-table td:nth-child(8) .hr-strong,
+.trend-data-table td:nth-child(8) .hr-good,
+.trend-data-table td:nth-child(9) .hr-lock,
+.trend-data-table td:nth-child(9) .hr-strong,
+.trend-data-table td:nth-child(9) .hr-good,
+.trend-data-table td:nth-child(10) .hr-lock,
+.trend-data-table td:nth-child(10) .hr-strong,
+.trend-data-table td:nth-child(10) .hr-good,
+.trend-data-table td:nth-child(11) .hr-lock,
+.trend-data-table td:nth-child(11) .hr-strong,
+.trend-data-table td:nth-child(11) .hr-good,
+.trend-data-table td:nth-child(13) .grade-badge,
+.trend-data-table td:nth-child(14) .hr-lock,
+.trend-data-table td:nth-child(14) .hr-strong,
+.trend-data-table td:nth-child(14) .hr-good {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    line-height: 1.1;
+}
+
+.trend-data-table td:nth-child(8),
+.trend-data-table td:nth-child(9),
+.trend-data-table td:nth-child(10),
+.trend-data-table td:nth-child(11),
+.trend-data-table td:nth-child(14) {
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.trend-data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 7;
+    background: linear-gradient(180deg, rgba(31, 55, 77, 0.98) 0%, rgba(28, 49, 69, 0.96) 100%);
+    box-shadow: inset 0 -1px 0 rgba(166, 233, 229, 0.18);
+}
+</style>
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">League-Wide Streak Scanner</div>
+        <h1>Trend <span class="accent">Board</span></h1>
+        <div class="page-subtitle">A cleaner consistency board that separates floor clears, live Vegas or market-line results, current runs, and total 3+ streak behavior so you can rank who is truly repeatable.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/trend-board?postseason={{ 1 if postseason_only else 0 }}&stat={{ stat_filter|lower }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}&sample=current" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+        <a href="/trend-board?postseason={{ 1 if postseason_only else 0 }}&stat={{ stat_filter|lower }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}&sample=full" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">Trend Read</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Trend Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board is built to answer whether a run is actually repeatable, not just whether a player got hot for a few nights.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Market Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The live line columns matter because a streak only becomes useful when it still beats the current number.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Verdict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use the consistency score to separate real continuation spots from noisy scoreboard streaks.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch;">
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Board Scope</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ trend_meta.scope_label }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ trend_meta.row_count }} ranked rows</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Game Log Base</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ trend_meta.gamelog_rows }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">player-game rows powering the consistency logic</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Live Prop Base</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ trend_meta.props_rows }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">current prop rows used to find the Vegas or market reference line</div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Consistency Rank</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Floor + Vegas + streak blend</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Balances floor clears, live-line results, current run strength, and snapshot stability.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch;">
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%);">
+            <div class="page-kicker" style="margin-bottom: 6px;">3+ Follow-Through</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">
+                {% if trend_meta.opportunity_summary['3']['rate'] is not none %}
+                {{ trend_meta.opportunity_summary['3']['rate'] }}%
+                {% else %}
+                No sample
+                {% endif %}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+                {{ trend_meta.opportunity_summary['3']['hits'] }}/{{ trend_meta.opportunity_summary['3']['chances'] }} next-game opportunities kept cashing
+            </div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%);">
+            <div class="page-kicker" style="margin-bottom: 6px;">5+ Follow-Through</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">
+                {% if trend_meta.opportunity_summary['5']['rate'] is not none %}
+                {{ trend_meta.opportunity_summary['5']['rate'] }}%
+                {% else %}
+                No sample
+                {% endif %}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+                {{ trend_meta.opportunity_summary['5']['hits'] }}/{{ trend_meta.opportunity_summary['5']['chances'] }} next-game opportunities kept cashing
+            </div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Best 3+ Stat</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">
+                {{ trend_meta.opportunity_summary['3']['best_stat'] or 'Waiting' }}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+                {% if trend_meta.opportunity_summary['3']['best_stat_rate'] is not none %}
+                {{ trend_meta.opportunity_summary['3']['best_stat_rate'] }}% continuation rate
+                {% else %}
+                Need at least two opportunities to rank a stat
+                {% endif %}
+            </div>
+        </div>
+        <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%);">
+            <div class="page-kicker" style="margin-bottom: 6px;">Best 5+ Stat</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">
+                {{ trend_meta.opportunity_summary['5']['best_stat'] or 'Waiting' }}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+                {% if trend_meta.opportunity_summary['5']['best_stat_rate'] is not none %}
+                {{ trend_meta.opportunity_summary['5']['best_stat_rate'] }}% continuation rate
+                {% else %}
+                Need at least two opportunities to rank a stat
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel">
+        <form method="get" action="/trend-board" class="control-group" style="width: 100%;">
+            <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+            <input type="hidden" name="sample" value="{{ sample_mode }}">
+            <input type="hidden" name="sort_by" value="{{ sort_by }}">
+            <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+            <span class="control-label">Filter</span>
+            <select name="stat" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="all" {% if stat_filter == 'all' %}selected{% endif %}>All Stats</option>
+                {% for stat in stat_options %}
+                <option value="{{ stat|lower }}" {% if stat_filter == stat %}selected{% endif %}>{{ stat }}</option>
+                {% endfor %}
+            </select>
+            <div class="logo-select" data-logo-select>
+                <input type="hidden" name="team" value="{{ team_query or '' }}">
+                <button type="button" class="logo-select-toggle" data-logo-select-toggle>
+                    <span class="logo-select-value" data-logo-select-value>
+                        {% if team_query %}
+                            {{ team_mark(team_query, size='xs') }}
+                        {% else %}
+                            <span>All Teams</span>
+                        {% endif %}
+                    </span>
+                    <span class="logo-select-caret">▼</span>
+                </button>
+                <div class="logo-select-menu">
+                    <button type="button" class="logo-select-option {% if not team_query %}active{% endif %}" data-logo-select-option data-value="">
+                        <span>All Teams</span>
+                    </button>
+                    {% for team in teams %}
+                    <button type="button" class="logo-select-option {% if team == team_query %}active{% endif %}" data-logo-select-option data-value="{{ team }}">
+                        {{ team_mark(team, size='xs') }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+            {% if stat_filter != 'all' or team_query %}
+            <a href="/trend-board?postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}" class="btn btn-secondary btn-sm">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">{{ 'Playoff Field ' if postseason_only else '' }}Consistency Trends</div>
+        <span class="badge badge-accent">{{ rows|length }} Rows</span>
+    </div>
+    {% if rows %}
+    <div class="trend-freeze-frame">
+    <div class="table-shell trend-scroll-shell">
+        <table class="data-table trend-data-table" style="min-width: 1760px;">
+            <thead>
+                <tr>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('player', 'desc' if sort_by == 'player' and sort_dir == 'asc' else 'asc')) }}">Player{% if sort_by == 'player' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('team', 'desc' if sort_by == 'team' and sort_dir == 'asc' else 'asc')) }}">Team{% if sort_by == 'team' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('stat', 'desc' if sort_by == 'stat' and sort_dir == 'asc' else 'asc')) }}">Stat{% if sort_by == 'stat' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('line', 'asc' if sort_by == 'line' and sort_dir == 'desc' else 'desc')) }}">Floor Line{% if sort_by == 'line' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('market_line', 'asc' if sort_by == 'market_line' and sort_dir == 'desc' else 'desc')) }}">Vegas / Market{% if sort_by == 'market_line' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('avg', 'asc' if sort_by == 'avg' and sort_dir == 'desc' else 'desc')) }}">Avg{% if sort_by == 'avg' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('market_over_rate', 'asc' if sort_by == 'market_over_rate' and sort_dir == 'desc' else 'desc')) }}">O/U vs Vegas{% if sort_by == 'market_over_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('floor_hit_rate', 'asc' if sort_by == 'floor_hit_rate' and sort_dir == 'desc' else 'desc')) }}">Floor Clears{% if sort_by == 'floor_hit_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('active_streaks', 'asc' if sort_by == 'active_streaks' and sort_dir == 'desc' else 'desc')) }}">3+ Runs{% if sort_by == 'active_streaks' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th>3+ Follow</th>
+                    <th>5+ Follow</th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('current_run_len', 'asc' if sort_by == 'current_run_len' and sort_dir == 'desc' else 'desc')) }}">Current{% if sort_by == 'current_run_len' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('snapshot_consistency', 'asc' if sort_by == 'snapshot_consistency' and sort_dir == 'desc' else 'desc')) }}">Snapshot{% if sort_by == 'snapshot_consistency' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trend-board', base_params, ('consistency_index', 'asc' if sort_by == 'consistency_index' and sort_dir == 'desc' else 'desc')) }}">Consistency{% if sort_by == 'consistency_index' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td><a href="/player/{{ row.player|urlencode }}?sample={{ sample_mode }}">{{ row.player }}</a></td>
+                    <td>{{ row.team }}</td>
+                    <td><span class="badge">{{ row.stat }}</span></td>
+                    <td><strong>{{ row.line }}</strong></td>
+                    <td>
+                        {% if row.market_line is not none %}
+                        <div><strong>{{ row.market_line }}</strong></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ row.market_source }}{% if row.market_book %} · {{ row.market_book }}{% endif %}</div>
+                        {% else %}
+                        <span style="color: var(--text-muted);">No live line</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.avg }}</td>
+                    <td>
+                        {% if row.market_line is not none %}
+                        <div><span style="color: var(--accent);">O {{ row.market_over_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_over_rate }}%)</span></div>
+                        <div><span style="color: #FF8C8C;">U {{ row.market_under_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_under_rate }}%)</span>{% if row.market_pushes %} <span style="color: var(--text-muted);">· {{ row.market_pushes }} push</span>{% endif %}</div>
+                        {% else %}
+                        <span style="color: var(--text-muted);">Waiting on live ref</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div><span class="{% if row.floor_hit_rate >= 80 %}hr-lock{% elif row.floor_hit_rate >= 70 %}hr-strong{% else %}hr-good{% endif %}">{{ row.floor_hit_rate }}%</span></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ row.floor_hits }} clears / {{ row.games }}</div>
+                    </td>
+                    <td>
+                        <div><span class="{% if row.active_streaks >= 6 %}hr-lock{% elif row.active_streaks >= 4 %}hr-strong{% else %}hr-good{% endif %}">{{ row.active_streaks }}</span></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">O {{ row.over_count }} · U {{ row.under_count }}</div>
+                    </td>
+                    <td>
+                        <div><span class="{% if row.follow_3_rate is not none and row.follow_3_rate >= 70 %}hr-lock{% elif row.follow_3_rate is not none and row.follow_3_rate >= 55 %}hr-strong{% else %}hr-good{% endif %}">{{ row.follow_3_label }}</span></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{% if row.follow_3_rate is not none %}{{ row.follow_3_rate }}% kept cashing{% else %}No sample{% endif %}</div>
+                    </td>
+                    <td>
+                        <div><span class="{% if row.follow_5_rate is not none and row.follow_5_rate >= 70 %}hr-lock{% elif row.follow_5_rate is not none and row.follow_5_rate >= 55 %}hr-strong{% else %}hr-good{% endif %}">{{ row.follow_5_label }}</span></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{% if row.follow_5_rate is not none %}{{ row.follow_5_rate }}% kept cashing{% else %}No sample{% endif %}</div>
+                    </td>
+                    <td>
+                        <span class="grade-badge" style="background: {% if row.current_run_side == 'over' %}rgba(110,168,166,0.28){% elif row.current_run_side == 'under' %}rgba(132,157,255,0.28){% else %}var(--bg-elevated){% endif %}; color: var(--text-bright);">
+                            {{ row.current_label }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if row.snapshot_consistency is not none %}
+                        <span class="{% if row.snapshot_consistency >= 82 %}hr-lock{% elif row.snapshot_consistency >= 72 %}hr-strong{% else %}hr-good{% endif %}">{{ row.snapshot_consistency }}</span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div><span class="{% if row.consistency_index >= 85 %}hr-lock{% elif row.consistency_index >= 76 %}hr-strong{% else %}hr-good{% endif %}">{{ row.consistency_index }}</span></div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ row.consistency_label }}</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    </div>
+    <div class="trend-scroll-hint">Scroll left to right to see every trend column.</div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No streak trends found</div>
+        <div class="empty-state-copy">This filter combination did not return any qualifying streak rows. Try widening the stat or team filter, or switch sample modes.</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="legend-panel">
+    <div class="control-panel">
+        <div class="control-group" style="gap: 14px;">
+            <span class="control-label">Board Guide</span>
+            <span class="badge badge-accent">Floor Clears</span>
+            <span style="font-size: 11px; color: var(--text-muted);">How often the player clears the floor-play line.</span>
+            <span class="badge">O/U vs Vegas</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Season over and under record against the live Caesars line when available, or the best loaded market line if not.</span>
+            <span class="badge">3+ Runs</span>
+            <span style="font-size: 11px; color: var(--text-muted);">How many separate over and under streaks reached at least three straight games this season.</span>
+            <span class="badge">3+/5+ Follow</span>
+            <span style="font-size: 11px; color: var(--text-muted);">When that same side entered a game on a 3+ or 5+ streak, how often the next game kept cashing at the floor line.</span>
+            <span class="badge">Consistency</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Blends snapshot stability, floor clears, live-line results, and repeat streak behavior.</span>
+        </div>
+    </div>
+</div>
+{% endblock %}

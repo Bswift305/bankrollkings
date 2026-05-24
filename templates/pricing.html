@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+    <section class="page-hero">
+        <div class="page-hero-copy">
+            <span class="eyebrow">Membership</span>
+            <h1 class="page-title">Pricing Built For Real Bettors</h1>
+            <p class="page-subtitle">Bankroll Kings sits between low-cost picks subscriptions and expensive scanner platforms. The goal is to charge like a serious decision tool, not a mass-market hype feed.</p>
+        </div>
+    </section>
+
+    <section class="board-shell" style="padding: 22px;">
+        <div class="board-header">
+            <div class="board-title">Positioning</div>
+        </div>
+        {% if gate_notice %}
+        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; color: var(--accent); font-weight:700;">{{ gate_notice }}</div>
+        {% endif %}
+        {% if request.args.get('checkout') == 'cancelled' %}
+        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(255,184,107,0.28);">
+            <div class="detail-kicker">Checkout Update</div>
+            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">Checkout Was Cancelled</div>
+            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">No membership change was finalized. You can choose a plan again whenever you're ready.</div>
+        </div>
+        {% endif %}
+        {% if request.args.get('billing') == 'demo' %}
+        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(132,215,210,0.28);">
+            <div class="detail-kicker">Billing Status</div>
+            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">Billing Portal Not Live Yet</div>
+            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">Your account is active, but the live Stripe billing portal URL is not configured yet. This environment is still using the demo membership flow.</div>
+        </div>
+        {% endif %}
+        {% if checkout_config and checkout_config.mode != 'live' %}
+        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(255,184,107,0.28);">
+            <div class="detail-kicker">Membership Flow Status</div>
+            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">{% if checkout_config.mode == 'partial' %}Partial Stripe Setup{% else %}Demo Membership Flow{% endif %}</div>
+            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">{{ checkout_config.summary }} No real card charge should be assumed until Stripe checkout is fully wired and verified end to end.</div>
+            <div style="font-size:12px; color:var(--accent-copper); margin-top:8px; line-height:1.6;">
+                Billing portal: {% if checkout_config.billing_portal_configured %}configured{% else %}missing{% endif %}.
+            </div>
+        </div>
+        {% endif %}
+        <div style="display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Market Comp</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">$29/mo</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">BettingPros Premium and Dimers Pro both sit around the $29.99 monthly mark for broad-access premium betting tools.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Power Tool Ceiling</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">$199+/mo</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">OddsJam-style scanner products live much higher. Bankroll Kings should stay meaningfully below that unless it becomes a true live-book execution tool.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Recommendation</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">Tier It</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">Use a free entry layer, a serious consumer tier, and a sharper power-user tier. That matches the current product depth much better than one flat number.</div>
+            </div>
+        </div>
+    </section>
+
+    {% if current_user %}
+    <section class="board-shell" style="padding: 22px; margin-top:24px;">
+        <div class="board-header">
+            <div class="board-title">Current Membership</div>
+            <span class="badge badge-accent">{{ current_user.plan|default('free')|upper }}</span>
+        </div>
+        <div style="display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Plan Status</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">{{ current_user.plan_status|default('selected')|replace('_',' ')|title }}</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">Billing cycle: {{ current_user.billing_cycle|default('monthly')|title }}</div>
+                {% if checkout_config and checkout_config.mode != 'live' %}
+                <div style="font-size:12px; color:var(--accent-copper); margin-top:8px; line-height:1.6;">Demo membership flow only. This account state does not confirm a real Stripe charge yet.</div>
+                {% endif %}
+            </div>
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Account</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">{{ current_user.display_name }}</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">{{ current_user.email }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:16px;">
+                <div class="detail-kicker">Billing Tools</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+                    <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary btn-sm">Manage Billing</a>
+                    <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section style="display:grid; gap:18px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top:24px;">
+        {% for tier in pricing_cards %}
+        <article class="board-shell" style="padding:20px; border-color:{% if tier.key == 'pro' %}rgba(166,233,229,0.45){% else %}var(--border){% endif %}; box-shadow:{% if tier.key == 'pro' %}0 22px 44px rgba(0,0,0,0.24){% else %}none{% endif %};">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div>
+                    <div class="board-title">{{ tier.name }}</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">{{ tier.best_for }}</div>
+                </div>
+                <span class="badge {% if tier.key == 'pro' %}badge-accent{% else %}badge-outline{% endif %}">{{ tier.badge }}</span>
+            </div>
+            <div style="margin-top:18px;">
+                <div style="font-size:28px; font-weight:800; color:var(--text-bright);">{{ tier.monthly_label }}</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">{{ tier.annual_label }} annual option</div>
+            </div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.65; margin-top:16px;">{{ tier.summary }}</div>
+            <div style="display:grid; gap:8px; margin-top:16px;">
+                {% for feature in tier.features %}
+                <div style="font-size:13px; color:var(--text-muted);">- {{ feature }}</div>
+                {% endfor %}
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px;">
+                {% if tier.is_current %}
+                <span class="btn btn-secondary">{{ tier.current_status_label }}</span>
+                {% else %}
+                <a href="{{ tier.monthly_cta.href }}" class="btn {% if tier.key == 'pro' %}btn-primary{% else %}btn-secondary{% endif %}">{{ tier.monthly_cta.label }}</a>
+                {% endif %}
+            </div>
+            {% if not tier.is_current and tier.key != 'free' %}
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Choose Annual</a>
+                <span class="badge">
+                    {% if checkout_config.mode == 'partial' and tier.uses_demo_checkout %}
+                    Missing Stripe URL
+                    {% elif tier.uses_demo_checkout %}
+                    Demo Checkout Active
+                    {% else %}
+                    Stripe Checkout
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}

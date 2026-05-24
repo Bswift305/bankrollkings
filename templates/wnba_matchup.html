@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ matchup.away }} @ {{ matchup.home }} - WNBA Matchup{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">WNBA Matchup Board</div>
+        <h1>{{ matchup.away }} <span class="accent">@</span> {{ matchup.home }}</h1>
+        <div class="page-subtitle">This first matchup page is market-driven, using live multi-book prices with DraftKings anchored and Caesars acting as the Vegas reference.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Back to WNBA Board</a>
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Dashboard</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Tip Time</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ matchup.time or 'TBD' }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ matchup.date or 'Date pending' }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Spread</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if matchup.spread is not none %}{{ matchup.home }} {{ matchup.spread }}{% else %}No spread loaded{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Current side line from the loaded market set.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Game Total</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if matchup.total is not none %}{{ matchup.total }}{% else %}No total loaded{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Live total market.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Moneyline</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if matchup.away_ml is not none and matchup.home_ml is not none %}{{ matchup.away_ml }} / {{ matchup.home_ml }}{% else %}No ML loaded{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ matchup.away }} / {{ matchup.home }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Prop Count</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ matchup_props|length }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Live prop rows loaded for this matchup.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">How To Read This Page</div>
+        <span class="badge">Stage 1</span>
+    </div>
+    <div class="p-16" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What The Lean Means</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">The board is reading the price split between over and under and removing the vig to see which side the market is pricing more aggressively.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What It Is Not Yet</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">This is not a full projection model yet. It is a clean first pass to rank props and spotlight where the book is shading hardest.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Best Use</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">Use it to narrow the slate fast, then compare the strongest leans against injury news, role changes, and your own matchup opinions.</div>
+        </div>
+    </div>
+</div>
+
+{% if not trend_ready %}
+<div class="card mb-24" style="border-color: rgba(255, 184, 0, 0.42); background: linear-gradient(135deg, rgba(64,46,10,0.92) 0%, rgba(44,37,21,0.94) 100%);">
+    <div class="p-16" style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
+        <div>
+            <div style="font-size: 12px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">TREND FEED WAITING</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">Recent-form notes will appear once WNBA game logs are loaded.</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">Right now this matchup page is still useful because it is reading live multi-book prices and game context, but player-by-player recent form is not available locally yet.</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Live Props</div>
+        <span class="badge badge-accent">{{ matchup_props|length }} props</span>
+    </div>
+    <div class="p-16" style="font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+        Refresh status: {{ refresh_meta.last_updated }}{% if refresh_meta.books %} | Books: {{ refresh_meta.books|join(', ') }}{% endif %}
+    </div>
+    {% if matchup_props %}
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Play</th>
+                    <th>O/U Split</th>
+                    <th>Lean</th>
+                    <th>Price</th>
+                    <th>DK / Vegas</th>
+                    <th>Context</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prop in matchup_props %}
+                <tr>
+                    <td>
+                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.player }}</div>
+                        {% if prop.has_injury_flag %}
+                        <div style="margin-top: 6px;">
+                            <span class="badge badge-injury" title="{{ prop.injury_reason }}">
+                                &#10010; {{ prop.injury_short_label or prop.injury_status }}
+                            </span>
+                        </div>
+                        {% endif %}
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.book or 'DraftKings' }}{% if prop.book_count %} | {{ prop.book_count }} books{% endif %}</div>
+                    </td>
+                    <td><span class="badge">{{ prop.stat }}</span></td>
+                    <td><strong>{{ prop.line }}</strong></td>
+                    <td>
+                        <span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>
+                        {% if prop.play_verdict and prop.play_verdict != 'PLAY' %}
+                        <div style="margin-top: 6px; font-size: 11px; font-weight: 700; color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %};">{{ prop.play_verdict }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: var(--text-muted);">/</span>
+                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                    </td>
+                    <td>
+                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.lean_strength }}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.market_prob }}% favorite side</div>
+                    </td>
+                    <td>{% if prop.market_price is not none %}{{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}-{% endif %}</td>
+                    <td style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                        <div>DK {% if prop.draftkings_line is not none %}{{ prop.draftkings_line }}{% else %}-{% endif %}</div>
+                        <div>Vegas {% if prop.vegas_line is not none %}{{ prop.vegas_line }}{% else %}-{% endif %}</div>
+                        {% if prop.line_low is not none and prop.line_high is not none %}
+                        <div style="margin-top: 4px;">Range {{ prop.line_low }} to {{ prop.line_high }}</div>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                        <div>{{ prop.market_note }}</div>
+                        {% if prop.guardrail_tags %}
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                            {% for tag in prop.guardrail_tags[:3] %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.book_comparison_note }}</div>
+                        <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.environment_note }}</div>
+                        {% if prop.trend_note %}
+                        <div style="margin-top: 6px; color: var(--accent-copper);">{{ prop.trend_note }}</div>
+                        {% endif %}
+                        {% if prop.play_verdict_note %}
+                        <div style="margin-top: 6px; color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %}; font-weight: 700;">{{ prop.play_verdict_note }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-16" style="text-align: center; color: var(--text-muted);">No props are loaded for this matchup yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

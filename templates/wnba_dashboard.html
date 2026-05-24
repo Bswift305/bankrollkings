@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}WNBA Board{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">WNBA Expansion</div>
+        <h1>WNBA <span class="accent">Props + Game Board</span></h1>
+        <div class="page-subtitle">{{ sport_profile.summary }}</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA Board</a>
+        <a href="/sports/wnba/market-edge?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Market Edge</a>
+        <a href="/sports/wnba/floor?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Floor</a>
+        <a href="/sports/wnba/trends?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Trends</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Model Focus</div>
+        <span class="badge badge-accent">{{ sport_profile.label }}</span>
+    </div>
+    <div class="p-16">
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.primary_markets %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.core_drivers %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 16px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Today</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ board_status.today_games }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">WNBA games currently in today’s schedule feed.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Props Rows</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent-copper);">{{ board_status.props_rows }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Live WNBA prop rows currently loaded.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Odds Rows</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--text-bright);">{{ board_status.odds_rows }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Game-line rows available for the WNBA side.</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Live Board Status</div>
+        <span class="badge badge-accent">{{ board_status.stage }}</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            This page now checks the same kinds of files the NBA board uses. Once we start pulling live WNBA odds and props, this becomes the bridge into a full NBA-style WNBA board.
+        </div>
+        {% if refresh_meta.warning %}
+        <div class="parlay-surface-soft" style="padding: 12px; margin-bottom: 16px; color: var(--warning); font-weight: 700;">
+            {{ refresh_meta.warning }}
+        </div>
+        {% endif %}
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+            {% for item in board_status.coverage %}
+            <span class="badge badge-accent">{{ item }}</span>
+            {% endfor %}
+            {% if not board_status.coverage %}
+            <span class="badge">No live layers yet</span>
+            {% endif %}
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Refresh Status</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.last_updated }}</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                    {% if board_status.books %}
+                    Books: {{ board_status.books|join(', ') }}
+                    {% else %}
+                    No live WNBA books loaded yet.
+                    {% endif %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Next Build Layer</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                    {{ board_status.next_layer }}
+                </div>
+            </div>
+        </div>
+        <div class="grid-2" style="gap: 16px; margin-top: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Trend Feed</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if board_status.trend_ready %}Ready{% else %}Waiting On WNBA Logs{% endif %}</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">{{ board_status.gamelog_rows }} WNBA game-log rows currently loaded.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Current Context Layer</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                    {% if board_status.trend_ready %}
+                    Live props, game lines, and player form notes are all available now.
+                    {% else %}
+                    The board can already read price splits and game environment. Once WNBA game logs are loaded, plain-English recent-form notes will appear automatically.
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Refresh Workflow</div>
+        <span class="badge">Ready</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            WNBA now has its own multi-book fetch path. The board can compare DraftKings against Caesars as a Vegas reference while still using FanDuel and BetMGM for wider market context.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Daily Commands</div>
+                <pre style="margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.6; color: var(--text-bright);">py fetch_wnba_game_lines.py --days 5
+py fetch_wnba_player_props.py --days 5</pre>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">What Success Looks Like</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                    Schedule rows should populate first, then game lines, then player props. Once all three layers are present, this page becomes the launch point for a true WNBA board, matchup page, and parlay workflow.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if matchup_cards %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Live Matchups</div>
+        <span class="badge badge-accent">{{ matchup_cards|length }} matchups</span>
+    </div>
+    <div class="p-16">
+        <div class="grid-2" style="gap: 16px;">
+            {% for card in matchup_cards %}
+            <a href="/sports/wnba/matchup/{{ card.slug }}?postseason={{ 1 if postseason_only else 0 }}" class="parlay-surface-soft" style="padding: 12px; text-decoration: none; color: inherit; display: block;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+                    <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ card.away }} @ {{ card.home }}</div>
+                    <span class="badge">{{ card.time or 'TBD' }}</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">{{ card.date or 'Date pending' }}{% if card.book %} | {{ card.book }}{% endif %}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% if card.spread is not none %}<span class="badge badge-accent">Spread {{ card.spread }}</span>{% endif %}
+                    {% if card.total is not none %}<span class="badge">Total {{ card.total }}</span>{% endif %}
+                    {% if card.away_ml is not none and card.home_ml is not none %}<span class="badge">{{ card.away_ml }}/{{ card.home_ml }} ML</span>{% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">WNBA Prop Board</div>
+        <span class="badge badge-accent">{{ top_props|length }} rows</span>
+    </div>
+    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; border-bottom: 1px solid var(--border);">
+        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">WHEN:</span>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date=today{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date=tomorrow{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px; margin-left: 8px;">PLAY:</span>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date={{ date_filter }}&direction=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date={{ date_filter }}&direction=over{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date={{ date_filter }}&direction=under{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px; margin-left: 8px;">STAT:</span>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date={{ date_filter }}&direction={{ direction_filter }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if not stat_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        {% for stat in ['PTS', 'REB', 'AST', '3PM', 'STL', 'BLK'] %}
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}&date={{ date_filter }}&direction={{ direction_filter }}&stat={{ stat }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if stat_filter == stat %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ stat }}</a>
+        {% endfor %}
+    </div>
+    <div class="p-16" style="font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+        This first WNBA board is market-driven. The lean comes from the no-vig price split across the loaded books, and the context column now blends market pressure, DraftKings vs Caesars line differences, and game-environment context.
+    </div>
+    {% if top_props %}
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Matchup</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Play</th>
+                    <th>O/U Split</th>
+                    <th>Lean</th>
+                    <th>Price</th>
+                    <th>DK / Vegas</th>
+                    <th>Context</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prop in top_props %}
+                <tr>
+                    <td>
+                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.player }}</div>
+                        {% if prop.has_injury_flag %}
+                        <div style="margin-top: 6px;">
+                            <span class="badge badge-injury" title="{{ prop.injury_reason }}">
+                                &#10010; {{ prop.injury_short_label or prop.injury_status }}
+                            </span>
+                        </div>
+                        {% endif %}
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.book or 'DraftKings' }}</div>
+                    </td>
+                    <td>
+                        <a href="/sports/wnba/matchup/{{ prop.matchup_slug }}?postseason={{ 1 if postseason_only else 0 }}">{{ prop.matchup }}</a>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.game_date or 'Date TBD' }}{% if prop.game_time %} | {{ prop.game_time }}{% endif %}</div>
+                    </td>
+                    <td><span class="badge">{{ prop.stat }}</span></td>
+                    <td><strong>{{ prop.line }}</strong></td>
+                    <td>
+                        <span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>
+                        {% if prop.play_verdict and prop.play_verdict != 'PLAY' %}
+                        <div style="margin-top: 6px; font-size: 11px; font-weight: 700; color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %};">{{ prop.play_verdict }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: var(--text-muted);">/</span>
+                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                    </td>
+                    <td>
+                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.lean_strength }}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.market_prob }}% favorite side{% if prop.book_count %} | {{ prop.book_count }} books{% endif %}</div>
+                    </td>
+                    <td>{% if prop.market_price is not none %}{{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}-{% endif %}</td>
+                    <td style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                        <div>DK {% if prop.draftkings_line is not none %}{{ prop.draftkings_line }}{% else %}-{% endif %}</div>
+                        <div>Vegas {% if prop.vegas_line is not none %}{{ prop.vegas_line }}{% else %}-{% endif %}</div>
+                        {% if prop.line_low is not none and prop.line_high is not none %}
+                        <div style="margin-top: 4px;">Range {{ prop.line_low }} to {{ prop.line_high }}</div>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                        <div>{{ prop.market_note }}</div>
+                        {% if prop.guardrail_tags %}
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                            {% for tag in prop.guardrail_tags[:3] %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.book_comparison_note }}</div>
+                        <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.environment_note }}</div>
+                        {% if prop.trend_note %}
+                        <div style="margin-top: 6px; color: var(--accent-copper);">{{ prop.trend_note }}</div>
+                        {% endif %}
+                        {% if prop.play_verdict_note %}
+                        <div style="margin-top: 6px; color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %}; font-weight: 700;">{{ prop.play_verdict_note }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">No WNBA prop rows match the current filters yet.</div>
+    {% endif %}
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Available WNBA Betting Markets</div>
+        <span class="badge badge-accent">{{ market_groups|length }} market groups</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            The WNBA side should follow the NBA pattern closely: core game markets and player props deserve equal space, while combo and alternate markets sit one level underneath.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for group in market_groups %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+                    <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ group.title }}</div>
+                    <span class="badge {% if group.focus == 'Co-primary' or group.focus == 'Primary' %}badge-accent{% endif %}">{{ group.focus }}</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px;">{{ group.summary }}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for market in group.markets %}
+                    <span class="badge" title="{{ market.key }}">{{ market.label }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% if upcoming.today %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Today’s WNBA Slate</div>
+        <span class="badge badge-accent">{{ upcoming.today|length }} games</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Away</th>
+                    <th>Home</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for game in upcoming.today %}
+                <tr>
+                    <td>{{ game.Date }}</td>
+                    <td><a href="/sports/wnba/matchup/{{ (game.Away ~ '-at-' ~ game.Home)|lower|replace(' ', '-') }}?postseason={{ 1 if postseason_only else 0 }}">{{ game.Away }}</a></td>
+                    <td>{{ game.Home }}</td>
+                    <td>{{ game.Time }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="legend-panel">
+    <div class="legend-row">
+        <span class="control-label">Build Direction</span>
+        <span class="status-pill playoff-hit">NBA-Style Sister Board</span>
+        <span style="font-size: 12px; color: var(--text-muted);">Next step is giving WNBA the same live prop, matchup, injury, and parlay structure we already built for NBA, just with league-specific data and weights.</span>
+    </div>
+</div>
+{% endblock %}

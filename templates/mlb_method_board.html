@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}MLB {{ method_title }} - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">MLB Method Board</div>
+        <h1>MLB <span class="accent">{{ method_title }}</span></h1>
+        <div class="page-subtitle">{{ method_guide.what_it_is or sport_profile.summary }}</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/sports/mlb?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Main MLB Board</a>
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open NBA Board</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <a href="/sports/mlb/market-edge?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'market_edge' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Market Edge</a>
+        <a href="/sports/mlb/floor?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'floor_plays' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
+        <a href="/sports/mlb/trends?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'trends' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Trends</a>
+        <span class="badge badge-accent" style="margin-left:auto;">{{ rows|length }} rows</span>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">How To Use {{ method_title }}</div>
+    </div>
+    <div class="grid-2 p-16" style="gap:14px;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What It Is</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.55;">{{ method_guide.what_it_is }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Best Use Case</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.55;">{{ method_guide.best_use_case }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What Confirms It</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.55;">{{ method_guide.what_confirms_it }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What Makes It Risky</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.55;">{{ method_guide.what_makes_it_risky }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 12px;">
+    {% for card in summary_cards %}
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ card.note }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if mlb_launch_lab %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">MLB Launch Intelligence</div>
+            <div class="cell-meta" style="margin-top:4px;">Bucket reliability and profile context that decides whether MLB is launch-ready.</div>
+        </div>
+        <span class="badge badge-accent">Summer Build</span>
+    </div>
+    <div class="grid-3 p-16" style="gap:12px;">
+        {% for card in mlb_launch_lab.cards %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">{{ card.label }}</div>
+            <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ card.value }}</div>
+            <div class="cell-meta" style="margin-top:6px;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Bucket</th>
+                    <th>Reliability</th>
+                    <th>Resolved</th>
+                    <th>Hit Rate</th>
+                    <th>Pending</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in mlb_launch_lab.bucket_rows[:8] %}
+                <tr>
+                    <td><strong>{{ row.stat }} {{ row.direction }}</strong></td>
+                    <td><span class="badge">{{ row.reliability }}</span></td>
+                    <td>{{ row.hits }}-{{ row.misses }}</td>
+                    <td>{{ row.hit_rate }}%</td>
+                    <td>{{ row.pending }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if mlb_launch_lab.summer_mix %}
+    <div class="p-16">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:8px;">Summer Cross-Sport Mix</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                {% for row in mlb_launch_lab.summer_mix[:6] %}
+                <span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.sport }} {{ row.bucket }} · {{ row.hit_rate }}%</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if mlb_slate_intelligence %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">MLB Slate Intelligence</div>
+            <div class="cell-meta" style="margin-top:4px;">Matchup-level run environment and reliability concentration for this method.</div>
+        </div>
+        <span class="badge badge-accent">{{ mlb_slate_intelligence|length }} games</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Game</th>
+                    <th>Environment</th>
+                    <th>Props</th>
+                    <th>Anchor / Watch / Avoid</th>
+                    <th>Best Anchor</th>
+                    <th>Read</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for game in mlb_slate_intelligence %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ game.matchup }}</div>
+                        <div class="cell-meta">{{ game.date or 'Date TBD' }}{% if game.time %} · {{ game.time }}{% endif %}</div>
+                    </td>
+                    <td>
+                        <span class="badge">{{ game.environment }}</span>
+                        <div class="cell-meta" style="margin-top:6px;">Total {{ game.total }} · range {{ game.total_range }}</div>
+                    </td>
+                    <td>{{ game.props }}</td>
+                    <td>
+                        <div class="cell-meta">Anchor {{ game.anchors }}</div>
+                        <div class="cell-meta">Watch {{ game.watch }}</div>
+                        <div class="cell-meta">Avoid {{ game.avoid }}</div>
+                    </td>
+                    <td>
+                        {% if game.best_anchor %}
+                        <div style="font-weight:700; color:var(--accent);">{{ game.best_anchor.player }}</div>
+                        <div class="cell-meta">{{ game.best_anchor.stat }} {{ game.best_anchor.direction }} · {{ game.best_anchor.hit_rate }}%</div>
+                        {% else %}
+                        <span class="cell-meta">No anchor yet</span>
+                        {% endif %}
+                    </td>
+                    <td><div class="cell-meta" style="line-height:1.55;">{{ game.note }}</div></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-bottom:1px solid var(--border);">
+        <span class="control-label">When</span>
+        <a href="?date=today{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="?date=tomorrow{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="?date=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <span class="control-label" style="margin-left:8px;">Play</span>
+        <a href="?date={{ date_filter }}&direction=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="?date={{ date_filter }}&direction=over{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="?date={{ date_filter }}&direction=under{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+        <span class="control-label" style="margin-left:8px;">Stat</span>
+        <a href="?date={{ date_filter }}&direction={{ direction_filter }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if not stat_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        {% for stat in stat_options %}
+        <a href="?date={{ date_filter }}&direction={{ direction_filter }}&stat={{ stat|urlencode }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if stat_filter == stat %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ stat }}</a>
+        {% endfor %}
+    </div>
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Matchup</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Play</th>
+                    <th>Method</th>
+                    <th>Reliability</th>
+                    <th>O/U Split</th>
+                    <th>Price</th>
+                    <th>DK / Vegas</th>
+                    <th>Context</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prop in rows %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ prop.player }}</div>
+                        {% if prop.has_injury_flag %}
+                        <div style="margin-top: 6px;">
+                            <span class="badge badge-injury" title="{{ prop.injury_reason }}">
+                                &#10010; {{ prop.injury_short_label or prop.injury_status }}
+                            </span>
+                        </div>
+                        {% endif %}
+                        <div style="font-size:11px; color:var(--text-muted);">{{ prop.team }}{% if prop.book %} | {{ prop.book }}{% endif %}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ prop.matchup }}</div>
+                        <div style="font-size:11px; color:var(--text-muted);">{{ prop.game_date or 'Date TBD' }}{% if prop.game_time %} | {{ prop.game_time }}{% endif %}</div>
+                    </td>
+                    <td><span class="badge">{{ prop.stat }}</span></td>
+                    <td><strong>{{ prop.line }}</strong></td>
+                    <td>
+                        <span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>
+                        {% if prop.play_verdict and prop.play_verdict != 'PLAY' %}
+                        <div style="margin-top: 6px; font-size: 11px; font-weight: 700; color: {% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %};">{{ prop.play_verdict }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ prop.method_score }}%</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                            {% for tag in prop.method_tags[:3] %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                            {% for tag in prop.guardrail_tags[:2] %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge">{{ prop.historical_reliability or 'UNPROVEN' }}</span>
+                        <div class="cell-meta" style="margin-top:6px;">
+                            {% if prop.historical_hit_rate is not none %}{{ prop.historical_hit_rate }}%{% else %}-{% endif %}
+                            {% if prop.historical_resolved %} / {{ prop.historical_resolved }} resolved{% endif %}
+                        </div>
+                        {% if prop.player_model_flag %}
+                        <div class="cell-meta">{{ prop.player_model_flag }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: var(--text-muted);">/</span>
+                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                    </td>
+                    <td>{% if prop.market_price is not none %}{{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}-{% endif %}</td>
+                    <td style="font-size:12px; color:var(--text-muted); line-height:1.45;">
+                        <div>DK {% if prop.draftkings_line is not none %}{{ prop.draftkings_line }}{% else %}-{% endif %}</div>
+                        <div>Vegas {% if prop.vegas_line is not none %}{{ prop.vegas_line }}{% else %}-{% endif %}</div>
+                        {% if prop.line_low is not none and prop.line_high is not none %}
+                        <div style="margin-top:4px;">Range {{ prop.line_low }} to {{ prop.line_high }}</div>
+                        {% endif %}
+                    </td>
+                    <td style="font-size:12px; color:var(--text-muted); line-height:1.45;">
+                        <div>{{ prop.method_note or prop.market_note }}</div>
+                        {% if prop.environment_note %}
+                        <div style="margin-top:6px; color:var(--text-bright);">{{ prop.environment_note }}</div>
+                        {% endif %}
+                        {% if prop.trend_note %}
+                        <div style="margin-top:6px; color:var(--accent-copper);">{{ prop.trend_note }}</div>
+                        {% endif %}
+                        {% if prop.play_verdict_note %}
+                        <div style="margin-top:6px; color:{% if prop.play_verdict == 'PASS' %}var(--danger){% else %}var(--warning){% endif %}; font-weight:700;">{{ prop.play_verdict_note }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-24" style="text-align:center; color:var(--text-muted);">No MLB rows match this method and filter set yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

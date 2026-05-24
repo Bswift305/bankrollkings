@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}{{ stat_name }} Trends - Bankroll Kings{% endblock %}
+
+{% block content %}
+{% set trends_guide = get_method_guide('trends') %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    .trends-page {
+        --tr-bg: #0b0e13;
+        --tr-card: #111520;
+        --tr-elevated: #171d2b;
+        --tr-border: rgba(255,255,255,0.07);
+        --tr-accent: #2dd4bf;
+        --tr-copper: #c9803a;
+        --tr-gold: #facc15;
+        --tr-violet: #8b8fff;
+        --tr-text: #e8ecf4;
+        --tr-muted: #7a8499;
+        --tr-head: 'Barlow Condensed', sans-serif;
+        --tr-body: 'DM Sans', sans-serif;
+        --tr-mono: 'JetBrains Mono', monospace;
+    }
+
+    .trends-page,
+    .trends-page * { font-family: var(--tr-body); }
+    .trends-page .page-kicker,
+    .trends-page .card-title,
+    .trends-page .control-label,
+    .trends-page .btn,
+    .trends-page th { font-family: var(--tr-head); }
+
+    .trends-page .page-hero {
+        padding: 20px 22px 18px;
+        border-radius: 14px;
+        border: 1px solid rgba(250,204,21,0.16);
+        background:
+            radial-gradient(circle at 16% 12%, rgba(250,204,21,0.09) 0%, transparent 24%),
+            radial-gradient(circle at 84% 18%, rgba(139,143,255,0.10) 0%, transparent 21%),
+            linear-gradient(135deg, rgba(17,21,32,0.98) 0%, rgba(23,29,43,0.96) 100%);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.24);
+        margin-bottom: 16px;
+    }
+
+    .trends-page .page-hero h1 {
+        font-family: var(--tr-head);
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: 0.4px;
+    }
+
+    .trends-page .page-subtitle { color: var(--tr-muted); max-width: 760px; }
+    .trends-page .btn { border-radius: 8px; letter-spacing: 0.6px; font-size: 12px; }
+    .trends-page .btn-primary { background: rgba(250,204,21,0.12); border-color: rgba(250,204,21,0.34); color: var(--tr-gold); }
+    .trends-page .btn-secondary { background: var(--tr-elevated); border-color: var(--tr-border); color: var(--tr-muted); }
+    .trends-page .card { border-radius: 12px; border-color: var(--tr-border); background: var(--tr-card); box-shadow: none; }
+    .trends-page .card-header, .trends-page .control-panel { background: transparent; }
+
+    .trends-page .trend-method-panel {
+        background: var(--tr-card);
+        border: 1px solid rgba(250,204,21,0.18);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 16px;
+    }
+
+    .trends-page .trend-method-header {
+        display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding:10px 14px;
+        border-bottom:1px solid rgba(250,204,21,0.12);
+        background: rgba(250,204,21,0.04);
+    }
+
+    .trends-page .trend-method-title {
+        font-size:13px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color: var(--tr-gold);
+    }
+
+    .trends-page .trend-method-grid {
+        display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+    }
+
+    .trends-page .trend-method-cell {
+        padding:13px 14px; border-right:1px solid var(--tr-border);
+    }
+    .trends-page .trend-method-cell:last-child { border-right:none; }
+    .trends-page .trend-method-label {
+        font-family: var(--tr-head); font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color: var(--tr-copper); margin-bottom:6px;
+    }
+    .trends-page .trend-method-body { font-size:13px; color: var(--tr-muted); line-height:1.55; }
+
+    .trends-page .trend-stat-strip {
+        display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin-bottom:16px;
+    }
+    .trends-page .trend-stat-tile {
+        background: var(--tr-card); border:1px solid var(--tr-border); border-radius:12px; padding:12px 14px; position:relative; overflow:hidden;
+    }
+    .trends-page .trend-stat-tile::before {
+        content:''; position:absolute; inset:0;
+        background: linear-gradient(135deg, rgba(250,204,21,0.05) 0%, transparent 60%);
+        pointer-events:none;
+    }
+    .trends-page .trend-stat-tile:nth-child(2)::before { background: linear-gradient(135deg, rgba(139,143,255,0.06) 0%, transparent 60%); }
+    .trends-page .trend-stat-tile:nth-child(3)::before { background: linear-gradient(135deg, rgba(45,212,191,0.05) 0%, transparent 60%); }
+    .trends-page .trend-stat-kicker { font-family: var(--tr-head); font-size:10px; font-weight:700; letter-spacing:1.4px; color: var(--tr-copper); margin-bottom:5px; text-transform:uppercase; }
+    .trends-page .trend-stat-value { font-family: var(--tr-head); font-size:20px; font-weight:700; color: var(--tr-text); line-height:1.1; margin-bottom:3px; }
+    .trends-page .trend-stat-note { font-size:11px; color: var(--tr-muted); line-height:1.4; }
+
+    .trends-page .trend-control-bar,
+    .trends-page .legend-panel .control-panel {
+        background: var(--tr-card);
+        border: 1px solid var(--tr-border);
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+
+    .trends-page .table-shell { background: var(--tr-card); border-top: 1px solid var(--tr-border); }
+    .trends-page .data-table thead tr { background: rgba(255,255,255,0.02); }
+    .trends-page .data-table th { font-size:11px; letter-spacing:0.8px; text-transform:uppercase; color: var(--tr-muted); }
+</style>
+
+<div class="trends-page">
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">{{ 'Playoff Color Mode' if playoff_palette_active else 'Trends Board' }}</div>
+        <h1>{{ stat_name }} <span class="accent">Trends</span></h1>
+        <div class="page-subtitle">
+            {% if playoff_palette_active %}
+            Playoff focus is active, so the board keeps one table but switches into a postseason palette for hits, misses, and opponent-specific reads.
+            {% else %}
+            A cleaner read on recent hits, misses, and opponent-specific form so the trends board feels like the rest of the betting boards instead of a side utility.
+            {% endif %}
+        </div>
+    </div>
+    <div class="hero-actions">
+        <a href="/trends/{{ stat }}?direction=over&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if direction == 'over' or not direction %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/trends/{{ stat }}?direction=under&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if direction == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+    </div>
+</div>
+
+<div class="trend-method-panel">
+    <div class="trend-method-header">
+        <div class="trend-method-title">How To Use Trends</div>
+        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#samples-time-windows" class="btn btn-secondary btn-sm">Glossary</a>
+    </div>
+    <div class="trend-method-grid">
+        <div class="trend-method-cell">
+            <div class="trend-method-label">What It Is</div>
+            <div class="trend-method-body">{{ trends_guide.what_it_is }}</div>
+        </div>
+        <div class="trend-method-cell">
+            <div class="trend-method-label">Best Use Case</div>
+            <div class="trend-method-body">{{ trends_guide.best_use_case }}</div>
+        </div>
+        <div class="trend-method-cell">
+            <div class="trend-method-label">What Confirms It</div>
+            <div class="trend-method-body">{{ trends_guide.what_confirms_it }}</div>
+        </div>
+        <div class="trend-method-cell">
+            <div class="trend-method-label">What Makes It Risky</div>
+            <div class="trend-method-body">{{ trends_guide.what_makes_it_risky }}</div>
+        </div>
+    </div>
+</div>
+
+{% if playoff_palette_active %}
+<div class="card mb-24 panel-glow">
+    <div class="control-panel">
+        <div class="control-group">
+            <span class="control-label">Playoff Palette</span>
+            <span class="status-pill playoff-hit">Hit</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Postseason hit color for the current direction.</span>
+            <span class="status-pill playoff-miss">Miss</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Postseason miss color without needing a second table.</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="trend-stat-strip">
+        <div class="trend-stat-tile">
+            <div class="trend-stat-kicker">Lines Refreshed</div>
+            <div class="trend-stat-value">{{ refresh_meta.last_updated }}</div>
+            <div class="trend-stat-note">{{ refresh_meta.row_count }} live prop rows loaded</div>
+        </div>
+        <div class="trend-stat-tile">
+            <div class="trend-stat-kicker">Market Source</div>
+            <div class="trend-stat-value">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
+            <div class="trend-stat-note">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
+        </div>
+        <div class="trend-stat-tile">
+            <div class="trend-stat-kicker">Board Read</div>
+            <div class="trend-stat-value">{{ 'Vs Series Opponent' if scope == 'series' else 'Overall Form' }}</div>
+            <div class="trend-stat-note">{{ 'Current matchup sample' if scope == 'series' else 'Last 15-game trend sample' }}</div>
+        </div>
+        <div class="trend-stat-tile">
+            <div class="trend-stat-kicker">Display Rate</div>
+            <div class="trend-stat-value">{{ 'Vs Opponent hit rate' if scope == 'series' else 'Primary hit rate' }}</div>
+            <div class="trend-stat-note">Sortable across the whole board</div>
+        </div>
+</div>
+
+<div class="card mb-24">
+    <div class="trend-control-bar">
+        <div class="control-group">
+            <span class="control-label">Stat</span>
+            <a href="/trends/PTS?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == 'PTS' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Points</a>
+            <a href="/trends/REB?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == 'REB' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Rebounds</a>
+            <a href="/trends/AST?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == 'AST' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Assists</a>
+            <a href="/trends/3PM?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == '3PM' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">3-Pointers</a>
+            <a href="/trends/STL?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == 'STL' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Steals</a>
+            <a href="/trends/BLK?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if stat == 'BLK' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Blocks</a>
+        </div>
+    </div>
+</div>
+
+{% if postseason_only %}
+<div class="card mb-24">
+    <div class="trend-control-bar">
+        <div class="control-group">
+            <span class="control-label">View</span>
+            <a href="/trends/{{ stat }}?direction={{ direction }}&scope=series&postseason=1{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if scope == 'series' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Vs Series Opponent</a>
+            <a href="/trends/{{ stat }}?direction={{ direction }}&scope=overall&postseason=1{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if opponent_query %}&opponent={{ opponent_query|urlencode }}{% endif %}" class="btn {% if scope == 'overall' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overall Form</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="trend-control-bar">
+        <form method="get" action="/trends/{{ stat }}" class="control-group" style="width: 100%;">
+            <input type="hidden" name="direction" value="{{ direction }}">
+            <input type="hidden" name="scope" value="{{ scope }}">
+            <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+            <input type="hidden" name="sort_by" value="{{ sort_by }}">
+            <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+            <span class="control-label">Filter</span>
+            <div class="logo-select" data-logo-select>
+                <input type="hidden" name="team" value="{{ team_query or '' }}">
+                <button type="button" class="logo-select-toggle" data-logo-select-toggle>
+                    <span class="logo-select-value" data-logo-select-value>
+                        {% if team_query %}
+                            {{ team_mark(team_query, size='xs') }}
+                        {% else %}
+                            <span>All Teams</span>
+                        {% endif %}
+                    </span>
+                    <span class="logo-select-caret">▼</span>
+                </button>
+                <div class="logo-select-menu">
+                    <button type="button" class="logo-select-option {% if not team_query %}active{% endif %}" data-logo-select-option data-value="">
+                        <span>All Teams</span>
+                    </button>
+                    {% for team in teams %}
+                    <button type="button" class="logo-select-option {% if team == team_query %}active{% endif %}" data-logo-select-option data-value="{{ team }}">
+                        {{ team_mark(team, size='xs') }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if postseason_only %}
+            <select name="opponent" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
+                <option value="">All Opponents</option>
+                {% for opponent in opponents %}
+                <option value="{{ opponent }}" {% if opponent == opponent_query %}selected{% endif %}>{{ opponent }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+            {% if team_query or opponent_query %}
+            <a href="/trends/{{ stat }}?direction={{ direction }}&scope={{ scope }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">
+            {% if direction == 'under' %}
+            Under {{ stat_name }} - {{ 'Vs Series Opponent' if scope == 'series' else 'Last 15 Games' }}
+            {% else %}
+            Over {{ stat_name }} - {{ 'Vs Series Opponent' if scope == 'series' else 'Last 15 Games' }}
+            {% endif %}
+        </div>
+        <span class="badge badge-accent">{{ players|length }} Players</span>
+    </div>
+    
+    {% if players %}
+    <div class="table-shell">
+        <table class="data-table" style="min-width: 1480px;">
+            <thead>
+                <tr>
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('player', 'desc' if sort_by == 'player' and sort_dir == 'asc' else 'asc')) }}">Player{% if sort_by == 'player' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('team', 'desc' if sort_by == 'team' and sort_dir == 'asc' else 'asc')) }}">Team{% if sort_by == 'team' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    {% if postseason_only %}<th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('opponent', 'desc' if sort_by == 'opponent' and sort_dir == 'asc' else 'asc')) }}">Opp{% if sort_by == 'opponent' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>{% endif %}
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('line', 'asc' if sort_by == 'line' and sort_dir == 'desc' else 'desc')) }}">Line{% if sort_by == 'line' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('avg', 'asc' if sort_by == 'avg' and sort_dir == 'desc' else 'desc')) }}">Avg{% if sort_by == 'avg' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, (( 'under_rate' if direction == 'under' else 'over_rate'), 'asc' if sort_by == ( 'under_rate' if direction == 'under' else 'over_rate') and sort_dir == 'desc' else 'desc')) }}">O/U %{% if sort_by == ( 'under_rate' if direction == 'under' else 'over_rate') %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th><a href="{{ build_sort_link('/trends/' ~ stat, base_params, ('display_rate', 'asc' if sort_by == 'display_rate' and sort_dir == 'desc' else 'desc')) }}">{{ 'VS OPP %' if scope == 'series' else ('OVER' if direction != 'under' else 'UNDER') ~ ' %' }}{% if sort_by == 'display_rate' %} {{ '↑' if sort_dir == 'asc' else '↓' }}{% endif %}</a></th>
+                    <th colspan="15" style="text-align: center;">{{ 'Last 15 Vs Current Opponent' if scope == 'series' else 'Last 15 Games (Recent to Old)' }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for player in players %}
+                {% set display_rate = player.matchup_hit_rate if scope == 'series' and player.matchup_hit_rate is not none else player.hit_rate %}
+                <tr>
+                    <td><a href="/player/{{ player.name|urlencode }}">{{ player.name }}</a></td>
+                    <td>{{ player.team }}</td>
+                    {% if postseason_only %}
+                    <td>
+                        {% if player.opponent %}
+                        <span class="badge">{{ player.opponent }}</span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">-</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td><strong>{{ player.line }}</strong></td>
+                    <td>{{ player.avg }}</td>
+                    <td>
+                        <span style="color: var(--accent);">O:{{ player.over_rate }}%</span>
+                        <span style="color: var(--text-muted);">/</span>
+                        <span style="color: #ffb8b8;">U:{{ player.under_rate }}%</span>
+                    </td>
+                    <td>
+                        <span class="{% if display_rate >= 80 %}hr-lock{% elif display_rate >= 70 %}hr-strong{% else %}hr-good{% endif %}">
+                            {{ display_rate }}%
+                        </span>
+                        {% if scope == 'series' %}
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">{{ player.matchup_games }} games</div>
+                        {% endif %}
+                    </td>
+                    {% for game in player.last_15 %}
+                    <td style="padding: 8px 4px; text-align: center; min-width: 36px;">
+                        {% if game.played and game.value is not none %}
+                        <div class="status-pill {% if playoff_palette_active %}{% if game.hit %}playoff-hit{% else %}playoff-miss{% endif %}{% else %}{% if game.hit %}{% if direction == 'under' %}tomorrow{% else %}today{% endif %}{% else %}upcoming{% endif %}{% endif %}" style="display: inline-flex; min-width: 32px; justify-content: center; padding: 6px 4px; font-size: 11px;">
+                            {{ game.value|int }}
+                        </div>
+                        {% else %}
+                        <div style="background: var(--bg-elevated); color: var(--text-dim); padding: 4px 2px; border-radius: 8px; font-size: 11px;">
+                            -
+                        </div>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No {{ stat_name }} trend data</div>
+        <div class="empty-state-copy">There is no {{ 'series-opponent ' if scope == 'series' else '' }}sample available for the current filters. Try switching the stat, clearing team/opponent filters, or moving back to overall form.</div>
+    </div>
+    {% endif %}
+<div class="legend-panel">
+    <div class="control-panel">
+        <div class="control-group" style="gap: 14px;">
+            <span class="control-label">Board Guide</span>
+            <span class="status-pill {% if playoff_palette_active %}playoff-hit{% else %}today{% endif %}" style="min-width: 42px; justify-content: center;">4</span>
+            <span style="font-size: 11px; color: var(--text-muted);">{{ 'Playoff hit in the current direction.' if playoff_palette_active else 'Hit in the current direction.' }}</span>
+            <span class="status-pill {% if playoff_palette_active %}playoff-miss{% else %}upcoming{% endif %}" style="min-width: 42px; justify-content: center;">1</span>
+            <span style="font-size: 11px; color: var(--text-muted);">{{ 'Playoff miss in the current direction.' if playoff_palette_active else 'Miss in the current direction.' }}</span>
+            <span class="badge">OPP</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Opponent-aware when postseason series mode is active.</span>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Parlay Builder - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1>Parlay <span class="accent">Builder</span></h1>
+    <div style="display: flex; gap: 8px;">
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Postseason</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Teams</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Floor Parlay Formula</div>
+        <span class="badge badge-accent">{{ strategy.tier_counts.tier1 }} {{ glossary_hint('Tier 1', 'betting-board-terms', show_icon=False, variant='quiet') }}</span>
+    </div>
+    <div class="p-16">
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px;">
+            <div style="padding: 12px; background: rgba(0,255,65,0.08); border: 1px solid rgba(0,255,65,0.2); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 1</div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--accent);">{{ strategy.tier_counts.tier1 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Anchor-grade plays</div>
+            </div>
+            <div style="padding: 12px; background: rgba(255,184,0,0.08); border: 1px solid rgba(255,184,0,0.2); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 2</div>
+                <div style="font-size: 24px; font-weight: 700; color: #FFB800;">{{ strategy.tier_counts.tier2 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">RR support</div>
+            </div>
+            <div style="padding: 12px; background: rgba(107,138,255,0.08); border: 1px solid rgba(107,138,255,0.2); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted);">Tier 3</div>
+                <div style="font-size: 24px; font-weight: 700; color: #6B8AFF;">{{ strategy.tier_counts.tier3 }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Watchlist only</div>
+            </div>
+            <div style="padding: 12px; background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.2); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted);">Core Rule</div>
+                <div style="font-size: 16px; font-weight: 700;">4-6 legs</div>
+                <div style="font-size: 11px; color: var(--text-muted);">8-10 only as a tiny flyer</div>
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+            {% for item in strategy.budget %}
+            <div style="padding: 12px; background: var(--bg-elevated); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--text-muted);">{{ item.label }}</div>
+                <div style="font-size: 22px; font-weight: 700; color: var(--accent);">{{ item.share }}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">{{ item.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-24">
+    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+        <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px;">BUILD FOR:</span>
+        <a href="/parlay?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">🔥 Today</a>
+        <a href="/parlay?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if date_filter == 'tomorrow' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">📅 Tomorrow</a>
+        <a href="/parlay?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        
+        <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
+        
+        <a href="/parlay?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/parlay?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'over' %}background: var(--accent); color: #000;{% endif %}">📈 Overs</a>
+        <a href="/parlay?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'under' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Unders</a>
+    </div>
+</div>
+
+<div class="grid-3" style="gap: 24px;">
+    <!-- Available Props -->
+    <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <div class="card-title">{{ 'Postseason Props (65%+)' if postseason_only else 'Available Props (65%+)' }}</div>
+            <span class="badge badge-accent">{{ props|length }}</span>
+        </div>
+        <div style="max-height: 600px; overflow-y: auto;">
+            <table class="data-table">
+                <thead style="position: sticky; top: 0; background: var(--bg-card); z-index: 1;">
+                    <tr>
+                        <th style="width: 40px;"></th>
+                        <th>Player</th>
+                        <th>Prop</th>
+                        <th>{{ glossary_hint('Tier', 'betting-board-terms', show_icon=True) }}</th>
+                        <th>Play</th>
+                        <th>{{ glossary_hint('O/U %', 'betting-board-terms', show_icon=True) }}</th>
+                        <th>{{ glossary_hint('Proj', 'next-gen-tracking', show_icon=True) }}</th>
+                        <th>{{ glossary_hint('Fair', 'betting-board-terms', show_icon=True) }}</th>
+                        <th>Market</th>
+                        <th>{{ glossary_hint('Conf', 'betting-board-terms', show_icon=True) }}</th>
+                        <th>Pressure</th>
+                        <th>Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for prop in props %}
+                    <tr style="{% if prop.plays_today %}background: rgba(0,255,65,0.05);{% elif prop.plays_tomorrow %}background: rgba(255,184,0,0.05);{% endif %}">
+                        <td>
+                            <input type="checkbox" class="prop-checkbox" 
+                                data-player="{{ prop.player }}" 
+                                data-team="{{ prop.team }}" 
+                                data-stat="{{ prop.stat }}" 
+                                data-line="{{ prop.line }}"
+                                data-direction="{{ prop.direction }}"
+                                data-confidence="{{ prop.confidence }}"
+                                data-matchup="{{ prop.matchup }}"
+                                style="width: 18px; height: 18px; cursor: pointer;">
+                        </td>
+                        <td>
+                            <a href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
+                            <span style="font-size: 10px; color: var(--text-muted); display: block;">{{ team_mark(prop.team, size='xs') }}</span>
+                        </td>
+                        <td>
+                            <span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span>
+                            <strong style="margin-left: 4px;">{{ prop.line }}</strong>
+                        </td>
+                        <td>
+                            <span style="background: {% if prop.tier == 'Tier 1' %}var(--accent){% elif prop.tier == 'Tier 2' %}#FFB800{% else %}#6B8AFF{% endif %}; color: {% if prop.tier in ['Tier 1', 'Tier 2'] %}#000{% else %}#fff{% endif %}; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;">{{ glossary_hint(prop.tier, 'betting-board-terms', show_icon=False, variant='quiet') }}</span>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Score {{ prop.strategy_score|round(1) }}</div>
+                        </td>
+                        <td>
+                            {% if prop.direction == 'OVER' %}
+                            <span style="background: var(--accent); color: #000; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">📈 O</span>
+                            {% else %}
+                            <span style="background: #FF6B6B; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">📉 U</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 12px;">
+                            <span style="color: var(--accent);">{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span>/<span style="color: #FF6B6B;">{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div>{% if prop.projected_minutes is not none %}{{ prop.projected_minutes }} MIN{% else %}-{% endif %}</div>
+                            <div style="color: var(--text-muted);">{% if prop.usage_pct is not none %}{{ prop.usage_pct }} {{ glossary_hint('USG', 'next-gen-tracking', show_icon=False, variant='quiet') }}{% else %}-{% endif %}</div>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div>{% if prop.fair_price %}{{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% else %}-{% endif %}</div>
+                            <div style="color: {% if prop.ev_pct is not none and prop.ev_pct > 0 %}var(--accent){% elif prop.ev_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                                {% if prop.ev_pct is not none %}{{ glossary_hint('EV', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.ev_pct }}%{% else %}No price{% endif %}
+                            </div>
+                            <div style="color: {% if prop.edge_pct is not none and prop.edge_pct > 0 %}var(--accent){% elif prop.edge_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                                {% if prop.edge_pct is not none %}{{ glossary_hint('Edge', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.edge_pct }}%{% else %}-{% endif %}
+                            </div>
+                        </td>
+                        <td style="font-size: 11px;">
+                            <div>
+                                {% if prop.current_line is not none %}{{ prop.current_line }}{% else %}{{ prop.line }}{% endif %}
+                                {% if prop.market_price %}@ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% endif %}
+                            </div>
+                            <div style="color: var(--text-muted);">{{ prop.book or 'Manual' }}</div>
+                            <div style="color: {% if prop.clv_line is not none and prop.clv_line > 0 %}var(--accent){% elif prop.clv_line is not none and prop.clv_line < 0 %}#FF6B6B{% else %}var(--text-muted){% endif %};">
+                                {% if prop.clv_line is not none %}CLV {{ '+' if prop.clv_line > 0 }}{{ prop.clv_line }}{% elif prop.line_move is not none %}Move {{ '+' if prop.line_move > 0 }}{{ prop.line_move }}{% else %}-{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <span style="background: {% if prop.is_lock %}{% if prop.direction == 'OVER' %}var(--accent){% else %}#FF6B6B{% endif %}{% else %}var(--bg-elevated){% endif %}; color: {% if prop.is_lock %}#{% if prop.direction == 'OVER' %}000{% else %}fff{% endif %}{% else %}var(--text){% endif %}; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                                {{ prop.confidence|round|int }}%{% if prop.is_lock %}🔒{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            {% set pressure = namespace(tags=[]) %}
+                            {% for sit in prop.situations %}
+                                {% if sit in ['STAR ROLE', 'CORE ROLE', 'LOW ROLE', 'ROTATION', 'ROLE HOLD', 'ROLE SLIP', 'MIN STABLE', 'VOLATILE', 'TRAILING', 'AHEAD', 'ELIMINATION', 'CLOSEOUT', 'BOUNCE BACK', 'KEEP EDGE', 'WIN OR GO HOME'] or sit[:1] == 'G' %}
+                                    {% set pressure.tags = pressure.tags + [sit] %}
+                                {% endif %}
+                            {% endfor %}
+                            {% for sit in pressure.tags[:1] %}
+                            <span style="background: {% if sit in ['ELIMINATION', 'WIN OR GO HOME'] %}#FF6B6B{% elif sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}var(--accent){% else %}var(--bg-elevated){% endif %}; color: {% if sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}#000{% else %}#fff{% endif %}; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: 600;">{{ sit }}</span>
+                            {% endfor %}
+                            {% if not pressure.tags %}
+                            <span style="color: var(--text-muted);">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% for sit in prop.situations[:2] %}
+                            <span style="background: {% if sit == 'B2B' %}#FFB800{% elif sit == 'COLD' %}#6B8AFF{% elif sit == 'HOT' %}var(--accent){% else %}#9B59B6{% endif %}; color: {% if sit == 'B2B' or sit == 'HOT' %}#000{% else %}#fff{% endif %}; padding: 2px 5px; border-radius: 3px; font-size: 9px; font-weight: 600;">{{ sit }}</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Parlay Builder Panel -->
+    <div class="card" style="position: sticky; top: 20px; align-self: start;">
+        <div class="card-header" style="background: linear-gradient(135deg, rgba(0,255,65,0.1) 0%, transparent 100%);">
+            <div class="card-title">🎰 Your Parlay</div>
+        </div>
+        <div class="p-16">
+            <!-- Stats -->
+            <div style="padding: 12px; background: rgba(0,255,65,0.06); border: 1px solid rgba(0,255,65,0.2); border-radius: 10px; margin-bottom: 16px;">
+                <div style="font-size: 11px; color: var(--accent); font-weight: 700; margin-bottom: 6px;">FORMULA</div>
+                <div style="font-size: 12px; color: var(--text); line-height: 1.5;">
+                    Build around <strong>4 Tier 1</strong> floor plays, then put most bankroll on round robins.
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+                <div style="text-align: center; padding: 10px; background: var(--bg-elevated); border-radius: 8px;">
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);" id="legCount">0</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Legs</div>
+                </div>
+                <div style="text-align: center; padding: 10px; background: var(--bg-elevated); border-radius: 8px;">
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);" id="tier1Count">0</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Tier 1</div>
+                </div>
+                <div style="text-align: center; padding: 10px; background: var(--bg-elevated); border-radius: 8px;">
+                    <div style="font-size: 20px; font-weight: 700; color: #FF6B6B;" id="avgConf">0%</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Avg Conf</div>
+                </div>
+            </div>
+            
+            <!-- Rules -->
+            <div style="padding: 12px; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 16px;">
+                <div style="font-size: 11px; color: var(--accent); font-weight: 600; margin-bottom: 8px;">RULES</div>
+                <div style="font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
+                    <div id="rule1">✓ Max 2 per player</div>
+                    <div id="rule2">✓ Max 4 per game</div>
+                    <div id="rule3">✓ Mix overs & unders</div>
+                </div>
+            </div>
+            
+            <!-- Selected Props -->
+            <div id="selectedProps" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-height: 200px; overflow-y: auto;">
+                <div style="text-align: center; color: var(--text-muted); padding: 16px; font-size: 12px;">
+                    Select props to build parlay
+                </div>
+            </div>
+            
+            <button onclick="clearParlay()" class="btn btn-secondary" style="width: 100%;">Clear All</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedProps = [];
+
+document.querySelectorAll('.prop-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const prop = {
+            player: this.dataset.player,
+            team: this.dataset.team,
+            stat: this.dataset.stat,
+            line: this.dataset.line,
+            direction: this.dataset.direction,
+            confidence: parseFloat(this.dataset.confidence),
+            matchup: this.dataset.matchup
+        };
+        
+        if (this.checked) {
+            selectedProps.push(prop);
+        } else {
+            selectedProps = selectedProps.filter(p => 
+                !(p.player === prop.player && p.stat === prop.stat)
+            );
+        }
+        updateParlay();
+    });
+});
+
+function updateParlay() {
+    const container = document.getElementById('selectedProps');
+    const legCount = document.getElementById('legCount');
+    const overCount = document.getElementById('overCount');
+    const underCount = document.getElementById('underCount');
+    const avgConf = document.getElementById('avgConf');
+    
+    const overs = selectedProps.filter(p => p.direction === 'OVER').length;
+    const unders = selectedProps.filter(p => p.direction === 'UNDER').length;
+    
+    legCount.textContent = selectedProps.length;
+    overCount.textContent = overs;
+    underCount.textContent = unders;
+    
+    if (selectedProps.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 16px; font-size: 12px;">Select props to build parlay</div>';
+        avgConf.textContent = '0%';
+        return;
+    }
+    
+    const totalConf = selectedProps.reduce((sum, p) => sum + p.confidence, 0);
+    avgConf.textContent = Math.round(totalConf / selectedProps.length) + '%';
+    
+    let html = '';
+    selectedProps.forEach(prop => {
+        const isOver = prop.direction === 'OVER';
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-elevated); border-radius: 6px; border-left: 3px solid ${isOver ? 'var(--accent)' : '#FF6B6B'};">
+                <div>
+                    <div style="font-weight: 600; font-size: 12px;">${prop.player}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">${prop.stat} ${isOver ? 'O' : 'U'}${prop.line}</div>
+                </div>
+                <span style="font-size: 11px; color: ${isOver ? 'var(--accent)' : '#FF6B6B'}; font-weight: 600;">${Math.round(prop.confidence)}%</span>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+    checkRules();
+}
+
+function checkRules() {
+    const playerCounts = {};
+    selectedProps.forEach(p => { playerCounts[p.player] = (playerCounts[p.player] || 0) + 1; });
+    const rule1Pass = Object.values(playerCounts).every(c => c <= 2);
+    document.getElementById('rule1').innerHTML = (rule1Pass ? '✓' : '⚠️') + ' Max 2 per player';
+    document.getElementById('rule1').style.color = rule1Pass ? 'var(--text-muted)' : 'var(--danger)';
+    
+    const matchupCounts = {};
+    selectedProps.forEach(p => { if (p.matchup && p.matchup !== 'N/A') matchupCounts[p.matchup] = (matchupCounts[p.matchup] || 0) + 1; });
+    const rule2Pass = Object.values(matchupCounts).every(c => c <= 4);
+    document.getElementById('rule2').innerHTML = (rule2Pass ? '✓' : '⚠️') + ' Max 4 per game';
+    document.getElementById('rule2').style.color = rule2Pass ? 'var(--text-muted)' : 'var(--danger)';
+    
+    const overs = selectedProps.filter(p => p.direction === 'OVER').length;
+    const unders = selectedProps.filter(p => p.direction === 'UNDER').length;
+    const rule3Pass = (overs > 0 && unders > 0) || selectedProps.length < 5;
+    document.getElementById('rule3').innerHTML = (rule3Pass ? '✓' : '💡') + ' Mix overs & unders';
+    document.getElementById('rule3').style.color = rule3Pass ? 'var(--text-muted)' : '#FFB800';
+}
+
+function clearParlay() {
+    selectedProps = [];
+    document.querySelectorAll('.prop-checkbox').forEach(cb => cb.checked = false);
+    updateParlay();
+}
+</script>
+{% endblock %}

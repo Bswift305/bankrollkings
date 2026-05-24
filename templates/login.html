@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container" style="max-width: 760px;">
+    <section class="page-hero">
+        <div class="page-hero-copy">
+            <span class="eyebrow">Accounts</span>
+            <h1 class="page-title">Sign In</h1>
+            <p class="page-subtitle">Sign in to load your saved tickets, bet review history, personal parlay records, and selected membership tier anywhere you open the site.</p>
+        </div>
+    </section>
+
+    <div class="board-shell">
+        <div class="board-header">
+            <div class="board-title">Your Bankroll Kings Account</div>
+        </div>
+        <form method="post" style="padding: 18px; display: grid; gap: 14px;">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% if gate_notice %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--accent); font-weight: 700;">{{ gate_notice }}</div>
+            {% endif %}
+            {% if next_url %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="detail-kicker">Return Destination</div>
+                <div style="font-size:12px; color:var(--text-muted); line-height:1.6; margin-top:6px; word-break:break-word;">After sign-in, you will be sent back to {{ next_url }}.</div>
+            </div>
+            {% endif %}
+            {% if error %}
+            <div class="parlay-surface-soft" style="padding: 12px; color: var(--danger); font-weight: 700;">{{ error }}</div>
+            {% endif %}
+            <div>
+                <label for="loginEmail" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Email</label>
+                <input id="loginEmail" name="email" type="email" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div>
+                <label for="loginPassword" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Password</label>
+                <input id="loginPassword" name="password" type="password" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+            </div>
+            <div class="parlay-surface-soft" style="padding:14px;">
+                <div class="detail-kicker">Current Positioning</div>
+                <div style="font-size:12px; color:var(--text-muted); line-height:1.6;">Consumer premium betting tools like BettingPros Premium and Dimers Pro cluster around the $29.99 monthly mark. Bankroll Kings is being positioned with a free entry layer, a serious Pro tier, and a sharper power-user tier.</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button type="submit" class="btn btn-primary">Sign In</button>
+                <a href="/pricing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">View Pricing</a>
+                <a href="/signup{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Create Account</a>
+                <a href="/password-reset{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Reset Password</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

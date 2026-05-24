@@ -1,0 +1,55 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime logs and server output
+logs/
+*.log
+server*.out.txt
+server*.err.txt
+
+# Local assistant/editor state
+.claude/
+
+# Generated app data and bulky local datasets
+data/cache/
+data/debug/
+data/gamelogs/
+data/historical/
+data/injuries/
+data/odds/
+data/props/
+data/rosters/
+data/schedules/
+data/tracking/
+
+# Local exports, spreadsheets, docs, archives
+*.zip
+*.xlsx
+*.xls
+*.docx
+*.pptx
+*.csv
+*.lnk
+
+# Raw local asset dumps; app-ready assets live under static/
+Logos/
+
+# Keep intentional repo seed/config CSVs, not generated slate context
+!data/context/MLB_BallparkFactors.csv
+data/context/MLB_GameContext.csv
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

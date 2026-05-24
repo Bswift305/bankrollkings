@@ -1,0 +1,990 @@
+{% extends "base.html" %}
+{% block title %}Market Edge - Bankroll Kings{% endblock %}
+
+{% block content %}
+{% set market_edge_guide = get_method_guide('market_edge') %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    .market-edge-page {
+        --me-bg: #0b0e13;
+        --me-card: #111520;
+        --me-elevated: #171d2b;
+        --me-border: rgba(255,255,255,0.07);
+        --me-border-strong: rgba(184,115,51,0.35);
+        --me-accent: #2dd4bf;
+        --me-accent-dim: rgba(45,212,191,0.12);
+        --me-copper: #c9803a;
+        --me-copper-dim: rgba(201,128,58,0.12);
+        --me-green: #22c55e;
+        --me-red: #f87171;
+        --me-gold: #facc15;
+        --me-text: #e8ecf4;
+        --me-muted: #7a8499;
+        --me-dim: #4a5268;
+        --me-font-head: 'Barlow Condensed', sans-serif;
+        --me-font-body: 'DM Sans', sans-serif;
+        --me-font-mono: 'JetBrains Mono', monospace;
+    }
+
+    .market-edge-page,
+    .market-edge-page * {
+        font-family: var(--me-font-body);
+    }
+
+    .market-edge-page .page-kicker,
+    .market-edge-page .card-title,
+    .market-edge-page .control-label,
+    .market-edge-page .situation-title,
+    .market-edge-page .market-method-title,
+    .market-edge-page .market-stat-kicker,
+    .market-edge-page .market-table-title,
+    .market-edge-page .data-table th,
+    .market-edge-page .badge,
+    .market-edge-page .grade-badge,
+    .market-edge-page .play-pill-gloss,
+    .market-edge-page .btn {
+        font-family: var(--me-font-head);
+    }
+
+    .market-edge-page .cell-meta,
+    .market-edge-page .mini-note,
+    .market-edge-page .rate-line,
+    .market-edge-page .streak-hot {
+        font-family: var(--me-font-mono);
+    }
+
+    .market-edge-page .page-hero {
+        padding: 20px 22px 18px;
+        border-radius: 14px;
+        border: 1px solid rgba(45,212,191,0.18);
+        background:
+            radial-gradient(circle at 18% 10%, rgba(45,212,191,0.10) 0%, transparent 24%),
+            radial-gradient(circle at 82% 18%, rgba(201,128,58,0.10) 0%, transparent 20%),
+            linear-gradient(135deg, rgba(17,21,32,0.98) 0%, rgba(23,29,43,0.96) 100%);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.24);
+        margin-bottom: 16px;
+    }
+
+    .market-edge-page .page-hero h1 {
+        font-family: var(--me-font-head);
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: 0.4px;
+    }
+
+    .market-edge-page .page-subtitle {
+        color: var(--me-muted);
+        max-width: 760px;
+    }
+
+    .market-edge-page .btn {
+        border-radius: 8px;
+        letter-spacing: 0.6px;
+        font-size: 12px;
+    }
+
+    .market-edge-page .btn-primary {
+        background: var(--me-accent-dim);
+        border-color: rgba(45,212,191,0.4);
+        color: var(--me-accent);
+    }
+
+    .market-edge-page .btn-secondary {
+        background: var(--me-elevated);
+        border-color: var(--me-border);
+        color: var(--me-muted);
+    }
+
+    .market-edge-page .card {
+        border-radius: 12px;
+        border-color: var(--me-border);
+        background: var(--me-card);
+        box-shadow: none;
+    }
+
+    .market-edge-page .card-header,
+    .market-edge-page .control-panel {
+        background: transparent;
+    }
+
+    .market-method-panel {
+        background: var(--me-card);
+        border: 1px solid rgba(45,212,191,0.2);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 16px;
+    }
+
+    .market-method-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(45,212,191,0.12);
+        background: rgba(45,212,191,0.04);
+    }
+
+    .market-method-title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--me-accent);
+    }
+
+    .market-method-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .market-method-cell {
+        padding: 13px 14px;
+        border-right: 1px solid var(--me-border);
+    }
+
+    .market-method-cell:last-child {
+        border-right: none;
+    }
+
+    .market-method-label {
+        font-family: var(--me-font-head);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--me-copper);
+        margin-bottom: 6px;
+    }
+
+    .market-method-body {
+        font-size: 13px;
+        color: var(--me-muted);
+        line-height: 1.55;
+    }
+
+    .market-stat-strip {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .market-stat-tile {
+        background: var(--me-card);
+        border: 1px solid var(--me-border);
+        border-radius: 12px;
+        padding: 12px 14px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .market-stat-tile::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(45,212,191,0.05) 0%, transparent 60%);
+        pointer-events: none;
+    }
+
+    .market-stat-tile:nth-child(2)::before {
+        background: linear-gradient(135deg, rgba(201,128,58,0.06) 0%, transparent 60%);
+    }
+
+    .market-stat-tile:nth-child(3)::before {
+        background: linear-gradient(135deg, rgba(110,162,255,0.05) 0%, transparent 60%);
+    }
+
+    .market-stat-kicker {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.4px;
+        color: var(--me-copper);
+        margin-bottom: 5px;
+        text-transform: uppercase;
+    }
+
+    .market-stat-value {
+        font-family: var(--me-font-head);
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--me-text);
+        line-height: 1.1;
+        margin-bottom: 3px;
+    }
+
+    .market-stat-note {
+        font-size: 11px;
+        color: var(--me-muted);
+        line-height: 1.4;
+    }
+
+    .market-filter-bar {
+        background: var(--me-card);
+        border: 1px solid var(--me-border);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .market-filter-divider {
+        width: 1px;
+        height: 20px;
+        background: var(--me-border);
+        flex-shrink: 0;
+    }
+
+    .market-edge-page .badge {
+        background: var(--me-elevated);
+        border-color: var(--me-border);
+        color: var(--me-text);
+    }
+
+    .market-edge-page .badge-accent {
+        background: var(--me-accent-dim);
+        border-color: rgba(45,212,191,0.35);
+        color: var(--me-accent);
+    }
+
+    .market-table-wrap {
+        background: var(--me-card);
+        border: 1px solid var(--me-border);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .market-table-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--me-border);
+    }
+
+    .market-table-title {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: var(--me-text);
+    }
+
+    .market-edge-page .table-shell {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .market-edge-page .data-table {
+        min-width: 1280px;
+    }
+
+    .market-edge-page .data-table thead tr {
+        background: var(--me-elevated);
+        border-bottom: 1px solid var(--me-border);
+    }
+
+    .market-edge-page .data-table th {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--me-dim);
+        padding: 10px 14px;
+    }
+
+    .market-edge-page .data-table td {
+        padding: 10px 14px;
+        font-size: 13px;
+        color: var(--me-text);
+        vertical-align: top;
+    }
+
+    .market-edge-page .data-table tbody tr:hover {
+        background: rgba(255,255,255,0.025);
+    }
+
+    .market-edge-page .cell-meta {
+        font-size: 11px;
+        color: var(--me-muted);
+        line-height: 1.45;
+    }
+
+    .market-edge-page .signal-chip.soft {
+        background: var(--me-elevated);
+        color: var(--me-muted);
+        border-color: var(--me-border);
+    }
+
+    .market-edge-page .empty-state {
+        padding: 48px 24px;
+    }
+
+    @media (max-width: 900px) {
+        .market-method-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .market-method-cell {
+            border-right: none;
+            border-bottom: 1px solid var(--me-border);
+        }
+
+        .market-method-cell:last-child {
+            border-bottom: none;
+        }
+    }
+
+    .smart-picks-grid td:nth-child(1) { min-width: 170px; }
+    .smart-picks-grid td:nth-child(8),
+    .smart-picks-grid td:nth-child(9),
+    .smart-picks-grid td:nth-child(10),
+    .smart-picks-grid td:nth-child(11) { min-width: 92px; }
+    .smart-picks-grid td:nth-child(12) { min-width: 110px; }
+    .smart-picks-grid td:nth-child(13) { min-width: 132px; }
+    .smart-picks-grid td:nth-child(14) { min-width: 220px; }
+    .smart-picks-grid td:nth-child(15) { min-width: 150px; }
+    .smart-picks-grid td:nth-child(16) { min-width: 88px; }
+
+    .smart-tone {
+        background: linear-gradient(180deg, rgba(255,255,255,0.018) 0%, rgba(255,255,255,0) 100%);
+    }
+
+    .smart-row-today {
+        background: linear-gradient(90deg, rgba(110,168,166,0.10) 0%, rgba(110,168,166,0.03) 40%, transparent 100%);
+    }
+
+    .smart-row-tomorrow {
+        background: linear-gradient(90deg, rgba(184,115,51,0.10) 0%, rgba(184,115,51,0.03) 40%, transparent 100%);
+    }
+
+    .rate-line {
+        font-size: 12px;
+        line-height: 1.35;
+        font-weight: 700;
+    }
+
+    .mini-note {
+        font-size: 10px;
+        color: var(--text-muted);
+        line-height: 1.35;
+    }
+
+    .situation-column {
+        display: grid;
+        gap: 4px;
+        max-width: 215px;
+    }
+
+    .situation-section {
+        display: grid;
+        gap: 4px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.025);
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .method-support-list {
+        display: grid;
+        gap: 4px;
+    }
+
+    .method-support-item {
+        padding: 6px 7px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.05);
+        background: rgba(255,255,255,0.015);
+    }
+
+    .method-support-note {
+        font-size: 10px;
+        color: var(--text-muted);
+        line-height: 1.35;
+        margin-top: 3px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .situation-title {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .market-edge-page .compact-details {
+        padding-top: 1px;
+    }
+
+    .market-edge-page .compact-details summary {
+        list-style: none;
+        cursor: pointer;
+        font-family: var(--me-font-head);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        color: var(--me-accent);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .market-edge-page .compact-details summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .market-edge-page .compact-details-body {
+        display: grid;
+        gap: 5px;
+        margin-top: 4px;
+    }
+</style>
+
+<div class="market-edge-page">
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Methods Board</div>
+        <h1>Market <span class="accent">Edge</span></h1>
+        {% if model_debug %}
+        <div class="badge badge-accent" style="margin: 8px 0 0;">Debug Mode Active</div>
+        {% endif %}
+        <div class="page-subtitle">A methods-first board for finding when the market is still light, late, or split across books so bettors can act on value instead of chasing random confidence.</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Board Terms ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#situation-tags" class="btn btn-secondary btn-sm">Situation Tags ?</a>
+            <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#next-gen-tracking" class="btn btn-secondary btn-sm">Next Gen ?</a>
+        </div>
+    </div>
+    <div class="hero-actions">
+            <a href="/market-edge?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/market-edge?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+    </div>
+</div>
+
+<div class="market-method-panel">
+    <div class="market-method-header">
+        <div class="market-method-title">How To Use Market Edge</div>
+        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Glossary</a>
+    </div>
+    <div class="market-method-grid">
+        <div class="market-method-cell">
+            <div class="market-method-label">What It Is</div>
+            <div class="market-method-body">{{ market_edge_guide.what_it_is }}</div>
+        </div>
+        <div class="market-method-cell">
+            <div class="market-method-label">Best Use Case</div>
+            <div class="market-method-body">{{ market_edge_guide.best_use_case }}</div>
+        </div>
+        <div class="market-method-cell">
+            <div class="market-method-label">What Confirms It</div>
+            <div class="market-method-body">{{ market_edge_guide.what_confirms_it }}</div>
+        </div>
+        <div class="market-method-cell">
+            <div class="market-method-label">What Makes It Risky</div>
+            <div class="market-method-body">{{ market_edge_guide.what_makes_it_risky }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/props?postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}" class="btn btn-secondary btn-sm">Open Props Screener</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Where price is off</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This board is built to show when the market is late, split, or still leaving a better number somewhere else.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Can the spot support it?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">A real edge still has to survive the role, matchup, and game-environment test.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">History with guardrails</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Line-history conflict and current-team checks keep the board from overrating thin streaks.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Edge or mirage</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use Market Edge to decide whether the number is actually helping you, not just whether the play sounds good.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="market-filter-bar" style="justify-content: space-between;">
+        <div>
+            <div class="page-kicker" style="margin-bottom: 8px;">Analysis Sample</div>
+            <div class="page-subtitle" style="font-size: 13px; max-width: 680px;">Sharper current-role reads for traded players, with a quick way back to full-season context.</div>
+        </div>
+        <div class="control-group">
+            <a href="/market-edge?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+            <a href="/market-edge?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+        </div>
+    </div>
+</div>
+
+<div class="market-stat-strip">
+        <div class="market-stat-tile">
+            <div class="market-stat-kicker">Lines Refreshed</div>
+            <div class="market-stat-value">{{ refresh_meta.last_updated }}</div>
+            <div class="market-stat-note">{{ refresh_meta.row_count }} live prop rows loaded</div>
+        </div>
+        <div class="market-stat-tile">
+            <div class="market-stat-kicker">Market Source</div>
+            <div class="market-stat-value">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
+            <div class="market-stat-note">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
+        </div>
+        <div class="market-stat-tile">
+            <div class="market-stat-kicker">Method Read</div>
+            <div class="market-stat-value">Market first</div>
+            <div class="market-stat-note">This board is for book comparison, price splits, and spots where the market still looks light.</div>
+        </div>
+        <div class="market-stat-tile">
+            <div class="market-stat-kicker">Confidence</div>
+            <div class="market-stat-value">50-99 scale</div>
+            <div class="market-stat-note">A cleaner score built from the adjusted read so the top of the board stays believable.</div>
+        </div>
+        <div class="market-stat-tile">
+            <div class="market-stat-kicker">Next Gen + Game Env</div>
+            <div class="market-stat-value">Tracking is live</div>
+            <div class="market-stat-note">Touches, drives, speed, TS%, plus spread and total context are shown directly in the rows.</div>
+        </div>
+</div>
+
+{% if not refresh_meta.has_live_props %}
+<div class="card mb-24" style="border-color: rgba(255, 184, 0, 0.42); background: linear-gradient(135deg, rgba(64,46,10,0.92) 0%, rgba(44,37,21,0.94) 100%);">
+    <div class="control-panel" style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
+        <div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Live Feed Warning</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live NBA props are loaded right now.</div>
+            <div class="mini-note" style="font-size: 12px; line-height: 1.6;">{{ refresh_meta.warning }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="market-filter-bar">
+        <div class="control-group" style="padding-right: 12px; border-right: 1px solid var(--border);">
+            <span class="control-label">When</span>
+            <a href="/market-edge?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+            <a href="/market-edge?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if date_filter == 'tomorrow' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">Tomorrow</a>
+            <a href="/market-edge?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        </div>
+        <div class="control-group">
+            <span class="control-label">Type</span>
+            <a href="/market-edge?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+            <a href="/market-edge?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'over' %}background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent) 100%); color: #08110f;{% endif %}">Overs</a>
+            <a href="/market-edge?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'under' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">Unders</a>
+        </div>
+        <div class="market-filter-divider"></div>
+        <div class="mini-note">Use `All` first, then narrow into the spots where the book comparison note is actually saying something useful.</div>
+</div>
+
+<div class="card">
+    <div class="market-table-wrap">
+    <div class="market-table-head">
+        <div class="market-table-title">{{ (focus_mode_label + ' Market Edge') if postseason_only else 'Market Edge Plays (70%+ Confidence)' }}</div>
+        <span class="badge badge-accent">{{ picks|length }} Picks</span>
+    </div>
+    <div class="market-filter-bar" style="border: none; border-top: 1px solid var(--me-border); border-radius: 0; margin-bottom: 0;">
+        <div class="control-group">
+            <span class="control-label">Sort</span>
+        <a href="{{ build_sort_link('/market-edge', base_params, ('player', 'asc')) }}" class="btn {% if sort_by == 'player' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Player A-Z</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('team', 'asc')) }}" class="btn {% if sort_by == 'team' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Team A-Z</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('stat', 'asc')) }}" class="btn {% if sort_by == 'stat' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Stat A-Z</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('confidence', 'desc')) }}" class="btn {% if sort_by == 'confidence' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Confidence</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('line', 'asc')) }}" class="btn {% if sort_by == 'line' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Lowest Line</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('avg', 'desc')) }}" class="btn {% if sort_by == 'avg' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Avg</a>
+        </div>
+    </div>
+    {% if team_query or player_query or stat_query %}
+    <div class="market-filter-bar" style="border: none; border-top: 1px solid var(--me-border); border-radius: 0; margin-bottom: 0; padding-top: 12px; padding-bottom: 12px;">
+        <div class="control-group">
+            <span class="control-label">Active Filters</span>
+            {% if team_query %}<span class="badge badge-accent">Team {{ team_query }}</span>{% endif %}
+            {% if player_query %}<span class="badge badge-accent">Player {{ player_query }}</span>{% endif %}
+            {% if stat_query %}<span class="badge badge-accent">Stat {{ stat_query }}</span>{% endif %}
+        </div>
+        <a href="/market-edge?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left: auto;">Clear Filters</a>
+    </div>
+    {% endif %}
+
+    {% if picks %}
+    <div class="table-shell">
+        <table class="data-table smart-picks-grid compact-board">
+            <thead>
+                <tr>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('player', 'desc' if sort_by == 'player' and sort_dir == 'asc' else 'asc')) }}">Player</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('team', 'desc' if sort_by == 'team' and sort_dir == 'asc' else 'asc')) }}">Team</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('stat', 'desc' if sort_by == 'stat' and sort_dir == 'asc' else 'asc')) }}">{{ glossary_hint('Stat', 'core-stats', show_icon=True) }}</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('line', 'desc' if sort_by == 'line' and sort_dir == 'asc' else 'asc')) }}">Line</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('avg', 'asc' if sort_by == 'avg' and sort_dir == 'desc' else 'desc')) }}">Avg</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('direction', 'desc' if sort_by == 'direction' and sort_dir == 'asc' else 'asc')) }}">Play</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('weighted_over_rate', 'asc' if sort_by == 'weighted_over_rate' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('O/U Rates', 'betting-board-terms', show_icon=True) }}</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('projected_minutes', 'asc' if sort_by == 'projected_minutes' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Proj', 'next-gen-tracking', show_icon=True, title='Open glossary for projection and minutes signals') }}</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('fair_price', 'asc' if sort_by == 'fair_price' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Fair', 'betting-board-terms', show_icon=True) }}</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('market_price', 'asc' if sort_by == 'market_price' and sort_dir == 'desc' else 'desc')) }}">Market</a></th>
+                    <th>{{ glossary_hint('Game Env', 'betting-board-terms', show_icon=True) }}</th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('over_streak', 'asc' if sort_by == 'over_streak' and sort_dir == 'desc' else 'desc')) }}">Streak</a></th>
+                    <th>Pressure</th>
+                    <th>Situations</th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('confidence', 'asc' if sort_by == 'confidence' and sort_dir == 'desc' else 'desc')) }}">{{ glossary_hint('Confidence', 'betting-board-terms', show_icon=True) }}</a></th>
+                    <th><a href="{{ build_sort_link('/market-edge', base_params, ('game_day', 'desc' if sort_by == 'game_day' and sort_dir == 'asc' else 'asc')) }}">Game</a></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pick in picks %}
+                <tr class="{% if pick.plays_today %}smart-row-today{% elif pick.plays_tomorrow %}smart-row-tomorrow{% endif %}">
+                    <td>
+                        <div class="cell-stack">
+                            <a href="/player/{{ pick.player|urlencode }}?sample={{ sample_mode }}">{{ pick.player }}</a>
+                            {% if pick.has_injury_flag %}
+                            <div class="cell-meta" style="margin-top: 6px;">
+                                <span class="badge badge-injury" title="{{ pick.injury_reason }}">
+                                    &#10010; {{ pick.injury_short_label or pick.injury_status }}
+                                </span>
+                            </div>
+                            {% endif %}
+                            {% if pick.is_multi_team %}
+                            <div class="cell-meta" style="color: var(--accent-copper);">{{ pick.sample_label }}</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="cell-stack">
+                            <div class="player-team-meta" style="margin-top: 0;">{{ team_mark(pick.team, size='sm') }}</div>
+                            {% if pick.is_multi_team %}
+                            <div class="cell-meta">{{ pick.team_history }}</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td><span class="badge">{{ glossary_hint(pick.stat, 'core-stats', show_icon=False, variant='quiet') }}</span></td>
+                    <td><strong>{{ pick.line }}</strong></td>
+                    <td>{{ pick.avg }}</td>
+                    <td>
+                        {% if pick.play_verdict == 'PASS' %}
+                        <span class="play-pill-gloss" style="background: rgba(255,107,107,0.18); color: #FFB3B3; border: 1px solid rgba(255,107,107,0.35);">Pass</span>
+                        {% elif pick.play_verdict == 'CONFLICTED' %}
+                        <span class="play-pill-gloss" style="background: rgba(255,184,0,0.16); color: #FFD47A; border: 1px solid rgba(255,184,0,0.3);">{% if pick.direction == 'OVER' %}Lean Over{% else %}Lean Under{% endif %}</span>
+                        {% elif pick.direction == 'OVER' %}
+                        <span class="play-pill-gloss over">Over</span>
+                        {% else %}
+                        <span class="play-pill-gloss under">Under</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="metric-stack">
+                            <div class="rate-line"><span style="color: var(--accent);">O {% if postseason_only and pick.weighted_over_rate is defined %}{{ pick.weighted_over_rate }}{% else %}{{ pick.over_rate }}{% endif %}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #FF8C8C;">U {% if postseason_only and pick.weighted_under_rate is defined %}{{ pick.weighted_under_rate }}{% else %}{{ pick.under_rate }}{% endif %}%</span></div>
+                            <div class="mini-note">Weighted playoff read</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="metric-stack">
+                            <div>{% if pick.projected_minutes is not none %}{{ pick.projected_minutes }} MIN{% else %}-{% endif %}</div>
+                            <div class="micro-cluster">
+                                {% if pick.usage_pct is not none %}<span class="micro-chip soft">{{ pick.usage_pct }} {{ glossary_hint('USG', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if pick.ts_pct is not none %}<span class="micro-chip blue">{{ pick.ts_pct }} {{ glossary_hint('TS', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                            </div>
+                            <div class="micro-cluster">
+                                {% if pick.touches is not none %}<span class="micro-chip soft">{{ pick.touches }} {{ glossary_hint('TCH', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if pick.drives is not none %}<span class="micro-chip copper">{{ pick.drives }} {{ glossary_hint('DRV', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                                {% if pick.avg_speed is not none %}<span class="micro-chip blue">{{ pick.avg_speed }} {{ glossary_hint('SPD', 'next-gen-tracking', show_icon=False, variant='quiet') }}</span>{% endif %}
+                            </div>
+                            <div class="cell-meta" style="color: {% if pick.snapshot_consistency and pick.snapshot_consistency >= 80 %}var(--accent){% else %}var(--text-muted){% endif %};">{% if pick.snapshot_signal %}{{ pick.snapshot_signal }}{% elif pick.snapshot_consistency %}Snap {{ pick.snapshot_consistency }}{% else %}-{% endif %}</div>
+                            {% if pick.is_multi_team %}
+                            <div class="cell-meta" style="color: var(--accent-copper);">{{ pick.sample_label }}</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="metric-stack">
+                            <div>{% if pick.fair_price %}{{ '+' if pick.fair_price > 0 }}{{ pick.fair_price }}{% else %}-{% endif %}</div>
+                            <div class="cell-meta" style="color: {% if pick.ev_pct is not none and pick.ev_pct > 0 %}var(--accent){% elif pick.ev_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">{% if pick.ev_pct is not none %}{{ glossary_hint('EV', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ pick.ev_pct }}%{% else %}No price{% endif %}</div>
+                            <div class="cell-meta" style="color: {% if pick.edge_pct is not none and pick.edge_pct > 0 %}var(--accent){% elif pick.edge_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">{% if pick.edge_pct is not none %}{{ glossary_hint('Edge', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ pick.edge_pct }}%{% else %}-{% endif %}</div>
+                            <div class="cell-meta">Model {% if pick.model_prob is not none %}{{ pick.model_prob }}%{% else %}-{% endif %}{% if pick.implied_prob is not none %} • Book {{ pick.implied_prob }}%{% endif %}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="metric-stack">
+                            <div>{% if pick.current_line is not none %}{{ pick.current_line }}{% else %}{{ pick.line }}{% endif %}{% if pick.market_price %} @ {{ '+' if pick.market_price > 0 }}{{ pick.market_price }}{% endif %}</div>
+                            <div class="cell-meta">{{ pick.book or 'Manual' }}</div>
+                            {% if pick.book_count and pick.book_count > 1 %}
+                            <div class="cell-meta">
+                                {{ pick.book_count }} books
+                                {% if pick.draftkings_line is not none or pick.vegas_line is not none %}
+                                • DK {{ pick.draftkings_line if pick.draftkings_line is not none else '-' }} / Vegas {{ pick.vegas_line if pick.vegas_line is not none else '-' }}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if pick.open_line is not none or pick.current_line is not none %}
+                            <div class="cell-meta">
+                                Open {{ pick.open_line if pick.open_line is not none else '-' }}
+                                → Now {{ pick.current_line if pick.current_line is not none else '-' }}
+                            </div>
+                            {% endif %}
+                            {% if pick.close_line is not none %}
+                            <div class="cell-meta">Prior {{ pick.close_line }}</div>
+                            {% endif %}
+                            <div class="cell-meta" style="color:
+                                {% if pick.market_view.tone == 'accent' %}var(--accent)
+                                {% elif pick.market_view.tone == 'copper' %}var(--accent-copper)
+                                {% elif pick.market_view.tone == 'danger' %}#FF6B6B
+                                {% elif pick.market_view.tone == 'blue' %}var(--accent-blue)
+                                {% else %}var(--text-muted){% endif %}; font-weight:700;">{{ pick.market_view.label }}</div>
+                            <div class="cell-meta" style="color: {% if pick.clv_line is not none and pick.clv_line > 0 %}var(--accent){% elif pick.clv_line is not none and pick.clv_line < 0 %}#FF6B6B{% else %}var(--text-muted){% endif %};">{% if pick.clv_line is not none %}CLV {{ '+' if pick.clv_line > 0 }}{{ pick.clv_line }}{% elif pick.line_move is not none %}Move {{ '+' if pick.line_move > 0 }}{{ pick.line_move }}{% else %}-{% endif %}</div>
+                            <div class="cell-meta" style="line-height:1.45;">{{ pick.market_view.note }}</div>
+                            {% if 'LINE HISTORY CAP' in pick.guardrail_tags or 'LINE HISTORY CONFLICT' in pick.guardrail_tags %}
+                            <div class="cell-meta" style="margin-top: 4px; color: #FFB800; font-weight: 700;">Line history conflict</div>
+                            {% if pick.live_line_over_rate is not none and pick.live_line_under_rate is not none and pick.live_line_games %}
+                            <div class="cell-meta">Season at this line: O {{ pick.live_line_over_rate }}% / U {{ pick.live_line_under_rate }}% ({{ pick.live_line_games }} games)</div>
+                            {% endif %}
+                            {% endif %}
+                            {% if pick.line_low is not none and pick.line_high is not none and pick.line_low != pick.line_high %}
+                            <div class="cell-meta" style="color: var(--accent-copper);">Range {{ pick.line_low }} to {{ pick.line_high }}</div>
+                            {% endif %}
+                            {% if pick.best_book %}
+                            <div class="cell-meta" style="color: var(--accent-blue);">Best book: {{ pick.best_book }}</div>
+                            {% endif %}
+                            {% if pick.book_comparison_note %}
+                            <div class="cell-meta" style="line-height:1.45;">{{ pick.book_comparison_note }}</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="metric-stack">
+                            <div class="micro-cluster">
+                                {% if pick.game_total is not none %}<span class="micro-chip blue">O/U {{ pick.game_total }}</span>{% endif %}
+                                {% if pick.team_spread is not none %}<span class="micro-chip copper">Team {{ '+' if pick.team_spread > 0 }}{{ pick.team_spread }}</span>{% endif %}
+                            </div>
+                            <div class="cell-meta" style="color: var(--accent);">{% if pick.game_environment %}{{ pick.game_environment }}{% elif pick.game_market_summary %}{{ pick.game_market_summary }}{% else %}-{% endif %}</div>
+                        </div>
+                    </td>
+                    <td>
+                        {% if pick.current_run_side == 'over' and pick.current_streak >= 1 %}
+                        <span class="streak-hot">O{{ pick.current_streak }}</span>
+                        {% elif pick.current_run_side == 'under' and pick.current_streak >= 1 %}
+                        <span style="color: #FF6B6B; font-weight: 700;">U{{ pick.current_streak }}</span>
+                        {% else %}
+                        {{ pick.over_streak if pick.direction == 'OVER' else pick.under_streak }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set pressure = namespace(tags=[]) %}
+                        {% for sit in pick.situations %}
+                            {% if sit in ['STAR ROLE', 'CORE ROLE', 'LOW ROLE', 'ROTATION', 'ROLE HOLD', 'ROLE SLIP', 'MIN STABLE', 'VOLATILE', 'TRAILING', 'AHEAD', 'ELIMINATION', 'CLOSEOUT', 'BOUNCE BACK', 'KEEP EDGE', 'WIN OR GO HOME'] or sit[:1] == 'G' %}
+                                {% set pressure.tags = pressure.tags + [sit] %}
+                            {% endif %}
+                        {% endfor %}
+                        <div class="signal-cluster">
+                            {% for sit in pressure.tags[:3] %}
+                            <span class="signal-chip {% if sit in ['ELIMINATION', 'WIN OR GO HOME'] %}danger{% elif sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}accent{% else %}soft{% endif %}">{{ sit }}</span>
+                            {% endfor %}
+                            {% if pressure.tags|length > 3 %}
+                            <span class="signal-more">+{{ pressure.tags|length - 3 }} more</span>
+                            {% endif %}
+                            {% if not pressure.tags %}
+                            <span class="signal-more">No major pressure tag</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% set featured = namespace(tags=[]) %}
+                        {% set matchup = namespace(tags=[]) %}
+                        {% for sit in pick.situations %}
+                            {% if sit in ['HOT', 'COLD', 'STREAK+', 'STREAK-', 'ROLE UP', 'ROLE DOWN', 'MIN+', 'MIN-', 'L5 SURGE', 'L5 FADE'] %}
+                                {% set featured.tags = featured.tags + [sit] %}
+                            {% else %}
+                                {% set matchup.tags = matchup.tags + [sit] %}
+                            {% endif %}
+                        {% endfor %}
+                        <div class="situation-column">
+                            <div class="situation-section">
+                                <div class="situation-title">Method Support</div>
+                                <div class="method-support-list">
+                                    {% for support in pick.method_supports[:1] %}
+                                    <div class="method-support-item">
+                                        <span class="signal-chip {{ support.tone }}">{{ support.label }}</span>
+                                        {% if support.note %}
+                                        <div class="method-support-note">{{ support.note }}</div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                    {% if pick.method_supports|length > 1 %}
+                                    <span class="signal-more">+{{ pick.method_supports|length - 1 }} more support note{{ '' if pick.method_supports|length - 1 == 1 else 's' }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="situation-section">
+                                <div class="situation-title">Key Signals</div>
+                                <div class="signal-cluster">
+                                    {% for sit in featured.tags[:1] %}
+                                    <span class="signal-chip {% if sit == 'HOT' %}accent{% elif sit == 'COLD' %}blue{% elif 'ROLE' in sit or 'MIN' in sit %}copper{% else %}soft{% endif %}">{{ sit }}</span>
+                                    {% endfor %}
+                                    {% if featured.tags|length > 1 %}
+                                    <span class="signal-more">+{{ featured.tags|length - 1 }} more</span>
+                                    {% endif %}
+                                    {% if not featured.tags %}
+                                    <span class="signal-more">No live form signal</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% if matchup.tags or pick.baseline_reason or pick.public_trend_note or pick.injury_context_note %}
+                            <details class="compact-details">
+                                <summary>More Context</summary>
+                                <div class="compact-details-body">
+                                    <div class="situation-section">
+                                        <div class="situation-title">Matchup Notes</div>
+                                        <div class="signal-cluster">
+                                            {% for sit in matchup.tags[:3] %}
+                                            <span class="signal-chip {% if 'DEF' in sit %}violet{% elif sit == 'B2B' %}copper{% elif 'OPP' in sit %}blue{% else %}soft{% endif %}">{{ sit }}</span>
+                                            {% endfor %}
+                                            {% if matchup.tags|length > 3 %}
+                                            <span class="signal-more">+{{ matchup.tags|length - 3 }} more</span>
+                                            {% elif not matchup.tags %}
+                                            <span class="signal-more">No extra matchup note</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% if pick.baseline_reason %}
+                                    <div class="situation-section">
+                                        <div class="situation-title">Baseline Read</div>
+                                        {% if pick.public_trend_note %}
+                                        <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-bottom: 4px;">{{ pick.public_trend_note }}</div>
+                                        {% endif %}
+                                        {% if 'LINE HISTORY CAP' in pick.guardrail_tags or 'LINE HISTORY CONFLICT' in pick.guardrail_tags %}
+                                        <div style="font-size: 11px; color: #FFB800; line-height: 1.45; margin-bottom: 4px;">{{ pick.guardrail_note }}</div>
+                                        {% endif %}
+                                        {% if pick.injury_context_note %}
+                                        <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-bottom: 4px;">{{ pick.injury_context_note }}</div>
+                                        {% endif %}
+                                        <div class="baseline-reason baseline-reason-{{ pick.baseline_reason_tone or 'neutral' }}" style="margin-top: 0;">{{ pick.baseline_reason }}</div>
+                                        {% if pick.core_volume_read %}
+                                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ pick.core_volume_read }}</div>
+                                        {% endif %}
+                                        {% if pick.core_model_read %}
+                                        <details class="model-read">
+                                            <summary>Model Read</summary>
+                                            <div class="model-read-body">{{ pick.core_model_read }}</div>
+                                            {% if model_debug and pick.core_debug_lines %}
+                                            <div class="model-debug-panel">
+                                                {% for item in pick.core_debug_lines %}
+                                                <div class="model-debug-row">
+                                                    <span class="model-debug-label">{{ item.label }}</span>
+                                                    <span class="model-debug-value">{{ item.value }}</span>
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% endif %}
+                                        </details>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </details>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="grade-badge" style="background: {% if pick.is_lock %}{% if pick.direction == 'OVER' %}linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%){% else %}#FF6B6B{% endif %}{% elif pick.confidence >= 75 %}{% if pick.direction == 'OVER' %}rgba(110,168,166,0.28){% else %}rgba(255,107,107,0.3){% endif %}{% else %}var(--bg-elevated){% endif %}; color: {% if pick.is_lock %}#{% if pick.direction == 'OVER' %}08110f{% else %}fff{% endif %}{% else %}var(--text){% endif %};">
+                            {{ pick.confidence|round|int }}% {% if pick.is_lock %}Lock{% endif %}
+                        </span>
+                        {% if pick.play_verdict_note %}
+                        <div class="confidence-note" style="color: {% if pick.play_verdict == 'PASS' %}#FF8C8C{% else %}#FFB800{% endif %};">{{ pick.play_verdict_note }}</div>
+                        {% endif %}
+                        {% if pick.rank_explanation %}
+                        <div class="confidence-note" style="color: var(--text-bright); line-height: 1.5;">{{ pick.rank_explanation }}</div>
+                        {% endif %}
+                        <div class="confidence-note" style="color: var(--text-muted);">
+                            Profile {{ (pick.weight_profile or 'regular')|replace('_', ' ')|upper }}
+                            {% if pick.series_game_number %} · G{{ pick.series_game_number }}{% endif %}
+                        </div>
+                        <div class="confidence-note" style="color: {% if pick.volatility_flag == 'HIGH' %}#FF8C8C{% elif pick.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %};">
+                            Volatility {{ pick.volatility_flag or 'STABLE' }}
+                        </div>
+                        <div class="confidence-note" style="color: {% if pick.market_gate == 'HOLD' %}#FF8C8C{% elif pick.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %};">
+                            Market Gate {{ pick.market_gate or 'CLEAR' }}
+                        </div>
+                        <details class="model-read" style="margin-top: 6px;">
+                            <summary>Why this ranked here</summary>
+                            <div class="model-read-body">
+                                {% if pick.rank_explanation %}<div>{{ pick.rank_explanation }}</div>{% endif %}
+                                {% if pick.novice_tag_sentence %}<div style="margin-top: 6px;">{{ pick.novice_tag_sentence }}</div>{% endif %}
+                                <div>Profile {{ (pick.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if pick.series_game_number %} · Game {{ pick.series_game_number }}{% endif %}</div>
+                                {% if pick.component_weights %}
+                                <div>Line history / sample: {{ pick.component_weights.get('line_history', 0) }}%</div>
+                                <div>Opponent / series: {{ pick.component_weights.get('opponent', 0) }}%{% if pick.series_weight %} (series weight {{ (pick.series_weight * 100)|round|int }}%){% endif %}</div>
+                                <div>Role / usage: {{ pick.component_weights.get('role_usage', 0) }}%</div>
+                                <div>Streak: {{ pick.component_weights.get('streak', 0) }}%</div>
+                                <div>Market: {{ pick.component_weights.get('market', 0) }}%</div>
+                                {% endif %}
+                                <div style="margin-top: 6px;">Volatility: {{ pick.volatility_flag or 'STABLE' }}</div>
+                                {% if pick.volatility_note %}<div>{{ pick.volatility_note }}</div>{% endif %}
+                                <div style="margin-top: 6px;">Market Gate: {{ pick.market_gate or 'CLEAR' }}</div>
+                                {% if pick.market_gate_note %}<div>{{ pick.market_gate_note }}</div>{% endif %}
+                                {% if pick.featured_risk_note %}<div style="margin-top: 6px;"><strong>What could break this:</strong> {{ pick.featured_risk_note }}</div>{% endif %}
+                                {% if pick.featured_risk_note %}<div style="margin-top: 6px;"><strong>What could break this:</strong> {{ pick.featured_risk_note }}</div>{% endif %}
+                            </div>
+                        </details>
+                        {% if 'LINE HISTORY CAP' in pick.guardrail_tags or 'LINE HISTORY CONFLICT' in pick.guardrail_tags %}
+                        <div class="confidence-note" style="color: #FFB800;">Line history conflict</div>
+                        {% endif %}
+                        {% if pick.is_lock %}
+                        <div class="confidence-note">{{ pick.lock_reason }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if pick.game_day == 'TODAY' %}
+                        <span class="status-pill today">Today</span>
+                        {% elif pick.game_day == 'TOMORROW' %}
+                        <span class="status-pill tomorrow">Tmr</span>
+                        {% elif pick.game_day %}
+                        <span class="status-pill upcoming">{{ pick.game_day }}</span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every market-edge column.</div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No picks found</div>
+        <div class="empty-state-copy">Try a different date range, clear a filter, or switch sample modes to widen the board.</div>
+    </div>
+    {% endif %}
+    </div>
+</div>
+
+<div class="legend-panel">
+    <div class="control-panel">
+        <div class="control-group" style="gap: 14px;">
+            <span class="control-label">Board Guide</span>
+            <span class="signal-chip accent">Over</span>
+            <span class="mini-note">Model prefers the over at the current line.</span>
+            <span class="signal-chip danger">Under</span>
+            <span class="mini-note">Model prefers the under at the current line.</span>
+            <span class="signal-chip copper">B2B</span>
+            <span class="mini-note">Back-to-back fatigue can pull unders up.</span>
+            <span class="signal-chip violet">vs Elite DEF</span>
+            <span class="mini-note">Tough defense tag adds matchup caution.</span>
+        </div>
+</div>
+{% endblock %}

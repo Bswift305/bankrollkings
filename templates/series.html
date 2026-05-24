@@ -1,0 +1,527 @@
+{% extends "base.html" %}
+{% block title %}{{ series_label }} - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker" style="color: {% if series_type == 'playoff' %}var(--accent-copper){% else %}#ddb25f{% endif %};">{{ series_label }}</div>
+        <h1>{{ matchup_mark(teams[0], teams[1], 'vs', 'lg') }}</h1>
+        {% if model_debug %}
+        <div class="badge badge-accent" style="margin: 8px 0 0;">Debug Mode Active</div>
+        {% endif %}
+        <div class="page-subtitle">{{ series_score.status }}{% if series_summary.home_court_story %} &bull; {{ series_summary.home_court_story }}{% endif %}</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/dashboard?postseason=1" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">Series Read</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Market Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The next-game line matters because every series story eventually has to meet a real spread, total, and moneyline.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Matchup Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This page compresses who is driving the series, where the pressure points are, and which prop environments are gaining strength.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Verdict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use the series page when you want a tighter read than a single-game board can give you.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Next Game Market</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if current_market %}{{ teams[1] }} {{ '%+g'|format(current_market.spread|float) if current_market.spread is not none else 'No spread' }}{% else %}No line loaded{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{% if current_market_summary %}{{ current_market_summary }}{% else %}Spread, total, and moneyline will show here when the game market file is refreshed.{% endif %}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Series Score</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ series_score.team_a_wins }} - {{ series_score.team_b_wins }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ series_score.status }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Next Spot</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if series_summary.next_game %}Game {{ series_summary.next_game.game_number }}{% else %}Waiting{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{% if series_summary.next_game %}{{ series_summary.next_game.Date }} &bull; {{ series_summary.next_game.Time }}{% else %}No next game loaded{% endif %}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Best Over</div>
+            {% if series_summary.best_over %}
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ series_summary.best_over.player }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">{{ team_mark(series_summary.best_over.team, size='xs') }} {{ series_summary.best_over.stat }} {{ series_summary.best_over.line }}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ series_summary.best_over.confidence|round|int }}% OVER{% if series_summary.best_over.signals and not series_summary.best_over.baseline_reason %} &bull; {{ series_summary.best_over.signals[0] }}{% endif %}</div>
+            {% if series_summary.best_over.public_trend_note %}
+            <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ series_summary.best_over.public_trend_note }}</div>
+            {% endif %}
+            {% if series_summary.best_over.injury_context_note %}
+            <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ series_summary.best_over.injury_context_note }}</div>
+            {% endif %}
+            {% if series_summary.best_over.baseline_reason %}
+            <div class="baseline-reason baseline-reason-{{ series_summary.best_over.baseline_reason_tone or 'over' }}">{{ series_summary.best_over.baseline_reason }}</div>
+                {% if series_summary.best_over.core_volume_read %}
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ series_summary.best_over.core_volume_read }}</div>
+                {% endif %}
+                {% if series_summary.best_over.core_model_read %}
+                <details class="model-read">
+                    <summary>Model Read</summary>
+                    <div class="model-read-body">{{ series_summary.best_over.core_model_read }}</div>
+                    {% if model_debug and series_summary.best_over.core_debug_lines %}
+                    <div class="model-debug-panel">
+                        {% for item in series_summary.best_over.core_debug_lines %}
+                        <div class="model-debug-row">
+                            <span class="model-debug-label">{{ item.label }}</span>
+                            <span class="model-debug-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+                {% endif %}
+            {% endif %}
+            {% else %}
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">No edge yet</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Board still separating</div>
+            {% endif %}
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Best Under</div>
+            {% if series_summary.best_under %}
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ series_summary.best_under.player }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">{{ team_mark(series_summary.best_under.team, size='xs') }} {{ series_summary.best_under.stat }} {{ series_summary.best_under.line }}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ series_summary.best_under.confidence|round|int }}% UNDER{% if series_summary.best_under.signals and not series_summary.best_under.baseline_reason %} &bull; {{ series_summary.best_under.signals[0] }}{% endif %}</div>
+            {% if series_summary.best_under.public_trend_note %}
+            <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ series_summary.best_under.public_trend_note }}</div>
+            {% endif %}
+            {% if series_summary.best_under.injury_context_note %}
+            <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ series_summary.best_under.injury_context_note }}</div>
+            {% endif %}
+            {% if series_summary.best_under.baseline_reason %}
+            <div class="baseline-reason baseline-reason-{{ series_summary.best_under.baseline_reason_tone or 'under' }}">{{ series_summary.best_under.baseline_reason }}</div>
+                {% if series_summary.best_under.core_volume_read %}
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ series_summary.best_under.core_volume_read }}</div>
+                {% endif %}
+                {% if series_summary.best_under.core_model_read %}
+                <details class="model-read">
+                    <summary>Model Read</summary>
+                    <div class="model-read-body">{{ series_summary.best_under.core_model_read }}</div>
+                    {% if model_debug and series_summary.best_under.core_debug_lines %}
+                    <div class="model-debug-panel">
+                        {% for item in series_summary.best_under.core_debug_lines %}
+                        <div class="model-debug-row">
+                            <span class="model-debug-label">{{ item.label }}</span>
+                            <span class="model-debug-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+                {% endif %}
+            {% endif %}
+            {% else %}
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">No edge yet</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Board still separating</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="card" style="border-color: rgba(110,168,166,0.34);">
+        <div class="card-header"><div class="card-title">Series Score</div></div>
+        <div class="p-16">
+            <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px;">{{ series_score.status }}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <div style="text-align: center; flex: 1;">
+                    <div style="font-size: 12px; color: var(--text-muted);">{{ team_mark(teams[0], size='xs') }}</div>
+                    <div style="font-size: 32px; font-weight: 700; color: {% if series_score.leader == teams[0] %}var(--accent){% else %}var(--text-bright){% endif %};">{{ series_score.team_a_wins }}</div>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">SERIES</div>
+                <div style="text-align: center; flex: 1;">
+                    <div style="font-size: 12px; color: var(--text-muted);">{{ team_mark(teams[1], size='xs') }}</div>
+                    <div style="font-size: 32px; font-weight: 700; color: {% if series_score.leader == teams[1] %}var(--accent){% else %}var(--text-bright){% endif %};">{{ series_score.team_b_wins }}</div>
+                </div>
+            </div>
+            {% if series_score.games %}
+            <div style="font-size: 12px; color: var(--text-muted);">Last result: {{ series_score.games[-1].date }} | {{ team_mark(teams[0], size='xs') }} {{ series_score.games[-1].team_a_score }} - {{ team_mark(teams[1], size='xs') }} {{ series_score.games[-1].team_b_score }}</div>
+            {% else %}
+            <div style="font-size: 12px; color: var(--text-muted);">No completed head-to-head games logged yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card" style="border-color: rgba(110,168,166,0.24);">
+        <div class="card-header"><div class="card-title">Best Over</div></div>
+        <div class="p-16">
+            {% if series_summary.best_over %}
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">{{ series_summary.best_over.player }}</div>
+            <div style="color: var(--text-muted); margin-bottom: 10px;">{{ series_summary.best_over.team }} {{ series_summary.best_over.stat }} {{ series_summary.best_over.line }}</div>
+            <div class="hr-lock">{{ series_summary.best_over.confidence|round|int }}% OVER</div>
+                    {% if series_summary.best_over.baseline_reason %}
+                    <div class="baseline-reason baseline-reason-{{ series_summary.best_over.baseline_reason_tone or 'over' }}">{{ series_summary.best_over.baseline_reason }}</div>
+                {% if series_summary.best_over.core_model_read %}
+                <details class="model-read">
+                    <summary>Model Read</summary>
+                    <div class="model-read-body">{{ series_summary.best_over.core_model_read }}</div>
+                    {% if model_debug and series_summary.best_over.core_debug_lines %}
+                    <div class="model-debug-panel">
+                        {% for item in series_summary.best_over.core_debug_lines %}
+                        <div class="model-debug-row">
+                            <span class="model-debug-label">{{ item.label }}</span>
+                            <span class="model-debug-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+                {% endif %}
+                    {% endif %}
+            {% else %}
+            <div class="text-muted">No over play has separated from the board yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card" style="border-color: rgba(255,107,107,0.25);">
+        <div class="card-header"><div class="card-title">Best Under</div></div>
+        <div class="p-16">
+            {% if series_summary.best_under %}
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">{{ series_summary.best_under.player }}</div>
+            <div style="color: var(--text-muted); margin-bottom: 10px;">{{ series_summary.best_under.team }} {{ series_summary.best_under.stat }} {{ series_summary.best_under.line }}</div>
+            <div class="hr-strong" style="color: #ffb8b8; border-color: rgba(255,107,107,0.3);">{{ series_summary.best_under.confidence|round|int }}% UNDER</div>
+                    {% if series_summary.best_under.baseline_reason %}
+                    <div class="baseline-reason baseline-reason-{{ series_summary.best_under.baseline_reason_tone or 'under' }}">{{ series_summary.best_under.baseline_reason }}</div>
+                {% if series_summary.best_under.core_model_read %}
+                <details class="model-read">
+                    <summary>Model Read</summary>
+                    <div class="model-read-body">{{ series_summary.best_under.core_model_read }}</div>
+                    {% if model_debug and series_summary.best_under.core_debug_lines %}
+                    <div class="model-debug-panel">
+                        {% for item in series_summary.best_under.core_debug_lines %}
+                        <div class="model-debug-row">
+                            <span class="model-debug-label">{{ item.label }}</span>
+                            <span class="model-debug-value">{{ item.value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </details>
+                {% endif %}
+                    {% endif %}
+            {% else %}
+            <div class="text-muted">No under play has separated from the board yet.</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card" style="border-color: rgba(184,115,51,0.35);">
+        <div class="card-header"><div class="card-title">Best Boost</div></div>
+        <div class="p-16">
+            {% if series_summary.best_boost %}
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">{{ series_summary.best_boost.player }}</div>
+            <div style="color: var(--text-muted); margin-bottom: 10px;">{{ series_summary.best_boost.team }} {{ series_summary.best_boost.stat }}</div>
+            <div class="hr-good">+{{ series_summary.best_boost.boost_pct }}% teammate boost</div>
+            {% if series_summary.best_boost.direction and series_summary.best_boost.confidence %}
+            <div style="margin-top: 10px; color: var(--text-muted); font-size: 12px;">Linked prop: {{ series_summary.best_boost.direction }} at {{ series_summary.best_boost.confidence|round|int }}%</div>
+            {% endif %}
+            {% else %}
+            <div class="text-muted">No active boost play is loaded for this series.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if series_score.games %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Completed Series Games</div>
+        <span class="badge badge-accent">{{ series_score.games|length }} Logged</span>
+    </div>
+    <table class="data-table">
+        <thead><tr><th>Date</th><th>{{ team_mark(teams[0], size='xs') }}</th><th>{{ team_mark(teams[1], size='xs') }}</th><th>Scoreline</th><th>Winner</th></tr></thead>
+        <tbody>
+            {% for game in series_score.games|reverse %}
+            <tr>
+                <td>{{ game.date }}</td>
+                <td>{{ game.team_a_score }}</td>
+                <td>{{ game.team_b_score }}</td>
+                <td>{{ team_mark(teams[0], size='xs') }} {{ game.team_a_score }} - {{ team_mark(teams[1], size='xs') }} {{ game.team_b_score }}</td>
+                        <td><span class="{% if game.winner == teams[0] or game.winner == teams[1] %}hr-strong{% endif %}">{{ team_mark(game.winner, size='xs') if game.winner else '-' }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if series_games %}
+<div class="card mb-24" style="border-color: rgba(110,168,166,0.36);">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(110,168,166,0.1) 0%, rgba(78,120,194,0.03) 100%);">
+        <div class="card-title">Series Schedule</div>
+        <span class="badge badge-accent">{{ series_games|length }} Games</span>
+    </div>
+    <div class="p-20">
+        {% if series_summary.next_game %}
+        <div style="margin-bottom: 16px; padding: 14px 16px; background: var(--bg-elevated); border: 1px solid var(--accent-border); border-radius: 10px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 6px;">Next Game</div>
+            <div style="font-size: 18px; font-weight: 700;">Game {{ series_summary.next_game.game_number }}: {{ series_summary.next_game.Away }} @ {{ series_summary.next_game.Home }}</div>
+            <div style="margin-top: 6px; color: var(--text-muted);">{{ series_summary.next_game.Date }} | {{ series_summary.next_game.Time }}</div>
+        </div>
+        {% endif %}
+        <div class="grid-2" style="gap: 16px;">
+            {% for game in series_games %}
+            <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1" class="matchup-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                    <div>
+                        <div class="matchup-kicker">Game {{ game.game_number }}</div>
+                        <div class="matchup-teams" style="font-size: 18px;">{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</div>
+                    </div>
+                    <span class="status-pill {% if game.bucket == 'today' %}today{% elif game.bucket == 'tomorrow' %}tomorrow{% else %}upcoming{% endif %}">{{ game.badge_label }}</span>
+                </div>
+                <div class="matchup-meta">{{ game.Date }} • {{ game.Time }}</div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text);">Home floor: <span style="color: var(--accent);">{{ team_mark(game.site_team, size='xs') }}</span></div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if role_changes %}
+<div class="card mb-24" style="border-color: rgba(255,107,107,0.35);">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(255,107,107,0.12) 0%, transparent 100%);">
+        <div class="card-title">Expected Role Changes</div>
+        <span class="badge">{{ role_changes|length }}</span>
+    </div>
+    <table class="data-table">
+        <thead><tr><th>Player</th><th>Team</th><th>Stat</th><th>Shift</th><th>Driver</th></tr></thead>
+        <tbody>
+            {% for role in role_changes %}
+            <tr>
+                <td><a href="/player/{{ role.player|urlencode }}">{{ role.player }}</a></td>
+                <td>{{ team_mark(role.team, size='xs') }}</td>
+                <td><span class="badge">{{ role.stat }}</span></td>
+                <td><span class="hr-strong">+{{ role.boost_pct }}% {{ role.expected_shift }}</span>{% if role.projected_starter %}<div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Projected starter</div>{% endif %}</td>
+                <td>{{ role.injured_player }} <span style="color: var(--text-muted);">({{ role.injury_status }})</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="grid-2 mb-24" style="gap: 16px;">
+    {% for team in teams %}
+    {% set record = team_records[team] %}
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">{{ team_mark(team, size='sm') }} Team Form Snapshot</div>
+            <span class="badge badge-accent">{{ record.wins }}-{{ record.losses }}</span>
+        </div>
+        <div class="p-20">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">{{ record.sample_label or sample_context.label }}</div>
+            <div class="grid-2" style="gap: 14px;">
+                <div><div style="font-size: 12px; color: var(--text-muted);">Win %</div><div style="font-size: 24px; font-weight: 700;">{{ (record.win_pct * 100)|round|int }}%</div></div>
+                <div><div style="font-size: 12px; color: var(--text-muted);">Last 5</div><div style="font-size: 24px; font-weight: 700; color: {% if record.last_5_wins >= 3 %}var(--accent){% else %}#FF6B6B{% endif %};">{{ record.last_5_wins }}-{{ 5 - record.last_5_wins }}</div></div>
+                <div><div style="font-size: 12px; color: var(--text-muted);">Home Scoring Avg</div><div style="font-size: 20px; font-weight: 700;">{{ record.home_ppg }}</div></div>
+                <div><div style="font-size: 12px; color: var(--text-muted);">Away Scoring Avg</div><div style="font-size: 20px; font-weight: 700;">{{ record.away_ppg }}</div></div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if matchup_profiles %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Series Offensive Fit vs Defensive Resistance</div>
+        <span class="badge badge-accent">{{ sample_context.label if sample_context else 'Team-v-Team Read' }}</span>
+    </div>
+    <div class="p-20">
+        {% if sample_context %}
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">{{ sample_context.reason }}</div>
+        {% endif %}
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">Use this to see whether one team is actually creating a cleaner offense into the other team's current defensive profile.</div>
+        <div class="grid-2" style="gap: 14px;">
+            {% for profile in matchup_profiles %}
+            <div class="parlay-surface-soft" style="padding: 18px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">{{ profile.offense_team }} offense vs {{ profile.defense_team }} defense</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">{{ profile.summary }}</div>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Stat</th><th>{{ profile.offense_team }}</th><th>{{ profile.defense_team }} Allowed</th><th>Edge</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for stat in profile.stats %}
+                        <tr>
+                            <td>{{ stat.label }}</td>
+                            <td>{{ stat.offense_avg }}</td>
+                            <td>{{ stat.defense_allowed }}</td>
+                            <td>
+                                <span class="signal-chip {% if stat.verdict == 'Attack' %}accent{% elif stat.verdict == 'Defense Edge' %}danger{% else %}soft{% endif %}">
+                                    {{ stat.edge_pct }}% {{ stat.verdict }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Series Prop Board</div>
+        <span class="badge badge-accent">{{ series_props|length }} Plays</span>
+    </div>
+    {% if series_props %}
+    <table class="data-table">
+        <thead><tr><th>Player</th><th>Team</th><th>Stat</th><th>Line</th><th>Avg</th><th>Play</th><th>Weighted O/U</th><th>Market</th><th>Signals</th><th>Confidence</th></tr></thead>
+        <tbody>
+            {% for prop in series_props %}
+            <tr>
+                <td><a href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>{% if prop.has_injury_flag %}<div style="margin-top: 6px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}</td>
+                <td>{{ team_mark(prop.team, size='xs') }}</td>
+                <td><span class="badge">{{ prop.stat }}</span></td>
+                <td><strong>{{ prop.line }}</strong></td>
+                <td>{{ prop.avg }}</td>
+                  <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
+                  <td><span style="color: var(--accent);">O:{{ prop.weighted_over_rate }}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #ffb8b8;">U:{{ prop.weighted_under_rate }}%</span></td>
+                  <td style="font-size: 11px; line-height: 1.45;">
+                      {% if prop.market_summary %}
+                      <div style="color: var(--text-bright);">{{ prop.market_summary }}</div>
+                      {% endif %}
+                      {% if prop.book_comparison_note %}
+                      <div style="color: var(--text-muted); margin-top: 4px;">{{ prop.book_comparison_note }}</div>
+                      {% elif prop.best_book %}
+                      <div style="color: var(--text-muted); margin-top: 4px;">Best book: {{ prop.best_book }}</div>
+                      {% endif %}
+                  </td>
+                  <td>
+                    {% for tag in prop.signals[:3] %}<span style="background: var(--bg-elevated); color: var(--accent); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}
+                    {% if prop.public_trend_note %}
+                    <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ prop.public_trend_note }}</div>
+                    {% endif %}
+                    {% if prop.injury_context_note %}
+                    <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ prop.injury_context_note }}</div>
+                    {% endif %}
+                    {% if prop.baseline_reason %}
+                    <div class="baseline-reason baseline-reason-{{ prop.baseline_reason_tone or 'neutral' }}">{{ prop.baseline_reason }}</div>
+                    {% if prop.core_volume_read %}
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ prop.core_volume_read }}</div>
+                    {% endif %}
+                    {% if prop.core_model_read %}
+                    <details class="model-read">
+                            <summary>Model Read</summary>
+                            <div class="model-read-body">{{ prop.core_model_read }}</div>
+                            {% if model_debug and prop.core_debug_lines %}
+                            <div class="model-debug-panel">
+                                {% for item in prop.core_debug_lines %}
+                                <div class="model-debug-row">
+                                    <span class="model-debug-label">{{ item.label }}</span>
+                                    <span class="model-debug-value">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </details>
+                        {% endif %}
+                        {% endif %}
+                </td>
+                <td><span class="{% if prop.confidence >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ prop.confidence|round|int }}%</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No strong series props yet</div>
+            <div class="empty-state-copy">The current board has not separated enough to surface a strong series prop.</div>
+        </div>
+    {% endif %}
+</div>
+
+<div class="grid-2 mb-24" style="gap: 16px;">
+    {% for team in teams %}
+    <div class="card">
+            <div class="card-header"><div class="card-title">{{ team_mark(team, size='sm') }} Core Rotation</div></div>
+        <table class="data-table">
+            <thead><tr><th>Player</th><th>PTS</th><th>REB</th><th>AST</th><th>MIN</th></tr></thead>
+            <tbody>
+                {% for player in team_leaders[team] %}
+                <tr>
+                    <td><a href="/player/{{ player.name|urlencode }}">{{ player.name }}</a></td>
+                    <td>{{ player.pts }}</td>
+                    <td>{{ player.reb }}</td>
+                    <td>{{ player.ast }}</td>
+                    <td>{{ player.min }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="grid-2" style="gap: 16px;">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Series Injuries</div></div>
+        {% if series_injuries %}
+        <table class="data-table">
+            <thead><tr><th>Player</th><th>Team</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody>
+                {% for injury in series_injuries %}
+                <tr>
+                    <td>{{ injury.Player }}</td>
+                    <td>{{ team_mark(injury.Team, size='xs') }}</td>
+                    <td><span class="{% if injury.Status in ['OUT', 'DOUBTFUL'] %}status-out{% else %}status-gtd{% endif %}">{{ injury.Status }}</span></td>
+                    <td>{{ injury.Reason }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No active {{ teams[0] }}/{{ teams[1] }} injury entries in the current feed</div>
+            <div class="empty-state-copy">The current injury feed does not list any active entries for this series right now.</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header"><div class="card-title">Active Boost Plays</div></div>
+        {% if series_boosts %}
+        <table class="data-table">
+            <thead><tr><th>Beneficiary</th><th>Team</th><th>Stat</th><th>Boost</th></tr></thead>
+            <tbody>
+                {% for boost in series_boosts %}
+                <tr>
+                    <td>{{ boost.Beneficiary }}</td>
+                    <td>{{ team_mark(boost.Team, size='xs') }}</td>
+                    <td>{{ boost.Stat }}</td>
+                    <td><span class="hr-lock">+{{ boost.Boost_Pct }}%</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No active boost plays</div>
+            <div class="empty-state-copy">No teammate-boost situations are currently loaded for this series.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

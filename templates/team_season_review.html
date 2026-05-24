@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}{{ review.team }} Season Review - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
+    <div>
+        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-copper); font-weight: 700; margin-bottom: 8px;">Team Research</div>
+        <h1>{{ review.team }} <span class="accent">Season Review</span></h1>
+        <div style="margin-top: 10px; color: var(--text-muted); max-width: 760px;">A team-level breakdown of season form, home/away edges, stable player floors, and late-season role changes to carry into the playoffs.</div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="/props/floor?date=all&direction=over&postseason=1&team={{ review.team }}" class="btn btn-primary btn-sm">Open Floor Board</a>
+        <a href="/smart-picks?date=all&direction=all&postseason=1&team={{ review.team }}" class="btn btn-secondary btn-sm">Team Smart Picks</a>
+        <a href="/parlay?date=all&direction=all&postseason=1&team={{ review.team }}" class="btn btn-secondary btn-sm">Team Parlay Pool</a>
+        <a href="/props?date=all&direction=all&postseason=1&team={{ review.team }}" class="btn btn-secondary btn-sm">All Team Props</a>
+        <a href="/season-review?postseason=1" class="btn btn-secondary btn-sm">Back to Season Review</a>
+        <a href="/team/{{ review.team }}?postseason=1" class="btn btn-secondary btn-sm">Roster View</a>
+    </div>
+</div>
+
+{% if review.current_matchup %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Current Playoff Matchup</div>
+        <span class="badge badge-accent">{{ review.current_matchup.label }}</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 16px;">
+        <div style="padding: 12px; background: rgba(78,120,194,0.08); border: 1px solid rgba(78,120,194,0.18); border-radius: 10px;">
+            <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Next Spot</div>
+            <div style="font-size: 16px; font-weight: 700;">{{ review.current_matchup.matchup }}</div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+                {{ 'Road game' if review.current_matchup.site == 'away' else 'Home game' }}{% if review.current_matchup.time %} at {{ review.current_matchup.time }}{% endif %}
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+                {{ review.current_matchup.series_score.status }}
+            </div>
+        </div>
+        <div style="padding: 12px; background: rgba(110,168,166,0.08); border: 1px solid rgba(110,168,166,0.18); border-radius: 10px;">
+            <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Series Hub</div>
+            <div style="font-size: 14px; font-weight: 700;">{{ review.current_matchup.series_label or ('Series vs ' ~ review.current_matchup.opponent) }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">{{ review.current_matchup.series_type|title if review.current_matchup.series_type else 'Current matchup' }}</div>
+            {% if review.current_matchup.series_id %}
+            <a href="/series/{{ review.current_matchup.series_id }}?postseason=1" class="btn btn-secondary btn-sm">Open Series Page</a>
+            {% else %}
+            <a href="/matchup/{{ review.team }}-{{ review.current_matchup.opponent }}?postseason=1" class="btn btn-secondary btn-sm">Open Matchup Page</a>
+            {% endif %}
+        </div>
+        <div style="padding: 12px; background: rgba(184,115,51,0.08); border: 1px solid rgba(184,115,51,0.18); border-radius: 10px;">
+            <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Defense Read</div>
+            {% if review.current_matchup.defense_reads %}
+                {% for read in review.current_matchup.defense_reads %}
+                <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ read.stat }}: {{ read.tag }}</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">Leans {{ read.lean }} against {{ review.current_matchup.opponent }}</div>
+                {% endfor %}
+            {% else %}
+            <div style="font-size: 12px; color: var(--text-muted);">No strong opponent defense lean separated yet.</div>
+            {% endif %}
+        </div>
+    </div>
+    {% if review.current_matchup.matchup_angles %}
+    <div class="p-16" style="padding-top: 0;">
+        <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 8px;">Best {{ review.team }} Angles vs {{ review.current_matchup.opponent }}</div>
+        <div style="display: grid; grid-template-columns: repeat({{ 4 if review.current_matchup.matchup_angles|length >= 4 else review.current_matchup.matchup_angles|length }}, minmax(0, 1fr)); gap: 10px;">
+            {% for angle in review.current_matchup.matchup_angles %}
+            <a href="/props/floor?date=all&direction=over&postseason=1&team={{ review.team }}&player={{ angle.player|urlencode }}&stat={{ angle.stat }}" style="display: block; padding: 12px; background: rgba(110,168,166,0.08); border: 1px solid rgba(110,168,166,0.18); border-radius: 10px; text-decoration: none; color: inherit;">
+                <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">{{ angle.player }} {{ angle.stat }}</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">{{ angle.hit_rate }}% over {{ angle.floor_line }} in {{ angle.games }} games</div>
+                <div style="font-size: 11px; color: var(--accent-copper);">Open filtered floor board</div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="grid-4 mb-24" style="gap: 16px;">
+    <div class="stat-card">
+        <div class="stat-label">Record</div>
+        <div class="stat-value">{{ review.record.wins }}-{{ review.record.losses }}</div>
+        <div class="stat-detail">{{ (review.record.win_pct * 100)|round(1) }}% win rate</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Home / Away</div>
+        <div class="stat-value" style="font-size: 28px;">{{ review.record.home_wins }}-{{ review.record.home_losses }}</div>
+        <div class="stat-detail">Away: {{ review.record.away_wins }}-{{ review.record.away_losses }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Season PPG</div>
+        <div class="stat-value">{{ review.season_averages.PTS }}</div>
+        <div class="stat-detail">Last 10: {{ review.recent_averages.PTS }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Last 5 Form</div>
+        <div class="stat-value">{{ review.record.last_5_wins }}-{{ 5 - review.record.last_5_wins }}</div>
+        <div class="stat-detail">Recent team trend</div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap: 24px;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Playoff Blueprint</div>
+        </div>
+        <div class="p-16" style="display: grid; gap: 12px;">
+            <div style="padding: 12px; background: rgba(110,168,166,0.08); border: 1px solid rgba(110,168,166,0.18); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">{% if review.current_matchup and review.current_matchup.matchup_angles %}Best {{ review.current_matchup.opponent }} Angle{% else %}Best Team Angle{% endif %}</div>
+                <div style="font-size: 15px; font-weight: 700;">
+                    {% if review.current_matchup and review.current_matchup.matchup_angles %}{{ review.current_matchup.matchup_angles[0].angle }}{% elif review.team_angles %}{{ review.team_angles[0].angle }}{% else %}No clear team angle yet{% endif %}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    {% if review.current_matchup and review.current_matchup.matchup_angles %}{{ review.current_matchup.matchup_angles[0].hit_rate }}% hit rate at {{ review.current_matchup.matchup_angles[0].floor_line }} in {{ review.current_matchup.matchup_angles[0].games }} matchup games{% elif review.team_angles %}{{ review.team_angles[0].hit_rate }}% hit rate at {{ review.team_angles[0].floor_line }}{% else %}Need more separation from the board{% endif %}
+                </div>
+            </div>
+            <div style="padding: 12px; background: rgba(184,115,51,0.08); border: 1px solid rgba(184,115,51,0.18); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Core Usage</div>
+                <div style="font-size: 15px; font-weight: 700;">
+                    {% if review.best_offense %}{{ review.best_offense[0].player }} leads the profile{% else %}No usage leader loaded{% endif %}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    {% if review.best_offense %}Primary {{ review.best_offense[0].stat }} driver for this team{% else %}Review the core rotation table below{% endif %}
+                </div>
+            </div>
+            <div style="padding: 12px; background: rgba(107,138,255,0.08); border: 1px solid rgba(107,138,255,0.18); border-radius: 10px;">
+                <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">Minutes Watch</div>
+                <div style="font-size: 15px; font-weight: 700;">
+                    {% if review.role_risers %}{{ review.role_risers[0].player }} is climbing{% else %}No major late-season riser{% endif %}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    {% if review.role_risers %}+{{ review.role_risers[0].min_jump }} MIN over season baseline{% else %}Lean on the stable floor signals instead{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Team Split Profile</div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Split</th>
+                    <th>PTS</th>
+                    <th>REB</th>
+                    <th>AST</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Home</td>
+                    <td>{{ review.split_summary.home_ppg }}</td>
+                    <td>{{ review.split_summary.home_reb }}</td>
+                    <td>{{ review.split_summary.home_ast }}</td>
+                </tr>
+                <tr>
+                    <td>Away</td>
+                    <td>{{ review.split_summary.away_ppg }}</td>
+                    <td>{{ review.split_summary.away_reb }}</td>
+                    <td>{{ review.split_summary.away_ast }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Stat Leaders</div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Stat</th>
+                    <th>Leader</th>
+                    <th>Avg</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for leader in review.best_offense %}
+                <tr>
+                    <td>{{ leader.stat }}</td>
+                    <td>{{ leader.player }}</td>
+                    <td>{{ leader.value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Best Playoff Angles For {{ review.team }}</div>
+        <span class="badge badge-accent">{{ review.team_angles|length }} Angles</span>
+    </div>
+    {% if review.team_angles %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Angle</th>
+                <th>Line</th>
+                <th>Hit Rate</th>
+                <th>Trend</th>
+                <th>Read</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for angle in review.team_angles %}
+            <tr>
+                <td>
+                    <a href="/props/floor?date=all&direction=over&postseason=1&team={{ review.team }}&player={{ angle.player|urlencode }}&stat={{ angle.stat }}">
+                        {{ angle.angle }}
+                    </a>
+                </td>
+                <td>{{ angle.floor_line }}</td>
+                <td><span class="hr-lock">{{ angle.hit_rate }}%</span></td>
+                <td style="color: {% if angle.trend_delta >= 0 %}var(--accent){% else %}#FF6B6B{% endif %}; font-weight: 700;">{{ '+' if angle.trend_delta >= 0 else '' }}{{ angle.trend_delta }}</td>
+                <td>{{ angle.label }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="p-20 text-muted">No strong floor angles separated from the board yet.</div>
+    {% endif %}
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Core Rotation</div>
+        <span class="badge badge-accent">{{ review.core_rotation|length }} Players</span>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>MIN</th>
+                <th>PTS</th>
+                <th>REB</th>
+                <th>AST</th>
+                <th>3PM</th>
+                <th>USG%</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for player in review.core_rotation %}
+            <tr>
+                <td><a href="/player/{{ player.player|urlencode }}">{{ player.player }}</a></td>
+                <td>{{ player.min }}</td>
+                <td>{{ player.pts }}</td>
+                <td>{{ player.reb }}</td>
+                <td>{{ player.ast }}</td>
+                <td>{{ player['3pm'] }}</td>
+                <td>{% if player.usg_pct is not none %}{{ player.usg_pct }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="grid-2 mb-24" style="gap: 24px;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Stable Floor Signals</div>
+            <span class="badge badge-accent">{{ review.stable_floor|length }} Plays</span>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Stat</th>
+                    <th>80% Line</th>
+                    <th>Hit Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in review.stable_floor %}
+                <tr>
+                    <td><a href="/props/floor?date=all&direction=over&postseason=1&team={{ review.team }}&player={{ play.player|urlencode }}&stat={{ play.stat }}">{{ play.player }}</a></td>
+                    <td><a href="/props/floor?date=all&direction=over&postseason=1&team={{ review.team }}&player={{ play.player|urlencode }}&stat={{ play.stat }}"><span class="badge">{{ play.stat }}</span></a></td>
+                    <td>{{ play.floor_line }}</td>
+                    <td><span class="hr-lock">{{ play.hit_rate }}%</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Late-Season Role Risers</div>
+            <span class="badge badge-accent">{{ review.role_risers|length }} Players</span>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>MIN Jump</th>
+                    <th>Last 10 MIN</th>
+                    <th>Last 10 PTS</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for player in review.role_risers %}
+                <tr>
+                    <td>{{ player.player }}</td>
+                    <td style="color: var(--accent); font-weight: 700;">+{{ player.min_jump }}</td>
+                    <td>{{ player.last10_min }}</td>
+                    <td>{{ player.last10_pts }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Recent Team Games</div>
+        <span class="badge badge-accent">{{ review.game_log_tail|length }} Games</span>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Matchup</th>
+                <th>Result</th>
+                <th>PTS</th>
+                <th>REB</th>
+                <th>AST</th>
+                <th>3PM</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for game in review.game_log_tail %}
+            <tr>
+                <td>{{ game.Date.strftime('%Y-%m-%d') if game.Date else '-' }}</td>
+                <td>{{ game.Matchup }}</td>
+                <td>{{ game.Result }}</td>
+                <td>{{ game.PTS }}</td>
+                <td>{{ game.REB }}</td>
+                <td>{{ game.AST }}</td>
+                <td>{{ game['3PM'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

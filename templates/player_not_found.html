@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Player Not Found - Floor Play Engine{% endblock %}
+
+{% block content %}
+<div class="card text-center p-20">
+    <h1>😕 Player Not Found</h1>
+    <p class="text-muted mt-10">Could not find player: <strong>{{ player }}</strong></p>
+    <p class="text-muted">They may not have enough games in our database (minimum 5 required).</p>
+    <div class="mt-20">
+        <a href="/" class="btn btn-primary">← Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

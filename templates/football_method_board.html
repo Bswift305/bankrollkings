@@ -1,0 +1,1016 @@
+{% extends "base.html" %}
+{% block title %}{{ sport_title }} {{ method.title }} - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Football Methods</div>
+        <h1>{{ sport_title }} <span class="accent">{{ method.title }}</span></h1>
+        <div class="page-subtitle">{{ method.summary }}</div>
+    </div>
+    <div class="hero-actions" style="display:flex; align-items:center; gap:12px;">
+        {% if sport_logo_url(sport_key) %}
+        <img src="{{ sport_logo_url(sport_key) }}" alt="{{ sport_title }} logo" style="width:48px; height:48px; object-fit:contain; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.28));">
+        {% endif %}
+        <a href="/sports/{{ sport_key }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to {{ sport_title }}</a>
+        <a href="/sports/nfl?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open NFL Board</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        {% for item in football_methods %}
+        <a href="/sports/{{ sport_key }}/{{ item.key }}?postseason={{ 1 if postseason_only else 0 }}" class="btn {% if active_method == item.key %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ item.title }}</a>
+        {% endfor %}
+        <span class="badge badge-accent" style="margin-left:auto;">{{ sport_profile.label }}</span>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Why This Method Matters</div>
+        <span class="badge badge-accent">
+            {% if active_method in ['game_lines','totals'] %}Primary Read
+            {% elif active_method == 'props' and sport_key == 'ncaaf' %}Optional Support
+            {% elif active_method == 'props' %}Selective Support
+            {% else %}Support Layer{% endif %}
+        </span>
+    </div>
+    <div class="p-16">
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Method Read</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.55;">{{ method.summary }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Best Use Case</div>
+                <div style="font-size: 13px; color: var(--accent-copper); line-height: 1.55;">{{ method.best_use }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if method_view.live_refresh_meta and method_view.live_refresh_meta.warning %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(201,128,58,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Live Feed Warning</div>
+        <span class="badge">Stale Feed</span>
+    </div>
+    <div class="p-16">
+        <div class="parlay-surface-soft" style="padding: 12px; color: var(--warning); font-weight: 700;">
+            {{ method_view.live_refresh_meta.warning }}
+        </div>
+        <div class="cell-meta" style="margin-top: 10px; line-height: 1.55;">
+            This method page now suppresses stale live prop rows instead of quietly mixing old market data into the board.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid-4 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--accent);">What is the number saying?</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Start with spread, total, price shape, and book context. The market is part of the handicap, not just the price tag.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How does the game want to play?</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use environment, style, and team behavior to understand whether the spot supports a side, a total, or no bet at all.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Does the history actually support it?</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Streaks and continuation patterns only matter if they survive review. This layer is here to confirm or challenge the first read.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Plain-English Verdict</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or conflict?</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is not to overwhelm you with variables. The goal is to show whether the signals agree, partially agree, or should keep you off the bet.</div>
+    </div>
+</div>
+
+{% if sport_key == 'nfl' %}
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">NFL Order</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Support</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">The board now treats game lines and totals as the lead signal. Trends and props only add support.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">What We Learned</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Broad prop hot-hand is thin</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Real historical line review says NFL prop streaks need more filtering than NBA-style prop boards do.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">How To Use This</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Build script first</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Pick the game environment first, then let trends or props confirm it instead of inventing a play on their own.</div>
+    </div>
+</div>
+{% endif %}
+
+{% if sport_key == 'ncaaf' %}
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">CFB Order</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Matchups</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">College football should start with the game environment and weekly board shape, not a prop-first workflow.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Trend Role</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Team behavior first</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">ATS runs, O/U runs, conference form, and home-road spots matter more than broad prop streak hunting.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Prop Role</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Optional only</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Use props only when the market is actually available and it clearly supports the side, total, and matchup script already on the board.</div>
+    </div>
+</div>
+{% endif %}
+
+{% if method_view.summary_cards %}
+<div class="grid-3 mb-24" style="gap: 12px;">
+    {% for card in method_view.summary_cards %}
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ card.note }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if method_view.game_line_board and method_view.game_line_board.rows %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Game Line Intelligence</div>
+            <div class="cell-meta" style="margin-top:4px;">{{ method_view.game_line_board.note }}</div>
+        </div>
+        <span class="badge badge-accent">{{ method_view.game_line_board.source_label }}</span>
+    </div>
+    {% if method_view.game_line_board.middle_alerts %}
+    <div class="p-16" style="padding-bottom:0;">
+        <div class="parlay-surface-soft" style="padding:12px; border-color:rgba(201,128,58,0.28);">
+            <div class="page-kicker" style="margin-bottom:6px;">Middle Watch</div>
+            {% for alert in method_view.game_line_board.middle_alerts %}
+            <div class="cell-meta" style="line-height:1.5;"><strong>{{ alert.matchup }}</strong>: {{ alert.note }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Game</th>
+                    <th>Best Spread</th>
+                    <th>Total</th>
+                    <th>Movement</th>
+                    <th>Script Tags</th>
+                    <th>Teaching Note</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.game_line_board.rows %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ row.matchup }}</div>
+                        <div class="cell-meta">{{ row.date }}{% if row.week %} · Week {{ row.week }}{% endif %} · {{ row.source }}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--accent);">{{ row.best_spread }}</div>
+                        <div class="cell-meta">{{ row.spread_book }}</div>
+                        {% if row.middle_note %}
+                        <div class="cell-meta" style="margin-top:6px; color:var(--accent-copper);">{{ row.middle_note }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ row.best_total }}</div>
+                        <div class="cell-meta">{{ row.total_book }}</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">Spread {{ row.movement }}</div>
+                        <div class="cell-meta">Total {{ row.total_movement }}</div>
+                    </td>
+                    <td>
+                        {% if row.script_tags %}
+                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                            {% for tag in row.script_tags[:4] %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <span class="cell-meta">No tags</span>
+                        {% endif %}
+                    </td>
+                    <td><div class="cell-meta" style="line-height:1.55;">{{ row.teaching_note }}</div></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Spreads and totals are adjustable. Use this as the best-number and game-script layer before trusting prop direction.</div>
+</div>
+{% endif %}
+
+{% if method_view.history_status and method_view.history_status.cards %}
+<div class="card mb-24 panel-glow" style="border-color: {% if method_view.history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif method_view.history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Historical Coverage</div>
+        <span class="badge {% if method_view.history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
+            {% if method_view.history_status.state == 'ready' %}Operational{% elif method_view.history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
+        </span>
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px;">
+        {% for card in method_view.history_status.cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+            <div class="cell-meta" style="margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="p-16" style="padding-top: 0;">
+        <div class="cell-meta" style="line-height: 1.55;">{{ method_view.history_status.note }}</div>
+    </div>
+</div>
+{% endif %}
+
+{% if method_view.history_insights %}
+<div class="grid-3 mb-24" style="gap: 12px;">
+    {% for card in method_view.history_insights %}
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+        <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height:1.5;">{{ card.note }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if method_view.history_rows %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">{{ method.title }} Historical Pattern Board</div>
+        <span class="badge badge-accent">{{ method_view.history_rows|length }} teams</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Team</th>
+                    <th>Trend</th>
+                    <th>ATS Streak</th>
+                    <th>O/U Streak</th>
+                    <th>Last 5</th>
+                    <th>Last Season</th>
+                    <th>5 Seasons</th>
+                    <th>Fit</th>
+                    <th>Why It Matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.history_rows %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ team_mark(row.team, size='sm', sport_key=sport_key) }}</div>
+                        <div class="cell-meta">{{ row.games }} games | {{ row.seasons }} seasons</div>
+                    </td>
+                    <td>{{ row.trend }}</td>
+                    <td>{{ row.ats_streak }}</td>
+                    <td>{{ row.ou_streak }}</td>
+                    <td>
+                        <div class="cell-meta">ATS {{ row.cover_rate_last5 if row.cover_rate_last5 is not none else '-' }}%</div>
+                        <div class="cell-meta">O/U {{ row.over_rate_last5 if row.over_rate_last5 is not none else '-' }}%</div>
+                        {% if row.follow_note %}
+                        <div class="cell-meta" style="margin-top:6px;">{{ row.follow_note }}</div>
+                        {% endif %}
+                        {% if row.spread_move_last5_avg is not none %}
+                        <div class="cell-meta" style="margin-top:6px;">Spread move {{ row.spread_move_last5_avg }}</div>
+                        {% endif %}
+                        {% if row.total_move_last5_avg is not none %}
+                        <div class="cell-meta">Total move {{ row.total_move_last5_avg }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="cell-meta">ATS {{ row.cover_rate_last_season if row.cover_rate_last_season is not none else '-' }}%</div>
+                        <div class="cell-meta">O/U {{ row.over_rate_last_season if row.over_rate_last_season is not none else '-' }}%</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">ATS {{ row.cover_rate_5y if row.cover_rate_5y is not none else '-' }}%</div>
+                        <div class="cell-meta">O/U {{ row.over_rate_5y if row.over_rate_5y is not none else '-' }}%</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--accent);">{{ row.fit_score }}%</div>
+                        {% if row.fit_tags %}
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                            {% for tag in row.fit_tags %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="cell-meta" style="line-height:1.55;">{{ row.note }}</div>
+                        <div class="cell-meta" style="margin-top:6px;">Last game: {{ row.last_game_date }}</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every historical-pattern column.</div>
+</div>
+{% endif %}
+
+{% if method_view.history_team_scorecards %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Historical Team Scorecard</div>
+        <span class="badge badge-accent">{{ method_view.history_team_scorecards|length }} teams</span>
+    </div>
+    <div class="grid-2 p-16" style="gap: 12px;">
+        {% for row in method_view.history_team_scorecards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ row.label }}</div>
+            <div style="font-size: 18px; font-weight: 800; color: var(--accent);">{{ row.primary }}</div>
+            <div style="font-size: 12px; color: var(--text-bright); margin-top: 6px;">{{ row.secondary }}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ row.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if method_view.history_player_rows %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">{{ method.title }} Historical Player Board</div>
+        <span class="badge badge-accent">{{ method_view.history_player_rows|length }} players</span>
+    </div>
+    {% if method_view.history_player_note %}
+    <div class="p-16" style="font-size:12px; color:var(--text-muted); line-height:1.55; border-bottom:1px solid rgba(166,233,229,0.08);">
+        {{ method_view.history_player_note }}
+    </div>
+    {% endif %}
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Stat</th>
+                    <th>Reference Line</th>
+                    <th>Last 5</th>
+                    <th>Season Avg</th>
+                    <th>Streak</th>
+                    <th>Follow</th>
+                    <th>Review</th>
+                    <th>Fit</th>
+                    <th>Why It Matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.history_player_rows %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ row.player }}</div>
+                        <div class="cell-meta">{{ team_mark(row.team, size='xs', sport_key=sport_key) }}{% if row.position %} | {{ row.position }}{% endif %}{% if row.opponent %} | vs {{ team_mark(row.opponent, size='xs', sport_key=sport_key) }}{% endif %}</div>
+                    </td>
+                    <td>{{ row.stat }}</td>
+                    <td>
+                        <div>{{ row.line_proxy }}</div>
+                        {% if row.line_source %}
+                        <div class="cell-meta">{{ row.line_source }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="cell-meta">{{ row.last5_values|join(', ') }}</div>
+                        <div class="cell-meta">Avg {{ row.last5_avg if row.last5_avg is not none else '-' }}</div>
+                        <div class="cell-meta">Stability {{ row.stability if row.stability is not none else '-' }}%</div>
+                    </td>
+                    <td>{{ row.season_avg if row.season_avg is not none else '-' }}</td>
+                    <td>
+                        <div class="cell-meta">Live {{ row.current_streak }}</div>
+                        <div class="cell-meta">Max {{ row.max_streak }}</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">3+ {{ row.follow_3_rate if row.follow_3_rate is not none else '-' }}%</div>
+                        <div class="cell-meta">5+ {{ row.follow_5_rate if row.follow_5_rate is not none else '-' }}%</div>
+                        <div class="cell-meta">Opps {{ row.opp3_count if row.opp3_count is not none else '-' }}/{{ row.opp5_count if row.opp5_count is not none else '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">Hit {{ row.review_hit_rate if row.review_hit_rate is not none else '-' }}%</div>
+                        <div class="cell-meta">Resolved {{ row.review_resolved if row.review_resolved is not none else '-' }}</div>
+                        {% if row.governance_badge %}
+                        <div class="cell-meta" style="margin-top:6px; color: {% if row.governance_tier == 'trusted' %}var(--accent){% elif row.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-muted){% endif %};">{{ row.governance_badge }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--accent);">{{ row.fit_score }}%</div>
+                        {% if row.fit_tags %}
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                            {% for tag in row.fit_tags %}
+                            <span class="badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="cell-meta" style="line-height:1.55;">{{ row.note }}</div>
+                        {% if row.follow_note %}
+                        <div class="cell-meta" style="margin-top:6px;">{{ row.follow_note }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every historical-player column.</div>
+</div>
+{% endif %}
+
+{% if method_view.history_player_scorecards %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Historical Stat Scorecard</div>
+        <span class="badge badge-accent">{{ method_view.history_player_scorecards|length }} stats</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Stat</th>
+                    <th>Players</th>
+                    <th>Avg 3+ Follow</th>
+                    <th>Avg 3+ Opps</th>
+                    <th>Avg Stability</th>
+                    <th>Avg Fit</th>
+                    <th>Avg Live Streak</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.history_player_scorecards %}
+                <tr>
+                    <td>{{ row.stat }}</td>
+                    <td>{{ row.players }}</td>
+                    <td>{{ row.avg_follow_3_rate if row.avg_follow_3_rate is not none else '-' }}%</td>
+                    <td>{{ row.avg_opp3_count if row.avg_opp3_count is not none else '-' }}</td>
+                    <td>{{ row.avg_stability if row.avg_stability is not none else '-' }}%</td>
+                    <td>{{ row.avg_fit_score if row.avg_fit_score is not none else '-' }}%</td>
+                    <td>
+                        <div>{{ row.avg_streak if row.avg_streak is not none else '-' }}</div>
+                        {% if row.dominant_tier %}
+                        <div class="cell-meta" style="margin-top:4px;">{{ row.dominant_tier|replace('_', ' ')|title }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if method_view.history_prop_review and method_view.history_prop_review.ready %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Historical Prop Review Lab</div>
+        <span class="badge badge-accent">{{ method_view.history_prop_review.totals.resolved }} resolved</span>
+    </div>
+    {% if method_view.history_prop_review.coverage_note %}
+    <div class="p-16" style="font-size:12px; color:var(--text-muted); line-height:1.55; border-bottom:1px solid rgba(166,233,229,0.08);">
+        {{ method_view.history_prop_review.coverage_note }}
+    </div>
+    {% endif %}
+    <div class="grid-3 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Resolved Hit Rate</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">
+                {% if method_view.history_prop_review.totals.hit_rate is not none %}{{ method_view.history_prop_review.totals.hit_rate }}%{% else %}-{% endif %}
+            </div>
+            <div class="cell-meta">{{ method_view.history_prop_review.totals.hits }} hits / {{ method_view.history_prop_review.totals.misses }} misses</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Pushes</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent-copper);">{{ method_view.history_prop_review.totals.pushes }}</div>
+            <div class="cell-meta">{{ method_view.history_prop_review.totals.rows }} archived line rows analyzed</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Best Pattern</div>
+            <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">
+                {% if method_view.history_prop_review.best_patterns %}{{ method_view.history_prop_review.best_patterns[0].label }}{% else %}No pattern yet{% endif %}
+            </div>
+            <div class="cell-meta">
+                {% if method_view.history_prop_review.best_patterns %}{{ method_view.history_prop_review.best_patterns[0].hit_rate }}% across {{ method_view.history_prop_review.best_patterns[0].resolved }} resolved spots{% else %}Need more sample{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px; padding-top: 0;">
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Stat</th>
+                        <th>Resolved</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in method_view.history_prop_review.by_stat %}
+                    <tr>
+                        <td>{{ row.stat }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Streak</th>
+                        <th>Resolved</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in method_view.history_prop_review.by_threshold %}
+                    <tr>
+                        <td>{{ row.threshold }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Side</th>
+                        <th>Resolved</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in method_view.history_prop_review.by_side %}
+                    <tr>
+                        <td>{{ row.side }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if method_view.history_prop_review.coverage_by_stat %}
+    <div class="table-shell" style="padding: 0 16px 16px 16px;">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Stat Coverage</th>
+                    <th>Weeks Loaded</th>
+                    <th>Span</th>
+                    <th>Missing Weeks</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.history_prop_review.coverage_by_stat %}
+                <tr>
+                    <td>{{ row.stat }}</td>
+                    <td>{{ row.weeks_loaded }}/18</td>
+                    <td>{{ row.week_span }}</td>
+                    <td class="cell-meta">{% if row.missing_weeks %}{{ row.missing_weeks|join(', ') }}{% else %}Complete{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% if method_view.history_prop_review.best_patterns %}
+    <div class="table-shell" style="padding: 0 16px 16px 16px;">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Pattern</th>
+                    <th>Resolved</th>
+                    <th>Hits</th>
+                    <th>Hit %</th>
+                    <th>Why It Matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in method_view.history_prop_review.best_patterns %}
+                <tr>
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{{ row.hits }}</td>
+                    <td>{{ row.hit_rate }}%</td>
+                    <td class="cell-meta">{{ row.note }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if method_view.live_games %}
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">{{ method.title }} Slate</div>
+            <span class="badge badge-accent">{{ method_view.live_games|length }} matchups</span>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Matchup</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Spread</th>
+                        <th>Total</th>
+                        <th>Moneyline</th>
+                        <th>Book</th>
+                        <th>Method Fit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for game in method_view.live_games %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:700; color:var(--text-bright);">
+                                {% if game.away and game.home %}
+                                {{ matchup_mark(game.away, game.home, size='sm', sport_key=sport_key) }}
+                                {% else %}
+                                {{ game.matchup }}
+                                {% endif %}
+                            </div>
+                            <div class="cell-meta">{{ game.summary }}</div>
+                            {% if sport_key == 'ncaaf' and (game.away_signal_tags or game.home_signal_tags or game.signal_summary) %}
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                {% for tag in game.away_signal_tags[:2] %}
+                                <span class="badge">{{ game.away }} {{ tag }}</span>
+                                {% endfor %}
+                                {% for tag in game.home_signal_tags[:2] %}
+                                <span class="badge">{{ game.home }} {{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            {% if game.signal_summary %}
+                            <div class="cell-meta" style="margin-top:6px; line-height:1.5;">{{ game.signal_summary }}</div>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        <td>{{ game.date or '-' }}</td>
+                        <td>{{ game.time or '-' }}</td>
+                        <td>{% if game.spread is not none %}{{ '%+g'|format(game.spread|float) }}{% else %}-{% endif %}</td>
+                        <td>{% if game.total is not none %}{{ game.total }}{% else %}-{% endif %}</td>
+                        <td>
+                            {% if game.away_ml is not none and game.home_ml is not none %}
+                            {{ '%+d'|format(game.away_ml|int) }}/{{ '%+d'|format(game.home_ml|int) }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>{{ game.book or '-' }}</td>
+                        <td>
+                            <div style="font-weight:700; color:var(--accent);">{{ game.fit_score }}%</div>
+                            {% if game.fit_tags %}
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                {% for tag in game.fit_tags %}
+                                <span class="badge">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if sport_key == 'ncaaf' and game.signal_tags %}
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                {% for tag in game.signal_tags[:2] %}
+                                <span class="badge badge-accent">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="cell-meta" style="margin-top:6px;">{{ game.fit_note }}</div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-scroll-hint">Scroll left to right to see every live football slate column.</div>
+    </div>
+{% elif method_view.live_plays %}
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">{{ method.title }} Candidates</div>
+            <span class="badge badge-accent">{{ method_view.live_plays|length }} plays</span>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Stat</th>
+                        <th>Game</th>
+                        <th>Line</th>
+                        <th>Play</th>
+                        <th>O/U Rates</th>
+                        <th>Fair</th>
+                        <th>Market</th>
+                        <th>Method Fit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for play in method_view.live_plays %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
+                            {% if play.has_injury_flag %}
+                            <div style="margin-top: 6px;">
+                                <span class="badge badge-injury" title="{{ play.injury_reason }}">
+                                    &#10010; {{ play.injury_short_label or play.injury_status }}
+                                </span>
+                            </div>
+                            {% endif %}
+                            <div class="cell-meta">{{ play.stat_family }}</div>
+                        </td>
+                        <td>{{ play.stat }}</td>
+                        <td>{{ play.matchup }}</td>
+                        <td><strong>{{ play.line }}</strong></td>
+                        <td><span class="badge badge-{{ 'success' if play.direction == 'OVER' else 'warning' }}">{{ play.direction }}</span></td>
+                        <td>
+                            <span class="hr-strong">O {{ play.over_rate if play.over_rate is not none else '-' }}%</span>
+                            <span class="hr-low"> / U {{ play.under_rate if play.under_rate is not none else '-' }}%</span>
+                        </td>
+                        <td>
+                            <div>{{ play.fair_price if play.fair_price is not none else '-' }}</div>
+                            <div class="cell-meta">EV {{ play.market_prob }}%</div>
+                        </td>
+                        <td>
+                            <div>{{ play.line }} @ {{ play.market_price if play.market_price is not none else '-' }}</div>
+                            <div class="cell-meta">{{ play.book or '-' }}{% if play.book_count %} · {{ play.book_count }} books{% endif %}</div>
+                        </td>
+                        <td>
+                            <div style="font-weight:700; color:var(--accent);">{{ play.method_score }}%</div>
+                            {% if play.method_tags %}
+                            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                {% for tag in play.method_tags %}
+                                <span class="badge">{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="cell-meta" style="margin-top:6px;">{{ play.method_note }}</div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-scroll-hint">Scroll left to right to see every candidate-play column.</div>
+    </div>
+{% elif sport_key == 'nfl' and board.available %}
+    {% if method_view.games %}
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">{{ method.title }} Slate</div>
+            <span class="badge badge-accent">{{ method_view.games|length }} matchups</span>
+        </div>
+        <div class="grid-2 p-16" style="gap: 16px;">
+            {% for game in method_view.games %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px;">
+                    <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ game.sheet }}</div>
+                    <span class="badge badge-accent">{{ game.hit_rate_100 }} perfect-hit plays</span>
+                </div>
+                <div style="font-size:13px; color:var(--text-bright); margin-bottom:4px;">{{ game.title }}</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">{{ game.market_line }}</div>
+                <a href="{{ game.matchup_href }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Matchup Board</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if method_view.top_plays %}
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">{{ method.title }} Candidates</div>
+            <span class="badge badge-accent">{{ method_view.top_plays|length }} plays</span>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Team</th>
+                        <th>Stat</th>
+                        <th>Line</th>
+                        <th>Avg</th>
+                        <th>Hit %</th>
+                        <th>Streak</th>
+                        <th>Trust</th>
+                        <th>Last 5</th>
+                        <th>Why It Fits</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for play in method_view.top_plays %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
+                            {% if play.trust_verdict %}
+                            <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ team_mark(play.team, size='xs', sport_key=sport_key) }}</td>
+                        <td>
+                            <span class="badge">{{ play.stat_meta.short }}</span>
+                            <div class="cell-meta">{{ play.stat_meta.family }}</div>
+                        </td>
+                        <td><strong>{{ play.line }}</strong></td>
+                        <td>{{ play.avg }}</td>
+                        <td><span class="hr-strong">{{ play.hit_pct }}</span></td>
+                        <td>{{ play.streak }}</td>
+                        <td style="font-size: 11px;">
+                            <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
+                            <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
+                        </td>
+                        <td style="font-size: 11px; color: var(--text-muted);">{{ play.games|join(', ') }}</td>
+                        <td style="font-size: 11px; color: var(--text-muted); line-height: 1.5;">{{ play.note }}{% if play.trust_summary %}<div style="margin-top:4px;">{{ play.trust_summary }}</div>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-scroll-hint">Scroll left to right to see every candidate-play column.</div>
+    </div>
+    {% endif %}
+{% else %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">{{ sport_title }} {{ method.title }}</div>
+        <span class="badge badge-accent">{% if method_view.source == 'empty_live' %}Feed Waiting{% elif method_view.source == 'workbook' %}Workbook Ready{% else %}Framework Ready{% endif %}</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            {% if method_view.source == 'empty_live' and method_view.live_empty_reason %}
+            {{ method_view.live_empty_reason }}
+            {% elif method_view.source == 'workbook' and sport_key == 'nfl' %}
+            Live NFL slate files are empty right now, so this method is being served from the floor-play workbook and historical review layers instead.
+            {% else %}
+            This lane is now structurally set up so we can drop live football data into the right method instead of forcing everything into one generic page.
+            {% endif %}
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for item in sport_profile.primary_markets %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for item in sport_profile.core_drivers %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% if sport_key == 'ncaaf' and current_season_context and (current_season_context.team_signals or current_season_context.top_returning_teams) %}
+        <div class="grid-2" style="gap: 16px; margin-top: 16px;">
+            {% if current_season_context.team_signals %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Current Team Signals</div>
+                {% for row in current_season_context.team_signals[:6] %}
+                <div style="margin-top: 8px;">
+                    <div style="font-size: 13px; color: var(--text-bright); font-weight: 700;">{{ team_mark(row.team, size='xs', sport_key=sport_key) }}</div>
+                    <div style="font-size: 11px; color: {% if row.signal_tier == 'stable' %}var(--accent){% elif row.signal_tier == 'volatile' %}var(--accent-copper){% else %}var(--text-muted){% endif %}; margin-top: 3px;">{{ row.signal_badge or row.signal_tier|upper }} · {{ row.signal_score if row.signal_score is not none else '-' }} score</div>
+                    <div style="font-size: 11px; color: var(--accent-copper); margin-top: 3px;">{{ row.tags|join(', ') if row.tags else 'Neutral' }}</div>
+                    <div class="cell-meta" style="margin-top: 3px; line-height: 1.45;">{{ row.verdict }}</div>
+                    {% if row.signal_note %}
+                    <div class="cell-meta" style="margin-top: 3px; line-height: 1.45;">{{ row.signal_note }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if current_season_context.top_returning_teams %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Top Returning Teams</div>
+                {% for row in current_season_context.top_returning_teams[:6] %}
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top: 8px;">
+                    <div>
+                        <div style="font-size: 13px; color: var(--text-bright); font-weight: 700;">{{ team_mark(row.team, size='xs', sport_key=sport_key) }}</div>
+                        <div class="cell-meta">{{ row.conference }}</div>
+                    </div>
+                    <div style="font-size: 13px; color: var(--accent); font-weight: 800;">{{ row.value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if sport_key == 'ncaaf' and current_season_context and current_season_context.matchup_verdict_cards %}
+        <div class="parlay-surface-soft" style="padding: 16px; margin-top: 16px;">
+            <div class="page-kicker" style="margin-bottom: 8px;">Matchup Verdict Builder</div>
+            <div class="grid-2" style="gap: 12px;">
+                {% for card in current_season_context.matchup_verdict_cards %}
+                <div>
+                    <div style="font-size: 13px; color: var(--text-bright); font-weight: 700;">{{ team_mark(card.team, size='xs', sport_key=sport_key) }}</div>
+                    <div style="font-size: 11px; color: var(--accent-copper); margin-top: 3px;">{{ card.label }}</div>
+                    <div class="cell-meta" style="margin-top: 3px; line-height: 1.45;">{{ card.note }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if history_lab %}
+<div class="card mt-16">
+    <div class="card-header">
+        <div class="card-title">{{ history_lab.label }} Historical Build Mode</div>
+        <span class="badge badge-accent">{% if history_lab.ready %}History Loaded{% else %}Waiting On History{% endif %}</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            We can build football around last year's results and longer streak history even while the live feed is out of season. The hot-hand question should be tested against real historical props and game lines, not guessed.
+        </div>
+        <div class="grid-2" style="gap: 16px; margin-bottom: 16px;">
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Hot-Hand Research</div>
+                {% if history_lab.hot_hand.ready %}
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    <span class="badge">3+ Follow {{ history_lab.hot_hand.follow_3_rate }}%</span>
+                    <span class="badge">5+ Follow {{ history_lab.hot_hand.follow_5_rate }}%</span>
+                    <span class="badge">{{ history_lab.hot_hand.players }} players</span>
+                    <span class="badge">{{ history_lab.hot_hand.seasons }} seasons</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">
+                    Over streak follow-through: {{ history_lab.hot_hand.over_follow_3_rate if history_lab.hot_hand.over_follow_3_rate is not none else '-' }}% |
+                    Under streak follow-through: {{ history_lab.hot_hand.under_follow_3_rate if history_lab.hot_hand.under_follow_3_rate is not none else '-' }}%
+                </div>
+                {% if history_lab.hot_hand.top_stats %}
+                <div style="margin-top: 12px; display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for item in history_lab.hot_hand.top_stats %}
+                    <span class="badge">{{ item.stat }} {{ item.follow_3_rate if item.follow_3_rate is not none else '-' }}%</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% else %}
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">
+                    Waiting on historical props history with `Player`, `Stat`, `Line`, `Actual`, and `Date` so we can test whether 3-game and 5-game hot-hand runs actually keep cashing against Vegas numbers.
+                </div>
+                {% endif %}
+            </div>
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Game Lines / O-U Research</div>
+                {% if history_lab.line_patterns.ready %}
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    <span class="badge">ATS 3+ {{ history_lab.line_patterns.ats_follow_3_rate }}%</span>
+                    <span class="badge">ATS 5+ {{ history_lab.line_patterns.ats_follow_5_rate }}%</span>
+                    <span class="badge">O/U 3+ {{ history_lab.line_patterns.ou_follow_3_rate }}%</span>
+                    <span class="badge">O/U 5+ {{ history_lab.line_patterns.ou_follow_5_rate }}%</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">
+                    {{ history_lab.line_patterns.rows }} historical game rows across {{ history_lab.line_patterns.seasons }} seasons loaded.
+                </div>
+                {% if history_lab.line_patterns.team_patterns %}
+                <div style="margin-top: 12px; display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for item in history_lab.line_patterns.team_patterns[:6] %}
+                    <span class="badge">{{ item.team }} ATS {{ item.cover_rate }}%</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% else %}
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">
+                    Waiting on historical game-line history with `Away`, `Home`, `Spread`, `Total`, `AwayScore`, `HomeScore`, and `Date` so we can test ATS and totals streak continuation.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% if not history_lab.ready %}
+        <div class="parlay-surface-soft" style="padding: 16px;">
+            <div class="page-kicker" style="margin-bottom: 8px;">Files To Populate</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                {% for file in history_lab.required_files %}
+                <span class="badge">{{ file }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

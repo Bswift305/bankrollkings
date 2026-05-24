@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Elite MLB Lab - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Elite MLB</div>
+        <h1>MLB <span class="accent">Launch Lab</span></h1>
+        <div class="page-subtitle">Power suppression, pitcher profiles, slate environment, and book-supported under spots for the summer launch sport.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/elite" class="btn btn-secondary btn-sm">Elite Cockpit</a>
+        <a href="/elite/matchup-builder?sport=MLB" class="btn btn-primary btn-sm">Matchup Builder</a>
+        <a href="/sports/mlb" class="btn btn-secondary btn-sm">MLB Board</a>
+    </div>
+</div>
+
+<div class="grid-4 mb-24" style="gap:10px;">
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Suppression Spots</div>
+        <div style="font-size:26px; font-weight:800; color:var(--accent);">{{ suppression.summary.rows }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Anchors</div>
+        <div style="font-size:26px; font-weight:800; color:var(--accent-blue);">{{ suppression.summary.anchors }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Avg Score</div>
+        <div style="font-size:26px; font-weight:800; color:var(--accent-copper);">{% if suppression.summary.avg_score is not none %}{{ suppression.summary.avg_score }}{% else %}-{% endif %}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Pitcher Cards</div>
+        <div style="font-size:26px; font-weight:800; color:var(--text-bright);">{{ pitcher_cards|length }}</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Required MLB Market Coverage</div>
+            <div class="cell-meta" style="margin-top:4px;">These are the markets the fetcher asks for every refresh. Missing means the provider/books returned no live rows on the current slate.</div>
+        </div>
+        <span class="badge badge-accent">{{ market_coverage.summary.live }}/{{ market_coverage.summary.requested }} live</span>
+    </div>
+    <div class="p-16">
+        {% if market_coverage.missing %}
+        <div class="parlay-surface-soft" style="padding:10px; margin-bottom:12px; border-color:rgba(255,196,122,0.35);">
+            <div class="page-kicker" style="margin-bottom:6px;">Needed But Missing Today</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                {% for row in market_coverage.missing %}
+                <span class="badge" title="{{ row.market_key }}{% if row.missing_reason %} | {{ row.missing_reason }}{% endif %}">{{ row.stat }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            {% for row in market_coverage.rows %}
+            <span class="badge {% if row.status == 'LIVE' %}badge-accent{% endif %}" title="{{ row.market_key }} | {{ row.price_format }}{% if row.missing_reason %} | {{ row.missing_reason }}{% endif %}">
+                {{ row.stat }}: {{ row.rows }}{% if row.price_format == 'ONE_SIDED_YES' %} yes-only{% endif %}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Power Suppression Board</div>
+            <div class="cell-meta" style="margin-top:4px;">This is the HR-under strategy translated to the current feed. Dedicated HR props can plug into this same scoring layer once available.</div>
+        </div>
+        <span class="badge badge-accent">{{ suppression.summary.rows }} rows</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Game</th>
+                    <th>Play</th>
+                    <th>Power Profile</th>
+                    <th>Market</th>
+                    <th>Environment</th>
+                    <th>Score</th>
+                    <th>Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in suppression.rows %}
+                <tr>
+                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }}</div></td>
+                    <td>{{ row.game }}</td>
+                    <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}</td>
+                    <td>
+                        <div class="cell-meta">HR rate {{ row.hr_rate }}%</div>
+                        <div class="cell-meta">TB/G {{ row.tb_per_game }} | K {{ row.k_rate }}%</div>
+                        <div class="cell-meta">Recent TB {{ row.recent_tb_avg }}</div>
+                    </td>
+                    <td>{{ row.book }}<div class="cell-meta">{{ '+' if row.under_price > 0 }}{{ row.under_price }} | {{ row.implied_under }}%</div></td>
+                    <td>{{ row.environment }}{% if row.total %}<div class="cell-meta">Total {{ row.total }}</div>{% endif %}</td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span><div class="cell-meta">{{ row.score }}</div></td>
+                    <td class="cell-meta">{{ row.reasons|join(' | ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="cell-meta">{{ suppression.summary.note }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">One-Sided Power Markets</div>
+            <div class="cell-meta" style="margin-top:4px;">Home Runs and Triples often come back as yes-only markets. This panel keeps them visible without treating them like normal O/U props.</div>
+        </div>
+        <span class="badge badge-accent">{{ one_sided_power.summary.rows }} rows</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Game</th>
+                    <th>Market</th>
+                    <th>Best Yes Price</th>
+                    <th>Power Profile</th>
+                    <th>Environment</th>
+                    <th>Read</th>
+                    <th>Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in one_sided_power.rows %}
+                <tr>
+                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }}</div></td>
+                    <td>{{ row.game }}</td>
+                    <td><span class="badge">YES</span> {{ row.stat }} {{ row.line }}</td>
+                    <td>
+                        {{ row.book }}
+                        <div class="cell-meta">{{ '+' if row.yes_price > 0 }}{{ row.yes_price }}{% if row.implied_yes is not none %} | {{ row.implied_yes }}% implied{% endif %}</div>
+                        <div class="cell-meta">{{ row.book_count }} books</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">HR rate {% if row.hr_rate is not none %}{{ row.hr_rate }}%{% else %}-{% endif %}</div>
+                        <div class="cell-meta">TB/G {% if row.tb_per_game is not none %}{{ row.tb_per_game }}{% else %}-{% endif %}</div>
+                        <div class="cell-meta">Recent TB {% if row.recent_tb_avg is not none %}{{ row.recent_tb_avg }}{% else %}-{% endif %}</div>
+                    </td>
+                    <td>{{ row.environment }}{% if row.total %}<div class="cell-meta">Total {{ row.total }}</div>{% endif %}</td>
+                    <td><span class="badge {% if row.profile_label == 'POWER WATCH' %}badge-accent{% endif %}">{{ row.profile_label }}</span><div class="cell-meta">{{ row.score }}</div></td>
+                    <td class="cell-meta">{{ row.reasons|join(' | ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="cell-meta">{{ one_sided_power.summary.note }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap:14px;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Pitcher Profile Cards</div>
+            <span class="badge">{{ pitcher_cards|length }} profiles</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:8px;">
+            {% for row in pitcher_cards %}
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <strong>{{ row.player }}</strong>
+                    <span class="badge">{{ row.tag }}</span>
+                </div>
+                <div class="cell-meta" style="margin-top:5px;">{{ row.team }} | {{ row.games }} games | WHIP {{ row.whip }} | H/9 {{ row.h_per_9 }} | K/9 {{ row.k_per_9 }} | Outs {{ row.outs_avg }}</div>
+            </div>
+            {% else %}
+            <div class="cell-meta">Pitcher profiles need MLB game logs with pitcher stat columns.</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Slate Environment</div>
+            <span class="badge">{{ slate_intelligence|length }} games</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:8px;">
+            {% for row in slate_intelligence[:10] %}
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <strong>{{ row.matchup }}</strong>
+                    <span class="badge">{{ row.environment }}</span>
+                </div>
+                <div class="cell-meta" style="margin-top:5px;">Total {{ row.total }} | Anchors {{ row.anchors }} | Watch {{ row.watch }} | {{ row.note }}</div>
+            </div>
+            {% else %}
+            <div class="cell-meta">No slate environment rows loaded yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

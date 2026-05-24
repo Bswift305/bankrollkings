@@ -1,0 +1,1001 @@
+{% extends "base.html" %}
+{% block title %}Matchup Lens - Bankroll Kings{% endblock %}
+
+{% block content %}
+{% set matchup_guide = get_method_guide('matchup_lens') %}
+<style>
+.dashboard-spotlight {
+    border-color: rgba(132,215,210,0.28) !important;
+    background:
+        radial-gradient(circle at 50% 42%, rgba(132,215,210,0.12) 0%, rgba(110,162,255,0.08) 30%, rgba(184,115,51,0.06) 50%, transparent 74%),
+        linear-gradient(135deg, rgba(17,34,48,0.96) 0%, rgba(22,40,52,0.96) 50%, rgba(15,26,30,0.98) 100%) !important;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.dashboard-spotlight .card-header {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 70%),
+        linear-gradient(135deg, rgba(110,162,255,0.20) 0%, rgba(132,215,210,0.10) 42%, rgba(18,35,49,0.92) 100%) !important;
+    padding: 14px 18px;
+}
+
+.dashboard-spotlight .card-title {
+    font-size: 18px;
+    letter-spacing: 1.4px;
+    text-shadow: 0 0 18px rgba(255,255,255,0.12), 0 0 30px rgba(110,162,255,0.10);
+}
+
+.lens-board-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.lens-card {
+    display: block;
+    text-decoration: none;
+    border-radius: 16px;
+    padding: 13px 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 30%),
+        linear-gradient(135deg, rgba(18,35,49,0.96) 0%, rgba(24,40,54,0.94) 100%);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.lens-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(132,215,210,0.28);
+}
+
+.lens-card.accent { border-color: rgba(132,215,210,0.26); }
+.lens-card.copper { border-color: rgba(184,115,51,0.26); }
+.lens-card.blue { border-color: rgba(110,162,255,0.26); }
+.lens-card.danger { border-color: rgba(255,107,107,0.30); }
+
+.lens-type {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--accent-copper);
+    margin-bottom: 8px;
+}
+
+.lens-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.2;
+    margin-bottom: 6px;
+}
+
+.lens-kicker {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.lens-topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.lens-score {
+    min-width: 52px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text-bright);
+    text-align: center;
+}
+
+.lens-summary {
+    font-size: 12px;
+    color: #b8c8d2;
+    line-height: 1.55;
+    margin-bottom: 10px;
+}
+
+.lens-drivers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 10px;
+}
+
+.lens-driver {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    color: var(--text);
+}
+
+.lens-driver-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.lens-cta {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.tonight-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.tonight-card {
+    border-radius: 16px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 28%),
+        linear-gradient(135deg, rgba(18,35,49,0.97) 0%, rgba(24,40,54,0.96) 100%);
+}
+
+.tonight-card.accent { border-color: rgba(132,215,210,0.26); }
+.tonight-card.blue { border-color: rgba(110,162,255,0.26); }
+
+.tonight-card-topline {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    margin-bottom:10px;
+}
+
+.tonight-card-title {
+    font-size:22px;
+    font-weight:800;
+    color:var(--text-bright);
+    line-height:1.15;
+    margin-bottom:4px;
+}
+
+.tonight-card-subtitle {
+    font-size:11px;
+    color:var(--accent);
+    font-weight:700;
+}
+
+.tonight-card-time {
+    font-size:11px;
+    color:var(--text-muted);
+    font-weight:700;
+}
+
+.tonight-card-summary {
+    font-size:13px;
+    color:#b8c8d2;
+    line-height:1.55;
+    margin-bottom:10px;
+}
+
+.tonight-card-layout {
+    display:grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.95fr);
+    gap:12px;
+    align-items:start;
+}
+
+.tonight-card-stack {
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+
+.tonight-chip-row {
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-bottom:10px;
+}
+
+.tonight-chip {
+    display:inline-flex;
+    align-items:center;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,0.08);
+    background:rgba(255,255,255,0.04);
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:0.6px;
+    color:var(--text);
+}
+
+.tonight-chip-explain {
+    font-size:11px;
+    color:var(--text-muted);
+    line-height:1.45;
+    margin-top:-2px;
+}
+
+.tonight-split {
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap:8px;
+}
+
+.tonight-panel {
+    border-radius:12px;
+    padding:9px 10px;
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.06);
+}
+
+.tonight-label {
+    font-size:10px;
+    color:var(--accent-copper);
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    margin-bottom:6px;
+}
+
+.tonight-value {
+    font-size:15px;
+    color:var(--text-bright);
+    font-weight:800;
+    margin-bottom:4px;
+}
+
+.tonight-copy {
+    font-size:11px;
+    color:var(--text-muted);
+    line-height:1.5;
+}
+
+.tonight-panel-value-compact {
+    font-size:13px;
+    color:var(--text-bright);
+    font-weight:800;
+    margin-bottom:4px;
+}
+
+.tonight-angle-list {
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+.tonight-angle {
+    display:grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap:8px 10px;
+    align-items:start;
+    padding:8px 9px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.05);
+}
+
+.tonight-angle-text {
+    font-size:12px;
+    color:var(--text-bright);
+    line-height:1.35;
+    font-weight:700;
+}
+
+.tonight-angle-reason {
+    grid-column:1 / 2;
+    font-size:11px;
+    line-height:1.45;
+    color:var(--text-muted);
+}
+
+.tonight-angle-confidence {
+    grid-column:2 / 3;
+    grid-row:1 / 3;
+    font-size:11px;
+    color:var(--accent);
+    font-weight:800;
+    white-space:nowrap;
+    padding-top:1px;
+}
+
+.tonight-avoid {
+    font-size:11px;
+    color:var(--text-muted);
+    line-height:1.5;
+    padding-top:8px;
+    border-top:1px solid rgba(255,255,255,0.06);
+}
+
+.tonight-actions {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+@media (max-width: 1080px) {
+    .tonight-card-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.market-watch-grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap:16px;
+}
+
+.market-watch-card {
+    border-radius:16px;
+    padding:12px;
+    border:1px solid rgba(255,255,255,0.08);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 28%),
+        linear-gradient(135deg, rgba(18,35,49,0.97) 0%, rgba(24,40,54,0.96) 100%);
+}
+
+.market-watch-list {
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+.market-watch-row {
+    border-radius:12px;
+    padding:8px 9px;
+    border:1px solid rgba(255,255,255,0.06);
+    background:rgba(255,255,255,0.03);
+}
+
+.market-watch-row.accent { border-color: rgba(132,215,210,0.24); }
+.market-watch-row.copper { border-color: rgba(184,115,51,0.24); }
+.market-watch-row.danger { border-color: rgba(255,107,107,0.28); }
+.market-watch-row.blue { border-color: rgba(110,162,255,0.22); }
+
+.market-watch-topline {
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    align-items:flex-start;
+    margin-bottom:6px;
+}
+
+.market-watch-title {
+    font-size:13px;
+    font-weight:800;
+    color:var(--text-bright);
+    line-height:1.35;
+}
+
+.market-watch-badge {
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:0.8px;
+    color:var(--accent);
+    white-space:nowrap;
+}
+
+.market-watch-meta {
+    font-size:11px;
+    color:var(--text-muted);
+    line-height:1.5;
+}
+
+.market-watch-detail-grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap:4px 12px;
+    margin-top:6px;
+}
+</style>
+
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">NBA Matchup Method</div>
+        <h1>Matchup <span class="accent">Lens</span></h1>
+        <div class="page-subtitle">The dedicated NBA matchup workspace for reading slate context, playoff series state, opponent environment, and whether a prop or trend actually fits tonight’s spot.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-primary btn-sm">Open Market Edge</a>
+        <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-secondary btn-sm">Open Parlay Builder</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-secondary btn-sm">Open Market Edge</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Where the number moved</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use open-to-now movement, book splits, and price disagreement before trusting any prop row.</div>
+            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> Opened 12.5, now 13.5. The over got more expensive, so the early number was the better one.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How tonight should play</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This board exists to turn team-vs-defense context into a cleaner read on game script and angle fit.</div>
+            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> If the opponent gives up a lot of guard threes, a shooting guard over may deserve more trust than usual.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Short sample or real support?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Trend support only matters when the line history and current-team sample are not fighting the play.</div>
+            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> 4 of the last 5 only matters if the player was in the same role and playing similar minutes.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Attack, support, or avoid</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is not to flood the card with plays. It is to understand which spots actually deserve action.</div>
+            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> Attack = clean edge, Support = usable but fragile, Avoid = too many conflicts.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">NBA Data Pulse</div>
+        <span class="badge badge-accent">Trust Layer</span>
+    </div>
+    <div class="p-16" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker">Today's slate source</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.schedule_source }}</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">The game list is being built from live sportsbook schedule data. {{ nba_data_pulse.schedule_games }} slate rows are loaded.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker">Results current through</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.results_last_date }}</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">This is the most recent playoff result date already saved into the system.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker">Sportsbooks compared</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.prop_books }}</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">That is how many books are currently feeding the live prop board for line shopping and split reads.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker">Props last refreshed</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.props_last_updated }}</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Use this to judge whether the prop board is current before trusting the numbers.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">How To Use Matchup Lens</div>
+        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Glossary</a>
+    </div>
+    <div class="p-16" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+        <div class="parlay-surface-soft" style="padding:14px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What It Is</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_it_is }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:14px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Best Use Case</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.best_use_case }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:14px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What Confirms It</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_confirms_it }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:14px;">
+            <div class="page-kicker" style="margin-bottom:6px;">What Makes It Risky</div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_makes_it_risky }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch; gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Mode</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ focus_mode_label if postseason_only else regular_mode_label }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ focus_mode_description if postseason_only else 'Full-league view across all teams and boards.' }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Games In View</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Today, tomorrow, and upcoming combined</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Board Depth</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ total_props }} props</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ top_plays|length }} featured plays highlighted below</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Workflow</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Matchup -> Method -> Parlay</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Use this page as the clean starting point before choosing the betting method that fits the spot.</div>
+        </div>
+    </div>
+</div>
+
+{% if tonight_cards %}
+<div class="card mb-24 dashboard-spotlight">
+    <div class="card-header">
+        <div class="card-title">Tonight's Card</div>
+        <span class="badge badge-accent">{{ tonight_cards|length }} Games</span>
+    </div>
+    <div class="p-20">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            This is the one-card summary of each game: what sample the model is trusting, what the market is saying, and which prop angles actually fit the spot.
+        </div>
+        <div class="tonight-card-grid">
+            {% for card in tonight_cards %}
+            <div class="tonight-card {{ card.tone }}">
+                <div class="tonight-card-topline">
+                    <div>
+                        <div class="tonight-card-title">{{ card.title }}</div>
+                        <div class="tonight-card-subtitle">{{ card.series_label }}</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="tonight-card-time">{{ card.time }}</div>
+                        <div class="badge {% if card.market_loaded %}badge-accent{% else %}badge{% endif %}" style="margin-top:6px;">{{ card.series_status }}</div>
+                    </div>
+                </div>
+                <div class="tonight-card-layout">
+                    <div class="tonight-card-stack">
+                        <div class="tonight-card-summary">{{ card.summary }}</div>
+                        {% if card.driver_tags %}
+                        <div class="tonight-chip-row">
+                            {% for tag in card.driver_tags %}
+                            <span class="tonight-chip">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% for tag_detail in card.driver_tag_details if tag_detail.meaning %}
+                        <div class="tonight-chip-explain"><strong style="color: var(--text-bright);">{{ tag_detail.label }}:</strong> {{ tag_detail.meaning }}</div>
+                        {% endfor %}
+                        {% endif %}
+                        <div class="tonight-split">
+                            <div class="tonight-panel">
+                                <div class="tonight-label">Side Lean</div>
+                                <div class="tonight-value">{{ card.side_lean }}</div>
+                                <div class="tonight-copy">{{ card.side_reason }}</div>
+                            </div>
+                            <div class="tonight-panel">
+                                <div class="tonight-label">Total Environment</div>
+                                <div class="tonight-value">{{ card.total_lean }}</div>
+                                <div class="tonight-copy">{{ card.total_reason }}</div>
+                            </div>
+                        </div>
+                        <div class="tonight-avoid"><strong style="color:var(--text-bright);">What to avoid:</strong> {{ card.avoid_note }}</div>
+                    </div>
+                    <div class="tonight-card-stack">
+                        <div class="tonight-panel">
+                            <div class="tonight-label">Sample Read</div>
+                            <div class="tonight-panel-value-compact">{{ card.sample_label }}</div>
+                            <div class="tonight-copy">{{ card.sample_reason }}</div>
+                        </div>
+                        <div class="tonight-panel">
+                            <div class="tonight-label">Market Read</div>
+                            <div class="tonight-panel-value-compact">{{ card.market_summary }}</div>
+                            <div class="tonight-copy">
+                                {% if card.market_loaded %}
+                                Current loaded line context for this matchup.{% if card.market_updated %} Last update: {{ card.market_updated }}.{% endif %}
+                                {% else %}
+                                Game-line feed has not fully populated this matchup yet.
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if card.angles %}
+                        <div class="tonight-panel">
+                            <div class="tonight-label">Best Fits Tonight</div>
+                            <div class="tonight-angle-list">
+                                {% for angle in card.angles %}
+                                <div class="tonight-angle">
+                                    <div class="tonight-angle-text">{{ angle.label }}</div>
+                                    <div class="tonight-angle-reason">{{ angle.reason }}</div>
+                                    {% if angle.bet_tier %}
+                                    <div class="tonight-angle-reason" style="color: {% if angle.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif angle.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ angle.bet_tier.label }}</div>
+                                    {% endif %}
+                                    {% if angle.bet_tier_explanation %}
+                                    <div class="tonight-angle-reason">{{ angle.bet_tier_explanation }}</div>
+                                    {% endif %}
+                                    <div class="tonight-angle-reason" style="color: var(--text-muted);">
+                                        Profile {{ (angle.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if angle.series_game_number %} · G{{ angle.series_game_number }}{% endif %}
+                                        · <span style="color: {% if angle.volatility_flag == 'HIGH' %}var(--danger){% elif angle.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ angle.volatility_flag or 'STABLE' }}</span>
+                                        · <span style="color: {% if angle.market_gate == 'HOLD' %}var(--danger){% elif angle.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ angle.market_gate or 'CLEAR' }}</span>
+                                    </div>
+                                    {% if angle.profile_explanation %}
+                                    <div class="tonight-angle-reason">{{ angle.profile_explanation }}</div>
+                                    {% endif %}
+                                    {% if angle.market_summary %}
+                                    <div class="tonight-angle-reason" style="color: var(--text-bright);">{{ angle.market_summary }}</div>
+                                    {% endif %}
+                                    {% if angle.verdict_note %}
+                                    <div class="tonight-angle-reason" style="color: var(--accent-copper);">{{ angle.verdict_note }}</div>
+                                    {% endif %}
+                                    <div class="tonight-angle-confidence">{{ angle.confidence }}%</div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="tonight-actions">
+                    <a href="{{ card.href }}" class="btn btn-primary btn-sm">Open Matchup</a>
+                    <a href="{{ card.series_href }}" class="btn btn-secondary btn-sm">Open Series</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if market_watch and (market_watch.movers or market_watch.splits) %}
+<div class="card mb-24 dashboard-spotlight">
+    <div class="card-header">
+        <div class="card-title">Market Watch Tonight</div>
+        <span class="badge badge-accent">{{ (market_watch.movers|length) + (market_watch.splits|length) }} Reads</span>
+    </div>
+    <div class="p-20">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            This is the price-action layer: where tonight’s prop market actually moved and where books are still disagreeing enough to matter.
+        </div>
+        <div class="market-watch-grid">
+            {% if market_watch.movers %}
+            <div class="market-watch-card">
+                <div class="page-kicker" style="margin-bottom: 10px;">Market Movers</div>
+                <div class="market-watch-list">
+                    {% for item in market_watch.movers %}
+                    <div class="market-watch-row {{ item.tone }}">
+                        <div class="market-watch-topline">
+                            <div class="market-watch-title">{{ item.player }} {{ item.stat }} {{ item.line }}</div>
+                            <div class="market-watch-badge">{{ item.move_label or 'Movement' }}</div>
+                        </div>
+                        <div class="market-watch-meta">
+                            {{ item.team }}{% if item.opponent %} vs {{ item.opponent }}{% endif %}
+                            {% if item.direction %} • {{ item.direction }}{% endif %}
+                            {% if item.confidence %} • {{ item.confidence }}%{% endif %}
+                        </div>
+                        <div class="market-watch-meta">Open {{ item.open_line if item.open_line is not none else '-' }} → Now {{ item.current_line if item.current_line is not none else '-' }}{% if item.prior_line is not none %} • Prior {{ item.prior_line }}{% endif %}</div>
+                        <div class="market-watch-meta">{% if item.snapshot_move is not none %}Snapshot {{ '+' if item.snapshot_move > 0 }}{{ item.snapshot_move }}{% elif item.opening_move is not none %}Open shift {{ '+' if item.opening_move > 0 }}{{ item.opening_move }}{% else %}-{% endif %}</div>
+                        <div class="market-watch-meta">{{ item.move_note or item.note }}</div>
+                        {% if item.move_teaching_note %}
+                        <div class="market-watch-meta"><strong>Why it matters:</strong> {{ item.move_teaching_note }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if market_watch.splits %}
+            <div class="market-watch-card">
+                <div class="page-kicker" style="margin-bottom: 10px;">Book Split Watch</div>
+                <div class="market-watch-list">
+                    {% for item in market_watch.splits %}
+                    <div class="market-watch-row blue">
+                        <div class="market-watch-topline">
+                            <div class="market-watch-title">{{ item.player }} {{ item.stat }} {{ item.line }}</div>
+                            <div class="market-watch-badge">{{ item.book_count }} books</div>
+                        </div>
+                        <div class="market-watch-meta">
+                            {{ item.team }}{% if item.opponent %} vs {{ item.opponent }}{% endif %}
+                            {% if item.direction %} • {{ item.direction }}{% endif %}
+                            {% if item.confidence %} • {{ item.confidence }}%{% endif %}
+                        </div>
+                        <div class="market-watch-meta">Range {{ item.line_low }} to {{ item.line_high }}{% if item.range_gap is not none %} • Gap {{ item.range_gap }}{% endif %}</div>
+                        <div class="market-watch-meta">Best price book: {{ item.best_book or 'Loaded market' }}</div>
+                        <div class="market-watch-meta">{{ item.note }}</div>
+                        {% if item.split_teaching_note %}
+                        <div class="market-watch-meta"><strong>Why it matters:</strong> {{ item.split_teaching_note }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if matchup_lens_board %}
+<div class="card mb-24 dashboard-spotlight">
+    <div class="card-header">
+        <div class="card-title">Curated Lens Board</div>
+        <span class="badge badge-accent">{{ matchup_lens_board|length }}</span>
+    </div>
+    <div class="p-20">
+        <div class="lens-board-grid">
+            {% for card in matchup_lens_board %}
+            <a href="{{ card.href }}" class="lens-card {{ card.tone }}">
+                <div class="lens-topline">
+                    <div class="lens-type">{{ card.type }}</div>
+                    <div class="lens-score">{{ card.context_score }}</div>
+                </div>
+                <div class="lens-title">{{ card.title }}</div>
+                <div class="lens-kicker">{{ card.kicker }}</div>
+                <div class="lens-summary">{{ card.summary }}</div>
+                {% if card.context_drivers %}
+                <div class="lens-drivers">
+                    {% for driver in card.context_drivers[:3] %}
+                    <span class="lens-driver">{{ driver }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if card.score_note %}
+                <div class="lens-driver-note">{{ card.score_note }}</div>
+                {% endif %}
+                <div class="lens-cta">{{ card.cta }} -></div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if postseason_only and postseason_matchups %}
+<div class="card mb-24 dashboard-spotlight">
+    <div class="card-header">
+        <div class="card-title">{{ focus_mode_label }} Matchups</div>
+        <span class="badge badge-accent">{{ postseason_matchups|length }}</span>
+    </div>
+    <div class="p-20">
+        <div class="grid-2" style="gap: 16px;">
+            {% for game in postseason_matchups %}
+            <a href="{% if game.series_id %}/series/{{ game.series_id }}?postseason=1{% else %}/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1{% endif %}" class="matchup-card">
+                <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
+                    <div>
+                        <div class="matchup-kicker" style="color: {% if game.series_type == 'playoff' %}var(--accent-copper){% else %}#ddb25f{% endif %};">{{ game.series_label or 'Postseason Matchup' }}</div>
+                        <div class="matchup-teams" style="font-size: 21px;">{{ matchup_mark(game.Away, game.Home, '@', 'md') }}</div>
+                        {% if game.series_status %}
+                        <div style="margin-top: 6px; font-size: 12px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>
+                        {% endif %}
+                        {% if game.last_result %}
+                        <div style="margin-top: 4px; font-size: 11px; color: var(--text-muted);">{{ game.last_result }}</div>
+                        {% endif %}
+                    </div>
+                    <span class="status-pill {% if game.bucket == 'today' %}today{% elif game.bucket == 'tomorrow' %}tomorrow{% else %}upcoming{% endif %}">
+                        {% if game.bucket == 'today' %}Today{% elif game.bucket == 'tomorrow' %}Tmr{% else %}Upcoming{% endif %}
+                    </span>
+                </div>
+                <div class="matchup-meta">{{ game.Time }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if 0 %}
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="card panel-glow" style="border-color: rgba(110,168,166,0.26);">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">{{ focus_mode_short if postseason_only else 'Games' }} Today</div>
+            <span class="badge badge-accent">{{ upcoming.today|length }}</span>
+        </div>
+        <div style="max-height: 280px; overflow-y: auto;">
+            {% if upcoming_today %}
+            {% for game in upcoming_today %}
+            <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}" style="display: block; padding: 10px 16px; border-bottom: 1px solid var(--border); text-decoration: none;" onmouseover="this.style.background='var(--bg-elevated)'" onmouseout="this.style.background='transparent'">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">{{ game.Time }}</span>
+                </div>
+                {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-title">No games today</div>
+                <div class="empty-state-copy">This bucket is empty right now. Check tomorrow or upcoming for the next playoff spots on the board.</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card panel-glow" style="border-color: rgba(132,215,210,0.24);">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">Tomorrow</div>
+            <span class="status-pill tomorrow" style="min-width: 52px; padding: 7px 10px;">{{ upcoming.tomorrow|length }}</span>
+        </div>
+        <div style="max-height: 280px; overflow-y: auto;">
+            {% if upcoming_tomorrow %}
+            {% for game in upcoming_tomorrow %}
+            <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}" style="display: block; padding: 10px 16px; border-bottom: 1px solid var(--border); text-decoration: none;" onmouseover="this.style.background='var(--bg-elevated)'" onmouseout="this.style.background='transparent'">
+                <div>{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</div>
+                {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-title">No games tomorrow</div>
+                <div class="empty-state-copy">Tomorrow's schedule bucket is empty right now.</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card panel-glow" style="border-color: rgba(132,215,210,0.24);">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">Upcoming</div>
+            <span class="status-pill upcoming" style="min-width: 52px; padding: 7px 10px;">{{ upcoming.upcoming|length }}</span>
+        </div>
+        <div style="max-height: 280px; overflow-y: auto;">
+            {% if upcoming_future %}
+            {% for game in upcoming_future %}
+            <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}" style="display: block; padding: 10px 16px; border-bottom: 1px solid var(--border); text-decoration: none;" onmouseover="this.style.background='var(--bg-elevated)'" onmouseout="this.style.background='transparent'">
+                <div>{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</div>
+                {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-title">No upcoming games</div>
+                <div class="empty-state-copy">No later slate is loaded in the current view.</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if postseason_only and best_by_series %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(184,115,51,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Best By Series</div>
+        <span class="badge" style="background: linear-gradient(135deg, rgba(184,115,51,0.92) 0%, rgba(110,168,166,0.9) 100%); color: #08110f; border: 1px solid rgba(184,115,51,0.45);">{{ best_by_series|length }}</span>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Series</th>
+                <th>Player</th>
+                <th>Prop</th>
+                <th>Play</th>
+                <th>Pressure</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for play in best_by_series %}
+            <tr>
+                <td><a href="/series/{{ play.series_id }}?postseason=1" style="color: var(--accent-copper); font-weight: 700;">{{ play.series_label }}</a></td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span>{{ play.player }}</span>
+                        {{ team_mark(play.team, size='xs', show_name=False) }}
+                    </div>
+                </td>
+                <td><span class="badge">{{ play.stat }}</span> <strong>{{ play.line }}</strong></td>
+                <td><span class="play-pill-gloss {% if play.direction == 'OVER' %}over{% else %}under{% endif %}">{{ play.direction }} {{ play.confidence|round|int }}%</span></td>
+                <td>{% for tag in play.tags[:2] %}<span style="background: var(--bg-elevated); color: #FFB800; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}{% if play.support_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ play.support_note }}</div>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if postseason_only and role_changes %}
+<div class="card mb-24" style="border-color: rgba(255,107,107,0.35);">
+    <div class="card-header" style="background: linear-gradient(135deg, rgba(255,107,107,0.12) 0%, transparent 100%);">
+        <div class="card-title">Expected Role Changes</div>
+        <a href="/injuries?postseason=1" class="btn btn-secondary btn-sm">Injury Hub</a>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr><th>Player</th><th>Team</th><th>Stat</th><th>Shift</th><th>Driver</th></tr>
+        </thead>
+        <tbody>
+            {% for role in role_changes[:8] %}
+            <tr>
+                <td><a href="/player/{{ role.player|urlencode }}">{{ role.player }}</a></td>
+                <td>{{ team_mark(role.team, size='xs') }}</td>
+                <td><span class="badge">{{ role.stat }}</span></td>
+                <td><span class="hr-strong">+{{ role.boost_pct }}% {{ role.expected_shift }}</span>{% if role.projected_starter %}<div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Projected starter</div>{% endif %}</td>
+                <td>{{ role.injured_player }} <span style="color: var(--text-muted);">({{ role.injury_status }})</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="grid-4 mb-24" style="gap: 12px;">
+    <div class="stat-card" style="background: linear-gradient(135deg, rgba(78,120,194,0.08) 0%, var(--bg-card) 40%, rgba(110,168,166,0.16) 100%);">
+        <div class="stat-value" style="color: var(--accent);">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
+        <div class="stat-label">Total Games</div>
+    </div>
+    <div class="stat-card"><div class="stat-value">{{ total_props }}</div><div class="stat-label">Props</div></div>
+    <div class="stat-card"><div class="stat-value">{{ teams|length }}</div><div class="stat-label">Teams</div></div>
+    <div class="stat-card"><div class="stat-value" style="color: var(--accent);">{{ top_plays|length }}</div><div class="stat-label">Hot Plays</div></div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Top Plays</div>
+        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Board</a>
+    </div>
+    {% if top_plays %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Player</th><th>Team</th><th>Prop</th><th>Play</th><th>Hit Rate</th><th>Signals</th><th>Market</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            {% for play in top_plays %}
+            <tr>
+                <td><a href="/player/{{ play.player|urlencode }}">{{ play.player }}</a>{% if play.has_injury_flag %}<div style="margin-top: 6px;"><span class="badge badge-injury" title="{{ play.injury_reason }}">&#10010; {{ play.injury_short_label or play.injury_status }}</span></div>{% endif %}</td>
+                <td>{{ team_mark(play.team, size='xs') }}</td>
+                <td><span class="badge">{{ play.stat }}</span> <strong>{{ play.line }}</strong></td>
+                <td><span class="play-pill-gloss {% if play.direction == 'OVER' %}over{% else %}under{% endif %}">{{ play.direction }}</span></td>
+                <td><span class="{% if play.hit_rate >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ play.hit_rate }}%</span></td>
+                <td>{% if postseason_only and play.tags %}{% for tag in play.tags[:2] %}<span style="background: var(--bg-elevated); color: var(--accent); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}{% if play.bet_tier %}<div style="margin-top: 6px; font-size: 11px; color: {% if play.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif play.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ play.bet_tier.label }}</div>{% endif %}{% if play.play_verdict_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ play.play_verdict_note }}</div>{% endif %}{% if play.rank_explanation %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-bright); line-height: 1.5;">{{ play.rank_explanation }}</div>{% endif %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">Profile {{ (play.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if play.series_game_number %} · G{{ play.series_game_number }}{% endif %}</div><div style="margin-top: 4px; font-size: 11px; line-height: 1.45;"><span style="color: {% if play.volatility_flag == 'HIGH' %}var(--danger){% elif play.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ play.volatility_flag or 'STABLE' }}</span><span style="color: var(--text-muted);"> · </span><span style="color: {% if play.market_gate == 'HOLD' %}var(--danger){% elif play.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ play.market_gate or 'CLEAR' }}</span></div>{% if play.market_summary %}<div style="margin-top: 4px; font-size: 11px; color: var(--text-bright); line-height: 1.45;">{{ play.market_summary }}</div>{% endif %}{% if play.featured_risk_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.5;"><strong>What could break this:</strong> {{ play.featured_risk_note }}</div>{% endif %}</td>
+                <td style="font-size: 11px; line-height: 1.45;">
+                    {% if play.move_label %}
+                    <div style="color: {% if play.tone == 'accent' %}var(--accent){% elif play.tone == 'danger' %}#FF6B6B{% elif play.tone == 'copper' %}var(--accent-copper){% else %}var(--text-muted){% endif %}; font-weight: 800;">{{ play.move_label }}</div>
+                    {% elif play.book_count and play.book_count >= 2 and play.range_gap is not none and play.range_gap >= 0.5 %}
+                    <div style="color: var(--accent-blue); font-weight: 800;">{{ play.book_count }}-book split</div>
+                    {% else %}
+                    <div style="color: var(--text-muted); font-weight: 700;">Stable line</div>
+                    {% endif %}
+                    <div style="color: var(--text-muted);">Open {{ play.open_line if play.open_line is not none else '-' }} → Now {{ play.current_line if play.current_line is not none else play.line }}</div>
+                    {% if play.range_gap is not none and play.range_gap >= 0.5 %}
+                    <div style="color: var(--accent-copper);">Range {{ play.line_low }} to {{ play.line_high }}</div>
+                    {% elif play.prior_line is not none %}
+                    <div style="color: var(--text-muted);">Prior {{ play.prior_line }}</div>
+                    {% endif %}
+                    {% if 'LINE HISTORY CAP' in play.guardrail_tags or 'LINE HISTORY CONFLICT' in play.guardrail_tags %}
+                    <div style="color: #FFB800; font-weight: 800;">Line history conflict</div>
+                    {% if play.live_line_over_rate is not none and play.live_line_under_rate is not none and play.live_line_games %}
+                    <div style="color: var(--text-muted);">Season at this line: O {{ play.live_line_over_rate }}% / U {{ play.live_line_under_rate }}% ({{ play.live_line_games }} games)</div>
+                    {% endif %}
+                    {% endif %}
+                </td>
+                <td>{% if play.plays_today %}<span class="status-pill today">Today</span>{% elif play.plays_tomorrow %}<span class="status-pill tomorrow">Tmr</span>{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No plays loaded</div>
+        <div class="empty-state-copy">Run `REFRESH_DATA` to reload player props and rebuild the dashboard board.</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid-4" style="gap: 16px;">
+    <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div style="font-weight: 600;">Market Edge</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Best book and price context</div>
+    </a>
+    <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div style="font-weight: 600;">Parlay Builder</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Build anchors and round robins</div>
+    </a>
+    <a href="/props/unders?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div style="font-weight: 600;">Under Plays</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Situational unders</div>
+    </a>
+    <a href="/trends/PTS?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
+        <div style="font-weight: 600;">Trends</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Ride streaks and recent form</div>
+    </a>
+</div>
+{% endblock %}

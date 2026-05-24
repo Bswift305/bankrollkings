@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Raw Data - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Raw Data Explorer</div>
+        <h1>NBA Raw Data</h1>
+        <div class="page-subtitle">Filter the live game-log table by player and team, highlight one stat, and inspect the underlying rows before trusting the model layer.</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Filters</div>
+        <span class="badge badge-accent">{{ row_count }} Rows</span>
+    </div>
+    <form method="get" class="p-16" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;">
+        <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+        <div>
+            <div class="control-label">Player</div>
+            <input type="text" name="player" value="{{ selected_player }}" placeholder="Player name" style="width: 100%;">
+        </div>
+        <div>
+            <div class="control-label">Team</div>
+            <select name="team" style="width: 100%;">
+                <option value="">All teams</option>
+                {% for team in team_options %}
+                <option value="{{ team }}" {% if selected_team == team %}selected{% endif %}>{{ team }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <div class="control-label">Stat</div>
+            <select name="stat" style="width: 100%;">
+                {% for stat in stat_options %}
+                <option value="{{ stat }}" {% if selected_stat == stat %}selected{% endif %}>{{ stat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <div class="control-label">Sample</div>
+            <select name="sample" style="width: 100%;">
+                <option value="current" {% if sample_mode == 'current' %}selected{% endif %}>Current Team</option>
+                <option value="full" {% if sample_mode == 'full' %}selected{% endif %}>Full Season</option>
+            </select>
+        </div>
+        <div style="display: flex; align-items: end; gap: 8px;">
+            <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+            <a href="/raw-data?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Reset</a>
+        </div>
+    </form>
+</div>
+
+{% if trajectory and trajectory.points %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">{{ selected_player or 'Filtered Player' }} {{ selected_stat }} Trajectory</div>
+        <span class="badge">{{ trajectory.sample_size }} Games</span>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px; border-bottom: 1px solid var(--border);">
+        <div class="stat-card">
+            <div class="stat-value">{{ trajectory.latest }}</div>
+            <div class="stat-label">Latest</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ trajectory.recent_avg }}</div>
+            <div class="stat-label">Recent Avg</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ trajectory.high }}</div>
+            <div class="stat-label">High</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: {% if trajectory.delta >= 0 %}var(--accent){% else %}var(--danger){% endif %};">
+                {% if trajectory.delta > 0 %}+{% endif %}{{ trajectory.delta }}
+            </div>
+            <div class="stat-label">Delta</div>
+        </div>
+    </div>
+    {% if prop_book_lines %}
+    <div class="p-16" style="display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border);">
+        {% for stat, rows in prop_book_lines.items() %}
+            {% for item in rows %}
+            <span class="badge {% if stat == selected_stat %}badge-accent{% endif %}" style="{% if item.color %}border-color: {{ item.color }};{% endif %}">
+                {{ stat }} {{ item.book }} {{ item.line }}
+            </span>
+            {% endfor %}
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="p-20">
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            {% if trajectory.line_value is not none %}
+            Live prop line overlay: {{ selected_stat }} {{ trajectory.line_value }}{% if trajectory.overlay_lines %} with multi-book comparisons layered in{% endif %}.
+            {% else %}
+            No live prop line is loaded for this stat right now, so the chart is pure raw production.
+            {% endif %}
+        </div>
+        <div style="position: relative; height: 260px; padding: 14px 12px 28px 12px; border-radius: 16px; border: 1px solid rgba(132,215,210,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%), rgba(12,24,31,0.9);">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width: 100%; height: 200px; overflow: visible;">
+                <line x1="0" y1="100" x2="100" y2="100" stroke="rgba(255,255,255,0.15)" stroke-width="0.6"></line>
+                <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.08)" stroke-width="0.4" stroke-dasharray="2 2"></line>
+                {% for overlay in trajectory.overlay_lines %}
+                <line x1="0" y1="{{ overlay.y }}" x2="100" y2="{{ overlay.y }}" stroke="{{ overlay.color }}" stroke-width="0.55" stroke-dasharray="1.8 1.8" opacity="0.9"></line>
+                {% endfor %}
+                {% if trajectory.line_y is not none %}
+                <line x1="0" y1="{{ trajectory.line_y }}" x2="100" y2="{{ trajectory.line_y }}" stroke="rgba(255,184,0,0.9)" stroke-width="0.8" stroke-dasharray="2 2"></line>
+                {% endif %}
+                <polyline fill="none" stroke="url(#rawTrajectoryGradient)" stroke-width="2.2" points="{{ trajectory.svg_points }}"></polyline>
+                <defs>
+                    <linearGradient id="rawTrajectoryGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#6ea2ff"></stop>
+                        <stop offset="100%" stop-color="#84d7d2"></stop>
+                    </linearGradient>
+                </defs>
+                {% for point in trajectory.points %}
+                <circle cx="{{ point.x }}" cy="{{ point.y }}" r="1.7" fill="{% if point.season_type == 'Playoffs' %}#ffb800{% else %}#84d7d2{% endif %}"></circle>
+                {% endfor %}
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat({{ trajectory.points|length }}, minmax(0, 1fr)); gap: 4px; margin-top: 6px;">
+                {% for point in trajectory.points %}
+                <div style="text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-bright); font-weight: 700;">{{ point.value }}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">{{ point.label }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if trajectory.overlay_lines %}
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+                {% for overlay in trajectory.overlay_lines %}
+                <span class="badge" style="border-color: {{ overlay.color }}; color: var(--text-bright);">
+                    {{ overlay.book }} {{ overlay.line }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Game Log Rows</div>
+        <span class="badge">{{ selected_stat }} highlighted</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table" style="min-width: 1200px;">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Opp</th>
+                    <th>Matchup</th>
+                    <th>MIN</th>
+                    <th>PTS</th>
+                    <th>REB</th>
+                    <th>AST</th>
+                    <th>3PM</th>
+                    <th>STL</th>
+                    <th>BLK</th>
+                    <th>Anchor Line</th>
+                    <th>Book Lines</th>
+                    <th>{{ selected_stat }} vs Line</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td style="color: var(--text-muted);">{{ row.Date|default('-') }}</td>
+                    <td><strong><a href="/player/{{ row.Player|urlencode }}?sample={{ sample_mode }}&stat={{ selected_stat }}">{{ row.Player|default('-') }}</a></strong></td>
+                    <td>{{ row.Team|default('-') }}</td>
+                    <td>{{ row.Opp|default('-') }}</td>
+                    <td style="color: var(--text-muted);">{{ row.Matchup|default('-') }}</td>
+                    <td style="{% if selected_stat == 'MIN' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.MIN|default('-') }}</td>
+                    <td style="{% if selected_stat == 'PTS' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.PTS|default('-') }}</td>
+                    <td style="{% if selected_stat == 'REB' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.REB|default('-') }}</td>
+                    <td style="{% if selected_stat == 'AST' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.AST|default('-') }}</td>
+                    <td style="{% if selected_stat == '3PM' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.get('3PM', '-') }}</td>
+                    <td style="{% if selected_stat == 'STL' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.STL|default('-') }}</td>
+                    <td style="{% if selected_stat == 'BLK' %}background: rgba(132,215,210,0.12); font-weight: 700;{% endif %}">{{ row.BLK|default('-') }}</td>
+                    <td>{{ row.SelectedLine|default('-') }}</td>
+                    <td style="font-size: 11px; min-width: 180px;">
+                        {% if prop_book_lines.get(selected_stat) %}
+                            {% for item in prop_book_lines.get(selected_stat) %}
+                            <span class="badge" style="margin-bottom: 4px; border-color: {{ item.color }}; color: var(--text-bright);">{{ item.book }} {{ item.line }}</span>
+                            {% endfor %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.SelectedStatResult == 'OVER' %}
+                        <span class="badge badge-accent">OVER</span>
+                        {% elif row.SelectedStatResult == 'UNDER' %}
+                        <span class="badge badge-danger">UNDER</span>
+                        {% elif row.SelectedStatResult == 'PUSH' %}
+                        <span class="badge">PUSH</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.Result|default('-') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to inspect every tracked column.</div>
+</div>
+{% endblock %}

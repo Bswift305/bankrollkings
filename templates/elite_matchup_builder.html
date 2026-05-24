@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Elite Matchup Builder - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Elite Tier</div>
+        <h1>Matchup <span class="accent">Prop Builder</span></h1>
+        <div class="page-subtitle">Pick a game and see the strongest props, price moves, and book-shopping edges for that exact matchup.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/elite" class="btn btn-secondary btn-sm">Elite Cockpit</a>
+        <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Bet Review</a>
+    </div>
+</div>
+
+<form method="get" action="/elite/matchup-builder" class="card mb-24 p-16" style="display:grid; grid-template-columns:160px minmax(260px,1fr) auto; gap:12px; align-items:end;">
+    <div>
+        <label class="form-label">Sport</label>
+        <select name="sport" class="form-control">
+            <option value="">All</option>
+            <option value="MLB" {% if sport_filter == 'MLB' %}selected{% endif %}>MLB</option>
+            <option value="WNBA" {% if sport_filter == 'WNBA' %}selected{% endif %}>WNBA</option>
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Matchup</label>
+        <select name="matchup" class="form-control">
+            {% for option in matchup_options %}
+            <option value="{{ option.matchup }}" {% if option.matchup == matchup_filter and option.sport == sport_filter %}selected{% endif %}>
+                {{ option.sport }} | {{ option.matchup }} | {{ option.count }} legs{% if option.anchor_count %} | {{ option.anchor_count }} anchors{% endif %}
+            </option>
+            {% else %}
+            <option value="">No eligible matchups loaded</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Build Matchup</button>
+</form>
+
+<div class="grid-5 mb-24" style="gap:10px;">
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Candidates</div>
+        <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ summary.candidate_count }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Anchors</div>
+        <div style="font-size:24px; font-weight:800; color:var(--accent-blue);">{{ summary.anchor_count }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Watch</div>
+        <div style="font-size:24px; font-weight:800; color:var(--accent-copper);">{{ summary.watch_count }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Aligned Moves</div>
+        <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ summary.aligned_moves }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Avg Edge</div>
+        <div style="font-size:24px; font-weight:800; color:var(--text-bright);">{% if summary.avg_edge is not none %}{{ summary.avg_edge }}%{% else %}-{% endif %}</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">{{ sport_filter or 'Sport' }} {{ matchup_filter or 'Matchup' }}</div>
+            <div class="cell-meta" style="margin-top:4px;">Builder notes from reliability, line movement, and price edge.</div>
+        </div>
+        <span class="badge badge-accent">{{ summary.candidate_count }} legs</span>
+    </div>
+    <div class="p-16" style="display:grid; gap:8px;">
+        {% for note in summary.notes %}
+        <div class="parlay-surface-soft" style="padding:10px; color:var(--text-bright);">{{ note }}</div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Best Props For This Matchup</div>
+        <span class="badge">{{ candidates|length }} shown</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Play</th>
+                    <th>Reliability</th>
+                    <th>True</th>
+                    <th>Market</th>
+                    <th>Edge</th>
+                    <th>Book</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in candidates %}
+                <tr>
+                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }} | {{ row.method or 'Elite' }}</div></td>
+                    <td><span class="badge">{{ row.direction }}</span> {{ row.stat }} {{ row.line }}</td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span></td>
+                    <td>{{ row.true_prob }}%</td>
+                    <td>{% if row.market_price is not none %}{{ '+' if row.market_price > 0 }}{{ row.market_price }}{% else %}-{% endif %}</td>
+                    <td style="color:{% if row.edge_pct is not none and row.edge_pct > 0 %}var(--accent){% else %}var(--text-muted){% endif %}; font-weight:800;">{% if row.edge_pct is not none %}{{ row.edge_pct }}%{% else %}-{% endif %}</td>
+                    <td>{{ row.book or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="cell-meta">No eligible props found for this matchup yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap:14px;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Line Movement In This Game</div>
+            <span class="badge">{{ sharp_money|length }} moves</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:8px;">
+            {% for row in sharp_money %}
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <strong>{{ row.player }}</strong>
+                    <span class="badge">{{ row.urgency }}</span>
+                </div>
+                <div class="cell-meta" style="margin-top:5px;">{{ row.sharp_side }} {{ row.stat }} | Model {{ row.model_side }} | {{ row.alignment }} | {{ row.book }}</div>
+            </div>
+            {% else %}
+            <div class="cell-meta">No meaningful line moves are loaded for this matchup.</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Best-Book Edges</div>
+            <span class="badge">{{ best_books|length }} rows</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:8px;">
+            {% for row in best_books %}
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <strong>{{ row.player }}</strong>
+                    <span style="font-weight:800; color:var(--accent);">{% if row.improvement_pct is not none %}{{ row.improvement_pct }}%{% else %}-{% endif %}</span>
+                </div>
+                <div class="cell-meta" style="margin-top:5px;">{{ row.direction }} {{ row.stat }} {{ row.line }} | Best {{ row.best_book }} {{ '+' if row.best_price > 0 }}{{ row.best_price }} | Worst {{ row.worst_book }}</div>
+            </div>
+            {% else %}
+            <div class="cell-meta">No multi-book price gap is loaded for this matchup.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

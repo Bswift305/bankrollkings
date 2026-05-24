@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}NBA Calibration - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Calibration Loop</div>
+        <h1>NBA Featured Calibration</h1>
+        <div class="page-subtitle">Track how featured props are aging, how they are closing against the market, and which weight profiles or rule families are earning trust.</div>
+    </div>
+</div>
+
+<div class="grid-4 mb-24" style="gap: 16px;">
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.totals.candidates }}</div>
+        <div class="stat-label">Featured Archived</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.totals.hit_rate if summary.totals.hit_rate is not none else '-' }}{% if summary.totals.hit_rate is not none %}%{% endif %}</div>
+        <div class="stat-label">Resolved Hit Rate</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.totals.avg_clv_line if summary.totals.avg_clv_line is not none else '-' }}</div>
+        <div class="stat-label">Avg CLV Line</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.totals.positive_clv_rate if summary.totals.positive_clv_rate is not none else '-' }}{% if summary.totals.positive_clv_rate is not none %}%{% endif %}</div>
+        <div class="stat-label">Positive CLV Rate</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">QC Status</div>
+        <span class="badge {% if summary.latest_qc_run.clean %}badge-accent{% else %}badge-danger{% endif %}">
+            {% if summary.latest_qc_run.clean %}Clean{% else %}Needs Attention{% endif %}
+        </span>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Last Run</div>
+            <div style="font-size: 15px; font-weight: 700; color: var(--text-bright);">{{ summary.latest_qc_run.checked_at or 'Unknown' }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Warnings</div>
+            <div style="font-size: 22px; font-weight: 800; color: #FFB800;">{{ summary.latest_qc_run.warnings or 0 }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Failures</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--danger);">{{ summary.latest_qc_run.failures or 0 }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Featured Passed</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--accent);">{{ summary.latest_qc_run.featured_prop_count or 0 }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 18px;">
+    <div class="card">
+        <div class="card-header"><div class="card-title">By Weight Profile</div></div>
+        <div class="table-shell">
+            <table class="data-table">
+                <thead><tr><th>Profile</th><th>Hit Rate</th><th>CLV</th><th>Count</th></tr></thead>
+                <tbody>
+                    {% for row in summary.by_profile %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.hit_rate if row.hit_rate is not none else '-' }}{% if row.hit_rate is not none %}%{% endif %}</td>
+                        <td>{{ row.avg_clv_line if row.avg_clv_line is not none else '-' }}</td>
+                        <td>{{ row.candidates }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">By Rule Family</div></div>
+        <div class="table-shell">
+            <table class="data-table">
+                <thead><tr><th>Rule</th><th>Hit Rate</th><th>CLV</th><th>Count</th></tr></thead>
+                <tbody>
+                    {% for row in summary.by_rule_family %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.hit_rate if row.hit_rate is not none else '-' }}{% if row.hit_rate is not none %}%{% endif %}</td>
+                        <td>{{ row.avg_clv_line if row.avg_clv_line is not none else '-' }}</td>
+                        <td>{{ row.candidates }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">By Player Tier</div></div>
+        <div class="table-shell">
+            <table class="data-table">
+                <thead><tr><th>Tier</th><th>Hit Rate</th><th>CLV</th><th>Count</th></tr></thead>
+                <tbody>
+                    {% for row in summary.by_player_tier %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.hit_rate if row.hit_rate is not none else '-' }}{% if row.hit_rate is not none %}%{% endif %}</td>
+                        <td>{{ row.avg_clv_line if row.avg_clv_line is not none else '-' }}</td>
+                        <td>{{ row.candidates }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2" style="gap: 18px;">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Persistent Warnings</div></div>
+        <div class="table-shell">
+            <table class="data-table">
+                <thead><tr><th>Rule</th><th>Player</th><th>Runs</th><th>Last Seen</th></tr></thead>
+                <tbody>
+                    {% for row in summary.warning_history %}
+                    <tr>
+                        <td>{{ row.Rule }}</td>
+                        <td>{{ row.Player }} {{ row.Stat }}</td>
+                        <td>{{ row.ConsecutiveRuns }}</td>
+                        <td>{{ row.LastSeenAt }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Recent Archived Featured Props</div></div>
+        <div class="table-shell">
+            <table class="data-table" style="min-width: 980px;">
+                <thead><tr><th>Saved</th><th>Player</th><th>Stat</th><th>Dir</th><th>Profile</th><th>Tier</th><th>Outcome</th><th>CLV</th></tr></thead>
+                <tbody>
+                    {% for row in summary.recent_rows %}
+                    <tr>
+                        <td>{{ row.SavedAt }}</td>
+                        <td>{{ row.Player }}</td>
+                        <td>{{ row.Stat }}</td>
+                        <td>{{ row.Direction }} {{ row.Line }}</td>
+                        <td>{{ row.WeightProfile|default('regular') }}</td>
+                        <td>{{ row.RoleLabel|default('-') }}</td>
+                        <td>{{ row.OutcomeState|default('Pending') }}</td>
+                        <td>{{ row.ClvLine|default('-') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

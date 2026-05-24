@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} Hub - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+.method-hub-shell {
+    display: grid;
+    gap: 18px;
+}
+
+.method-tab-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.method-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(132,215,210,0.16);
+    background: rgba(17,27,36,0.88);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.method-tab:hover {
+    color: var(--text-bright);
+    border-color: rgba(132,215,210,0.34);
+}
+
+.method-tab.active {
+    color: #041413;
+    border-color: rgba(132,215,210,0.55);
+    background: linear-gradient(135deg, rgba(132,215,210,0.92) 0%, rgba(245,200,96,0.92) 100%);
+}
+
+.method-tab.watch {
+    border-color: rgba(255,184,0,0.28);
+}
+
+.method-tab-count {
+    min-width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    background: rgba(255,255,255,0.08);
+    color: inherit;
+}
+
+.method-detail-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 18px;
+}
+
+.method-detail-card {
+    border-radius: 18px;
+    padding: 22px;
+    border: 1px solid rgba(132,215,210,0.14);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 24%),
+        linear-gradient(135deg, rgba(18,35,49,0.97) 0%, rgba(24,40,54,0.96) 100%);
+}
+
+.method-detail-topline {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    margin-bottom:14px;
+}
+
+.method-detail-sport {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.1;
+}
+
+.method-detail-label {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.method-detail-note {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.7;
+    margin-bottom: 16px;
+}
+
+.method-detail-what {
+    color: var(--text-bright);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.method-detail-actions {
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:18px;
+}
+
+.method-quick-grid {
+    display:grid;
+    gap:12px;
+}
+
+.method-quick-tile {
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid rgba(132,215,210,0.12);
+    background: rgba(10,18,26,0.68);
+}
+
+.method-quick-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-copper);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.method-quick-value {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+}
+
+.method-quick-note {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+
+@media (max-width: 920px) {
+    .method-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">{{ title }} Hub</div>
+        <h1>{{ headline }}</h1>
+        <div class="page-subtitle">{{ summary }}</div>
+    </div>
+</div>
+
+<div class="method-hub-shell">
+    <div class="card panel-glow">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">{{ title }} By Sport</div>
+            <span class="badge badge-accent">{{ cards|length }} Sports</span>
+        </div>
+        <div class="p-20">
+            <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+                Pick the sport first. Global method links should help you move across the platform without pretending every sport uses the same board.
+            </div>
+
+            <div class="method-tab-strip">
+                {% for card in cards %}
+                <a href="{{ card.tab_href }}" class="method-tab {% if active_sport == card.sport_key %}active{% endif %} {% if card.status == 'watch' %}watch{% endif %}">
+                    <span>{{ card.sport }}</span>
+                    {% if card.game_count is defined %}
+                    <span class="method-tab-count">{{ card.game_count }}</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {% if active_card %}
+    <div class="method-detail-grid">
+        <div class="method-detail-card">
+            <div class="method-detail-topline">
+                <div>
+                    <div class="method-detail-sport">{{ active_card.sport }}</div>
+                    <div class="method-detail-label">{{ active_card.label }}</div>
+                </div>
+                <span class="badge {% if active_card.status == 'live' %}badge-accent{% else %}badge{% endif %}">{{ active_card.status|upper }}</span>
+            </div>
+            <div class="method-detail-note">{{ active_card.note }}</div>
+            <div class="method-detail-what">
+                This is the current {{ active_card.sport }} entry point for {{ title|lower }}. It keeps the platform connected without dropping you into an NBA-first page when you were trying to work another sport.
+            </div>
+            <div class="method-detail-actions">
+                <a href="{{ active_card.href }}" class="btn btn-primary btn-sm">Open {{ active_card.label }}</a>
+                <a href="/sports/{% if active_card.sport_key == 'cfb' %}ncaaf{% else %}{{ active_card.sport_key }}{% endif %}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open {{ active_card.sport }} Home</a>
+            </div>
+        </div>
+
+        <div class="method-quick-grid">
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">Why This Hub Exists</div>
+                <div class="method-quick-value">Universal first</div>
+                <div class="method-quick-note">The top layer should help you choose the sport. The deeper board should do the sport-specific work.</div>
+            </div>
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">What Changes Here</div>
+                <div class="method-quick-value">{{ active_card.sport }} selected</div>
+                <div class="method-quick-note">Tabs should switch the sport you are analyzing, not silently leave you on an NBA page.</div>
+            </div>
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">Current Status</div>
+                <div class="method-quick-value">{{ active_card.status|upper }}</div>
+                <div class="method-quick-note">
+                    {% if active_card.status == 'live' %}
+                    This sport has a working route behind this method today.
+                    {% else %}
+                    This sport still leans on its main board while this method layer matures.
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

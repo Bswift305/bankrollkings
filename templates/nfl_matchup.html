@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}NFL Matchup Board{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">NFL Matchup Board</div>
+        <h1>{{ matchup.sheet }} <span class="accent">Floor Read</span></h1>
+        <div class="page-subtitle">{{ matchup.title }} | {{ sport_profile.label }}</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/sports/nfl?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to NFL Board</a>
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA Board</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">Football Matchup Read</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Market Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board sits under the bigger NFL market map, so every floor play should still be read against the side, total, and game script.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Matchup Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use it to isolate which player families actually fit this specific game environment instead of treating all props the same.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Verdict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The goal is not just to rank floors. It is to show which floors still make sense inside this matchup.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">NFL Market Map</div>
+        <span class="badge badge-accent">{{ sport_profile.label }}</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            This matchup board lives inside a bigger NFL market system where spreads, totals, team totals, and props are all treated as equal research lanes.
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for group in market_groups %}
+                {% for market in group.markets[:3] %}
+                <span class="badge" title="{{ market.key }}">{{ market.label }}</span>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Matchup Filters</div>
+        <span class="badge badge-accent">{{ matchup.plays|length }} shown</span>
+    </div>
+    <div class="p-16">
+        <form method="get" class="control-group" style="gap: 12px;">
+            <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+            <div>
+                <div class="control-label">Team</div>
+                <select name="team" class="form-control">
+                    <option value="">Both Teams</option>
+                    {% for team in filter_state.teams %}
+                    <option value="{{ team }}" {% if filter_state.team == team %}selected{% endif %}>{{ team }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Family</div>
+                <select name="family" class="form-control">
+                    <option value="">All Families</option>
+                    {% for family in filter_state.families %}
+                    <option value="{{ family }}" {% if filter_state.family == family %}selected{% endif %}>{{ family }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Min Hit</div>
+                <select name="min_hit" class="form-control">
+                    <option value="">Any</option>
+                    <option value="80" {% if filter_state.min_hit == '80' %}selected{% endif %}>80%+</option>
+                    <option value="100" {% if filter_state.min_hit == '100' %}selected{% endif %}>100%</option>
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Sort</div>
+                <select name="sort_by" class="form-control">
+                    {% for key, label in filter_state.sorts.items() %}
+                    <option value="{{ key }}" {% if filter_state.sort_by == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Direction</div>
+                <select name="sort_dir" class="form-control">
+                    <option value="desc" {% if filter_state.sort_dir == 'desc' %}selected{% endif %}>High to Low</option>
+                    <option value="asc" {% if filter_state.sort_dir == 'asc' %}selected{% endif %}>Low to High</option>
+                </select>
+            </div>
+            <div style="min-width: 200px;">
+                <div class="control-label">Search</div>
+                <input type="text" name="query" value="{{ filter_state.query }}" class="form-control" placeholder="Player, team, or stat">
+            </div>
+            <div style="display: flex; gap: 8px; align-items: end;">
+                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                <a href="{{ matchup.matchup_href }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Game Line</div>
+        <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ matchup.market_line }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Workbook market snapshot</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Listed Plays</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ matchup.plays|length }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Player props in this matchup tab</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Perfect-Hit Plays</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent-copper);">{{ matchup.hit_rate_100 }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">100% floor clears in the workbook sample</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Best Floor Plays</div>
+        <span class="badge badge-accent">{{ matchup.best_plays|length }} highlighted</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Floor</th>
+                    <th>Avg</th>
+                    <th>Hit %</th>
+                    <th>Streak</th>
+                    <th>Trust</th>
+                    <th>Why It Stands Out</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in matchup.best_plays %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
+                        {% if play.trust_verdict %}
+                        <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ play.team }}</td>
+                    <td>
+                        <span class="badge">{{ play.stat_meta.short }}</span>
+                        <div class="cell-meta">{{ play.stat_meta.family }}</div>
+                    </td>
+                    <td><strong>{{ play.line }}</strong></td>
+                    <td>{{ play.floor }}</td>
+                    <td>{{ play.avg }}</td>
+                    <td><span class="hr-strong">{{ play.hit_pct }}</span></td>
+                    <td>{{ play.streak }}</td>
+                    <td style="font-size:11px;">
+                        <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
+                        <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
+                    </td>
+                    <td style="font-size: 11px; color: var(--text-muted); line-height: 1.5;">
+                        <div>{{ play.note }}</div>
+                        {% if play.trust_summary %}
+                        <div style="margin-top: 4px;">{{ play.trust_summary }}</div>
+                        {% endif %}
+                        <div style="margin-top: 4px;">Last 5: {{ play.games|join(', ') }}</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if not matchup.plays %}
+<div class="empty-state mb-24">
+    <div class="empty-state-title">No plays match this matchup filter set.</div>
+    <div class="empty-state-copy">Open the filter back up and widen the thresholds if you want the full sheet again.</div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Full Matchup Sheet</div>
+        <span class="badge badge-accent">{{ matchup.plays|length }} plays</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Floor</th>
+                    <th>Avg</th>
+                    <th>Hit %</th>
+                    <th>Streak</th>
+                    <th>Trust</th>
+                    <th>Last 5</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in matchup.plays %}
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
+                        {% if play.trust_verdict %}
+                        <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ play.team }}</td>
+                    <td>
+                        <span class="badge">{{ play.stat_meta.short }}</span>
+                        <div class="cell-meta">{{ play.stat_meta.label }}</div>
+                    </td>
+                    <td><strong>{{ play.line }}</strong></td>
+                    <td>{{ play.floor }}</td>
+                    <td>{{ play.avg }}</td>
+                    <td>{{ play.hit_pct }}</td>
+                    <td>{{ play.streak }}</td>
+                    <td style="font-size:11px;">
+                        <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
+                        <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
+                    </td>
+                    <td style="font-size: 11px; color: var(--text-muted);">{{ play.games|join(', ') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

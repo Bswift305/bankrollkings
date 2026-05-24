@@ -1,0 +1,847 @@
+{% extends "base.html" %}
+{% block title %}Candidate Review - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Method Archive</div>
+        <h1>Candidate <span class="accent">Review</span></h1>
+        <div class="page-subtitle">A daily audit of what the system would have recommended, even if nobody saved a ticket. This is where we find which method ideas actually held up in the next game.</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Review Lens</div>
+        <a href="/bet-review?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Saved Ticket Review</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Did the market help?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This lab checks whether move buckets and market depth actually improved the method outcome.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Did the idea fit the spot?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Candidate Review is where matchup logic stops being theory and starts getting graded against reality.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Which method ideas repeat?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This page is built to tell us which ideas hold up over time and which should lose weight going forward.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Keep, trim, or rethink</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This board is the governance layer for the platform, not just a list of past picks.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel">
+        <form method="get" action="/candidate-review" class="control-group" style="width: 100%;">
+            <span class="control-label">Filters</span>
+            <select name="sport" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="">All Sports</option>
+                {% for sport in sport_options %}
+                <option value="{{ sport }}" {% if sport == sport_filter %}selected{% endif %}>{{ sport }}</option>
+                {% endfor %}
+            </select>
+            <select name="method" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 150px;">
+                <option value="">All Methods</option>
+                {% for method in method_options %}
+                <option value="{{ method }}" {% if method == method_filter %}selected{% endif %}>{{ method }}</option>
+                {% endfor %}
+            </select>
+            <select name="outcome" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 140px;">
+                <option value="">All Outcomes</option>
+                <option value="hit" {% if outcome_filter == 'hit' %}selected{% endif %}>Hit</option>
+                <option value="miss" {% if outcome_filter == 'miss' %}selected{% endif %}>Miss</option>
+                <option value="push" {% if outcome_filter == 'push' %}selected{% endif %}>Push</option>
+                <option value="pending" {% if outcome_filter == 'pending' %}selected{% endif %}>Pending</option>
+            </select>
+            <select name="stat" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
+                <option value="">All Stats</option>
+                {% for stat in stat_options %}
+                <option value="{{ stat }}" {% if stat == stat_filter %}selected{% endif %}>{{ stat }}</option>
+                {% endfor %}
+            </select>
+            <select name="direction" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
+                <option value="">Over + Under</option>
+                <option value="OVER" {% if direction_filter == 'OVER' %}selected{% endif %}>Over</option>
+                <option value="UNDER" {% if direction_filter == 'UNDER' %}selected{% endif %}>Under</option>
+            </select>
+            <input type="search" name="player_search" value="{{ player_search_filter }}" placeholder="Player search" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 175px;">
+            <select name="market_depth" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Book Depth</option>
+                {% for depth in market_depth_options %}
+                <option value="{{ depth }}" {% if depth == market_depth_filter %}selected{% endif %}>{{ depth }}</option>
+                {% endfor %}
+            </select>
+            <select name="player_tier" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Player Tiers</option>
+                {% for tier in player_tier_options %}
+                <option value="{{ tier }}" {% if tier == player_tier_filter %}selected{% endif %}>{{ tier }}</option>
+                {% endfor %}
+            </select>
+            <select name="bet_tier" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="">All Bet Tiers</option>
+                {% for tier in bet_tier_options %}
+                <option value="{{ tier }}" {% if tier == bet_tier_filter %}selected{% endif %}>{{ tier }}</option>
+                {% endfor %}
+            </select>
+            <select name="floor_reliability" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 165px;">
+                <option value="">All Floor Reliability</option>
+                {% for label in floor_reliability_options %}
+                <option value="{{ label }}" {% if label == floor_reliability_filter %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="weight_profile" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 155px;">
+                <option value="">All Weight Profiles</option>
+                {% for profile in weight_profile_options %}
+                <option value="{{ profile }}" {% if profile == weight_profile_filter %}selected{% endif %}>{{ profile }}</option>
+                {% endfor %}
+            </select>
+            <select name="volatility" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Volatility</option>
+                {% for flag in volatility_options %}
+                <option value="{{ flag }}" {% if flag == volatility_filter %}selected{% endif %}>{{ flag }}</option>
+                {% endfor %}
+            </select>
+            <select name="market_gate" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 140px;">
+                <option value="">All Gates</option>
+                {% for gate in market_gate_options %}
+                <option value="{{ gate }}" {% if gate == market_gate_filter %}selected{% endif %}>{{ gate }}</option>
+                {% endfor %}
+            </select>
+            <select name="days_to_result" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Result Timing</option>
+                <option value="same_day" {% if days_to_result_filter == 'same_day' %}selected{% endif %}>Same day</option>
+                <option value="one_day" {% if days_to_result_filter == 'one_day' %}selected{% endif %}>1 day</option>
+                <option value="two_plus" {% if days_to_result_filter == 'two_plus' %}selected{% endif %}>2+ days</option>
+                <option value="resolved" {% if days_to_result_filter == 'resolved' %}selected{% endif %}>Resolved only</option>
+                <option value="pending" {% if days_to_result_filter == 'pending' %}selected{% endif %}>Pending only</option>
+            </select>
+            <input type="date" name="start_date" value="{{ start_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px;">
+            <input type="date" name="end_date" value="{{ end_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px;">
+            <input type="number" step="0.1" min="0" max="100" name="min_confidence" value="{{ min_confidence }}" placeholder="Min conf" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; width: 110px;">
+            <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+            {% if sport_filter or method_filter or outcome_filter or stat_filter or direction_filter or player_search_filter or market_depth_filter or player_tier_filter or bet_tier_filter or floor_reliability_filter or weight_profile_filter or volatility_filter or market_gate_filter or days_to_result_filter or start_date or end_date or min_confidence %}
+            <a href="/candidate-review?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Candidates</div>
+        <div class="stat-value">{{ summary.totals.candidates }}</div>
+        <div class="stat-note">archived method plays</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Resolved Hit Rate</div>
+        <div class="stat-value">{% if summary.totals.hit_rate is not none %}{{ summary.totals.hit_rate }}%{% else %}-{% endif %}</div>
+        <div class="stat-note">{{ summary.totals.hits }} hits / {{ summary.totals.misses }} misses</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Pending</div>
+        <div class="stat-value">{{ summary.totals.pending }}</div>
+        <div class="stat-note">still waiting on next game</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Pushes</div>
+        <div class="stat-value">{{ summary.totals.pushes }}</div>
+        <div class="stat-note">landed right on the line</div>
+    </div>
+</div>
+
+{% macro line_chart(points, label_key, expected_rate=None) %}
+{% set n = points|length %}
+{% if n > 1 %}
+<svg viewBox="0 0 100 44" preserveAspectRatio="none" style="width:100%; height:150px; display:block;">
+    <line x1="0" y1="22" x2="100" y2="22" stroke="rgba(255,255,255,0.16)" stroke-width="0.6"></line>
+    {% if expected_rate is not none %}
+    {% set ey = 40 - ((expected_rate or 0) / 100 * 36) %}
+    <line x1="0" y1="{{ ey|round(2) }}" x2="100" y2="{{ ey|round(2) }}" stroke="rgba(211,161,95,0.62)" stroke-width="0.9" stroke-dasharray="3 2"></line>
+    {% endif %}
+    <polyline fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"
+        points="{% for p in points %}{{ (loop.index0 / (n - 1) * 100)|round(2) }},{{ (40 - ((p.hit_rate or 0) / 100 * 36))|round(2) }} {% endfor %}"></polyline>
+    {% for p in points %}
+    <circle cx="{{ (loop.index0 / (n - 1) * 100)|round(2) }}" cy="{{ (40 - ((p.hit_rate or 0) / 100 * 36))|round(2) }}" r="1.2" fill="var(--accent-copper)"></circle>
+    {% endfor %}
+</svg>
+{% else %}
+<div class="empty-state" style="padding:14px;"><div class="empty-state-copy">Need at least two resolved dates.</div></div>
+{% endif %}
+{% endmacro %}
+
+{% macro multi_line_chart(series, expected_rate=None) %}
+{% if series %}
+<svg viewBox="0 0 100 44" preserveAspectRatio="none" style="width:100%; height:170px; display:block;">
+    <line x1="0" y1="22" x2="100" y2="22" stroke="rgba(255,255,255,0.16)" stroke-width="0.6"></line>
+    {% if expected_rate is not none %}
+    {% set ey = 40 - ((expected_rate or 0) / 100 * 36) %}
+    <line x1="0" y1="{{ ey|round(2) }}" x2="100" y2="{{ ey|round(2) }}" stroke="rgba(211,161,95,0.62)" stroke-width="0.9" stroke-dasharray="3 2"></line>
+    {% endif %}
+    {% for s in series %}
+    <polyline fill="none" stroke="{{ s.color }}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+        points="{% for p in s.points %}{{ p.x }},{{ p.y }} {% endfor %}"></polyline>
+    {% endfor %}
+</svg>
+<div style="display:flex; flex-wrap:wrap; gap:8px 12px; padding:0 12px 12px;">
+    {% for s in series %}
+    <span style="display:inline-flex; align-items:center; gap:6px; color:var(--text-muted); font-size:11px;">
+        <span style="width:9px; height:9px; border-radius:999px; background:{{ s.color }};"></span>{{ s.label }}
+    </span>
+    {% endfor %}
+    {% if expected_rate is not none %}
+    <span style="display:inline-flex; align-items:center; gap:6px; color:var(--text-muted); font-size:11px;">
+        <span style="width:14px; border-top:1px dashed rgba(211,161,95,0.85);"></span>Expected {{ expected_rate }}%
+    </span>
+    {% endif %}
+</div>
+{% else %}
+<div class="empty-state" style="padding:14px;"><div class="empty-state-copy">No resolved trend series in this slice yet.</div></div>
+{% endif %}
+{% endmacro %}
+
+{% macro bar_chart(points, label_key) %}
+{% if points %}
+<div style="display:grid; gap:10px; padding:12px;">
+    {% for p in points %}
+    <div>
+        <div style="display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
+            <span>{{ p[label_key] }}</span>
+            <span>{{ p.hit_rate }}% &middot; {{ p.resolved }}</span>
+        </div>
+        <div style="height:9px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden;">
+            <div style="height:100%; width:{{ p.hit_rate }}%; background:linear-gradient(90deg,var(--accent),var(--accent-copper));"></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state" style="padding:14px;"><div class="empty-state-copy">No resolved rows in this slice yet.</div></div>
+{% endif %}
+{% endmacro %}
+
+{% macro calibration_chart(points) %}
+{% if points %}
+<div style="display:grid; gap:11px; padding:12px;">
+    {% for p in points %}
+    <div>
+        <div style="display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
+            <span>{{ p.bucket }}</span>
+            <span>{{ p.hit_rate }}% actual{% if p.expected_rate is not none %} / {{ p.expected_rate }}% expected{% endif %}</span>
+        </div>
+        <div style="position:relative; height:10px; background:rgba(255,255,255,0.08); border-radius:999px;">
+            <div style="height:100%; width:{{ p.hit_rate }}%; background:linear-gradient(90deg,var(--accent),var(--accent-copper)); border-radius:999px;"></div>
+            {% if p.expected_rate is not none %}
+            <span style="position:absolute; left:{{ p.expected_rate }}%; top:-4px; width:2px; height:18px; background:rgba(255,255,255,0.72); box-shadow:0 0 0 1px rgba(0,0,0,0.22);"></span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state" style="padding:14px;"><div class="empty-state-copy">No confidence bands resolved in this slice yet.</div></div>
+{% endif %}
+{% endmacro %}
+
+<div class="grid-3 mb-24">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Hit Rate Over Time</div></div>
+        <div style="padding:12px;">{{ line_chart(charts.daily, 'date', charts.expected_rate) }}</div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Confidence Calibration</div></div>
+        {{ calibration_chart(charts.by_confidence) }}
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Line Buckets</div></div>
+        {{ bar_chart(charts.by_line, 'bucket') }}
+    </div>
+</div>
+
+<div class="grid-2 mb-24">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Tier 1 / 2 / 3 Audit</div></div>
+        {{ bar_chart(charts.by_review_tier, 'tier') }}
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Why Misses Failed</div></div>
+        {% if charts.failure_reasons %}
+        <div style="display:grid; gap:10px; padding:12px;">
+            {% for p in charts.failure_reasons %}
+            <div>
+                <div style="display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
+                    <span>{{ p.reason }}</span>
+                    <span>{{ p.share }}% &middot; {{ p.misses }} misses</span>
+                </div>
+                <div style="height:9px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden;">
+                    <div style="height:100%; width:{{ p.share }}%; background:linear-gradient(90deg,var(--accent-copper),var(--accent));"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state" style="padding:14px;"><div class="empty-state-copy">No misses in this slice yet.</div></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Floor Play Review</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            {% if sport_filter %}
+            <a href="/candidate-review?method=&outcome=&stat=&direction=&market_depth=&player_tier=&bet_tier=&weight_profile=&volatility=&market_gate=&days_to_result=&start_date=&end_date=&min_confidence=" class="btn btn-secondary btn-sm">All-Sport Floor Mix</a>
+            {% endif %}
+            <span class="badge badge-accent">
+                {% if charts.floor_summary.hit_rate is not none %}{{ charts.floor_summary.hit_rate }}%{% else %}-{% endif %}
+            </span>
+        </div>
+    </div>
+    <div class="control-panel" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; border-left:0; border-right:0; border-radius:0;">
+        <div class="stat-card">
+            <div class="page-kicker">Floor Candidates</div>
+            <div class="stat-value">{{ charts.floor_summary.candidates }}</div>
+            <div class="stat-note">floor-method rows in this slice</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Floor Hits</div>
+            <div class="stat-value">{{ charts.floor_summary.hits }}</div>
+            <div class="stat-note">{{ charts.floor_summary.resolved }} resolved</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Floor Misses</div>
+            <div class="stat-value">{{ charts.floor_summary.misses }}</div>
+            <div class="stat-note">{{ charts.floor_summary.pending }} pending</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Floor vs Straight</div>
+            <div class="stat-value">{% if charts.floor_efficiency.floor_edge is not none %}{{ charts.floor_efficiency.floor_edge }} pts{% else %}-{% endif %}</div>
+            <div class="stat-note">{{ charts.floor_efficiency.verdict }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Multi-Sport Days</div>
+            <div class="stat-value">{{ charts.cross_sport_mix.multi_sport_days }}</div>
+            <div class="stat-note">
+                {% if charts.cross_sport_mix.multi_sport_hit_rate is not none %}{{ charts.cross_sport_mix.multi_sport_hit_rate }}% multi{% else %}multi pending{% endif %}
+                /
+                {% if charts.cross_sport_mix.single_sport_hit_rate is not none %}{{ charts.cross_sport_mix.single_sport_hit_rate }}% single{% else %}single pending{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="grid-3" style="padding:14px;">
+        <div class="parlay-surface-soft">
+            <div class="card-header"><div class="card-title">By Sport</div></div>
+            {{ bar_chart(charts.floor_by_sport, 'sport') }}
+        </div>
+        <div class="parlay-surface-soft">
+            <div class="card-header"><div class="card-title">By Stat</div></div>
+            {{ bar_chart(charts.floor_by_stat, 'stat') }}
+        </div>
+        <div class="parlay-surface-soft">
+            <div class="card-header"><div class="card-title">By Tier</div></div>
+            {{ bar_chart(charts.floor_by_tier, 'tier') }}
+        </div>
+    </div>
+    <div style="padding:0 14px 14px;">
+        <div class="parlay-surface-soft" style="margin-bottom:14px;">
+            <div class="card-header"><div class="card-title">Floor Reliability Table</div></div>
+            {% if charts.floor_reliability_table %}
+            <div class="table-shell">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Sport</th>
+                            <th>Stat</th>
+                            <th>Dir</th>
+                            <th>Resolved</th>
+                            <th>Hits</th>
+                            <th>Misses</th>
+                            <th>Hit %</th>
+                            <th>Reliability</th>
+                            <th>Pending</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in charts.floor_reliability_table %}
+                        <tr>
+                            <td>{{ row.sport }}</td>
+                            <td>{{ row.stat }}</td>
+                            <td><span class="badge">{{ row.direction }}</span></td>
+                            <td>{{ row.resolved_count }}</td>
+                            <td>{{ row.hits }}</td>
+                            <td>{{ row.misses }}</td>
+                            <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                            <td><span class="badge {% if row.floor_reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.floor_reliability }}</span></td>
+                            <td>{{ row.pending_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state" style="padding:14px;"><div class="empty-state-copy">No floor reliability buckets in this slice yet.</div></div>
+            {% endif %}
+        </div>
+        <div class="parlay-surface-soft">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Cross-Sport Floor Mix Spots</div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                        Multi-sport floor days: {{ charts.cross_sport_mix.multi_sport_days }}{% if charts.cross_sport_mix.multi_sport_hit_rate is not none %} at {{ charts.cross_sport_mix.multi_sport_hit_rate }}%{% endif %}
+                        {% if charts.cross_sport_mix.single_sport_hit_rate is not none %} / single-sport days {{ charts.cross_sport_mix.single_sport_hit_rate }}%{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if charts.cross_sport_mix.best_combinations %}
+            <div style="padding:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px;">
+                {% for combo in charts.cross_sport_mix.best_combinations %}
+                <div class="stat-card">
+                    <div class="page-kicker">{{ combo.combo }}</div>
+                    <div class="stat-value">{{ combo.hit_rate }}%</div>
+                    <div class="stat-note">{{ combo.days }} shared floor days</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if charts.floor_mix_spots %}
+            <div class="table-shell">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Mix Bucket</th>
+                            <th>Resolved</th>
+                            <th>Hits</th>
+                            <th>Misses</th>
+                            <th>Hit %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in charts.floor_mix_spots %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td>{{ row.resolved }}</td>
+                            <td>{{ row.hits }}</td>
+                            <td>{{ row.misses }}</td>
+                            <td>{{ row.hit_rate }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state" style="padding:14px;"><div class="empty-state-copy">Need at least three resolved floor plays in a sport/stat/direction/tier bucket.</div></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Player Hit Profiles</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Actual hit/miss rate by player, sport, stat, and direction for this filtered slice.</div>
+        </div>
+        <span class="badge">{{ charts.player_profiles|length }} Buckets</span>
+    </div>
+    {% if charts.player_profiles %}
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Sport</th>
+                    <th>Stat</th>
+                    <th>Dir</th>
+                    <th>Resolved</th>
+                    <th>Hits</th>
+                    <th>Misses</th>
+                    <th>Hit %</th>
+                    <th>Avg Conf</th>
+                    <th>Model</th>
+                    <th>Reliability</th>
+                    <th>Line Split</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in charts.player_profiles %}
+                <tr>
+                    <td>
+                        {% if row.sport == 'NBA' %}
+                        <a href="/player/{{ row.player|urlencode }}" style="color:var(--text-bright); font-weight:800;">{{ row.player }}</a>
+                        {% else %}
+                        <span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.sport }}</td>
+                    <td>{{ row.stat }}</td>
+                    <td><span class="badge">{{ row.direction }}</span></td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{{ row.hits }}</td>
+                    <td>{{ row.misses }}</td>
+                    <td>{{ row.hit_rate }}%</td>
+                    <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}-{% endif %}</td>
+                    <td><span class="badge {% if row.model_accuracy == 'OVERVALUED' %}badge-danger{% elif row.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.model_accuracy }}</span></td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span></td>
+                    <td style="font-size:11px; color:var(--text-muted);">
+                        {{ row.line_note }}
+                        {% if row.low_line_hit_rate is not none and row.high_line_hit_rate is not none %}
+                        <div>Low {{ row.low_line_hit_rate }}% / High {{ row.high_line_hit_rate }}%</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No player profile buckets yet</div>
+        <div class="empty-state-copy">Use resolved rows or widen the filters to see player-level hit/miss rates.</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid-2 mb-24">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Hit Rate by Stat Type</div></div>
+        <div style="padding:12px;">{{ multi_line_chart(charts.by_stat_time, charts.expected_rate) }}</div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Over vs Under Over Time</div></div>
+        <div style="padding:12px;">{{ multi_line_chart(charts.by_direction_time, charts.expected_rate) }}</div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24">
+    <div class="card">
+        <div class="card-header"><div class="card-title">Line Movement Impact</div></div>
+        {{ bar_chart(charts.line_movement, 'bucket') }}
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">Player Tier by Month</div></div>
+        <div style="padding:12px;">{{ multi_line_chart(charts.tier_by_month, charts.expected_rate) }}</div>
+    </div>
+</div>
+
+{% if charts.insights %}
+<div class="card mb-24">
+    <div class="card-header"><div class="card-title">Nuance Finder</div></div>
+    <div style="padding:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px;">
+        {% for insight in charts.insights %}
+        <div class="parlay-surface-soft" style="padding:12px; color:var(--text-bright); font-size:12px; line-height:1.55;">
+            {% if insight is mapping %}
+            <div class="page-kicker" style="margin-bottom:5px;">{{ insight.type }}</div>
+            <div style="font-weight:800; margin-bottom:4px;">{{ insight.title }}</div>
+            <div style="color:var(--text-muted);">{{ insight.detail }}</div>
+            {% else %}
+            {{ insight }}
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="grid-3 mb-24">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Sport Scorecard</div>
+        </div>
+        {% if summary.by_sport %}
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Sport</th>
+                        <th>Resolved</th>
+                        <th>Hits</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.by_sport %}
+                    <tr>
+                        <td>{{ row.sport }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hits }}</td>
+                        <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No sport split yet</div>
+            <div class="empty-state-copy">Once WNBA rows archive and resolve, this board will separate NBA and WNBA performance.</div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Method Scorecard</div>
+        </div>
+        {% if summary.by_method %}
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Resolved</th>
+                        <th>Hits</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.by_method %}
+                    <tr>
+                        <td>{{ row.method }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hits }}</td>
+                        <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No archived methods yet</div>
+            <div class="empty-state-copy">Load Market Edge or Floor Plays on a live slate and this archive will start filling in.</div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Stat Scorecard</div>
+        </div>
+        {% if summary.by_stat %}
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Stat</th>
+                        <th>Resolved</th>
+                        <th>Hits</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.by_stat %}
+                    <tr>
+                        <td>{{ row.stat }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hits }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No stat summary yet</div>
+            <div class="empty-state-copy">Resolved archive rows will automatically populate this board.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid-2 mb-24">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Market Move Audit</div>
+        </div>
+        {% if summary.by_market_move %}
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Bucket</th>
+                        <th>Resolved</th>
+                        <th>Hits</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.by_market_move %}
+                    <tr>
+                        <td>{{ row.bucket }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hits }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No move audit yet</div>
+            <div class="empty-state-copy">As newer archive rows carry line-move and CLV data, this board will show whether the market moved with us or against us.</div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Market Depth Audit</div>
+        </div>
+        {% if summary.by_market_depth %}
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Bucket</th>
+                        <th>Resolved</th>
+                        <th>Hits</th>
+                        <th>Hit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.by_market_depth %}
+                    <tr>
+                        <td>{{ row.bucket }}</td>
+                        <td>{{ row.resolved }}</td>
+                        <td>{{ row.hits }}</td>
+                        <td>{{ row.hit_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-title">No depth audit yet</div>
+            <div class="empty-state-copy">New archive rows will show whether single-book or multi-book candidate spots are holding up better.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Recent Archived Candidates</div>
+        <span class="badge badge-accent">{{ rows|length }} Rows</span>
+    </div>
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table" style="min-width: 1760px;">
+                <thead>
+                    <tr>
+                        <th>Snapshot</th>
+                        <th>Sport</th>
+                        <th>Method</th>
+                        <th>Player</th>
+                        <th>Team</th>
+                    <th>Stat</th>
+                    <th>Play</th>
+                    <th>Line</th>
+                    <th>Conf</th>
+                    <th>Outcome</th>
+                    <th>Result</th>
+                    <th>Move</th>
+                    <th>CLV</th>
+                    <th>Books</th>
+                    <th>Market Read</th>
+                    <th>Bet Tier</th>
+                    <th>Floor Reliability</th>
+                    <th>Player Reliability</th>
+                    <th>Player Model</th>
+                    <th>Tier</th>
+                    <th>Failure Reason</th>
+                    <th>Profile</th>
+                    <th>Vol</th>
+                    <th>Gate</th>
+                    <th>Days</th>
+                    <th>Matchup</th>
+                    <th>Support</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.SnapshotDate.strftime('%Y-%m-%d') if row.SnapshotDate else row.SnapshotDate }}</td>
+                    <td>{{ row.Sport }}</td>
+                    <td>{{ row.Method }}</td>
+                    <td>{{ row.Player }}</td>
+                    <td>{{ row.Team }}</td>
+                    <td>{{ row.Stat }}</td>
+                    <td><span class="badge">{{ row.Direction }}</span></td>
+                    <td>{{ row.Line }}</td>
+                    <td>{{ row.Confidence }}</td>
+                    <td>
+                        <span class="badge {% if row.OutcomeState == 'Hit' %}badge-accent{% endif %}">{{ row.OutcomeState }}</span>
+                    </td>
+                    <td>
+                        {% if row.ResultDate %}
+                        {{ row.ResultValue }} on {{ row.ResultDate }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.MarketMoveBucket if row.MarketMoveBucket else '-' }}</td>
+                    <td>
+                        {% if row.ClvLine is not none and row.ClvLine != '' %}
+                        {{ row.ClvLine }}
+                        {% elif row.ClvPricePct is not none and row.ClvPricePct != '' %}
+                        {{ row.ClvPricePct }}%
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.BookCount if row.BookCount not in [None, ''] else '-' }}</td>
+                    <td>{{ row.MarketViewLabel if row.MarketViewLabel else '-' }}</td>
+                    <td><span class="badge">{{ row.ReviewTier if row.ReviewTier else '-' }}</span></td>
+                    <td>
+                        {% if row.FloorReliability %}
+                        <span class="badge {% if row.FloorReliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.FloorReliability }}</span>
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">{{ row.FloorReliabilityNote }}</div>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.PlayerReliability %}
+                        <span class="badge {% if row.PlayerReliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.PlayerReliability }}</span>
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">{{ row.PlayerProfileNote }}</div>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.PlayerModelAccuracy %}
+                        <span class="badge {% if row.PlayerModelAccuracy == 'OVERVALUED' %}badge-danger{% elif row.PlayerModelAccuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.PlayerModelAccuracy }}</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.RoleLabel if row.RoleLabel else '-' }}</td>
+                    <td style="font-size: 11px; color: var(--text-muted);">{{ row.FailureSignals if row.FailureSignals else '-' }}</td>
+                    <td>{{ row.WeightProfile if row.WeightProfile else '-' }}</td>
+                    <td>{{ row.VolatilityFlag if row.VolatilityFlag else '-' }}</td>
+                    <td>{{ row.MarketGate if row.MarketGate else '-' }}</td>
+                    <td>{{ row.DaysToResult if row.DaysToResult is not none and row.DaysToResult != '' else '-' }}</td>
+                    <td>{{ row.Matchup }}</td>
+                    <td style="font-size: 11px; color: var(--text-muted);">{{ row.MethodLabels }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every review-lab column.</div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No candidate rows yet</div>
+        <div class="empty-state-copy">This page will populate once the live methods archive a slate.</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

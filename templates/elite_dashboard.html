@@ -1,0 +1,529 @@
+{% extends "base.html" %}
+{% block title %}Elite Cockpit - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Elite Tier</div>
+        <h1>Elite <span class="accent">Betting Cockpit</span></h1>
+        <div class="page-subtitle">Personal ROI, leak detection, cross-sport parlay EV, and launch-grade action notes in one place.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/elite/matchup-builder" class="btn btn-primary btn-sm">Matchup Builder</a>
+        <a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>
+        <a href="/elite/learn" class="btn btn-secondary btn-sm">Sharp University</a>
+        <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Full Bet Review</a>
+        <a href="/sports/mlb" class="btn btn-secondary btn-sm">MLB Board</a>
+        <a href="/sports/wnba" class="btn btn-secondary btn-sm">WNBA Board</a>
+    </div>
+</div>
+
+{% if request.args.get('status') == 'saved' %}
+<div class="card mb-24" style="border-color: rgba(45,212,191,0.28);">
+    <div class="p-16">
+        <strong style="color:var(--accent);">Elite card saved.</strong>
+        <span class="cell-meta">Open Bet Review after results grade to see ROI, leaks, and hindsight structure.</span>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid-4 mb-24" style="gap:12px;">
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Tracked Tickets</div>
+        <div style="font-size:28px; font-weight:800; color:var(--accent);">{{ review.totals.tickets }}</div>
+        <div class="cell-meta">Won {{ review.totals.won }} / Dead {{ review.totals.dead }} / Pending {{ review.totals.pending }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Tracked ROI</div>
+        <div style="font-size:28px; font-weight:800; color:{% if review.money.roi_pct is not none and review.money.roi_pct < 0 %}var(--danger){% else %}var(--accent){% endif %};">
+            {% if review.money.roi_pct is not none %}{{ review.money.roi_pct }}%{% else %}-{% endif %}
+        </div>
+        <div class="cell-meta">${{ review.money.profit }} profit on ${{ review.money.staked }} staked</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">This Week</div>
+        <div style="font-size:28px; font-weight:800; color:var(--accent-blue);">{{ weekly.tickets }}</div>
+        <div class="cell-meta">${{ weekly.profit }} profit{% if weekly.roi_pct is not none %} / {{ weekly.roi_pct }}% ROI{% endif %}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;">
+        <div class="page-kicker" style="margin-bottom:6px;">Candidate Pool</div>
+        <div style="font-size:28px; font-weight:800; color:var(--accent-copper);">{{ candidate_pool|length }}</div>
+        <div class="cell-meta">MLB/WNBA launch-grade legs loaded</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">MLB Power Suppression Engine</div>
+            <div class="cell-meta" style="margin-top:4px;">HR-suppression proxy using low-power hitter profiles, total-base unders, market under support, and game-total context.</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">Open MLB Lab</a>
+            <span class="badge badge-accent">{{ mlb_power_suppression.summary.rows }} spots</span>
+        </div>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Under</th>
+                    <th>Profile</th>
+                    <th>Environment</th>
+                    <th>Score</th>
+                    <th>Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in mlb_power_suppression.rows %}
+                <tr>
+                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }} | {{ row.game }}</div></td>
+                    <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}<div class="cell-meta">{{ row.book }} {{ '+' if row.under_price > 0 }}{{ row.under_price }}</div></td>
+                    <td>
+                        <div class="cell-meta">HR {{ row.hr_rate }}% | TB/G {{ row.tb_per_game }}</div>
+                        <div class="cell-meta">K {{ row.k_rate }}% | Recent TB {{ row.recent_tb_avg }}</div>
+                    </td>
+                    <td>{{ row.environment }}{% if row.total %}<div class="cell-meta">Total {{ row.total }}</div>{% endif %}</td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span><div class="cell-meta">{{ row.score }}</div></td>
+                    <td class="cell-meta">{{ row.reasons|join(' | ') }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="cell-meta">{{ mlb_power_suppression.summary.note }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap:14px;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Elite Action Queue</div>
+            <span class="badge badge-accent">{{ actions|length }} reads</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:10px;">
+            {% for action in actions %}
+            <div class="parlay-surface-soft" style="padding:12px;">
+                <div class="page-kicker" style="margin-bottom:6px;">{{ action.type }}</div>
+                <div style="font-weight:800; color:var(--text-bright);">{{ action.title }}</div>
+                <div class="cell-meta" style="line-height:1.55; margin-top:6px;">{{ action.detail }}</div>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-title">No action notes yet</div></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Personal Leak Finder</div>
+            <span class="badge">Bet Tracker</span>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Bucket</th>
+                        <th>Resolved</th>
+                        <th>ROI</th>
+                        <th>Record</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in review.roi_by_stat[:8] %}
+                    <tr>
+                        <td><strong>{{ row.label }}</strong></td>
+                        <td>{{ row.resolved }}</td>
+                        <td style="color:{% if row.roi_pct is not none and row.roi_pct < 0 %}var(--danger){% else %}var(--accent){% endif %};">{% if row.roi_pct is not none %}{{ row.roi_pct }}%{% else %}-{% endif %}</td>
+                        <td>{{ row.wins }}-{{ row.losses }}{% if row.pushes %}-{{ row.pushes }}{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="cell-meta">Save tickets and enter stake/payout to unlock personal leak tracking.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2 mb-24" style="gap:14px;">
+    <div class="card panel-glow">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">Weekly Sharp Report</div>
+            <span class="badge badge-accent">Elite</span>
+        </div>
+        <div class="p-16">
+            <div class="grid-3" style="gap:10px; margin-bottom:12px;">
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div class="page-kicker" style="margin-bottom:6px;">Tracked ROI</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--accent);">{% if weekly_report.tracked_roi is not none %}{{ weekly_report.tracked_roi }}%{% else %}-{% endif %}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div class="page-kicker" style="margin-bottom:6px;">Model Legs</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--accent-blue);">{{ weekly_report.resolved_legs }}</div>
+                </div>
+                <div class="parlay-surface-soft" style="padding:10px;">
+                    <div class="page-kicker" style="margin-bottom:6px;">Verdict</div>
+                    <div style="font-size:13px; font-weight:800; color:var(--text-bright);">{{ weekly_report.verdict }}</div>
+                </div>
+            </div>
+            <div style="display:grid; gap:8px;">
+                {% for finding in weekly_report.findings %}
+                <div class="cell-meta" style="line-height:1.5;">{{ finding }}</div>
+                {% endfor %}
+            </div>
+            {% if weekly_report.next_angles %}
+            <div style="margin-top:12px;">
+                <div class="page-kicker" style="margin-bottom:8px;">Next Angles</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    {% for angle in weekly_report.next_angles %}
+                    <span class="badge">{{ angle }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Market Timing Watch</div>
+            <span class="badge">{{ timing_watch|length }} alerts</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:8px;">
+            {% for item in timing_watch %}
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">{{ item.type }}</div>
+                <div style="font-weight:800; color:var(--text-bright);">{{ item.title }}</div>
+                <div class="cell-meta" style="line-height:1.5; margin-top:5px;">{{ item.detail }}</div>
+            </div>
+            {% else %}
+            <div class="cell-meta">No market timing alerts yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Sharp Money / Line Movement Scanner</div>
+            <div class="cell-meta" style="margin-top:4px;">Open-to-current price moves, model-side alignment, and act/hold labels from today’s loaded books.</div>
+        </div>
+        <span class="badge badge-accent">{{ sharp_money|length }} moves</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Prop</th>
+                    <th>Book</th>
+                    <th>Line</th>
+                    <th>Move</th>
+                    <th>Sharp Side</th>
+                    <th>Model</th>
+                    <th>Alignment</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sharp_money %}
+                <tr>
+                    <td>
+                        <strong>{{ row.player }}</strong>
+                        <div class="cell-meta">{{ row.sport }} · {{ row.stat }}{% if row.game %} · {{ row.game }}{% endif %}</div>
+                    </td>
+                    <td>{{ row.book or '-' }}</td>
+                    <td>
+                        <div class="cell-meta">Open {{ row.open_line }}</div>
+                        <div class="cell-meta">Now {{ row.current_line }}</div>
+                    </td>
+                    <td>
+                        <div class="cell-meta">O {% if row.over_move is not none %}{{ row.over_move }} pts{% else %}-{% endif %}</div>
+                        <div class="cell-meta">U {% if row.under_move is not none %}{{ row.under_move }} pts{% else %}-{% endif %}</div>
+                        {% if row.line_move is not none %}<div class="cell-meta">Line {{ row.line_move }}</div>{% endif %}
+                    </td>
+                    <td><span class="badge">{{ row.sharp_side }}</span></td>
+                    <td>
+                        <span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.model_side }}</span>
+                        <div class="cell-meta" style="margin-top:6px;">{{ row.reliability }}{% if row.true_prob %} · {{ row.true_prob }}%{% endif %}</div>
+                    </td>
+                    <td style="color:{% if row.alignment == 'ALIGNED' %}var(--accent){% elif row.alignment == 'CONFLICT' %}var(--danger){% else %}var(--text-muted){% endif %}; font-weight:800;">{{ row.alignment }}</td>
+                    <td><span class="badge {% if row.urgency == 'WINDOW CLOSING' %}badge-accent{% endif %}">{{ row.urgency }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="cell-meta">No meaningful open-to-current moves are loaded yet. Refresh books to activate the scanner.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Alert Performance History</div>
+            <div class="cell-meta" style="margin-top:4px;">Persisted line-move alerts, later graded against game results so the scanner can prove itself.</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <a href="/elite/alerts/export" class="btn btn-secondary btn-sm">Export CSV</a>
+            <span class="badge badge-accent">{{ alert_history.total }} tracked</span>
+        </div>
+    </div>
+    <div class="p-16">
+        <div class="grid-5" style="gap:10px; margin-bottom:14px;">
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Hit Rate</div>
+                <div style="font-size:22px; font-weight:800; color:var(--accent);">{% if alert_history.hit_rate is not none %}{{ alert_history.hit_rate }}%{% else %}-{% endif %}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Aligned Hit Rate</div>
+                <div style="font-size:22px; font-weight:800; color:var(--accent-blue);">{% if alert_history.aligned_hit_rate is not none %}{{ alert_history.aligned_hit_rate }}%{% else %}-{% endif %}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Record</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright);">{{ alert_history.hits }}-{{ alert_history.misses }}{% if alert_history.pushes %}-{{ alert_history.pushes }}{% endif %}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Pending</div>
+                <div style="font-size:22px; font-weight:800; color:var(--accent-copper);">{{ alert_history.pending }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Resolved</div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright);">{{ alert_history.hits + alert_history.misses + alert_history.pushes }}</div>
+            </div>
+        </div>
+        <div class="grid-2" style="gap:14px;">
+            <div>
+                <div class="page-kicker" style="margin-bottom:8px;">Best Alert Buckets</div>
+                <div style="display:grid; gap:8px;">
+                    {% for bucket in alert_history.by_bucket %}
+                    <div class="parlay-surface-soft" style="padding:10px; display:flex; justify-content:space-between; gap:12px;">
+                        <div>
+                            <strong>{{ bucket.label }}</strong>
+                            <div class="cell-meta">{{ bucket.resolved }} resolved | {{ bucket.record }}</div>
+                        </div>
+                        <div style="font-weight:800; color:var(--accent);">{{ bucket.hit_rate }}%</div>
+                    </div>
+                    {% else %}
+                    <div class="cell-meta">Alert buckets need at least two resolved plays before this ranks them.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <div class="page-kicker" style="margin-bottom:8px;">Recent Alerts</div>
+                <div style="display:grid; gap:8px;">
+                    {% for row in alert_history.recent %}
+                    <div class="parlay-surface-soft" style="padding:10px;">
+                        <div style="display:flex; justify-content:space-between; gap:10px;">
+                            <strong>{{ row.Player }}</strong>
+                            <span class="badge">{{ row.OutcomeState or 'Pending' }}</span>
+                        </div>
+                        <div class="cell-meta" style="margin-top:5px;">{{ row.Sport }} | {{ row.SharpSide }} {{ row.Stat }} {{ row.CurrentLine }} | {{ row.Alignment }} | {{ row.Book }}</div>
+                    </div>
+                    {% else %}
+                    <div class="cell-meta">No persisted alerts yet. Refresh the Elite cockpit after prop books update.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Best-Book Shopping Board</div>
+            <div class="cell-meta" style="margin-top:4px;">Same leg, best available price. This is where half a unit of edge becomes real over time.</div>
+        </div>
+        <span class="badge badge-accent">{{ best_books|length }} priced legs</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Leg</th>
+                    <th>Reliability</th>
+                    <th>Best Book</th>
+                    <th>Worst Book</th>
+                    <th>Books</th>
+                    <th>Price Gain</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in best_books %}
+                <tr>
+                    <td>
+                        <strong>{{ row.player }}</strong>
+                        <div class="cell-meta">{{ row.sport }} · {{ row.direction }} {{ row.stat }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</div>
+                    </td>
+                    <td>
+                        <span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span>
+                        <div class="cell-meta" style="margin-top:6px;">True {{ row.true_prob }}%</div>
+                    </td>
+                    <td><strong>{{ row.best_book or '-' }}</strong><div class="cell-meta">{{ '+' if row.best_price > 0 }}{{ row.best_price }}</div></td>
+                    <td>{{ row.worst_book or '-' }}<div class="cell-meta">{{ '+' if row.worst_price > 0 }}{{ row.worst_price }}</div></td>
+                    <td>{{ row.book_count }}</td>
+                    <td style="color:{% if row.improvement_pct is not none and row.improvement_pct > 0 %}var(--accent){% else %}var(--text-muted){% endif %}; font-weight:800;">
+                        {% if row.improvement_pct is not none %}{{ row.improvement_pct }}%{% else %}-{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="cell-meta">No multi-book shopping rows are available yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Cross-Sport Parlay EV Builder</div>
+            <div class="cell-meta" style="margin-top:4px;">Suggested from current MLB/WNBA reliability, market price, and correlation rules.</div>
+        </div>
+        <span class="badge badge-accent">Correlation {{ parlay_ev.correlation_label }}</span>
+    </div>
+    <div class="grid-4 p-16" style="gap:12px;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">True Probability</div>
+            <div style="font-size:26px; font-weight:800; color:var(--accent);">{% if parlay_ev.true_prob is not none %}{{ parlay_ev.true_prob }}%{% else %}-{% endif %}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Book Implied</div>
+            <div style="font-size:26px; font-weight:800; color:var(--text-bright);">{% if parlay_ev.book_implied is not none %}{{ parlay_ev.book_implied }}%{% else %}-{% endif %}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Expected Value</div>
+            <div style="font-size:26px; font-weight:800; color:{% if parlay_ev.ev_pct is not none and parlay_ev.ev_pct < 0 %}var(--danger){% else %}var(--accent){% endif %};">{% if parlay_ev.ev_pct is not none %}{{ parlay_ev.ev_pct }}%{% else %}Price Needed{% endif %}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Decimal Odds</div>
+            <div style="font-size:26px; font-weight:800; color:var(--accent-copper);">{% if parlay_ev.decimal_odds is not none %}{{ parlay_ev.decimal_odds }}x{% else %}-{% endif %}</div>
+        </div>
+    </div>
+    <div class="p-16" style="padding-top:0;">
+        <div class="cell-meta" style="line-height:1.55; margin-bottom:12px;">{{ parlay_ev.correlation_note }}</div>
+        {% if parlay_ev.legs %}
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Leg</th>
+                        <th>Sport</th>
+                        <th>Reliability</th>
+                        <th>True %</th>
+                        <th>Book</th>
+                        <th>Price</th>
+                        <th>Edge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for leg in parlay_ev.legs %}
+                    <tr>
+                        <td>
+                            <strong>{{ leg.player }}</strong>
+                            <div class="cell-meta">{{ leg.direction }} {{ leg.stat }} {{ leg.line }} · {{ leg.matchup }}</div>
+                        </td>
+                        <td>{{ leg.sport }}</td>
+                        <td><span class="badge {% if leg.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ leg.reliability }}</span></td>
+                        <td>{{ leg.true_prob }}%</td>
+                        <td>{{ leg.book or '-' }}</td>
+                        <td>{% if leg.market_price is not none %}{{ '+' if leg.market_price > 0 }}{{ leg.market_price }}{% else %}-{% endif %}</td>
+                        <td>{% if leg.edge_pct is not none %}{{ leg.edge_pct }}%{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form method="post" action="/elite/parlay/save" style="margin-top:12px;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Elite Card To Tracker</button>
+            <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Open Personal Tracker</a>
+        </form>
+        {% else %}
+        <div class="empty-state"><div class="empty-state-title">No buildable card yet</div></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Quick Bet Log</div>
+        <span class="badge">Manual Tracker</span>
+    </div>
+    <form method="post" action="/elite/bet-log" class="p-16" style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; align-items:end;">
+        <div>
+            <div class="control-label">Sport</div>
+            <select name="sport" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">
+                <option>MLB</option>
+                <option>WNBA</option>
+                <option>NBA</option>
+                <option>NFL</option>
+            </select>
+        </div>
+        <div><div class="control-label">Player</div><input name="player" required style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Stat</div><input name="stat" required placeholder="TOTAL BASES" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div>
+            <div class="control-label">Side</div>
+            <select name="direction" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">
+                <option>UNDER</option>
+                <option>OVER</option>
+            </select>
+        </div>
+        <div><div class="control-label">Line</div><input name="line" required style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Price</div><input name="price" placeholder="-120" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Matchup</div><input name="matchup" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Book</div><input name="book" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Stake</div><input name="stake" type="number" step="0.01" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Payout</div><input name="payout" type="number" step="0.01" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div>
+            <div class="control-label">Result</div>
+            <select name="result" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">
+                <option>Pending</option>
+                <option>Win</option>
+                <option>Loss</option>
+                <option>Push</option>
+            </select>
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit">Log Bet</button>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Candidate Pool</div>
+        <span class="badge badge-accent">{{ candidate_pool|length }} legs</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Sport</th>
+                    <th>Prop</th>
+                    <th>Reliability</th>
+                    <th>True %</th>
+                    <th>Implied</th>
+                    <th>Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for leg in candidate_pool %}
+                <tr>
+                    <td><strong>{{ leg.player }}</strong><div class="cell-meta">{{ leg.matchup }}</div></td>
+                    <td>{{ leg.sport }}</td>
+                    <td>{{ leg.direction }} {{ leg.stat }} {{ leg.line }}</td>
+                    <td><span class="badge {% if leg.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ leg.reliability }}</span></td>
+                    <td>{{ leg.true_prob }}%</td>
+                    <td>{% if leg.implied_prob is not none %}{{ leg.implied_prob }}%{% else %}-{% endif %}</td>
+                    <td>{{ leg.score }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="cell-meta">No MLB/WNBA elite candidates passed the current filter.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

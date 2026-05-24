@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Sports Dashboard - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Platform Dashboard</div>
+        <h1>Sports <span class="accent">Overview</span></h1>
+        <div class="page-subtitle">A clean home base for every sport on the platform. Jump into the live NBA command center now, and see how the rest of the betting-intelligence system is expanding around it.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA</a>
+        {% if show_ops_strip %}
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="/matchup-lens?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Matchup Lens</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Read price before opinion</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use the line, total, move, and best-book context to understand what the market already knows.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How should this game behave?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Pace, role fit, continuity, pressure, and environment help explain the shape of the game.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Test what actually repeats</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Review loops and line-history checks separate real continuation angles from noisy streaks.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Support or conflict?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The platform is built to tell you when signals stack cleanly and when they fight each other.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="control-panel" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); align-items:stretch;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Focus</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_summary.focus_label }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ nba_summary.focus_copy }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Today</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_summary.today_games }} NBA games</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ nba_summary.board_depth }} props currently modeled</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Best Starting Point</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">Matchup Lens</div>
+            <div style="font-size:11px; color:var(--text-muted);">Open the dedicated NBA matchup method page, then drill into Market Edge, Trends, Floor Plays, and parlays.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Workflow</div>
+            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">Series -> Props -> Ticket</div>
+            <div style="font-size:11px; color:var(--text-muted);">The same research-to-ticket workflow will carry across every sport as modules launch.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(110,162,255,0.24);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Sports Platform</div>
+        <span class="badge badge-accent">{{ sports_launch_cards|length }} Sports</span>
+    </div>
+    <div class="p-20">
+        <div class="grid-3" style="gap: 16px;">
+            {% for sport in sports_launch_cards %}
+            <a href="{{ sport.href }}" class="series-feature-card" style="position: relative;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                    <div class="feature-kicker" style="margin-bottom:0;">{{ sport.kicker }}</div>
+                    <span class="status-pill {{ sport.status_class }}">{{ sport.status_label }}</span>
+                </div>
+                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-bottom:8px;">{{ sport.title }}</div>
+                <div style="font-size:13px; color:#b8c8d2; line-height:1.55; margin-bottom:12px;">{{ sport.summary }}</div>
+                <div class="micro-cluster" style="margin-bottom: 10px;">
+                    {% for item in sport.highlights[:4] %}
+                    <span class="micro-chip {% if loop.index == 1 %}accent{% elif loop.index == 2 %}blue{% elif loop.index == 3 %}copper{% else %}soft{% endif %}">{{ item }}</span>
+                    {% endfor %}
+                </div>
+                <div style="font-size:13px; color:var(--accent); font-weight:700;">
+                    {% if sport.coming_soon %}View roadmap ->{% else %}Open live workspace ->{% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="grid-3" style="gap: 16px;">
+    <div class="card panel-glow">
+        <div class="p-24">
+            <div class="feature-kicker">NBA Snapshot</div>
+            <div style="font-size:32px; font-weight:800; color:var(--text-bright); margin-bottom:6px;">{{ nba_summary.board_depth }}</div>
+            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Live NBA props on the board right now, with game environment, matchup context, and trend logic already wired in.</div>
+        </div>
+    </div>
+    <div class="card panel-glow">
+        <div class="p-24">
+            <div class="feature-kicker">Top Play Depth</div>
+            <div style="font-size:32px; font-weight:800; color:var(--accent); margin-bottom:6px;">{{ nba_summary.top_plays }}</div>
+            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Featured NBA plays currently surfacing from the live slate and ready for deeper review.</div>
+        </div>
+    </div>
+    <div class="card panel-glow">
+        <div class="p-24">
+            <div class="feature-kicker">Series Angles</div>
+            <div style="font-size:32px; font-weight:800; color:var(--accent-copper); margin-bottom:6px;">{{ nba_summary.series_angles }}</div>
+            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Current NBA series contexts already being tracked so the platform can move beyond single-game thinking.</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

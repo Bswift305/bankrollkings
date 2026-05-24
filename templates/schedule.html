@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Schedule - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">NBA Schedule</div>
+        <h1>Game <span class="accent">Schedule</span></h1>
+        <div class="page-subtitle">Full slate view with market context when game lines and totals are available.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/game-lines?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Game Lines</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Platform Lens</div>
+        <span class="badge badge-accent">Slate Context</span>
+    </div>
+    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Schedule Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This is the clean slate map for who plays, when they tip, and where to open the deeper board work next.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Market Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">When lines are loaded, the schedule becomes the first pass for spotting low-total environments, pace pockets, and thin-market games.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker">Verdict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use the slate view to route yourself into the right matchup, line board, or prop board instead of guessing where the edge lives.</div>
+        </div>
+    </div>
+</div>
+
+{% for date, day_games in games_by_date.items() %}
+<div class="card mb-20">
+    <div class="card-header">
+        <div class="card-title">{{ date }}</div>
+        <span class="badge">{{ day_games|length }} Games</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr><th>Away</th><th></th><th>Home</th><th>Time</th><th>Market</th></tr>
+            </thead>
+            <tbody>
+                {% for game in day_games %}
+                <tr>
+                    <td><a href="/team/{{ game.Away }}" style="color: var(--accent);">{{ team_mark(game.Away, size='xs') }}</a></td>
+                    <td>@</td>
+                    <td><a href="/team/{{ game.Home }}" style="color: var(--accent);">{{ team_mark(game.Home, size='xs') }}</a></td>
+                    <td>{{ game.Time if game.Time else '-' }}</td>
+                    <td>{% if game.market_summary %}{{ game.market_summary }}{% else %}<span style="color: var(--text-muted);">No line loaded</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll left to right to see every schedule column.</div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-title">No games in schedule</div>
+        <div class="empty-state-copy">Load the NBA schedule to populate this view.</div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

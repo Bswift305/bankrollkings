@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Sharp University - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Elite Tier</div>
+        <h1>Sharp <span class="accent">University</span></h1>
+        <div class="page-subtitle">Short practical lessons tied directly to the tools inside the Elite cockpit.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/elite" class="btn btn-primary btn-sm">Elite Cockpit</a>
+        <a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>
+        <a href="/elite/matchup-builder" class="btn btn-secondary btn-sm">Matchup Builder</a>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap:14px;">
+    {% for module in modules %}
+    <div class="card" id="{{ module.slug }}">
+        <div class="card-header">
+            <div>
+                <div class="page-kicker" style="margin-bottom:6px;">{{ module.feature }}</div>
+                <div class="card-title">{{ module.title }}</div>
+            </div>
+            <span class="badge">{{ loop.index }}</span>
+        </div>
+        <div class="p-16" style="display:grid; gap:10px;">
+            <div class="cell-meta" style="line-height:1.55;">{{ module.summary }}</div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Lesson</div>
+                <div style="color:var(--text-bright); line-height:1.55;">{{ module.lesson }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Apply It</div>
+                <div style="color:var(--text-bright); line-height:1.55;">{{ module.apply }}</div>
+            </div>
+            <a href="{{ module.href }}" class="btn btn-secondary btn-sm">Open Feature</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

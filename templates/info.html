@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% block title %}How It Works - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Platform Guide</div>
+        <h1>Betting <span class="accent">Intelligence</span> Explained</h1>
+        <div class="page-subtitle">This page explains the product standard behind Bankroll Kings: market read, matchup read, trend read, and a plain-English verdict that helps the bettor make the final decision.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Glossary</a>
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Live Boards</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        {% if show_ops_strip %}
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
+        {% endif %}
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">What the number is saying</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The platform should explain price, movement, and disagreement before it starts recommending angles.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How the game should behave</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Role, pace, continuity, pressure, and environment should turn raw data into a usable game script.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">What actually repeats</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">History is useful only when it survives review, line conflict checks, and current-team context.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Support, conflict, or pass</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The platform should compress complexity into a decision-support read, not fake certainty.</div>
+        </div>
+    </div>
+</div>
+
+<!-- Hero Section -->
+<div class="card mb-24" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(0, 255, 65, 0.08) 100%); border: 1px solid rgba(0,255,65,0.4);">
+    <div style="padding: 48px; text-align: center;">
+        <div style="font-size: 32px; font-weight: 700; margin-bottom: 16px; color: #fff;">
+            We simplify the market. <span style="color: var(--accent);">You make the decision.</span>
+        </div>
+        <div style="font-size: 16px; color: var(--text-muted); max-width: 760px; margin: 0 auto; line-height: 1.8;">
+            Bankroll Kings is a betting intelligence platform. We translate market movement, matchup context, and trend signals into plain-English decision support so everyday bettors can read the board with more clarity.
+        </div>
+    </div>
+</div>
+
+<!-- The Reality Check -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">The Reality of Sports Betting</div>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 15px; color: var(--text); line-height: 1.9;">
+            <p style="margin-bottom: 16px;">
+                <strong style="color: var(--accent);">The goal is not fake certainty.</strong> The goal is to compress a noisy betting market into a cleaner read: what the number is saying, what the matchup is saying, what the trend is saying, and where those signals disagree.
+            </p>
+            <p style="margin-bottom: 16px;">
+                Different markets deserve different treatment. Some are efficient. Some are thin. Some are volatile. Our job is to surface those differences and explain them in language that feels usable instead of buried in betting jargon.
+            </p>
+            <p>
+                We are not a sportsbook and we are not selling magic. We are a decision-support platform built to help bettors compare angles, understand context, and make smarter choices with their own bankroll.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- The Three Pillars -->
+<div style="font-size: 13px; color: var(--accent); letter-spacing: 2px; font-weight: 600; margin-bottom: 16px;">THE DECISION FRAMEWORK</div>
+<div class="grid-3 mb-24">
+    <div class="card" style="text-align: center; border-color: rgba(0,255,65,0.3);">
+        <div class="p-24">
+            <div style="font-size: 14px; color: var(--accent); margin-bottom: 16px; letter-spacing: 2px; font-weight: 800;">01</div>
+            <div style="font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #fff;">Market Read</div>
+            <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                We track how the number is priced, how books differ, and how the market is moving. That gives you context beyond a static spread or prop line.
+            </div>
+        </div>
+    </div>
+    <div class="card" style="text-align: center; border-color: rgba(0,255,65,0.3);">
+        <div class="p-24">
+            <div style="font-size: 14px; color: var(--accent); margin-bottom: 16px; letter-spacing: 2px; font-weight: 800;">02</div>
+            <div style="font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #fff;">Matchup Read</div>
+            <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                We show how style, pace, role, opponent weakness, and game environment shape the bet. This keeps the board grounded in actual basketball and football logic.
+            </div>
+        </div>
+    </div>
+    <div class="card" style="text-align: center; border-color: rgba(0,255,65,0.3);">
+        <div class="p-24">
+            <div style="font-size: 14px; color: var(--accent); margin-bottom: 16px; letter-spacing: 2px; font-weight: 800;">03</div>
+            <div style="font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #fff;">Trend Read</div>
+            <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                We test whether continuation spots and historical patterns actually hold up. If a signal looks strong but broader history pushes back, the site should tell you that too.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- The Platform Score Deep Dive -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">The Scoring Stack</div>
+        <span class="badge badge-accent">Decision Support</span>
+    </div>
+    <div class="p-24">
+        <p style="color: var(--text-muted); margin-bottom: 24px; line-height: 1.7;">
+            The platform score is not just a hit rate. It blends multiple layers so the board can show when a play has real support and when it deserves more caution. Here's the simplified framework:
+        </p>
+        
+        <div style="background: var(--bg-elevated); padding: 24px; border-radius: 8px; font-family: monospace; font-size: 16px; color: var(--accent); text-align: center; margin-bottom: 32px;">
+            Platform Score = Hit Rate + Streak Bonus + Trend Bonus + Opponent Bonus
+        </div>
+        
+        <div class="grid-2" style="gap: 24px;">
+            <div style="background: var(--bg-elevated); padding: 24px; border-radius: 8px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 14px; color: var(--accent); font-weight: 700; margin-bottom: 12px;">1. BASE HIT RATE (0-100)</div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    The foundation. If a player has hit a prop line in 85 of 100 games, their base is 85. 
+                    <strong style="color: #fff;">This alone tells you more than any "expert" pick ever will.</strong>
+                </div>
+            </div>
+            <div style="background: var(--bg-elevated); padding: 24px; border-radius: 8px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 14px; color: var(--accent); font-weight: 700; margin-bottom: 12px;">2. STREAK BONUS (+0 to +25)</div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    +5 points for every consecutive game they've cleared the line. A player on a 5+ game streak gets the max +25 bonus. 
+                    <strong style="color: #fff;">Hot hands are real in basketball.</strong>
+                </div>
+            </div>
+            <div style="background: var(--bg-elevated); padding: 24px; border-radius: 8px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 14px; color: var(--accent); font-weight: 700; margin-bottom: 12px;">3. TREND BONUS (-10 to +10)</div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    We compare their last 5 games to their prior 5. Rising form? +10 (HOT) or +5 (UP). 
+                    Declining? -5 (DOWN) or -10 (COLD). <strong style="color: #fff;">Momentum matters.</strong>
+                </div>
+            </div>
+            <div style="background: var(--bg-elevated); padding: 24px; border-radius: 8px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 14px; color: var(--accent); font-weight: 700; margin-bottom: 12px;">4. OPPONENT BONUS (-10 to +10)</div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    Historical performance against tonight's specific opponent. Some players feast on certain teams. 
+                    <strong style="color: #fff;">Matchups matter more than overall averages.</strong>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 32px; padding: 20px; background: rgba(0,255,65,0.1); border-radius: 8px; border: 1px solid rgba(0,255,65,0.3);">
+            <div style="font-size: 13px; color: var(--accent); font-weight: 600; margin-bottom: 12px;">GRADE SCALE</div>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <span><strong style="color: var(--accent);">A+</strong> (95+) = Elite Lock</span>
+                <span><strong style="color: var(--accent);">A</strong> (90-94) = Strong Lock</span>
+                <span><strong>B+</strong> (85-89) = Very Good</span>
+                <span><strong>B</strong> (80-84) = Good</span>
+                <span><strong style="color: var(--warning);">C</strong> (70-79) = Decent</span>
+                <span><strong style="color: var(--danger);">D</strong> (&lt;70) = Avoid</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Prop Tiers Explained -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Understanding Prop Tiers</div>
+    </div>
+    <div class="p-24">
+        <div class="grid-3" style="gap: 20px; margin-bottom: 24px;">
+            <div style="background: linear-gradient(135deg, rgba(0,255,65,0.15) 0%, var(--bg-elevated) 100%); padding: 28px; border-radius: 12px; border: 2px solid var(--accent);">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <span class="hr-lock">80%+</span>
+                    <span style="font-size: 18px; font-weight: 700; color: #fff;">LOCKS</span>
+                </div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    The player has cleared this line in at least 80% of games. This is as close to "guaranteed" as sports betting gets. 
+                    <strong style="color: var(--accent);">Your parlay anchors.</strong>
+                </div>
+            </div>
+            <div style="background: var(--bg-elevated); padding: 28px; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <span class="hr-strong">70-79%</span>
+                    <span style="font-size: 18px; font-weight: 700; color: #fff;">STRONG</span>
+                </div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    Solid consistency. They miss occasionally, but the hit rate is well above breakeven. 
+                    <strong style="color: #fff;">Great for diversification.</strong>
+                </div>
+            </div>
+            <div style="background: var(--bg-elevated); padding: 28px; border-radius: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <span class="badge badge-accent">FLOOR</span>
+                    <span style="font-size: 18px; font-weight: 700; color: #fff;">FLOOR PLAYS</span>
+                </div>
+                <div style="font-size: 14px; color: var(--text-muted); line-height: 1.7;">
+                    The line is set below 77% of their average. Even on a bad night, they should clear. 
+                    <strong style="color: #fff;">Mathematical edges.</strong>
+                </div>
+            </div>
+        </div>
+        
+        <div style="padding: 20px; background: var(--bg-elevated); border-radius: 8px;">
+            <div style="font-size: 14px; color: var(--text); line-height: 1.8;">
+                <strong style="color: var(--accent);">Pro Tip:</strong> Don't chase high odds with low-percentage plays. A 15-leg parlay of 75%+ props at +400 
+                is infinitely smarter than a 6-leg parlay of "expert picks" at +2500. <strong style="color: #fff;">Consistency compounds. Variance destroys.</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- The Parlay Strategy -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">The Diversification Strategy</div>
+        <span class="badge">The Real Secret</span>
+    </div>
+    <div class="p-24">
+        <p style="color: var(--text); margin-bottom: 24px; line-height: 1.8; font-size: 15px;">
+            <strong style="color: var(--accent);">This is where most bettors fail.</strong> They load up 5 props from the same player or 8 props from the same game. 
+            One injury, one blowout, one bad quarter—and the entire ticket is dead. Sharps diversify. Here's how:
+        </p>
+        
+        <div class="grid-2" style="gap: 32px;">
+            <div>
+                <div style="font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: 1px; margin-bottom: 16px;">THE RULES</div>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+                        <span style="color: var(--accent); font-weight: 800; font-size: 28px; min-width: 50px;">2</span>
+                        <div>
+                            <div style="font-weight: 600; color: #fff;">Max Props Per Player</div>
+                            <div style="font-size: 13px; color: var(--text-muted);">Stack only if both props are 75%+</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+                        <span style="color: var(--accent); font-weight: 800; font-size: 28px; min-width: 50px;">4</span>
+                        <div>
+                            <div style="font-weight: 600; color: #fff;">Max Props Per Game</div>
+                            <div style="font-size: 13px; color: var(--text-muted);">Blowouts kill correlated props</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+                        <span style="color: var(--accent); font-weight: 800; font-size: 28px; min-width: 50px;">5+</span>
+                        <div>
+                            <div style="font-weight: 600; color: #fff;">Minimum Different Games</div>
+                            <div style="font-size: 13px; color: var(--text-muted);">Spread risk across the slate</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+                        <span style="color: var(--accent); font-weight: 800; font-size: 28px; min-width: 50px;">15-20</span>
+                        <div>
+                            <div style="font-weight: 600; color: #fff;">Target Legs Per Parlay</div>
+                            <div style="font-size: 13px; color: var(--text-muted);">Sweet spot for +200 to +400 odds</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <div style="font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: 1px; margin-bottom: 16px;">THE MATH</div>
+                <div style="font-size: 15px; color: var(--text-muted); line-height: 1.9;">
+                    <p style="margin-bottom: 16px;">
+                        <strong style="color: #fff;">At +300 odds, you need to hit 25% to break even.</strong> If your props average 75% hit rates and you're building 
+                        diversified 15-leg parlays, the math is in your favor.
+                    </p>
+                    <p style="margin-bottom: 16px;">
+                        <strong style="color: var(--accent);">The volume approach:</strong> 20 tickets at $5 each = $100 risk. Hit 2 at +300 = $140 return. 
+                        Hit 3 = $190. That's 40-90% ROI on a single day.
+                    </p>
+                    <p>
+                        <strong style="color: #fff;">The key is consistency.</strong> Some days you hit 4. Some days you hit 1. Over 30 days, the math works. 
+                        That's why sharps don't sweat individual losses—they trust the process.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trends Guide -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Reading Trends Like a Sharp</div>
+    </div>
+    <div class="p-24">
+        <div style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap; margin-bottom: 24px;">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="width: 40px; height: 40px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #000; font-size: 14px;">28</div>
+                <span style="font-size: 14px; color: var(--text-muted);"><strong style="color: #fff;">GREEN</strong> = Hit (over the line)</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="width: 40px; height: 40px; background: var(--danger); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 14px;">18</div>
+                <span style="font-size: 14px; color: var(--text-muted);"><strong style="color: #fff;">RED</strong> = Miss (under the line)</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="width: 40px; height: 40px; background: var(--bg-elevated); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-muted);">-</div>
+                <span style="font-size: 14px; color: var(--text-muted);"><strong style="color: #fff;">DASH</strong> = Did not play</span>
+            </div>
+        </div>
+        
+        <div style="font-size: 15px; color: var(--text-muted); line-height: 1.9;">
+            <p style="margin-bottom: 16px;">
+                <strong style="color: var(--accent);">Look for streaks of green.</strong> A player with 8 straight green cells is on fire. Books are often slower than the streak—
+                by the time they move the line up, the streak is already working in your favor.
+            </p>
+            <p style="margin-bottom: 16px;">
+                <strong style="color: #fff;">Watch for pattern breaks.</strong> If a player has been green for 10 games and suddenly hits two reds, 
+                something changed—injury, minutes restriction, lineup change. Time to reassess.
+            </p>
+            <p>
+                <strong style="color: var(--accent);">The numbers tell the story.</strong> A player who hits 25, 27, 29, 31 in their last 4 games with a line of 22.5? 
+                That's not luck—that's a trend. Ride it.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Pre-Game Checklist -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">The Sharp's Pre-Game Checklist</div>
+    </div>
+    <div class="p-24">
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 15px;">
+            Before locking in any prop, run through this checklist. Sharps don't skip steps.
+        </p>
+        <div class="grid-2" style="gap: 16px;">
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Injury Report</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">Is the player healthy? Are key teammates out (usage boost)?</div>
+                </div>
+            </div>
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Back-to-Back Check</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">Second night of B2B? Veterans often rest or see reduced minutes.</div>
+                </div>
+            </div>
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Game Script</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">Big favorite? Starters might sit Q4. Big underdog? Garbage time affects stats.</div>
+                </div>
+            </div>
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Pace & Total</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">High O/U games = more possessions = more stats. Low totals suppress everything.</div>
+                </div>
+            </div>
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Defensive Matchup</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">Playing the worst rebounding team? Boards prop looks juicy. Best perimeter D? Skip 3PM.</div>
+                </div>
+            </div>
+            <div style="padding: 16px; background: var(--bg-elevated); border-radius: 8px; display: flex; gap: 12px; align-items: flex-start;">
+                <span style="color: var(--accent); font-size: 18px;">✓</span>
+                <div>
+                    <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">Line Movement</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">Did the line move from 22.5 to 24.5? Sharp money came in. Be cautious.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Glossary -->
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Sharp Betting Glossary</div>
+    </div>
+    <table class="data-table">
+        <tbody>
+            <tr>
+                <td style="width: 180px; font-weight: 700; color: var(--accent);">Hit Rate</td>
+                <td>Percentage of games the player has exceeded the prop line. The single most important metric.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">Floor Play</td>
+                <td>A prop line set below 77% of a player's season average. Even on their worst night, they should clear.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">Platform Score</td>
+                <td>Our 0-100 decision-support rating combining hit rate, streak, trend, and opponent performance.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">Streak</td>
+                <td>Consecutive games over the prop line. Indicates current hot form—ride the wave.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">Stacking</td>
+                <td>Adding multiple props for the same player. Only do this when both props are 75%+.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">Correlation</td>
+                <td>Props that move together (PTS + AST for a guard). Can be positive or negative—understand it.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">CLV (Closing Line Value)</td>
+                <td>Getting better odds than where the line closes. The mark of a true sharp.</td>
+            </tr>
+            <tr>
+                <td style="font-weight: 700; color: var(--accent);">ROI</td>
+                <td>Return on Investment. Track this religiously. If you're not profitable after 500 bets, adjust your approach.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Final CTA -->
+<div style="text-align: center; padding: 48px 20px; background: linear-gradient(135deg, var(--bg-card) 0%, rgba(0, 255, 65, 0.05) 100%); border-radius: 12px; border: 1px solid var(--border);">
+    <div style="font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px;">Ready to bet like a sharp?</div>
+    <div style="font-size: 15px; color: var(--text-muted); margin-bottom: 28px; max-width: 500px; margin-left: auto; margin-right: auto;">
+        Stop guessing. Start analyzing. The edge is in the data.
+    </div>
+    <a href="/market-edge" class="btn" style="margin: 0 8px; padding: 14px 32px;">Open Market Edge</a>
+    <a href="/parlay" class="btn btn-secondary" style="margin: 0 8px; padding: 14px 32px;">Build a Parlay</a>
+</div>
+{% endblock %}

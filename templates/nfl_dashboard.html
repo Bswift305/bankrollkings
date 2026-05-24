@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+{% block title %}{{ sport_title }} Command Surface{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Football Command Surface</div>
+        <h1>{{ sport_title }} <span class="accent">{{ hero_accent }}</span></h1>
+        <div class="page-subtitle">
+            {% if board.available %}
+            {{ sport_profile.summary }}
+            {% else %}
+            {{ sport_title }} board data is not loaded yet.
+            {% endif %}
+        </div>
+    </div>
+    <div class="hero-actions" style="display:flex; align-items:center; gap:12px;">
+        {% if sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') %}
+        <img src="{{ sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') }}" alt="{{ sport_title }} logo" style="width:52px; height:52px; object-fit:contain; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.28));">
+        {% endif %}
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to NBA</a>
+        {% if show_ops_strip %}
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Test Drive</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Platform Lens</div>
+        <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open {{ sport_title }} Board</a>
+    </div>
+    <div class="grid-4 p-16" style="gap: 12px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Read the number first</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Spread, total, and book range should set the conversation before trend chasing starts.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Script and style drive it</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use continuity, environment, and team behavior to understand how the game is likely to unfold.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Pattern or noise?</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">History only matters when it survives review, context, and the current team situation.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or conflict</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is to surface when the layers agree and when the board should be treated more cautiously.</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Live Games</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ live_status.games }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ live_status.note }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Live Props</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent-copper);">{{ live_status.props }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ live_status.detail }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Books</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">{{ live_status.books|length }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ live_status.books|join(', ') if live_status.books else 'No live books loaded yet.' }}</div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow" style="border-color: {% if live_status.state == 'live' %}rgba(45,212,191,0.22){% else %}rgba(201,128,58,0.28){% endif %};">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Live Feed Status</div>
+        <span class="badge {% if live_status.state == 'live' %}badge-accent{% else %}badge{% endif %}">{{ live_status.state_label }}</span>
+    </div>
+    <div class="p-16">
+        {% if refresh_meta.warning %}
+        <div class="parlay-surface-soft" style="padding: 12px; margin-bottom: 16px; color: var(--warning); font-weight: 700;">
+            {{ refresh_meta.warning }}
+        </div>
+        {% endif %}
+        {% if refresh_meta.status == 'unavailable' %}
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <span class="badge">Props Unavailable</span>
+            <span class="badge">Live board suppressed</span>
+        </div>
+        {% endif %}
+        <div style="font-size: 13px; color: var(--text-bright); line-height: 1.55; margin-bottom: 10px;">{{ live_status.note }}</div>
+        <div class="cell-meta" style="line-height: 1.55;">{{ live_status.detail }}</div>
+        {% if not live_status.has_live_games and not live_status.has_live_props %}
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;">
+            <span class="badge">Schedule {{ live_status.schedule_rows }}</span>
+            <span class="badge">Odds {{ live_status.odds_rows }}</span>
+            <span class="badge">Props {{ live_status.prop_rows }}</span>
+            {% if live_status.workbook_matchups %}
+            <span class="badge badge-accent">Workbook matchups {{ live_status.workbook_matchups }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Closeout Check</div>
+        <span class="badge badge-accent">Operator Path</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
+            Use the sport QC command before calling the board finished. The result tells you whether the surface is healthy, even when live files are intentionally empty.
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            {% if sport_title == 'NFL' %}
+            <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-bright); line-height: 1.7;">py qc_nfl_board.py</div>
+            {% elif sport_title == 'College Football' %}
+            <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-bright); line-height: 1.7;">py qc_cfb_board.py</div>
+            {% else %}
+            <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-bright); line-height: 1.7;">py qc_football_board.py</div>
+            {% endif %}
+            <div class="cell-meta" style="margin-top: 8px;">A clean pass means the routes load, the framing is intact, and the board is being honest about workbook, historical, or live mode.</div>
+        </div>
+        <div class="cell-meta" style="margin-top: 10px; line-height: 1.55;">
+            Combined football pass: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text-bright);">py qc_football_board.py</span>
+        </div>
+    </div>
+</div>
+
+<div class="grid-4 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Price comes first</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Read the spread, total, and book range before turning the board into a pick sheet.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Game script matters</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use style, pace, and team behavior to understand how the game is likely to unfold.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Test the pattern</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">A streak is only useful if the history and review data say it is worth following.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Plain-English Verdict</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Support or conflict?</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Bankroll Kings is built to show when the signals line up and when they are fighting each other.</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Game Lines</a>
+        <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Totals</a>
+        <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Trends</a>
+        <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Props</a>
+        <a href="{{ other_sport_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left:auto;">{{ other_sport_label }}</a>
+    </div>
+</div>
+
+{% if sport_title == 'College Football' and current_season_context %}
+<div class="card mb-24 panel-glow" style="border-color: {% if current_season_context.state == 'ready' %}rgba(45,212,191,0.22){% elif current_season_context.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Roster & Continuity</div>
+        <span class="badge {% if current_season_context.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
+            {% if current_season_context.state == 'ready' %}Current + History Ready{% elif current_season_context.state == 'partial' %}Roster Ready{% else %}Waiting on Roster{% endif %}
+        </span>
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px;">
+        {% for card in current_season_context.cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px; padding-top: 0;">
+        {% for card in current_season_context.position_cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent-copper);">{{ card.value }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% if current_season_context.coverage_summary %}
+    <div class="p-16" style="padding-top: 0;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">Roster Coverage</div>
+            <div style="font-size: 13px; color: var(--text-bright); line-height: 1.55;">
+                {{ current_season_context.coverage_summary.ok }} teams returned clean ESPN rosters
+                {% if current_season_context.coverage_summary.empty or current_season_context.coverage_summary.error %}
+                , {{ current_season_context.coverage_summary.empty }} empty and {{ current_season_context.coverage_summary.error }} errored on the last pull.
+                {% else %}
+                with no empty/error team responses on the last pull.
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="p-16" style="padding-top: 0;">
+        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ current_season_context.note }}</div>
+    </div>
+    {% if current_season_context.coverage_alert %}
+    <div class="p-16" style="padding-top: 0;">
+        <div class="parlay-surface-soft" style="padding: 12px; border: 1px solid rgba(248,113,113,0.22);">
+            <div class="page-kicker" style="margin-bottom: 6px; color: #fca5a5;">{{ current_season_context.coverage_alert.title }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55; margin-bottom: 8px;">{{ current_season_context.coverage_alert.note }}</div>
+            {% for item in current_season_context.coverage_alert.items %}
+            <div style="font-size: 12px; color: var(--text-bright); line-height: 1.55; margin-top: 4px;">
+                {{ item.team }}: {{ item.status }}{% if item.rows is not none %} ({{ item.rows }} rows){% endif %}{% if item.error %} - {{ item.error }}{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if current_season_context.plain_english_cards %}
+    <div class="grid-2 p-16" style="gap: 12px; padding-top: 0;">
+        {% for card in current_season_context.plain_english_cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">{{ card.title }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if current_season_context.matchup_verdict_cards %}
+    <div class="p-16" style="padding-top: 0;">
+        <div class="page-kicker" style="margin-bottom: 8px;">Matchup Verdict Builder</div>
+        <div class="grid-2" style="gap: 12px;">
+            {% for card in current_season_context.matchup_verdict_cards %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">{{ team_mark(card.team, size='xs', sport_key='ncaaf') }}</div>
+                <div style="font-size: 13px; color: var(--text-bright); margin-top: 6px; line-height: 1.5;">{{ card.title }}</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">{{ card.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if current_season_context.next_steps %}
+    <div class="p-16" style="padding-top: 0;">
+        <div class="page-kicker" style="margin-bottom: 8px;">Load Sequence</div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            {% for step in current_season_context.next_steps %}
+            <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-bright); line-height: 1.6;">{{ step }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if current_season_context.top_qbs or current_season_context.top_skill or current_season_context.top_defense %}
+    <div class="grid-3 p-16" style="gap: 12px; padding-top: 0;">
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead><tr><th>QB Returners</th><th>Team</th><th>Value</th></tr></thead>
+                <tbody>
+                    {% for row in current_season_context.top_qbs %}
+                    <tr>
+                        <td>{{ row.player }}{% if row.transfer %}<div class="cell-meta">Transfer from {{ row.last_team }}</div>{% endif %}</td>
+                        <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
+                        <td>{{ row.value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead><tr><th>Skill Returners</th><th>Team</th><th>Value</th></tr></thead>
+                <tbody>
+                    {% for row in current_season_context.top_skill %}
+                    <tr>
+                        <td>{{ row.player }}{% if row.transfer %}<div class="cell-meta">Transfer from {{ row.last_team }}</div>{% endif %}</td>
+                        <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
+                        <td>{{ row.value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead><tr><th>Defensive Returners</th><th>Team</th><th>Value</th></tr></thead>
+                <tbody>
+                    {% for row in current_season_context.top_defense %}
+                    <tr>
+                        <td>{{ row.player }}{% if row.transfer %}<div class="cell-meta">Transfer from {{ row.last_team }}</div>{% endif %}</td>
+                        <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
+                        <td>{{ row.value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% if current_season_context.team_rollups %}
+    <div class="table-shell" style="padding: 0 16px 16px 16px;">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Team</th>
+                    <th>Players</th>
+                    <th>Transfers</th>
+                    <th>QBs</th>
+                    <th>Returning Offense</th>
+                    <th>Tackles</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in current_season_context.team_rollups %}
+                <tr>
+                    <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
+                    <td>{{ row.players }}</td>
+                    <td>{{ row.transfers }}</td>
+                    <td>{{ row.qbs }}</td>
+                    <td>{{ row.returning_offense }}</td>
+                    <td>{{ row.tackles }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% if current_season_context.top_returning_teams or current_season_context.portal_moves %}
+    <div class="grid-2 p-16" style="gap: 12px; padding-top: 0;">
+        {% if current_season_context.top_returning_teams %}
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead><tr><th>Top Returning Teams</th><th>Conf</th><th>Return %</th></tr></thead>
+                <tbody>
+                    {% for row in current_season_context.top_returning_teams %}
+                    <tr>
+                        <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
+                        <td>{{ row.conference }}</td>
+                        <td>{{ row.value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        {% if current_season_context.portal_moves %}
+        <div class="table-shell">
+            <table class="data-table compact-board">
+                <thead><tr><th>Portal Watch</th><th>From</th><th>To</th></tr></thead>
+                <tbody>
+                    {% for row in current_season_context.portal_moves %}
+                    <tr>
+                        <td>{{ row.player }}{% if row.position %}<div class="cell-meta">{{ row.position }}</div>{% endif %}</td>
+                        <td>{{ team_mark(row.origin, size='xs', sport_key='ncaaf') }}</td>
+                        <td>{{ team_mark(row.destination, size='xs', sport_key='ncaaf') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if current_season_context.team_signals %}
+    <div class="table-shell" style="padding: 0 16px 16px 16px;">
+        <table class="data-table compact-board">
+            <thead><tr><th>Team Signal</th><th>Stability</th><th>Tags</th><th>Plain-English Verdict</th></tr></thead>
+            <tbody>
+                {% for row in current_season_context.team_signals %}
+                <tr>
+                    <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}{% if row.conference %}<div class="cell-meta">{{ row.conference }}</div>{% endif %}</td>
+                    <td>
+                        <div style="font-weight:700; color:{% if row.signal_tier == 'stable' %}var(--accent){% elif row.signal_tier == 'volatile' %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ row.signal_badge or row.signal_tier|upper }}</div>
+                        <div class="cell-meta">{{ row.signal_score if row.signal_score is not none else '-' }} score</div>
+                    </td>
+                    <td>{{ row.tags|join(', ') if row.tags else 'Neutral' }}</td>
+                    <td>{{ row.verdict }}{% if row.signal_note %}<div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ row.signal_note }}</div>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+</div>
+{% endif %}
+
+{% if not board.available and history_status and history_status.cards %}
+<div class="card mb-24 panel-glow" style="border-color: {% if history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Historical Coverage</div>
+        <span class="badge {% if history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
+            {% if history_status.state == 'ready' %}Operational{% elif history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
+        </span>
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px;">
+        {% for card in history_status.cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="p-16" style="padding-top: 0;">
+        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ history_status.note }}</div>
+    </div>
+</div>
+{% endif %}
+
+{% if board.available %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Football Method Priorities</div>
+        <span class="badge badge-accent">{{ priority_badge }}</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            {{ board_priority_copy }}
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for item in football_methods %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div style="font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 6px;">{{ item.title }}</div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55; margin-bottom: 8px;">{{ item.summary }}</div>
+                <div style="font-size: 12px; color: var(--accent-copper); line-height: 1.5;">{{ item.best_use }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 12px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Primary Thesis</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent);">{{ primary_thesis_title }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ primary_thesis_note }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Trend Role</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">{{ trend_role_title }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ trend_role_note }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Prop Role</div>
+        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">{{ prop_role_title }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ prop_role_note }}</div>
+    </div>
+</div>
+
+{% if history_status and history_status.cards %}
+<div class="card mb-24 panel-glow" style="border-color: {% if history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Historical Coverage</div>
+        <span class="badge {% if history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
+            {% if history_status.state == 'ready' %}Operational{% elif history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
+        </span>
+    </div>
+    <div class="grid-3 p-16" style="gap: 12px;">
+        {% for card in history_status.cards %}
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="p-16" style="padding-top: 0;">
+        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ history_status.note }}</div>
+    </div>
+</div>
+{% endif %}
+
+{% if market_groups %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Available {{ sport_title }} Betting Markets</div>
+        <span class="badge badge-accent">{{ market_groups|length }} market groups</span>
+    </div>
+    <div class="p-16">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            We are treating game lines and totals as first-class {{ sport_title }} markets, with props only taking the role the sport actually deserves.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for group in market_groups %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+                    <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ group.title }}</div>
+                    <span class="badge {% if group.focus == 'Co-primary' or group.focus == 'Primary' %}badge-accent{% endif %}">{{ group.focus }}</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px;">{{ group.summary }}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for market in group.markets %}
+                    <span class="badge" title="{{ market.key }}">{{ market.label }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Model Focus</div>
+        <span class="badge badge-accent">{{ sport_profile.label }}</span>
+    </div>
+    <div class="p-16">
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.primary_markets %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.core_drivers %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Board Filters</div>
+        <span class="badge badge-accent">{{ board.filtered_play_count or board.top_plays|length }} live plays</span>
+    </div>
+    <div class="p-16">
+        <form method="get" class="control-group" style="gap: 12px;">
+            <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+            <div>
+                <div class="control-label">Team</div>
+                <select name="team" class="form-control">
+                    <option value="">All Teams</option>
+                    {% for team in filter_state.teams %}
+                    <option value="{{ team }}" {% if filter_state.team == team %}selected{% endif %}>{{ team }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Family</div>
+                <select name="family" class="form-control">
+                    <option value="">All Families</option>
+                    {% for family in filter_state.families %}
+                    <option value="{{ family }}" {% if filter_state.family == family %}selected{% endif %}>{{ family }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Min Hit</div>
+                <select name="min_hit" class="form-control">
+                    <option value="">Any</option>
+                    <option value="80" {% if filter_state.min_hit == '80' %}selected{% endif %}>80%+</option>
+                    <option value="100" {% if filter_state.min_hit == '100' %}selected{% endif %}>100%</option>
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Sort</div>
+                <select name="sort_by" class="form-control">
+                    {% for key, label in filter_state.sorts.items() %}
+                    <option value="{{ key }}" {% if filter_state.sort_by == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <div class="control-label">Direction</div>
+                <select name="sort_dir" class="form-control">
+                    <option value="desc" {% if filter_state.sort_dir == 'desc' %}selected{% endif %}>High to Low</option>
+                    <option value="asc" {% if filter_state.sort_dir == 'asc' %}selected{% endif %}>Low to High</option>
+                </select>
+            </div>
+            <div style="min-width: 200px;">
+                <div class="control-label">Search</div>
+                <input type="text" name="query" value="{{ filter_state.query }}" class="form-control" placeholder="Player, team, or stat">
+            </div>
+            <div style="display: flex; gap: 8px; align-items: end;">
+                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                <a href="{{ dashboard_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap: 16px;">
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Source</div>
+        <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ board.source_file }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Current workbook feeding the football seed board.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Matchups</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ board.games|length }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Game tabs currently loaded into the board.</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding: 12px;">
+        <div class="page-kicker" style="margin-bottom: 6px;">Filtered Plays</div>
+        <div style="font-size: 28px; font-weight: 800; color: var(--accent-copper);">{{ board.filtered_play_count or board.top_plays|length }}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Current board plays after filters and sorting.</div>
+    </div>
+</div>
+
+{% if board.parameters %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Current {{ sport_title }} Formula</div>
+        <span class="badge badge-accent">Workbook Rules</span>
+    </div>
+    <div class="p-16">
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for item in board.parameters %}
+            <span class="badge">{{ item }}</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if board.top_plays %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Top Floor Plays</div>
+        <span class="badge badge-accent">{{ board.top_plays|length }} shown</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Floor</th>
+                    <th>Avg</th>
+                    <th>Hit %</th>
+                    <th>Streak</th>
+                    <th>Trust</th>
+                    <th>Last 5</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in board.top_plays %}
+                <tr>
+                    <td>{{ play.player }}</td>
+                    <td>{{ team_mark(play.team, size='xs', sport_key='nfl' if 'NFL' in sport_title else 'ncaaf') }}</td>
+                    <td>
+                        <span class="badge">{{ play.stat_meta.short }}</span>
+                        <div class="cell-meta">{{ play.stat_meta.family }}</div>
+                    </td>
+                    <td><strong>{{ play.line }}</strong></td>
+                    <td>{{ play.floor }}</td>
+                    <td>{{ play.avg }}</td>
+                    <td><span class="hr-strong">{{ play.hit_pct }}</span></td>
+                    <td>{{ play.streak }}</td>
+                    <td style="font-size: 11px;">
+                        <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
+                        <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
+                    </td>
+                    <td style="font-size: 11px; color: var(--text-muted);">
+                        <div>{{ play.games|join(', ') }}</div>
+                        <div style="margin-top: 4px;">{{ play.note }}</div>
+                        {% if play.trust_summary %}
+                        <div style="margin-top: 4px;">{{ play.trust_summary }}</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if not board.top_plays and not board.games %}
+<div class="empty-state mb-24">
+        <div class="empty-state-title">No {{ sport_title }} plays match this filter set.</div>
+    <div class="empty-state-copy">Try widening the hit-rate threshold or clearing the team or family filter so the weekly board can breathe again.</div>
+</div>
+{% endif %}
+
+    <div class="grid-2" style="gap: 16px;">
+    {% for game in board.games %}
+    <div class="card panel-glow">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">{{ game.sheet }}</div>
+            <span class="badge badge-accent">{{ game.hit_rate_100 }} perfect-hit plays</span>
+        </div>
+        <div class="p-16">
+            <div style="font-size: 18px; font-weight: 700; color: var(--text-bright); margin-bottom: 8px;">{{ game.title }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">{{ game.market_line }}</div>
+            <div style="margin-bottom: 14px;">
+                <a href="{{ game.matchup_href }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Matchup Board</a>
+            </div>
+            <table class="data-table compact-board">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Stat</th>
+                        <th>Line</th>
+                        <th>Avg</th>
+                        <th>Hit %</th>
+                        <th>Streak</th>
+                        <th>Trust</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for play in game.best_plays %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 700;">{{ play.player }}</div>
+                            <div class="cell-meta">{{ team_mark(play.team, size='xs', sport_key='nfl' if 'NFL' in sport_title else 'ncaaf') }}</div>
+                            {% if play.trust_verdict %}
+                            <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge">{{ play.stat_meta.short }}</span>
+                            <div class="cell-meta">{{ play.stat_meta.family }}</div>
+                        </td>
+                        <td><strong>{{ play.line }}</strong></td>
+                        <td>{{ play.avg }}</td>
+                        <td><span style="color: {% if play.hit_pct == '100%' %}var(--accent){% elif play.hit_pct == '80%' %}var(--accent-copper){% else %}var(--text-bright){% endif %}; font-weight: 700;">{{ play.hit_pct }}</span></td>
+                        <td>{{ play.streak }}</td>
+                        <td>
+                            <div style="font-size:11px; font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
+                            <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card mb-24">
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">
+        {{ sport_title }} workbook data is not available yet.
+    </div>
+</div>
+{% endif %}
+{% endblock %}

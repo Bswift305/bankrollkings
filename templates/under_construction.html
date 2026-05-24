@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} - Under Construction{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">{{ page.kicker }}</div>
+        <h1>{{ page.title }} <span class="accent">Under Construction</span></h1>
+        <div class="page-subtitle">{{ page.summary }}</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Back to Dashboard</a>
+        {% if show_ops_strip %}
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">What’s Coming</div>
+        <span class="badge badge-accent">Roadmap</span>
+    </div>
+    <div class="p-24">
+        <div class="grid-2" style="gap: 16px;">
+            {% for item in page.highlights %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Planned Module</div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ item }}</div>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">This board is part of the next expansion pass after the NBA playoff build tightens up.</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% if sport_profile %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Model Focus</div>
+        <span class="badge badge-accent">{{ sport_profile.label }}</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">{{ sport_profile.summary }}</div>
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.primary_markets %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.core_drivers %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if football_methods %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Football Method Priorities</div>
+        <span class="badge badge-accent">Game Lines + Hot Hand</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            Football should treat game lines and totals as co-primary with props, and it should lean heavily into repeatable recent form when the market still has not fully adjusted.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for item in football_methods %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright); margin-bottom: 6px;">{{ item.title }}</div>
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55; margin-bottom: 10px;">{{ item.summary }}</div>
+                <div style="font-size: 12px; color: var(--accent-copper); line-height: 1.5;">{{ item.best_use }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="legend-panel">
+    <div class="legend-row">
+        <span class="control-label">Status</span>
+        <span class="status-pill playoff-hit">In Build</span>
+        <span style="font-size: 12px; color: var(--text-muted);">This page is intentionally live as a placeholder so testers can see where the platform is heading next.</span>
+    </div>
+</div>
+
+{% if workbook_preview and workbook_preview.available %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Current NFL Workbook Preview</div>
+        <span class="badge badge-accent">{{ workbook_preview.games|length }} Matchup Tabs</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Pulled from <strong style="color: var(--text-bright);">{{ workbook_preview.title }}</strong> so the NFL side starts from your real workflow, not a blank shell.</div>
+        {% if workbook_preview.parameters %}
+        <div class="parlay-surface-soft" style="padding: 16px; margin-bottom: 16px;">
+            <div class="page-kicker" style="margin-bottom: 8px;">Current Formula Notes</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for item in workbook_preview.parameters %}
+                <span class="badge">{{ item }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="grid-2" style="gap: 16px; margin-bottom: 16px;">
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Workbook Matchups</div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    {% for game in workbook_preview.games %}
+                    <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ game }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">What This Gives Us</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                    We already have a seed template for NFL floor-play boards, hit rates, streaks, and matchup tabs. The next build step is converting this workbook logic into the same live board system you now have on the NBA side.
+                </div>
+            </div>
+        </div>
+
+        {% if workbook_preview.top_plays %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Team</th>
+                    <th>Stat</th>
+                    <th>Line</th>
+                    <th>Floor</th>
+                    <th>Avg</th>
+                    <th>Hit %</th>
+                    <th>Streak</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for play in workbook_preview.top_plays %}
+                <tr>
+                    <td>{{ play.player }}</td>
+                    <td>{{ play.team }}</td>
+                    <td>{{ play.stat }}</td>
+                    <td><strong>{{ play.line }}</strong></td>
+                    <td>{{ play.floor }}</td>
+                    <td>{{ play.avg }}</td>
+                    <td><span class="hr-strong">{{ play.hit_pct }}</span></td>
+                    <td>{{ play.streak }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
