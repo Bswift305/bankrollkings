@@ -29,6 +29,10 @@ Set the billing portal URL:
 
 - `STRIPE_BILLING_PORTAL_URL`
 
+Optional, for the future API-backed portal session flow:
+
+- `STRIPE_BILLING_PORTAL_CONFIG_ID`
+
 ## Modes
 
 - `demo`
@@ -36,6 +40,7 @@ Set the billing portal URL:
   - pricing page clearly says no real charge should be assumed
 - `partial`
   - some checkout URLs configured, but not all
+  - or payment links are configured but the billing portal only has a Stripe `bpc_...` configuration ID and no URL/session flow yet
   - this is a QC failure state
 - `live`
   - all required checkout URLs configured

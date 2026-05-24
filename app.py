@@ -353,6 +353,10 @@ def get_stripe_billing_portal_url():
     return str(os.environ.get('STRIPE_BILLING_PORTAL_URL', '') or '').strip()
 
 
+def get_stripe_billing_portal_config_id():
+    return str(os.environ.get('STRIPE_BILLING_PORTAL_CONFIG_ID', '') or '').strip()
+
+
 def uses_demo_checkout(plan_key, billing_cycle='monthly'):
     return not bool(get_stripe_checkout_url(plan_key, billing_cycle))
 
@@ -378,7 +382,9 @@ def get_checkout_configuration_report():
             })
     total = len(entries)
     portal_url = get_stripe_billing_portal_url()
+    portal_config_id = get_stripe_billing_portal_config_id()
     billing_portal_configured = bool(portal_url)
+    billing_portal_config_ready = bool(portal_config_id)
     all_live = total > 0 and live_count == total and billing_portal_configured
     partial_live = live_count > 0 and not all_live
     mode = 'live' if all_live else 'partial' if partial_live else 'demo'
@@ -386,7 +392,7 @@ def get_checkout_configuration_report():
     if mode == 'partial':
         summary = (
             f"Stripe is partially configured. {live_count}/{total} checkout URLs are live and "
-            f"billing portal is {'configured' if billing_portal_configured else 'missing'}."
+            f"billing portal is {'configured' if billing_portal_configured else 'configured in Stripe but not wired to a URL/session' if billing_portal_config_ready else 'missing'}."
         )
     elif mode == 'demo':
         summary = (
@@ -399,7 +405,9 @@ def get_checkout_configuration_report():
         'configured_count': live_count,
         'required_count': total,
         'billing_portal_configured': billing_portal_configured,
+        'billing_portal_config_ready': billing_portal_config_ready,
         'billing_portal_url': portal_url,
+        'billing_portal_config_id': portal_config_id,
         'entries': entries,
         'summary': summary,
     }
