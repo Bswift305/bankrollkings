@@ -2,12 +2,13 @@
 {% block title %}Elite Cockpit - Bankroll Kings{% endblock %}
 
 {% block content %}
-<div class="page-hero">
+<div class="page-hero elite-hero-mascot">
     <div>
         <div class="page-kicker">Elite Tier</div>
         <h1>Elite <span class="accent">Betting Cockpit</span></h1>
         <div class="page-subtitle">Personal ROI, leak detection, cross-sport parlay EV, and launch-grade action notes in one place.</div>
     </div>
+    <img src="/static/king-bankroll.png" alt="Bankroll Kings mascot" class="elite-hero-mascot-img">
     <div class="hero-actions">
         <a href="/elite/matchup-builder" class="btn btn-primary btn-sm">Matchup Builder</a>
         <a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>
@@ -17,6 +18,46 @@
         <a href="/sports/wnba" class="btn btn-secondary btn-sm">WNBA Board</a>
     </div>
 </div>
+
+<style>
+.elite-hero-mascot {
+    position: relative;
+    overflow: hidden;
+    min-height: 230px;
+    padding-right: 220px;
+}
+.elite-hero-mascot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(132,215,210,0.06) 58%, rgba(132,215,210,0.15) 100%);
+    pointer-events: none;
+}
+.elite-hero-mascot > div,
+.elite-hero-mascot .hero-actions {
+    position: relative;
+    z-index: 1;
+}
+.elite-hero-mascot-img {
+    position: absolute;
+    right: 12px;
+    bottom: -82px;
+    width: 250px;
+    max-width: 34vw;
+    opacity: 0.86;
+    filter: drop-shadow(0 0 28px rgba(132,215,210,0.28));
+    pointer-events: none;
+}
+@media (max-width: 900px) {
+    .elite-hero-mascot {
+        padding-right: 16px;
+        min-height: 0;
+    }
+    .elite-hero-mascot-img {
+        display: none;
+    }
+}
+</style>
 
 {% if request.args.get('status') == 'saved' %}
 <div class="card mb-24" style="border-color: rgba(45,212,191,0.28);">

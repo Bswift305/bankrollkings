@@ -3,12 +3,9 @@
 
 {% block content %}
 <!-- Hero Section -->
-<div style="text-align: center; padding: 42px 18px; margin-bottom: 24px; background: linear-gradient(135deg, rgba(110,162,255,0.18) 0%, rgba(132,215,210,0.16) 55%, rgba(184,115,51,0.10) 100%); border: 1px solid rgba(132,215,210,0.26); border-radius: 16px; position: relative; overflow: hidden; box-shadow: 0 0 50px rgba(110,162,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04);">
-<div style="position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(110,162,255,0.16) 38%, rgba(132,215,210,0.22) 50%, rgba(184,115,51,0.14) 62%, transparent 100%); transform: translateX(-28%);"></div>
-<div style="position: absolute; top: 50%; left: 50%; width: 460px; height: 460px; background: radial-gradient(circle, rgba(132,215,210,0.20) 0%, rgba(110,162,255,0.12) 35%, transparent 72%); transform: translate(-50%, -50%); animation: pulse 3s ease-in-out infinite;"></div>
-    
-    <div style="position: relative; z-index: 1;">
-        <img src="/static/home-logo.png" alt="Bankroll Kings logo" style="width: min(100%, 320px); height: auto; margin: 0 auto 16px; display: block; filter: drop-shadow(0 0 22px rgba(132,215,210,0.20)) drop-shadow(0 0 38px rgba(110,162,255,0.14));">
+<div class="bk-brand-hero">
+    <div class="bk-brand-hero-copy">
+        <img src="/static/home-logo.png" alt="Bankroll Kings logo" style="width: min(100%, 320px); height: auto; margin: 0 0 16px; display: block; filter: drop-shadow(0 0 22px rgba(132,215,210,0.20)) drop-shadow(0 0 38px rgba(110,162,255,0.14));">
         <p style="font-size: 18px; color: rgba(255,255,255,0.74); max-width: 820px; margin: 0 auto 16px; line-height: 1.6;">
             Bankroll Kings is built for bettors who want the context, trends, pressure points, and matchup information that books never organize in one place.
             {% if postseason_only %}
@@ -17,7 +14,7 @@
             The goal is simple: turn hidden regular-season and postseason betting information into a usable edge across the full sports calendar.
             {% endif %}
         </p>
-        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 0 auto 22px; max-width: 920px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 10px; margin: 0 0 22px; max-width: 720px;">
             <span class="micro-chip blue">Props + O/U</span>
             <span class="micro-chip accent">Trends</span>
             <span class="micro-chip copper">Series + Matchup Context</span>
@@ -25,7 +22,7 @@
             <span class="micro-chip blue">Tracking + Next Gen</span>
             <span class="micro-chip accent">Parlay Planning</span>
         </div>
-        <div style="display: flex; gap: 12px; justify-content: center;">
+        <div style="display: flex; gap: 12px; justify-content: flex-start;">
             <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">Enter Dashboard →</a>
             <a href="/info?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary" style="padding: 16px 32px; font-size: 16px;">How It Works</a>
         </div>
@@ -150,6 +147,55 @@
 @keyframes pulse {
     0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
     50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
+}
+.bk-brand-hero {
+    min-height: 520px;
+    margin-bottom: 24px;
+    padding: 44px 38px;
+    border: 1px solid rgba(132,215,210,0.26);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    background:
+        linear-gradient(90deg, rgba(3,8,12,0.95) 0%, rgba(5,17,24,0.90) 45%, rgba(0,0,0,0.36) 100%),
+        url('/static/king-bankroll.png') right center / auto 112% no-repeat;
+    box-shadow: 0 0 50px rgba(110,162,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.bk-brand-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(110,162,255,0.10) 38%, rgba(132,215,210,0.14) 50%, transparent 70%);
+    pointer-events: none;
+}
+.bk-brand-hero-copy {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+}
+@media (max-width: 900px) {
+    .bk-brand-hero {
+        min-height: 0;
+        padding: 34px 18px;
+        text-align: center;
+        background:
+            linear-gradient(180deg, rgba(3,8,12,0.86) 0%, rgba(3,8,12,0.97) 100%),
+            url('/static/king-bankroll.png') center top / cover no-repeat;
+    }
+    .bk-brand-hero-copy {
+        max-width: none;
+    }
+    .bk-brand-hero-copy img {
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+    .bk-brand-hero-copy > div {
+        justify-content: center !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
 }
 .series-feature-card {
     display: block;
