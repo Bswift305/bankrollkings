@@ -18854,6 +18854,7 @@ def apply_live_method_market_guardrails(prop):
     trends_only = bool(method_labels == {'Trends'})
     support_count = len(method_labels)
     book_count = int(prop.get('book_count', 0) or 0)
+    range_gap = pd.to_numeric(pd.Series([prop.get('range_gap')]), errors='coerce').iloc[0]
     weak_evidence = weighted_hit_rate < 58 and baseline_hit_rate < 58
     thin_edge = edge_pct < 2
     live_line_over_rate = prop.get('live_line_over_rate')
@@ -18923,7 +18924,13 @@ def apply_live_method_market_guardrails(prop):
         notes.append(f"market moved {abs(float(effective_move)):.1f} points against this side")
         tags.append('MARKET HOLD')
         market_gate_note = 'Line moved materially against the model side. Review before promoting.'
-    elif split_market and float(prop.get('range_gap', 0) or 0) >= 2.0:
+    elif split_market and pd.notna(range_gap) and stat in {'STL', 'BLK', '3PM'} and float(range_gap) >= 1.0:
+        market_gate = 'SPLIT MARKET'
+        confidence = min(confidence, 59.4)
+        notes.append('low-count stat has a full-point book split')
+        tags.append('MARKET SPLIT')
+        market_gate_note = 'Books disagree by a full point on a volatile stat. Confirm the exact book line before using this play.'
+    elif split_market and pd.notna(range_gap) and float(range_gap) >= 2.0:
         market_gate = 'SPLIT MARKET'
         confidence = min(confidence, 61.4)
         notes.append('wide book disagreement requires manual review')

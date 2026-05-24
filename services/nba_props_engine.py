@@ -157,6 +157,14 @@ def collect_live_prop_rows(
         multi_book_context = build_prop_multi_book_context(prop, best_play['direction'], props_market_groups)
         calibration = recalibrate_live_market_confidence(best_play['confidence'], multi_book_context)
         calibrated_confidence = calibration['confidence']
+        line_low = multi_book_context.get('line_low')
+        line_high = multi_book_context.get('line_high')
+        range_gap = None
+        if line_low is not None and line_high is not None:
+            try:
+                range_gap = round(float(line_high) - float(line_low), 1)
+            except Exception:
+                range_gap = None
         floor_line = round(float(avg) * floor_multipliers.get(str(stat).upper(), 0.75) * 2) / 2 if avg is not None else None
         if floor_line is not None and floor_line < 0.5:
             floor_line = 0.5
@@ -247,6 +255,7 @@ def collect_live_prop_rows(
             'vegas_line': multi_book_context['vegas_line'],
             'line_low': multi_book_context['line_low'],
             'line_high': multi_book_context['line_high'],
+            'range_gap': range_gap,
             'best_book': multi_book_context['best_book'],
             'book_comparison_note': multi_book_context['book_comparison_note'],
             'current_line': market_context['current_line'],

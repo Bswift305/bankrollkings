@@ -8,8 +8,8 @@ from datetime import datetime
 STEPS = [
     ("playoff_results", [sys.executable, "-X", "utf8", "refresh_playoff_results.py"]),
     ("playoff_player_logs", [sys.executable, "-X", "utf8", "refresh_playoff_player_logs.py"]),
-    ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5", "--api-key", "51234f049c2e262e299d9a78d1c0a829"]),
-    ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5", "--api-key", "51234f049c2e262e299d9a78d1c0a829"]),
+    ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5"]),
+    ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5"]),
     ("injuries", [sys.executable, "-X", "utf8", "fetch_injuries.py"]),
     ("candidate_archive", [sys.executable, "archive_daily_candidates.py"]),
     ("featured_results", [sys.executable, "refresh_featured_results.py"]),
