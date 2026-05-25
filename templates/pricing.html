@@ -94,7 +94,7 @@
         {% for tier in pricing_cards %}
         <article class="board-shell {% if tier.key == 'elite' %}pricing-elite-card{% endif %}" style="padding:20px; border-color:{% if tier.key == 'pro' %}rgba(166,233,229,0.45){% elif tier.key == 'elite' %}rgba(132,215,210,0.38){% else %}var(--border){% endif %}; box-shadow:{% if tier.key == 'pro' or tier.key == 'elite' %}0 22px 44px rgba(0,0,0,0.24){% else %}none{% endif %};">
             {% if tier.key == 'elite' %}
-            <img src="/static/king-bankroll.png" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
+            <img src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
             {% endif %}
             <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                 <div>

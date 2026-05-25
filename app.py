@@ -12652,9 +12652,10 @@ def team_logo_url(value, sport_key=None):
     # Prefer curated local assets first so we control quality and avoid
     # mismatched remote logos. Fall back to the remote map only if a local
     # file is missing.
-    clean_candidate = STATIC_DIR / 'logos' / 'nba_clean' / f'{abbr}.png'
-    if clean_candidate.exists():
-        return f'/static/logos/nba_clean/{abbr}.png'
+    for extension in ('webp', 'png'):
+        clean_candidate = STATIC_DIR / 'logos' / 'nba_clean' / f'{abbr}.{extension}'
+        if clean_candidate.exists():
+            return f'/static/logos/nba_clean/{abbr}.{extension}'
     for extension in ('svg', 'webp', 'png', 'jpg', 'jpeg'):
         candidate = STATIC_DIR / 'logos' / 'nba' / f'{abbr}.{extension}'
         if candidate.exists():
@@ -21409,6 +21410,41 @@ def inject_globals():
 # =============================================================================
 @app.route('/')
 def frontpage():
+    postseason_only = postseason_only_enabled()
+    snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+    if snapshot:
+        payload = snapshot.get('payload') or {}
+        upcoming = payload.get('upcoming') or {'today': [], 'tomorrow': [], 'upcoming': []}
+        top_plays = (payload.get('top_plays') or [])[:5]
+        teams = payload.get('teams') or []
+        total_props = int(payload.get('total_props') or 0)
+        best_by_series = payload.get('best_by_series') or []
+        sports_launch_cards = build_sports_launch_cards(
+            postseason_only,
+            upcoming=upcoming,
+            total_props=total_props,
+            total_players=len(teams),
+            top_plays_count=len(top_plays),
+            best_by_series_count=len(best_by_series),
+        )
+        return render_template('frontpage.html',
+            num_games_today=len(upcoming.get('today', [])),
+            num_games_tomorrow=len(upcoming.get('tomorrow', [])),
+            num_games_upcoming=len(upcoming.get('upcoming', [])),
+            total_players=len(teams),
+            total_props=total_props,
+            top_plays=top_plays,
+            upcoming=upcoming,
+            upcoming_today=payload.get('upcoming_today') or upcoming.get('today', []),
+            upcoming_tomorrow=payload.get('upcoming_tomorrow') or upcoming.get('tomorrow', []),
+            upcoming_future=payload.get('upcoming_future') or upcoming.get('upcoming', []),
+            postseason_only=postseason_only,
+            postseason_matchups=payload.get('postseason_matchups') or [],
+            best_by_series=best_by_series,
+            role_changes=payload.get('role_changes') or [],
+            sports_launch_cards=sports_launch_cards)
+
     gamelogs, schedule = load_gamelogs(), load_schedule()
     player_snapshot = load_player_snapshot()
     current_team_overrides = load_current_team_overrides()
@@ -21686,7 +21722,7 @@ def build_nba_command_center_context(postseason_only):
 def dashboard():
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=30)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     sports_launch_cards = build_sports_launch_cards(
         postseason_only,
@@ -21710,7 +21746,7 @@ def dashboard():
 def matchup_lens():
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=30)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     return render_template('dashboard.html', matchup_lens_mode=True, **nba_context)
 
@@ -21719,7 +21755,7 @@ def matchup_lens():
 def nba_page():
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=30)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     return render_template('dashboard.html', **nba_context)
 
@@ -21768,7 +21804,7 @@ def build_nfl_dashboard_runtime_bundle():
 def nfl_page():
     postseason_only = postseason_only_enabled()
     if not request.args:
-        snapshot = load_runtime_snapshot('nfl_dashboard', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('nfl_dashboard', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
             top_props = annotate_mlb_rows_with_reliability(payload.get('top_props', []))
@@ -22176,7 +22212,7 @@ def wnba_page():
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('wnba_dashboard_today', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('wnba_dashboard_today', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
             return render_template(
@@ -22187,7 +22223,7 @@ def wnba_page():
                 refresh_meta=payload.get('refresh_meta', {}),
                 board_status=payload.get('board_status', {}),
                 upcoming=payload.get('upcoming', {}),
-                top_props=top_props,
+                top_props=payload.get('top_props', []),
                 matchup_cards=payload.get('matchup_cards', []),
                 date_filter=date_filter,
                 stat_filter=stat_filter,
@@ -22310,7 +22346,7 @@ def _render_wnba_method_page(method_key):
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if method_key == 'market_edge' and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('wnba_market_edge_today', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('wnba_market_edge_today', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
             guide = METHOD_GUIDES.get(method_key, {})
@@ -22477,10 +22513,10 @@ def mlb_dashboard():
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('mlb_dashboard_today', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('mlb_dashboard_today', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
-            mlb_launch_lab = build_mlb_launch_lab()
+            mlb_launch_lab = payload.get('mlb_launch_lab') or build_mlb_launch_lab()
             top_props = annotate_mlb_rows_with_reliability(payload.get('top_props', []))
             mlb_slate_intelligence = build_mlb_slate_intelligence(load_mlb_game_market_odds(), top_props)
             return render_template(
@@ -22593,7 +22629,7 @@ def _render_mlb_method_page(method_key):
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if method_key == 'market_edge' and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('mlb_market_edge_today', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('mlb_market_edge_today', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
             guide = METHOD_GUIDES.get(method_key, {})
@@ -24454,7 +24490,7 @@ def props(filter_type=None):
         and sort_by == 'confidence' and sort_dir == 'desc'
     )
     if use_default_snapshot:
-        snapshot = load_runtime_snapshot('nba_props_postseason_today_current', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('nba_props_postseason_today_current', max_age_minutes=720)
         if snapshot:
             board = snapshot.get('payload') or {}
         else:
@@ -24562,7 +24598,7 @@ def smart_picks():
         and sort_by == 'confidence' and sort_dir == 'desc'
     )
     if use_default_snapshot:
-        snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=30)
+        snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=720)
         if snapshot:
             board = snapshot.get('payload') or {}
         else:
@@ -25359,7 +25395,17 @@ def bet_review_model_export():
 @app.route('/elite')
 def elite_dashboard():
     current_user = get_current_user()
-    context = build_elite_dashboard_context(current_user)
+    user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
+    snapshot_key = f"elite_dashboard_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+    if snapshot:
+        context = snapshot.get('payload') or {}
+    else:
+        context = build_elite_dashboard_context(current_user)
+        try:
+            write_runtime_snapshot(snapshot_key, context, meta={'view': 'elite_dashboard'})
+        except Exception:
+            pass
     return render_template(
         'elite_dashboard.html',
         current_user=current_user,

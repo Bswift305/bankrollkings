@@ -7,6 +7,7 @@ import pandas as pd
 from app import (
     build_market_edge_board,
     build_mlb_board_status,
+    build_mlb_launch_lab,
     build_mlb_method_board,
     build_mlb_prop_board,
     build_nba_command_center_context,
@@ -186,6 +187,7 @@ def build_mlb_snapshots() -> None:
         "market_groups": get_mlb_market_groups(),
         "refresh_meta": refresh_meta,
         "board_status": build_mlb_board_status(schedule_df, odds_df, props_df, gamelogs_df, upcoming),
+        "mlb_launch_lab": build_mlb_launch_lab(),
         "upcoming": upcoming,
         "top_props": top_props[:80],
         "date_filter": "today",
