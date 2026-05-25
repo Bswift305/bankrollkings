@@ -269,40 +269,31 @@
 
 <!-- Filters -->
 <div class="card mb-24">
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-bottom:1px solid var(--border);">
+        <span class="control-label">When</span>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+
+        <span class="control-label" style="margin-left:8px;">Play</span>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+
+        <span class="control-label" style="margin-left:8px;">Board</span>
+        <a href="/props?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Props</a>
+        <a href="/props/locks?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Locks</a>
+        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
+    </div>
     <form id="nba-props-filter-form" class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
         <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
         <input type="hidden" name="sample" value="{{ sample_mode }}">
+        <input type="hidden" name="date" value="{{ date_filter }}">
+        <input type="hidden" name="direction" value="{{ direction_filter }}">
         {% if model_debug %}<input type="hidden" name="model_debug" value="1">{% endif %}
         {% if team_query %}<input type="hidden" name="team" value="{{ team_query }}">{% endif %}
         {% if player_query %}<input type="hidden" name="player" value="{{ player_query }}">{% endif %}
         {% if stat_query %}<input type="hidden" name="stat" value="{{ stat_query }}">{% endif %}
-        <div class="board-filter-field">
-            <label for="nba-date-filter">Date</label>
-            <select id="nba-date-filter" name="date">
-                <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
-                <option value="tomorrow" {% if date_filter == 'tomorrow' %}selected{% endif %}>Tomorrow</option>
-                <option value="all" {% if date_filter == 'all' or not date_filter %}selected{% endif %}>All Games</option>
-            </select>
-        </div>
-        <div class="board-filter-field">
-            <label for="nba-direction-filter">Play</label>
-            <select id="nba-direction-filter" name="direction">
-                <option value="all" {% if direction_filter == 'all' or not direction_filter %}selected{% endif %}>All Plays</option>
-                <option value="over" {% if direction_filter == 'over' %}selected{% endif %}>Overs</option>
-                <option value="under" {% if direction_filter == 'under' %}selected{% endif %}>Unders</option>
-            </select>
-        </div>
-        <div class="board-filter-field">
-            <label for="nba-board-filter">Board</label>
-            <select id="nba-board-filter" name="board_type">
-                <option value="" {% if not filter_type %}selected{% endif %}>All Props</option>
-                <option value="locks" {% if filter_type == 'locks' %}selected{% endif %}>Locks</option>
-                <option value="floor" {% if filter_type == 'floor' %}selected{% endif %}>Floor Plays</option>
-                <option value="overs" {% if filter_type == 'overs' %}selected{% endif %}>Best Overs</option>
-                <option value="unders" {% if filter_type == 'unders' %}selected{% endif %}>Best Unders</option>
-                <option value="situational" {% if filter_type == 'situational' %}selected{% endif %}>Situational</option>
-            </select>
-        </div>
         <div class="board-filter-field">
             <label for="nba-page-size-filter">Rows</label>
             <select id="nba-page-size-filter" name="page_size">

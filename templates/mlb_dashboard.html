@@ -352,23 +352,19 @@
         <div class="card-title">MLB Prop Board</div>
         <span class="badge badge-accent">{{ top_props|length }} rows</span>
     </div>
+    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-bottom:1px solid var(--border);">
+        <span class="control-label">When</span>
+        <a href="/sports/mlb?date=today&direction={{ direction_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="/sports/mlb?date=tomorrow&direction={{ direction_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="/sports/mlb?date=all&direction={{ direction_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <span class="control-label" style="margin-left:8px;">Play</span>
+        <a href="/sports/mlb?date={{ date_filter }}&direction=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/sports/mlb?date={{ date_filter }}&direction=over{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/sports/mlb?date={{ date_filter }}&direction=under{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+    </div>
     <form class="board-filter-form" method="get" action="/sports/mlb">
-        <div class="board-filter-field">
-            <label for="mlb-date-filter">Date</label>
-            <select id="mlb-date-filter" name="date">
-                <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
-                <option value="tomorrow" {% if date_filter == 'tomorrow' %}selected{% endif %}>Tomorrow</option>
-                <option value="all" {% if date_filter == 'all' %}selected{% endif %}>All Games</option>
-            </select>
-        </div>
-        <div class="board-filter-field">
-            <label for="mlb-direction-filter">Play</label>
-            <select id="mlb-direction-filter" name="direction">
-                <option value="all" {% if direction_filter == 'all' %}selected{% endif %}>All Plays</option>
-                <option value="over" {% if direction_filter == 'over' %}selected{% endif %}>Overs</option>
-                <option value="under" {% if direction_filter == 'under' %}selected{% endif %}>Unders</option>
-            </select>
-        </div>
+        <input type="hidden" name="date" value="{{ date_filter }}">
+        <input type="hidden" name="direction" value="{{ direction_filter }}">
         <div class="board-filter-field">
             <label for="mlb-stat-filter">Stat</label>
             <select id="mlb-stat-filter" name="stat">

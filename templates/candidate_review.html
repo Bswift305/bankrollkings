@@ -68,11 +68,13 @@
                 <option value="{{ stat }}" {% if stat == stat_filter %}selected{% endif %}>{{ stat }}</option>
                 {% endfor %}
             </select>
-            <select name="direction" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
-                <option value="">Over + Under</option>
-                <option value="OVER" {% if direction_filter == 'OVER' %}selected{% endif %}>Over</option>
-                <option value="UNDER" {% if direction_filter == 'UNDER' %}selected{% endif %}>Under</option>
-            </select>
+            <input id="candidate-direction-filter" type="hidden" name="direction" value="{{ direction_filter }}">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span class="control-label">Play</span>
+                <button type="button" data-direction-choice="" class="btn {% if not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Both</button>
+                <button type="button" data-direction-choice="OVER" class="btn {% if direction_filter == 'OVER' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Over</button>
+                <button type="button" data-direction-choice="UNDER" class="btn {% if direction_filter == 'UNDER' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Under</button>
+            </div>
             <input type="search" name="player_search" value="{{ player_search_filter }}" placeholder="Player search" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 175px;">
             <select name="market_depth" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
                 <option value="">All Book Depth</option>
@@ -844,4 +846,15 @@
     </div>
     {% endif %}
 </div>
+<script>
+document.querySelectorAll('[data-direction-choice]').forEach(function(button) {
+    button.addEventListener('click', function() {
+        const input = document.getElementById('candidate-direction-filter');
+        const form = button.closest('form');
+        if (!input || !form) return;
+        input.value = button.dataset.directionChoice || '';
+        form.submit();
+    });
+});
+</script>
 {% endblock %}
