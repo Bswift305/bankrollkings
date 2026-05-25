@@ -783,6 +783,61 @@
         
         .btn-sm { padding: 8px 14px; font-size: 12px; }
         .btn-primary { background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent) 58%, rgba(184,115,51,0.92) 100%); color: #041215; }
+
+        .board-filter-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            align-items: end;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 100%),
+                rgba(8, 15, 21, 0.42);
+        }
+
+        .board-filter-field {
+            min-width: 0;
+        }
+
+        .board-filter-field label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1.1px;
+            text-transform: uppercase;
+        }
+
+        .board-filter-field select,
+        .board-filter-field input {
+            width: 100%;
+            min-height: 38px;
+            border-radius: 10px;
+            border: 1px solid rgba(132, 215, 210, 0.22);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%),
+                rgba(10, 23, 32, 0.96);
+            color: var(--text-bright);
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            outline: none;
+        }
+
+        .board-filter-field select:focus,
+        .board-filter-field input:focus {
+            border-color: rgba(132, 215, 210, 0.48);
+            box-shadow: 0 0 0 3px rgba(132, 215, 210, 0.08);
+        }
+
+        .board-filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
         
         .data-table {
             width: 100%;

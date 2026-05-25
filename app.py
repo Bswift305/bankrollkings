@@ -2394,6 +2394,15 @@ def calculate_mlb_launch_reliability(resolved_count, hit_rate):
 
 
 def build_mlb_reliability_tables(results_df=None):
+    if results_df is None:
+        cache_key = 'mlb_reliability_tables'
+        cache_version = _build_file_token(DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv')
+        cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+        if cached_entry:
+            cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
+            if cached_age <= 600 and cached_entry.get('version') == cache_version:
+                return cached_entry['value']
+
     results = load_mlb_all_prop_results() if results_df is None else results_df
     empty = {
         'bucket_rows': [],
@@ -2511,16 +2520,36 @@ def build_mlb_reliability_tables(results_df=None):
         key=lambda item: (bucket_order.get(item['reliability'], 9), -item['hit_rate'], -item['resolved'], item['player']),
     )
 
-    return {
+    payload = {
         'bucket_rows': bucket_rows,
         'player_rows': player_rows,
         'bucket_lookup': bucket_lookup,
         'player_lookup': player_lookup,
         'totals': totals,
     }
+    if results_df is None:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': payload,
+            'version': cache_version,
+        }
+    return payload
 
 
 def build_mlb_launch_lab(results_df=None, gamelogs_df=None):
+    if results_df is None and gamelogs_df is None:
+        cache_key = 'mlb_launch_lab'
+        cache_version = _build_file_token(
+            DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+            DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
+            DATA_DIR / 'tracking' / 'Floor_Play_Index.csv',
+        )
+        cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+        if cached_entry:
+            cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
+            if cached_age <= 600 and cached_entry.get('version') == cache_version:
+                return cached_entry['value']
+
     reliability_tables = build_mlb_reliability_tables(results_df)
     bucket_rows = reliability_tables.get('bucket_rows', [])
     totals = reliability_tables.get('totals', {})
@@ -2672,7 +2701,7 @@ def build_mlb_launch_lab(results_df=None, gamelogs_df=None):
                     key=lambda item: ({'ANCHOR': 0, 'WATCH': 1}.get(item['reliability'], 9), -item['hit_rate'], -item['resolved']),
                 )[:8]
 
-    return {
+    payload = {
         'cards': cards,
         'bucket_rows': bucket_rows[:12],
         'player_rows': reliability_tables.get('player_rows', [])[:12],
@@ -2681,6 +2710,13 @@ def build_mlb_launch_lab(results_df=None, gamelogs_df=None):
         'hitter_rows': hitter_rows,
         'summer_mix': summer_mix,
     }
+    if results_df is None and gamelogs_df is None:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': payload,
+            'version': cache_version,
+        }
+    return payload
 
 
 def annotate_mlb_rows_with_reliability(rows):
@@ -15065,6 +15101,21 @@ def _dashboard_best_prop_for_game(props_df, game_name):
 
 
 def build_cross_sport_dashboard_snapshots(postseason_only=False):
+    cache_key = f"cross_sport_dashboard_snapshots::{int(bool(postseason_only))}"
+    cache_version = _build_file_token(
+        DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
+        DATA_DIR / 'schedules' / 'WNBA_Schedule.csv',
+        DATA_DIR / 'schedules' / 'MLB_Schedule.csv',
+        DATA_DIR / 'props' / 'NBA_Props.csv',
+        DATA_DIR / 'props' / 'WNBA_Props.csv',
+        DATA_DIR / 'props' / 'MLB_Props.csv',
+    )
+    cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached_entry:
+        cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
+        if cached_age <= 300 and cached_entry.get('version') == cache_version:
+            return cached_entry['value']
+
     today = datetime.now().date().isoformat()
     sport_configs = [
         {
@@ -15172,6 +15223,11 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             ),
         })
 
+    RUNTIME_TTL_CACHE[cache_key] = {
+        'created_at': datetime.now(timezone.utc),
+        'value': snapshots,
+        'version': cache_version,
+    }
     return snapshots
 
 
@@ -22424,8 +22480,7 @@ def mlb_dashboard():
         snapshot = load_runtime_snapshot('mlb_dashboard_today', max_age_minutes=30)
         if snapshot:
             payload = snapshot.get('payload') or {}
-            gamelogs_df = load_mlb_gamelogs()
-            mlb_launch_lab = build_mlb_launch_lab(gamelogs_df=gamelogs_df)
+            mlb_launch_lab = build_mlb_launch_lab()
             top_props = annotate_mlb_rows_with_reliability(payload.get('top_props', []))
             mlb_slate_intelligence = build_mlb_slate_intelligence(load_mlb_game_market_odds(), top_props)
             return render_template(
@@ -22452,7 +22507,7 @@ def mlb_dashboard():
     odds_df = load_mlb_game_market_odds()
     schedule_df = load_mlb_schedule()
     gamelogs_df = load_mlb_gamelogs()
-    mlb_launch_lab = build_mlb_launch_lab(gamelogs_df=gamelogs_df)
+    mlb_launch_lab = build_mlb_launch_lab()
     upcoming = get_upcoming_games(schedule_df, days=7)
     board_status = build_mlb_board_status(schedule_df, odds_df, props_df, gamelogs_df, upcoming)
     top_props = build_mlb_prop_board(

@@ -379,21 +379,41 @@
         <div class="card-title">MLB Prop Board</div>
         <span class="badge badge-accent">{{ top_props|length }} rows</span>
     </div>
-    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-bottom:1px solid var(--border);">
-        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">WHEN:</span>
-        <a href="/sports/mlb?date=today{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
-        <a href="/sports/mlb?date=tomorrow{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
-        <a href="/sports/mlb?date=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if date_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px; margin-left: 8px;">PLAY:</span>
-        <a href="/sports/mlb?date={{ date_filter }}&direction=all{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'all' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-        <a href="/sports/mlb?date={{ date_filter }}&direction=over{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
-        <a href="/sports/mlb?date={{ date_filter }}&direction=under{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
-        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px; margin-left: 8px;">STAT:</span>
-        <a href="/sports/mlb?date={{ date_filter }}&direction={{ direction_filter }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if not stat_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-        {% for stat in stat_options %}
-        <a href="/sports/mlb?date={{ date_filter }}&direction={{ direction_filter }}&stat={{ stat|urlencode }}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if stat_filter == stat %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ stat }}</a>
-        {% endfor %}
-    </div>
+    <form class="board-filter-form" method="get" action="/sports/mlb">
+        <div class="board-filter-field">
+            <label for="mlb-date-filter">Date</label>
+            <select id="mlb-date-filter" name="date">
+                <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+                <option value="tomorrow" {% if date_filter == 'tomorrow' %}selected{% endif %}>Tomorrow</option>
+                <option value="all" {% if date_filter == 'all' %}selected{% endif %}>All Games</option>
+            </select>
+        </div>
+        <div class="board-filter-field">
+            <label for="mlb-direction-filter">Play</label>
+            <select id="mlb-direction-filter" name="direction">
+                <option value="all" {% if direction_filter == 'all' %}selected{% endif %}>All Plays</option>
+                <option value="over" {% if direction_filter == 'over' %}selected{% endif %}>Overs</option>
+                <option value="under" {% if direction_filter == 'under' %}selected{% endif %}>Unders</option>
+            </select>
+        </div>
+        <div class="board-filter-field">
+            <label for="mlb-stat-filter">Stat</label>
+            <select id="mlb-stat-filter" name="stat">
+                <option value="" {% if not stat_filter %}selected{% endif %}>All Stats</option>
+                {% for stat in stat_options %}
+                <option value="{{ stat }}" {% if stat_filter == stat %}selected{% endif %}>{{ stat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="board-filter-field">
+            <label for="mlb-search-filter">Player</label>
+            <input id="mlb-search-filter" type="search" name="search" value="{{ search_query }}" placeholder="Search player">
+        </div>
+        <div class="board-filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="/sports/mlb" class="btn btn-secondary btn-sm">Reset</a>
+        </div>
+    </form>
     <div class="p-16" style="font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border);">
         This first MLB board is market-driven. The lean comes from the no-vig book split, while the context column blends book agreement, total-based environment notes, and recent game-log form when it exists.
     </div>
