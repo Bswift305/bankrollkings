@@ -2,6 +2,64 @@
 {% block title %}MLB Board{% endblock %}
 
 {% block content %}
+<style>
+    .mlb-slate-table th:nth-child(1) { min-width: 260px; }
+    .mlb-slate-table th:nth-child(2) { min-width: 150px; }
+    .mlb-slate-table th:nth-child(3) { min-width: 180px; }
+    .mlb-slate-table th:nth-child(7) { min-width: 420px; }
+
+    .run-env-cell {
+        min-width: 142px;
+    }
+
+    .run-env-pill,
+    .reliability-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: max-content;
+        max-width: 100%;
+        white-space: nowrap;
+        line-height: 1;
+    }
+
+    .run-env-pill {
+        min-width: 96px;
+        padding: 7px 11px;
+        font-size: 10px;
+        letter-spacing: 0.4px;
+    }
+
+    .mlb-prop-table th:nth-child(1) { min-width: 150px; }
+    .mlb-prop-table th:nth-child(2) { min-width: 210px; }
+    .mlb-prop-table th:nth-child(8) { min-width: 132px; }
+    .mlb-prop-table th:nth-child(11) { min-width: 330px; }
+
+    .reliability-cell {
+        min-width: 126px;
+    }
+
+    .reliability-pill {
+        min-width: 78px;
+        padding: 6px 10px;
+        font-size: 10px;
+        letter-spacing: 0.35px;
+        text-align: center;
+    }
+
+    .reliability-meta {
+        max-width: 118px;
+        line-height: 1.35;
+    }
+
+    @media (max-width: 900px) {
+        .mlb-slate-table th:nth-child(7),
+        .mlb-prop-table th:nth-child(11) {
+            min-width: 280px;
+        }
+    }
+</style>
+
 <div class="page-hero">
     <div>
         <div class="page-kicker">Baseball Expansion</div>
@@ -268,7 +326,7 @@
         <span class="badge badge-accent">{{ mlb_slate_intelligence|length }} games</span>
     </div>
     <div class="table-shell">
-        <table class="data-table compact-board">
+        <table class="data-table compact-board mlb-slate-table">
             <thead>
                 <tr>
                     <th>Game</th>
@@ -287,8 +345,8 @@
                         <div style="font-weight:700; color:var(--text-bright);">{{ game.matchup }}</div>
                         <div class="cell-meta">{{ game.date or 'Date TBD' }}{% if game.time %} · {{ game.time }}{% endif %}</div>
                     </td>
-                    <td>
-                        <span class="badge">{{ game.environment }}</span>
+                    <td class="run-env-cell">
+                        <span class="badge run-env-pill">{{ game.environment }}</span>
                         <div class="cell-meta" style="margin-top:6px;">Total {{ game.total }} · Range {{ game.total_range }}</div>
                         <div class="cell-meta">Run line range {{ game.runline_range }}</div>
                     </td>
@@ -341,7 +399,7 @@
     </div>
     {% if top_props %}
     <div class="table-shell">
-        <table class="data-table compact-board">
+        <table class="data-table compact-board mlb-prop-table">
             <thead>
                 <tr>
                     <th>Player</th>
@@ -397,9 +455,9 @@
                             {{ prop.market_prob }}% {% if prop.is_one_sided %}implied yes{% else %}favorite side{% endif %}{% if prop.book_count %} | {{ prop.book_count }} books{% endif %}
                         </div>
                     </td>
-                    <td>
-                        <span class="badge">{{ prop.historical_reliability or 'UNPROVEN' }}</span>
-                        <div class="cell-meta" style="margin-top:6px;">
+                    <td class="reliability-cell">
+                        <span class="badge reliability-pill">{{ prop.historical_reliability or 'UNPROVEN' }}</span>
+                        <div class="cell-meta reliability-meta" style="margin-top:6px;">
                             {% if prop.historical_hit_rate is not none %}{{ prop.historical_hit_rate }}%{% else %}-{% endif %}
                             {% if prop.historical_resolved %} / {{ prop.historical_resolved }} resolved{% endif %}
                         </div>
