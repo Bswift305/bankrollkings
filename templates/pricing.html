@@ -1,162 +1,298 @@
 {% extends "base.html" %}
+{% block title %}Pricing - Bankroll Kings{% endblock %}
 {% block content %}
-<div class="container">
-    <section class="page-hero">
-        <div class="page-hero-copy">
-            <span class="eyebrow">Membership</span>
-            <h1 class="page-title">Pricing Built For Real Bettors</h1>
-            <p class="page-subtitle">Bankroll Kings sits between low-cost picks subscriptions and expensive scanner platforms. The goal is to charge like a serious decision tool, not a mass-market hype feed.</p>
-        </div>
-    </section>
+<section class="pricing-hero">
+    <div>
+        <div class="page-kicker">Membership</div>
+        <h1>Choose the workflow you actually need.</h1>
+        <p>Start free, unlock the daily boards with Pro, move into calibration with Sharp, or use Elite as the all-sports lab for market timing, player reliability, and cross-sport ticket building.</p>
+    </div>
+    <div class="pricing-hero-actions">
+        {% if current_user %}
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary">Back to Dashboard</a>
+        <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Manage Billing</a>
+        {% else %}
+        <a href="/signup?plan=free{% if next_url_encoded %}&next={{ next_url_encoded }}{% endif %}" class="btn btn-primary">Create Free Account</a>
+        <a href="/login{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Sign In</a>
+        {% endif %}
+    </div>
+</section>
 
-    <section class="board-shell" style="padding: 22px;">
-        <div class="board-header">
-            <div class="board-title">Positioning</div>
-        </div>
+{% if gate_notice or request.args.get('checkout') == 'cancelled' or (checkout_config and checkout_config.mode == 'partial') %}
+<section class="card mb-24">
+    <div class="p-16">
         {% if gate_notice %}
-        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; color: var(--accent); font-weight:700;">{{ gate_notice }}</div>
+        <div class="parlay-surface-soft pricing-notice">{{ gate_notice }}</div>
         {% endif %}
         {% if request.args.get('checkout') == 'cancelled' %}
-        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(255,184,107,0.28);">
+        <div class="parlay-surface-soft pricing-notice">
             <div class="detail-kicker">Checkout Update</div>
-            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">Checkout Was Cancelled</div>
-            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">No membership change was finalized. You can choose a plan again whenever you're ready.</div>
+            <strong>Checkout was cancelled.</strong>
+            <p>No membership change was finalized. You can choose a plan again whenever you're ready.</p>
         </div>
         {% endif %}
-        {% if request.args.get('billing') == 'demo' %}
-        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(132,215,210,0.28);">
-            <div class="detail-kicker">Billing Status</div>
-            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">Billing Portal Not Live Yet</div>
-            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">Your account is active, but the live Stripe billing portal URL is not configured yet. This environment is still using the demo membership flow.</div>
+        {% if checkout_config and checkout_config.mode == 'partial' %}
+        <div class="parlay-surface-soft pricing-notice">
+            <div class="detail-kicker">Stripe Setup</div>
+            <strong>Some checkout links are missing.</strong>
+            <p>{{ checkout_config.summary }}</p>
         </div>
         {% endif %}
-        {% if checkout_config and checkout_config.mode != 'live' %}
-        <div class="parlay-surface-soft" style="padding:14px; margin-bottom:16px; border:1px solid rgba(255,184,107,0.28);">
-            <div class="detail-kicker">Membership Flow Status</div>
-            <div style="font-size:18px; font-weight:800; color:var(--text-bright); margin-top:6px;">{% if checkout_config.mode == 'partial' %}Partial Stripe Setup{% else %}Demo Membership Flow{% endif %}</div>
-            <div style="font-size:13px; color:var(--text-muted); margin-top:6px; line-height:1.6;">{{ checkout_config.summary }} No real card charge should be assumed until Stripe checkout is fully wired and verified end to end.</div>
-            <div style="font-size:12px; color:var(--accent-copper); margin-top:8px; line-height:1.6;">
-                Billing portal: {% if checkout_config.billing_portal_configured %}configured{% else %}missing{% endif %}.
-            </div>
-        </div>
-        {% endif %}
-        <div style="display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Market Comp</div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">$29/mo</div>
-                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">BettingPros Premium and Dimers Pro both sit around the $29.99 monthly mark for broad-access premium betting tools.</div>
-            </div>
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Power Tool Ceiling</div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">$199+/mo</div>
-                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">OddsJam-style scanner products live much higher. Bankroll Kings should stay meaningfully below that unless it becomes a true live-book execution tool.</div>
-            </div>
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Recommendation</div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">Tier It</div>
-                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">Use a free entry layer, a serious consumer tier, and a sharper power-user tier. That matches the current product depth much better than one flat number.</div>
-            </div>
-        </div>
-    </section>
+    </div>
+</section>
+{% endif %}
 
-    {% if current_user %}
-    <section class="board-shell" style="padding: 22px; margin-top:24px;">
-        <div class="board-header">
-            <div class="board-title">Current Membership</div>
-            <span class="badge badge-accent">{{ current_user.plan|default('free')|upper }}</span>
-        </div>
-        <div style="display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Plan Status</div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">{{ current_user.plan_status|default('selected')|replace('_',' ')|title }}</div>
-                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">Billing cycle: {{ current_user.billing_cycle|default('monthly')|title }}</div>
-                {% if checkout_config and checkout_config.mode != 'live' %}
-                <div style="font-size:12px; color:var(--accent-copper); margin-top:8px; line-height:1.6;">Demo membership flow only. This account state does not confirm a real Stripe charge yet.</div>
-                {% endif %}
-            </div>
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Account</div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-top:6px;">{{ current_user.display_name }}</div>
-                <div style="font-size:13px; color:var(--text-muted); margin-top:6px;">{{ current_user.email }}</div>
-            </div>
-            <div class="parlay-surface-soft" style="padding:16px;">
-                <div class="detail-kicker">Billing Tools</div>
-                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
-                    <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary btn-sm">Manage Billing</a>
-                    <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
-                </div>
-            </div>
-        </div>
-    </section>
-    {% endif %}
+{% if current_user %}
+<section class="current-plan-card mb-24">
+    <div>
+        <div class="page-kicker">Current Membership</div>
+        <h2>{{ current_user.plan|default('free')|upper }} Plan</h2>
+        <p>{{ current_user.email }} · {{ current_user.plan_status|default('selected')|replace('_',' ')|title }} · {{ current_user.billing_cycle|default('monthly')|title }}</p>
+    </div>
+    <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary btn-sm">Manage Billing</a>
+</section>
+{% endif %}
 
-    <section style="display:grid; gap:18px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top:24px;">
-        {% for tier in pricing_cards %}
-        <article class="board-shell {% if tier.key == 'elite' %}pricing-elite-card{% endif %}" style="padding:20px; border-color:{% if tier.key == 'pro' %}rgba(166,233,229,0.45){% elif tier.key == 'elite' %}rgba(132,215,210,0.38){% else %}var(--border){% endif %}; box-shadow:{% if tier.key == 'pro' or tier.key == 'elite' %}0 22px 44px rgba(0,0,0,0.24){% else %}none{% endif %};">
-            {% if tier.key == 'elite' %}
-            <img src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
-            {% endif %}
-            <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+<section class="pricing-grid">
+    {% for tier in pricing_cards %}
+    <article class="pricing-card {% if tier.key == 'pro' %}is-recommended{% endif %} {% if tier.key == 'elite' %}is-elite{% endif %}">
+        {% if tier.key == 'elite' %}
+        <img src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
+        {% endif %}
+        <div class="pricing-card-content">
+            <div class="pricing-card-top">
                 <div>
-                    <div class="board-title">{{ tier.name }}</div>
-                    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">{{ tier.best_for }}</div>
+                    <div class="pricing-plan">{{ tier.name }}</div>
+                    <div class="pricing-best">{{ tier.best_for }}</div>
                 </div>
                 <span class="badge {% if tier.key == 'pro' %}badge-accent{% else %}badge-outline{% endif %}">{{ tier.badge }}</span>
             </div>
-            <div style="margin-top:18px;">
-                <div style="font-size:28px; font-weight:800; color:var(--text-bright);">{{ tier.monthly_label }}</div>
-                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">{{ tier.annual_label }} annual option</div>
-            </div>
-            <div style="font-size:13px; color:var(--text-muted); line-height:1.65; margin-top:16px;">{{ tier.summary }}</div>
-            <div style="display:grid; gap:8px; margin-top:16px;">
+            <div class="pricing-price">{{ tier.monthly_label }}</div>
+            <div class="pricing-annual">{{ tier.annual_label }} annual option</div>
+            <p class="pricing-summary">{{ tier.summary }}</p>
+            <div class="pricing-features">
                 {% for feature in tier.features %}
-                <div style="font-size:13px; color:var(--text-muted);">- {{ feature }}</div>
+                <div>{{ feature }}</div>
                 {% endfor %}
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px;">
+            <div class="pricing-actions">
                 {% if tier.is_current %}
                 <span class="btn btn-secondary">{{ tier.current_status_label }}</span>
                 {% else %}
-                <a href="{{ tier.monthly_cta.href }}" class="btn {% if tier.key == 'pro' %}btn-primary{% else %}btn-secondary{% endif %}">{{ tier.monthly_cta.label }}</a>
+                <a href="{{ tier.monthly_cta.href }}" class="btn {% if tier.key in ['pro', 'elite'] %}btn-primary{% else %}btn-secondary{% endif %}">{{ tier.monthly_cta.label }}</a>
+                {% endif %}
+                {% if not tier.is_current and tier.key != 'free' %}
+                <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Annual</a>
                 {% endif %}
             </div>
-            {% if not tier.is_current and tier.key != 'free' %}
-            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-                <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Choose Annual</a>
-                <span class="badge">
-                    {% if checkout_config.mode == 'partial' and tier.uses_demo_checkout %}
-                    Missing Stripe URL
-                    {% elif tier.uses_demo_checkout %}
-                    Demo Checkout Active
-                    {% else %}
-                    Stripe Checkout
-                    {% endif %}
-                </span>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Which Plan Should Testers Use?</div>
+    </div>
+    <div class="p-16">
+        <div class="pricing-chooser-grid">
+            <div class="pricing-chooser">
+                <div class="feature-kicker">Free</div>
+                <strong>Account and saved tickets</strong>
+                <p>Use this when someone only needs to get in, look around, and test account creation.</p>
             </div>
-            {% endif %}
-        </article>
-        {% endfor %}
-    </section>
-</div>
+            <div class="pricing-chooser">
+                <div class="feature-kicker">Pro</div>
+                <strong>Daily board testing</strong>
+                <p>Best for friends checking the normal user experience across NBA, MLB, WNBA, and football boards.</p>
+            </div>
+            <div class="pricing-chooser">
+                <div class="feature-kicker">Sharp</div>
+                <strong>Calibration and review</strong>
+                <p>Use this for people reviewing archived candidates, hit/miss tracking, and model tuning.</p>
+            </div>
+            <div class="pricing-chooser">
+                <div class="feature-kicker">Elite</div>
+                <strong>All-sports lab</strong>
+                <p>Use this for the full cockpit: MLB lab, personal tracker, market timing, and cross-sport parlay EV.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
 <style>
-.pricing-elite-card {
+.pricing-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    align-items: center;
+    padding: 22px;
+    margin-bottom: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(132,215,210,0.22);
+    background:
+        linear-gradient(135deg, rgba(11,24,34,0.96) 0%, rgba(10,31,39,0.92) 54%, rgba(4,8,11,0.98) 100%);
+}
+.pricing-hero h1 {
+    margin: 0 0 8px;
+    font-size: 34px;
+}
+.pricing-hero p {
+    max-width: 820px;
+    margin: 0;
+    color: #b7c6d0;
+    font-size: 14px;
+    line-height: 1.55;
+}
+.pricing-hero-actions,
+.pricing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.pricing-card {
     position: relative;
     overflow: hidden;
-    background:
-        linear-gradient(135deg, rgba(8,18,25,0.98) 0%, rgba(10,31,39,0.92) 52%, rgba(4,8,11,0.98) 100%);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(16,30,40,0.98), rgba(9,18,25,0.98));
+    box-shadow: 0 18px 38px rgba(0,0,0,0.18);
 }
-.pricing-elite-card > *:not(.pricing-elite-mascot) {
+.pricing-card.is-recommended {
+    border-color: rgba(166,233,229,0.45);
+    box-shadow: 0 24px 48px rgba(0,0,0,0.24), 0 0 0 1px rgba(132,215,210,0.08);
+}
+.pricing-card.is-elite {
+    border-color: rgba(132,215,210,0.36);
+    background: linear-gradient(135deg, rgba(8,18,25,0.98), rgba(10,31,39,0.92) 52%, rgba(4,8,11,0.98));
+}
+.pricing-card-content {
     position: relative;
     z-index: 1;
+    padding: 18px;
+}
+.pricing-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+}
+.pricing-plan {
+    color: var(--text-bright);
+    font-size: 20px;
+    font-weight: 800;
+}
+.pricing-best,
+.pricing-annual,
+.pricing-summary,
+.pricing-features div,
+.pricing-chooser p,
+.current-plan-card p,
+.pricing-notice p {
+    color: var(--text-muted);
+}
+.pricing-best {
+    margin-top: 4px;
+    font-size: 12px;
+}
+.pricing-price {
+    margin-top: 18px;
+    color: var(--text-bright);
+    font-size: 30px;
+    font-weight: 900;
+}
+.pricing-annual {
+    margin-top: 4px;
+    font-size: 12px;
+}
+.pricing-summary {
+    margin-top: 14px;
+    min-height: 66px;
+    font-size: 13px;
+    line-height: 1.55;
+}
+.pricing-features {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+.pricing-features div {
+    font-size: 13px;
+    line-height: 1.4;
+}
+.pricing-features div::before {
+    content: "OK";
+    margin-right: 8px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 900;
+}
+.pricing-actions {
+    margin-top: 18px;
 }
 .pricing-elite-mascot {
     position: absolute;
     right: -44px;
     bottom: -64px;
     width: 190px;
-    opacity: 0.24;
+    opacity: 0.22;
     filter: drop-shadow(0 0 24px rgba(132,215,210,0.28));
     pointer-events: none;
+}
+.current-plan-card {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(132,215,210,0.20);
+    background: rgba(12,25,34,0.94);
+}
+.current-plan-card h2 {
+    margin: 0 0 4px;
+}
+.pricing-chooser-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+}
+.pricing-chooser,
+.pricing-notice {
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(132,215,210,0.16);
+    background: rgba(10,22,31,0.76);
+}
+.pricing-chooser strong,
+.pricing-notice strong {
+    display: block;
+    color: var(--text-bright);
+    margin-bottom: 6px;
+}
+.pricing-chooser p,
+.pricing-notice p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+@media (max-width: 800px) {
+    .pricing-hero {
+        grid-template-columns: 1fr;
+    }
+    .pricing-hero h1 {
+        font-size: 28px;
+    }
+    .current-plan-card {
+        align-items: flex-start;
+        flex-direction: column;
+    }
 }
 </style>
 {% endblock %}

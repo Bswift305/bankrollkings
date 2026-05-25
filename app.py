@@ -54,12 +54,6 @@ try:
 except Exception:
     load_workbook = None
 
-# =============================================================================
-# APP SETUP
-# =============================================================================
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY') or secrets.token_urlsafe(48)
-
 BASE_DIR = Path(__file__).parent.resolve()
 load_local_env(BASE_DIR)
 DATA_DIR = BASE_DIR / 'data'
@@ -67,6 +61,12 @@ TEMPLATES_DIR = BASE_DIR / 'templates'
 STATIC_DIR = BASE_DIR / 'static'
 TREND_OPPORTUNITY_CACHE_DIR = DATA_DIR / 'tracking' / 'trend_opportunity_cache'
 CANDIDATE_ARCHIVE_PATH = DATA_DIR / 'tracking' / 'NBA_CandidateArchive.csv'
+
+# =============================================================================
+# APP SETUP
+# =============================================================================
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY') or secrets.token_urlsafe(48)
 
 app.template_folder = str(TEMPLATES_DIR)
 app.static_folder = str(STATIC_DIR)
@@ -124,7 +124,7 @@ PRICING_TIERS = [
             'Everything in Pro',
             'Priority access to advanced review and calibration layers',
             'Deeper archive views and operator-facing QC context',
-            'Founding-user pricing before payment automation is added',
+            'Calibration views for model tuning and risk review',
         ],
         'cta': 'Choose Sharp',
     },
