@@ -15198,6 +15198,45 @@ def _dashboard_best_prop_for_game(props_df, game_name):
     return best
 
 
+def _dashboard_best_props_for_games(props_df, game_names):
+    if props_df.empty or 'Game' not in props_df.columns or not game_names:
+        return {'OVER': None, 'UNDER': None}
+
+    normalized_games = {
+        re.sub(r'\s+', '', str(game_name).casefold())
+        for game_name in game_names
+        if str(game_name or '').strip()
+    }
+    if not normalized_games:
+        return {'OVER': None, 'UNDER': None}
+
+    game_props = props_df[
+        props_df['Game'].astype(str).map(lambda value: re.sub(r'\s+', '', value.casefold())).isin(normalized_games)
+    ].copy()
+    if game_props.empty:
+        return {'OVER': None, 'UNDER': None}
+
+    best = {'OVER': None, 'UNDER': None}
+    for _, row in game_props.iterrows():
+        for direction, odds in [('OVER', row.get('OverOdds')), ('UNDER', row.get('UnderOdds'))]:
+            implied = _american_implied_probability(odds)
+            if implied is None:
+                continue
+            candidate = {
+                'player': str(row.get('Player') or '').strip() or 'Player prop',
+                'stat': str(row.get('Stat') or '').strip() or 'Prop',
+                'line': row.get('Line'),
+                'direction': direction,
+                'price': _format_american_price(odds),
+                'implied': round(implied * 100, 1),
+                'book': str(row.get('Book') or '').strip(),
+                'matchup': str(row.get('Game') or '').strip(),
+            }
+            if best[direction] is None or candidate['implied'] > best[direction]['implied']:
+                best[direction] = candidate
+    return best
+
+
 def build_cross_sport_dashboard_snapshots(postseason_only=False):
     cache_key = f"cross_sport_dashboard_snapshots::{int(bool(postseason_only))}"
     cache_version = _build_file_token(
@@ -15291,10 +15330,13 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
 
         matchup_rows = []
         best_sport_prop = None
+        game_names = []
         for index, (_, game) in enumerate(today_games.iterrows()):
             away = str(game.get('AwayFull') or game.get('Away') or '').strip()
             home = str(game.get('HomeFull') or game.get('Home') or '').strip()
             matchup = f"{away} @ {home}".strip(' @')
+            if matchup:
+                game_names.append(matchup)
             best_prop = _dashboard_best_prop_for_game(props, matchup)
             if best_prop and (best_sport_prop is None or best_prop['implied'] > best_sport_prop['implied']):
                 best_sport_prop = {**best_prop, 'matchup': matchup or 'Matchup TBD'}
@@ -15304,6 +15346,13 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
                     'time': str(game.get('Time') or 'TBD'),
                     'best_prop': best_prop,
                 })
+        directional_best = _dashboard_best_props_for_games(props, game_names)
+        best_over = directional_best.get('OVER')
+        best_under = directional_best.get('UNDER')
+        if best_under and not best_under.get('matchup') and best_sport_prop:
+            best_under['matchup'] = best_sport_prop.get('matchup')
+        if best_over and not best_over.get('matchup') and best_sport_prop:
+            best_over['matchup'] = best_sport_prop.get('matchup')
 
         snapshots.append({
             **config,
@@ -15311,6 +15360,14 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             'props_rows': int(len(props)),
             'matchups': matchup_rows,
             'best_prop': best_sport_prop,
+            'best_over': best_over,
+            'best_under': best_under,
+            'preview_matchup': matchup_rows[0]['matchup'] if matchup_rows else '',
+            'preview_angle': (
+                'Compare the strongest over and under before opening the full board.'
+                if best_over and best_under
+                else 'Open the board for matchup context and available props.'
+            ),
             'is_live': config['status'] == 'Live',
             'note': (
                 'Live slate with props and matchup reads.'

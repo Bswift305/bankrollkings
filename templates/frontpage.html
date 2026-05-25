@@ -82,9 +82,10 @@
             <thead>
                 <tr>
                     <th>Sport</th>
-                    <th>Slate</th>
-                    <th>Best Prop</th>
-                    <th>Read</th>
+                    <th>Board Context</th>
+                    <th>Best Over</th>
+                    <th>Best Under / Anchor</th>
+                    <th>Why Open It</th>
                     <th>Open</th>
                 </tr>
             </thead>
@@ -93,24 +94,30 @@
                 {% if sport.is_live %}
                 <tr>
                     <td><span class="badge badge-accent">{{ sport.sport }}</span></td>
-                    <td>{{ sport.today_games }} games<div class="cell-meta">{{ sport.props_rows }} props loaded</div></td>
                     <td>
-                        {% if sport.best_prop %}
-                        <strong>{{ sport.best_prop.player }}</strong>
-                        <div class="cell-meta">{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}{% if sport.best_prop.price %} &middot; {{ sport.best_prop.price }}{% endif %}</div>
+                        <strong>{{ sport.today_games }} games</strong>
+                        <div class="cell-meta">{{ sport.props_rows }} props loaded</div>
+                        {% if sport.preview_matchup %}<div class="cell-meta">{{ sport.preview_matchup }}</div>{% endif %}
+                    </td>
+                    <td>
+                        {% if sport.best_over %}
+                        <strong>{{ sport.best_over.player }}</strong>
+                        <div class="cell-meta">{{ sport.best_over.stat }} OVER {{ sport.best_over.line }}{% if sport.best_over.price %} &middot; {{ sport.best_over.price }}{% endif %}</div>
+                        <span class="hr-lock">{{ sport.best_over.implied }}%</span>
                         {% else %}
-                        <strong>Open board</strong>
-                        <div class="cell-meta">Current prop context is available inside the sport page.</div>
+                        <span class="cell-meta">No over edge surfaced yet.</span>
                         {% endif %}
                     </td>
                     <td>
-                        {% if sport.best_prop %}
-                        <span class="hr-lock">{{ sport.best_prop.implied }}%</span>
-                        <div class="cell-meta">{{ sport.best_prop.matchup or sport.best_prop.book or sport.note }}</div>
+                        {% if sport.best_under %}
+                        <strong>{{ sport.best_under.player }}</strong>
+                        <div class="cell-meta">{{ sport.best_under.stat }} UNDER {{ sport.best_under.line }}{% if sport.best_under.price %} &middot; {{ sport.best_under.price }}{% endif %}</div>
+                        <span class="hr-lock">{{ sport.best_under.implied }}%</span>
                         {% else %}
-                        <div class="cell-meta">{{ sport.note }}</div>
+                        <span class="cell-meta">No under anchor surfaced yet.</span>
                         {% endif %}
                     </td>
+                    <td><div class="cell-meta">{{ sport.preview_angle or sport.note }}</div></td>
                     <td><a href="{{ sport.href }}" class="btn btn-secondary btn-sm">Open {{ sport.sport }}</a></td>
                 </tr>
                 {% endif %}
