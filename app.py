@@ -2244,6 +2244,95 @@ def build_wnba_game_environment_note(total, spread, stat, direction):
     return ' '.join(note_bits[:2])
 
 
+def classify_prop_game_environment(total=None, spread=None, sport='NBA'):
+    sport_key = str(sport or '').upper()
+    total_value = pd.to_numeric(pd.Series([total]), errors='coerce').iloc[0]
+    spread_value = pd.to_numeric(pd.Series([spread]), errors='coerce').iloc[0]
+
+    if pd.isna(total_value):
+        label = 'NO TOTAL'
+    elif sport_key == 'MLB':
+        if float(total_value) <= 7.5:
+            label = 'PITCHER FRIENDLY'
+        elif float(total_value) >= 9.0:
+            label = 'HITTER FRIENDLY'
+        else:
+            label = 'NEUTRAL'
+    elif sport_key == 'WNBA':
+        if float(total_value) >= 170:
+            label = 'SCORING ENV'
+        elif float(total_value) <= 160:
+            label = 'UNDER ENV'
+        else:
+            label = 'NEUTRAL'
+    else:
+        if float(total_value) >= 226:
+            label = 'SCORING ENV'
+        elif float(total_value) <= 218:
+            label = 'UNDER ENV'
+        else:
+            label = 'NEUTRAL'
+
+    tags = []
+    if not pd.isna(total_value):
+        tags.append(f"Total {float(total_value):g}")
+    if not pd.isna(spread_value):
+        tags.append(f"Spread {float(spread_value):+g}")
+        if abs(float(spread_value)) >= (8 if sport_key == 'WNBA' else 9):
+            tags.append('Blowout risk')
+        elif abs(float(spread_value)) <= 4:
+            tags.append('Close spread')
+    return {
+        'label': label,
+        'tags': tags,
+        'summary': ' | '.join(tags),
+    }
+
+
+def enrich_rows_with_game_environment(rows, sport='NBA', odds_df=None):
+    if not rows:
+        return rows
+    sport_key = str(sport or '').upper()
+    lookup = {}
+    if odds_df is not None and not odds_df.empty:
+        for _, market in odds_df.iterrows():
+            away = str(market.get('AwayFull') or market.get('Away') or '').strip()
+            home = str(market.get('HomeFull') or market.get('Home') or '').strip()
+            if not away or not home:
+                continue
+            payload = {
+                'total': market.get('Total'),
+                'spread': market.get('Spread'),
+            }
+            for key in {
+                _mlb_prop_game_key(f'{away} @ {home}'),
+                _mlb_prop_game_key(f'{away}@{home}'),
+                _mlb_prop_game_key(f'{away} vs {home}'),
+                build_matchup_slug(away, home),
+            }:
+                lookup[key] = payload
+
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        market = (
+            lookup.get(_mlb_prop_game_key(item.get('game')))
+            or lookup.get(_mlb_prop_game_key(item.get('matchup')))
+            or lookup.get(str(item.get('matchup_slug') or '').strip())
+            or {}
+        )
+        total = item.get('total', item.get('game_total', market.get('total')))
+        spread = item.get('spread', item.get('team_spread', market.get('spread')))
+        context = classify_prop_game_environment(total, spread, sport=sport_key)
+        item.setdefault('game_environment_label', context.get('label'))
+        if not item.get('game_environment_label'):
+            item['game_environment_label'] = context.get('label')
+        if not item.get('game_environment_summary'):
+            item['game_environment_summary'] = context.get('summary')
+        enriched.append(item)
+    return enriched
+
+
 def build_wnba_recent_form_note(player_name, stat, line, gamelogs, sample_size=5):
     if gamelogs is None or gamelogs.empty or stat not in gamelogs.columns or 'Player' not in gamelogs.columns:
         return ''
@@ -3198,6 +3287,9 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         if search_query and search_query not in ' '.join([player, stat, matchup_text]).lower():
             continue
         environment_payload = environment_lookup.get(_mlb_prop_game_key(game)) or environment_lookup.get(_mlb_prop_game_key(matchup_text)) or {}
+        environment_context = classify_prop_game_environment(market.get('total'), market.get('spread'), sport='MLB')
+        game_environment_label = environment_payload.get('environment') or environment_context.get('label') or 'NO TOTAL'
+        game_environment_summary = environment_payload.get('summary') or environment_context.get('summary') or ''
 
         stat_key = stat.upper()
         direction_key = direction.upper()
@@ -3305,6 +3397,8 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             'book_comparison_note': build_mlb_book_comparison_note(dk_line, vegas_line, line_low, line_high, direction, best_book),
             'environment_note': build_mlb_game_environment_note(market.get('total'), stat, direction, context=environment_payload),
             'environment_tags': environment_payload.get('context_tags', []),
+            'game_environment_label': game_environment_label,
+            'game_environment_summary': game_environment_summary,
             'trend_note': build_mlb_recent_form_note(player, stat, line, gamelogs),
             'historical_reliability': reliability_label,
             'historical_hit_rate': reliability_hit_rate,
@@ -3912,6 +4006,7 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
         haystack = ' '.join([player, stat, matchup_text]).lower()
         if search_query and search_query not in haystack:
             continue
+        environment_context = classify_prop_game_environment(market.get('total'), market.get('spread'), sport='WNBA')
 
         numeric_lines = []
         for candidate in pd.concat([market_rows['CurrentLine'], market_rows['Line']], axis=0).dropna().tolist():
@@ -3971,6 +4066,8 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
                 dk_line, vegas_line, line_low, line_high, direction, best_book
             ),
             'environment_note': build_wnba_game_environment_note(market.get('total'), market.get('spread'), stat, direction),
+            'game_environment_label': environment_context.get('label'),
+            'game_environment_summary': environment_context.get('summary'),
             'trend_note': build_wnba_recent_form_note(player, stat, line, gamelogs),
             'total': market.get('total'),
             'spread': market.get('spread'),
@@ -20190,6 +20287,7 @@ def build_live_prop_collection_deps():
         'build_core_baseline_fields': build_core_baseline_fields,
         'build_method_supports': build_method_supports,
         'apply_live_method_market_guardrails': apply_live_method_market_guardrails,
+        'classify_prop_game_environment': classify_prop_game_environment,
         'FLOOR_MULTIPLIERS': FLOOR_MULTIPLIERS,
         'POSTSEASON_TEAMS': POSTSEASON_TEAMS,
     }
@@ -22312,6 +22410,11 @@ def wnba_page():
         snapshot = load_runtime_snapshot('wnba_dashboard_today', max_age_minutes=720)
         if snapshot:
             payload = snapshot.get('payload') or {}
+            top_props = enrich_rows_with_game_environment(
+                payload.get('top_props', []),
+                sport='WNBA',
+                odds_df=load_wnba_game_market_odds(),
+            )
             return render_template(
                 'wnba_dashboard.html',
                 postseason_only=postseason_only,
@@ -22320,7 +22423,7 @@ def wnba_page():
                 refresh_meta=payload.get('refresh_meta', {}),
                 board_status=payload.get('board_status', {}),
                 upcoming=payload.get('upcoming', {}),
-                top_props=payload.get('top_props', []),
+                top_props=top_props,
                 matchup_cards=payload.get('matchup_cards', []),
                 date_filter=date_filter,
                 stat_filter=stat_filter,
@@ -22614,7 +22717,11 @@ def mlb_dashboard():
         if snapshot:
             payload = snapshot.get('payload') or {}
             mlb_launch_lab = payload.get('mlb_launch_lab') or build_mlb_launch_lab()
-            top_props = annotate_mlb_rows_with_reliability(payload.get('top_props', []))
+            top_props = enrich_rows_with_game_environment(
+                annotate_mlb_rows_with_reliability(payload.get('top_props', [])),
+                sport='MLB',
+                odds_df=load_mlb_game_market_odds(),
+            )
             mlb_slate_intelligence = build_mlb_slate_intelligence(load_mlb_game_market_odds(), top_props)
             return render_template(
                 'mlb_dashboard.html',
@@ -23333,7 +23440,12 @@ def game_lines_page():
                 'Home': home,
                 'Time': str(game.get('Time', 'TBD')),
                 'market': market,
-                'market_summary': format_game_market_summary(market, home)
+                'market_summary': format_game_market_summary(market, home),
+                'environment': classify_prop_game_environment(
+                    market.get('total') if market else None,
+                    market.get('spread') if market else None,
+                    sport='NBA',
+                ),
             })
 
     return render_template('game_lines.html', games_by_date=games_by_date, postseason_only=postseason_only)
@@ -24328,6 +24440,11 @@ def matchup(matchup):
     ]
     current_market = get_single_game_market(game_odds, away, home)
     current_market_summary = format_game_market_summary(current_market, home)
+    current_market_environment = classify_prop_game_environment(
+        current_market.get('total') if current_market else None,
+        current_market.get('spread') if current_market else None,
+        sport='NBA',
+    )
     matchup_editorial = build_matchup_editorial(
         away, home, series_label, series_score, matchup_profiles, current_market, matchup_props
     )
@@ -24339,7 +24456,8 @@ def matchup(matchup):
         matchup_props=matchup_props, away_record=away_record, home_record=home_record, feast_players=feast_players,
         series_label=series_label, series_type=series_type, series_id=series_id,
         series_score=series_score, postseason_only=postseason_only, matchup_profiles=matchup_profiles, current_market=current_market,
-        current_market_summary=current_market_summary, matchup_editorial=matchup_editorial, model_debug=model_debug,
+        current_market_summary=current_market_summary, current_market_environment=current_market_environment,
+        matchup_editorial=matchup_editorial, model_debug=model_debug,
         sample_context=sample_context, refresh_meta=refresh_meta, series_context_teaching_note=series_context_teaching_note)
 
 def build_live_props_board(filter_type=None, postseason_only=False, date_filter=None, direction_filter='all',
@@ -24619,7 +24737,7 @@ def props(filter_type=None):
             sort_by=sort_by,
             sort_dir=sort_dir,
         )
-    all_props = board['props']
+    all_props = enrich_rows_with_game_environment(board['props'], sport='NBA')
     refresh_meta = board['refresh_meta']
     upcoming = board['upcoming']
     from_cache = bool(board.get('from_cache'))

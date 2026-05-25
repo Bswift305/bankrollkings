@@ -554,11 +554,15 @@
                 </td>
                 <td style="font-size: 11px;">
                     <div class="metric-stack">
+                        {% if prop.matchup %}
+                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.matchup }}</div>
+                        {% endif %}
                         <div class="micro-cluster">
-                                    {% if prop.game_total is not none %}<span class="micro-chip blue">{{ glossary_hint('O/U', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.game_total }}</span>{% endif %}
+                            {% if prop.game_environment_label %}<span class="micro-chip {% if prop.game_environment_label == 'SCORING ENV' %}copper{% elif prop.game_environment_label == 'UNDER ENV' %}blue{% else %}soft{% endif %}">{{ prop.game_environment_label }}</span>{% endif %}
+                            {% if prop.game_total is not none %}<span class="micro-chip blue">{{ glossary_hint('O/U', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ prop.game_total }}</span>{% endif %}
                             {% if prop.team_spread is not none %}<span class="micro-chip copper">Team {{ '+' if prop.team_spread > 0 }}{{ prop.team_spread }}</span>{% endif %}
                         </div>
-                        <div style="color: var(--accent);">{% if prop.game_environment %}{{ prop.game_environment }}{% elif prop.game_market_summary %}{{ prop.game_market_summary }}{% else %}-{% endif %}</div>
+                        <div style="color: var(--accent);">{% if prop.game_environment_summary %}{{ prop.game_environment_summary }}{% elif prop.game_environment %}{{ prop.game_environment }}{% elif prop.game_market_summary %}{{ prop.game_market_summary }}{% else %}-{% endif %}</div>
                     </div>
                 </td>
                 {% if filter_type == 'floor' and postseason_only %}

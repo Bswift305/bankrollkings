@@ -226,6 +226,11 @@ py fetch_wnba_player_props.py --days 5</pre>
                     <td>
                         <a href="/sports/wnba/matchup/{{ prop.matchup_slug }}?postseason={{ 1 if postseason_only else 0 }}">{{ prop.matchup }}</a>
                         <div style="font-size: 11px; color: var(--text-muted);">{{ prop.game_date or 'Date TBD' }}{% if prop.game_time %} | {{ prop.game_time }}{% endif %}</div>
+                        <div class="micro-cluster" style="margin-top: 6px;">
+                            <span class="micro-chip {% if prop.game_environment_label == 'SCORING ENV' %}copper{% elif prop.game_environment_label == 'UNDER ENV' %}blue{% else %}soft{% endif %}">{{ prop.game_environment_label or 'NO TOTAL' }}</span>
+                            {% if prop.total is not none %}<span class="micro-chip soft">O/U {{ prop.total }}</span>{% endif %}
+                            {% if prop.spread is not none %}<span class="micro-chip soft">Spread {{ '+' if prop.spread > 0 }}{{ prop.spread }}</span>{% endif %}
+                        </div>
                     </td>
                     <td><span class="badge">{{ prop.stat }}</span></td>
                     <td><strong>{{ prop.line }}</strong></td>
@@ -263,6 +268,9 @@ py fetch_wnba_player_props.py --days 5</pre>
                         {% endif %}
                         <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.book_comparison_note }}</div>
                         <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.environment_note }}</div>
+                        {% if prop.game_environment_summary %}
+                        <div style="margin-top: 6px; color: var(--accent);">{{ prop.game_environment_summary }}</div>
+                        {% endif %}
                         {% if prop.trend_note %}
                         <div style="margin-top: 6px; color: var(--accent-copper);">{{ prop.trend_note }}</div>
                         {% endif %}

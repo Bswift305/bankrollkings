@@ -54,6 +54,7 @@ def collect_live_prop_rows(
     build_core_baseline_fields = deps['build_core_baseline_fields']
     build_method_supports = deps['build_method_supports']
     apply_live_method_market_guardrails = deps['apply_live_method_market_guardrails']
+    classify_prop_game_environment = deps.get('classify_prop_game_environment')
     floor_multipliers = deps['FLOOR_MULTIPLIERS']
     postseason_teams = deps['POSTSEASON_TEAMS']
 
@@ -152,6 +153,14 @@ def collect_live_prop_rows(
             continue
 
         game_day = scheduled_game.get('label', '')
+        environment_context = (
+            classify_prop_game_environment(
+                game_environment.get('game_total'),
+                game_environment.get('team_spread'),
+                sport='NBA',
+            )
+            if classify_prop_game_environment else {'label': '', 'summary': ''}
+        )
         model_prob = max(0.01, min(best_play['confidence'], 99.0)) / 100
         market_context = get_prop_market_context(prop, best_play['direction'], model_prob)
         multi_book_context = build_prop_multi_book_context(prop, best_play['direction'], props_market_groups)
@@ -227,6 +236,8 @@ def collect_live_prop_rows(
             'game_total': game_environment.get('game_total'),
             'team_spread': game_environment.get('team_spread'),
             'game_environment': game_environment.get('game_environment'),
+            'game_environment_label': environment_context.get('label', ''),
+            'game_environment_summary': environment_context.get('summary', ''),
             'game_market_summary': scheduled_game.get('market_summary', ''),
             'sample_label': player_context.get('sample_label'),
             'is_multi_team': player_context.get('is_multi_team'),

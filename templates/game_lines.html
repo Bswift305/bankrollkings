@@ -4,9 +4,9 @@
 {% block content %}
 <div class="page-hero">
     <div>
-        <div class="page-kicker">Market Board</div>
-        <h1>Game Lines <span class="accent">&amp; O/U</span></h1>
-        <div class="page-subtitle">A clean board for spreads, totals, and moneylines so the site feels complete beyond props.</div>
+        <div class="page-kicker">Game First</div>
+        <h1>Game Lines <span class="accent">&amp; Environments</span></h1>
+        <div class="page-subtitle">Read the spread, total, and scoring environment first, then decide which prop angles actually fit the game.</div>
     </div>
     <div class="hero-actions">
         <a href="/schedule?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Schedule</a>
@@ -21,15 +21,15 @@
     <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker">Market Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use this board to catch the live spread, total, and moneyline before you drill into props or matchup pages.</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The spread and total define the game script before any player prop gets attacked.</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Matchup Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Each row should feed the next question: does the number match the game environment, pace, injuries, and home-road story?</div>
+            <div class="page-kicker">Environment Read</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Scoring Env, Under Env, and Neutral labels tell you which prop families are swimming with or against the game.</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Verdict</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board is the clean market spine for sides and totals, not just a list of odds.</div>
+            <div class="page-kicker">Prop Fit</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use the matchup link when a game environment supports deeper prop review.</div>
         </div>
     </div>
 </div>
@@ -43,13 +43,19 @@
     <div class="table-shell">
         <table class="data-table">
             <thead>
-                <tr><th>Matchup</th><th>Time</th><th>Spread</th><th>Total</th><th>Moneyline</th><th>Book</th></tr>
+                <tr><th>Matchup</th><th>Environment</th><th>Time</th><th>Spread</th><th>Total</th><th>Moneyline</th><th>Book</th></tr>
             </thead>
             <tbody>
                 {% for game in day_games %}
                 {% set market = game.market %}
                 <tr>
                     <td><a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}">{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</a></td>
+                    <td>
+                        <div class="micro-cluster">
+                            <span class="micro-chip {% if game.environment.label == 'SCORING ENV' %}copper{% elif game.environment.label == 'UNDER ENV' %}blue{% else %}soft{% endif %}">{{ game.environment.label }}</span>
+                        </div>
+                        {% if game.environment.summary %}<div class="cell-meta" style="margin-top: 5px;">{{ game.environment.summary }}</div>{% endif %}
+                    </td>
                     <td>{{ game.Time if game.Time else '-' }}</td>
                     <td>{% if market and market.spread is not none %}{{ team_mark(game.Home, size='xs') }} {{ '%+g'|format(market.spread|float) }}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}</td>
                     <td>{% if market and market.total is not none %}{{ market.total }}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}</td>

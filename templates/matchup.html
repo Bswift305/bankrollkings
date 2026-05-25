@@ -57,6 +57,12 @@
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Game Market</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if current_market %}{{ home }} {{ '%+g'|format(current_market.spread|float) if current_market.spread is not none else 'No spread' }}{% else %}No line loaded{% endif %}</div>
+            {% if current_market_environment %}
+            <div class="micro-cluster" style="margin-top: 7px;">
+                <span class="micro-chip {% if current_market_environment.label == 'SCORING ENV' %}copper{% elif current_market_environment.label == 'UNDER ENV' %}blue{% else %}soft{% endif %}">{{ current_market_environment.label }}</span>
+                {% if current_market.total is not none %}<span class="micro-chip soft">O/U {{ current_market.total }}</span>{% endif %}
+            </div>
+            {% endif %}
             <div style="font-size: 11px; color: var(--text-muted);">{% if current_market_summary %}{{ current_market_summary }}{% else %}Refresh game lines to load spread, total, and ML.{% endif %}</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
