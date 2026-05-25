@@ -24062,31 +24062,16 @@ def build_live_props_board(filter_type=None, postseason_only=False, date_filter=
     elif filter_type == 'strong':
         all_props = [p for p in all_props if 70 <= p['confidence'] < 80 and str(p.get('play_verdict', 'PLAY')).upper() == 'PLAY']
     elif filter_type == 'floor':
-        if postseason_only:
-            all_props = [
-                p for p in all_props
-                if str(p.get('play_verdict', 'PLAY')).upper() == 'PLAY'
-                and p.get('direction') == 'OVER'
-                and int(p.get('matchup_games', 0) or 0) >= 1
-                and float(p.get('matchup_over_rate', 0) or 0) >= 75
-            ]
-            all_props = sorted(
-                all_props,
-                key=lambda x: (
-                    float(x.get('matchup_over_rate', 0) or 0),
-                    int(x.get('matchup_games', 0) or 0),
-                    float(x.get('confidence', 0) or 0),
-                ),
-                reverse=True
+        all_props = sorted(
+            all_props,
+            key=lambda x: (
+                str(x.get('play_verdict', 'PLAY')).upper() != 'PLAY',
+                -float(x.get('confidence', 0) or 0),
+                -float(x.get('weighted_over_rate', x.get('over_rate', 0)) or 0),
+                str(x.get('player', '')),
+                str(x.get('stat', '')),
             )
-        else:
-            all_props = [
-                p for p in all_props
-                if str(p.get('play_verdict', 'PLAY')).upper() == 'PLAY'
-                and p.get('direction') == 'OVER'
-                and float(p.get('line', 0) or 0) <= float(p.get('floor_line', p.get('line', 0)) or 0)
-                and float(p.get('weighted_over_rate', 0) or 0) >= 75
-            ]
+        )
     elif filter_type == 'unders':
         all_props = [p for p in all_props if p['direction'] == 'UNDER' and p['confidence'] >= 70 and str(p.get('play_verdict', 'PLAY')).upper() == 'PLAY']
     elif filter_type == 'overs':

@@ -99,8 +99,8 @@
         <div class="page-subtitle">Your safer anchor method for lower-volatility builds, stable roles, and stat targets that fit each player instead of forcing every prop through the same lens.</div>
     </div>
     <div class="hero-actions">
-        <a href="/props/floor?date={{ date_filter }}&direction=over&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
-        <a href="/props/floor?date={{ date_filter }}&direction=over&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
     </div>
 </div>
 {% else %}
@@ -291,7 +291,7 @@
             <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">TYPE:</span>
             <a href="/props?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
             <a href="/props/locks?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'locks' %}background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f; border-color: rgba(184,115,51,0.55);{% endif %}">🔒 Locks</a>
-            <a href="/props/floor?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'floor' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">📉 Floor Plays</a>
+            <a href="/props/floor?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'floor' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">📉 Floor Plays</a>
             <a href="/props/overs?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'overs' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'overs' %}background: var(--accent); color: #000;{% endif %}">📈 Best Overs</a>
             <a href="/props/unders?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'unders' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'unders' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Best Unders</a>
             <a href="/props/situational?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'situational' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">⚡ Situational</a>
