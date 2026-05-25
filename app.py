@@ -3058,7 +3058,7 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
-        if cached_age <= 180 and cached_entry.get('version') == cache_version:
+        if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
 
     if props_df is None or props_df.empty:
@@ -3374,7 +3374,7 @@ def build_mlb_method_board(method_key, props_df, odds_df, schedule_df, gamelogs=
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
-        if cached_age <= 180 and cached_entry.get('version') == cache_version:
+        if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
 
     base_rows = build_mlb_prop_board(
@@ -3777,7 +3777,7 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
-        if cached_age <= 180 and cached_entry.get('version') == cache_version:
+        if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
 
     if props_df is None or props_df.empty:
@@ -6889,7 +6889,7 @@ def load_nfl_floor_board():
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
-        if cached_age <= 180 and cached_entry.get('version') == cache_version:
+        if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             cached_board = dict(cached_entry['value'])
             cached_board['from_cache'] = True
             return cached_board
@@ -24484,13 +24484,14 @@ def props(filter_type=None):
     sort_by = request_context['sort_by']
     sort_dir = request_context['sort_dir']
     use_default_snapshot = (
-        filter_type is None and postseason_only and date_filter == 'today'
+        filter_type in {None, 'floor'} and postseason_only and date_filter == 'today'
         and direction_filter == 'all' and not team_query and not player_query and not stat_query
         and sample_mode == 'current' and not model_debug
         and sort_by == 'confidence' and sort_dir == 'desc'
     )
     if use_default_snapshot:
-        snapshot = load_runtime_snapshot('nba_props_postseason_today_current', max_age_minutes=720)
+        snapshot_key = 'nba_floor_props_postseason_today_current' if filter_type == 'floor' else 'nba_props_postseason_today_current'
+        snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
         if snapshot:
             board = snapshot.get('payload') or {}
         else:
@@ -24525,6 +24526,23 @@ def props(filter_type=None):
     refresh_meta = board['refresh_meta']
     upcoming = board['upcoming']
     from_cache = bool(board.get('from_cache'))
+    total_props = len(all_props)
+    try:
+        page = int(request.args.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get('page_size', 25))
+    except (TypeError, ValueError):
+        page_size = 25
+    allowed_page_sizes = (25, 50, 100, 200)
+    if page_size not in allowed_page_sizes:
+        page_size = 25
+    page_count = max(1, (total_props + page_size - 1) // page_size)
+    page = max(1, min(page, page_count))
+    page_start = (page - 1) * page_size
+    page_end = min(page_start + page_size, total_props)
+    visible_props = all_props[page_start:page_end]
 
     query_params = {}
     if team_query:
@@ -24542,10 +24560,49 @@ def props(filter_type=None):
         'direction': direction_filter,
         'postseason': 1 if postseason_only else 0,
         'sample': sample_mode,
+        'page_size': page_size,
         'model_debug': 1 if model_debug else None,
         'team': team_query or None,
         'player': player_query or None,
         'stat': stat_query or None,
+    }
+    page_path = '/props' + (f'/{filter_type}' if filter_type else '')
+    def build_props_page_url(target_page, target_page_size=None):
+        params = {
+            'date': date_filter,
+            'direction': direction_filter,
+            'postseason': 1 if postseason_only else 0,
+            'sample': sample_mode,
+            'page': target_page,
+            'page_size': target_page_size if target_page_size is not None else page_size,
+            'sort_by': sort_by,
+            'sort_dir': sort_dir,
+        }
+        if model_debug:
+            params['model_debug'] = 1
+        if team_query:
+            params['team'] = team_query
+        if player_query:
+            params['player'] = player_query
+        if stat_query:
+            params['stat'] = stat_query
+        clean_params = {k: v for k, v in params.items() if v is not None and v != ''}
+        return f"{page_path}?{urlencode(clean_params)}"
+    pagination = {
+        'page': page,
+        'page_size': page_size,
+        'page_count': page_count,
+        'total': total_props,
+        'start': page_start + 1 if total_props else 0,
+        'end': page_end,
+        'has_prev': page > 1,
+        'has_next': page < page_count,
+        'prev_url': build_props_page_url(page - 1) if page > 1 else '',
+        'next_url': build_props_page_url(page + 1) if page < page_count else '',
+        'first_url': build_props_page_url(1),
+        'last_url': build_props_page_url(page_count),
+        'page_size_urls': {size: build_props_page_url(1, size) for size in allowed_page_sizes},
+        'allowed_page_sizes': allowed_page_sizes,
     }
 
     if filter_type == 'floor' and not from_cache and should_auto_archive_candidates(
@@ -24564,11 +24621,12 @@ def props(filter_type=None):
             sample_mode=sample_mode,
         )
     
-    return render_template('props.html', props=all_props[:200], 
+    return render_template('props.html', props=visible_props,
         filter_type=filter_type, date_filter=date_filter, direction_filter=direction_filter, stat_options=STAT_COLUMNS,
         upcoming=upcoming, postseason_only=postseason_only, team_query=team_query, player_query=player_query,
         stat_query=stat_query, query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
-        base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug)
+        base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug,
+        pagination=pagination)
 
 @app.route('/smart-picks')
 def smart_picks_legacy_redirect():

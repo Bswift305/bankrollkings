@@ -303,6 +303,14 @@
                 <option value="situational" {% if filter_type == 'situational' %}selected{% endif %}>Situational</option>
             </select>
         </div>
+        <div class="board-filter-field">
+            <label for="nba-page-size-filter">Rows</label>
+            <select id="nba-page-size-filter" name="page_size">
+                {% for size in pagination.allowed_page_sizes %}
+                <option value="{{ size }}" {% if pagination.page_size == size %}selected{% endif %}>{{ size }} per page</option>
+                {% endfor %}
+            </select>
+        </div>
         <div class="board-filter-actions">
             <button type="submit" class="btn btn-primary btn-sm">Apply</button>
             <a href="/props?date=today&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}{% if model_debug %}&model_debug=1{% endif %}" class="btn btn-secondary btn-sm">Reset</a>
@@ -320,13 +328,15 @@
             {% else %}{{ (focus_mode_label + ' Props') if postseason_only else 'All Props' }}
             {% endif %}
         </div>
-        <span class="badge badge-accent">{{ props|length }} Props</span>
+        <span class="badge badge-accent">{{ pagination.total }} Props</span>
     </div>
     <form class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
         <input type="hidden" name="date" value="{{ date_filter }}">
         <input type="hidden" name="direction" value="{{ direction_filter }}">
         <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
         <input type="hidden" name="sample" value="{{ sample_mode }}">
+        <input type="hidden" name="page" value="1">
+        <input type="hidden" name="page_size" value="{{ pagination.page_size }}">
         {% if model_debug %}<input type="hidden" name="model_debug" value="1">{% endif %}
         {% if team_query %}<input type="hidden" name="team" value="{{ team_query }}">{% endif %}
         {% if player_query %}<input type="hidden" name="player" value="{{ player_query }}">{% endif %}
@@ -353,6 +363,21 @@
             <button type="submit" class="btn btn-secondary btn-sm">Sort</button>
         </div>
     </form>
+    <div class="pagination-bar">
+        <div class="pagination-meta">
+            Showing {{ pagination.start }}-{{ pagination.end }} of {{ pagination.total }} props · Page {{ pagination.page }} of {{ pagination.page_count }}
+        </div>
+        <div class="pagination-actions">
+            {% if pagination.has_prev %}
+            <a href="{{ pagination.first_url }}" class="btn btn-secondary btn-sm">First</a>
+            <a href="{{ pagination.prev_url }}" class="btn btn-secondary btn-sm">Previous</a>
+            {% endif %}
+            {% if pagination.has_next %}
+            <a href="{{ pagination.next_url }}" class="btn btn-primary btn-sm">Next</a>
+            <a href="{{ pagination.last_url }}" class="btn btn-secondary btn-sm">Last</a>
+            {% endif %}
+        </div>
+    </div>
     {% if team_query or player_query or stat_query %}
     <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
         <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">ACTIVE FILTERS:</span>

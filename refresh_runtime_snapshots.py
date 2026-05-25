@@ -68,25 +68,29 @@ def build_nba_snapshots() -> None:
 def build_nba_props_snapshot() -> None:
     from app import build_live_props_board
 
-    board = build_live_props_board(
-        filter_type=None,
-        postseason_only=True,
-        date_filter="today",
-        direction_filter="all",
-        team_query="",
-        player_query="",
-        stat_query="",
-        sample_mode="current",
-        model_debug=False,
-        sort_by="confidence",
-        sort_dir="desc",
-    )
-    _write_snapshot(
-        "nba_props_postseason_today_current",
-        board,
-        meta={"sport": "NBA", "view": "props", "postseason_only": True},
-    )
-
+    board_configs = [
+        (None, "nba_props_postseason_today_current", "props"),
+        ("floor", "nba_floor_props_postseason_today_current", "floor_props"),
+    ]
+    for filter_type, snapshot_key, view_name in board_configs:
+        board = build_live_props_board(
+            filter_type=filter_type,
+            postseason_only=True,
+            date_filter="today",
+            direction_filter="all",
+            team_query="",
+            player_query="",
+            stat_query="",
+            sample_mode="current",
+            model_debug=False,
+            sort_by="confidence",
+            sort_dir="desc",
+        )
+        _write_snapshot(
+            snapshot_key,
+            board,
+            meta={"sport": "NBA", "view": view_name, "postseason_only": True},
+        )
 
 def build_nfl_snapshot() -> None:
     board = load_nfl_floor_board()
