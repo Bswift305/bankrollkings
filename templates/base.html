@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
     <title>{% block title %}Bankroll Kings{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,20 +70,26 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 0;
             text-decoration: none;
+            min-width: 190px;
         }
         
         .logo img {
-            height: 48px;
-            width: auto;
-            filter: drop-shadow(0 0 8px var(--accent-glow));
+            width: 220px;
+            height: 62px;
+            object-fit: contain;
+            object-position: left center;
+            filter: drop-shadow(0 0 10px var(--accent-glow));
         }
         
         .logo-text {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
         }
         
         .logo-title {
