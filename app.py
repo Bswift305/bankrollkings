@@ -16759,7 +16759,100 @@ def build_nba_market_watch(props_df, upcoming, top_plays):
             str(item.get('player', ''))
         )
     )[:8]
-    return {'movers': movers, 'splits': splits}
+
+    # --- Synthesis layer ---
+    synthesis = _build_market_watch_synthesis(movers, splits)
+    return {'movers': movers, 'splits': splits, 'synthesis': synthesis}
+
+
+def _build_market_watch_synthesis(movers, splits):
+    """Derive pattern summary and action read from sorted mover/split lists."""
+    from collections import Counter
+    if not movers and not splits:
+        return None
+
+    all_items = movers + splits
+
+    # Stat distribution
+    stat_counts = Counter(item.get('stat', '') for item in all_items if item.get('stat'))
+    top_stat = stat_counts.most_common(1)[0] if stat_counts else None
+
+    # Move direction (movers only)
+    move_values = [float(m.get('snapshot_move') or m.get('opening_move') or 0) for m in movers]
+    ups = sum(1 for value in move_values if value > 0)
+    downs = sum(1 for value in move_values if value < 0)
+
+    # Most active game
+    game_counts = Counter(item.get('game_label', '') for item in all_items if item.get('game_label'))
+    top_game = game_counts.most_common(1)[0] if game_counts else None
+
+    # Model alignment buckets
+    aligned   = [m for m in movers if m.get('tone') == 'accent']
+    conflicted = [m for m in movers if m.get('tone') == 'danger']
+
+    # Pattern bullets
+    pattern = []
+    if top_stat and top_stat[1] > 1:
+        pattern.append(f"{top_stat[1]} of {len(all_items)} reads are {top_stat[0]} props")
+    if movers:
+        if ups > downs:
+            pattern.append(f"{ups} moved up, {downs} moved down")
+        elif downs > ups:
+            pattern.append(f"{downs} moved down, {ups} moved up")
+        else:
+            pattern.append("Movement split evenly up and down")
+    if top_game:
+        pattern.append(f"{top_game[0]} is carrying most movement")
+    if aligned:
+        pattern.append(f"{len(aligned)} mover{'s' if len(aligned) != 1 else ''} aligned with model")
+    if conflicted:
+        pattern.append(f"{len(conflicted)} mover{'s' if len(conflicted) != 1 else ''} moving against model")
+
+    # Best candidate: highest confidence among aligned movers
+    best_candidate = None
+    best_score = -1
+    for m in aligned:
+        score = float(m.get('confidence') or 0) + abs(float(m.get('snapshot_move') or m.get('opening_move') or 0)) * 10
+        if score > best_score:
+            best_score = score
+            best_candidate = m
+
+    # Caution prop: first conflicted mover
+    caution_prop = conflicted[0] if conflicted else None
+
+    # Action guidance
+    if aligned and not conflicted:
+        action_summary = "Market and model are moving together. Confirm against floor and reliability before acting."
+    elif conflicted and not aligned:
+        action_summary = "Market is moving against the model. Do not chase these lines - wait for model confirmation."
+    elif aligned and conflicted:
+        action_summary = "Mixed signals tonight. Filter to aligned movers only and skip the conflicts."
+    else:
+        action_summary = "Movement is neutral tonight. Stick to floor anchors and avoid chasing line shifts."
+
+    best_candidate_label = None
+    if best_candidate:
+        best_candidate_label = (
+            f"{best_candidate['player']} {best_candidate['stat']} {best_candidate.get('direction','OVER')} "
+            f"{best_candidate.get('line','')} - market and model agree"
+        )
+
+    caution_label = None
+    if caution_prop:
+        caution_label = (
+            f"{caution_prop['player']} {caution_prop['stat']} - market moved against model"
+        )
+
+    return {
+        'pattern': pattern,
+        'action_summary': action_summary,
+        'best_candidate': best_candidate_label,
+        'caution': caution_label,
+        'aligned_count': len(aligned),
+        'conflicted_count': len(conflicted),
+        'mover_count': len(movers),
+        'split_count': len(splits),
+    }
 
 
 def build_market_move_teaching_note(direction, snapshot_move=None, opening_move=None, moved_toward_play=None):

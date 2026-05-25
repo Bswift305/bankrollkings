@@ -333,73 +333,184 @@
     }
 }
 
-.market-watch-grid {
-    display:grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap:16px;
+.market-watch-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    align-items: start;
 }
 
-.market-watch-card {
-    border-radius:16px;
-    padding:12px;
-    border:1px solid rgba(255,255,255,0.08);
+@media (max-width: 1080px) {
+    .market-watch-panel {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 680px) {
+    .market-watch-panel {
+        grid-template-columns: 1fr;
+    }
+}
+
+.market-watch-col {
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
     background:
-        linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 28%),
+        linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
         linear-gradient(135deg, rgba(18,35,49,0.97) 0%, rgba(24,40,54,0.96) 100%);
+    overflow: hidden;
+}
+
+.market-watch-col-head {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.market-watch-col-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--accent-copper);
+}
+
+.market-watch-col-count {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
 }
 
 .market-watch-list {
-    display:flex;
-    flex-direction:column;
-    gap:8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px;
 }
 
 .market-watch-row {
-    border-radius:12px;
-    padding:8px 9px;
-    border:1px solid rgba(255,255,255,0.06);
-    background:rgba(255,255,255,0.03);
+    border-radius: 10px;
+    padding: 7px 9px;
+    border: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.025);
 }
 
-.market-watch-row.accent { border-color: rgba(132,215,210,0.24); }
-.market-watch-row.copper { border-color: rgba(184,115,51,0.24); }
-.market-watch-row.danger { border-color: rgba(255,107,107,0.28); }
-.market-watch-row.blue { border-color: rgba(110,162,255,0.22); }
+.market-watch-row.accent { border-color: rgba(132,215,210,0.20); background: rgba(132,215,210,0.04); }
+.market-watch-row.copper { border-color: rgba(184,115,51,0.22); background: rgba(184,115,51,0.04); }
+.market-watch-row.danger { border-color: rgba(255,107,107,0.22); background: rgba(255,59,59,0.04); }
+.market-watch-row.blue   { border-color: rgba(110,162,255,0.18); background: rgba(110,162,255,0.04); }
 
 .market-watch-topline {
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    align-items:flex-start;
-    margin-bottom:6px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 3px;
 }
 
 .market-watch-title {
-    font-size:13px;
-    font-weight:800;
-    color:var(--text-bright);
-    line-height:1.35;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.3;
 }
 
 .market-watch-badge {
-    font-size:10px;
-    font-weight:800;
-    letter-spacing:0.8px;
-    color:var(--accent);
-    white-space:nowrap;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .market-watch-meta {
-    font-size:11px;
-    color:var(--text-muted);
-    line-height:1.5;
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.45;
 }
 
-.market-watch-detail-grid {
-    display:grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap:4px 12px;
-    margin-top:6px;
+/* Synthesis column */
+.mw-synthesis-block {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.mw-synthesis-block:last-child {
+    border-bottom: none;
+}
+
+.mw-synthesis-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+}
+
+.mw-synthesis-label.accent  { color: var(--accent); }
+.mw-synthesis-label.copper  { color: var(--accent-copper); }
+.mw-synthesis-label.blue    { color: var(--accent-blue); }
+.mw-synthesis-label.danger  { color: var(--danger); }
+
+.mw-pattern-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.mw-pattern-item {
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.4;
+    padding-left: 10px;
+    position: relative;
+}
+
+.mw-pattern-item::before {
+    content: "·";
+    position: absolute;
+    left: 2px;
+    color: var(--accent-copper);
+    font-weight: 800;
+}
+
+.mw-action-summary {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.55;
+    margin-bottom: 10px;
+}
+
+.mw-action-item {
+    border-radius: 8px;
+    padding: 7px 9px;
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.mw-action-item.best {
+    border: 1px solid rgba(132,215,210,0.22);
+    background: rgba(132,215,210,0.05);
+    color: #c8f0ee;
+}
+
+.mw-action-item.caution {
+    border: 1px solid rgba(255,107,107,0.22);
+    background: rgba(255,59,59,0.05);
+    color: #ffd0d0;
+}
+
+.mw-action-item-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    opacity: 0.7;
 }
 </style>
 
@@ -609,9 +720,9 @@
                                     <div class="tonight-angle-reason">{{ angle.bet_tier_explanation }}</div>
                                     {% endif %}
                                     <div class="tonight-angle-reason" style="color: var(--text-muted);">
-                                        Profile {{ (angle.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if angle.series_game_number %} · G{{ angle.series_game_number }}{% endif %}
-                                        · <span style="color: {% if angle.volatility_flag == 'HIGH' %}var(--danger){% elif angle.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ angle.volatility_flag or 'STABLE' }}</span>
-                                        · <span style="color: {% if angle.market_gate == 'HOLD' %}var(--danger){% elif angle.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ angle.market_gate or 'CLEAR' }}</span>
+                                        Profile {{ (angle.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if angle.series_game_number %} | G{{ angle.series_game_number }}{% endif %}
+                                        | <span style="color: {% if angle.volatility_flag == 'HIGH' %}var(--danger){% elif angle.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ angle.volatility_flag or 'STABLE' }}</span>
+                                        | <span style="color: {% if angle.market_gate == 'HOLD' %}var(--danger){% elif angle.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ angle.market_gate or 'CLEAR' }}</span>
                                     </div>
                                     {% if angle.profile_explanation %}
                                     <div class="tonight-angle-reason">{{ angle.profile_explanation }}</div>
@@ -642,68 +753,130 @@
 {% endif %}
 
 {% if market_watch and (market_watch.movers or market_watch.splits) %}
+{% set mws = market_watch.synthesis %}
 <div class="card mb-24 dashboard-spotlight">
     <div class="card-header">
         <div class="card-title">Market Watch Tonight</div>
         <span class="badge badge-accent">{{ (market_watch.movers|length) + (market_watch.splits|length) }} Reads</span>
     </div>
-    <div class="p-20">
-        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
-            This is the price-action layer: where tonight’s prop market actually moved and where books are still disagreeing enough to matter.
-        </div>
-        <div class="market-watch-grid">
-            {% if market_watch.movers %}
-            <div class="market-watch-card">
-                <div class="page-kicker" style="margin-bottom: 10px;">Market Movers</div>
+    <div class="p-16">
+        <div class="market-watch-panel">
+
+            {# Column 1: Line Movers #}
+            <div class="market-watch-col">
+                <div class="market-watch-col-head">
+                    <span class="market-watch-col-label">Line Movers</span>
+                    <span class="market-watch-col-count">{{ market_watch.movers|length }} props</span>
+                </div>
                 <div class="market-watch-list">
                     {% for item in market_watch.movers %}
                     <div class="market-watch-row {{ item.tone }}">
                         <div class="market-watch-topline">
                             <div class="market-watch-title">{{ item.player }} {{ item.stat }} {{ item.line }}</div>
-                            <div class="market-watch-badge">{{ item.move_label or 'Movement' }}</div>
+                            <div class="market-watch-badge">{{ item.move_label or 'Move' }}</div>
                         </div>
                         <div class="market-watch-meta">
                             {{ item.team }}{% if item.opponent %} vs {{ item.opponent }}{% endif %}
-                            {% if item.direction %} • {{ item.direction }}{% endif %}
-                            {% if item.confidence %} • {{ item.confidence }}%{% endif %}
-                        </div>
-                        <div class="market-watch-meta">Open {{ item.open_line if item.open_line is not none else '-' }} → Now {{ item.current_line if item.current_line is not none else '-' }}{% if item.prior_line is not none %} • Prior {{ item.prior_line }}{% endif %}</div>
-                        <div class="market-watch-meta">{% if item.snapshot_move is not none %}Snapshot {{ '+' if item.snapshot_move > 0 }}{{ item.snapshot_move }}{% elif item.opening_move is not none %}Open shift {{ '+' if item.opening_move > 0 }}{{ item.opening_move }}{% else %}-{% endif %}</div>
-                        <div class="market-watch-meta">{{ item.move_note or item.note }}</div>
-                        {% if item.move_teaching_note %}
-                        <div class="market-watch-meta"><strong>Why it matters:</strong> {{ item.move_teaching_note }}</div>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-            {% if market_watch.splits %}
-            <div class="market-watch-card">
-                <div class="page-kicker" style="margin-bottom: 10px;">Book Split Watch</div>
-                <div class="market-watch-list">
-                    {% for item in market_watch.splits %}
-                    <div class="market-watch-row blue">
-                        <div class="market-watch-topline">
-                            <div class="market-watch-title">{{ item.player }} {{ item.stat }} {{ item.line }}</div>
-                            <div class="market-watch-badge">{{ item.book_count }} books</div>
+                            {% if item.direction %} | {{ item.direction }}{% endif %}
+                            {% if item.confidence %} | {{ item.confidence }}%{% endif %}
                         </div>
                         <div class="market-watch-meta">
-                            {{ item.team }}{% if item.opponent %} vs {{ item.opponent }}{% endif %}
-                            {% if item.direction %} • {{ item.direction }}{% endif %}
-                            {% if item.confidence %} • {{ item.confidence }}%{% endif %}
+                            Open {{ item.open_line if item.open_line is not none else '-' }} -> {{ item.current_line if item.current_line is not none else '-' }}
+                            {% if item.snapshot_move is not none %} | Move {{ '+' if item.snapshot_move > 0 }}{{ item.snapshot_move }}{% endif %}
                         </div>
-                        <div class="market-watch-meta">Range {{ item.line_low }} to {{ item.line_high }}{% if item.range_gap is not none %} • Gap {{ item.range_gap }}{% endif %}</div>
-                        <div class="market-watch-meta">Best price book: {{ item.best_book or 'Loaded market' }}</div>
-                        <div class="market-watch-meta">{{ item.note }}</div>
-                        {% if item.split_teaching_note %}
-                        <div class="market-watch-meta"><strong>Why it matters:</strong> {{ item.split_teaching_note }}</div>
-                        {% endif %}
                     </div>
                     {% endfor %}
+                    {% if market_watch.splits %}
+                    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.06);">
+                        <div class="market-watch-col-label" style="padding: 0 1px 6px;">Book Splits</div>
+                        {% for item in market_watch.splits %}
+                        <div class="market-watch-row blue" style="margin-bottom: 5px;">
+                            <div class="market-watch-topline">
+                                <div class="market-watch-title">{{ item.player }} {{ item.stat }} {{ item.line }}</div>
+                                <div class="market-watch-badge">{{ item.book_count }} books</div>
+                            </div>
+                            <div class="market-watch-meta">
+                                Range {{ item.line_low }} - {{ item.line_high }}
+                                {% if item.range_gap is not none %} | Gap {{ item.range_gap }}{% endif %}
+                                {% if item.best_book %} | Best: {{ item.best_book }}{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
-            {% endif %}
+
+            {# Column 2: What It Means #}
+            <div class="market-watch-col">
+                <div class="market-watch-col-head">
+                    <span class="market-watch-col-label">What It Means</span>
+                </div>
+                {% if mws and mws.pattern %}
+                <div class="mw-synthesis-block">
+                    <div class="mw-synthesis-label accent">Tonight's Pattern</div>
+                    <div class="mw-pattern-list">
+                        {% for bullet in mws.pattern %}
+                        <div class="mw-pattern-item">{{ bullet }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% if mws %}
+                <div class="mw-synthesis-block">
+                    <div class="mw-synthesis-label copper">Alignment Read</div>
+                    <div class="mw-pattern-list">
+                        {% if mws.aligned_count %}
+                        <div class="mw-pattern-item" style="color: var(--accent);">{{ mws.aligned_count }} mover{{ 's' if mws.aligned_count != 1 }} - market confirms model direction</div>
+                        {% endif %}
+                        {% if mws.conflicted_count %}
+                        <div class="mw-pattern-item" style="color: var(--danger);">{{ mws.conflicted_count }} mover{{ 's' if mws.conflicted_count != 1 }} - market contradicts model</div>
+                        {% endif %}
+                        {% if not mws.aligned_count and not mws.conflicted_count %}
+                        <div class="mw-pattern-item">No strong alignment signal tonight</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {# Column 3: Action Read #}
+            <div class="market-watch-col">
+                <div class="market-watch-col-head">
+                    <span class="market-watch-col-label">Action Read</span>
+                </div>
+                {% if mws %}
+                <div class="mw-synthesis-block">
+                    <div class="mw-synthesis-label blue">Tonight's Guidance</div>
+                    <div class="mw-action-summary">{{ mws.action_summary }}</div>
+                    {% if mws.best_candidate %}
+                    <div class="mw-action-item best">
+                        <div class="mw-action-item-label">Best Candidate</div>
+                        {{ mws.best_candidate }}
+                    </div>
+                    {% endif %}
+                    {% if mws.caution %}
+                    <div class="mw-action-item caution">
+                        <div class="mw-action-item-label">Caution</div>
+                        {{ mws.caution }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="mw-synthesis-block">
+                    <div class="mw-synthesis-label copper">Always Confirm Against</div>
+                    <div class="mw-pattern-list">
+                        <div class="mw-pattern-item">Floor value and reliability grade</div>
+                        <div class="mw-pattern-item">Current-team sample size</div>
+                        <div class="mw-pattern-item">Injury and role stability</div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="mw-synthesis-block">
+                    <div class="mw-action-summary" style="color: var(--text-muted);">No movement strong enough for a directional read tonight. Stick to floor anchors.</div>
+                </div>
+                {% endif %}
+            </div>
+
         </div>
     </div>
 </div>
@@ -945,7 +1118,7 @@
                 <td><span class="badge">{{ play.stat }}</span> <strong>{{ play.line }}</strong></td>
                 <td><span class="play-pill-gloss {% if play.direction == 'OVER' %}over{% else %}under{% endif %}">{{ play.direction }}</span></td>
                 <td><span class="{% if play.hit_rate >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ play.hit_rate }}%</span></td>
-                <td>{% if postseason_only and play.tags %}{% for tag in play.tags[:2] %}<span style="background: var(--bg-elevated); color: var(--accent); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}{% if play.bet_tier %}<div style="margin-top: 6px; font-size: 11px; color: {% if play.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif play.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ play.bet_tier.label }}</div>{% endif %}{% if play.play_verdict_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ play.play_verdict_note }}</div>{% endif %}{% if play.rank_explanation %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-bright); line-height: 1.5;">{{ play.rank_explanation }}</div>{% endif %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">Profile {{ (play.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if play.series_game_number %} · G{{ play.series_game_number }}{% endif %}</div><div style="margin-top: 4px; font-size: 11px; line-height: 1.45;"><span style="color: {% if play.volatility_flag == 'HIGH' %}var(--danger){% elif play.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ play.volatility_flag or 'STABLE' }}</span><span style="color: var(--text-muted);"> · </span><span style="color: {% if play.market_gate == 'HOLD' %}var(--danger){% elif play.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ play.market_gate or 'CLEAR' }}</span></div>{% if play.market_summary %}<div style="margin-top: 4px; font-size: 11px; color: var(--text-bright); line-height: 1.45;">{{ play.market_summary }}</div>{% endif %}{% if play.featured_risk_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.5;"><strong>What could break this:</strong> {{ play.featured_risk_note }}</div>{% endif %}</td>
+                <td>{% if postseason_only and play.tags %}{% for tag in play.tags[:2] %}<span style="background: var(--bg-elevated); color: var(--accent); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}{% else %}<span style="color: var(--text-muted);">-</span>{% endif %}{% if play.bet_tier %}<div style="margin-top: 6px; font-size: 11px; color: {% if play.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif play.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ play.bet_tier.label }}</div>{% endif %}{% if play.play_verdict_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ play.play_verdict_note }}</div>{% endif %}{% if play.rank_explanation %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-bright); line-height: 1.5;">{{ play.rank_explanation }}</div>{% endif %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">Profile {{ (play.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if play.series_game_number %} | G{{ play.series_game_number }}{% endif %}</div><div style="margin-top: 4px; font-size: 11px; line-height: 1.45;"><span style="color: {% if play.volatility_flag == 'HIGH' %}var(--danger){% elif play.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ play.volatility_flag or 'STABLE' }}</span><span style="color: var(--text-muted);"> | </span><span style="color: {% if play.market_gate == 'HOLD' %}var(--danger){% elif play.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ play.market_gate or 'CLEAR' }}</span></div>{% if play.market_summary %}<div style="margin-top: 4px; font-size: 11px; color: var(--text-bright); line-height: 1.45;">{{ play.market_summary }}</div>{% endif %}{% if play.featured_risk_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.5;"><strong>What could break this:</strong> {{ play.featured_risk_note }}</div>{% endif %}</td>
                 <td style="font-size: 11px; line-height: 1.45;">
                     {% if play.move_label %}
                     <div style="color: {% if play.tone == 'accent' %}var(--accent){% elif play.tone == 'danger' %}#FF6B6B{% elif play.tone == 'copper' %}var(--accent-copper){% else %}var(--text-muted){% endif %}; font-weight: 800;">{{ play.move_label }}</div>
@@ -954,7 +1127,7 @@
                     {% else %}
                     <div style="color: var(--text-muted); font-weight: 700;">Stable line</div>
                     {% endif %}
-                    <div style="color: var(--text-muted);">Open {{ play.open_line if play.open_line is not none else '-' }} → Now {{ play.current_line if play.current_line is not none else play.line }}</div>
+                    <div style="color: var(--text-muted);">Open {{ play.open_line if play.open_line is not none else '-' }} -> Now {{ play.current_line if play.current_line is not none else play.line }}</div>
                     {% if play.range_gap is not none and play.range_gap >= 0.5 %}
                     <div style="color: var(--accent-copper);">Range {{ play.line_low }} to {{ play.line_high }}</div>
                     {% elif play.prior_line is not none %}
