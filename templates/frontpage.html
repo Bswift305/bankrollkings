@@ -6,9 +6,9 @@
     <div class="bk-public-copy">
         <img src="/static/home-logo.webp" alt="Bankroll Kings" class="bk-public-logo">
         <div class="public-kicker">Betting intelligence for props, matchups, and market movement</div>
-        <h1>Find the spots the board is actually supporting.</h1>
+        <h1>Every prop has a story. This is where you read it.</h1>
         <p>
-            Bankroll Kings turns live props, game environment, line movement, injuries, trends, and player reliability into a cleaner betting workflow. NBA, MLB, and WNBA are live now, with football calibration building behind the scenes.
+            Bankroll Kings surfaces live prop context, game environment, line movement, book splits, and player reliability so you can see which plays actually fit tonight before you act on any of them.
         </p>
         <div class="public-actions">
             {% if current_user %}
@@ -47,12 +47,12 @@
                     <span class="status-pill today">Live</span>
                 </div>
                 <div class="live-sport-statline">
-                    <strong>{{ sport.today_games }}</strong> games · <strong>{{ sport.props_rows }}</strong> props
+                    <strong>{{ sport.today_games }}</strong> games &middot; <strong>{{ sport.props_rows }}</strong> props
                 </div>
                 {% if sport.best_prop %}
                 <div class="live-sport-prop">
                     <strong>{{ sport.best_prop.player }}</strong>
-                    <span>{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }} · {{ sport.best_prop.implied }}%</span>
+                    <span>{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }} &middot; {{ sport.best_prop.implied }}%</span>
                 </div>
                 {% elif sport.matchups and sport.matchups[0].best_prop %}
                 <div class="live-sport-prop">
@@ -69,77 +69,6 @@
     </div>
 </section>
 
-
-<section class="public-grid public-grid-3 mb-24">
-    <a href="/sports/mlb?date=today" class="public-feature-card">
-        <div class="feature-kicker">Live Now</div>
-        <h2>MLB Slate Intelligence</h2>
-        <p>Game totals, book disagreement, launch legs, best anchors, and prop context for each matchup.</p>
-        <span>Open MLB board</span>
-    </a>
-    <a href="/props/floor?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="public-feature-card">
-        <div class="feature-kicker">Parlay Stabilizers</div>
-        <h2>Floor Play System</h2>
-        <p>Every eligible prop gets a floor read so you can compare straight-line quality against safer build legs.</p>
-        <span>See floor plays</span>
-    </a>
-    <a href="/candidate-review" class="public-feature-card">
-        <div class="feature-kicker">Model Tuning</div>
-        <h2>Review What Happened</h2>
-        <p>Track suggested plays versus results, inspect tiers, and find where the model is strong or drifting.</p>
-        <span>Open review center</span>
-    </a>
-</section>
-
-<section class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">What You Get</div>
-        <a href="/pricing" class="btn btn-secondary btn-sm">Compare Plans</a>
-    </div>
-    <div class="p-16">
-        <div class="public-grid public-grid-4">
-            <div class="public-mini-panel">
-                <div class="feature-kicker">Markets</div>
-                <strong>Best book, price split, line range</strong>
-                <p>See whether books agree, disagree, or are quietly moving against a play.</p>
-            </div>
-            <div class="public-mini-panel">
-                <div class="feature-kicker">Context</div>
-                <strong>Game environment and injuries</strong>
-                <p>Spread, total, role stability, and injury context stay attached to the prop.</p>
-            </div>
-            <div class="public-mini-panel">
-                <div class="feature-kicker">Calibration</div>
-                <strong>Hit/miss review loops</strong>
-                <p>Use archived results to find tiers, buckets, players, and sports worth trusting.</p>
-            </div>
-            <div class="public-mini-panel">
-                <div class="feature-kicker">Workflow</div>
-                <strong>Build cleaner tickets</strong>
-                <p>Move from board read to floor play to saved ticket without losing the why.</p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section class="card mb-16 panel-glow compact-coverage-card">
-    <div class="card-header panel-header-gloss compact-public-header">
-        <div class="card-title">Coverage Roadmap</div>
-        <span class="badge badge-accent">{{ sports_launch_cards|length }} Sports</span>
-    </div>
-    <div class="p-12">
-        <div class="roadmap-strip">
-            {% for sport in sports_launch_cards %}
-            {% if sport.coming_soon %}
-            <a href="{{ sport.href }}" class="roadmap-pill">
-                <span>{{ sport.title }}</span>
-                <small>Coming soon</small>
-            </a>
-            {% endif %}
-            {% endfor %}
-        </div>
-    </div>
-</section>
 <section class="card mb-16 panel-glow">
     <div class="card-header compact-public-header">
         <div>
@@ -168,7 +97,7 @@
                     <td>
                         {% if sport.best_prop %}
                         <strong>{{ sport.best_prop.player }}</strong>
-                        <div class="cell-meta">{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}{% if sport.best_prop.price %} · {{ sport.best_prop.price }}{% endif %}</div>
+                        <div class="cell-meta">{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}{% if sport.best_prop.price %} &middot; {{ sport.best_prop.price }}{% endif %}</div>
                         {% else %}
                         <strong>Open board</strong>
                         <div class="cell-meta">Current prop context is available inside the sport page.</div>
@@ -190,6 +119,59 @@
         </table>
     </div>
 </section>
+
+<section class="public-grid public-grid-3 mb-24">
+    <a href="/game-lines" class="public-feature-card">
+        <div class="feature-kicker">Step 1</div>
+        <h2>Start With The Game</h2>
+        <p>Read the total, spread, environment, and matchup shape before touching a single player prop.</p>
+        <span>Open game lines</span>
+    </a>
+    <a href="/smart-picks" class="public-feature-card">
+        <div class="feature-kicker">Step 2</div>
+        <h2>Check The Market</h2>
+        <p>See where books agree, where they split, and whether the current number still supports the play.</p>
+        <span>Open market edge</span>
+    </a>
+    <a href="/candidate-review" class="public-feature-card">
+        <div class="feature-kicker">Step 3</div>
+        <h2>Trust What Has Worked</h2>
+        <p>Review hit rates by sport, stat, player, tier, and floor reliability so your process keeps improving.</p>
+        <span>Open review center</span>
+    </a>
+</section>
+
+<section class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">What You Get</div>
+        <a href="/pricing" class="btn btn-secondary btn-sm">Compare Plans</a>
+    </div>
+    <div class="p-16">
+        <div class="public-grid public-grid-4">
+            <div class="public-mini-panel">
+                <div class="feature-kicker">Markets</div>
+                <strong>Know when books disagree</strong>
+                <p>Book splits and line ranges show where value may still exist, and where the number already moved away.</p>
+            </div>
+            <div class="public-mini-panel">
+                <div class="feature-kicker">Context</div>
+                <strong>Understand the game first</strong>
+                <p>Spread, total, injuries, role stability, and matchup context stay attached to every prop row.</p>
+            </div>
+            <div class="public-mini-panel">
+                <div class="feature-kicker">Calibration</div>
+                <strong>See what is worth trusting</strong>
+                <p>Archived results reveal which tiers, players, stat buckets, and floor plays are earning confidence.</p>
+            </div>
+            <div class="public-mini-panel">
+                <div class="feature-kicker">Workflow</div>
+                <strong>Move from read to ticket</strong>
+                <p>Build cleaner tickets without losing the why behind each leg, market read, or avoid flag.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
 <section class="public-cta">
     <h2>Ready to test the board?</h2>
     <p>Create an account, pick a plan, and start reviewing the live workflow.</p>
@@ -373,30 +355,6 @@
 .live-sport-prop strong {
     color: var(--text-bright);
     font-size: 13px;
-}
-.roadmap-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-.roadmap-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(132,215,210,0.16);
-    background: rgba(10,22,31,0.70);
-    color: var(--text-bright);
-    text-decoration: none;
-    font-size: 12px;
-    font-weight: 800;
-}
-.roadmap-pill small {
-    color: var(--text-muted);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
 }
 .multi-sport-preview-table td {
     vertical-align: middle;
