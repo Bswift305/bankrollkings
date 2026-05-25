@@ -2183,8 +2183,8 @@ def build_mlb_board_status(schedule_df, odds_df, props_df, gamelogs_df, upcoming
         coverage.append('Game Logs')
 
     if has_schedule and has_odds and has_props and has_logs:
-        stage = 'Scaffold Ready'
-        next_layer = 'The next MLB step is turning raw hitter and pitcher markets into a governed prop board with lineup, handedness, and ballpark filters.'
+        stage = 'Live'
+        next_layer = 'MLB is live: use the slate, game-line context, prop board, reliability labels, and matchup reads together the same way the NBA and WNBA boards work.'
     elif has_schedule and (has_odds or has_props):
         stage = 'Partial Feed'
         next_layer = 'Baseball data has started landing. The next job is syncing schedules, lines, props, and logs into one daily board.'
@@ -14992,7 +14992,9 @@ def build_sports_launch_cards(postseason_only, upcoming=None, total_props=0, tot
         }
     ]
 
+    live_sports = {'mlb', 'wnba'}
     for league, config in SPORTS_LAUNCH_PAGES.items():
+        is_live = league in live_sports
         nba_cards.append({
             'key': league,
             'title': config['title'],
@@ -15000,12 +15002,177 @@ def build_sports_launch_cards(postseason_only, upcoming=None, total_props=0, tot
             'summary': config['summary'],
             'highlights': config['highlights'],
             'href': f"/sports/{league}?postseason={1 if postseason_only else 0}",
-            'coming_soon': True,
-            'status_label': 'Coming Soon',
-            'status_class': 'upcoming'
+            'coming_soon': not is_live,
+            'status_label': 'Live' if is_live else 'Coming Soon',
+            'status_class': 'today' if is_live else 'upcoming'
         })
 
     return nba_cards
+
+
+def _american_implied_probability(odds):
+    try:
+        odds = float(odds)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(odds) or odds == 0:
+        return None
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100)
+    return 100 / (odds + 100)
+
+
+def _format_american_price(odds):
+    try:
+        odds = int(round(float(odds)))
+    except (TypeError, ValueError):
+        return ''
+    return f"+{odds}" if odds > 0 else str(odds)
+
+
+def _dashboard_best_prop_for_game(props_df, game_name):
+    if props_df.empty or 'Game' not in props_df.columns or not game_name:
+        return None
+    normalized_game = re.sub(r'\s+', '', str(game_name).casefold())
+    game_props = props_df[
+        props_df['Game'].astype(str).map(lambda value: re.sub(r'\s+', '', value.casefold())) == normalized_game
+    ].copy()
+    if game_props.empty:
+        return None
+
+    best = None
+    for _, row in game_props.iterrows():
+        options = [
+            ('OVER', row.get('OverOdds')),
+            ('UNDER', row.get('UnderOdds')),
+        ]
+        for direction, odds in options:
+            implied = _american_implied_probability(odds)
+            if implied is None:
+                continue
+            candidate = {
+                'player': str(row.get('Player') or '').strip() or 'Player prop',
+                'stat': str(row.get('Stat') or '').strip() or 'Prop',
+                'line': row.get('Line'),
+                'direction': direction,
+                'price': _format_american_price(odds),
+                'implied': round(implied * 100, 1),
+                'book': str(row.get('Book') or '').strip(),
+            }
+            if best is None or candidate['implied'] > best['implied']:
+                best = candidate
+    return best
+
+
+def build_cross_sport_dashboard_snapshots(postseason_only=False):
+    today = datetime.now().date().isoformat()
+    sport_configs = [
+        {
+            'sport': 'NBA',
+            'key': 'nba',
+            'href': f"/sports/nba?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NBA_Props.csv',
+            'status': 'Live',
+            'tone': 'accent',
+        },
+        {
+            'sport': 'WNBA',
+            'key': 'wnba',
+            'href': f"/sports/wnba?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'WNBA_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'WNBA_Props.csv',
+            'status': 'Live',
+            'tone': 'blue',
+        },
+        {
+            'sport': 'MLB',
+            'key': 'mlb',
+            'href': f"/sports/mlb?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'MLB_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'MLB_Props.csv',
+            'status': 'Live',
+            'tone': 'copper',
+        },
+        {
+            'sport': 'NFL',
+            'key': 'nfl',
+            'href': f"/sports/nfl?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'NFL_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NFL_Props.csv',
+            'status': 'Season Prep',
+            'tone': 'soft',
+        },
+        {
+            'sport': 'CFB',
+            'key': 'ncaaf',
+            'href': f"/sports/ncaaf?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'NCAAF_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NCAAF_Props.csv',
+            'status': 'Season Prep',
+            'tone': 'soft',
+        },
+        {
+            'sport': 'Men Hoops',
+            'key': 'ncaamb',
+            'href': f"/sports/ncaamb?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'NCAAMB_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NCAAMB_Props.csv',
+            'status': 'Building',
+            'tone': 'soft',
+        },
+        {
+            'sport': 'Women Hoops',
+            'key': 'ncaawb',
+            'href': f"/sports/ncaawb?postseason={1 if postseason_only else 0}",
+            'schedule': DATA_DIR / 'schedules' / 'NCAAWB_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NCAAWB_Props.csv',
+            'status': 'Building',
+            'tone': 'soft',
+        },
+    ]
+
+    snapshots = []
+    for config in sport_configs:
+        schedule = _load_cached_csv(config['schedule'])
+        props = _load_cached_csv(config['props'])
+        today_games = pd.DataFrame()
+        if not schedule.empty and 'Date' in schedule.columns:
+            today_games = schedule[schedule['Date'].astype(str).str[:10] == today].copy()
+
+        matchup_rows = []
+        best_sport_prop = None
+        for index, (_, game) in enumerate(today_games.iterrows()):
+            away = str(game.get('AwayFull') or game.get('Away') or '').strip()
+            home = str(game.get('HomeFull') or game.get('Home') or '').strip()
+            matchup = f"{away} @ {home}".strip(' @')
+            best_prop = _dashboard_best_prop_for_game(props, matchup)
+            if best_prop and (best_sport_prop is None or best_prop['implied'] > best_sport_prop['implied']):
+                best_sport_prop = {**best_prop, 'matchup': matchup or 'Matchup TBD'}
+            if index < 3:
+                matchup_rows.append({
+                    'matchup': matchup or 'Matchup TBD',
+                    'time': str(game.get('Time') or 'TBD'),
+                    'best_prop': best_prop,
+                })
+
+        snapshots.append({
+            **config,
+            'today_games': int(len(today_games)),
+            'props_rows': int(len(props)),
+            'matchups': matchup_rows,
+            'best_prop': best_sport_prop,
+            'is_live': config['status'] == 'Live',
+            'note': (
+                'Live slate with props and matchup reads.'
+                if config['status'] == 'Live'
+                else 'No active daily slate yet; use this as the season-prep workspace.'
+                if config['status'] == 'Season Prep'
+                else 'Page framework is present, but data workflow is still being built.'
+            ),
+        })
+
+    return snapshots
 
 
 def get_active_sport_for_path(path):
@@ -21473,7 +21640,14 @@ def dashboard():
         top_plays_count=len(nba_context['top_plays']),
         best_by_series_count=len(nba_context['best_by_series'])
     )
-    return render_template('dashboard_overview.html', sports_launch_cards=sports_launch_cards, nba_summary=nba_context['nba_summary'], postseason_only=postseason_only)
+    sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    return render_template(
+        'dashboard_overview.html',
+        sports_launch_cards=sports_launch_cards,
+        sport_snapshots=sport_snapshots,
+        nba_summary=nba_context['nba_summary'],
+        postseason_only=postseason_only,
+    )
 
 
 @app.route('/matchup-lens')
@@ -22535,15 +22709,15 @@ SPORTS_LAUNCH_PAGES = {
     },
     'mlb': {
         'title': 'MLB',
-        'kicker': 'Baseball Expansion',
-        'summary': 'MLB regular-season and postseason pages are being built as a prop-first slate centered on hitters, pitchers, and game environment context.',
-        'highlights': ['Hits / total bases props', 'Pitcher strikeout context', 'Ballpark + handedness splits', 'Daily prop boards']
+        'kicker': 'Live Baseball',
+        'summary': 'MLB is live as a prop-first daily slate centered on hitters, pitchers, game environment, reliability labels, and matchup-level reads.',
+        'highlights': ['Daily prop board', 'Slate intelligence', 'Pitcher + hitter context', 'Reliability labels']
     },
     'wnba': {
         'title': 'WNBA',
-        'kicker': 'Women’s Hoops Expansion',
-        'summary': 'WNBA has started moving into the same ecosystem as NBA, with live schedule, lines, props, and matchup workflow support being built next.',
-        'highlights': ['Player props', 'Game lines + totals', 'Trend profiles', 'Parlay planner']
+        'kicker': 'Live Women’s Hoops',
+        'summary': 'WNBA is live with schedule, lines, props, trend reads, floor plays, and matchup workflow support beside the NBA and MLB boards.',
+        'highlights': ['Player props', 'Game lines + totals', 'Trend profiles', 'Floor plays']
     },
     'ncaamb': {
         'title': 'Men’s College Hoops',

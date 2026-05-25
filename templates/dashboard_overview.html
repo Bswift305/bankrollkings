@@ -6,10 +6,12 @@
     <div>
         <div class="page-kicker">Platform Dashboard</div>
         <h1>Sports <span class="accent">Overview</span></h1>
-        <div class="page-subtitle">A clean home base for every sport on the platform. Jump into the live NBA command center now, and see how the rest of the betting-intelligence system is expanding around it.</div>
+        <div class="page-subtitle">A clean home base for every sport on the platform. NBA, WNBA, and MLB are live daily boards now; football and college hoops stay visible as season-prep workspaces.</div>
     </div>
     <div class="hero-actions">
         <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA</a>
+        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open WNBA</a>
+        <a href="/sports/mlb?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open MLB</a>
         {% if show_ops_strip %}
         <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
         {% endif %}
@@ -44,6 +46,63 @@
         </div>
     </div>
 </div>
+
+{% if sport_snapshots %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">All Sports Today</div>
+            <div class="cell-meta" style="margin-top:4px;">Live matchups, board depth, and strongest available O/U-style prop read by sport.</div>
+        </div>
+        <span class="badge badge-accent">{{ sport_snapshots|length }} sports</span>
+    </div>
+    <div class="p-16">
+        <div class="grid-3" style="gap: 14px;">
+            {% for sport in sport_snapshots %}
+            <a href="{{ sport.href }}" class="series-feature-card" style="position: relative;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                    <div class="feature-kicker" style="margin-bottom:0;">{{ sport.sport }}</div>
+                    <span class="status-pill {% if sport.is_live %}today{% else %}upcoming{% endif %}">{{ sport.status }}</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; margin-bottom:10px;">
+                    <div class="parlay-surface-soft" style="padding:9px;">
+                        <div class="page-kicker" style="margin-bottom:5px;">Matchups</div>
+                        <div style="font-size:22px; font-weight:800; color:var(--accent);">{{ sport.today_games }}</div>
+                    </div>
+                    <div class="parlay-surface-soft" style="padding:9px;">
+                        <div class="page-kicker" style="margin-bottom:5px;">Props</div>
+                        <div style="font-size:22px; font-weight:800; color:var(--text-bright);">{{ sport.props_rows }}</div>
+                    </div>
+                </div>
+                {% if sport.best_prop %}
+                <div style="font-size:15px; font-weight:800; color:var(--text-bright); margin-bottom:4px;">
+                    {{ sport.best_prop.player }} {{ sport.best_prop.stat }} {{ sport.best_prop.direction }}
+                </div>
+                <div class="cell-meta" style="line-height:1.45; margin-bottom:8px;">
+                    Line {{ sport.best_prop.line }}{% if sport.best_prop.price %} at {{ sport.best_prop.price }}{% endif %}
+                    {% if sport.best_prop.book %} · {{ sport.best_prop.book }}{% endif %}
+                    <br>{{ sport.best_prop.matchup }}
+                </div>
+                <div class="micro-cluster">
+                    <span class="micro-chip accent">{{ sport.best_prop.implied }}% implied</span>
+                    <span class="micro-chip copper">Best O/U read</span>
+                </div>
+                {% else %}
+                <div style="font-size:15px; font-weight:800; color:var(--text-bright); margin-bottom:4px;">
+                    {% if sport.today_games %}No O/U prop read yet{% else %}No slate today{% endif %}
+                </div>
+                <div class="cell-meta" style="line-height:1.45; margin-bottom:8px;">{{ sport.note }}</div>
+                <div class="micro-cluster">
+                    <span class="micro-chip soft">{{ sport.status }}</span>
+                    {% if sport.today_games %}<span class="micro-chip blue">Check board</span>{% else %}<span class="micro-chip copper">Season layer</span>{% endif %}
+                </div>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card mb-24 panel-glow">
     <div class="control-panel" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); align-items:stretch;">
