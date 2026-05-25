@@ -21428,6 +21428,7 @@ def frontpage():
             top_plays_count=len(top_plays),
             best_by_series_count=len(best_by_series),
         )
+        sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
         return render_template('frontpage.html',
             num_games_today=len(upcoming.get('today', [])),
             num_games_tomorrow=len(upcoming.get('tomorrow', [])),
@@ -21443,7 +21444,8 @@ def frontpage():
             postseason_matchups=payload.get('postseason_matchups') or [],
             best_by_series=best_by_series,
             role_changes=payload.get('role_changes') or [],
-            sports_launch_cards=sports_launch_cards)
+            sports_launch_cards=sports_launch_cards,
+            sport_snapshots=sport_snapshots)
 
     gamelogs, schedule = load_gamelogs(), load_schedule()
     player_snapshot = load_player_snapshot()
@@ -21517,6 +21519,7 @@ def frontpage():
         top_plays_count=len(top_plays),
         best_by_series_count=len(best_by_series)
     )
+    sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
     
     return render_template('frontpage.html', 
         num_games_today=len(upcoming['today']),
@@ -21533,7 +21536,8 @@ def frontpage():
         postseason_matchups=postseason_matchups,
         best_by_series=best_by_series,
         role_changes=role_changes,
-        sports_launch_cards=sports_launch_cards)
+        sports_launch_cards=sports_launch_cards,
+        sport_snapshots=sport_snapshots)
 
 
 def build_nba_command_center_context(postseason_only):

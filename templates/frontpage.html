@@ -29,6 +29,47 @@
     </div>
 </section>
 
+<section class="card mb-16 panel-glow live-sports-card">
+    <div class="card-header panel-header-gloss compact-public-header">
+        <div>
+            <div class="card-title">Live Sports</div>
+            <div class="cell-meta">NBA, MLB, and WNBA are active daily boards.</div>
+        </div>
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Dashboard</a>
+    </div>
+    <div class="p-12">
+        <div class="live-sport-strip">
+            {% for sport in sport_snapshots %}
+            {% if sport.is_live %}
+            <a href="{{ sport.href }}" class="live-sport-tile {{ sport.tone }}">
+                <div class="live-sport-top">
+                    <span>{{ sport.sport }}</span>
+                    <span class="status-pill today">Live</span>
+                </div>
+                <div class="live-sport-statline">
+                    <strong>{{ sport.today_games }}</strong> games · <strong>{{ sport.props_rows }}</strong> props
+                </div>
+                {% if sport.best_prop %}
+                <div class="live-sport-prop">
+                    <strong>{{ sport.best_prop.player }}</strong>
+                    <span>{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }} · {{ sport.best_prop.implied }}%</span>
+                </div>
+                {% elif sport.matchups and sport.matchups[0].best_prop %}
+                <div class="live-sport-prop">
+                    <strong>{{ sport.matchups[0].best_prop.player }}</strong>
+                    <span>{{ sport.matchups[0].best_prop.stat }} {{ sport.matchups[0].best_prop.direction }} {{ sport.matchups[0].best_prop.line }}</span>
+                </div>
+                {% else %}
+                <div class="live-sport-prop"><span>Open board for current matchups and props.</span></div>
+                {% endif %}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+
 <section class="public-grid public-grid-3 mb-24">
     <a href="/sports/mlb?date=today" class="public-feature-card">
         <div class="feature-kicker">Live Now</div>
@@ -81,69 +122,74 @@
     </div>
 </section>
 
-<section class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Sports Coverage</div>
+<section class="card mb-16 panel-glow compact-coverage-card">
+    <div class="card-header panel-header-gloss compact-public-header">
+        <div class="card-title">Coverage Roadmap</div>
         <span class="badge badge-accent">{{ sports_launch_cards|length }} Sports</span>
     </div>
-    <div class="p-16">
-        <div class="public-grid public-grid-3">
+    <div class="p-12">
+        <div class="roadmap-strip">
             {% for sport in sports_launch_cards %}
-            <a href="{{ sport.href }}" class="public-sport-card">
-                <div class="sport-card-top">
-                    <div class="feature-kicker">{{ sport.kicker }}</div>
-                    {% if sport.coming_soon %}
-                    <span class="status-pill upcoming">Coming Soon</span>
-                    {% else %}
-                    <span class="status-pill today">Live</span>
-                    {% endif %}
-                </div>
-                <h3>{{ sport.title }}</h3>
-                <p>{{ sport.summary }}</p>
-                <div class="micro-cluster">
-                    {% for item in sport.highlights[:3] %}
-                    <span class="micro-chip {% if loop.index == 1 %}accent{% elif loop.index == 2 %}blue{% else %}copper{% endif %}">{{ item }}</span>
-                    {% endfor %}
-                </div>
+            {% if sport.coming_soon %}
+            <a href="{{ sport.href }}" class="roadmap-pill">
+                <span>{{ sport.title }}</span>
+                <small>Coming soon</small>
             </a>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
 </section>
-
-{% if top_plays %}
-<section class="card mb-24 panel-glow">
-    <div class="card-header">
-        <div class="card-title">Live Board Preview</div>
-        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Market Edge</a>
+<section class="card mb-16 panel-glow">
+    <div class="card-header compact-public-header">
+        <div>
+            <div class="card-title">Live Board Preview</div>
+            <div class="cell-meta">Best available board read from each live sport.</div>
+        </div>
+        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open All Boards</a>
     </div>
     <div class="table-shell">
-        <table class="data-table compact-board home-top-play-table">
+        <table class="data-table compact-board home-top-play-table multi-sport-preview-table">
             <thead>
                 <tr>
-                    <th>Player</th>
-                    <th>Prop</th>
-                    <th>Play</th>
-                    <th>Confidence</th>
+                    <th>Sport</th>
+                    <th>Slate</th>
+                    <th>Best Prop</th>
                     <th>Read</th>
+                    <th>Open</th>
                 </tr>
             </thead>
             <tbody>
-                {% for play in top_plays[:6] %}
+                {% for sport in sport_snapshots %}
+                {% if sport.is_live %}
                 <tr>
-                    <td><a href="/player/{{ play.player|urlencode }}">{{ play.player }}</a><div class="cell-meta">{{ team_mark(play.team, size='xs') }}</div></td>
-                    <td><span class="badge">{{ play.stat }}</span> <strong>{{ play.line }}</strong></td>
-                    <td><span class="play-pill-gloss {% if play.direction == 'OVER' %}over{% else %}under{% endif %}">{{ play.direction|title }}</span></td>
-                    <td><span class="hr-lock">{{ play.hit_rate }}%</span></td>
-                    <td><div class="cell-meta">{{ play.rank_explanation or play.market_summary or play.play_verdict_note or 'Market and trend context available inside the board.' }}</div></td>
+                    <td><span class="badge badge-accent">{{ sport.sport }}</span></td>
+                    <td>{{ sport.today_games }} games<div class="cell-meta">{{ sport.props_rows }} props loaded</div></td>
+                    <td>
+                        {% if sport.best_prop %}
+                        <strong>{{ sport.best_prop.player }}</strong>
+                        <div class="cell-meta">{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}{% if sport.best_prop.price %} · {{ sport.best_prop.price }}{% endif %}</div>
+                        {% else %}
+                        <strong>Open board</strong>
+                        <div class="cell-meta">Current prop context is available inside the sport page.</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if sport.best_prop %}
+                        <span class="hr-lock">{{ sport.best_prop.implied }}%</span>
+                        <div class="cell-meta">{{ sport.best_prop.matchup or sport.best_prop.book or sport.note }}</div>
+                        {% else %}
+                        <div class="cell-meta">{{ sport.note }}</div>
+                        {% endif %}
+                    </td>
+                    <td><a href="{{ sport.href }}" class="btn btn-secondary btn-sm">Open {{ sport.sport }}</a></td>
                 </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </section>
-{% endif %}
-
 <section class="public-cta">
     <h2>Ready to test the board?</h2>
     <p>Create an account, pick a plan, and start reviewing the live workflow.</p>
@@ -159,9 +205,9 @@
 
 <style>
 .bk-public-hero {
-    min-height: 500px;
-    margin-bottom: 18px;
-    padding: 40px 36px;
+    min-height: 360px;
+    margin-bottom: 12px;
+    padding: 28px 30px;
     border: 1px solid rgba(132,215,210,0.26);
     border-radius: 16px;
     position: relative;
@@ -188,7 +234,7 @@
     max-width: 720px;
 }
 .bk-public-logo {
-    width: min(100%, 380px);
+    width: min(100%, 320px);
     height: auto;
     margin: 0 0 16px;
     display: block;
@@ -205,15 +251,15 @@
 .bk-public-copy h1 {
     max-width: 680px;
     margin: 0 0 12px;
-    font-size: 42px;
-    line-height: 1.05;
+    font-size: 34px;
+    line-height: 1.08;
 }
 .bk-public-copy p {
     max-width: 700px;
-    margin: 0 0 18px;
+    margin: 0 0 14px;
     color: #b8c8d2;
-    font-size: 16px;
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 1.5;
 }
 .public-actions {
     display: flex;
@@ -225,11 +271,11 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 18px;
+    margin-top: 14px;
 }
 .public-grid {
     display: grid;
-    gap: 14px;
+    gap: 12px;
 }
 .public-grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
 .public-grid-4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
@@ -238,7 +284,7 @@
 .public-mini-panel {
     display: block;
     text-decoration: none;
-    padding: 16px;
+    padding: 12px;
     border-radius: 12px;
     border: 1px solid rgba(132,215,210,0.16);
     background:
@@ -272,6 +318,89 @@
     font-size: 13px;
     font-weight: 800;
 }
+.compact-public-header {
+    padding: 10px 14px;
+}
+.compact-public-header .cell-meta {
+    margin-top: 4px;
+}
+.live-sports-card,
+.compact-coverage-card {
+    margin-bottom: 12px !important;
+}
+.live-sport-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+.live-sport-tile {
+    display: block;
+    min-width: 0;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(132,215,210,0.18);
+    background: rgba(8, 20, 28, 0.90);
+    text-decoration: none;
+}
+.live-sport-tile.accent { border-color: rgba(132,215,210,0.34); }
+.live-sport-tile.blue { border-color: rgba(110,162,255,0.34); }
+.live-sport-tile.copper { border-color: rgba(184,115,51,0.34); }
+.live-sport-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    color: var(--text-bright);
+    font-size: 18px;
+    font-weight: 900;
+    margin-bottom: 8px;
+}
+.live-sport-statline {
+    color: #b8c8d2;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+.live-sport-statline strong {
+    color: var(--accent);
+}
+.live-sport-prop {
+    display: grid;
+    gap: 3px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+.live-sport-prop strong {
+    color: var(--text-bright);
+    font-size: 13px;
+}
+.roadmap-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.roadmap-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(132,215,210,0.16);
+    background: rgba(10,22,31,0.70);
+    color: var(--text-bright);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 800;
+}
+.roadmap-pill small {
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+.multi-sport-preview-table td {
+    vertical-align: middle;
+}
 .public-mini-panel strong {
     display: block;
     margin-bottom: 7px;
@@ -304,7 +433,7 @@
 @media (max-width: 900px) {
     .bk-public-hero {
         min-height: 0;
-        padding: 30px 18px;
+        padding: 24px 16px;
         text-align: center;
         background:
             linear-gradient(180deg, rgba(3,8,12,0.80) 0%, rgba(3,8,12,0.98) 100%),
@@ -322,7 +451,10 @@
         justify-content: center;
     }
     .bk-public-copy h1 {
-        font-size: 31px;
+        font-size: 28px;
+    }
+    .live-sport-strip {
+        grid-template-columns: 1fr;
     }
 }
 </style>
