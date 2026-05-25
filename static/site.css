@@ -775,10 +775,10 @@
 
         .board-filter-form {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+            gap: 9px;
             align-items: end;
-            padding: 12px 14px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--border);
             background:
                 linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 100%),
@@ -791,7 +791,7 @@
 
         .board-filter-field label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
             color: var(--text-muted);
             font-size: 10px;
             font-weight: 800;
@@ -802,7 +802,7 @@
         .board-filter-field select,
         .board-filter-field input {
             width: 100%;
-            min-height: 38px;
+            min-height: 36px;
             border-radius: 10px;
             border: 1px solid rgba(132, 215, 210, 0.22);
             background:
@@ -837,7 +837,7 @@
             background:
                 linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 68%),
                 linear-gradient(135deg, rgba(40,70,96,0.96) 0%, rgba(33,58,78,0.98) 52%, rgba(22,38,50,0.98) 100%);
-            padding: 12px 14px;
+            padding: 10px 12px;
             text-align: left;
             font-size: 11px;
             text-transform: uppercase;
@@ -864,18 +864,18 @@
         }
         
         .data-table td {
-            padding: 12px 14px;
+            padding: 10px 12px;
             border-bottom: 1px solid rgba(125, 177, 203, 0.14);
             font-size: 13px;
             vertical-align: top;
         }
 
         .data-table.compact-board th {
-            padding: 10px 11px;
+            padding: 8px 10px;
         }
 
         .data-table.compact-board td {
-            padding: 9px 11px;
+            padding: 7px 10px;
         }
 
         .data-table.compact-board .baseline-reason {
@@ -1065,11 +1065,11 @@
         .page-hero {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
-            gap: 16px;
+            gap: 12px;
             align-items: center;
-            padding: 20px 22px;
-            margin-bottom: 16px;
-            border-radius: 22px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+            border-radius: 16px;
             background:
                 radial-gradient(circle at 18% 0%, rgba(110,162,255,0.22) 0%, transparent 34%),
                 radial-gradient(circle at 78% 8%, rgba(132,215,210,0.16) 0%, transparent 28%),
@@ -1079,32 +1079,32 @@
         }
 
         .page-hero h1 {
-            margin-bottom: 8px;
-            font-size: 42px;
-            line-height: 1.02;
+            margin-bottom: 5px;
+            font-size: 30px;
+            line-height: 1.08;
         }
 
         .page-kicker {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 10px;
-            padding: 6px 12px;
+            margin-bottom: 6px;
+            padding: 4px 9px;
             border-radius: 999px;
             background: rgba(255,255,255,0.04);
             border: 1px solid rgba(132,215,210,0.18);
             color: var(--accent-copper);
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             letter-spacing: 1.6px;
             text-transform: uppercase;
         }
 
         .page-subtitle {
-            max-width: 760px;
+            max-width: 900px;
             color: #afbfca;
-            font-size: 15px;
-            line-height: 1.55;
+            font-size: 13px;
+            line-height: 1.42;
         }
 
         .hero-actions {
@@ -2006,7 +2006,7 @@
         @media (max-width: 980px) {
             .page-hero {
                 grid-template-columns: 1fr;
-                padding: 20px;
+                padding: 14px;
             }
 
             .hero-actions {

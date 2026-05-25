@@ -269,36 +269,46 @@
 
 <!-- Filters -->
 <div class="card mb-24">
-    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
-        <!-- Date Filter -->
-        <div style="display: flex; gap: 4px; padding-right: 16px; border-right: 1px solid var(--border);">
-            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">WHEN:</span>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if date_filter == 'tomorrow' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">Tomorrow</a>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+    <form id="nba-props-filter-form" class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
+        <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+        <input type="hidden" name="sample" value="{{ sample_mode }}">
+        {% if model_debug %}<input type="hidden" name="model_debug" value="1">{% endif %}
+        {% if team_query %}<input type="hidden" name="team" value="{{ team_query }}">{% endif %}
+        {% if player_query %}<input type="hidden" name="player" value="{{ player_query }}">{% endif %}
+        {% if stat_query %}<input type="hidden" name="stat" value="{{ stat_query }}">{% endif %}
+        <div class="board-filter-field">
+            <label for="nba-date-filter">Date</label>
+            <select id="nba-date-filter" name="date">
+                <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+                <option value="tomorrow" {% if date_filter == 'tomorrow' %}selected{% endif %}>Tomorrow</option>
+                <option value="all" {% if date_filter == 'all' or not date_filter %}selected{% endif %}>All Games</option>
+            </select>
         </div>
-        
-        <!-- Direction Filter -->
-        <div style="display: flex; gap: 4px; padding-right: 16px; border-right: 1px solid var(--border);">
-            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">PLAY:</span>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'over' %}background: var(--accent); color: #000;{% endif %}">📈 Overs</a>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if direction_filter == 'under' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Unders</a>
+        <div class="board-filter-field">
+            <label for="nba-direction-filter">Play</label>
+            <select id="nba-direction-filter" name="direction">
+                <option value="all" {% if direction_filter == 'all' or not direction_filter %}selected{% endif %}>All Plays</option>
+                <option value="over" {% if direction_filter == 'over' %}selected{% endif %}>Overs</option>
+                <option value="under" {% if direction_filter == 'under' %}selected{% endif %}>Unders</option>
+            </select>
         </div>
-        
-        <!-- Type Filter -->
-        <div style="display: flex; gap: 4px;">
-            <span style="color: var(--text-muted); font-size: 12px; margin-right: 8px; align-self: center;">TYPE:</span>
-            <a href="/props?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-            <a href="/props/locks?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'locks' %}background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f; border-color: rgba(184,115,51,0.55);{% endif %}">🔒 Locks</a>
-            <a href="/props/floor?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ query_suffix }}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'floor' %}background: #FFB800; color: #000; border-color: #FFB800;{% endif %}">📉 Floor Plays</a>
-            <a href="/props/overs?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'overs' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'overs' %}background: var(--accent); color: #000;{% endif %}">📈 Best Overs</a>
-            <a href="/props/unders?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'unders' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm" style="{% if filter_type == 'unders' %}background: #FF6B6B; color: #fff; border-color: #FF6B6B;{% endif %}">📉 Best Unders</a>
-            <a href="/props/situational?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if filter_type == 'situational' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">⚡ Situational</a>
+        <div class="board-filter-field">
+            <label for="nba-board-filter">Board</label>
+            <select id="nba-board-filter" name="board_type">
+                <option value="" {% if not filter_type %}selected{% endif %}>All Props</option>
+                <option value="locks" {% if filter_type == 'locks' %}selected{% endif %}>Locks</option>
+                <option value="floor" {% if filter_type == 'floor' %}selected{% endif %}>Floor Plays</option>
+                <option value="overs" {% if filter_type == 'overs' %}selected{% endif %}>Best Overs</option>
+                <option value="unders" {% if filter_type == 'unders' %}selected{% endif %}>Best Unders</option>
+                <option value="situational" {% if filter_type == 'situational' %}selected{% endif %}>Situational</option>
+            </select>
         </div>
-    </div>
+        <div class="board-filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="/props?date=today&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}{% if model_debug %}&model_debug=1{% endif %}" class="btn btn-secondary btn-sm">Reset</a>
+        </div>
+    </form>
 </div>
-
 <div class="card">
     <div class="card-header">
         <div class="card-title">
@@ -312,15 +322,37 @@
         </div>
         <span class="badge badge-accent">{{ props|length }} Props</span>
     </div>
-    <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-        <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">SORT:</span>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('player', 'asc')) }}" class="btn {% if sort_by == 'player' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Player A-Z</a>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('team', 'asc')) }}" class="btn {% if sort_by == 'team' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Team A-Z</a>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('stat', 'asc')) }}" class="btn {% if sort_by == 'stat' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Stat A-Z</a>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('confidence', 'desc')) }}" class="btn {% if sort_by == 'confidence' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Confidence</a>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('line', 'asc')) }}" class="btn {% if sort_by == 'line' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Lowest Line</a>
-        <a href="{{ build_sort_link('/props' ~ ('/' ~ filter_type if filter_type else ''), base_params, ('avg', 'desc')) }}" class="btn {% if sort_by == 'avg' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Avg</a>
-    </div>
+    <form class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
+        <input type="hidden" name="date" value="{{ date_filter }}">
+        <input type="hidden" name="direction" value="{{ direction_filter }}">
+        <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
+        <input type="hidden" name="sample" value="{{ sample_mode }}">
+        {% if model_debug %}<input type="hidden" name="model_debug" value="1">{% endif %}
+        {% if team_query %}<input type="hidden" name="team" value="{{ team_query }}">{% endif %}
+        {% if player_query %}<input type="hidden" name="player" value="{{ player_query }}">{% endif %}
+        {% if stat_query %}<input type="hidden" name="stat" value="{{ stat_query }}">{% endif %}
+        <div class="board-filter-field">
+            <label for="nba-sort-filter">Sort</label>
+            <select id="nba-sort-filter" name="sort_by">
+                <option value="confidence" {% if sort_by == 'confidence' %}selected{% endif %}>Confidence</option>
+                <option value="player" {% if sort_by == 'player' %}selected{% endif %}>Player</option>
+                <option value="team" {% if sort_by == 'team' %}selected{% endif %}>Team</option>
+                <option value="stat" {% if sort_by == 'stat' %}selected{% endif %}>Stat</option>
+                <option value="line" {% if sort_by == 'line' %}selected{% endif %}>Line</option>
+                <option value="avg" {% if sort_by == 'avg' %}selected{% endif %}>Average</option>
+            </select>
+        </div>
+        <div class="board-filter-field">
+            <label for="nba-sort-dir">Order</label>
+            <select id="nba-sort-dir" name="sort_dir">
+                <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>High to Low</option>
+                <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>Low to High</option>
+            </select>
+        </div>
+        <div class="board-filter-actions">
+            <button type="submit" class="btn btn-secondary btn-sm">Sort</button>
+        </div>
+    </form>
     {% if team_query or player_query or stat_query %}
     <div class="p-16" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
         <span style="font-size: 12px; color: var(--text-muted); letter-spacing: 1px;">ACTIVE FILTERS:</span>
@@ -646,4 +678,17 @@
     {% endif %}
 </div>
 </div>
+<script>
+document.getElementById('nba-props-filter-form')?.addEventListener('submit', function(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const params = new URLSearchParams(new FormData(form));
+    const boardType = params.get('board_type') || '';
+    params.delete('board_type');
+    const path = boardType ? `/props/${encodeURIComponent(boardType)}` : '/props';
+    const query = params.toString();
+    window.location.href = query ? `${path}?${query}` : path;
+});
+</script>
+
 {% endblock %}

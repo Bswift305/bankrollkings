@@ -75,33 +75,6 @@
     </div>
 </div>
 
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Model Focus</div>
-        <span class="badge badge-accent">{{ sport_profile.label }}</span>
-    </div>
-    <div class="p-16">
-        <div class="grid-2" style="gap: 16px;">
-            <div class="parlay-surface-soft" style="padding: 12px;">
-                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    {% for item in sport_profile.primary_markets %}
-                    <span class="badge">{{ item }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="parlay-surface-soft" style="padding: 12px;">
-                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    {% for item in sport_profile.core_drivers %}
-                    <span class="badge">{{ item }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="grid-4 mb-24" style="gap: 16px;">
     <div class="parlay-surface-soft" style="padding: 12px;">
         <div class="page-kicker" style="margin-bottom: 6px;">Today</div>
