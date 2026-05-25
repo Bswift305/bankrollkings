@@ -313,7 +313,7 @@
             </thead>
             <tbody>
                 {% for game in mlb_slate_intelligence %}
-                <tr>
+                <tr id="matchup-{{ game.slug }}">
                     <td>
                         <div style="font-weight:700; color:var(--text-bright);">{{ game.matchup }}</div>
                         <div class="cell-meta">{{ game.date or 'Date TBD' }}{% if game.time %} · {{ game.time }}{% endif %}</div>

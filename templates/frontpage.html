@@ -41,28 +41,24 @@
         <div class="live-sport-strip">
             {% for sport in sport_snapshots %}
             {% if sport.is_live %}
-            <a href="{{ sport.href }}" class="live-sport-tile {{ sport.tone }}">
+            <div class="live-sport-tile {{ sport.tone }}">
                 <div class="live-sport-top">
                     <span>{{ sport.sport }}</span>
-                    <span class="status-pill today">Live</span>
+                    <a href="{{ sport.href }}" class="status-pill today">Live</a>
                 </div>
                 <div class="live-sport-statline">
                     <strong>{{ sport.today_games }}</strong> games &middot; <strong>{{ sport.props_rows }}</strong> props
                 </div>
-                {% if sport.best_prop %}
-                <div class="live-sport-prop">
-                    <strong>{{ sport.best_prop.player }}</strong>
-                    <span>{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }} &middot; {{ sport.best_prop.implied }}%</span>
-                </div>
-                {% elif sport.matchups and sport.matchups[0].best_prop %}
-                <div class="live-sport-prop">
-                    <strong>{{ sport.matchups[0].best_prop.player }}</strong>
-                    <span>{{ sport.matchups[0].best_prop.stat }} {{ sport.matchups[0].best_prop.direction }} {{ sport.matchups[0].best_prop.line }}</span>
+                {% if sport.matchups %}
+                <div class="live-sport-matchups">
+                    {% for matchup in sport.matchups[:3] %}
+                    <a href="{{ matchup.href }}" class="live-sport-matchup-link">{{ matchup.matchup }}{% if matchup.time and matchup.time != 'TBD' %} <em>{{ matchup.time }}</em>{% endif %}</a>
+                    {% endfor %}
                 </div>
                 {% else %}
                 <div class="live-sport-prop"><span>Open board for current matchups and props.</span></div>
                 {% endif %}
-            </a>
+            </div>
             {% endif %}
             {% endfor %}
         </div>
@@ -362,6 +358,28 @@
 .live-sport-prop strong {
     color: var(--text-bright);
     font-size: 13px;
+}
+.live-sport-matchups {
+    display: grid;
+    gap: 5px;
+}
+.live-sport-matchup-link {
+    display: block;
+    color: var(--text-bright);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-decoration: none;
+    padding: 4px 0;
+}
+.live-sport-matchup-link:hover {
+    color: var(--accent);
+}
+.live-sport-matchup-link em {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 700;
 }
 .multi-sport-preview-table td {
     vertical-align: middle;

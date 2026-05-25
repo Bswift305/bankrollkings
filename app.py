@@ -2873,8 +2873,10 @@ def build_mlb_slate_intelligence(odds_df, prop_rows):
     has_team_columns = ({'AwayFull', 'HomeFull'}.issubset(odds.columns) or {'Away', 'Home'}.issubset(odds.columns))
     if odds is None or odds.empty or not has_team_columns:
         for matchup, meta in sorted(prop_lookup.items(), key=lambda kv: (-kv[1]['anchors'], -kv[1]['props'], kv[0]))[:12]:
+            away, home = split_game_label(matchup)
             rows.append({
                 'matchup': matchup,
+                'slug': build_matchup_slug(away, home),
                 'date': '',
                 'time': '',
                 'books': '-',
@@ -2934,6 +2936,7 @@ def build_mlb_slate_intelligence(odds_df, prop_rows):
             note = f"{note} {meta['avoid']} current props sit in historical avoid buckets."
         rows.append({
             'matchup': matchup,
+            'slug': build_matchup_slug(away, home),
             'date': str(key_map.get('Date') or '').strip(),
             'time': str(key_map.get('Time') or '').strip(),
             'books': ', '.join(books[:4]) if books else '-',
@@ -15335,6 +15338,13 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             away = str(game.get('AwayFull') or game.get('Away') or '').strip()
             home = str(game.get('HomeFull') or game.get('Home') or '').strip()
             matchup = f"{away} @ {home}".strip(' @')
+            matchup_slug = build_matchup_slug(away, home)
+            if config['key'] == 'wnba':
+                matchup_href = f"/sports/wnba/matchup/{matchup_slug}?postseason={1 if postseason_only else 0}"
+            elif config['key'] == 'mlb':
+                matchup_href = f"/sports/mlb?date=today#matchup-{matchup_slug}"
+            else:
+                matchup_href = f"/matchup/{quote(away)}-{quote(home)}?postseason={1 if postseason_only else 0}"
             if matchup:
                 game_names.append(matchup)
             best_prop = _dashboard_best_prop_for_game(props, matchup)
@@ -15345,6 +15355,8 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
                     'matchup': matchup or 'Matchup TBD',
                     'time': str(game.get('Time') or 'TBD'),
                     'best_prop': best_prop,
+                    'href': matchup_href,
+                    'slug': matchup_slug,
                 })
         directional_best = _dashboard_best_props_for_games(props, game_names)
         best_over = directional_best.get('OVER')
