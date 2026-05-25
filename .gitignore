@@ -13,6 +13,7 @@ __pycache__/
 
 # Runtime logs and server output
 logs/
+.runtime/
 *.log
 server*.out.txt
 server*.err.txt
