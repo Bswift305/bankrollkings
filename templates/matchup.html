@@ -25,35 +25,10 @@
 
 <div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
     <div class="card-header panel-header-gloss">
-        <div class="card-title">Platform Lens</div>
+        <div class="card-title">Game Environment</div>
         <a href="/matchup-lens?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to Matchup Lens</a>
     </div>
-    <div class="grid-4 p-16" style="gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">What the number implies</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The spread, total, and loaded market context should frame this game before any player prop gets attacked.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How the game should behave</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This page exists to translate team-vs-team environment into a cleaner read on pace, pressure, role fit, and script.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Context over blind history</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Head-to-head and recent form matter most when they still fit the current market and matchup environment.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Where the game can be attacked</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use this page to decide whether the matchup supports the angle, weakens it, or tells you to leave it alone.</div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-24">
-    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch;">
+    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); align-items: stretch;">
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Game Market</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if current_market %}{{ home }} {{ '%+g'|format(current_market.spread|float) if current_market.spread is not none else 'No spread' }}{% else %}No line loaded{% endif %}</div>
@@ -79,14 +54,14 @@
             <div style="font-size: 11px; color: var(--text-muted);">{{ h2h_avg_total }} average total points</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Prop Count</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ matchup_props|length }}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">top plays loaded for this matchup</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Playable Props</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ matchup_decision.playable_count if matchup_decision else matchup_props|length }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">props that survive the current matchup read</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Feast Angles</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ feast_players|length if feast_players else 0 }}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">players showing a real matchup boost</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Avoid Count</div>
+            <div style="font-size: 16px; font-weight: 700; color: {% if matchup_decision and matchup_decision.avoid_count %}#FFB3B3{% else %}var(--accent){% endif %};">{{ matchup_decision.avoid_count if matchup_decision else 0 }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">props downgraded or too thin to force</div>
         </div>
     </div>
 </div>
@@ -209,6 +184,124 @@
 </div>
 {% endif %}
 
+{% if matchup_decision %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.24);">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Props Decision Board</div>
+        <span class="badge badge-accent">{{ matchup_props|length }} Props</span>
+    </div>
+    <div class="p-16" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+        {% for card in [matchup_decision.best_over, matchup_decision.best_under, matchup_decision.best_floor, matchup_decision.avoid] %}
+        {% if card %}
+        <div class="parlay-surface-soft" style="padding: 12px; border-color: {% if card.label == 'Avoid' %}rgba(255,107,107,0.26){% elif card.direction == 'UNDER' %}rgba(110,162,255,0.24){% else %}rgba(132,215,210,0.24){% endif %};">
+            <div class="page-kicker" style="margin-bottom: 6px; color: {% if card.label == 'Avoid' %}#FFB3B3{% elif card.direction == 'UNDER' %}var(--accent-blue){% else %}var(--accent){% endif %};">{{ card.label }}</div>
+            <div style="font-size: 15px; font-weight: 800; color: var(--text-bright); line-height: 1.25;">{{ card.player }}</div>
+            <div class="micro-cluster" style="margin-top: 8px;">
+                <span class="micro-chip soft">{{ card.stat }} {{ card.line }}</span>
+                <span class="micro-chip {% if card.direction == 'UNDER' %}blue{% else %}accent{% endif %}">{{ card.direction }}</span>
+                <span class="micro-chip copper">{{ card.confidence }}%</span>
+            </div>
+            {% if card.market %}<div class="cell-meta" style="margin-top: 8px;">{{ card.market }}</div>{% endif %}
+            {% if card.note %}<div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 6px;">{{ card.note }}</div>{% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Prop Fits</div>
+        <span class="badge badge-accent">{{ matchup_props|length }} Props</span>
+    </div>
+    {% if matchup_props %}
+    <table class="data-table">
+        <thead><tr><th>Player</th><th>Team</th><th>Stat</th><th>Line</th><th>Avg</th><th>Play</th><th>O/U %</th><th>Market</th><th>Pressure</th><th>Situations</th><th>Verdict</th></tr></thead>
+        <tbody>
+            {% for prop in matchup_props %}
+            <tr>
+                <td><a href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>{% if prop.has_injury_flag %}<div style="margin-top: 6px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}</td>
+                <td>{{ team_mark(prop.team, size='xs') }}</td>
+                <td><span class="badge">{{ prop.stat }}</span></td>
+                <td><strong>{{ prop.line }}</strong></td>
+                <td>{{ prop.avg }}</td>
+                  <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
+                  <td><span style="color: var(--accent);">O:{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #ffb8b8;">U:{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span></td>
+                  <td style="font-size: 11px; line-height: 1.45;">
+                      {% if prop.market_summary %}
+                      <div style="color: var(--text-bright);">{{ prop.market_summary }}</div>
+                      {% endif %}
+                      {% if prop.book_comparison_note %}
+                      <div style="color: var(--text-muted); margin-top: 4px;">{{ prop.book_comparison_note }}</div>
+                      {% elif prop.best_book %}
+                      <div style="color: var(--text-muted); margin-top: 4px;">Best book: {{ prop.best_book }}</div>
+                      {% endif %}
+                  </td>
+                  <td>
+                    {% set pressure = namespace(tags=[]) %}
+                    {% for sit in prop.situations %}
+                        {% if sit in ['STAR ROLE', 'CORE ROLE', 'LOW ROLE', 'ROTATION', 'ROLE HOLD', 'ROLE SLIP', 'MIN STABLE', 'VOLATILE', 'TRAILING', 'AHEAD', 'ELIMINATION', 'CLOSEOUT', 'BOUNCE BACK', 'KEEP EDGE', 'WIN OR GO HOME'] or sit[:1] == 'G' %}
+                            {% set pressure.tags = pressure.tags + [sit] %}
+                        {% endif %}
+                    {% endfor %}
+                    {% for sit in pressure.tags[:2] %}
+                    <span style="background: {% if sit in ['ELIMINATION', 'WIN OR GO HOME'] %}rgba(132,157,255,0.28){% elif sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}rgba(110,168,166,0.28){% else %}var(--bg-elevated){% endif %}; color: var(--text-bright); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
+                    {% endfor %}
+                    {% if not pressure.tags %}<span style="color: var(--text-muted);">-</span>{% endif %}
+                </td>
+                <td>
+                    {% for sit in prop.situations %}
+                    <span style="background: {% if sit == 'B2B' %}rgba(184,115,51,0.22){% elif sit == 'COLD' %}rgba(110,162,255,0.24){% elif sit == 'HOT' %}rgba(110,168,166,0.24){% else %}rgba(132,157,255,0.22){% endif %}; color: var(--text-bright); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
+                    {% endfor %}
+                        {% if prop.public_trend_note %}
+                        <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ prop.public_trend_note }}</div>
+                        {% endif %}
+                        {% if prop.injury_context_note %}
+                        <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ prop.injury_context_note }}</div>
+                        {% endif %}
+                        {% if prop.baseline_reason %}
+                        <div class="baseline-reason baseline-reason-{{ prop.baseline_reason_tone or 'neutral' }}">{{ prop.baseline_reason }}</div>
+                        {% if prop.core_volume_read %}
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ prop.core_volume_read }}</div>
+                        {% endif %}
+                        {% if prop.core_model_read %}
+                        <details class="model-read">
+                            <summary>Model Read</summary>
+                            <div class="model-read-body">{{ prop.core_model_read }}</div>
+                            {% if model_debug and prop.core_debug_lines %}
+                            <div class="model-debug-panel">
+                                {% for item in prop.core_debug_lines %}
+                                <div class="model-debug-row">
+                                    <span class="model-debug-label">{{ item.label }}</span>
+                                    <span class="model-debug-value">{{ item.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </details>
+                        {% endif %}
+                        {% endif %}
+                </td>
+                <td>
+                    {% if prop.is_lock %}
+                    <span class="grade-badge" style="background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f;">{{ prop.confidence|round|int }}% Lock</span>
+                    {% elif prop.confidence >= 70 %}
+                    <span class="grade-badge">{{ prop.confidence|round|int }}% Play</span>
+                    {% else %}
+                    <span style="color: var(--text-muted);">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">No props available for this matchup.</div>
+    {% endif %}
+</div>
+
+
 <div class="card mb-24" style="border-color: rgba(110,168,166,0.26);">
     <div class="card-header">
         <div class="card-title">Head-to-Head This Season</div>
@@ -330,97 +423,6 @@
     </div>
 </div>
 {% endif %}
-
-<div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">Top Props This Matchup</div>
-        <span class="badge badge-accent">{{ matchup_props|length }} Props</span>
-    </div>
-    {% if matchup_props %}
-    <table class="data-table">
-        <thead><tr><th>Player</th><th>Team</th><th>Stat</th><th>Line</th><th>Avg</th><th>Play</th><th>O/U %</th><th>Market</th><th>Pressure</th><th>Situations</th><th>Verdict</th></tr></thead>
-        <tbody>
-            {% for prop in matchup_props %}
-            <tr>
-                <td><a href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>{% if prop.has_injury_flag %}<div style="margin-top: 6px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}</td>
-                <td>{{ team_mark(prop.team, size='xs') }}</td>
-                <td><span class="badge">{{ prop.stat }}</span></td>
-                <td><strong>{{ prop.line }}</strong></td>
-                <td>{{ prop.avg }}</td>
-                  <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
-                  <td><span style="color: var(--accent);">O:{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #ffb8b8;">U:{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span></td>
-                  <td style="font-size: 11px; line-height: 1.45;">
-                      {% if prop.market_summary %}
-                      <div style="color: var(--text-bright);">{{ prop.market_summary }}</div>
-                      {% endif %}
-                      {% if prop.book_comparison_note %}
-                      <div style="color: var(--text-muted); margin-top: 4px;">{{ prop.book_comparison_note }}</div>
-                      {% elif prop.best_book %}
-                      <div style="color: var(--text-muted); margin-top: 4px;">Best book: {{ prop.best_book }}</div>
-                      {% endif %}
-                  </td>
-                  <td>
-                    {% set pressure = namespace(tags=[]) %}
-                    {% for sit in prop.situations %}
-                        {% if sit in ['STAR ROLE', 'CORE ROLE', 'LOW ROLE', 'ROTATION', 'ROLE HOLD', 'ROLE SLIP', 'MIN STABLE', 'VOLATILE', 'TRAILING', 'AHEAD', 'ELIMINATION', 'CLOSEOUT', 'BOUNCE BACK', 'KEEP EDGE', 'WIN OR GO HOME'] or sit[:1] == 'G' %}
-                            {% set pressure.tags = pressure.tags + [sit] %}
-                        {% endif %}
-                    {% endfor %}
-                    {% for sit in pressure.tags[:2] %}
-                    <span style="background: {% if sit in ['ELIMINATION', 'WIN OR GO HOME'] %}rgba(132,157,255,0.28){% elif sit in ['STAR ROLE', 'CORE ROLE', 'BOUNCE BACK', 'TRAILING'] %}rgba(110,168,166,0.28){% else %}var(--bg-elevated){% endif %}; color: var(--text-bright); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
-                    {% endfor %}
-                    {% if not pressure.tags %}<span style="color: var(--text-muted);">-</span>{% endif %}
-                </td>
-                <td>
-                    {% for sit in prop.situations %}
-                    <span style="background: {% if sit == 'B2B' %}rgba(184,115,51,0.22){% elif sit == 'COLD' %}rgba(110,162,255,0.24){% elif sit == 'HOT' %}rgba(110,168,166,0.24){% else %}rgba(132,157,255,0.22){% endif %}; color: var(--text-bright); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ sit }}</span>
-                    {% endfor %}
-                        {% if prop.public_trend_note %}
-                        <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45; margin-top: 4px;">{{ prop.public_trend_note }}</div>
-                        {% endif %}
-                        {% if prop.injury_context_note %}
-                        <div style="font-size: 11px; color: var(--accent-copper); line-height: 1.45; margin-top: 4px;">{{ prop.injury_context_note }}</div>
-                        {% endif %}
-                        {% if prop.baseline_reason %}
-                        <div class="baseline-reason baseline-reason-{{ prop.baseline_reason_tone or 'neutral' }}">{{ prop.baseline_reason }}</div>
-                        {% if prop.core_volume_read %}
-                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">{{ prop.core_volume_read }}</div>
-                        {% endif %}
-                        {% if prop.core_model_read %}
-                        <details class="model-read">
-                            <summary>Model Read</summary>
-                            <div class="model-read-body">{{ prop.core_model_read }}</div>
-                            {% if model_debug and prop.core_debug_lines %}
-                            <div class="model-debug-panel">
-                                {% for item in prop.core_debug_lines %}
-                                <div class="model-debug-row">
-                                    <span class="model-debug-label">{{ item.label }}</span>
-                                    <span class="model-debug-value">{{ item.value }}</span>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                        </details>
-                        {% endif %}
-                        {% endif %}
-                </td>
-                <td>
-                    {% if prop.is_lock %}
-                    <span class="grade-badge" style="background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f;">{{ prop.confidence|round|int }}% Lock</span>
-                    {% elif prop.confidence >= 70 %}
-                    <span class="grade-badge">{{ prop.confidence|round|int }}% Play</span>
-                    {% else %}
-                    <span style="color: var(--text-muted);">-</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="p-24" style="text-align: center; color: var(--text-muted);">No props available for this matchup.</div>
-    {% endif %}
-</div>
 
 <div class="grid-2 mb-24" style="gap: 24px;">
     <div class="card">

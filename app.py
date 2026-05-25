@@ -17622,6 +17622,62 @@ def build_matchup_editorial(away, home, series_label, series_score, matchup_prof
         'market_watch': market_watch,
     }
 
+
+def build_matchup_decision_cards(matchup_props):
+    def usable(prop):
+        return str(prop.get('play_verdict', 'PLAY') or 'PLAY').upper() == 'PLAY'
+
+    def score(prop):
+        return (
+            float(prop.get('confidence') or 0),
+            float(prop.get('book_count') or 0),
+            float(prop.get('matchup_games') or 0),
+        )
+
+    def card(prop, label):
+        if not prop:
+            return None
+        direction = str(prop.get('direction') or '').upper()
+        return {
+            'label': label,
+            'player': prop.get('player'),
+            'team': prop.get('team'),
+            'stat': prop.get('stat'),
+            'line': prop.get('line'),
+            'direction': direction,
+            'confidence': int(round(float(prop.get('confidence') or 0))),
+            'market': prop.get('market_summary') or prop.get('book_comparison_note') or '',
+            'note': prop.get('baseline_reason') or prop.get('public_trend_note') or prop.get('injury_context_note') or '',
+            'tone': 'danger' if label == 'Avoid' else 'blue' if direction == 'UNDER' else 'accent',
+        }
+
+    playable = [prop for prop in matchup_props if usable(prop)]
+    avoid_candidates = [
+        prop for prop in matchup_props
+        if not usable(prop)
+        or str(prop.get('play_verdict', '')).upper() in {'PASS', 'CONFLICTED'}
+        or float(prop.get('confidence') or 0) < 58
+    ]
+    best_over = max([prop for prop in playable if str(prop.get('direction')).upper() == 'OVER'], key=score, default=None)
+    best_under = max([prop for prop in playable if str(prop.get('direction')).upper() == 'UNDER'], key=score, default=None)
+    stabilizers = [
+        prop for prop in playable
+        if str(prop.get('direction')).upper() == 'UNDER'
+        or str(prop.get('stat')).upper() in {'REB', 'AST', 'STL', 'BLK'}
+    ]
+    best_floor = max(stabilizers, key=score, default=None)
+    avoid = max(avoid_candidates, key=score, default=None)
+
+    return {
+        'best_over': card(best_over, 'Best Over'),
+        'best_under': card(best_under, 'Best Under'),
+        'best_floor': card(best_floor, 'Best Stabilizer'),
+        'avoid': card(avoid, 'Avoid'),
+        'playable_count': len(playable),
+        'avoid_count': len(avoid_candidates),
+    }
+
+
 def get_upcoming_games(schedule, days=7, allowed_teams=None):
     if schedule.empty or 'Date' not in schedule.columns:
         return {'today': [], 'tomorrow': [], 'upcoming': [], 'all_teams': set()}
@@ -24448,6 +24504,7 @@ def matchup(matchup):
     matchup_editorial = build_matchup_editorial(
         away, home, series_label, series_score, matchup_profiles, current_market, matchup_props
     )
+    matchup_decision = build_matchup_decision_cards(matchup_props)
     
     series_context_teaching_note = build_series_context_teaching_note(series_score, series_label=series_label, series_type=series_type)
 
@@ -24457,7 +24514,7 @@ def matchup(matchup):
         series_label=series_label, series_type=series_type, series_id=series_id,
         series_score=series_score, postseason_only=postseason_only, matchup_profiles=matchup_profiles, current_market=current_market,
         current_market_summary=current_market_summary, current_market_environment=current_market_environment,
-        matchup_editorial=matchup_editorial, model_debug=model_debug,
+        matchup_editorial=matchup_editorial, matchup_decision=matchup_decision, model_debug=model_debug,
         sample_context=sample_context, refresh_meta=refresh_meta, series_context_teaching_note=series_context_teaching_note)
 
 def build_live_props_board(filter_type=None, postseason_only=False, date_filter=None, direction_filter='all',
