@@ -1,0 +1,41 @@
+# systemd unit for the Bankroll Kings web tier (gunicorn).
+# Install:
+#   sudo cp deploy/bankrollkings.service /etc/systemd/system/bankrollkings.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bankrollkings
+# Reload after a data refresh (re-runs prewarm, rolls workers, zero downtime):
+#   sudo systemctl reload bankrollkings
+# Logs:
+#   journalctl -u bankrollkings -f
+
+[Unit]
+Description=Bankroll Kings (gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/bankrollkings
+
+# Load production secrets/config (live Stripe URLs, SECRET_KEY, ENABLE_HSTS, API keys).
+EnvironmentFile=/opt/bankrollkings/.env
+
+# Bind to localhost only — Nginx is the public entrypoint on 80/443.
+Environment=BK_BIND=127.0.0.1:8000
+Environment=BK_PREWARM_ON_BOOT=1
+
+ExecStart=/opt/bankrollkings/venv/bin/gunicorn -c gunicorn.conf.py wsgi:application
+# Graceful reload (HUP) re-runs the master prewarm and rolls workers.
+ExecReload=/bin/kill -s HUP $MAINPID
+
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+
+# Light hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
