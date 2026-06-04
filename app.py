@@ -26032,7 +26032,9 @@ def _render_football_method_page(sport_key, method_key):
             if live_games:
                 method_view['live_games'] = live_games
                 method_view['source'] = 'live'
-                avg_total = round(float(np.nanmean([pd.to_numeric(game.get('total'), errors='coerce') for game in live_games])), 1) if live_games else 0
+                _live_totals = [pd.to_numeric(game.get('total'), errors='coerce') for game in live_games]
+                _valid_totals = [float(t) for t in _live_totals if pd.notna(t)]
+                avg_total = round(sum(_valid_totals) / len(_valid_totals), 1) if _valid_totals else 0
                 method_view['summary_cards'] = [
                     {'label': 'Matchups', 'value': len(live_games), 'note': 'live slate rows loaded'},
                     {'label': 'Book Source', 'value': len(sorted({str(game.get("book") or "").strip() for game in live_games if str(game.get("book") or "").strip()})), 'note': ', '.join(sorted({str(game.get("book") or "").strip() for game in live_games if str(game.get("book") or "").strip()})[:4]) or 'No books loaded'},
