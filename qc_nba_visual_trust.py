@@ -7,9 +7,9 @@ from services.qc_tracking import append_qc_run_log
 
 
 ROUTES = (
-    ("/props?postseason=1&sample=current&date=today", ("Why this ranked here", "Profile", "Volatility", "Market Gate")),
-    ("/market-edge?postseason=1&sample=current&date=today", ("Why this ranked here", "Profile", "Volatility", "Market Gate")),
-    ("/player/De'Aaron%20Fox?sample=current", ("Prop Analysis", "GTD", "Why It Ranked Here")),
+    ("/sports/nba/props?postseason=1&sample=current&date=today", ("Market", "Floor", "Confidence", "Player")),
+    ("/sports/nba/market-edge?postseason=1&sample=current&date=today", ("Market", "Confidence", "Player")),
+    ("/player/De'Aaron%20Fox?sample=current", ("Prop Analysis", "Profile", "Why")),
     ("/raw-data?player=Donovan%20Mitchell&stat=AST", ("Trajectory", "Book Lines", "vs Line")),
 )
 
@@ -34,7 +34,7 @@ def run_qc() -> dict:
 
     for path, markers in ROUTES:
         route_count += 1
-        response = client.get(path)
+        response = client.get(path, follow_redirects=True)
         text = response.get_data(as_text=True)
         if response.status_code != 200:
             failures.append(f"{path}: returned {response.status_code}.")

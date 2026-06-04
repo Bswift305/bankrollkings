@@ -13,20 +13,21 @@ Run: python floor_parlay_builder.py
 
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import os
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 DATE_STR = datetime.now().strftime("%Y-%m-%d")
 DATE_DISPLAY = datetime.now().strftime("%B %d, %Y")
+BASE_DIR = Path(__file__).resolve().parent
 
-# File paths - UPDATE THESE IF NEEDED
-INPUT_FILE = "Floor_Props_Dec31.xlsx"  # Your props file
-OUTPUT_FILE = f"Parlays_{datetime.now().strftime('%b%d')}.xlsx"
+# File paths
+INPUT_FILE = BASE_DIR / "data" / "NBA_Floor_Plays.xlsx"
+OUTPUT_FILE = BASE_DIR / f"Parlays_{datetime.now().strftime('%b%d')}.xlsx"
 
 # Parlay settings
 TOTAL_PARLAYS = 25
@@ -59,9 +60,9 @@ print("=" * 60)
 # ============================================================
 print(f"\n📂 Loading: {INPUT_FILE}")
 
-if not os.path.exists(INPUT_FILE):
+if not INPUT_FILE.exists():
     print(f"❌ File not found: {INPUT_FILE}")
-    print(f"   Make sure you're running from: C:\\Users\\Decatur\\NBA Floor Play")
+    print("   Update INPUT_FILE at the top of this script or place the workbook under data/NBA_Floor_Plays.xlsx.")
     exit(1)
 
 # Read the 80%+ plays (already filtered)

@@ -1,0 +1,96 @@
+
+================================================================================
+FLOOR PROPS WORKFLOW - STANDARD OPERATING PROCEDURE
+================================================================================
+
+REFERENCE FILES (Keep on your PC):
+1. NBA_2025_26_Rosters.csv     - Current team assignments (update after trades)
+2. NBA_Stats_Master_2025_26.xlsx - Game-by-game stats (update weekly)
+
+OUTPUT FILE:
+3. Floor_Props_[DATE].xlsx      - Generated daily with consistent layout
+
+================================================================================
+STEP-BY-STEP PROCESS
+================================================================================
+
+STEP 1: WEEKLY STATS UPDATE (Do every Sunday/Monday)
+------------------------------------------------------------------------
+- Export game logs from Basketball Reference or NBA.com
+- Paste new games into NBA_Stats_Master_2025_26.xlsx → Game_Logs sheet
+- Save file
+
+STEP 2: DAILY FLOOR PROPS REQUEST
+------------------------------------------------------------------------
+When you ask Claude for floor props, provide:
+
+"Generate floor props for [DATE]. Here are today's lines:
+[Paste prop lines from Covers/DraftKings/FanDuel]"
+
+Example format for lines:
+Player, Stat, Line
+Giannis Antetokounmpo, PTS, 29.5
+Giannis Antetokounmpo, REB, 10.5
+Stephen Curry, PTS, 26.5
+Stephen Curry, 3PM, 4.5
+...
+
+STEP 3: CLAUDE'S PROCESS (Automatic)
+------------------------------------------------------------------------
+1. Check Rosters file for current teams
+2. Pull player's games from Stats Master file
+3. Calculate:
+   - Season Average
+   - Last 5 Games Average
+   - Last 10 Games Average
+   - Floor = 77% of Season Average
+   - Edge = Floor vs Your Line
+   - Hit Rate = How often they beat the line in L5/L10
+4. Generate Floor_Props_[DATE].xlsx with:
+   - All props analyzed
+   - 80%+ plays highlighted
+   - Parlay builder sheet
+
+================================================================================
+FLOOR CALCULATION FORMULA
+================================================================================
+
+Floor = Season Average × 0.77
+
+Example:
+- Giannis PTS Avg: 31.5
+- Floor: 31.5 × 0.77 = 24.3
+- If Line is 29.5, Edge = Line - Floor = 29.5 - 24.3 = +5.2 ✓ (GOOD)
+
+================================================================================
+HIT RATE CALCULATION
+================================================================================
+
+Hit Rate = (Games where Actual >= Floor) / Total Games × 100
+
+Target: 80%+ hit rate props only for parlays
+
+================================================================================
+OUTPUT FILE STRUCTURE
+================================================================================
+
+Sheet 1: Floor_Plays
+- All analyzed props with full data
+
+Sheet 2: 80%+ Plays  
+- Only props with 80%+ hit rate AND positive edge
+
+Sheet 3: Parlay_Builder
+- Selected plays for building parlays
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. ALWAYS use YOUR provided lines - never estimated lines
+2. Check injury reports before finalizing
+3. Consider back-to-back games (reduce expectations)
+4. Check opponent defensive rankings
+5. Update Rosters file immediately after any trades
+
+================================================================================

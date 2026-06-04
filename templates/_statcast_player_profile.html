@@ -1,0 +1,31 @@
+{% if statcast_context and statcast_context.available %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Statcast Profile</div>
+            <div class="cell-meta" style="margin-top:4px;">{{ statcast_context.season }} Baseball Savant baseline from public Statcast aggregates.</div>
+        </div>
+        <span class="badge badge-accent">STATCAST</span>
+    </div>
+    {% for profile in statcast_context.profiles %}
+    <div class="p-16" style="{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+            <div>
+                <div class="page-kicker">{{ profile.title }}</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Player-quality layer for MLB props before park, weather, umpire, and market context.</div>
+            </div>
+            <span class="badge">{{ profile.role|upper }}</span>
+        </div>
+        <div class="grid-4" style="gap:12px;">
+            {% for metric in profile.metrics %}
+            <div class="stat-card">
+                <div class="page-kicker">{{ metric.label }}</div>
+                <div class="stat-value" style="font-size:22px;">{{ metric.value }}</div>
+                <div class="stat-note">{{ metric.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

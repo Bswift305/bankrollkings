@@ -1,0 +1,243 @@
+{% set active_page = 'player_archive' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ player }} Archive Profile - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Player Archive Profile</div>
+        <h1>{{ player }} <span class="accent">Review</span></h1>
+        <div class="page-subtitle">All archived prop results and player-level hit/miss buckets we have for this player across sports, stat types, and directions.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/candidate-review?profile_player={{ player|urlencode }}" class="btn btn-primary btn-sm">Back To Candidate Review</a>
+    </div>
+</div>
+
+{% if archive.profiles %}
+{% set top_profile = archive.profiles[0] %}
+<div class="card mb-24 panel-glow player-profile-primer">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">{{ player }} Archive Identity</div>
+            <div class="cell-meta" style="margin-top:4px;">Best available stat-direction profile from the resolved review archive.</div>
+        </div>
+        <span class="badge {% if top_profile.reliability == 'ANCHOR' %}badge-accent{% elif top_profile.reliability == 'AVOID' %}badge-danger{% endif %}">{{ top_profile.reliability }}</span>
+    </div>
+    <div class="grid-4 p-16" style="gap:12px;">
+        <div class="stat-card">
+            <div class="page-kicker">Best Bucket</div>
+            <div class="stat-value" style="font-size:22px;">{{ top_profile.stat }} {{ top_profile.direction }}</div>
+            <div class="stat-note">{{ top_profile.sport }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Bucket Record</div>
+            <div class="stat-value">{{ top_profile.hits }}-{{ top_profile.misses }}</div>
+            <div class="stat-note">hits-misses</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Bucket Hit Rate</div>
+            <div class="stat-value">{{ top_profile.hit_rate }}%</div>
+            <div class="stat-note">{{ top_profile.resolved }} resolved</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Model Read</div>
+            <div class="stat-value" style="font-size:22px;">{{ top_profile.model_accuracy }}</div>
+            <div class="stat-note">{{ top_profile.line_note }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% include "_ngs_player_profile.html" %}
+{% include "_statcast_player_profile.html" %}
+
+{% if archive.available %}
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Overall Hit Rate</div>
+        <div class="stat-value">{% if archive.summary.hit_rate is not none %}{{ archive.summary.hit_rate }}%{% else %}-{% endif %}</div>
+        <div class="stat-note">{{ archive.summary.hits }} hits / {{ archive.summary.misses }} misses</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Resolved</div>
+        <div class="stat-value">{{ archive.summary.resolved }}</div>
+        <div class="stat-note">{{ archive.summary.pending }} pending / {{ archive.summary.pushes }} pushes</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Avg Confidence</div>
+        <div class="stat-value">{% if archive.summary.avg_confidence is not none %}{{ archive.summary.avg_confidence }}{% else %}-{% endif %}</div>
+        <div class="stat-note">all archived rows</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Stat Coverage</div>
+        <div class="stat-value">{{ archive.stats|length }}</div>
+        <div class="stat-note">{{ archive.sports|join(', ') }}</div>
+    </div>
+</div>
+{% elif (ngs_context and ngs_context.available) or (statcast_context and statcast_context.available) %}
+<div class="card mb-24">
+    <div class="empty-state">
+        <div class="empty-state-title">No Prop Archive Yet</div>
+        <div class="empty-state-copy">This player is available in an advanced-stat data layer, but does not have resolved Bankroll Kings prop archive rows yet.</div>
+    </div>
+</div>
+{% endif %}
+
+{% if archive.streak_heat %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Streak Heat Chart</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Longest hit and miss runs by stat/direction, capped at 10. Use this to spot hot-hand buckets without double-counting duplicate method rows.</div>
+        </div>
+        <span class="badge">{{ archive.streak_heat|length }} Buckets</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Bucket</th>
+                    <th>Resolved</th>
+                    <th>Hit %</th>
+                    <th>Hit Streak 1-10</th>
+                    <th>Miss Streak 1-10</th>
+                    <th>Current</th>
+                    <th>Last 10</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in archive.streak_heat %}
+                <tr>
+                    <td style="color:var(--text-bright); font-weight:800;">{{ row.label }}</td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                    <td>
+                        <div style="display:grid; grid-template-columns:repeat(10, 18px); gap:3px;">
+                            {% for cell in row.heat_cells %}
+                            <span title="Hit streak {{ cell.n }}" style="height:16px; border-radius:4px; font-size:9px; display:flex; align-items:center; justify-content:center; color:#06120f; font-weight:900; background:{% if cell.hit_active %}linear-gradient(135deg,var(--accent),var(--accent-copper)){% else %}rgba(255,255,255,0.08){% endif %};">{{ cell.n }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td>
+                        <div style="display:grid; grid-template-columns:repeat(10, 18px); gap:3px;">
+                            {% for cell in row.heat_cells %}
+                            <span title="Miss streak {{ cell.n }}" style="height:16px; border-radius:4px; font-size:9px; display:flex; align-items:center; justify-content:center; color:{% if cell.miss_active %}#fff{% else %}var(--text-muted){% endif %}; font-weight:900; background:{% if cell.miss_active %}rgba(239,68,68,0.75){% else %}rgba(255,255,255,0.08){% endif %};">{{ cell.n }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td><span class="badge {% if row.current_outcome == 'Hit' %}badge-accent{% elif row.current_outcome == 'Miss' %}badge-danger{% endif %}">{{ row.current_count }} {{ row.current_outcome }}</span></td>
+                    <td style="font-family:monospace; color:var(--text-muted); letter-spacing:2px;">{{ row.sequence }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Stat Direction Profiles</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Minimum three resolved props per bucket.</div>
+        </div>
+        <span class="badge">{{ archive.profiles|length }} Buckets</span>
+    </div>
+    {% if archive.profiles %}
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Sport</th>
+                    <th>Stat</th>
+                    <th>Dir</th>
+                    <th>Resolved</th>
+                    <th>Hits</th>
+                    <th>Misses</th>
+                    <th>Hit %</th>
+                    <th>Avg Line</th>
+                    <th>Avg Conf</th>
+                    <th>Model</th>
+                    <th>Reliability</th>
+                    <th>Line Split</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in archive.profiles %}
+                <tr>
+                    <td>{{ row.sport }}</td>
+                    <td>{{ row.stat }}</td>
+                    <td><span class="badge">{{ row.direction }}</span></td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{{ row.hits }}</td>
+                    <td>{{ row.misses }}</td>
+                    <td>{{ row.hit_rate }}%</td>
+                    <td>{% if row.avg_line is not none %}{{ row.avg_line }}{% else %}-{% endif %}</td>
+                    <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}-{% endif %}</td>
+                    <td><span class="badge {% if row.model_accuracy == 'OVERVALUED' %}badge-danger{% elif row.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.model_accuracy }}</span></td>
+                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% elif row.reliability == 'AVOID' %}badge-danger{% endif %}" style="white-space:nowrap;">{{ row.reliability }}</span></td>
+                    <td style="font-size:11px; color:var(--text-muted);">
+                        {{ row.line_note }}
+                        {% if row.low_line_hit_rate is not none and row.high_line_hit_rate is not none %}
+                        <div>Low {{ row.low_line_hit_rate }}% / High {{ row.high_line_hit_rate }}%</div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-title">No three-result buckets yet</div>
+        <div class="empty-state-copy">This player has archive rows, but not enough resolved results in a single stat/direction bucket yet.</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Recent Archived Props</div>
+        <span class="badge">{{ archive.recent_rows|length }} Rows</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Sport</th>
+                    <th>Method</th>
+                    <th>Matchup</th>
+                    <th>Stat</th>
+                    <th>Play</th>
+                    <th>Line</th>
+                    <th>Actual</th>
+                    <th>Outcome</th>
+                    <th>Conf</th>
+                    <th>Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in archive.recent_rows %}
+                <tr>
+                    <td>{{ row.snapshot_date }}</td>
+                    <td>{{ row.sport }}</td>
+                    <td>{{ row.method }}</td>
+                    <td>{{ row.matchup }}</td>
+                    <td>{{ row.stat }}</td>
+                    <td><span class="badge">{{ row.direction }}</span></td>
+                    <td>{{ row.line }}</td>
+                    <td>{{ row.actual }}</td>
+                    <td><span class="badge {% if row.outcome == 'Hit' %}badge-accent{% elif row.outcome == 'Miss' %}badge-danger{% endif %}">{{ row.outcome }}</span></td>
+                    <td>{% if row.confidence is not none %}{{ row.confidence }}{% else %}-{% endif %}</td>
+                    <td>{{ row.tier }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

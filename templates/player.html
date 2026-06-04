@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'review' %}
+{% set active_sport = (historical_prop_profile.rows[0].sport|lower if historical_prop_profile and historical_prop_profile.rows else 'nba') %}
+{% extends "bk_base.html" %}
 {% block title %}{{ player }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -23,34 +27,109 @@
     </div>
 </div>
 
-<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Platform Lens</div>
-        <span class="badge badge-accent">{{ player_context.sample_label }}</span>
+{% if player_decision_context %}
+<div class="card panel-glow bk-decision-shell">
+    <div class="bk-decision-header">
+        <div>
+            <div class="page-kicker">{{ player_decision_context.sport_label }} Player Decision</div>
+            <div class="bk-decision-question">{{ player_decision_context.question }}</div>
+        </div>
+        <span class="badge badge-accent">{{ selected_stat }} focus</span>
     </div>
-    <div class="grid-4 p-16" style="gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">How the line fits this player</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Player pages should help you decide whether the market is pricing this role fairly, not just whether the name is familiar.</div>
+    <div class="bk-decision-section-title">Tonight's Context</div>
+    <div class="bk-decision-grid">
+        {% for item in player_decision_context.tonight %}
+        <div class="bk-decision-card">
+            <div class="bk-decision-label">{{ item.label }}</div>
+            <div class="bk-decision-value">{{ item.value }}</div>
+            <div class="bk-decision-note">{{ item.note }}</div>
         </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">What the role can support</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Minutes, touches, home-road splits, and opponent context should drive the read more than reputation.</div>
+        {% endfor %}
+    </div>
+    <div class="bk-decision-section-title">Prop Hit Rates</div>
+    <div class="bk-decision-table-wrap">
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Stat</th>
+                        <th>Line</th>
+                        <th>Best Side</th>
+                        <th>Hit</th>
+                        <th>Over</th>
+                        <th>Under</th>
+                        <th>Avg</th>
+                        <th>Market</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in player_decision_context.prop_tabs %}
+                    <tr>
+                        <td><strong>{{ row.stat }}</strong>{% if row.grade %} <span class="badge">{{ row.grade }}</span>{% endif %}</td>
+                        <td>{{ row.line }}</td>
+                        <td>{{ row.direction }}</td>
+                        <td>{{ row.hit_rate }}</td>
+                        <td>{{ row.over_rate }}</td>
+                        <td>{{ row.under_rate }}</td>
+                        <td>{{ row.avg }}</td>
+                        <td>{{ row.market or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Current sample or full season?</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This page is built to show when the current-team sample tells a different story than the broader season history.</div>
+    </div>
+    <div class="bk-decision-section-title">Matchup Layer</div>
+    <div class="bk-decision-grid">
+        {% for item in player_decision_context.matchup %}
+        <div class="bk-decision-card">
+            <div class="bk-decision-label">{{ item.label }}{% if item.plan %} <span class="bk-plan-pill">{{ item.plan }}</span>{% endif %}</div>
+            <div class="bk-decision-value">{{ item.value }}</div>
+            <div class="bk-decision-note">{{ item.note }}</div>
         </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Build context before the click</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use this page as a decision-support layer before adding the player to a card or parlay ticket.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if historical_prop_profile and historical_prop_profile.available %}
+<div class="card mb-24 panel-glow player-profile-primer">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">{{ player }} Prop Identity</div>
+            <div class="cell-meta" style="margin-top:4px;">Personalized from resolved archive rows, current props, and stat-direction buckets.</div>
+        </div>
+        <span class="badge {% if historical_prop_profile.overall.model_accuracy == 'OVERVALUED' %}badge-danger{% elif historical_prop_profile.overall.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">
+            {{ historical_prop_profile.overall.model_accuracy }}
+        </span>
+    </div>
+    <div class="grid-4 p-16" style="gap:12px;">
+        <div class="stat-card">
+            <div class="page-kicker">Archive Hit Rate</div>
+            <div class="stat-value">{% if historical_prop_profile.overall.hit_rate is not none %}{{ historical_prop_profile.overall.hit_rate }}%{% else %}-{% endif %}</div>
+            <div class="stat-note">{{ historical_prop_profile.overall.hits }} hits / {{ historical_prop_profile.overall.misses }} misses</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Resolved Props</div>
+            <div class="stat-value">{{ historical_prop_profile.overall.resolved }}</div>
+            <div class="stat-note">graded rows for this player</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Best Bucket</div>
+            <div class="stat-value" style="font-size:22px;">{% if historical_prop_profile.best %}{{ historical_prop_profile.best.stat }} {{ historical_prop_profile.best.direction }}{% else %}-{% endif %}</div>
+            <div class="stat-note">{% if historical_prop_profile.best %}{{ historical_prop_profile.best.hit_rate }}% over {{ historical_prop_profile.best.resolved }}{% else %}need more results{% endif %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="page-kicker">Current Archive Run</div>
+            <div class="stat-value" style="font-size:22px;">{{ historical_prop_profile.current_streak if historical_prop_profile.current_streak else '-' }}</div>
+            <div class="stat-note">latest resolved sequence</div>
         </div>
     </div>
 </div>
+{% endif %}
+
+{% include "_ngs_player_profile.html" %}
+{% include "_statcast_player_profile.html" %}
 
 <div class="card mb-24">
     <div class="p-16" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
@@ -642,6 +721,58 @@
         <div class="empty-state-copy">This player is in the archive, but the stat/direction samples have not resolved deeply enough.</div>
     </div>
     {% endif %}
+</div>
+{% endif %}
+
+{% if archived_context and archived_context.streak_heat %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Streak Heat Chart</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Longest hit and miss runs by archived stat/direction, capped at 10. This is the hot-hand view for deciding which player buckets deserve a closer look live.</div>
+        </div>
+        <span class="badge">{{ archived_context.streak_heat|length }} Buckets</span>
+    </div>
+    <div class="table-shell">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Bucket</th>
+                    <th>Resolved</th>
+                    <th>Hit %</th>
+                    <th>Hit Streak 1-10</th>
+                    <th>Miss Streak 1-10</th>
+                    <th>Current</th>
+                    <th>Last 10</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in archived_context.streak_heat %}
+                <tr>
+                    <td style="color:var(--text-bright); font-weight:800;">{{ row.label }}</td>
+                    <td>{{ row.resolved }}</td>
+                    <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                    <td>
+                        <div style="display:grid; grid-template-columns:repeat(10, 18px); gap:3px;">
+                            {% for cell in row.heat_cells %}
+                            <span title="Hit streak {{ cell.n }}" style="height:16px; border-radius:4px; font-size:9px; display:flex; align-items:center; justify-content:center; color:#06120f; font-weight:900; background:{% if cell.hit_active %}linear-gradient(135deg,var(--accent),var(--accent-copper)){% else %}rgba(255,255,255,0.08){% endif %};">{{ cell.n }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td>
+                        <div style="display:grid; grid-template-columns:repeat(10, 18px); gap:3px;">
+                            {% for cell in row.heat_cells %}
+                            <span title="Miss streak {{ cell.n }}" style="height:16px; border-radius:4px; font-size:9px; display:flex; align-items:center; justify-content:center; color:{% if cell.miss_active %}#fff{% else %}var(--text-muted){% endif %}; font-weight:900; background:{% if cell.miss_active %}rgba(239,68,68,0.75){% else %}rgba(255,255,255,0.08){% endif %};">{{ cell.n }}</span>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    <td><span class="badge {% if row.current_outcome == 'Hit' %}badge-accent{% elif row.current_outcome == 'Miss' %}badge-danger{% endif %}">{{ row.current_count }} {{ row.current_outcome }}</span></td>
+                    <td style="font-family:monospace; color:var(--text-muted); letter-spacing:2px;">{{ row.sequence }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endif %}
 

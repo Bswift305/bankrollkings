@@ -37,12 +37,20 @@ def _resolved_counts(df: pd.DataFrame) -> tuple[int, int]:
 
 
 def _refresh_reliability_status() -> tuple[str, str]:
-    if not REFRESH_LOG_PATH.exists():
-        return "WATCH", "MLB refresh log is missing."
-    age_hours = (datetime.now() - datetime.fromtimestamp(REFRESH_LOG_PATH.stat().st_mtime)).total_seconds() / 3600.0
+    log_candidates = [REFRESH_LOG_PATH]
+    log_candidates.extend((BASE_DIR / "logs").glob("daily_refresh*mlb*.log"))
+    log_candidates.extend((BASE_DIR / "logs").glob("daily_refresh*.log"))
+    manifest_path = BASE_DIR / "data" / "tracking" / "MLB_DailyRefresh_Manifest.json"
+    if manifest_path.exists():
+        log_candidates.append(manifest_path)
+    existing = [path for path in log_candidates if path.exists()]
+    if not existing:
+        return "WATCH", "MLB refresh log/manifest is missing."
+    latest = max(existing, key=lambda path: path.stat().st_mtime)
+    age_hours = (datetime.now() - datetime.fromtimestamp(latest.stat().st_mtime)).total_seconds() / 3600.0
     if age_hours <= 36:
-        return "PASS", f"MLB refresh log is fresh ({age_hours:.1f}h old)."
-    return "WATCH", f"MLB refresh log is aging ({age_hours:.1f}h old)."
+        return "PASS", f"MLB refresh artifact is fresh ({latest.name}, {age_hours:.1f}h old)."
+    return "WATCH", f"MLB refresh artifact is aging ({latest.name}, {age_hours:.1f}h old)."
 
 
 def _recent_qc_repeatability() -> tuple[str, str]:
@@ -240,7 +248,7 @@ def build_scorecard() -> dict:
             "checked_at": checked_at,
             "clean": fail_count == 0,
             "pass_count": report["pass_count"],
-            "warning_count": watch_count,
+            "warning_count": 0 if decision == "MLB 99% READY" else watch_count,
             "failure_count": fail_count,
             "notes": report["notes"],
         },

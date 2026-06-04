@@ -9,6 +9,18 @@ import pandas as pd
 NormalizeTeamName = Callable[[str], str]
 
 
+def _clean_display_text(value) -> str:
+    if value is None:
+        return ''
+    try:
+        if pd.isna(value):
+            return ''
+    except Exception:
+        pass
+    text = str(value).strip()
+    return '' if text.lower() in {'nan', 'none', 'null'} else text
+
+
 def build_ncaaf_signal_profile(row: dict | pd.Series) -> dict:
     if isinstance(row, pd.Series):
         row = row.to_dict()
@@ -443,7 +455,7 @@ def build_ncaaf_current_season_context(
             for _, row in working.iterrows():
                 top_returning_teams.append({
                     'team': row.get('Team', ''),
-                    'conference': row.get('Conference', ''),
+                    'conference': _clean_display_text(row.get('Conference', '')),
                     'value': round(float(row.get('ReturningProduction', 0) or 0), 1),
                     'passing': round(float(row.get('PassingUsage', 0) or 0), 1),
                     'rushing': round(float(row.get('RushingUsage', 0) or 0), 1),
@@ -633,7 +645,7 @@ def build_ncaaf_current_season_context(
             profile = signal_profiles.get(str(row.get('Team', '') or '').strip(), {})
             team_signals.append({
                 'team': row.get('Team', ''),
-                'conference': row.get('Conference', ''),
+                'conference': _clean_display_text(row.get('Conference', '')),
                 'returning_production': round(float(row.get('ReturningProduction', 0) or 0), 3),
                 'portal_in': int(row.get('PortalIn', 0) or 0),
                 'portal_out': int(row.get('PortalOut', 0) or 0),
@@ -724,7 +736,7 @@ def build_ncaaf_team_signal_map(team_signal_rows: list[dict], normalize_team_nam
             continue
         signal_map[team] = {
             'team': team,
-            'conference': row.get('conference', ''),
+            'conference': _clean_display_text(row.get('conference', '')),
             'tags': list(row.get('tags') or []),
             'verdict': str(row.get('verdict') or '').strip(),
             'returning_production': row.get('returning_production'),

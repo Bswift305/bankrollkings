@@ -7,7 +7,7 @@ from services.qc_tracking import append_qc_run_log
 
 
 ROUTES = (
-    ("/sports/nfl?postseason=1", ("Platform Lens", "Closeout Check", "Live Feed Status")),
+    ("/sports/nfl?postseason=1", ("Weekly Script Board", "Closeout Check", "Live Feed Status")),
     ("/sports/nfl/game-lines?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
     ("/sports/nfl/totals?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
     ("/sports/nfl/trends?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),

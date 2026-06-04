@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = 'pricing' %}
+{% extends "public_base.html" %}
 {% block title %}Pricing - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 {% block content %}
 <section class="pricing-hero">
     <div>
@@ -53,11 +56,58 @@
 </section>
 {% endif %}
 
-<section class="pricing-grid">
-    {% for tier in pricing_cards %}
+<section class="pricing-section">
+    <div class="pricing-section-copy">
+        <div class="page-kicker">Single-Sport Access</div>
+        <h2>Pay for the league you actually use.</h2>
+        <p>NBA, WNBA, MLB, and NFL passes unlock that sport’s dashboard, board, player pages, and core workflow without forcing an all-sports subscription.</p>
+    </div>
+    <div class="pricing-grid pricing-grid-sport">
+        {% for tier in sport_pricing_cards %}
+        <article class="pricing-card is-sport-pass">
+            <div class="pricing-card-content">
+                <div class="pricing-card-top">
+                    <div>
+                        <div class="pricing-plan">{{ tier.name }}</div>
+                        <div class="pricing-best">{{ tier.best_for }}</div>
+                    </div>
+                    <span class="badge badge-outline">{{ tier.badge }}</span>
+                </div>
+                <div class="pricing-price">{{ tier.monthly_label }}</div>
+                <div class="pricing-annual">{{ tier.annual_label }} annual option</div>
+                <p class="pricing-summary">{{ tier.summary }}</p>
+                <div class="pricing-features">
+                    {% for feature in tier.features %}
+                    <div>{{ feature }}</div>
+                    {% endfor %}
+                </div>
+                <div class="pricing-actions">
+                    {% if tier.is_current %}
+                    <span class="btn btn-secondary">{{ tier.current_status_label }}</span>
+                    {% else %}
+                    <a href="{{ tier.monthly_cta.href }}" class="btn btn-primary">{{ tier.monthly_cta.label }}</a>
+                    {% endif %}
+                    {% if not tier.is_current %}
+                    <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Annual</a>
+                    {% endif %}
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="pricing-section">
+    <div class="pricing-section-copy">
+        <div class="page-kicker">All-Sports Platform</div>
+        <h2>Upgrade when you want the full operating system.</h2>
+        <p>Pro, Sharp, and Elite keep every active sport open and add deeper review, calibration, market timing, and cross-sport workflows.</p>
+    </div>
+    <div class="pricing-grid">
+    {% for tier in platform_pricing_cards %}
     <article class="pricing-card {% if tier.key == 'pro' %}is-recommended{% endif %} {% if tier.key == 'elite' %}is-elite{% endif %}">
         {% if tier.key == 'elite' %}
-        <img src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
+        <img loading="lazy" src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
         {% endif %}
         <div class="pricing-card-content">
             <div class="pricing-card-top">
@@ -88,6 +138,7 @@
         </div>
     </article>
     {% endfor %}
+    </div>
 </section>
 
 <section class="card mb-24">
@@ -156,6 +207,33 @@
     gap: 16px;
     margin-bottom: 24px;
 }
+.pricing-section {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+.pricing-section-copy {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 0 4px;
+}
+.pricing-section-copy h2 {
+    margin: 0;
+    color: var(--text-bright);
+    font-size: 22px;
+}
+.pricing-section-copy p {
+    max-width: 680px;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.pricing-grid-sport {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
 .pricing-card {
     position: relative;
     overflow: hidden;
@@ -171,6 +249,12 @@
 .pricing-card.is-elite {
     border-color: rgba(132,215,210,0.36);
     background: linear-gradient(135deg, rgba(8,18,25,0.98), rgba(10,31,39,0.92) 52%, rgba(4,8,11,0.98));
+}
+.pricing-card.is-sport-pass {
+    border-color: rgba(201,143,65,0.28);
+    background:
+        radial-gradient(circle at top right, rgba(201,143,65,0.13), transparent 38%),
+        linear-gradient(135deg, rgba(13,29,34,0.98), rgba(7,16,21,0.98));
 }
 .pricing-card-content {
     position: relative;
@@ -292,6 +376,12 @@
     .current-plan-card {
         align-items: flex-start;
         flex-direction: column;
+    }
+    .pricing-section-copy {
+        display: block;
+    }
+    .pricing-section-copy p {
+        margin-top: 8px;
     }
 }
 </style>

@@ -1,0 +1,27 @@
+{% extends "public_base.html" %}
+{% block title %}{{ error_title }} - Bankroll Kings{% endblock %}
+{% block meta_description %}{{ error_message }}{% endblock %}
+
+{% block content %}
+<div class="card panel-glow" style="max-width: 760px; margin: 48px auto;">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="page-kicker">{{ status_code }}</div>
+            <div class="card-title">{{ error_title }}</div>
+        </div>
+        <span class="badge">{{ status_code }}</span>
+    </div>
+    <div class="p-24">
+        <div style="color: var(--text-muted); line-height: 1.6; margin-bottom: 18px;">{{ error_message }}</div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <a class="btn btn-primary btn-sm" href="{{ url_for('frontpage') }}">Bankroll Kings</a>
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('pricing') }}">Pricing</a>
+            {% if current_user %}
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+            {% else %}
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('login') }}">Sign In</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

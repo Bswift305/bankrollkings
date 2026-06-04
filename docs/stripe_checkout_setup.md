@@ -16,10 +16,22 @@ Then fill in the real values there. The app now loads `.env` and `.env.local` au
 
 ## Required Environment Variables
 
-Set all four checkout URLs:
+Set all checkout URLs:
 
 - `STRIPE_PRO_MONTHLY_URL`
 - `STRIPE_PRO_ANNUAL_URL`
+- `STRIPE_NBA_PASS_MONTHLY_URL`
+- `STRIPE_NBA_PASS_ANNUAL_URL`
+- `STRIPE_WNBA_PASS_MONTHLY_URL`
+- `STRIPE_WNBA_PASS_ANNUAL_URL`
+- `STRIPE_MLB_PASS_MONTHLY_URL`
+- `STRIPE_MLB_PASS_ANNUAL_URL`
+- `STRIPE_NFL_PASS_MONTHLY_URL`
+- `STRIPE_NFL_PASS_ANNUAL_URL`
+- `STRIPE_CFB_PASS_MONTHLY_URL`
+- `STRIPE_CFB_PASS_ANNUAL_URL`
+- `STRIPE_CBB_PASS_MONTHLY_URL`
+- `STRIPE_CBB_PASS_ANNUAL_URL`
 - `STRIPE_SHARP_MONTHLY_URL`
 - `STRIPE_SHARP_ANNUAL_URL`
 - `STRIPE_ELITE_MONTHLY_URL`
@@ -53,6 +65,18 @@ Optional, for the future API-backed portal session flow:
 3. Click each plan:
    - Pro Monthly
    - Pro Annual
+   - NBA Pass Monthly
+   - NBA Pass Annual
+   - WNBA Pass Monthly
+   - WNBA Pass Annual
+   - MLB Pass Monthly
+   - MLB Pass Annual
+   - NFL Pass Monthly
+   - NFL Pass Annual
+   - CFB Pass Monthly
+   - CFB Pass Annual
+   - CBB Pass Monthly
+   - CBB Pass Annual
    - Sharp Monthly
    - Sharp Annual
    - Elite Monthly

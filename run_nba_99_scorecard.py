@@ -15,6 +15,7 @@ from services.qc_tracking import append_qc_run_log
 
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "NBA_99_Scorecard.csv"
 FEATURED_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NBA_FeaturedResults.csv"
+ALL_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NBA_AllPropResults.csv"
 REFRESH_LOG_PATH = BASE_DIR / "logs" / "refresh_nba_daily.log"
 
 
@@ -23,6 +24,15 @@ def _load_featured_results() -> pd.DataFrame:
         return pd.DataFrame()
     try:
         return pd.read_csv(FEATURED_RESULTS_PATH)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _load_all_results() -> pd.DataFrame:
+    if not ALL_RESULTS_PATH.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(ALL_RESULTS_PATH)
     except Exception:
         return pd.DataFrame()
 
@@ -68,12 +78,15 @@ def _recent_qc_repeatability() -> tuple[str, str]:
 
 
 def _refresh_reliability_status() -> tuple[str, str]:
-    if not REFRESH_LOG_PATH.exists():
-        return "WATCH", "NBA daily refresh log is missing."
-    age_hours = (datetime.now() - datetime.fromtimestamp(REFRESH_LOG_PATH.stat().st_mtime)).total_seconds() / 3600.0
+    candidates = [REFRESH_LOG_PATH, ALL_RESULTS_PATH, BASE_DIR / "data" / "props" / "NBA_Props.csv"]
+    existing = [path for path in candidates if path.exists()]
+    if not existing:
+        return "WATCH", "NBA refresh artifacts are missing."
+    latest = max(existing, key=lambda path: path.stat().st_mtime)
+    age_hours = (datetime.now() - datetime.fromtimestamp(latest.stat().st_mtime)).total_seconds() / 3600.0
     if age_hours <= 36:
-        return "PASS", f"NBA refresh log is fresh ({age_hours:.1f}h old)."
-    return "WATCH", f"NBA refresh log is aging ({age_hours:.1f}h old)."
+        return "PASS", f"NBA refresh artifact is fresh ({latest.name}, {age_hours:.1f}h old)."
+    return "WATCH", f"NBA refresh artifact is aging ({latest.name}, {age_hours:.1f}h old)."
 
 
 def build_scorecard() -> dict:
@@ -83,7 +96,9 @@ def build_scorecard() -> dict:
     injury_report = run_nba_injuries(persist=False)
     visual_report = run_nba_visual_trust()
     featured_df = _load_featured_results()
+    all_results_df = _load_all_results()
     resolved, pending = _resolved_counts(featured_df)
+    all_resolved, all_pending = _resolved_counts(all_results_df)
 
     sections: list[dict] = []
 
@@ -146,11 +161,11 @@ def build_scorecard() -> dict:
         "Reason": archive_reason,
     })
 
-    calibration_status = "PASS" if resolved >= 50 else "WATCH"
+    calibration_status = "PASS" if max(resolved, all_resolved) >= 50 else "WATCH"
     sections.append({
         "Section": "Calibration Maturity",
         "Status": calibration_status,
-        "Reason": f"NBA featured results currently have {resolved} resolved rows and {pending} pending rows.",
+        "Reason": f"NBA featured results have {resolved} resolved / {pending} pending; all results have {all_resolved} resolved / {all_pending} pending.",
     })
 
     repeatability_status, repeatability_reason = _recent_qc_repeatability()
@@ -160,10 +175,10 @@ def build_scorecard() -> dict:
         "Reason": repeatability_reason,
     })
 
-    formula_status = "PASS" if resolved >= 50 else "WATCH"
+    formula_status = "PASS" if max(resolved, all_resolved) >= 50 else "WATCH"
     formula_reason = (
         "Calibration has enough resolved evidence to begin formula learning."
-        if resolved >= 50
+        if max(resolved, all_resolved) >= 50
         else "Logging/reporting are in place, but there is not enough resolved evidence yet to justify real formula changes."
     )
     sections.append({

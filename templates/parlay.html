@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'parlay_builder' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
 {% block title %}Parlay Builder - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
@@ -125,7 +129,9 @@
                             {% endif %}
                         </td>
                         <td style="font-size: 12px;">
-                            <span style="color: var(--accent);">{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span>/<span style="color: #FF6B6B;">{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span>
+                            {% set parlay_over = prop.weighted_over_rate if postseason_only and prop.weighted_over_rate is defined else prop.over_rate %}
+                            {% set parlay_under = prop.weighted_under_rate if postseason_only and prop.weighted_under_rate is defined else prop.under_rate %}
+                            <span style="color: {{ ou_rate_color(parlay_over) }};">{{ parlay_over }}%</span>/<span style="color: {{ ou_rate_color(parlay_under) }};">{{ parlay_under }}%</span>
                         </td>
                         <td style="font-size: 11px;">
                             <div>{% if prop.projected_minutes is not none %}{{ prop.projected_minutes }} MIN{% else %}-{% endif %}</div>

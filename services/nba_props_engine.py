@@ -3,6 +3,41 @@ from __future__ import annotations
 import pandas as pd
 
 
+def _compact_text(value):
+    text = ''.join(ch.lower() for ch in str(value or '') if ch.isalnum())
+    return text.strip()
+
+
+def _prop_matches_scheduled_game(prop_game, team, scheduled_game):
+    prop_game_key = _compact_text(prop_game)
+    if not prop_game_key:
+        return True
+
+    team_terms = {
+        _compact_text(team),
+    }
+    opponent_terms = {
+        _compact_text(scheduled_game.get('opponent_abbr')),
+        _compact_text(scheduled_game.get('opponent_display')),
+        _compact_text(scheduled_game.get('opponent')),
+    }
+
+    matchup = str(scheduled_game.get('matchup') or '').strip()
+    if '@' in matchup:
+        away_team, home_team = [part.strip() for part in matchup.split('@', 1)]
+        team_terms.add(_compact_text(away_team))
+        team_terms.add(_compact_text(home_team))
+        opponent_terms.add(_compact_text(away_team))
+        opponent_terms.add(_compact_text(home_team))
+
+    team_terms = {term for term in team_terms if term}
+    opponent_terms = {term for term in opponent_terms if term}
+
+    team_match = any(term in prop_game_key for term in team_terms) if team_terms else True
+    opponent_match = any(term in prop_game_key for term in opponent_terms) if opponent_terms else True
+    return team_match and opponent_match
+
+
 def collect_live_prop_rows(
     *,
     props_df,
@@ -90,6 +125,9 @@ def collect_live_prop_rows(
         if date_filter == 'tomorrow' and not plays_tomorrow:
             continue
         if date_filter == 'upcoming' and not (plays_today or plays_tomorrow or plays_upcoming):
+            continue
+
+        if not _prop_matches_scheduled_game(prop.get('Game'), team, scheduled_game):
             continue
 
         projection_context = get_player_projection_context(

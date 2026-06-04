@@ -1,0 +1,240 @@
+{% extends "bk_base.html" %}
+
+{% block title %}NFL Formula Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">NFL Formula</div>
+  <a class="bk-sidebar-item active" href="#overview"><span class="si-icon">OV</span><span class="si-name">Overview</span></a>
+  <a class="bk-sidebar-item" href="#scores"><span class="si-icon">SC</span><span class="si-name">Score Bands</span></a>
+  <a class="bk-sidebar-item" href="#simulation"><span class="si-icon">SM</span><span class="si-name">Simulation</span></a>
+  <a class="bk-sidebar-item" href="#calibration"><span class="si-icon">CL</span><span class="si-name">Calibration</span></a>
+  <a class="bk-sidebar-item" href="#notes"><span class="si-icon">NT</span><span class="si-name">Notes</span></a>
+</div>
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Files</div>
+  {% for file in files %}
+  <div class="bk-sidebar-item">
+    <span class="si-icon">{{ loop.index }}</span>
+    <span class="si-name">{{ file.label }}</span>
+    <span class="si-count">{{ file.status }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header" id="overview">
+  <div>
+    <div class="bk-page-title">NFL FORMULA LAB</div>
+    <div class="bk-page-sub">2024-2025 historical backfill, EdgeScore, PropScore, simulation, and calibration notes.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Rows</span><span class="sp-val">{{ totals.rows }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Resolved</span><span class="sp-val">{{ totals.resolved }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Hit Rate</span><span class="sp-val">{{ totals.hit_rate }}</span></div>
+  </div>
+</div>
+
+<div class="bk-content nfl-lab">
+  <section class="bk-card nfl-hero">
+    <div>
+      <div class="bk-dashboard-kicker">Formula Family</div>
+      <h1>Train on last season. Calibrate before kickoff.</h1>
+      <p>
+        This page turns the NFL backfill into a working formula lab. EdgeScore explains the broad market read,
+        PropScore grades player props, simulation converts player history into probability bands, and calibration
+        tells us where the model is strong or lying.
+      </p>
+    </div>
+    <div class="nfl-hero-grid">
+      <div><span>EdgeScore 20+</span><strong>{{ edge_high.rate }}</strong><small>{{ edge_high.sample }} rows</small></div>
+      <div><span>PropScore 25+</span><strong>{{ prop_high.rate }}</strong><small>{{ prop_high.sample }} rows</small></div>
+      <div><span>Sim 70+</span><strong>{{ sim_high.rate }}</strong><small>{{ sim_high.sample }} rows</small></div>
+    </div>
+  </section>
+
+  <section class="nfl-grid" id="scores">
+    <article class="bk-card">
+      <div class="bk-card-title">EdgeScore Backtest</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Band</th><th>Rows</th><th>Actual</th><th>Read</th></tr></thead>
+        <tbody>
+          {% for row in edge_bands %}
+          <tr>
+            <td class="primary">{{ row.BucketLabel }}</td>
+            <td>{{ row.SampleSize }}</td>
+            <td>{{ row.ActualRatePct }}</td>
+            <td>{{ row.Classification }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="bk-card">
+      <div class="bk-card-title">PropScore Backtest</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Band</th><th>Rows</th><th>Actual</th><th>Read</th></tr></thead>
+        <tbody>
+          {% for row in prop_bands %}
+          <tr>
+            <td class="primary">{{ row.BucketLabel }}</td>
+            <td>{{ row.SampleSize }}</td>
+            <td>{{ row.ActualRatePct }}</td>
+            <td>{{ row.Classification }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+
+  <section class="bk-card" id="simulation">
+    <div class="bk-card-title">Simulation Probability Bands</div>
+    <div class="nfl-band-list">
+      {% for row in sim_bands %}
+      <div class="nfl-band">
+        <div>
+          <span>{{ row.BucketLabel }}</span>
+          <strong>{{ row.ActualRatePct }}</strong>
+          <small>{{ row.SampleSize }} resolved rows</small>
+        </div>
+        <div class="nfl-meter"><i style="width: {{ row.WidthPct }}%"></i></div>
+        <p>{{ row.Recommendation }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="nfl-grid" id="calibration">
+    <article class="bk-card">
+      <div class="bk-card-title">Promote Candidates</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Bucket</th><th>Actual</th><th>Rows</th></tr></thead>
+        <tbody>
+          {% for row in promote_rows %}
+          <tr><td class="primary">{{ row.BucketType }}: {{ row.BucketLabel }}</td><td>{{ row.ActualRatePct }}</td><td>{{ row.SampleSize }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+    <article class="bk-card">
+      <div class="bk-card-title">Reduce Trust</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Bucket</th><th>Actual</th><th>Rows</th></tr></thead>
+        <tbody>
+          {% for row in reduce_rows %}
+          <tr><td class="primary">{{ row.BucketType }}: {{ row.BucketLabel }}</td><td>{{ row.ActualRatePct }}</td><td>{{ row.SampleSize }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+
+  <section class="bk-card" id="notes">
+    <div class="bk-card-title">Human Calibration Notes</div>
+    <pre class="nfl-notes">{{ notes }}</pre>
+  </section>
+</div>
+
+<style>
+.nfl-lab .bk-card { margin-bottom: 12px; }
+.nfl-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: 16px;
+  align-items: center;
+}
+.nfl-hero h1 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-size: clamp(30px, 4vw, 48px);
+  margin: 0 0 8px;
+}
+.nfl-hero p,
+.nfl-band p {
+  color: var(--text2);
+  line-height: 1.55;
+}
+.nfl-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.nfl-hero-grid div {
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(215,167,79,0.06);
+}
+.nfl-hero-grid span,
+.nfl-hero-grid small,
+.nfl-band span,
+.nfl-band small {
+  display: block;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.nfl-hero-grid strong,
+.nfl-band strong {
+  display: block;
+  color: var(--bk-gold2);
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-size: 30px;
+  margin: 4px 0;
+}
+.nfl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.bk-table.compact th,
+.bk-table.compact td {
+  padding: 8px 10px;
+}
+.nfl-band-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.nfl-band {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255,255,255,0.025);
+}
+.nfl-meter {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  margin: 8px 0;
+}
+.nfl-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--bk-primary2), var(--bk-gold));
+}
+.nfl-notes {
+  white-space: pre-wrap;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+@media (max-width: 1000px) {
+  .nfl-hero,
+  .nfl-grid,
+  .nfl-hero-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock main %}

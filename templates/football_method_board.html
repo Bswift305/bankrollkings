@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'props' %}
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
 {% block title %}{{ sport_title }} {{ method.title }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -368,6 +372,7 @@
                     <th>Streak</th>
                     <th>Follow</th>
                     <th>Review</th>
+                    <th>Formula</th>
                     <th>Fit</th>
                     <th>Why It Matters</th>
                 </tr>
@@ -376,8 +381,11 @@
                 {% for row in method_view.history_player_rows %}
                 <tr>
                     <td>
-                        <div style="font-weight:700; color:var(--text-bright);">{{ row.player }}</div>
+                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                         <div class="cell-meta">{{ team_mark(row.team, size='xs', sport_key=sport_key) }}{% if row.position %} | {{ row.position }}{% endif %}{% if row.opponent %} | vs {{ team_mark(row.opponent, size='xs', sport_key=sport_key) }}{% endif %}</div>
+                        {% if row.context_matchup_note %}
+                        <div class="cell-meta">{{ row.context_matchup_note }}</div>
+                        {% endif %}
                     </td>
                     <td>{{ row.stat }}</td>
                     <td>
@@ -406,6 +414,28 @@
                         <div class="cell-meta">Resolved {{ row.review_resolved if row.review_resolved is not none else '-' }}</div>
                         {% if row.governance_badge %}
                         <div class="cell-meta" style="margin-top:6px; color: {% if row.governance_tier == 'trusted' %}var(--accent){% elif row.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-muted){% endif %};">{{ row.governance_badge }}</div>
+                        {% endif %}
+                        {% if row.promotion_signal and row.promotion_signal != 'STANDARD' %}
+                        <div class="cell-meta" style="margin-top:6px; color:{% if row.promotion_signal in ['PROMOTE HARD','PROMOTE'] %}var(--accent){% elif row.promotion_signal == 'HOLD' %}#FF6B6B{% else %}var(--accent-copper){% endif %}; font-weight:800;">{{ row.promotion_signal }}</div>
+                        <div class="cell-meta">{{ row.promotion_reason }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.nfl_edge_score or row.nfl_prop_score or row.sim_hit_probability %}
+                        {% if row.nfl_edge_score %}
+                        <div style="font-weight:800; color:var(--accent);">Edge {{ row.nfl_edge_score }}</div>
+                        <div class="cell-meta">{{ row.edge_score_detail }}</div>
+                        {% endif %}
+                        {% if row.nfl_prop_score %}
+                        <div style="font-weight:800; color:var(--accent-copper); margin-top:5px;">Prop {{ row.nfl_prop_score }}</div>
+                        <div class="cell-meta">{{ row.prop_score_detail }}</div>
+                        {% endif %}
+                        {% if row.sim_hit_probability %}
+                        <div style="font-weight:800; color:var(--accent-blue); margin-top:5px;">Sim {{ row.sim_hit_probability }}%</div>
+                        <div class="cell-meta">{{ row.sim_detail }}</div>
+                        {% endif %}
+                        {% else %}
+                        <span class="cell-meta">No formula match</span>
                         {% endif %}
                     </td>
                     <td>
@@ -723,6 +753,7 @@
                         <th>O/U Rates</th>
                         <th>Fair</th>
                         <th>Market</th>
+                        <th>Formula</th>
                         <th>Method Fit</th>
                     </tr>
                 </thead>
@@ -757,6 +788,24 @@
                             <div class="cell-meta">{{ play.book or '-' }}{% if play.book_count %} · {{ play.book_count }} books{% endif %}</div>
                         </td>
                         <td>
+                            {% if play.nfl_edge_score or play.nfl_prop_score or play.sim_hit_probability %}
+                            {% if play.nfl_edge_score %}
+                            <div style="font-weight:800; color:var(--accent);">Edge {{ play.nfl_edge_score }}</div>
+                            <div class="cell-meta">{{ play.edge_score_detail }}</div>
+                            {% endif %}
+                            {% if play.nfl_prop_score %}
+                            <div style="font-weight:800; color:var(--accent-copper); margin-top:5px;">Prop {{ play.nfl_prop_score }}</div>
+                            <div class="cell-meta">{{ play.prop_score_detail }}</div>
+                            {% endif %}
+                            {% if play.sim_hit_probability %}
+                            <div style="font-weight:800; color:var(--accent-blue); margin-top:5px;">Sim {{ play.sim_hit_probability }}%</div>
+                            <div class="cell-meta">{{ play.sim_detail }}</div>
+                            {% endif %}
+                            {% else %}
+                            <span class="cell-meta">No formula match</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             <div style="font-weight:700; color:var(--accent);">{{ play.method_score }}%</div>
                             {% if play.method_tags %}
                             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
@@ -764,6 +813,10 @@
                                 <span class="badge">{{ tag }}</span>
                                 {% endfor %}
                             </div>
+                            {% endif %}
+                            {% if play.promotion_signal and play.promotion_signal != 'STANDARD' %}
+                            <div style="margin-top:6px; color:{% if play.promotion_signal in ['PROMOTE HARD','PROMOTE'] %}var(--accent){% elif play.promotion_signal == 'HOLD' %}#FF6B6B{% else %}var(--accent-copper){% endif %}; font-weight:800;">{{ play.promotion_signal }}</div>
+                            <div class="cell-meta">{{ play.promotion_reason }}</div>
                             {% endif %}
                             <div class="cell-meta" style="margin-top:6px;">{{ play.method_note }}</div>
                         </td>

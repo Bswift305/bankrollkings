@@ -1,5 +1,9 @@
-{% extends "base.html" %}
-{% block title %}Trend Board - Bankroll Kings{% endblock %}
+{% set active_page = 'heat_map' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
+{% block title %}Streak Patterns - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <style>
@@ -149,35 +153,26 @@
 </style>
 <div class="page-hero">
     <div>
-        <div class="page-kicker">League-Wide Streak Scanner</div>
-        <h1>Trend <span class="accent">Board</span></h1>
-        <div class="page-subtitle">A cleaner consistency board that separates floor clears, live Vegas or market-line results, current runs, and total 3+ streak behavior so you can rank who is truly repeatable.</div>
+        <div class="page-kicker">Streak Lab | Pattern View</div>
+        <h1>Streak <span class="accent">Patterns</span></h1>
+        <div class="page-subtitle">The deep streak view: floor clears, live Vegas or market-line results, current runs, and 3+ follow-through behavior. Real Tendencies are reserved for conditional hit rates.</div>
     </div>
     <div class="hero-actions">
+        <a href="{{ url_for('heat_map') }}" class="btn btn-secondary btn-sm">Heat View</a>
+        <a href="{{ url_for('trend_board') }}" class="btn btn-primary btn-sm">Pattern View</a>
+        <a href="{{ url_for('tendencies') }}" class="btn btn-secondary btn-sm">Real Tendencies</a>
         <a href="/trend-board?postseason={{ 1 if postseason_only else 0 }}&stat={{ stat_filter|lower }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}&sample=current" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
         <a href="/trend-board?postseason={{ 1 if postseason_only else 0 }}&stat={{ stat_filter|lower }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}&sample=full" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
     </div>
 </div>
 
-<div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">Platform Lens</div>
-        <span class="badge badge-accent">Trend Read</span>
-    </div>
-    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Trend Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board is built to answer whether a run is actually repeatable, not just whether a player got hot for a few nights.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Market Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The live line columns matter because a streak only becomes useful when it still beats the current number.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Verdict</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use the consistency score to separate real continuation spots from noisy scoreboard streaks.</div>
-        </div>
-    </div>
+<div class="bk-status-strip mb-16">
+    <strong>Streak taxonomy:</strong>
+    <span>Heat View finds who is currently on a run.</span>
+    <span class="dot"></span>
+    <span>Pattern View tests whether those runs historically continued.</span>
+    <span class="dot"></span>
+    <span>Real Tendencies will measure conditional hit rates, not consecutive runs.</span>
 </div>
 
 <div class="card mb-24">
@@ -309,7 +304,7 @@
 
 <div class="card">
     <div class="card-header">
-        <div class="card-title">{{ 'Playoff Field ' if postseason_only else '' }}Consistency Trends</div>
+        <div class="card-title">{{ 'Playoff Field ' if postseason_only else '' }}Streak Pattern Detail</div>
         <span class="badge badge-accent">{{ rows|length }} Rows</span>
     </div>
     {% if rows %}
@@ -352,8 +347,8 @@
                     <td>{{ row.avg }}</td>
                     <td>
                         {% if row.market_line is not none %}
-                        <div><span style="color: var(--accent);">O {{ row.market_over_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_over_rate }}%)</span></div>
-                        <div><span style="color: #FF8C8C;">U {{ row.market_under_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_under_rate }}%)</span>{% if row.market_pushes %} <span style="color: var(--text-muted);">· {{ row.market_pushes }} push</span>{% endif %}</div>
+                        <div><span style="color: {{ ou_rate_color(row.market_over_rate) }};">O {{ row.market_over_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_over_rate }}%)</span></div>
+                        <div><span style="color: {{ ou_rate_color(row.market_under_rate) }};">U {{ row.market_under_hits }} / {{ row.games }}</span> <span style="color: var(--text-muted);">({{ row.market_under_rate }}%)</span>{% if row.market_pushes %} <span style="color: var(--text-muted);">· {{ row.market_pushes }} push</span>{% endif %}</div>
                         {% else %}
                         <span style="color: var(--text-muted);">Waiting on live ref</span>
                         {% endif %}

@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'props' %}
+{% set active_sport = 'mlb' %}
+{% extends "bk_base.html" %}
 {% block title %}MLB {{ method_title }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -9,16 +13,17 @@
         <div class="page-subtitle">{{ method_guide.what_it_is or sport_profile.summary }}</div>
     </div>
     <div class="hero-actions">
-        <a href="/sports/mlb?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Main MLB Board</a>
-        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open NBA Board</a>
+        <a href="/sports/mlb?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">MLB Command Center</a>
+        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">NBA Command Center</a>
     </div>
 </div>
 
 <div class="card mb-24">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        <a href="/sports/mlb/props?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'props' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Props</a>
         <a href="/sports/mlb/market-edge?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'market_edge' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Market Edge</a>
         <a href="/sports/mlb/floor?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'floor_plays' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
-        <a href="/sports/mlb/trends?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'trends' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Trends</a>
+        <a href="/sports/mlb/trends?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'trends' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Streak Patterns</a>
         <span class="badge badge-accent" style="margin-left:auto;">{{ rows|length }} rows</span>
     </div>
 </div>
@@ -154,7 +159,7 @@
                     </td>
                     <td>
                         {% if game.best_anchor %}
-                        <div style="font-weight:700; color:var(--accent);">{{ game.best_anchor.player }}</div>
+                        <a class="player-link accent-link" href="/player/{{ game.best_anchor.player|urlencode }}">{{ game.best_anchor.player }}</a>
                         <div class="cell-meta">{{ game.best_anchor.stat }} {{ game.best_anchor.direction }} · {{ game.best_anchor.hit_rate }}%</div>
                         {% else %}
                         <span class="cell-meta">No anchor yet</span>
@@ -192,6 +197,19 @@
             </select>
         </form>
     </div>
+    {% if all_dates_fallback %}
+    <div class="bk-status-strip">
+        <strong>All dates are prebuilt only</strong>
+        <span class="dot">|</span>
+        <span>The live page is showing today's board. Full all-date MLB enrichment should come from runtime snapshots or export workflows, not a blocking browser request.</span>
+    </div>
+    {% elif date_filter == 'all' %}
+    <div class="bk-status-strip">
+        <strong>All dates are display-capped</strong>
+        <span class="dot">|</span>
+        <span>This page shows the top available slice so the board stays responsive. Full MLB enrichment belongs in runtime snapshots and export workflows.</span>
+    </div>
+    {% endif %}
     {% if rows %}
     <div class="table-shell">
         <table class="data-table compact-board">
@@ -214,7 +232,7 @@
                 {% for prop in rows %}
                 <tr>
                     <td>
-                        <div style="font-weight:700; color:var(--text-bright);">{{ prop.player }}</div>
+                        <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
                         {% if prop.has_injury_flag %}
                         <div style="margin-top: 6px;">
                             <span class="badge badge-injury" title="{{ prop.injury_reason }}">
@@ -223,9 +241,18 @@
                         </div>
                         {% endif %}
                         <div style="font-size:11px; color:var(--text-muted);">{{ prop.team }}{% if prop.book %} | {{ prop.book }}{% endif %}</div>
+                        {% if prop.lineup_gate_label %}
+                        <div style="margin-top:6px;">
+                            <span class="bk-lineup-pill {{ prop.lineup_gate_class }}">{{ prop.lineup_gate_label }}</span>
+                        </div>
+                        {% endif %}
                     </td>
                     <td>
+                        {% if prop.matchup_slug %}
+                        <a class="player-link accent-link" href="/sports/mlb/matchup/{{ prop.matchup_slug }}?date={{ date_filter }}">{{ prop.matchup }}</a>
+                        {% else %}
                         <div style="font-weight:700; color:var(--text-bright);">{{ prop.matchup }}</div>
+                        {% endif %}
                         <div style="font-size:11px; color:var(--text-muted);">{{ prop.game_date or 'Date TBD' }}{% if prop.game_time %} | {{ prop.game_time }}{% endif %}</div>
                     </td>
                     <td><span class="badge">{{ prop.stat }}</span></td>
@@ -258,9 +285,9 @@
                         {% endif %}
                     </td>
                     <td>
-                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.over_rate) if prop.over_rate is not none else 'var(--text-muted)' }};">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
                         <span style="color: var(--text-muted);">/</span>
-                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.under_rate) if prop.under_rate is not none else 'var(--text-muted)' }};">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
                     </td>
                     <td>{% if prop.market_price is not none %}{{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}-{% endif %}</td>
                     <td style="font-size:12px; color:var(--text-muted); line-height:1.45;">
@@ -274,6 +301,18 @@
                         <div>{{ prop.method_note or prop.market_note }}</div>
                         {% if prop.environment_note %}
                         <div style="margin-top:6px; color:var(--text-bright);">{{ prop.environment_note }}</div>
+                        {% endif %}
+                        {% if prop.team_prior_note %}
+                        <div style="margin-top:6px; color:var(--accent-copper); font-weight:700;">{{ prop.team_prior_note }}</div>
+                        {% endif %}
+                        {% if prop.lineup_gate_note %}
+                        <div style="margin-top:6px; color:{% if prop.lineup_gate_status == 'PENDING' %}var(--danger){% elif prop.lineup_gate_status == 'PROBABLE' %}var(--accent-copper){% else %}var(--accent){% endif %}; font-weight:700;">{{ prop.lineup_gate_note }}</div>
+                        {% endif %}
+                        {% if prop.calibrated_sim_hit_probability is not none %}
+                        <div style="margin-top:6px; color:{% if prop.simulation_authority == 'LIVE_AUTHORITY' %}var(--accent){% elif prop.simulation_authority == 'WATCH' %}var(--accent-copper){% else %}var(--text-muted){% endif %}; font-weight:700;">
+                            Sim {{ prop.calibrated_sim_hit_probability }}% · {{ prop.simulation_authority|replace('_', ' ')|title }}
+                        </div>
+                        <div style="color:var(--text-muted);">Raw {{ prop.sim_hit_probability }}%{% if prop.simulation_detail %} · {{ prop.simulation_detail }}{% endif %}</div>
                         {% endif %}
                         {% if prop.trend_note %}
                         <div style="margin-top:6px; color:var(--accent-copper);">{{ prop.trend_note }}</div>

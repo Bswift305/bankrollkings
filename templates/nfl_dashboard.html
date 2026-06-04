@@ -1,58 +1,70 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'nfl' if 'NFL' in sport_title else 'ncaaf' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ sport_title }} Command Surface{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
-<div class="page-hero">
-    <div>
-        <div class="page-kicker">Football Command Surface</div>
-        <h1>{{ sport_title }} <span class="accent">{{ hero_accent }}</span></h1>
-        <div class="page-subtitle">
-            {% if board.available %}
-            {{ sport_profile.summary }}
-            {% else %}
-            {{ sport_title }} board data is not loaded yet.
-            {% endif %}
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        {% if sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') %}
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') }}" alt="{{ sport_title }} logo">
+        </div>
+        {% endif %}
+        <div>
+            <div class="page-kicker">{{ sport_title }} Command Center</div>
+            <h1>{{ sport_title }} <span class="accent">Command Center</span></h1>
+            <div class="page-subtitle">
+                {% if board.available %}
+                {{ sport_profile.summary }}
+                {% else %}
+                {{ sport_title }} board data is not loaded yet.
+                {% endif %}
+            </div>
         </div>
     </div>
-    <div class="hero-actions" style="display:flex; align-items:center; gap:12px;">
-        {% if sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') %}
-        <img src="{{ sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') }}" alt="{{ sport_title }} logo" style="width:52px; height:52px; object-fit:contain; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.28));">
-        {% endif %}
-        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to NBA</a>
-        {% if show_ops_strip %}
-        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Test Drive</a>
-        {% endif %}
+    <div class="hero-actions command-center-actions">
+        <a href="{{ url_for('free_sport_preview', sport_key=active_sport) }}" class="btn btn-primary btn-sm">Open Preview Board</a>
     </div>
 </div>
 
-<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
+<div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
-        <div class="card-title">Platform Lens</div>
-        <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open {{ sport_title }} Board</a>
+        <div>
+            <div class="card-title">{{ sport_title }} Weekly Script Board</div>
+            <div class="cell-meta" style="margin-top:4px;">Football starts with spread, total, weather, and script. Props only matter after the game shape is clear.</div>
+        </div>
+        <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Game Lines</a>
     </div>
     <div class="grid-4 p-16" style="gap: 12px;">
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Read the number first</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Spread, total, and book range should set the conversation before trend chasing starts.</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Slate Mode</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ live_status.state_label }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">{{ live_status.note }}</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Script and style drive it</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use continuity, environment, and team behavior to understand how the game is likely to unfold.</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Games / Workbook</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent-copper);">{{ live_status.games or live_status.workbook_games or 0 }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Weekly prep should be organized game-by-game.</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Pattern or noise?</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">History only matters when it survives review, context, and the current team situation.</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Props Role</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--text-bright);">{{ live_status.props or 0 }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use props as script-backed support, not the first read.</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or conflict</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is to surface when the layers agree and when the board should be treated more cautiously.</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Best First Click</div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Spread + total</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Build the side/total thesis before player-level angles.</div>
         </div>
     </div>
 </div>
+
+{% set sport_key = active_sport %}
+{% set sport_label = sport_title %}
+{% include "partials/sport_locked_depth.html" %}
 
 <div class="grid-3 mb-24" style="gap: 12px;">
     <div class="parlay-surface-soft" style="padding: 12px;">
@@ -129,34 +141,11 @@
     </div>
 </div>
 
-<div class="grid-4 mb-24" style="gap: 12px;">
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Price comes first</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Read the spread, total, and book range before turning the board into a pick sheet.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Game script matters</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use style, pace, and team behavior to understand how the game is likely to unfold.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Test the pattern</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">A streak is only useful if the history and review data say it is worth following.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Plain-English Verdict</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Support or conflict?</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Bankroll Kings is built to show when the signals line up and when they are fighting each other.</div>
-    </div>
-</div>
-
 <div class="card mb-24">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Game Lines</a>
         <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Totals</a>
-        <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Trends</a>
+        <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Streak Patterns</a>
         <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Props</a>
         <a href="{{ other_sport_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left:auto;">{{ other_sport_label }}</a>
     </div>

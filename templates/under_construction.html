@@ -1,20 +1,30 @@
-{% extends "base.html" %}
-{% block title %}{{ page.title }} - Under Construction{% endblock %}
+{% set active_page = 'under_construction' %}
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
+{% block title %}{{ page.title }} Command Center{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
-<div class="page-hero">
-    <div>
-        <div class="page-kicker">{{ page.kicker }}</div>
-        <h1>{{ page.title }} <span class="accent">Under Construction</span></h1>
-        <div class="page-subtitle">{{ page.summary }}</div>
-    </div>
-    <div class="hero-actions">
-        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Back to Dashboard</a>
-        {% if show_ops_strip %}
-        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        {% if sport_logo_url(sport_key) %}
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url(sport_key) }}" alt="{{ page.title }} logo">
+        </div>
         {% endif %}
+        <div>
+            <div class="page-kicker">{{ page.title }} Command Center</div>
+            <h1>{{ page.title }} <span class="accent">Command Center</span></h1>
+            <div class="page-subtitle">{{ page.summary }}</div>
+        </div>
+    </div>
+    <div class="hero-actions command-center-actions">
+        <a href="{{ url_for('free_sport_preview', sport_key=sport_key) }}" class="btn btn-primary btn-sm">Open Preview Board</a>
     </div>
 </div>
+
+{% include "partials/sport_dashboard_lens.html" %}
 
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">

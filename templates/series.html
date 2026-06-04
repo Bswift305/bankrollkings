@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ series_label }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -398,7 +402,7 @@
                 <td><strong>{{ prop.line }}</strong></td>
                 <td>{{ prop.avg }}</td>
                   <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
-                  <td><span style="color: var(--accent);">O:{{ prop.weighted_over_rate }}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #ffb8b8;">U:{{ prop.weighted_under_rate }}%</span></td>
+                  <td><span style="color: {{ ou_rate_color(prop.weighted_over_rate) }};">O:{{ prop.weighted_over_rate }}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: {{ ou_rate_color(prop.weighted_under_rate) }};">U:{{ prop.weighted_under_rate }}%</span></td>
                   <td style="font-size: 11px; line-height: 1.45;">
                       {% if prop.market_summary %}
                       <div style="color: var(--text-bright);">{{ prop.market_summary }}</div>

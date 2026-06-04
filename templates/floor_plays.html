@@ -1,0 +1,193 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Floor Plays{% endblock %}
+
+{% block sidebar %}
+<!-- Floor Plays gets the full filter sidebar -->
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Sport / League</div>
+  <a href="{{ url_for('floor_plays', sport='nba') }}"
+     class="bk-sidebar-item {% if active_sport == 'nba' %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sport_logo_url('nba') }}" alt=""></span>
+    <span class="si-name">NBA</span>
+    <span class="si-count">{{ nba_count }}</span>
+  </a>
+  <a href="{{ url_for('floor_plays', sport='nfl') }}"
+     class="bk-sidebar-item {% if active_sport == 'nfl' %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sport_logo_url('nfl') }}" alt=""></span>
+    <span class="si-name">NFL</span>
+    <span class="si-count">{{ nfl_count }}</span>
+  </a>
+  <a href="{{ url_for('floor_plays', sport='wnba') }}"
+     class="bk-sidebar-item {% if active_sport == 'wnba' %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sport_logo_url('wnba') }}" alt=""></span>
+    <span class="si-name">WNBA</span>
+    <span class="si-count">{{ wnba_count }}</span>
+  </a>
+  <a href="{{ url_for('floor_plays', sport='mlb') }}"
+     class="bk-sidebar-item {% if active_sport == 'mlb' %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sport_logo_url('mlb') }}" alt=""></span>
+    <span class="si-name">MLB</span>
+    <span class="si-count">{{ mlb_count }}</span>
+  </a>
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Prop Category</div>
+  {% for cat in prop_categories %}
+  <label class="bk-filter-row">
+    <input type="checkbox" {% if cat.enabled %}checked{% endif %}
+           onchange="filterProps('{{ cat.key }}', this.checked)">
+    <span {% if not cat.enabled %}style="text-decoration:line-through;opacity:0.4"{% endif %}>
+      {{ cat.name }}
+    </span>
+    <span class="fr-pct" {% if cat.hit_rate < 40 %}style="color:var(--color-red)"{% endif %}>
+      {{ cat.hit_rate }}%
+    </span>
+  </label>
+  {% endfor %}
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Min. Hit Rate</div>
+  <div class="bk-range-wrap">
+    <label>Threshold: <strong style="color:var(--bk-primary)" id="thresh-label">{{ threshold }}%</strong></label>
+    <input type="range" min="60" max="95" value="{{ threshold }}"
+           oninput="document.getElementById('thresh-label').textContent=this.value+'%'">
+    <div class="bk-range-labels"><span>60%</span><span>95%</span></div>
+  </div>
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Situational</div>
+  <label class="bk-filter-row"><input type="checkbox" checked> <span>Back-to-back</span></label>
+  <label class="bk-filter-row"><input type="checkbox" checked> <span>Teammate boost</span></label>
+  <label class="bk-filter-row"><input type="checkbox"> <span>Home only</span></label>
+  <label class="bk-filter-row"><input type="checkbox"> <span>Rested (2+ days)</span></label>
+</div>
+
+<div class="bk-sidebar-footer" id="injuries">
+  {% if injuries %}
+  <div class="bk-injury-alert">
+    <div class="ia-title">{{ injuries|length }} Injury Flag{{ 's' if injuries|length != 1 }}</div>
+    <div class="ia-body">
+      {% for inj in injuries %}{{ inj.player }} ({{ inj.status }}){% if not loop.last %}, {% endif %}{% endfor %}
+      — updated {{ injury_update_time }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock sidebar %}
+
+
+{% block main %}
+<!-- Sticky page header -->
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">FLOOR PLAYS — {{ active_sport | upper }}</div>
+    <div class="bk-page-sub">{{ today_label }} · Lines from DraftKings</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary">
+      <span class="sp-label">Plays</span>
+      <span class="sp-val">{{ plays | length }}</span>
+    </div>
+    <div class="bk-stat-pill primary">
+      <span class="sp-label">Avg Hit</span>
+      <span class="sp-val">{{ avg_hit_rate }}%</span>
+    </div>
+    <div class="bk-stat-pill info">
+      <span class="sp-label">Floor Gap</span>
+      <span class="sp-val">+{{ avg_floor_gap }}%</span>
+    </div>
+  </div>
+</div>
+
+<!-- Sort / filter toolbar -->
+<div class="bk-toolbar">
+  <span class="bk-toolbar-label">Sort:</span>
+  <button class="bk-btn active" onclick="sortPlays('hit_rate', this)">Hit Rate ↓</button>
+  <button class="bk-btn"       onclick="sortPlays('floor_gap', this)">Floor Gap ↓</button>
+  <button class="bk-btn"       onclick="sortPlays('prop_type', this)">Prop Type</button>
+  <button class="bk-btn"       onclick="sortPlays('team', this)">Team</button>
+  <div class="bk-toolbar-spacer"></div>
+  <span class="bk-toolbar-count">{{ plays | length }} plays · <span id="selected-count">0</span> selected</span>
+</div>
+
+<!-- Prop cards -->
+<div class="bk-content" id="prop-list">
+  {% for play in plays %}
+  <div class="bk-prop-card {{ 'floor' if play.floor_gap >= 0.22 else 'near' }}"
+       data-id="{{ play.id }}" onclick="toggleSelect(this)">
+
+    <div class="bk-avatar">{{ play.player_initials }}</div>
+
+    <div>
+      <div class="bk-player-name">{{ play.player_name }}</div>
+      <div class="bk-player-meta">{{ play.team }} · {{ play.position }} · {{ play.matchup }}</div>
+      {% if play.boost_tag %}
+      <span class="bk-tag {% if play.boost_type == 'floor' %}{% else %}info{% endif %}">
+        {{ play.boost_tag }}
+      </span>
+      {% endif %}
+    </div>
+
+    <div class="bk-prop-type"><strong>{{ play.prop_type }}</strong>O/U</div>
+
+    <div class="bk-line">
+      <div class="lv">{{ play.line }}</div>
+      <div class="ll">DK Line</div>
+    </div>
+
+    <div class="bk-avg">
+      <div class="av">{{ play.season_avg }}</div>
+      <div class="al">Szn Avg</div>
+      <div class="gap">+{{ (play.floor_gap * 100) | round | int }}% ↑</div>
+    </div>
+
+    <div class="bk-hit">
+      <div class="bk-hit-top">
+        <span class="bk-hit-pct {{ 'high' if play.hit_rate >= 80 else 'mid' if play.hit_rate >= 77 else 'low' }}">
+          {{ play.hit_rate }}%
+        </span>
+        <span class="bk-hit-games">L{{ play.games_sample }}</span>
+      </div>
+      <div class="bk-hit-track">
+        <div class="bk-hit-fill {{ 'high' if play.hit_rate >= 80 else 'mid' if play.hit_rate >= 77 else 'low' }}"
+             style="width:{{ play.hit_rate }}%"></div>
+      </div>
+    </div>
+
+    <button class="bk-add-btn" onclick="event.stopPropagation(); addToSlip(this, {{ play | tojson }})">+</button>
+  </div>
+  {% endfor %}
+</div>
+{% endblock main %}
+
+
+{% block extra_js %}
+<script>
+  function toggleSelect(card) {
+    card.classList.toggle('selected');
+    const count = document.querySelectorAll('.bk-prop-card.selected').length;
+    document.getElementById('selected-count').textContent = count;
+  }
+
+  function addToSlip(btn, play) {
+    btn.classList.toggle('added');
+    btn.textContent = btn.classList.contains('added') ? '✓' : '+';
+    // In production: POST to /api/slip/add or update session
+    checkSwap();
+  }
+
+  function sortPlays(key, btn) {
+    document.querySelectorAll('.bk-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // In production: re-fetch sorted data or sort DOM cards
+  }
+
+  function filterProps(key, enabled) {
+    // In production: POST filter state and re-render, or hide cards via JS
+  }
+</script>
+{% endblock %}

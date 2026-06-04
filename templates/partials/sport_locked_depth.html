@@ -1,0 +1,22 @@
+{% set locked_items = get_free_sport_locked_features(sport_key) if get_free_sport_locked_features is defined else [] %}
+{% if locked_items %}
+<div class="card mb-24 panel-glow sport-depth-gate">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">{{ sport_label|default(sport_key|upper) }} Depth Map</div>
+            <div class="cell-meta" style="margin-top:4px;">The dashboard shows the lane. Higher tiers unlock the deeper decision layers behind it.</div>
+        </div>
+        <span class="badge badge-accent">Plan-aware</span>
+    </div>
+    <div class="grid-3 p-16" style="gap:12px;">
+        {% for item in locked_items[:3] %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">{{ item.plan }}</div>
+            <div style="font-size:16px; font-weight:800; color:var(--text-bright);">{{ item.title }}</div>
+            <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-top:6px;">{{ item.description }}</div>
+            <a href="{{ url_for('pricing', required=item.plan|lower, next=item.href) }}" class="btn btn-secondary btn-sm" style="margin-top:10px;">Upgrade</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

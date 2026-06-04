@@ -1,0 +1,124 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Tendencies{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Tendency Scope</div>
+  <a class="bk-sidebar-item {% if not sport_filter %}active{% endif %}" href="{{ url_for('tendencies') }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
+    <span class="si-name">All Sports</span>
+  </a>
+  {% for sport in sport_options %}
+  <a class="bk-sidebar-item {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('tendencies', sport=sport) }}">
+    <span class="si-icon"><img src="{{ sport_logo_url(sport|lower) }}" alt=""></span>
+    <span class="si-name">{{ 'CFB' if sport == 'NCAAF' else sport }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">TENDENCIES</div>
+    <div class="bk-page-sub">Conditional hit-rate research: what happens when a specific betting condition is true.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Splits</span><span class="sp-val">{{ situational_splits|length }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Officials</span><span class="sp-val">{{ officiating_status.summary.confirmed }} / {{ officiating_status.summary.total }}</span></div>
+    <div class="bk-stat-pill gold"><span class="sp-label">Profiles</span><span class="sp-val">{{ official_tendencies.summary.ready }} / {{ official_tendencies.summary.total }}</span></div>
+  </div>
+</div>
+
+<div class="bk-toolbar">
+  <span class="bk-toolbar-label">Sport:</span>
+  <a class="bk-btn {% if not sport_filter %}active{% endif %}" href="{{ url_for('tendencies') }}">All</a>
+  {% for sport in sport_options %}
+  <a class="bk-btn {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('tendencies', sport=sport) }}">{{ 'CFB' if sport == 'NCAAF' else sport }}</a>
+  {% endfor %}
+  <div class="bk-toolbar-spacer"></div>
+  <a class="bk-btn" href="{{ url_for('heat_map', sport=sport_filter) }}">Streak Heat</a>
+  <a class="bk-btn" href="{{ url_for('trend_board') }}">Streak Patterns</a>
+  <a class="bk-btn" href="{{ url_for('derivatives_lab', sport=sport_filter) }}#officiating">Officiating</a>
+</div>
+
+<section class="bk-content bk-phase2-shell">
+  <div class="bk-phase2-head">
+    <div>
+      <div class="bk-dashboard-kicker">Product Definition</div>
+      <h2>Reserved for real conditional tendencies</h2>
+      <p>A streak says a player has hit several times in a row. A tendency says the hit rate changes when a condition is true: home, rest, favorite status, total band, opponent type, or official/umpire context.</p>
+    </div>
+  </div>
+  <div class="bk-status-strip">
+    <strong>Current policy:</strong>
+    <span>Streak logic stays in Streak Lab.</span>
+    <span class="dot"></span>
+    <span>Tendency logic must be conditional hit-rate logic.</span>
+    <span class="dot"></span>
+    <span>Officiating profiles should surface here and on sport dashboards when assignments are live.</span>
+  </div>
+</section>
+
+<section class="bk-content bk-phase2-shell">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Build Targets</div>
+      <h2>Situational splits worth building</h2>
+    </div>
+  </div>
+  <div class="bk-phase2-grid">
+    {% for split in situational_splits %}
+    <article class="bk-phase2-card">
+      <span class="bk-phase2-label">{{ split.status }}</span>
+      <strong>{{ split.label }}</strong>
+      <small>{{ split.detail }}</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bk-content bk-phase2-shell" id="officiating">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Officiating Tendencies</div>
+      <h2>Confirmed assignments and tendency profiles</h2>
+      <p>Official tendencies are a real tendency layer because they describe game conditions, not player streaks.</p>
+    </div>
+  </div>
+  <div class="bk-derivative-status-grid">
+    <div class="bk-derivative-status-card">
+      <div class="bk-dashboard-kicker">Assignments</div>
+      <strong>{{ officiating_status.summary.confirmed }} / {{ officiating_status.summary.total }} confirmed</strong>
+      <small>Confirmed officials can be attached to props, totals, and game-environment reads.</small>
+      <div class="bk-mini-read-list">
+        {% for row in officiating_status.rows[:6] %}
+        <div>
+          <span>{{ row.sport }} {{ row.game }}</span>
+          <b class="{{ 'live' if row.status == 'CONFIRMED' else '' }}">{{ row.status }}</b>
+        </div>
+        {% else %}
+        <div><span>No officiating assignment context file yet.</span><b>PENDING</b></div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="bk-derivative-status-card">
+      <div class="bk-dashboard-kicker">Profiles</div>
+      <strong>{{ official_tendencies.summary.ready }} / {{ official_tendencies.summary.total }} ready</strong>
+      <small>Profiles become actionable once they have enough sample and the game assignment is known.</small>
+      <div class="bk-mini-read-list">
+        {% for row in official_tendencies.rows[:6] %}
+        <div>
+          <span>{{ row.sport }} {{ row.official }} | {{ row.metric }}</span>
+          <b class="{{ 'live' if row.status == 'READY' else 'ready' if row.sample_games else '' }}">{{ row.value if row.value != '' else row.status }}</b>
+        </div>
+        {% else %}
+        <div><span>No official tendency profile has been built yet.</span><b>PENDING</b></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock main %}

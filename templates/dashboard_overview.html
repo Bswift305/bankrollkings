@@ -1,155 +1,362 @@
-{% extends "base.html" %}
-{% block title %}Sports Dashboard - Bankroll Kings{% endblock %}
+{% extends "public_base.html" if public_tour else "bk_base.html" %}
+
+{% block title %}Home{% endblock %}
+{% block workflow_toolbar %}{% endblock workflow_toolbar %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Member</div>
+  <a class="bk-sidebar-item active" href="{{ url_for('dashboard') }}" title="Home">
+    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span><span class="si-name">Home</span>
+  </a>
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Sport / League</div>
+  {% for sport in sport_snapshots %}
+  <a href="{{ sport.href }}" class="bk-sidebar-item">
+    <span class="si-icon"><img src="{{ sport_logo_url(sport.key) }}" alt=""></span>
+    <span class="si-name">{{ sport.sport }}</span>
+    <span class="si-count">{{ sport.props_rows }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
 
 {% block content %}
-<div class="page-hero">
-    <div>
-        <div class="page-kicker">Platform Dashboard</div>
-        <h1>Sports <span class="accent">Overview</span></h1>
-        <div class="page-subtitle">A clean home base for every sport on the platform. NBA, WNBA, and MLB are live daily boards now; football and college hoops stay visible as season-prep workspaces.</div>
-    </div>
-    <div class="hero-actions">
-        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA</a>
-        <a href="/sports/wnba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open WNBA</a>
-        <a href="/sports/mlb?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open MLB</a>
-        {% if show_ops_strip %}
-        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
-        {% endif %}
-    </div>
+{% set live_sports = sport_snapshots|selectattr('is_live')|list %}
+{% set total_games = live_sports|sum(attribute='today_games') %}
+{% set total_props = live_sports|sum(attribute='props_rows') %}
+
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">HOME</div>
+    <div class="bk-page-sub">All-sport member landing page: NBA, WNBA, MLB, and season-prep windows from the current refresh</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Live Sports</span><span class="sp-val">{{ live_sports|length }}</span></div>
+    <div class="bk-stat-pill primary"><span class="sp-label">Games</span><span class="sp-val">{{ total_games }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Props</span><span class="sp-val">{{ total_props }}</span></div>
+  </div>
 </div>
 
-{% if sport_snapshots %}
-<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
-    <div class="card-header panel-header-gloss">
-        <div>
-            <div class="card-title">All Sports Today</div>
-            <div class="cell-meta" style="margin-top:4px;">Live matchups, board depth, and strongest available O/U-style prop read by sport.</div>
-        </div>
-        <span class="badge badge-accent">{{ sport_snapshots|length }} sports</span>
-    </div>
-    <div class="p-16">
-        <div class="grid-3" style="gap: 14px;">
-            {% for sport in sport_snapshots %}
-            <a href="{{ sport.href }}" class="series-feature-card" style="position: relative;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
-                    <div class="feature-kicker" style="margin-bottom:0;">{{ sport.sport }}</div>
-                    <span class="status-pill {% if sport.is_live %}today{% else %}upcoming{% endif %}">{{ sport.status }}</span>
-                </div>
-                <div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; margin-bottom:10px;">
-                    <div class="parlay-surface-soft" style="padding:9px;">
-                        <div class="page-kicker" style="margin-bottom:5px;">Matchups</div>
-                        <div style="font-size:22px; font-weight:800; color:var(--accent);">{{ sport.today_games }}</div>
-                    </div>
-                    <div class="parlay-surface-soft" style="padding:9px;">
-                        <div class="page-kicker" style="margin-bottom:5px;">Props</div>
-                        <div style="font-size:22px; font-weight:800; color:var(--text-bright);">{{ sport.props_rows }}</div>
-                    </div>
-                </div>
-                {% if sport.best_prop %}
-                <div style="font-size:15px; font-weight:800; color:var(--text-bright); margin-bottom:4px;">
-                    {{ sport.best_prop.player }} {{ sport.best_prop.stat }} {{ sport.best_prop.direction }}
-                </div>
-                <div class="cell-meta" style="line-height:1.45; margin-bottom:8px;">
-                    Line {{ sport.best_prop.line }}{% if sport.best_prop.price %} at {{ sport.best_prop.price }}{% endif %}
-                    {% if sport.best_prop.book %} · {{ sport.best_prop.book }}{% endif %}
-                    <br>{{ sport.best_prop.matchup }}
-                </div>
-                <div class="micro-cluster">
-                    <span class="micro-chip accent">{{ sport.best_prop.implied }}% implied</span>
-                    <span class="micro-chip copper">Best O/U read</span>
-                </div>
-                {% else %}
-                <div style="font-size:15px; font-weight:800; color:var(--text-bright); margin-bottom:4px;">
-                    {% if sport.today_games %}No O/U prop read yet{% else %}No slate today{% endif %}
-                </div>
-                <div class="cell-meta" style="line-height:1.45; margin-bottom:8px;">{{ sport.note }}</div>
-                <div class="micro-cluster">
-                    <span class="micro-chip soft">{{ sport.status }}</span>
-                    {% if sport.today_games %}<span class="micro-chip blue">Check board</span>{% else %}<span class="micro-chip copper">Season layer</span>{% endif %}
-                </div>
-                {% endif %}
-            </a>
-            {% endfor %}
-        </div>
-    </div>
+<div class="bk-toolbar bk-command-toolbar">
+  <span class="bk-toolbar-label">Open:</span>
+  {% if not public_tour %}
+  <a class="bk-btn active" href="{{ url_for('dashboard', postseason=1 if postseason_only else 0) }}">Home</a>
+  {% endif %}
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='props') }}">Props</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">Parlay Builder</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='review') }}">Review Center</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='market') }}">Market</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='trends') }}">Streak Patterns</a>
+  <a class="bk-btn" href="{{ url_for('tendencies') }}">Tendencies</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='systems') }}">Derivatives</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='officiating') }}">Officiating</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='hot-streaks') }}">Hot Streaks</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='injuries') }}">Injuries</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='elite') }}">Elite</a>
+  <div class="bk-toolbar-spacer"></div>
+  <span class="bk-toolbar-count">{{ live_sports|length }} active boards</span>
 </div>
+
+<section class="bk-content bk-phase2-shell">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Platform Map</div>
+      <h2>What each command does</h2>
+      <p>Home is the all-sports member landing page. It shows what each sport has available, then sends users into that sport's Command Center.</p>
+    </div>
+    {% if public_tour %}
+    <a class="bk-open-btn" href="{{ url_for('signup', plan='free') }}">Create Free Account</a>
+    {% endif %}
+  </div>
+  <div class="bk-phase2-grid">
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='props') }}">
+      <span class="bk-phase2-label">Props</span>
+      <strong>Read the board</strong>
+      <em>Player, stat, line, book, context</em>
+      <small>Props are the live rows. Every row should carry game, market, and reliability context.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">
+      <span class="bk-phase2-label">Parlay Builder</span>
+      <strong>Build a ticket</strong>
+      <em>CorrelationIQ + BankrollIQ</em>
+      <small>The builder grades whether selected legs fit together or stack too much risk.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('account') }}">
+      <span class="bk-phase2-label">Bankroll Counter</span>
+      <strong>Track the crown</strong>
+      <em>Winnings, losses, earnings</em>
+      <small>Your profile bankroll is the running score: what you started with, what you won, what you lost, and what changed.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='review') }}">
+      <span class="bk-phase2-label">Review Center</span>
+      <strong>Learn from results</strong>
+      <em>Hit/miss, player profiles, calibration</em>
+      <small>Review turns yesterday's outcomes into tomorrow's promotion and avoid signals.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='market') }}">
+      <span class="bk-phase2-label">Market</span>
+      <strong>Shop the number</strong>
+      <em>Book split, movement, best price</em>
+      <small>A good read can become a pass if the current line no longer supports it.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='officiating') }}">
+      <span class="bk-phase2-label">Officiating</span>
+      <strong>Know the whistle</strong>
+      <em>Umpire, crew, tendency, pace</em>
+      <small>Umpires and crews can change scoring shape, foul pressure, strike zones, and prop context.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='hot-streaks') }}">
+      <span class="bk-phase2-label">Hot Streaks</span>
+      <strong>Current heat only</strong>
+      <em>Today-slate momentum</em>
+      <small>Streaks should feed the board only when the player is actually live today.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='injuries') }}">
+      <span class="bk-phase2-label">Injuries</span>
+      <strong>Translate role changes</strong>
+      <em>Status into usage</em>
+      <small>Injury value is who gains minutes, usage, targets, volume, or matchup leverage.</small>
+    </a>
+    <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='elite') }}">
+      <span class="bk-phase2-label">Elite</span>
+      <strong>Run the cockpit</strong>
+      <em>EV, tickets, alerts, reports</em>
+      <small>Elite is the paid operating layer for cross-sport builds, saved tickets, timing alerts, and weekly review.</small>
+    </a>
+  </div>
+</section>
+
+{% if cross_sport_top_props %}
+<section class="bk-content bk-home-top-props">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Cross-Sport Home</div>
+      <h2>Top props across every live board</h2>
+      <p>The Home page stays sport-neutral: NBA, WNBA, MLB, and season-prep sports can all surface here when their boards are active.</p>
+    </div>
+    <a class="bk-open-btn" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">Build Cross-Sport</a>
+  </div>
+  <div class="bk-top-props-grid">
+    {% for prop in cross_sport_top_props %}
+    <a class="bk-top-prop-card" href="{{ prop.href }}">
+      <span class="bk-top-prop-sport">
+        <img src="{{ sport_logo_url(prop.sport_key) }}" alt="">
+        {{ prop.sport }} · {{ prop.lane }}
+      </span>
+      <strong>{{ prop.player }}</strong>
+      <small>{{ prop.stat }} {{ prop.direction }} {{ prop.line }}{% if prop.price %} · {{ prop.price }}{% endif %}</small>
+      <em>{{ prop.implied }}% implied{% if prop.matchup %} · {{ prop.matchup }}{% endif %}</em>
+    </a>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 
-<div class="card mb-24 panel-glow">
-    <div class="control-panel" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); align-items:stretch;">
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker" style="margin-bottom:6px;">Focus</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_summary.focus_label }}</div>
-            <div style="font-size:11px; color:var(--text-muted);">{{ nba_summary.focus_copy }}</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker" style="margin-bottom:6px;">Today</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_summary.today_games }} NBA games</div>
-            <div style="font-size:11px; color:var(--text-muted);">{{ nba_summary.board_depth }} props currently modeled</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker" style="margin-bottom:6px;">Best Starting Point</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">Matchup Lens</div>
-            <div style="font-size:11px; color:var(--text-muted);">Open the dedicated NBA matchup method page, then drill into Market Edge, Trends, Floor Plays, and parlays.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker" style="margin-bottom:6px;">Workflow</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">Series -> Props -> Ticket</div>
-            <div style="font-size:11px; color:var(--text-muted);">The same research-to-ticket workflow will carry across every sport as modules launch.</div>
-        </div>
+{% if phase2 %}
+<section class="bk-content bk-phase2-shell">
+  <div class="bk-phase2-head">
+    <div>
+      <div class="bk-dashboard-kicker">Phase 2 Intelligence</div>
+      <h2>Feedback loop command strip</h2>
+      <p>CLV, missed winners, player profiles, hot streaks, scorecards, and parlay EV are now visible from one place.</p>
     </div>
-</div>
+    <a class="bk-open-btn" href="{{ url_for('global_feature_preview', feature_key='review') }}">Open Review</a>
+  </div>
 
-<div class="card mb-24 panel-glow" style="border-color: rgba(110,162,255,0.24);">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Sports Platform</div>
-        <span class="badge badge-accent">{{ sports_launch_cards|length }} Sports</span>
-    </div>
-    <div class="p-20">
-        <div class="grid-3" style="gap: 16px;">
-            {% for sport in sports_launch_cards %}
-            <a href="{{ sport.href }}" class="series-feature-card" style="position: relative;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
-                    <div class="feature-kicker" style="margin-bottom:0;">{{ sport.kicker }}</div>
-                    <span class="status-pill {{ sport.status_class }}">{{ sport.status_label }}</span>
-                </div>
-                <div style="font-size:22px; font-weight:800; color:var(--text-bright); margin-bottom:8px;">{{ sport.title }}</div>
-                <div style="font-size:13px; color:#b8c8d2; line-height:1.55; margin-bottom:12px;">{{ sport.summary }}</div>
-                <div class="micro-cluster" style="margin-bottom: 10px;">
-                    {% for item in sport.highlights[:4] %}
-                    <span class="micro-chip {% if loop.index == 1 %}accent{% elif loop.index == 2 %}blue{% elif loop.index == 3 %}copper{% else %}soft{% endif %}">{{ item }}</span>
-                    {% endfor %}
-                </div>
-                <div style="font-size:13px; color:var(--accent); font-weight:700;">
-                    {% if sport.coming_soon %}View roadmap ->{% else %}Open live workspace ->{% endif %}
-                </div>
-            </a>
-            {% endfor %}
-        </div>
-    </div>
-</div>
+  <div class="bk-phase2-grid">
+    <a class="bk-phase2-card" href="{{ url_for('candidate_review') }}#clv-watch">
+      <span class="bk-phase2-label">CLV Watch</span>
+      <strong>{{ phase2.clv.positive_rate if phase2.clv.positive_rate is not none else '—' }}{% if phase2.clv.positive_rate is not none %}%{% endif %}</strong>
+      <em>{{ phase2.clv.label }}</em>
+      <small>{{ phase2.clv.detail }}</small>
+    </a>
 
-<div class="grid-3" style="gap: 16px;">
-    <div class="card panel-glow">
-        <div class="p-24">
-            <div class="feature-kicker">NBA Snapshot</div>
-            <div style="font-size:32px; font-weight:800; color:var(--text-bright); margin-bottom:6px;">{{ nba_summary.board_depth }}</div>
-            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Live NBA props on the board right now, with game environment, matchup context, and trend logic already wired in.</div>
-        </div>
+    <a class="bk-phase2-card" href="{{ url_for('missed_opportunities') }}">
+      <span class="bk-phase2-label">Missed Winners</span>
+      <strong>{{ phase2.missed.summary.a_or_better if phase2.missed and phase2.missed.summary else 0 }}</strong>
+      <em>A or better</em>
+      <small>{{ phase2.missed.summary.a_plus if phase2.missed and phase2.missed.summary else 0 }} A+ props waiting for promotion review.</small>
+    </a>
+
+    <a class="bk-phase2-card" href="{{ url_for('candidate_review') }}#promotion-signals">
+      <span class="bk-phase2-label">Promotion Signals</span>
+      <strong>{{ phase2.promotion_signals|length }}</strong>
+      <em>Live rules</em>
+      {% if phase2.promotion_signals %}
+      <small>{{ phase2.promotion_signals[0].player }} · {{ phase2.promotion_signals[0].signal }}</small>
+      {% else %}
+      <small>No hard promote pressure in the current cache.</small>
+      {% endif %}
+    </a>
+
+    <a class="bk-phase2-card" href="{{ url_for('candidate_review') }}#streak-heat">
+      <span class="bk-phase2-label">Hot Hands</span>
+      <strong>{% if phase2.streak_heat %}{{ phase2.streak_heat[0].current_streak }}{% else %}0{% endif %}</strong>
+      <em>Top streak</em>
+      {% if phase2.streak_heat %}
+      <small>{{ phase2.streak_heat[0].player }} · {{ phase2.streak_heat[0].sport }} {{ phase2.streak_heat[0].stat }} {{ phase2.streak_heat[0].direction }}</small>
+      {% else %}
+      <small>Resolved rows will populate streak heat after grading.</small>
+      {% endif %}
+    </a>
+
+    <a class="bk-phase2-card" href="{{ url_for('ops_dashboard') }}">
+      <span class="bk-phase2-label">Scorecards</span>
+      <strong>{{ phase2.ready_scorecards }}/{{ phase2.scorecards|length }}</strong>
+      <em>{{ phase2.ops.overall_label }}</em>
+      <small>{{ phase2.scorecard_watch }} sport scorecards still need watch/attention review.</small>
+    </a>
+
+    <a class="bk-phase2-card" href="{{ url_for('elite_dashboard') }}">
+      <span class="bk-phase2-label">Parlay EV</span>
+      <strong>{{ phase2.parlay_ev.ev_pct if phase2.parlay_ev.ev_pct is not none else '—' }}{% if phase2.parlay_ev.ev_pct is not none %}%{% endif %}</strong>
+      <em>{{ phase2.parlay_ev.correlation_label }}</em>
+      <small>{{ phase2.parlay_ev.legs|length }} legs in the current Elite build.</small>
+    </a>
+  </div>
+
+  <div class="bk-phase2-lists">
+    <div class="bk-phase2-panel">
+      <div class="bk-panel-title">Promotion Queue</div>
+      {% for row in phase2.promotion_signals[:4] %}
+      <a class="bk-mini-row" href="/player/{{ row.player|urlencode }}">
+        <span><strong>{{ row.player }}</strong><small>{{ row.sport }} · {{ row.stat }} {{ row.direction }} · {{ row.reliability }}</small></span>
+        <b class="bk-mini-detail">Promoted because this row has a live rule signal, a trusted reliability bucket, and current board pressure strong enough to move it into review.</b>
+        <em>{{ row.signal }}</em>
+      </a>
+      {% else %}
+      <div class="bk-mini-empty">No promotion signals in this refresh window.</div>
+      {% endfor %}
     </div>
-    <div class="card panel-glow">
-        <div class="p-24">
-            <div class="feature-kicker">Top Play Depth</div>
-            <div style="font-size:32px; font-weight:800; color:var(--accent); margin-bottom:6px;">{{ nba_summary.top_plays }}</div>
-            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Featured NBA plays currently surfacing from the live slate and ready for deeper review.</div>
-        </div>
+
+    <div class="bk-phase2-panel">
+      <div class="bk-panel-title">Missed Winner Proof</div>
+      {% for row in phase2.missed_top[:4] %}
+      <a class="bk-mini-row" href="/player/{{ row.player|urlencode }}">
+        <span><strong>{{ row.player }}</strong><small>{{ row.sport }} · {{ row.stat }} {{ row.direction }} · {{ row.confidence or '—' }} conf</small></span>
+        <b class="bk-mini-detail">{{ row.grade }} means the model had a high-confidence read that still hit after missing the featured board, so it becomes proof for future promotion rules.</b>
+        <em>{{ row.grade }}</em>
+      </a>
+      {% else %}
+      <div class="bk-mini-empty">No graded missed winners available yet.</div>
+      {% endfor %}
     </div>
-    <div class="card panel-glow">
-        <div class="p-24">
-            <div class="feature-kicker">Series Angles</div>
-            <div style="font-size:32px; font-weight:800; color:var(--accent-copper); margin-bottom:6px;">{{ nba_summary.series_angles }}</div>
-            <div style="font-size:13px; color:#b8c8d2; line-height:1.5;">Current NBA series contexts already being tracked so the platform can move beyond single-game thinking.</div>
-        </div>
+
+    <div class="bk-phase2-panel">
+      <div class="bk-panel-title">EV Build Preview</div>
+      {% for leg in phase2.parlay_ev.legs[:4] %}
+      <a class="bk-mini-row" href="/player/{{ leg.player|urlencode }}">
+        <span><strong>{{ leg.player }}</strong><small>{{ leg.sport }} · {{ leg.stat }} {{ leg.direction }} {{ leg.line }} · {{ leg.reliability }}</small></span>
+        <b class="bk-mini-detail">{{ leg.true_prob }}% is the estimated true probability after reliability, role, and market context. It is shown here only when the leg survives the EV build screen.</b>
+        <em>{{ leg.true_prob }}%</em>
+      </a>
+      {% else %}
+      <div class="bk-mini-empty">No eligible EV legs available yet.</div>
+      {% endfor %}
     </div>
+  </div>
+</section>
+{% endif %}
+
+{% if run_status and run_status.rows %}
+<section class="bk-content bk-run-status-shell">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Run Status</div>
+      <h2>Daily engine health</h2>
+      <p>{{ run_status.fresh_count }} green checks, {{ run_status.watch_count }} watch items. This is the quick answer to "did the refresh and analysis chain run?"</p>
+    </div>
+    <a class="bk-open-btn" href="{{ url_for('ops_dashboard') }}">Open Ops</a>
+  </div>
+  <div class="bk-run-status-grid">
+    {% for row in run_status.rows %}
+    <div class="bk-run-status-row {{ row.StatusClass }}">
+      <span class="bk-run-dot"></span>
+      <span>
+        <strong>{{ row.Name }}</strong>
+        <small>{{ row.LastRunLabel }} · {{ row.AgeLabel }}</small>
+      </span>
+      <em>{{ row.StatusNote }}</em>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<div class="bk-content bk-dashboard-grid">
+  {% for sport in sport_snapshots %}
+  <section class="bk-dashboard-card {% if sport.is_live %}live{% endif %}">
+    <div class="bk-dashboard-card-head">
+      <div>
+        <div class="bk-dashboard-kicker">{{ sport.status }}</div>
+        <h2>{{ sport.sport }}</h2>
+      </div>
+      <a class="bk-open-btn" href="{{ sport.href }}">Open</a>
+    </div>
+
+    <div class="bk-dashboard-metrics">
+      <div><strong>{{ sport.today_games }}</strong><span>Games</span></div>
+      <div><strong>{{ sport.props_rows }}</strong><span>Props</span></div>
+      <div><strong>{{ sport.matchups|length }}</strong><span>Matchups</span></div>
+    </div>
+
+    {% if sport.matchups %}
+    <div class="bk-matchup-list">
+      {% for matchup in sport.matchups %}
+      <a class="bk-matchup-row" href="{{ matchup.href }}">
+        <span>
+          <strong>{{ matchup.matchup }}</strong>
+          <small>{{ matchup.time }}</small>
+        </span>
+        {% if matchup.best_prop %}
+        <em>{{ matchup.best_prop.player }} · {{ matchup.best_prop.stat }} {{ matchup.best_prop.direction }} {{ matchup.best_prop.line }}</em>
+        {% else %}
+        <em>Open matchup read</em>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="bk-dashboard-note">{{ sport.note }}</p>
+    {% endif %}
+  </section>
+  {% endfor %}
 </div>
-{% endblock %}
+{% endblock content %}
+
+{% block betslip %}
+{% set live_sports = sport_snapshots|selectattr('is_live')|list %}
+<aside class="bk-slip">
+  <div class="bk-slip-header">
+    <div class="bk-slip-title">RESEARCH SLIP</div>
+    <div class="bk-slip-count">{{ live_sports|length }}</div>
+  </div>
+  <div class="bk-slip-tabs">
+    <div class="bk-slip-tab active">Watchlist</div>
+    <div class="bk-slip-tab">Parlay</div>
+    <div class="bk-slip-tab">Singles</div>
+  </div>
+  <div class="bk-slip-legs">
+    {% for sport in live_sports %}
+      {% set prop = sport.best_under or sport.best_over or sport.best_prop %}
+      {% if prop %}
+      <a class="bk-leg" href="{{ sport.href }}">
+        <span class="bk-leg-sport">{{ sport.sport }}</span>
+        <div class="bk-leg-info">
+          <div class="bk-leg-player">{{ prop.player }} · {{ prop.stat }} {{ prop.direction }}</div>
+          <div class="bk-leg-prop">{{ prop.matchup or sport.preview_matchup }}</div>
+        </div>
+        <span class="bk-leg-hit">{{ prop.implied|round(1) }}%</span>
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div class="bk-slip-summary">
+    <div class="bk-sum-row"><span class="bk-sum-label">Mode</span><span class="bk-sum-val primary">{{ 'Postseason' if postseason_only else 'Regular' }}</span></div>
+    <div class="bk-sum-row"><span class="bk-sum-label">NBA Status</span><span class="bk-sum-val">{{ nba_summary.board_depth if nba_summary else 0 }} props</span></div>
+  </div>
+</aside>
+{% endblock betslip %}

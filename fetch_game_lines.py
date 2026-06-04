@@ -61,6 +61,13 @@ SPORT_DEFAULT_MARKETS = {
     "americanfootball_ncaaf": ["h2h", "spreads", "totals"],
     "baseball_mlb": ["h2h", "spreads", "totals"],
 }
+SPORT_TRACKING_PREFIX = {
+    "basketball_nba": "NBA",
+    "basketball_wnba": "WNBA",
+    "americanfootball_nfl": "NFL",
+    "americanfootball_ncaaf": "NCAAF",
+    "baseball_mlb": "MLB",
+}
 
 BOOKMAKER_TITLES = {
     "draftkings": "DraftKings",
@@ -96,13 +103,13 @@ def to_iso_local(value: str | None) -> str:
         return str(value)
 
 
-def fetch_events(api_key: str, days: int) -> list[dict]:
+def fetch_events(api_key: str, days: int, sport: str = DEFAULT_SPORT) -> list[dict]:
     now = datetime.now(timezone.utc)
     commence_from = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     commence_to = (now + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     url = build_url(
-        f"/v4/sports/{SPORT}/events",
+        f"/v4/sports/{sport}/events",
         apiKey=api_key,
         dateFormat="iso",
         commenceTimeFrom=commence_from,
@@ -275,6 +282,74 @@ def build_schedule_alias(df: pd.DataFrame) -> pd.DataFrame:
     return alias_df
 
 
+def append_line_movement_snapshot(df: pd.DataFrame, sport: str) -> None:
+    if df is None or df.empty:
+        return
+    sport_prefix = SPORT_TRACKING_PREFIX.get(sport, sport.upper().replace("-", "_"))
+    tracking_dir = BASE_DIR / "data" / "tracking"
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+    history_path = tracking_dir / f"{sport_prefix}_LineMovementHistory.csv"
+    current_path = tracking_dir / f"{sport_prefix}_LineMovementCurrent.csv"
+
+    snapshot_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    snapshot = df.copy()
+    snapshot.insert(0, "SnapshotAt", snapshot_at)
+    snapshot.insert(1, "Sport", sport_prefix)
+
+    if history_path.exists():
+        try:
+            history = pd.read_csv(history_path)
+        except Exception:
+            history = pd.DataFrame()
+        history = pd.concat([history, snapshot], ignore_index=True, sort=False)
+    else:
+        history = snapshot
+
+    dedupe_cols = [
+        col for col in ["SnapshotAt", "Sport", "GameID", "Date", "Away", "Home", "Book"]
+        if col in history.columns
+    ]
+    if dedupe_cols:
+        history = history.drop_duplicates(subset=dedupe_cols, keep="last")
+    history.to_csv(history_path, index=False)
+
+    key_cols = [col for col in ["Sport", "GameID", "Date", "Away", "Home", "Book"] if col in history.columns]
+    if not key_cols:
+        return
+    sort_cols = [col for col in ["SnapshotAt", "LastUpdated"] if col in history.columns]
+    ordered = history.sort_values(sort_cols) if sort_cols else history.copy()
+    rows = []
+    tracked_fields = ["AwayML", "HomeML", "Spread", "SpreadOdds", "Total", "OverOdds", "UnderOdds"]
+    for key_values, group in ordered.groupby(key_cols, dropna=False):
+        if not isinstance(key_values, tuple):
+            key_values = (key_values,)
+        group = group.copy()
+        latest_row = group.tail(1).iloc[0]
+        row = {col: value for col, value in zip(key_cols, key_values)}
+        row["FirstSeen"] = str(group["SnapshotAt"].iloc[0]) if "SnapshotAt" in group.columns else ""
+        row["LastSnapshotAt"] = str(latest_row.get("SnapshotAt", ""))
+        row["LastUpdated"] = str(latest_row.get("LastUpdated", ""))
+        for field in tracked_fields:
+            values = pd.to_numeric(group.get(field), errors="coerce") if field in group.columns else pd.Series(dtype=float)
+            values = values.dropna()
+            open_value = values.iloc[0] if not values.empty else pd.NA
+            current_value = pd.to_numeric(pd.Series([latest_row.get(field)]), errors="coerce").iloc[0] if field in latest_row else pd.NA
+            row[f"Open{field}"] = open_value
+            row[f"Current{field}"] = current_value
+            try:
+                row[f"{field}Move"] = round(float(current_value) - float(open_value), 3)
+            except Exception:
+                row[f"{field}Move"] = pd.NA
+        rows.append(row)
+
+    current = pd.DataFrame(rows)
+    if not current.empty:
+        current = current.sort_values([col for col in ["Date", "Time", "Away", "Home", "Book"] if col in current.columns])
+    current.to_csv(current_path, index=False)
+    print(f"Tracked line movement snapshot at {history_path}")
+    print(f"Updated current movement summary at {current_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch game lines from The Odds API")
     parser.add_argument("--api-key", help="The Odds API key. Prefer ODDS_API_KEY env var.")
@@ -285,6 +360,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", help="Primary output CSV path")
     parser.add_argument("--schedules-output", help="Optional schedule fallback output CSV path")
     parser.add_argument("--schedule-alias-output", help="Canonical schedule CSV path to keep in sync with fresh game lines")
+    parser.add_argument("--skip-line-movement", action="store_true", help="Do not append this fetch to line movement tracking files.")
     return parser.parse_args()
 
 
@@ -329,6 +405,8 @@ def main() -> int:
     df.to_csv(output_path, index=False)
     df.to_csv(schedules_output_path, index=False)
     build_schedule_alias(df).to_csv(schedule_alias_output_path, index=False)
+    if not args.skip_line_movement:
+        append_line_movement_snapshot(df, sport)
 
     print()
     print(f"Saved {len(df)} rows to {output_path}")

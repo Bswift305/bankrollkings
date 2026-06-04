@@ -1,21 +1,62 @@
-{% extends "base.html" %}
-{% block title %}WNBA Board{% endblock %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'wnba' %}
+{% extends "bk_base.html" %}
+{% block title %}WNBA Command Center{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
-<div class="page-hero">
-    <div>
-        <div class="page-kicker">WNBA Expansion</div>
-        <h1>WNBA <span class="accent">Props + Game Board</span></h1>
-        <div class="page-subtitle">{{ sport_profile.summary }}</div>
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url('wnba') }}" alt="WNBA logo">
+        </div>
+        <div>
+            <div class="page-kicker">WNBA Command Center</div>
+            <h1>WNBA <span class="accent">Command Center</span></h1>
+            <div class="page-subtitle">{{ sport_profile.summary }} Use the toolbar above to move through the WNBA workspace without returning Home.</div>
+        </div>
     </div>
-    <div class="hero-actions">
-        <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
-        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA Board</a>
-        <a href="/sports/wnba/market-edge?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Market Edge</a>
-        <a href="/sports/wnba/floor?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Floor</a>
-        <a href="/sports/wnba/trends?date={{ date_filter }}" class="btn btn-secondary btn-sm">WNBA Trends</a>
+    <div class="hero-actions command-center-actions">
+        <a href="{{ url_for('free_sport_preview', sport_key='wnba') }}" class="btn btn-primary btn-sm">Open Preview Board</a>
     </div>
 </div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">WNBA Market Trust Check</div>
+            <div class="cell-meta" style="margin-top:4px;">WNBA decisions need market depth and reliability front-and-center because book coverage and samples are thinner.</div>
+        </div>
+        <span class="badge badge-accent">{{ board_status.stage }}</span>
+    </div>
+    <div class="grid-4 p-16" style="gap:12px;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Market Depth</div>
+            <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ board_status.books|length if board_status.books else 0 }} books</div>
+            <div class="cell-meta" style="margin-top:6px;">{{ board_status.books|join(', ') if board_status.books else 'Treat rows as thin until more books load.' }}</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Playable Rows</div>
+            <div style="font-size:24px; font-weight:800; color:var(--accent-copper);">{{ top_props|selectattr('play_verdict', 'equalto', 'PLAY')|list|length }}</div>
+            <div class="cell-meta" style="margin-top:6px;">Rows not downgraded by simple guardrails.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Reliability Ready</div>
+            <div style="font-size:24px; font-weight:800; color:var(--text-bright);">{{ top_props|selectattr('historical_reliability')|list|length }}</div>
+            <div class="cell-meta" style="margin-top:6px;">Rows carrying historical reliability labels.</div>
+        </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Environment</div>
+            <div style="font-size:16px; font-weight:800; color:var(--text-bright);">{% if board_status.today_games %}Live slate{% else %}Waiting slate{% endif %}</div>
+            <div class="cell-meta" style="margin-top:6px;">Use scoring environment and thin-market warnings before trusting overs.</div>
+        </div>
+    </div>
+</div>
+
+{% set sport_key = 'wnba' %}
+{% set sport_label = 'WNBA' %}
+{% include "partials/sport_locked_depth.html" %}
 
 <div class="grid-3 mb-24" style="gap: 16px;">
     <div class="parlay-surface-soft" style="padding: 12px;">
@@ -34,6 +75,41 @@
         <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Game-line rows available for the WNBA side.</div>
     </div>
 </div>
+
+{% if board_intelligence and (board_intelligence.prior_count or board_intelligence.sim_count) %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">WNBA Intelligence Snapshot</div>
+        <span class="badge badge-accent">{{ board_intelligence.prior_count }} Team Priors</span>
+    </div>
+    <div class="p-16 grid-2" style="gap: 16px;">
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 8px;">Strongest Team Environments</div>
+            {% for row in board_intelligence.top_priors %}
+            <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
+                <span style="color:var(--text-bright); font-weight:800;">{{ row.team_prior_team or row.team }}</span>
+                <span style="color:var(--accent-copper); font-weight:800;">{{ row.team_prior_score }}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">{{ row.team_prior_label|title }}{% if row.team_market_win_prob is not none %} · market {{ row.team_market_win_prob }}%{% endif %}</div>
+            {% else %}
+            <div style="font-size:12px; color:var(--text-muted);">No team-prior matches on this slate.</div>
+            {% endfor %}
+        </div>
+        <div class="parlay-surface-soft" style="padding: 12px;">
+            <div class="page-kicker" style="margin-bottom: 8px;">Top Simulation Reads</div>
+            {% for row in board_intelligence.top_sims %}
+            <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
+                <span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>
+                <span style="color:var(--accent); font-weight:800;">{{ row.calibrated_sim_hit_probability }}%</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">{{ row.stat }} {{ row.direction }} · {{ row.simulation_authority|replace('_', ' ')|title }}</div>
+            {% else %}
+            <div style="font-size:12px; color:var(--text-muted);">No calibrated sim reads on this slate.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
@@ -209,7 +285,7 @@ py fetch_wnba_player_props.py --days 5</pre>
                 {% for prop in top_props %}
                 <tr>
                     <td>
-                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.player }}</div>
+                        <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
                         {% if prop.has_injury_flag %}
                         <div style="margin-top: 6px;">
                             <span class="badge badge-injury" title="{{ prop.injury_reason }}">
@@ -237,9 +313,9 @@ py fetch_wnba_player_props.py --days 5</pre>
                         {% endif %}
                     </td>
                     <td>
-                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.over_rate) if prop.over_rate is not none else 'var(--text-muted)' }};">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
                         <span style="color: var(--text-muted);">/</span>
-                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.under_rate) if prop.under_rate is not none else 'var(--text-muted)' }};">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
                     </td>
                     <td>
                         <div style="font-weight: 700; color: var(--text-bright);">{{ prop.lean_strength }}</div>
@@ -266,6 +342,15 @@ py fetch_wnba_player_props.py --days 5</pre>
                         <div style="margin-top: 6px; color: var(--text-bright);">{{ prop.environment_note }}</div>
                         {% if prop.game_environment_summary %}
                         <div style="margin-top: 6px; color: var(--accent);">{{ prop.game_environment_summary }}</div>
+                        {% endif %}
+                        {% if prop.team_prior_note %}
+                        <div style="margin-top: 6px; color: var(--accent-copper); font-weight: 700;">{{ prop.team_prior_note }}</div>
+                        {% endif %}
+                        {% if prop.calibrated_sim_hit_probability is not none %}
+                        <div style="margin-top: 6px; color:{% if prop.simulation_authority == 'LIVE_AUTHORITY' %}var(--accent){% elif prop.simulation_authority == 'WATCH' %}var(--accent-copper){% else %}var(--text-muted){% endif %}; font-weight:700;">
+                            Sim {{ prop.calibrated_sim_hit_probability }}% · {{ prop.simulation_authority|replace('_', ' ')|title }}
+                        </div>
+                        <div style="color: var(--text-muted);">Raw {{ prop.sim_hit_probability }}%{% if prop.simulation_detail %} · {{ prop.simulation_detail }}{% endif %}</div>
                         {% endif %}
                         {% if prop.trend_note %}
                         <div style="margin-top: 6px; color: var(--accent-copper);">{{ prop.trend_note }}</div>

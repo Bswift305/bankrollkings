@@ -1,0 +1,292 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Calibration Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Sports</div>
+  {% for row in sports %}
+  <a class="bk-sidebar-item" href="#{{ row.Sport|lower }}">
+    <span class="si-icon">{{ row.Sport[:2] }}</span>
+    <span class="si-name">{{ row.Sport }}</span>
+    <span class="si-count">{{ row.DataStatus }}</span>
+  </a>
+  {% endfor %}
+</div>
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Formula Labs</div>
+  <a class="bk-sidebar-item" href="{{ url_for('nfl_formula_lab') }}">
+    <span class="si-icon">NF</span>
+    <span class="si-name">NFL Formula Lab</span>
+  </a>
+  <a class="bk-sidebar-item" href="{{ url_for('quant_systems') }}">
+    <span class="si-icon">QS</span>
+    <span class="si-name">Systems Lab</span>
+  </a>
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">CALIBRATION LAB</div>
+    <div class="bk-page-sub">One calibration workflow across sports, separate formulas and weights underneath.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Live Sports</span><span class="sp-val">{{ live_count }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Resolved</span><span class="sp-val">{{ total_resolved }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Reports</span><span class="sp-val">{{ report_count }}</span></div>
+  </div>
+</div>
+
+<div class="bk-content calibration-lab">
+  <section class="bk-card cal-hero">
+    <div>
+      <div class="bk-dashboard-kicker">Calibration Rule</div>
+      <h1>Same questions. Different sport formulas.</h1>
+      <p>
+        NBA should not be calibrated like MLB. NFL should not be calibrated like WNBA.
+        The shared process is simple: compare confidence to outcomes, find overvalued buckets,
+        find underweighted buckets, and decide what deserves promotion tomorrow.
+      </p>
+    </div>
+    <div class="cal-callout">
+      <span>Current best large-sample read</span>
+      <strong>{{ best_read }}</strong>
+      <small>{{ best_read_note }}</small>
+    </div>
+  </section>
+
+  <section class="cal-sport-grid">
+    {% for row in sports %}
+    <article class="bk-card cal-sport-card" id="{{ row.Sport|lower }}">
+      <div class="cal-card-head">
+        <div>
+          <div class="bk-dashboard-kicker">{{ row.DataStatus }}</div>
+          <h2>{{ row.Sport }}</h2>
+        </div>
+        <span class="cal-status {{ row.OverallStatus|lower }}">{{ row.OverallStatus }}</span>
+      </div>
+      <div class="cal-metrics">
+        <div><span>Resolved</span><strong>{{ row.ResolvedRowsFmt }}</strong></div>
+        <div><span>Overall</span><strong>{{ row.OverallHitRatePct }}</strong></div>
+        <div><span>70+ Conf</span><strong>{{ row.HighConfidenceHitRatePct }}</strong><small>{{ row.HighConfidenceRowsFmt }} rows</small></div>
+      </div>
+      <div class="cal-buckets">
+        <span>Strong {{ row.StrongBuckets }}</span>
+        <span>Weak {{ row.WeakBuckets }}</span>
+        <span>Watch {{ row.WatchBuckets }}</span>
+      </div>
+      <p>{{ row.Read }}</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="bk-card">
+    <div class="bk-card-title">Cross-Sport Notes</div>
+    <pre class="cal-notes">{{ notes }}</pre>
+  </section>
+
+  <section class="bk-card" id="drivers">
+    <div class="bk-card-title">Sport-Specific Driver Calibration</div>
+    <div class="cal-driver-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Sport</th>
+            <th>Driver</th>
+            <th>Bucket</th>
+            <th>Sample</th>
+            <th>Hit Rate</th>
+            <th>Read</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in driver_rows %}
+          <tr>
+            <td>{{ row.Sport }}</td>
+            <td>{{ row.Driver }}</td>
+            <td>{{ row.Bucket }}</td>
+            <td>{{ row.SampleSize }}</td>
+            <td>{{ (row.HitRate * 100)|round(1) }}%</td>
+            <td><span class="cal-status {{ row.Classification|lower }}">{{ row.Classification }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <pre class="cal-notes">{{ driver_notes }}</pre>
+  </section>
+
+  <section class="bk-card" id="promotion">
+    <div class="bk-card-title">Promotion Signal Inputs</div>
+    <div class="cal-promotion-grid">
+      <div><span>Player Buckets</span><strong>{{ profile_count }}</strong></div>
+      <div><span>ANCHOR Profiles</span><strong>{{ anchor_count }}</strong></div>
+      <div><span>WATCH Profiles</span><strong>{{ watch_count }}</strong></div>
+      <div><span>Missed Winners</span><strong>{{ promotion_count }}</strong></div>
+    </div>
+    <pre class="cal-notes">{{ promotion_notes }}</pre>
+  </section>
+</div>
+
+<style>
+.calibration-lab .bk-card { margin-bottom: 12px; }
+.cal-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 390px);
+  gap: 16px;
+  align-items: center;
+}
+.cal-hero h1 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-size: clamp(30px, 4vw, 48px);
+  margin: 0 0 8px;
+}
+.cal-hero p,
+.cal-sport-card p {
+  color: var(--text2);
+  line-height: 1.55;
+}
+.cal-callout {
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(215,167,79,0.06);
+}
+.cal-callout span,
+.cal-callout small,
+.cal-metrics span,
+.cal-metrics small {
+  display: block;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cal-callout strong {
+  display: block;
+  color: var(--bk-gold2);
+  font-family: var(--font-display);
+  font-size: 32px;
+  letter-spacing: 0.06em;
+  margin: 6px 0;
+}
+.cal-sport-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.cal-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cal-card-head h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: 0.06em;
+}
+.cal-status,
+.cal-buckets span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.cal-status.strong { color: var(--bk-primary2); border-color: rgba(38,182,166,0.38); background: rgba(38,182,166,0.08); }
+.cal-status.watch { color: var(--bk-gold2); border-color: rgba(215,167,79,0.38); background: rgba(215,167,79,0.08); }
+.cal-status.weak { color: var(--color-red); border-color: rgba(255,79,106,0.32); background: rgba(255,79,106,0.08); }
+.cal-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 14px 0;
+}
+.cal-metrics div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255,255,255,0.025);
+}
+.cal-metrics strong {
+  display: block;
+  color: var(--text);
+  font-size: 20px;
+  margin-top: 4px;
+}
+.cal-buckets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.cal-notes {
+  white-space: pre-wrap;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.cal-promotion-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cal-promotion-grid div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255,255,255,0.025);
+}
+.cal-driver-table {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.cal-driver-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.cal-driver-table th,
+.cal-driver-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+}
+.cal-driver-table th {
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+.cal-promotion-grid span {
+  display: block;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cal-promotion-grid strong {
+  display: block;
+  color: var(--bk-gold2);
+  font-size: 24px;
+  margin-top: 4px;
+}
+@media (max-width: 900px) {
+  .cal-hero,
+  .cal-metrics,
+  .cal-promotion-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock main %}

@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'elite' %}
+{% set active_sport = (sport_filter|lower if sport_filter else 'mlb') %}
+{% extends "bk_base.html" %}
 {% block title %}Elite Matchup Builder - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -97,7 +101,7 @@
             <tbody>
                 {% for row in candidates %}
                 <tr>
-                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }} | {{ row.method or 'Elite' }}</div></td>
+                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }} | {{ row.method or 'Elite' }}</div></td>
                     <td><span class="badge">{{ row.direction }}</span> {{ row.stat }} {{ row.line }}</td>
                     <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span></td>
                     <td>{{ row.true_prob }}%</td>
@@ -123,7 +127,7 @@
             {% for row in sharp_money %}
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div style="display:flex; justify-content:space-between; gap:10px;">
-                    <strong>{{ row.player }}</strong>
+                    <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                     <span class="badge">{{ row.urgency }}</span>
                 </div>
                 <div class="cell-meta" style="margin-top:5px;">{{ row.sharp_side }} {{ row.stat }} | Model {{ row.model_side }} | {{ row.alignment }} | {{ row.book }}</div>
@@ -142,7 +146,7 @@
             {% for row in best_books %}
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div style="display:flex; justify-content:space-between; gap:10px;">
-                    <strong>{{ row.player }}</strong>
+                    <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                     <span style="font-weight:800; color:var(--accent);">{% if row.improvement_pct is not none %}{{ row.improvement_pct }}%{% else %}-{% endif %}</span>
                 </div>
                 <div class="cell-meta" style="margin-top:5px;">{{ row.direction }} {{ row.stat }} {{ row.line }} | Best {{ row.best_book }} {{ '+' if row.best_price > 0 }}{{ row.best_price }} | Worst {{ row.worst_book }}</div>

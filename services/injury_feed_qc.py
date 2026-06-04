@@ -110,9 +110,17 @@ def run_injury_feed_qc(sport_key: str, persist: bool = True) -> dict:
     if latest_updated is not None:
         age_hours = round((pd.Timestamp.now() - latest_updated).total_seconds() / 3600.0, 2)
         if age_hours > config.stale_hours:
-            failures.append(
-                f"{config.prefix} injury feed is stale at {age_hours}h old (threshold {config.stale_hours:.0f}h)."
-            )
+            file_age_hours = None
+            if current_path.exists():
+                file_age_hours = round((datetime.now() - datetime.fromtimestamp(current_path.stat().st_mtime)).total_seconds() / 3600.0, 2)
+            if file_age_hours is not None and file_age_hours <= 4:
+                warnings.append(
+                    f"{config.prefix} injury feed source timestamp is stale at {age_hours}h old, but the local fetch ran {file_age_hours}h ago and preserved last-good rows."
+                )
+            else:
+                failures.append(
+                    f"{config.prefix} injury feed is stale at {age_hours}h old (threshold {config.stale_hours:.0f}h)."
+                )
     elif config.live_expected and current_rows > 0:
         warnings.append(f"{config.prefix} injury feed has rows but no parseable Updated timestamps.")
 

@@ -1,8 +1,54 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ team_display_name(team) }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <h1>{{ team_mark(team, size='lg') }} <span class="accent">Roster</span></h1>
+
+{% if team_decision_context %}
+<div class="card panel-glow bk-decision-shell">
+    <div class="bk-decision-header">
+        <div>
+            <div class="page-kicker">{{ team_decision_context.sport_label }} Team Decision</div>
+            <div class="bk-decision-question">{{ team_decision_context.question }}</div>
+        </div>
+        <span class="badge badge-accent">{{ players|length }} roster rows</span>
+    </div>
+    <div class="bk-decision-section-title">What This Team Does</div>
+    <div class="bk-decision-grid">
+        {% for item in team_decision_context.does %}
+        <div class="bk-decision-card">
+            <div class="bk-decision-label">{{ item.label }}</div>
+            <div class="bk-decision-value">{{ item.value }}</div>
+            <div class="bk-decision-note">{{ item.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="bk-decision-section-title">What This Team Allows</div>
+    <div class="bk-decision-grid">
+        {% for item in team_decision_context.allows %}
+        <div class="bk-decision-card">
+            <div class="bk-decision-label">{{ item.label }}{% if item.plan %} <span class="bk-plan-pill">{{ item.plan }}</span>{% endif %}</div>
+            <div class="bk-decision-value">{{ item.value }}</div>
+            <div class="bk-decision-note">{{ item.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="bk-decision-section-title">What Tonight Looks Like</div>
+    <div class="bk-decision-grid">
+        {% for item in team_decision_context.tonight %}
+        <div class="bk-decision-card">
+            <div class="bk-decision-label">{{ item.label }}</div>
+            <div class="bk-decision-value">{{ item.value }}</div>
+            <div class="bk-decision-note">{{ item.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-header">

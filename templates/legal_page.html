@@ -1,0 +1,41 @@
+{% set active_page = 'legal' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ legal_page.title }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">{{ legal_page.kicker }}</div>
+        <h1>{{ legal_page.headline }}</h1>
+        <div class="page-subtitle">{{ legal_page.summary }}</div>
+    </div>
+    <div class="hero-actions">
+        <span class="badge badge-warning">Draft</span>
+        <span class="badge">{{ legal_page.updated_at }}</span>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">{{ legal_page.title }}</div>
+        <span class="badge badge-accent">Launch Readiness</span>
+    </div>
+    <div class="p-24">
+        <div class="legal-draft-note">
+            This is a platform draft and should receive attorney review before public launch.
+        </div>
+        <div class="legal-sections">
+            {% for section in legal_page.sections %}
+            <section class="legal-section">
+                <h2>{{ section.heading }}</h2>
+                {% for paragraph in section.body %}
+                <p>{{ paragraph }}</p>
+                {% endfor %}
+            </section>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

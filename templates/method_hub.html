@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = {'props': 'props', 'market-edge': 'market', 'parlay': 'parlay_builder', 'trends': 'trends', 'injuries': 'injuries'}[method_key] if method_key in ['props', 'market-edge', 'parlay', 'trends', 'injuries'] else 'props' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ title }} Hub - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <style>
@@ -19,8 +22,8 @@
     align-items: center;
     gap: 8px;
     padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(132,215,210,0.16);
+    border-radius: 8px;
+    border: 1px solid var(--window-border-soft, rgba(215,167,79,0.18));
     background: rgba(17,27,36,0.88);
     color: var(--text-muted);
     text-decoration: none;
@@ -32,13 +35,13 @@
 
 .method-tab:hover {
     color: var(--text-bright);
-    border-color: rgba(132,215,210,0.34);
+    border-color: rgba(255,209,109,0.42);
 }
 
 .method-tab.active {
     color: #041413;
-    border-color: rgba(132,215,210,0.55);
-    background: linear-gradient(135deg, rgba(132,215,210,0.92) 0%, rgba(245,200,96,0.92) 100%);
+    border-color: rgba(255,209,109,0.58);
+    background: linear-gradient(135deg, rgba(245,200,96,0.94) 0%, rgba(157,244,236,0.88) 100%);
 }
 
 .method-tab.watch {
@@ -48,13 +51,17 @@
 .method-tab-count {
     min-width: 20px;
     height: 20px;
-    border-radius: 999px;
+    border-radius: 6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-size: 11px;
     background: rgba(255,255,255,0.08);
     color: inherit;
+}
+
+.method-hub-shell .badge {
+    border-radius: 7px !important;
 }
 
 .method-detail-grid {
@@ -66,7 +73,7 @@
 .method-detail-card {
     border-radius: 18px;
     padding: 22px;
-    border: 1px solid rgba(132,215,210,0.14);
+    border: 1px solid var(--window-border, rgba(215,167,79,0.30));
     background:
         linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 24%),
         linear-gradient(135deg, rgba(18,35,49,0.97) 0%, rgba(24,40,54,0.96) 100%);
@@ -124,7 +131,7 @@
 .method-quick-tile {
     border-radius: 16px;
     padding: 16px;
-    border: 1px solid rgba(132,215,210,0.12);
+    border: 1px solid var(--window-border-soft, rgba(215,167,79,0.18));
     background: rgba(10,18,26,0.68);
 }
 
@@ -150,8 +157,236 @@
     color: var(--text-muted);
 }
 
+.props-primer {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+    gap: 18px;
+}
+
+.props-primer-main,
+.props-primer-visual,
+.props-primer-band {
+    border: 1px solid var(--window-border, rgba(215,167,79,0.30));
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0)),
+        rgba(10,18,26,0.82);
+}
+
+.props-primer-main {
+    border-radius: 18px;
+    padding: 22px;
+    min-height: 390px;
+}
+
+.props-primer-visual {
+    border-radius: 18px;
+    padding: 18px;
+    min-height: 390px;
+    position: relative;
+    overflow: hidden;
+}
+
+.props-primer-visual::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(135deg, rgba(215,167,79,0.14), transparent 34%),
+        url('/static/brand-betting-pattern.svg');
+    background-size: cover;
+    opacity: 0.18;
+    pointer-events: none;
+}
+
+.props-primer-visual > * {
+    position: relative;
+    z-index: 1;
+}
+
+.props-primer-title {
+    font-size: 30px;
+    color: var(--text-bright);
+    font-weight: 900;
+    line-height: 1.08;
+    margin-bottom: 6px;
+}
+
+.props-primer-copy {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.7;
+    max-width: 780px;
+}
+
+.props-primer-lede {
+    color: var(--text-bright);
+    font-size: 15px;
+    line-height: 1.75;
+    margin-top: 16px;
+}
+
+.props-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.props-type {
+    border: 1px solid var(--window-border-soft, rgba(215,167,79,0.18));
+    background: rgba(7,14,20,0.62);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.props-type strong {
+    display: block;
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.props-type span {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.props-logo-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.props-logo-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--window-border-soft, rgba(215,167,79,0.18));
+    background: rgba(0,0,0,0.26);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.props-logo-pill img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+}
+
+.ticket-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.ticket-card {
+    border: 1px solid rgba(245,200,96,0.22);
+    background:
+        linear-gradient(90deg, rgba(245,200,96,0.08), transparent 42%),
+        rgba(7,14,20,0.82);
+    border-radius: 12px;
+    padding: 13px;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.28);
+}
+
+.ticket-card.primary {
+    border-color: rgba(255,209,109,0.42);
+    background:
+        linear-gradient(135deg, rgba(245,200,96,0.15), transparent 46%),
+        rgba(7,14,20,0.88);
+}
+
+.ticket-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.ticket-pick {
+    color: var(--text-bright);
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1.2;
+    margin-bottom: 8px;
+}
+
+.ticket-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.ticket-meta span {
+    border: 1px solid var(--window-border-soft, rgba(215,167,79,0.18));
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.ticket-meta strong {
+    display: block;
+    color: var(--accent-copper);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+
+.props-primer-band {
+    border-radius: 14px;
+    padding: 16px;
+    grid-column: 1 / -1;
+}
+
+.props-rule-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.props-rule {
+    border-left: 2px solid rgba(245,200,96,0.62);
+    padding: 4px 10px;
+}
+
+.props-rule strong {
+    display: block;
+    color: var(--text-bright);
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.props-rule span {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 @media (max-width: 920px) {
     .method-detail-grid {
+        grid-template-columns: 1fr;
+    }
+    .props-primer,
+    .props-rule-grid {
+        grid-template-columns: 1fr;
+    }
+    .props-type-grid,
+    .ticket-meta {
         grid-template-columns: 1fr;
     }
 }
@@ -163,6 +398,14 @@
         <h1>{{ headline }}</h1>
         <div class="page-subtitle">{{ summary }}</div>
     </div>
+</div>
+
+<div class="bk-toolbar bk-command-toolbar">
+    <span class="bk-toolbar-label">Open:</span>
+    <a class="bk-btn" href="{{ url_for('dashboard', postseason=1 if postseason_only else 0) }}">All</a>
+    <a class="bk-btn {% if method_key == 'props' %}active{% endif %}" href="{{ url_for('method_hub', method_key='props') }}">Props</a>
+    <a class="bk-btn {% if method_key == 'market-edge' %}active{% endif %}" href="{{ url_for('method_hub', method_key='market-edge') }}">Market</a>
+    <a class="bk-btn {% if method_key == 'parlay' %}active{% endif %}" href="{{ url_for('method_hub', method_key='parlay') }}">Parlay</a>
 </div>
 
 <div class="method-hub-shell">
@@ -233,6 +476,247 @@
             </div>
         </div>
     </div>
+    {% else %}
+    {% if method_key == 'props' %}
+    <div class="props-primer">
+        <section class="props-primer-main">
+            <div class="method-detail-topline">
+                <div>
+                    <div class="props-primer-title">Prop Bets</div>
+                    <div class="method-detail-label">Start Here</div>
+                </div>
+                <span class="badge">SELECT SPORT</span>
+            </div>
+            <div class="props-primer-copy">
+                A prop bet is a wager on a specific player, team, or game event instead of the final winner. Common examples are points, rebounds, hits, strikeouts, passing yards, touchdowns, or whether a player clears a listed line.
+            </div>
+            <div class="props-primer-lede">
+                Props are useful because they isolate one part of the matchup. The job is not just finding an over or under; it is deciding whether the line, role, matchup, market, and recent form are all telling the same story.
+            </div>
+            <div class="props-type-grid">
+                <div class="props-type"><strong>Player Props</strong><span>Points, rebounds, assists, hits, strikeouts, passing yards, receptions, touchdowns.</span></div>
+                <div class="props-type"><strong>Game Props</strong><span>Team totals, first score, alternate totals, race-to markets, or game event outcomes.</span></div>
+                <div class="props-type"><strong>Over / Under</strong><span>Over means the player clears the line. Under means the player stays below it.</span></div>
+                <div class="props-type"><strong>Yes / No</strong><span>Event props like touchdown, home run, double-double, steal, block, or recorded hit.</span></div>
+            </div>
+            <div class="props-logo-strip" aria-label="Supported sports">
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('nba') }}" alt="">NBA</span>
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('wnba') }}" alt="">WNBA</span>
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('mlb') }}" alt="">MLB</span>
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('nfl') }}" alt="">NFL</span>
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('ncaaf') }}" alt="">CFB</span>
+                <span class="props-logo-pill"><img src="{{ sport_logo_url('ncaamb') }}" alt="">CBB</span>
+            </div>
+        </section>
+
+        <section class="props-primer-visual">
+            <div class="ticket-stack">
+                <div class="ticket-card primary">
+                    <div class="ticket-top"><span>Sample Ticket</span><span>Player Prop</span></div>
+                    <div class="ticket-pick">Over 24.5 Points</div>
+                    <div class="ticket-meta">
+                        <span><strong>Line</strong>Needs 25+</span>
+                        <span><strong>Market</strong>Check price</span>
+                        <span><strong>Risk</strong>Role dependent</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Baseball Read</span><span>Daily Slate</span></div>
+                    <div class="ticket-pick">Pitcher Over 5.5 Strikeouts</div>
+                    <div class="ticket-meta">
+                        <span><strong>Line</strong>Needs 6+</span>
+                        <span><strong>Matchup</strong>K rate matters</span>
+                        <span><strong>Weather</strong>Context check</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Football Read</span><span>Game Script</span></div>
+                    <div class="ticket-pick">Receiver Over 49.5 Yards</div>
+                    <div class="ticket-meta">
+                        <span><strong>Line</strong>Needs 50+</span>
+                        <span><strong>Role</strong>Targets first</span>
+                        <span><strong>Total</strong>Pace support</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="props-primer-band">
+            <div class="props-rule-grid">
+                <div class="props-rule"><strong>Pick the sport</strong><span>Each league has different stats, pace, schedule, and injury impact.</span></div>
+                <div class="props-rule"><strong>Understand the number</strong><span>A half-point line avoids ties; whole numbers can push depending on the market.</span></div>
+                <div class="props-rule"><strong>Check the support</strong><span>Look for role, matchup, trend, and book agreement before calling it strong.</span></div>
+                <div class="props-rule"><strong>Respect the risk</strong><span>One-player markets can swing on minutes, weather, usage, injury news, or game script.</span></div>
+            </div>
+        </section>
+    </div>
+    {% elif method_key == 'market-edge' %}
+    <div class="props-primer">
+        <section class="props-primer-main">
+            <div class="method-detail-topline">
+                <div>
+                    <div class="props-primer-title">Market Edge</div>
+                    <div class="method-detail-label">Start Here</div>
+                </div>
+                <span class="badge">SELECT SPORT</span>
+            </div>
+            <div class="props-primer-copy">
+                Market Edge is the pricing layer. It asks whether the current number is still worth attacking after line movement, book disagreement, implied odds, and matchup context are checked.
+            </div>
+            <div class="props-primer-lede">
+                A good player read can become a pass if the market has already moved. Start with the sport, then compare price, line, role, and timing before deciding whether the edge is real.
+            </div>
+            <div class="props-type-grid">
+                <div class="props-type"><strong>Line Movement</strong><span>Watch whether the number moved toward or away from the model side.</span></div>
+                <div class="props-type"><strong>Book Split</strong><span>Compare prices across books instead of trusting one stale number.</span></div>
+                <div class="props-type"><strong>Implied Price</strong><span>Convert odds into probability so the read can be judged against cost.</span></div>
+                <div class="props-type"><strong>Timing Risk</strong><span>Late injury news, starters, weather, and limits can change the market fast.</span></div>
+            </div>
+        </section>
+
+        <section class="props-primer-visual">
+            <div class="ticket-stack">
+                <div class="ticket-card primary">
+                    <div class="ticket-top"><span>Market Ticket</span><span>Price Check</span></div>
+                    <div class="ticket-pick">Over 7.5 Rebounds</div>
+                    <div class="ticket-meta">
+                        <span><strong>Open</strong>7.0</span>
+                        <span><strong>Current</strong>7.5</span>
+                        <span><strong>Read</strong>Chase carefully</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Book Split</span><span>Shop</span></div>
+                    <div class="ticket-pick">Best Price -110 vs -132</div>
+                    <div class="ticket-meta">
+                        <span><strong>Range</strong>22 cents</span>
+                        <span><strong>Depth</strong>Three books</span>
+                        <span><strong>Action</strong>Confirm</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Line Alert</span><span>Volatility</span></div>
+                    <div class="ticket-pick">Total Dropped 3.5 Points</div>
+                    <div class="ticket-meta">
+                        <span><strong>Pace</strong>Lower</span>
+                        <span><strong>Props</strong>Recheck unders</span>
+                        <span><strong>Status</strong>News-driven</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="props-primer-band">
+            <div class="props-rule-grid">
+                <div class="props-rule"><strong>Pick the sport</strong><span>Each market moves differently by league, slate size, and book depth.</span></div>
+                <div class="props-rule"><strong>Shop the number</strong><span>The same play can be strong at one price and weak at another.</span></div>
+                <div class="props-rule"><strong>Respect movement</strong><span>Movement helps when it confirms the read; it hurts when it removes value.</span></div>
+                <div class="props-rule"><strong>Confirm context</strong><span>Market signal should match role, matchup, injury, and recent usage.</span></div>
+            </div>
+        </section>
+    </div>
+    {% elif method_key == 'parlay' %}
+    <div class="props-primer">
+        <section class="props-primer-main">
+            <div class="method-detail-topline">
+                <div>
+                    <div class="props-primer-title">Parlay Builder</div>
+                    <div class="method-detail-label">Start Here</div>
+                </div>
+                <span class="badge">SELECT SPORT</span>
+            </div>
+            <div class="props-primer-copy">
+                A parlay combines multiple picks into one ticket. The payout rises because every leg has to win, so the workflow needs correlation, bankroll discipline, and cleaner leg quality than a single bet.
+            </div>
+            <div class="props-primer-lede">
+                The goal is not to stack every favorite. Start with a sport, choose legs that make sense together, avoid duplicated risk, and keep the ticket size aligned with the bankroll.
+            </div>
+            <div class="props-type-grid">
+                <div class="props-type"><strong>Leg Quality</strong><span>Each pick should stand on its own before it belongs in a ticket.</span></div>
+                <div class="props-type"><strong>CorrelationIQ</strong><span>Check whether legs support each other or fight the same game script.</span></div>
+                <div class="props-type"><strong>BankrollIQ</strong><span>Size the ticket by risk instead of chasing the biggest payout.</span></div>
+                <div class="props-type"><strong>Ticket Shape</strong><span>Three to five cleaner legs often beats a long lottery build.</span></div>
+            </div>
+        </section>
+
+        <section class="props-primer-visual">
+            <div class="ticket-stack">
+                <div class="ticket-card primary">
+                    <div class="ticket-top"><span>Sample Ticket</span><span>3 Legs</span></div>
+                    <div class="ticket-pick">Balanced Core Build</div>
+                    <div class="ticket-meta">
+                        <span><strong>Legs</strong>3</span>
+                        <span><strong>Risk</strong>Controlled</span>
+                        <span><strong>Fit</strong>Clean script</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Correlation</span><span>Game Script</span></div>
+                    <div class="ticket-pick">QB Yards + WR Receptions</div>
+                    <div class="ticket-meta">
+                        <span><strong>Support</strong>Pass volume</span>
+                        <span><strong>Conflict</strong>None</span>
+                        <span><strong>Grade</strong>Better fit</span>
+                    </div>
+                </div>
+                <div class="ticket-card">
+                    <div class="ticket-top"><span>Bankroll</span><span>Stake</span></div>
+                    <div class="ticket-pick">Small Unit, Clear Cap</div>
+                    <div class="ticket-meta">
+                        <span><strong>Unit</strong>0.25x</span>
+                        <span><strong>Max</strong>No chase</span>
+                        <span><strong>Review</strong>Track result</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="props-primer-band">
+            <div class="props-rule-grid">
+                <div class="props-rule"><strong>Pick the sport</strong><span>Build rules change by league because stats and game scripts differ.</span></div>
+                <div class="props-rule"><strong>Limit the legs</strong><span>More legs usually means more ways for one fragile read to break the ticket.</span></div>
+                <div class="props-rule"><strong>Check correlation</strong><span>Legs should fit the same story unless you are intentionally hedging risk.</span></div>
+                <div class="props-rule"><strong>Track the result</strong><span>Saved tickets feed review, calibration, and future avoid/promote rules.</span></div>
+            </div>
+        </section>
+    </div>
+    {% else %}
+    <div class="method-detail-grid">
+        <div class="method-detail-card">
+            <div class="method-detail-topline">
+                <div>
+                    <div class="method-detail-sport">{{ title }}</div>
+                    <div class="method-detail-label">Start Here</div>
+                </div>
+                <span class="badge">SELECT SPORT</span>
+            </div>
+            <div class="method-detail-note">
+                Choose a sport first so this hub can route you to the right board instead of assuming every league uses the same workflow.
+            </div>
+            <div class="method-detail-what">
+                The universal layer is a directory. The sport layer is where the full command center, method rules, and context live.
+            </div>
+        </div>
+
+        <div class="method-quick-grid">
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">Step 1</div>
+                <div class="method-quick-value">Pick The Sport</div>
+                <div class="method-quick-note">NBA props, MLB props, NFL props, and college props need different context, stats, and risk checks.</div>
+            </div>
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">Step 2</div>
+                <div class="method-quick-value">Read The Line</div>
+                <div class="method-quick-note">The line is the number to beat. A player over 24.5 points needs 25 or more; under needs 24 or fewer.</div>
+            </div>
+            <div class="method-quick-tile">
+                <div class="method-quick-kicker">Step 3</div>
+                <div class="method-quick-value">Check Support</div>
+                <div class="method-quick-note">Good props usually have matchup fit, role stability, trend support, and market confirmation working together.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}

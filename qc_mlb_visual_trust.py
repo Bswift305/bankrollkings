@@ -7,7 +7,7 @@ from services.qc_tracking import append_qc_run_log
 
 
 ROUTES = (
-    ("/sports/mlb", ("Daily Slate Command", "Live Board Status", "MLB Prop Board")),
+    ("/sports/mlb", ("MLB Slate Intelligence", "MLB Prop Board")),
     ("/sports/mlb/market-edge?date=all", ("MLB Method Board", "How To Use", "Context")),
     ("/sports/mlb/floor?date=all", ("MLB Method Board", "How To Use", "Context")),
     ("/sports/mlb/trends?date=all", ("MLB Method Board", "How To Use", "Context")),

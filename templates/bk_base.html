@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1418">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bankroll Kings">
+  <meta name="description" content="{% block meta_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, WNBA, and football.{% endblock %}">
+  <title>{% block title %}Bankroll Kings{% endblock %} — Betting Intel</title>
+
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand-latest-logo-thumb.webp') }}">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+
+  <!-- ONE theme file styles the entire site -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260601-sport-borders">
+  <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
+
+  <!-- Page-specific extra styles (optional) -->
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="bk-page-loading" id="bk-page-loading" aria-hidden="true"></div>
+
+<div class="bk-app {% block app_class %}{% endblock %} sport-{{ active_sport|default('home')|lower }}">
+
+  <!-- ═══════════════════════════════════════
+       TOP BAR — identical on every page
+  ═══════════════════════════════════════ -->
+  <header class="bk-topbar">
+    <a class="bk-logo bk-brand-logo" href="{{ url_for('dashboard') }}" title="Bankroll Kings">
+      <img src="/static/brand-latest-logo-thumb.webp" alt="Bankroll Kings">
+    </a>
+    <a class="bk-site-name" href="{{ url_for('dashboard') }}">BANKROLL KINGS</a>
+
+    <div class="bk-header-ticker" aria-label="Live intelligence ticker">
+      <div class="bk-header-ticker-track">
+        <span>LIVE: MLB {{ mlb_count | default(0) }} props</span>
+        <span>WNBA {{ wnba_count | default(0) }} props</span>
+        <span>NBA {{ nba_count | default(0) }} props</span>
+        <span>Promotion queue watching hard promote signals</span>
+        <span>A+ proof feeds future board boosts</span>
+        <span>EV preview checks true probability before ticket build</span>
+        <span>Runtime snapshots warm</span>
+      </div>
+    </div>
+
+    <div class="bk-topbar-right">
+      <span class="bk-date" id="bk-clock">— —</span>
+      {% set active_formula = formula_status_by_sport.get(active_sport|default('')|lower) if formula_status_by_sport else None %}
+      {% if active_formula %}
+      <span class="bk-account-link" title="{{ active_formula.Formula }} | {{ active_formula.ModelVersion }} | calibrated {{ active_formula.LastCalibratedAt or 'pending' }}">
+        {{ active_formula.Sport }} {{ active_formula.Status }}
+      </span>
+      {% endif %}
+      <a class="bk-bankroll" href="{{ url_for('account') if current_user else url_for('signup') }}" title="Bankroll Counter: profile-level winnings, losses, and earnings tracker">
+        <div class="br-label">Bankroll</div>
+        <div class="br-amount">${{ bankroll | default('0.00') }}</div>
+      </a>
+      {% if current_user %}
+      <a class="bk-account-link" href="{{ url_for('account') }}">Account</a>
+      <a class="bk-account-link" href="{{ url_for('pricing') }}">Pricing</a>
+      <a class="bk-account-link" href="{{ url_for('billing_portal') }}">Billing</a>
+      <a class="bk-account-link" href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+      <a class="bk-account-link" href="{{ url_for('login', next=request.path) }}">Sign In</a>
+      <a class="bk-account-link primary" href="{{ url_for('signup', next=request.path) }}">Sign Up</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════
+       ICON RAIL — identical on every page
+  ═══════════════════════════════════════ -->
+  <aside class="bk-rail">
+    <a href="{{ url_for('dashboard') }}" class="bk-rail-icon {% if active_page == 'home' %}active{% endif %}" title="Home: all-sport member landing page">
+      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Home"><span class="tip"><strong>Home</strong><small>All-sport member landing page</small></span>
+    </a>
+    <a href="{{ top_nav_by_key.get('props', {}).get('href', url_for('method_hub', method_key='props')) }}" class="bk-rail-icon {% if active_page == 'props' %}active{% endif %}" title="Props: choose a sport, then open that sport's board">
+      <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Props"><span class="tip"><strong>Props</strong><small>Choose a sport, then open that sport's board</small></span>
+    </a>
+    <a href="{{ top_nav_by_key.get('parlay_builder', {}).get('href', url_for('parlay_builder')) }}" class="bk-rail-icon {% if active_page == 'parlay_builder' %}active{% endif %}" title="Parlay Builder: build tickets from the selected sport">
+      <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Parlay Builder"><span class="tip"><strong>Parlay Builder</strong><small>Build tickets from the selected sport</small></span>
+    </a>
+    <a href="{{ top_nav_by_key.get('review', {}).get('href', url_for('candidate_review')) }}" class="bk-rail-icon {% if active_page == 'review' %}active{% endif %}" title="Review Center: hit/miss and player profile analysis">
+      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Review Center"><span class="tip"><strong>Review Center</strong><small>Hit/miss and player profile analysis</small></span>
+    </a>
+    <div class="bk-rail-divider"></div>
+    <a href="{{ url_for('heat_map') }}" class="bk-rail-icon {% if active_page in ['heat_map', 'hot_streaks'] %}active{% endif %}" title="Streak Lab: heat and pattern views">
+      <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Streak Lab"><span class="tip"><strong>Streak Lab</strong><small>Heat and pattern views</small></span>
+    </a>
+    <a href="{{ url_for('history') }}" class="bk-rail-icon {% if active_page == 'history' %}active{% endif %}" title="Analytics: result history and calibration reads">
+      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Analytics"><span class="tip"><strong>Analytics</strong><small>History, review, calibration</small></span>
+    </a>
+    <a href="#injuries" class="bk-rail-icon {% if injury_count %}bk-pulse{% endif %}" title="Injuries: active injury checks and role flags">
+      <img src="/static/logos/leagues/injuries.svg" loading="lazy" alt="Injuries"><span class="tip"><strong>Injuries</strong><small>Active injury checks{% if injury_count %}: {{ injury_count }}{% endif %}</small></span>
+    </a>
+    <div class="bk-rail-divider"></div>
+    <a href="{{ url_for('settings') }}" class="bk-rail-icon {% if active_page == 'settings' %}active{% endif %}" title="Settings: account and platform preferences">
+      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Settings"><span class="tip"><strong>Settings</strong><small>Account and platform controls</small></span>
+    </a>
+  </aside>
+
+  <!-- ═══════════════════════════════════════
+       LEFT SIDEBAR — overridden per page
+  ═══════════════════════════════════════ -->
+  <aside class="bk-sidebar">
+    {% block sidebar %}
+    <!-- Default sidebar: sport selector + injury alert -->
+    <div class="bk-sidebar-section">
+      <div class="bk-sidebar-heading">Member</div>
+      <a href="{{ url_for('dashboard') }}"
+         class="bk-sidebar-item {% if active_page == 'home' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('review') }}" alt=""></span>
+        <span class="si-name">Home</span>
+      </a>
+    </div>
+
+    <div class="bk-sidebar-section">
+      <div class="bk-sidebar-heading">Sport / League</div>
+      <a href="{{ sport_home_href('nba') }}"
+         class="bk-sidebar-item {% if active_sport == 'nba' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('nba') }}" alt=""></span>
+        <span class="si-name">NBA</span>
+        <span class="si-count">{{ nba_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('nfl') }}"
+         class="bk-sidebar-item {% if active_sport == 'nfl' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('nfl') }}" alt=""></span>
+        <span class="si-name">NFL</span>
+        <span class="si-count">{{ nfl_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('wnba') }}"
+         class="bk-sidebar-item {% if active_sport == 'wnba' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('wnba') }}" alt=""></span>
+        <span class="si-name">WNBA</span>
+        <span class="si-count">{{ wnba_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('mlb') }}"
+         class="bk-sidebar-item {% if active_sport == 'mlb' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('mlb') }}" alt=""></span>
+        <span class="si-name">MLB</span>
+        <span class="si-count">{{ mlb_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('ncaaf') }}"
+         class="bk-sidebar-item {% if active_sport in ['ncaaf', 'cfb'] %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaaf') }}" alt=""></span>
+        <span class="si-name">CFB</span>
+        <span class="si-count">{{ cfb_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('ncaamb') }}"
+         class="bk-sidebar-item {% if active_sport == 'ncaamb' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaamb') }}" alt=""></span>
+        <span class="si-name">Men CBB</span>
+        <span class="si-count">{{ ncaamb_count | default(0) }}</span>
+      </a>
+      <a href="{{ sport_home_href('ncaawb') }}"
+         class="bk-sidebar-item {% if active_sport == 'ncaawb' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaawb') }}" alt=""></span>
+        <span class="si-name">Women CBB</span>
+        <span class="si-count">{{ ncaawb_count | default(0) }}</span>
+      </a>
+    </div>
+
+    <div class="bk-sidebar-footer" id="injuries">
+      {% if injuries %}
+      <div class="bk-injury-alert">
+        <div class="ia-title">{{ injuries | length }} Injury Flag{{ 's' if injuries | length != 1 }}</div>
+        <div class="ia-body">
+          {% for inj in injuries %}{{ inj.player }} ({{ inj.status }}){% if not loop.last %}, {% endif %}{% endfor %}
+          — updated {{ injury_update_time | default('—') }}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endblock sidebar %}
+
+    <div class="bk-sidebar-section">
+      <div class="bk-sidebar-heading">Tools</div>
+      <a href="{{ url_for('settings') }}"
+         class="bk-sidebar-item {% if active_page == 'settings' %}active{% endif %}">
+        <span class="si-icon"><img src="/static/logos/leagues/review.svg" loading="lazy" alt=""></span>
+        <span class="si-name">Settings</span>
+      </a>
+      <a href="{{ url_for('account') }}"
+         class="bk-sidebar-item">
+        <span class="si-icon"><img src="/static/logos/leagues/review.svg" loading="lazy" alt=""></span>
+        <span class="si-name">Account</span>
+      </a>
+      <a href="{{ url_for('glossary') }}"
+         class="bk-sidebar-item">
+        <span class="si-icon"><img src="/static/logos/leagues/review.svg" loading="lazy" alt=""></span>
+        <span class="si-name">Glossary</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════
+       MAIN CONTENT — always overridden
+  ═══════════════════════════════════════ -->
+  <main class="bk-main">
+    {% block workflow_toolbar %}
+    {% if top_nav_items %}
+    <div class="bk-toolbar bk-command-toolbar bk-workflow-toolbar">
+      <span class="bk-toolbar-label">{% if active_sport %}{{ active_sport|upper }}{% else %}Command{% endif %}:</span>
+      {% for item in top_nav_items %}
+      <a class="bk-btn {% if item.active %}active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endblock workflow_toolbar %}
+    <div class="bk-compat-content">
+      {% block content %}{% block main %}{% endblock %}{% endblock %}
+    </div>
+    <footer class="bk-legal-footer">
+      <div class="bk-legal-footer-copy">
+        Bankroll Kings is an analytics platform, not a sportsbook. For entertainment and research use only.
+      </div>
+      <div class="bk-legal-footer-links">
+        <a href="{{ url_for('terms') }}">Terms</a>
+        <a href="{{ url_for('privacy') }}">Privacy</a>
+        <a href="{{ url_for('refund_policy') }}">Refund Policy</a>
+        <a href="{{ url_for('responsible_gambling') }}">Responsible Gambling</a>
+      </div>
+      <div class="bk-legal-footer-copy">
+        Need help? Call or text 1-800-GAMBLER where available.
+      </div>
+    </footer>
+  </main>
+
+  <!-- ═══════════════════════════════════════
+       BET SLIP — shown on most pages,
+       hidden via no-slip class on app div
+  ═══════════════════════════════════════ -->
+  {% block betslip %}
+  <aside class="bk-slip" x-data="{ slipTab: 'parlay' }">
+    <div class="bk-slip-header">
+      <div class="bk-slip-title">BET SLIP</div>
+      <div class="bk-slip-count" id="slip-count">{{ slip_legs | length if slip_legs else 0 }}</div>
+    </div>
+
+    <div class="bk-slip-tabs">
+      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'parlay' }" @click="slipTab = 'parlay'">Parlay</button>
+      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'roundrobin' }" @click="slipTab = 'roundrobin'">Round Robin</button>
+      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'singles' }" @click="slipTab = 'singles'">Singles</button>
+    </div>
+
+    <div class="bk-slip-legs" id="slip-legs">
+      {% if slip_legs %}
+        {% for leg in slip_legs %}
+        <div class="bk-leg" data-id="{{ leg.id }}">
+          <span class="bk-leg-sport">{{ leg.sport }}</span>
+          <div class="bk-leg-info">
+            <div class="bk-leg-player">{{ leg.player }} — {{ leg.prop }}</div>
+            <div class="bk-leg-prop">{{ leg.matchup }} · {{ leg.odds }}</div>
+          </div>
+          <span class="bk-leg-hit">{{ leg.hit_rate }}%</span>
+          <span class="bk-leg-remove" onclick="removeLeg(this)">✕</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="bk-empty">
+          <div class="em-icon">📋</div>
+          <div>No legs added yet</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="bk-slip-summary">
+      <div class="bk-sum-row"><span class="bk-sum-label">Legs</span><span class="bk-sum-val" id="sum-legs">0</span></div>
+      <div class="bk-sum-row"><span class="bk-sum-label">Parlay odds</span><span class="bk-sum-val primary" id="sum-odds">—</span></div>
+      <div class="bk-sum-row"><span class="bk-sum-label">Proj. hit rate</span><span class="bk-sum-val" id="sum-hit">—</span></div>
+      <div class="bk-sum-row"><span class="bk-sum-label">Proj. payout</span><span class="bk-sum-val payout" id="sum-payout">—</span></div>
+    </div>
+
+    <div class="bk-slip-footer">
+      <div class="bk-wager-row">
+        <span class="bk-wager-label">Wager</span>
+        <input class="bk-wager-input" type="text" value="$10.00" id="wager-input">
+      </div>
+      <div class="bk-swap-hint" id="swap-hint" style="display:none">
+        ⇄ 4-prop rotation swap available
+      </div>
+      <button class="bk-place-btn">PLACE PARLAY</button>
+    </div>
+  </aside>
+  {% endblock betslip %}
+
+</div><!-- /.bk-app -->
+
+<!-- ═══════════════════════════════════════
+     BASE JAVASCRIPT — runs on every page
+═══════════════════════════════════════ -->
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    const opts = { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'America/New_York', hour12:false };
+    document.getElementById('bk-clock').textContent =
+      now.toLocaleString('en-US', opts).toUpperCase() + ' ET';
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+
+  // Remove leg from slip
+  function removeLeg(btn) {
+    const leg = btn.closest('.bk-leg');
+    leg.style.transition = 'opacity 0.2s';
+    leg.style.opacity = '0';
+    setTimeout(() => leg.remove(), 200);
+  }
+
+  // Show swap hint when legs >= 4
+  function checkSwap() {
+    const count = document.querySelectorAll('.bk-leg').length;
+    const hint = document.getElementById('swap-hint');
+    if (hint) hint.style.display = count >= 4 ? 'flex' : 'none';
+    const countEl = document.getElementById('slip-count');
+    if (countEl) countEl.textContent = count;
+  }
+  checkSwap();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    });
+  }
+
+  const loadingBar = document.getElementById('bk-page-loading');
+  function showPageLoading() {
+    if (loadingBar) loadingBar.classList.add('active');
+  }
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href]');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    if (!href || href.startsWith('#') || link.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    showPageLoading();
+  });
+  document.addEventListener('submit', event => {
+    if (event.target && event.target.matches('form')) showPageLoading();
+  });
+</script>
+
+<!-- Page-specific scripts -->
+{% block extra_js %}{% endblock %}
+
+</body>
+</html>

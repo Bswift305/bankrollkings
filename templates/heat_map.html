@@ -1,0 +1,118 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Streak Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Heat Filters</div>
+  <a class="bk-sidebar-item {% if not sport_filter %}active{% endif %}" href="{{ url_for('heat_map', min_resolved=min_resolved) }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
+    <span class="si-name">All Sports</span>
+    <span class="si-count">{{ streak_heat|length }}</span>
+  </a>
+  {% for sport in sport_options %}
+  <a class="bk-sidebar-item {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('heat_map', sport=sport, min_resolved=min_resolved) }}">
+    <span class="si-icon"><img src="{{ sport_logo_url(sport|lower) }}" alt=""></span>
+    <span class="si-name">{{ sport }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Minimum Sample</div>
+  {% for sample in [3, 5, 10, 15] %}
+  <a class="bk-sidebar-item {% if min_resolved == sample %}active{% endif %}" href="{{ url_for('heat_map', sport=sport_filter, min_resolved=sample) }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('props') }}" alt=""></span>
+    <span class="si-name">{{ sample }}+ resolved</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <h1 class="bk-page-title">STREAK LAB</h1>
+    <div class="bk-page-sub">Heat View for active runs. Pattern View handles deeper follow-through research.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Buckets</span><span class="sp-val">{{ streak_heat|length }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Avg Heat</span><span class="sp-val">{{ avg_heat if avg_heat is not none else '—' }}</span></div>
+    <div class="bk-stat-pill gold"><span class="sp-label">Sample</span><span class="sp-val">{{ min_resolved }}+</span></div>
+  </div>
+</div>
+
+<div class="bk-toolbar">
+  <span class="bk-toolbar-label">Sport:</span>
+  <a class="bk-btn {% if not sport_filter %}active{% endif %}" href="{{ url_for('heat_map', min_resolved=min_resolved) }}">All</a>
+  {% for sport in sport_options %}
+  <a class="bk-btn {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('heat_map', sport=sport, min_resolved=min_resolved) }}">{{ sport }}</a>
+  {% endfor %}
+  <div class="bk-toolbar-spacer"></div>
+  <a class="bk-btn active" href="{{ url_for('heat_map', sport=sport_filter, min_resolved=min_resolved) }}">Heat View</a>
+  <a class="bk-btn" href="{{ url_for('trend_board') }}">Pattern View</a>
+  <a class="bk-btn" href="{{ url_for('tendencies', sport=sport_filter) }}">Real Tendencies</a>
+  <a class="bk-btn" href="{{ url_for('candidate_review') }}#streak-heat">Review Center</a>
+</div>
+
+<section class="bk-content bk-phase2-shell">
+  <div class="bk-phase2-head">
+    <div>
+      <div class="bk-dashboard-kicker">Streak Lab | Heat View</div>
+      <h2>Current streaks worth reviewing</h2>
+      <p>This does not replace QC. It flags where momentum, hit rate, and sample size line up so you can decide whether the hot hand is real enough to feed a parlay build.</p>
+    </div>
+    {% if top_row %}
+    <a class="bk-open-btn" href="{{ url_for('parlay') }}?player={{ top_row.player|urlencode }}&sport={{ top_row.sport }}&stat={{ top_row.stat }}&direction={{ top_row.direction|lower }}&sample=current&source=heat_map">Add Top</a>
+    {% endif %}
+  </div>
+
+  <div class="bk-heat-list">
+    {% for row in streak_heat %}
+    <article class="bk-heat-row">
+      <div class="bk-heat-main">
+        <span class="bk-heat-rank">{{ loop.index }}</span>
+        <span class="bk-heat-player">
+          <strong><a href="/player/{{ row.player|urlencode }}">{{ row.player }}</a></strong>
+          <small>{{ row.sport }} | {{ row.stat }} {{ row.direction }} | {{ row.resolved }} resolved | {{ row.hit_rate }}%</small>
+        </span>
+        <span class="bk-heat-streak">
+          <strong>{{ row.current_streak }}</strong>
+          <small>Current</small>
+        </span>
+        <span class="bk-heat-history" title="Recent resolved outcomes">
+          {% if row.last_10 is defined %}
+            {% for result in row.last_10[:10] %}
+            <i class="{{ 'hit' if result in ['Hit', 'H'] else 'miss' }}">{{ 'H' if result in ['Hit', 'H'] else 'M' }}</i>
+            {% endfor %}
+          {% else %}
+            {% for result in row.last_5[:10] %}
+            <i class="{{ 'hit' if result in ['Hit', 'H'] else 'miss' }}">{{ 'H' if result in ['Hit', 'H'] else 'M' }}</i>
+            {% endfor %}
+          {% endif %}
+        </span>
+        <span class="bk-heat-score">
+          <strong>{{ row.heat_score }}</strong>
+          <small>Heat</small>
+        </span>
+        <a class="bk-heat-add" href="{{ url_for('parlay') }}?player={{ row.player|urlencode }}&sport={{ row.sport }}&stat={{ row.stat }}&direction={{ row.direction|lower }}&sample=current&source=heat_map">Add</a>
+      </div>
+      <details class="bk-heat-details">
+        <summary>Read more</summary>
+        <div class="bk-compact-detail-grid">
+          <div class="bk-compact-detail"><strong>Streak</strong>{{ row.current_streak }} current hits. Longest streak: {{ row.longest_streak if row.longest_streak is defined else '-' }}.</div>
+          <div class="bk-compact-detail"><strong>Sample</strong>{{ row.hits if row.hits is defined else '-' }} hits, {{ row.misses if row.misses is defined else '-' }} misses across {{ row.resolved }} resolved.</div>
+          <div class="bk-compact-detail"><strong>Use</strong>Use this as a feeder into props or parlay review, not as a standalone bet.</div>
+        </div>
+      </details>
+    </article>
+    {% else %}
+    <div class="bk-empty">
+      <div class="em-icon">HOT</div>
+      <div>No streak buckets available for this filter yet.</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock main %}

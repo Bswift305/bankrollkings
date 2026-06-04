@@ -1,0 +1,337 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Quant Systems Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Systems</div>
+  {% for system in systems %}
+  <a class="bk-sidebar-item" href="#{{ system.key }}">
+    <span class="si-icon">{{ loop.index }}</span>
+    <span class="si-name">{{ system.name }}</span>
+  </a>
+  {% endfor %}
+</div>
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Bankroll Layers</div>
+  {% for layer in engine_layers %}
+  <a class="bk-sidebar-item" href="#layer-{{ loop.index }}">
+    <span class="si-icon">{{ layer.status_short }}</span>
+    <span class="si-name">{{ layer.name }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">QUANT SYSTEMS LAB</div>
+    <div class="bk-page-sub">How classic advantage-play ideas map into the Bankroll Kings engine.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Systems</span><span class="sp-val">{{ systems|length }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Engine Layers</span><span class="sp-val">{{ engine_layers|length }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Positioning</span><span class="sp-val">Explainable</span></div>
+  </div>
+</div>
+
+<div class="bk-content">
+  <section class="bk-card qsl-hero">
+    <div>
+      <div class="bk-dashboard-kicker">Platform Thesis</div>
+      <h1>Not a pick seller. A decision system.</h1>
+      <p>
+        The best gambling minds were not guessing. They combined probability, bankroll discipline,
+        market timing, and information speed. This lab shows which public ideas Bankroll Kings uses,
+        where our current product already supports them, and what we still need to build.
+      </p>
+    </div>
+    <div class="qsl-formula">
+      <span>Profit</span>
+      <strong>(Edge x Volume) - Variance</strong>
+      <small>The operating idea behind every serious betting workflow.</small>
+    </div>
+  </section>
+
+  <section class="bk-card qsl-checklist">
+    <div class="qsl-section-head">
+      <div>
+        <div class="bk-dashboard-kicker">Build Checklist</div>
+        <h2>Quant platform systems we can check off</h2>
+      </div>
+      <span class="bk-badge live">{{ build_checklist|selectattr('status_class', 'equalto', 'live')|list|length }} Live</span>
+    </div>
+    <table class="bk-table">
+      <thead>
+        <tr>
+          <th>System</th>
+          <th>Status</th>
+          <th>Current Artifact</th>
+          <th>Next Work</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in build_checklist %}
+        <tr>
+          <td class="primary">{{ item.system }}</td>
+          <td><span class="bk-badge {{ item.status_class }}">{{ item.status }}</span></td>
+          <td>{{ item.artifact }}</td>
+          <td>{{ item.next }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="qsl-grid">
+    {% for system in systems %}
+    <article class="bk-card qsl-system-card" id="{{ system.key }}">
+      <div class="qsl-card-head">
+        <div>
+          <div class="bk-dashboard-kicker">{{ system.category }}</div>
+          <h2>{{ system.name }}</h2>
+        </div>
+        <span class="bk-badge {{ system.status_class }}">{{ system.fit }}</span>
+      </div>
+      <p class="qsl-summary">{{ system.summary }}</p>
+      <div class="qsl-compare">
+        <div>
+          <span>Classic Lesson</span>
+          <strong>{{ system.lesson }}</strong>
+        </div>
+        <div>
+          <span>Bankroll Kings Translation</span>
+          <strong>{{ system.translation }}</strong>
+        </div>
+      </div>
+      <div class="qsl-tags">
+        {% for tag in system.modules %}
+        <span>{{ tag }}</span>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="bk-card">
+    <div class="bk-card-title">Bankroll Kings Engine Map</div>
+    <div class="qsl-layer-list">
+      {% for layer in engine_layers %}
+      <div class="qsl-layer" id="layer-{{ loop.index }}">
+        <div>
+          <span class="bk-dashboard-kicker">{{ layer.status }}</span>
+          <h3>{{ layer.name }}</h3>
+          <p>{{ layer.description }}</p>
+        </div>
+        <div class="qsl-layer-proof">
+          <strong>{{ layer.current }}</strong>
+          <small>{{ layer.next }}</small>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="bk-card">
+    <div class="bk-card-title">Sport-Specific Math Stack</div>
+    <table class="bk-table">
+      <thead>
+        <tr>
+          <th>Sport</th>
+          <th>Core Math</th>
+          <th>Best Prop Edges</th>
+          <th>Bankroll Kings Focus</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sport_stacks %}
+        <tr>
+          <td class="primary">{{ row.sport }}</td>
+          <td>{{ row.math }}</td>
+          <td>{{ row.props }}</td>
+          <td>{{ row.focus }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="bk-card qsl-warning">
+    <div class="bk-dashboard-kicker">Legal and Product Guardrail</div>
+    <h2>Inspired by public math, not copied models.</h2>
+    <p>
+      We can use public mathematical frameworks like Kelly, EV, Bayesian updating,
+      Poisson models, Markov chains, correlation matrices, and simulation. We should not
+      claim proprietary systems as ours, copy private formulas, or present historical figures
+      as endorsing the platform. The product position is cleaner: Bankroll Kings combines
+      public quantitative ideas into an explainable sports betting intelligence workflow.
+    </p>
+  </section>
+</div>
+
+<style>
+.qsl-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.qsl-hero h1 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-size: clamp(28px, 4vw, 46px);
+  margin: 0 0 8px;
+}
+.qsl-hero p,
+.qsl-summary,
+.qsl-layer p,
+.qsl-warning p {
+  color: var(--text2);
+  line-height: 1.55;
+  margin: 0;
+}
+.qsl-formula {
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 18px;
+  background: linear-gradient(145deg, rgba(215,167,79,0.10), rgba(38,182,166,0.06));
+}
+.qsl-formula span,
+.qsl-formula small,
+.qsl-compare span,
+.qsl-layer-proof small {
+  display: block;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.qsl-formula strong {
+  display: block;
+  color: var(--bk-gold2);
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: 0.06em;
+  margin: 6px 0;
+}
+.qsl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.qsl-checklist {
+  margin-bottom: 14px;
+}
+.qsl-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.qsl-section-head h2 {
+  font-family: var(--font-display);
+  color: var(--text);
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+.qsl-system-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.qsl-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.qsl-card-head h2,
+.qsl-layer h3,
+.qsl-warning h2 {
+  font-family: var(--font-display);
+  color: var(--text);
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+.qsl-card-head h2 { font-size: 24px; }
+.qsl-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.qsl-compare div {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(255,255,255,0.025);
+}
+.qsl-compare strong {
+  display: block;
+  color: var(--text);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.qsl-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.qsl-tags span,
+.bk-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--text2);
+  background: rgba(255,255,255,0.025);
+  font-size: 11px;
+  font-weight: 700;
+}
+.bk-badge.live { color: var(--bk-primary2); border-color: rgba(38,182,166,0.38); background: rgba(38,182,166,0.08); }
+.bk-badge.build { color: var(--bk-gold2); border-color: rgba(215,167,79,0.38); background: rgba(215,167,79,0.08); }
+.qsl-layer-list {
+  display: grid;
+  gap: 10px;
+}
+.qsl-layer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+}
+.qsl-layer-proof {
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+.qsl-layer-proof strong {
+  display: block;
+  color: var(--bk-gold2);
+  margin-bottom: 5px;
+}
+.qsl-warning {
+  margin-top: 14px;
+  border-color: var(--border2);
+}
+@media (max-width: 900px) {
+  .qsl-hero,
+  .qsl-layer,
+  .qsl-compare {
+    grid-template-columns: 1fr;
+  }
+  .qsl-layer-proof {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 12px;
+  }
+}
+</style>
+{% endblock main %}

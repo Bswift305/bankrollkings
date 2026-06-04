@@ -1,0 +1,101 @@
+===============================================================================
+  BANKROLL KINGS - SHORTCUTS & TASK SCHEDULER SETUP
+===============================================================================
+
+FOLDER STRUCTURE
+----------------
+C:\NBA_Floor_Plays\
+├── app.py
+├── fetch_injuries.py
+├── fetch_odds.py
+├── pull_gamelogs.py
+├── data\
+│   ├── gamelogs\
+│   ├── injuries\
+│   ├── props\
+│   └── schedules\
+├── templates\
+├── logs\                    <-- CREATE THIS FOLDER
+├── icons\                   <-- PUT .ICO FILES HERE
+│   ├── icon_launch.ico
+│   ├── icon_refresh.ico
+│   ├── icon_injuries.ico
+│   └── icon_basketball.ico
+└── batch\                   <-- PUT .BAT FILES HERE
+    ├── LAUNCH_BANKROLL_KINGS.bat
+    ├── REFRESH_DATA.bat
+    ├── UPDATE_INJURIES.bat
+    ├── TASK_refresh_data.bat
+    └── TASK_update_injuries.bat
+
+
+CREATING DESKTOP SHORTCUTS WITH ICONS
+-------------------------------------
+
+1. Right-click on desktop → New → Shortcut
+
+2. For "Launch Bankroll Kings":
+   - Location: C:\NBA_Floor_Plays\batch\LAUNCH_BANKROLL_KINGS.bat
+   - Name: Bankroll Kings
+   - Then right-click shortcut → Properties → Change Icon
+   - Browse to: C:\NBA_Floor_Plays\icons\icon_launch.ico
+
+3. For "Refresh Data":
+   - Location: C:\NBA_Floor_Plays\batch\REFRESH_DATA.bat
+   - Name: Refresh Data
+   - Icon: icon_refresh.ico
+
+4. For "Update Injuries":
+   - Location: C:\NBA_Floor_Plays\batch\UPDATE_INJURIES.bat
+   - Name: Update Injuries
+   - Icon: icon_injuries.ico
+
+
+TASK SCHEDULER SETUP
+--------------------
+
+### Task 1: Daily Data Refresh (4:00 AM)
+
+1. Open Task Scheduler (Windows search → "Task Scheduler")
+2. Click "Create Basic Task..."
+3. Name: "Bankroll Kings - Daily Refresh"
+4. Trigger: Daily at 4:00 AM
+5. Action: Start a program
+   - Program/script: C:\NBA_Floor_Plays\batch\TASK_refresh_data.bat
+   - Start in: C:\NBA_Floor_Plays
+6. Finish
+
+### Task 2: Injury Update (5:00 PM)
+
+1. Create Basic Task
+2. Name: "Bankroll Kings - Injury Update"
+3. Trigger: Daily at 5:00 PM
+4. Action: Start a program
+   - Program/script: C:\NBA_Floor_Plays\batch\TASK_update_injuries.bat
+   - Start in: C:\NBA_Floor_Plays
+5. Finish
+
+
+TASK SCHEDULER TIPS
+-------------------
+
+- Check "Run whether user is logged on or not" for reliability
+- Check "Run with highest privileges" if you get permission errors
+- In Conditions tab, uncheck "Start only if on AC power" for laptops
+- Check logs folder for output: C:\NBA_Floor_Plays\logs\
+
+
+MANUAL BATCH FILES vs TASK SCHEDULER BATCH FILES
+-------------------------------------------------
+
+Manual (with window):
+- LAUNCH_BANKROLL_KINGS.bat  → Opens browser, shows server
+- REFRESH_DATA.bat           → Shows progress, waits 10 sec
+- UPDATE_INJURIES.bat        → Shows progress, waits 10 sec
+
+Task Scheduler (silent):
+- TASK_refresh_data.bat      → Logs to file, no window
+- TASK_update_injuries.bat   → Logs to file, no window
+
+
+===============================================================================

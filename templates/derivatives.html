@@ -1,0 +1,184 @@
+{% extends "bk_base.html" %}
+
+{% block title %}Derivative Markets Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Derivative Scope</div>
+  <a class="bk-sidebar-item {% if not sport_filter %}active{% endif %}" href="{{ url_for('derivatives_lab') }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
+    <span class="si-name">All Sports</span>
+    <span class="si-count">{{ summary.props_loaded }}</span>
+  </a>
+  {% for sport in sport_options %}
+  <a class="bk-sidebar-item {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('derivatives_lab', sport=sport) }}">
+    <span class="si-icon"><img src="{{ sport_logo_url(sport|lower) }}" alt=""></span>
+    <span class="si-name">{{ 'CFB' if sport == 'NCAAF' else sport }}</span>
+    <span class="si-count">{{ sport_counts.get(sport, 0) }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Market Types</div>
+  {% for section in sections %}
+  <a class="bk-sidebar-item" href="#{{ section.key }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('game-lines') }}" alt=""></span>
+    <span class="si-name">{{ section.title }}</span>
+    <span class="si-count">{{ section.rows|length }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">DERIVATIVE MARKETS LAB</div>
+    <div class="bk-page-sub">Half, quarter, head-to-head, combined, alt-line, and defensive matchup feeders</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Props</span><span class="sp-val">{{ summary.props_loaded }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Priced</span><span class="sp-val">{{ summary.priced_props }}</span></div>
+    <div class="bk-stat-pill gold"><span class="sp-label">Games</span><span class="sp-val">{{ summary.games }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Combo Ready</span><span class="sp-val">{{ summary.combined_ready }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Officials</span><span class="sp-val">{{ summary.officials_confirmed }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Tendencies</span><span class="sp-val">{{ summary.tendency_ready }}</span></div>
+  </div>
+</div>
+
+<div class="bk-toolbar">
+  <span class="bk-toolbar-label">Sport:</span>
+  <a class="bk-btn {% if not sport_filter %}active{% endif %}" href="{{ url_for('derivatives_lab') }}">All</a>
+  {% for sport in sport_options %}
+  <a class="bk-btn {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('derivatives_lab', sport=sport) }}">{{ 'CFB' if sport == 'NCAAF' else sport }}</a>
+  {% endfor %}
+  <div class="bk-toolbar-spacer"></div>
+  <a class="bk-btn" href="{{ url_for('quant_systems') }}">Systems Lab</a>
+</div>
+
+<section class="bk-content bk-phase2-shell bk-derivatives">
+  <div class="bk-phase2-head">
+    <div>
+      <div class="bk-dashboard-kicker">Micro Market Intelligence</div>
+      <h2>Find the markets books price too mechanically</h2>
+      <p>DraftKings-style derivative markets create extra surfaces: halves, quarters, head-to-heads, combined props, and alternate ladders. This lab turns the current prop board into a shortlist of spots worth deeper pricing.</p>
+    </div>
+    <a class="bk-open-btn" href="{{ url_for('parlay') }}?sample=current">Open Builder</a>
+  </div>
+
+  <div class="bk-derivative-principles">
+    <div><strong>1</strong><span>Start with the full-game signal, then check whether the smaller window has its own logic.</span></div>
+    <div><strong>2</strong><span>Never add two players together without checking correlation and shared usage.</span></div>
+    <div><strong>3</strong><span>Defensive matchups and officiating become the precision layer before a prop graduates.</span></div>
+  </div>
+</section>
+
+<section class="bk-content bk-phase2-shell bk-derivatives">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">Data Readiness</div>
+      <h2>Combined props and officiating status</h2>
+      <p>This tells us which exotic markets are actually usable now and which context feeds still need assignments before the model should trust them.</p>
+    </div>
+  </div>
+  <div class="bk-derivative-status-grid">
+    <div class="bk-derivative-status-card">
+      <div class="bk-dashboard-kicker">Combined Props</div>
+      <strong>{{ combined_coverage.summary.ready }} / {{ combined_coverage.summary.total }} ready</strong>
+      <small>{{ combined_coverage.summary.live }} live market{{ '' if combined_coverage.summary.live == 1 else 's' }} detected from current prop files</small>
+      <div class="bk-mini-read-list">
+        {% for row in combined_coverage.rows[:6] %}
+        <div>
+          <span>{{ row.sport }} {{ row.stat }}</span>
+          <b class="{{ 'live' if row.live else 'ready' if row.ready else '' }}">{{ row.status }}</b>
+        </div>
+        {% else %}
+        <div><span>No combined prop coverage file yet.</span><b>PENDING</b></div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="bk-derivative-status-card">
+      <div class="bk-dashboard-kicker">Officiating</div>
+      <strong>{{ officiating_status.summary.confirmed }} / {{ officiating_status.summary.total }} confirmed</strong>
+      <small>MLB uses home-plate umpire context now; hoops, football, and college feeds are scaffolded for crews.</small>
+      <div class="bk-mini-read-list">
+        {% for row in officiating_status.rows[:6] %}
+        <div>
+          <span>{{ row.sport }} {{ row.game }}</span>
+          <b class="{{ 'live' if row.status == 'CONFIRMED' else '' }}">{{ row.status }}</b>
+        </div>
+        {% else %}
+        <div><span>No officiating context file yet.</span><b>PENDING</b></div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="bk-derivative-status-card">
+      <div class="bk-dashboard-kicker">Official Tendencies</div>
+      <strong>{{ official_tendencies.summary.ready }} / {{ official_tendencies.summary.total }} ready</strong>
+      <small>Call-level averages need event feeds. Until then, assignments can show the official but not a true whistle tendency.</small>
+      <div class="bk-mini-read-list">
+        {% for row in official_tendencies.rows[:6] %}
+        <div>
+          <span>{{ row.sport }} {{ row.official }} | {{ row.metric }}</span>
+          <b class="{{ 'live' if row.status == 'READY' else 'ready' if row.sample_games else '' }}">{{ row.value if row.value != '' else row.status }}</b>
+        </div>
+        {% else %}
+        <div><span>No official tendency profile has been built yet.</span><b>PENDING</b></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% for section in sections %}
+<section class="bk-content bk-phase2-shell bk-derivatives" id="{{ section.key }}">
+  <div class="bk-phase2-head compact">
+    <div>
+      <div class="bk-dashboard-kicker">{{ section.rows|length }} Reads</div>
+      <h2>{{ section.title }}</h2>
+      <p>{{ section.subtitle }}</p>
+    </div>
+  </div>
+
+  <div class="bk-compact-list">
+    {% for row in section.rows %}
+    <article class="bk-compact-row">
+      <div class="bk-compact-row-main">
+        <div class="bk-compact-player">
+          <a href="{{ row.href }}">{{ row.title }}</a>
+          <small>{{ row.sport }} | {{ row.game }}</small>
+        </div>
+        <div class="bk-compact-stat">
+          <span class="prop-chip">{{ row.tag }}</span>
+          <strong>{{ row.stat }} {{ row.side }}</strong>
+        </div>
+        <div class="bk-compact-line">
+          <strong>{{ row.line }}</strong>
+          <small>{{ row.price }}</small>
+        </div>
+        <div class="bk-compact-edge">
+          <strong>{{ row.score }}%</strong>
+          <small>{{ row.action }}</small>
+        </div>
+      </div>
+      <details class="bk-compact-details">
+        <summary>Read more</summary>
+        <div class="bk-compact-detail-grid">
+          <div class="bk-compact-detail"><strong>Why it matters</strong>{{ row.detail }}</div>
+          <div class="bk-compact-detail"><strong>Next check</strong>Confirm best book, line movement, game environment, and whether the derivative number is stale.</div>
+          <div class="bk-compact-detail"><strong>Workflow</strong>Use as a feeder into Props, Market, Parlay Builder, or the player profile.</div>
+        </div>
+      </details>
+    </article>
+    {% else %}
+    <div class="bk-empty">
+      <div class="em-icon">LAB</div>
+      <div>No derivative candidates are available for this filter yet.</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock main %}

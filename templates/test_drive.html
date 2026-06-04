@@ -1,11 +1,14 @@
-{% extends "base.html" %}
-{% block title %}Test Drive - Bankroll Kings{% endblock %}
+{% set active_page = 'test_drive' %}
+{% extends "bk_base.html" %}
+{% block title %}Tester Workflow - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
     <div>
         <div class="page-kicker">Tester Workflow</div>
-        <h1>Test <span class="accent">Drive</span></h1>
+        <h1>Tester <span class="accent">Workflow</span></h1>
         <div class="page-subtitle">
             Use this page as the outside-tester home base. It points people to the highest-value workflows and captures structured feedback so we can tighten the product fast.
         </div>
@@ -152,7 +155,8 @@
                             <option value="Smart Picks">Smart Picks</option>
                             <option value="Parlay Builder">Parlay Builder</option>
                             <option value="Heatmap">Heatmap</option>
-                            <option value="Trend Board">Trend Board</option>
+                            <option value="Streak Patterns">Streak Patterns</option>
+                            <option value="Tendencies">Tendencies</option>
                             <option value="Season Review">Season Review</option>
                             <option value="Team Page">Team Page</option>
                             <option value="Player Page">Player Page</option>

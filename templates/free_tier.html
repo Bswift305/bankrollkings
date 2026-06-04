@@ -1,0 +1,642 @@
+﻿{% extends "bk_base.html" %}
+
+{% block title %}{% if active_preview %}{{ active_preview.title }}{% else %}Free Tier{% endif %}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .free-hero {
+    border: 1px solid rgba(127,238,228,.22);
+    border-radius: 12px;
+    padding: 20px;
+    background:
+      radial-gradient(circle at 10% 12%, rgba(127,238,228,.10), transparent 30%),
+      linear-gradient(145deg, rgba(13,26,25,.95), rgba(7,12,12,.94));
+  }
+  .free-kicker {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .free-hero h1 {
+    margin: 0 0 8px;
+    font-family: var(--font-display);
+    font-size: clamp(36px, 5vw, 64px);
+    letter-spacing: .04em;
+    line-height: .9;
+  }
+  .free-hero p {
+    max-width: 880px;
+    color: var(--bk-muted);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .free-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .free-sport-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+  }
+  .free-tab {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 10px;
+    background: rgba(255,255,255,.025);
+    color: var(--bk-muted);
+    text-decoration: none;
+  }
+  .free-tab.active {
+    color: var(--bk-text);
+    border-color: rgba(241,193,91,.42);
+    background: rgba(241,193,91,.08);
+  }
+  .free-tab img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+  .free-tab strong {
+    display: block;
+    font-size: 13px;
+  }
+  .free-tab small {
+    display: block;
+    color: var(--bk-muted);
+    font-size: 11px;
+  }
+  .free-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 14px;
+    align-items: start;
+  }
+  .free-panel {
+    border: 1px solid rgba(127,238,228,.16);
+    border-radius: 12px;
+    padding: 15px;
+    background: linear-gradient(145deg, rgba(12,22,22,.92), rgba(6,10,11,.92));
+  }
+  .free-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .free-panel-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    letter-spacing: .06em;
+    font-size: 26px;
+  }
+  .free-lock {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(241,193,91,.30);
+    border-radius: 999px;
+    padding: 4px 9px;
+    color: var(--bk-gold);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .free-prop-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .free-prop-table th,
+  .free-prop-table td {
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid rgba(127,238,228,.10);
+    vertical-align: top;
+  }
+  .free-prop-table th {
+    color: var(--bk-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    background: rgba(127,238,228,.045);
+  }
+  .free-prop-table strong {
+    color: var(--bk-text);
+  }
+  .free-prop-table small {
+    color: var(--bk-muted);
+    line-height: 1.35;
+  }
+  .free-side-list {
+    display: grid;
+    gap: 10px;
+  }
+  .free-side-card {
+    border: 1px solid rgba(127,238,228,.12);
+    border-radius: 10px;
+    padding: 12px;
+    background: rgba(255,255,255,.025);
+  }
+  .free-side-card span {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .free-side-card strong {
+    display: block;
+    color: var(--bk-text);
+    margin: 5px 0 3px;
+  }
+  .free-side-card small {
+    color: var(--bk-muted);
+    line-height: 1.4;
+  }
+  .free-builder-demo {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr);
+    gap: 12px;
+  }
+  .free-builder-leg {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 11px;
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 10px;
+    background: rgba(255,255,255,.025);
+  }
+  .free-builder-leg em {
+    width: 28px;
+    height: 28px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(145deg, #9dfff7, #d7a74f);
+    color: #04100f;
+    font-style: normal;
+    font-weight: 900;
+  }
+  .free-builder-leg strong,
+  .free-builder-ticket strong {
+    display: block;
+    color: var(--bk-text);
+  }
+  .free-builder-leg small,
+  .free-builder-ticket small {
+    display: block;
+    color: var(--bk-muted);
+    line-height: 1.35;
+  }
+  .free-command-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .free-command-card {
+    min-height: 132px;
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 12px;
+    padding: 13px;
+    background:
+      radial-gradient(circle at 90% 12%, rgba(127,238,228,.08), transparent 34%),
+      rgba(255,255,255,.025);
+  }
+  .free-command-card span {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .free-command-card strong {
+    display: block;
+    color: var(--bk-text);
+    margin: 6px 0 4px;
+    font-size: 15px;
+  }
+  .free-command-card small {
+    display: block;
+    color: var(--bk-muted);
+    line-height: 1.4;
+  }
+  .free-command-card a {
+    display: inline-flex;
+    margin-top: 10px;
+    color: var(--bk-primary2);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .free-lock-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .free-lock-card {
+    min-height: 150px;
+    border: 1px solid rgba(241,193,91,.20);
+    border-radius: 12px;
+    padding: 13px;
+    background:
+      radial-gradient(circle at 92% 10%, rgba(241,193,91,.10), transparent 34%),
+      rgba(255,255,255,.025);
+  }
+  .free-lock-card span {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(241,193,91,.30);
+    border-radius: 999px;
+    padding: 3px 8px;
+    color: var(--bk-gold);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .free-lock-card strong {
+    display: block;
+    color: var(--bk-text);
+    margin: 9px 0 5px;
+    font-size: 15px;
+  }
+  .free-lock-card small {
+    display: block;
+    color: var(--bk-muted);
+    line-height: 1.45;
+  }
+  .free-lock-card a {
+    display: inline-flex;
+    margin-top: 10px;
+    color: var(--bk-primary2);
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .free-builder-chip {
+    border: 1px solid rgba(127,238,228,.22);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--bk-primary2);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .free-builder-ticket {
+    border: 1px solid rgba(241,193,91,.24);
+    border-radius: 12px;
+    padding: 14px;
+    background:
+      radial-gradient(circle at 90% 12%, rgba(241,193,91,.13), transparent 35%),
+      linear-gradient(145deg, rgba(14,22,22,.96), rgba(6,10,11,.96));
+  }
+  .free-ticket-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(127,238,228,.10);
+  }
+  .free-ticket-row:last-of-type {
+    border-bottom: 0;
+  }
+  .free-ticket-row span {
+    color: var(--bk-muted);
+    font-size: 12px;
+  }
+  .free-ticket-row b {
+    color: var(--bk-gold2);
+  }
+  .free-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .free-sport-card {
+    border: 1px solid rgba(127,238,228,.16);
+    border-radius: 12px;
+    padding: 14px;
+    background: linear-gradient(145deg, rgba(12,22,22,.94), rgba(6,10,11,.92));
+    text-decoration: none;
+    color: var(--bk-text);
+  }
+  .free-sport-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .free-sport-card-head img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+  .free-sport-card-head em {
+    margin-left: auto;
+    color: var(--bk-gold);
+    font-style: normal;
+    font-size: 11px;
+  }
+  .free-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 10px 0;
+  }
+  .free-metrics span {
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--bk-muted);
+    font-size: 11px;
+  }
+  @media (max-width: 1100px) {
+    .free-grid,
+    .free-builder-demo { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Member</div>
+  <a class="bk-sidebar-item {% if active_key == 'home' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
+    <span class="si-name">Home</span>
+  </a>
+</div>
+
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Sport Preview</div>
+  {% for sport in sports %}
+  <a href="{{ sport.href }}" class="bk-sidebar-item {% if active_key == sport.key %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sport_logo_url(sport.key) }}" alt=""></span>
+    <span class="si-name">{{ sport.sport }}</span>
+    <span class="si-count">{{ sport.sample_rows|length }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block main %}
+{% if active_preview %}
+<section class="bk-content free-hero">
+  <div class="free-kicker">{{ active_preview.kicker }}</div>
+  <h1>{{ active_preview.title }}</h1>
+  <p>{{ active_preview.summary }}</p>
+  <div class="free-actions">
+    <a class="bk-open-btn" href="{{ active_preview.paid_href }}">Unlock Full {{ active_preview.sport }}</a>
+    <a class="bk-btn" href="{{ url_for('pricing') }}">Compare Plans</a>
+    <a class="bk-btn" href="{{ url_for('free_tier') }}">All Free Samples</a>
+  </div>
+</section>
+
+<section class="bk-content">
+  <div class="free-sport-tabs">
+    {% for sport in sports %}
+    <a class="free-tab {% if active_key == sport.key %}active{% endif %}" href="{{ sport.href }}">
+      <img src="{{ sport_logo_url(sport.key) }}" alt="">
+      <span><strong>{{ sport.sport }}</strong><small>{{ sport.sample_rows|length }} free rows</small></span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bk-content free-panel">
+  <div class="free-panel-head">
+    <div>
+      <h2>Parlay Builder Example</h2>
+      <small>A free test drive should show how legs become a graded ticket, even before the full builder unlocks.</small>
+    </div>
+    <span class="free-lock">Preview workflow</span>
+  </div>
+  <div class="free-builder-demo">
+    <div class="free-side-list">
+      {% for row in active_preview.sample_rows[:3] %}
+      <div class="free-builder-leg">
+        <em>{{ loop.index }}</em>
+        <div>
+          <strong>{{ row.player }}</strong>
+          <small>{{ active_preview.sport }} Â· {{ row.stat }} {{ row.direction }} {{ row.line }}{% if row.matchup %} Â· {{ row.matchup }}{% endif %}</small>
+        </div>
+        <span class="free-builder-chip">{{ row.implied }}%</span>
+      </div>
+      {% else %}
+      <div class="free-builder-leg">
+        <em>1</em>
+        <div>
+          <strong>Sample Anchor Leg</strong>
+          <small>Live rows appear here when this sport has active props from refresh.</small>
+        </div>
+        <span class="free-builder-chip">Preview</span>
+      </div>
+      {% endfor %}
+    </div>
+    <aside class="free-builder-ticket">
+      <span class="free-lock">Ticket read</span>
+      <div class="free-ticket-row"><span>Build grade</span><b>Waiting for full access</b></div>
+      <div class="free-ticket-row"><span>CorrelationIQ</span><b>Checks same-game risk</b></div>
+      <div class="free-ticket-row"><span>BankrollIQ</span><b>Sizes the wager</b></div>
+      <div class="free-ticket-row"><span>Saved review</span><b>Tracks hit/miss later</b></div>
+      <small>The paid builder is where users add/remove legs, save a ticket, clear the slip, and review whether the ticket structure was actually smart after results finalize.</small>
+    </aside>
+  </div>
+</section>
+
+<section class="bk-content free-panel">
+  <div class="free-panel-head">
+    <div>
+      <h2>{{ active_preview.sport }} Tool Glimpse</h2>
+      <small>A limited sport-specific preview. Home explains the full platform; this page shows what this sport feels like.</small>
+    </div>
+    <span class="free-lock">Sport sample</span>
+  </div>
+  {% set sample = active_preview.sample_rows[0] if active_preview.sample_rows else none %}
+  <div class="free-command-grid">
+    <div class="free-command-card">
+      <span>Props</span>
+      <strong>{% if sample %}{{ sample.player }}{% else %}Live board rows{% endif %}</strong>
+      <small>{% if sample %}{{ sample.stat }} {{ sample.direction }} {{ sample.line }} at {{ sample.book }} shows how a prop row carries player, market, and matchup context.{% else %}When the slate is live, this card shows the row shape users unlock in the full props board.{% endif %}</small>
+      <a href="{{ active_preview.paid_href }}">Open full props</a>
+    </div>
+    <div class="free-command-card">
+      <span>Review Center</span>
+      <strong>Did the signal actually work?</strong>
+      <small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and missed-winner proof.</small>
+      <a href="{{ url_for('candidate_review') }}">Preview review</a>
+    </div>
+    <div class="free-command-card">
+      <span>Market</span>
+      <strong>{% if sample %}{{ sample.price }} Â· {{ sample.implied }}% implied{% else %}Book disagreement{% endif %}</strong>
+      <small>Market preview explains whether the current number still supports the read, or whether the book already moved away.</small>
+      <a href="{{ url_for('method_hub', method_key='market-edge') }}">Preview market</a>
+    </div>
+    <div class="free-command-card">
+      <span>Streak Lab</span>
+      <strong>Only current-slate heat</strong>
+      <small>Hot hands should only show players who actually play today, then connect streaks back to the board.</small>
+      <a href="{{ url_for('heat_map') }}">Preview heat</a>
+    </div>
+    <div class="free-command-card">
+      <span>Injuries</span>
+      <strong>Availability into role changes</strong>
+      <small>The injury tool should explain who gains minutes, usage, targets, or matchup value, not just list statuses.</small>
+      <a href="{{ url_for('method_hub', method_key='injuries') }}">Preview injuries</a>
+    </div>
+    <div class="free-command-card">
+      <span>Calibration</span>
+      <strong>Confidence has to prove itself</strong>
+      <small>Calibration checks whether the model's 60%, 70%, and 80% bands actually behave that way over resolved results.</small>
+      <a href="{{ url_for('calibration_lab') }}">Preview calibration</a>
+    </div>
+    <div class="free-command-card">
+      <span>Missed Opps</span>
+      <strong>Find what hit quietly</strong>
+      <small>Missed Winners show strong model reads that hit without being featured, then feed tomorrow's promotion logic.</small>
+      <a href="{{ url_for('missed_opportunities') }}">Preview missed</a>
+    </div>
+    <div class="free-command-card">
+      <span>Systems Lab</span>
+      <strong>Why the formula exists</strong>
+      <small>EV, Kelly, simulations, line timing, and correlation become plain-English decision rules.</small>
+      <a href="{{ url_for('quant_systems') }}">Preview systems</a>
+    </div>
+    <div class="free-command-card">
+      <span>Elite</span>
+      <strong>The full operating cockpit</strong>
+      <small>Elite ties saved tickets, EV, CorrelationIQ, BankrollIQ, reports, and action queues into one workflow.</small>
+      <a href="{{ url_for('elite_dashboard') }}">Preview elite</a>
+    </div>
+  </div>
+</section>
+
+<section class="bk-content free-grid">
+  <div class="free-panel">
+    <div class="free-panel-head">
+      <div>
+        <h2>Limited Live Board</h2>
+        <small>Real sample rows. Full board unlocks every row, filter, sort, player page, and matchup detail.</small>
+      </div>
+      <span class="free-lock">Free sample</span>
+    </div>
+    {% if active_preview.sample_rows %}
+    <table class="free-prop-table">
+      <thead><tr><th>Player</th><th>Prop</th><th>Market</th><th>Read</th></tr></thead>
+      <tbody>
+        {% for row in active_preview.sample_rows %}
+        <tr>
+          <td><strong>{{ row.player }}</strong><br><small>{{ row.matchup or active_preview.sport }}</small></td>
+          <td>{{ row.stat }} {{ row.direction }} {{ row.line }}<br><small>{{ row.book }}</small></td>
+          <td>{{ row.price }}<br><small>{{ row.implied }}% implied</small></td>
+          <td><small>{{ row.read }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="free-side-card">
+      <span>Season Prep</span>
+      <strong>No live prop slate yet</strong>
+      <small>This sportâ€™s free sample will use historical formula/backfill reads until the season starts.</small>
+    </div>
+    {% endif %}
+  </div>
+
+  <aside class="free-side-list">
+    <div class="free-side-card">
+      <span>Today</span>
+      <strong>{{ active_preview.today_games }} games Â· {{ active_preview.props_rows }} props</strong>
+      <small>{{ active_preview.status }}</small>
+    </div>
+    <div class="free-side-card">
+      <span>Game Glimpse</span>
+      {% if active_preview.matchups %}
+      <strong>{{ active_preview.matchups[0] }}</strong>
+      <small>Paid matchup pages add game lines, O/U, injuries, weather/officiating where available, and prop context.</small>
+      {% else %}
+      <strong>Formula preview</strong>
+      <small>Season-prep sports show how the formula will work before live slates return.</small>
+      {% endif %}
+    </div>
+    <div class="free-side-card">
+      <span>Drivers</span>
+      <strong>{{ active_preview.drivers|join(' Â· ') }}</strong>
+      <small>These are the main factors this sport leans on inside the paid engine.</small>
+    </div>
+    <div class="free-side-card">
+      <span>Locked</span>
+      {% for item in active_preview.locked_features[:4] %}
+      <small>{{ item.plan }} &middot; {{ item.title }}</small>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<section class="bk-content free-panel">
+  <div class="free-panel-head">
+    <div>
+      <h2>What Unlocks Next</h2>
+      <small>The free preview shows the surface. Paid tiers unlock the depth behind each sport's real betting workflow.</small>
+    </div>
+    <span class="free-lock">Depth gated by tier</span>
+  </div>
+  <div class="free-lock-grid">
+    {% for item in active_preview.locked_features %}
+    <div class="free-lock-card">
+      <span>{{ item.plan }}</span>
+      <strong>{{ item.title }}</strong>
+      <small>{{ item.description }}</small>
+      <a href="{{ url_for('pricing', required=item.plan|lower, next=item.href) }}">Upgrade for {{ item.plan }}</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="bk-content free-hero">
+  <div class="free-kicker">Free Tier Preview</div>
+  <h1>Try The Platform By Sport</h1>
+  <p>Free users get a real limited experience for each sport: sample rows, one matchup-style read, a few market notes, and locked full-depth tools. The preview board shows what the sport workflow feels like before paid access opens the complete board.</p>
+  <div class="free-actions">
+    <a class="bk-open-btn" href="{{ url_for('free_sport_preview', sport_key='mlb') }}">Try MLB</a>
+    <a class="bk-btn" href="{{ url_for('free_sport_preview', sport_key='wnba') }}">Try WNBA</a>
+    <a class="bk-btn" href="{{ url_for('pricing') }}">Compare Plans</a>
+  </div>
+</section>
+
+<section class="bk-content">
+  <div class="free-overview-grid">
+    {% for sport in sports %}
+    <a class="free-sport-card" href="{{ sport.href }}">
+      <div class="free-sport-card-head">
+        <img src="{{ sport_logo_url(sport.key) }}" alt="">
+        <strong>{{ sport.sport }}</strong>
+        <em>{{ sport.status }}</em>
+      </div>
+      <p>{{ sport.summary }}</p>
+      <div class="free-metrics">
+        <span>{{ sport.today_games }} games</span>
+        <span>{{ sport.props_rows }} props</span>
+        <span>{{ sport.sample_rows|length }} free rows</span>
+      </div>
+      {% if sport.best_prop %}
+      <small>Sample: {{ sport.best_prop.player }} Â· {{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}</small>
+      {% else %}
+      <small>Season-prep sample: {{ sport.drivers|join(' Â· ') }}</small>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

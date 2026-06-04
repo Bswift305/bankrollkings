@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'wnba' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ matchup.away }} @ {{ matchup.home }} - WNBA Matchup{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -106,7 +110,7 @@
                 {% for prop in matchup_props %}
                 <tr>
                     <td>
-                        <div style="font-weight: 700; color: var(--text-bright);">{{ prop.player }}</div>
+                        <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
                         {% if prop.has_injury_flag %}
                         <div style="margin-top: 6px;">
                             <span class="badge badge-injury" title="{{ prop.injury_reason }}">
@@ -125,9 +129,9 @@
                         {% endif %}
                     </td>
                     <td>
-                        <span style="color: var(--accent);">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.over_rate) if prop.over_rate is not none else 'var(--text-muted)' }};">O:{{ prop.over_rate if prop.over_rate is not none else '-' }}%</span>
                         <span style="color: var(--text-muted);">/</span>
-                        <span style="color: #FF6B6B;">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
+                        <span style="color: {{ ou_rate_color(prop.under_rate) if prop.under_rate is not none else 'var(--text-muted)' }};">U:{{ prop.under_rate if prop.under_rate is not none else '-' }}%</span>
                     </td>
                     <td>
                         <div style="font-weight: 700; color: var(--text-bright);">{{ prop.lean_strength }}</div>

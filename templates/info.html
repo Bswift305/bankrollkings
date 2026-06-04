@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = 'info' %}
+{% extends "bk_base.html" %}
 {% block title %}How It Works - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -18,7 +21,7 @@
     <div class="card-header panel-header-gloss">
         <div class="card-title">Platform Lens</div>
         {% if show_ops_strip %}
-        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Test Drive</a>
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Tester Workflow</a>
         {% endif %}
     </div>
     <div class="grid-4 p-16" style="gap: 12px;">

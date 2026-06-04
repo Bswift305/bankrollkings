@@ -1,5 +1,9 @@
-{% extends "base.html" %}
-{% block title %}Matchup Lens - Bankroll Kings{% endblock %}
+﻿{% set active_page = active_page|default('home') %}
+{% set active_sport = active_sport|default('') %}
+{% extends "bk_base.html" %}
+{% block title %}{% if matchup_lens_mode %}NBA Matchup Lens{% else %}NBA Command Center{% endif %} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 {% set matchup_guide = get_method_guide('matchup_lens') %}
@@ -32,6 +36,7 @@
 }
 
 .lens-card {
+    position: relative;
     display: block;
     text-decoration: none;
     border-radius: 16px;
@@ -40,18 +45,64 @@
     background:
         linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 30%),
         linear-gradient(135deg, rgba(18,35,49,0.96) 0%, rgba(24,40,54,0.94) 100%);
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.18);
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
-.lens-card:hover {
-    transform: translateY(-3px);
-    border-color: rgba(132,215,210,0.28);
+.lens-card:hover,
+.lens-card:focus-visible {
+    transform: translateY(-4px);
+    border-color: rgba(241,193,91,0.72);
+    background:
+        radial-gradient(circle at 92% 10%, rgba(241,193,91,0.16), transparent 34%),
+        linear-gradient(180deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0) 34%),
+        linear-gradient(135deg, rgba(20,44,51,0.98) 0%, rgba(24,40,54,0.96) 100%);
+    box-shadow: 0 18px 38px rgba(0,0,0,0.30), 0 0 0 1px rgba(241,193,91,0.18), 0 0 26px rgba(132,215,210,0.10);
+    outline: none;
+}
+
+.lens-card:hover .lens-title,
+.lens-card:focus-visible .lens-title {
+    color: #fff7dc;
+}
+
+.lens-card:hover .lens-score,
+.lens-card:focus-visible .lens-score {
+    border-color: rgba(241,193,91,0.50);
+    background: rgba(241,193,91,0.12);
 }
 
 .lens-card.accent { border-color: rgba(132,215,210,0.26); }
 .lens-card.copper { border-color: rgba(184,115,51,0.26); }
 .lens-card.blue { border-color: rgba(110,162,255,0.26); }
 .lens-card.danger { border-color: rgba(255,107,107,0.30); }
+
+.lens-board-grid:has(.lens-card:only-child) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.lens-board-grid:has(.lens-card:only-child) .lens-card {
+    display: grid;
+    grid-template-columns: minmax(280px, .58fr) minmax(360px, 1fr);
+    column-gap: 24px;
+    row-gap: 10px;
+    align-items: start;
+    padding: 16px 18px;
+    border-radius: 12px;
+}
+
+.lens-board-grid:has(.lens-card:only-child) .lens-topline,
+.lens-board-grid:has(.lens-card:only-child) .lens-title,
+.lens-board-grid:has(.lens-card:only-child) .lens-kicker,
+.lens-board-grid:has(.lens-card:only-child) .lens-drivers,
+.lens-board-grid:has(.lens-card:only-child) .lens-cta {
+    grid-column: 1;
+}
+
+.lens-board-grid:has(.lens-card:only-child) .lens-summary,
+.lens-board-grid:has(.lens-card:only-child) .lens-driver-note {
+    grid-column: 2;
+}
 
 .lens-type {
     font-size: 10px;
@@ -132,9 +183,25 @@
 }
 
 .lens-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    border: 1px solid rgba(132,215,210,0.18);
+    border-radius: 999px;
+    padding: 5px 9px;
+    background: rgba(255,255,255,0.035);
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 700;
+    transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.lens-card:hover .lens-cta,
+.lens-card:focus-visible .lens-cta {
+    color: #061112;
+    border-color: rgba(241,193,91,0.72);
+    background: linear-gradient(135deg, rgba(245,200,96,0.96), rgba(157,244,236,0.88));
 }
 
 .tonight-card-grid {
@@ -183,6 +250,14 @@
     font-weight:700;
 }
 
+.tonight-card-top-actions {
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:10px;
+}
+
 .tonight-card-summary {
     font-size:13px;
     color:#b8c8d2;
@@ -191,16 +266,22 @@
 }
 
 .tonight-card-layout {
-    display:grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.95fr);
+    display:flex;
+    flex-direction:column;
     gap:12px;
-    align-items:start;
 }
 
 .tonight-card-stack {
     display:flex;
     flex-direction:column;
     gap:10px;
+}
+
+.tonight-context-grid {
+    display:grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap:12px;
+    align-items:start;
 }
 
 .tonight-chip-row {
@@ -273,8 +354,8 @@
 }
 
 .tonight-angle-list {
-    display:flex;
-    flex-direction:column;
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap:8px;
 }
 
@@ -328,7 +409,10 @@
 }
 
 @media (max-width: 1080px) {
-    .tonight-card-layout {
+    .tonight-context-grid {
+        grid-template-columns: 1fr;
+    }
+    .tonight-angle-list {
         grid-template-columns: 1fr;
     }
 }
@@ -470,7 +554,7 @@
 }
 
 .mw-pattern-item::before {
-    content: "·";
+    content: "Â·";
     position: absolute;
     left: 2px;
     color: var(--accent-copper);
@@ -512,131 +596,636 @@
     margin-bottom: 3px;
     opacity: 0.7;
 }
+
+.sport-flow-panel {
+    overflow: hidden;
+}
+
+.sport-flow-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    align-items: start;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.34);
+    background:
+        radial-gradient(circle at 18% 0%, rgba(132,215,210,0.11), transparent 42%),
+        linear-gradient(135deg, rgba(18,35,49,0.92), rgba(10,14,15,0.96));
+}
+
+.sport-flow-head h2,
+.nba-section-title {
+    margin: 4px 0 6px;
+    font-family: var(--font-display);
+    letter-spacing: 1px;
+    color: var(--text-bright);
+}
+
+.sport-flow-head p,
+.nba-section-copy {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.55;
+}
+
+.sport-flow-track {
+    display: grid;
+    grid-template-columns: 1.25fr .95fr .95fr .95fr;
+    gap: 12px;
+    padding: 16px;
+    position: relative;
+}
+
+.sport-flow-step {
+    position: relative;
+    min-height: 168px;
+    border: 1px solid rgba(212,175,55,0.34);
+    border-radius: 10px;
+    padding: 14px 14px 14px 52px;
+    background: linear-gradient(145deg, rgba(14,24,24,0.94), rgba(7,10,11,0.98));
+}
+
+.sport-flow-step.is-primary {
+    background:
+        radial-gradient(circle at 20% 18%, rgba(132,215,210,0.12), transparent 42%),
+        linear-gradient(145deg, rgba(19,35,42,0.98), rgba(8,12,13,0.98));
+}
+
+.sport-flow-number {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-copper));
+    color: #061112;
+    font-weight: 900;
+}
+
+.sport-flow-step strong {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-bright);
+    font-size: 17px;
+}
+
+.sport-flow-step.is-market strong,
+.nba-highlight-market {
+    color: var(--accent);
+}
+
+.sport-flow-step.is-drivers strong,
+.nba-highlight-warning {
+    color: var(--accent-copper);
+}
+
+.sport-flow-step p {
+    margin: 7px 0 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+    font-size: 13px;
+}
+
+.sport-flow-step .micro-cluster {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.sport-flow-step .micro-chip {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    border-radius: 999px;
+    padding: 4px 8px;
+    border: 1px solid rgba(132,215,210,0.18);
+    background: rgba(132,215,210,0.05);
+    color: var(--text);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.sport-flow-step .micro-chip.copper {
+    border-color: rgba(212,175,55,0.34);
+    color: var(--accent);
+    background: rgba(212,175,55,0.08);
+}
+
+.nba-workspace-band {
+    display: grid;
+    grid-template-columns: minmax(260px, .72fr) minmax(0, 1.28fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.nba-side-brief,
+.nba-main-panel,
+.nba-pulse-strip,
+.nba-guide-panel {
+    border: 1px solid rgba(212,175,55,0.34);
+    border-radius: 10px;
+    background:
+        radial-gradient(circle at 12% 0%, rgba(132,215,210,0.08), transparent 42%),
+        linear-gradient(145deg, rgba(13,24,24,0.96), rgba(6,10,11,0.98));
+}
+
+.nba-side-brief {
+    padding: 18px;
+}
+
+.nba-side-brief .btn {
+    margin-top: 14px;
+}
+
+.nba-main-panel {
+    padding: 12px;
+}
+
+.nba-lens-list {
+    display: grid;
+    gap: 10px;
+}
+
+.nba-lens-row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr) minmax(180px, .8fr);
+    gap: 14px;
+    align-items: center;
+    padding: 12px;
+    border-radius: 9px;
+    border: 1px solid rgba(132,215,210,0.14);
+    background: rgba(255,255,255,0.025);
+}
+
+.nba-lens-row strong {
+    display: block;
+    color: var(--text-bright);
+    font-size: 16px;
+}
+
+.nba-lens-row p,
+.nba-lens-row small {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.nba-pulse-strip {
+    display: grid;
+    grid-template-columns: 1fr repeat(4, minmax(150px, .55fr));
+    gap: 0;
+    overflow: hidden;
+}
+
+.nba-pulse-intro {
+    padding: 18px;
+    border-right: 1px solid rgba(212,175,55,0.24);
+}
+
+.nba-pulse-stat {
+    padding: 16px;
+    border-right: 1px solid rgba(132,215,210,0.12);
+}
+
+.nba-pulse-stat:last-child {
+    border-right: 0;
+}
+
+.nba-pulse-stat strong {
+    display: block;
+    color: var(--text-bright);
+    font-size: 18px;
+    margin-top: 6px;
+}
+
+.nba-guide-panel {
+    display: grid;
+    grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr);
+    gap: 0;
+    overflow: hidden;
+}
+
+.nba-guide-intro {
+    padding: 18px;
+    border-right: 1px solid rgba(212,175,55,0.24);
+}
+
+.nba-guide-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px;
+}
+
+.nba-guide-tile {
+    border: 1px solid rgba(132,215,210,0.14);
+    border-radius: 9px;
+    padding: 12px;
+    background: rgba(255,255,255,0.025);
+}
+
+.nba-playoff-stack {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.nba-playoff-panel {
+    border: 1px solid rgba(212,175,55,0.38);
+    border-radius: 10px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 10% 0%, rgba(132,215,210,0.08), transparent 38%),
+        linear-gradient(145deg, rgba(13,24,24,0.96), rgba(6,10,11,0.98));
+}
+
+.nba-playoff-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(212,175,55,0.28);
+    background:
+        linear-gradient(135deg, rgba(212,175,55,0.26), rgba(132,215,210,0.10) 48%, rgba(18,35,49,0.92));
+}
+
+.nba-playoff-panel-title {
+    font-family: var(--font-display);
+    letter-spacing: 1px;
+    color: var(--text-bright);
+    font-size: 17px;
+}
+
+.nba-playoff-panel-subtitle {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.nba-matchup-stage {
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(320px, 1.1fr);
+    gap: 14px;
+    padding: 14px;
+}
+
+.nba-matchup-compact-list,
+.nba-series-compact-list {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+}
+
+.nba-matchup-feature,
+.nba-proof-feature,
+.nba-top-play-feature {
+    border: 1px solid rgba(132,215,210,0.18);
+    border-radius: 10px;
+    padding: 16px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.035), transparent 34%),
+        linear-gradient(145deg, rgba(17,31,39,0.96), rgba(8,13,15,0.98));
+}
+
+.nba-matchup-feature {
+    min-height: 132px;
+}
+
+.nba-matchup-row,
+.nba-series-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    text-decoration: none;
+    border: 1px solid rgba(132,215,210,0.18);
+    border-radius: 10px;
+    padding: 13px 14px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.035), transparent 34%),
+        linear-gradient(145deg, rgba(17,31,39,0.96), rgba(8,13,15,0.98));
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.nba-matchup-row {
+    grid-template-columns: minmax(260px, .75fr) minmax(190px, .45fr) minmax(260px, .65fr) auto;
+}
+
+.nba-matchup-row > .matchup-meta {
+    display: none;
+}
+
+.nba-matchup-row:hover,
+.nba-matchup-row:focus-visible,
+.nba-series-row:hover,
+.nba-series-row:focus-visible {
+    transform: translateY(-3px);
+    border-color: rgba(241,193,91,0.70);
+    background:
+        radial-gradient(circle at 94% 12%, rgba(241,193,91,0.14), transparent 34%),
+        linear-gradient(145deg, rgba(19,39,44,0.98), rgba(8,13,15,0.98));
+    box-shadow: 0 16px 34px rgba(0,0,0,0.26), 0 0 0 1px rgba(241,193,91,0.15);
+    outline: none;
+}
+
+.nba-matchup-main,
+.nba-series-main {
+    min-width: 0;
+}
+
+.nba-matchup-kicker,
+.nba-series-kicker {
+    color: var(--accent-copper);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.nba-matchup-name,
+.nba-series-name {
+    color: var(--text-bright);
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.nba-matchup-note,
+.nba-series-note {
+    margin-top: 5px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.nba-matchup-meta,
+.nba-series-meta {
+    text-align: right;
+    display: grid;
+    gap: 6px;
+    justify-items: end;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.nba-series-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: center;
+    gap: 16px;
+}
+
+.nba-check-cell {
+    border-left: 1px solid rgba(212,175,55,0.18);
+    padding-left: 14px;
+    min-height: 54px;
+}
+
+.nba-check-cell:first-child {
+    border-left: 0;
+    padding-left: 0;
+}
+
+.nba-series-row .lens-topline {
+    margin-bottom: 8px;
+}
+
+.nba-series-row .lens-title {
+    font-size: 18px;
+    margin-bottom: 4px;
+}
+
+.nba-series-row .lens-summary {
+    max-width: 780px;
+    margin-bottom: 8px;
+}
+
+.nba-series-row .lens-cta {
+    margin-top: 4px;
+}
+
+.nba-matchup-grid {
+    grid-template-columns: 1fr;
+}
+
+.nba-matchup-label,
+.nba-feature-label {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--accent-copper);
+    margin-bottom: 9px;
+}
+
+.nba-matchup-title,
+.nba-feature-title {
+    color: var(--text-bright);
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.nba-matchup-copy,
+.nba-feature-copy {
+    margin-top: 9px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    font-size: 13px;
+}
+
+.nba-matchup-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.nba-matchup-meta-row span,
+.nba-signal-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(132,215,210,0.18);
+    border-radius: 999px;
+    padding: 5px 9px;
+    background: rgba(255,255,255,0.035);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.nba-proof-feature {
+    display: grid;
+    grid-template-columns: minmax(190px, .8fr) minmax(0, 1.2fr);
+    gap: 14px;
+    align-items: stretch;
+}
+
+.nba-proof-read {
+    border-left: 1px solid rgba(212,175,55,0.22);
+    padding-left: 14px;
+}
+
+.nba-proof-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.nba-metric-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.nba-metric-card {
+    border: 1px solid rgba(212,175,55,0.34);
+    border-radius: 10px;
+    padding: 13px 14px;
+    background: linear-gradient(145deg, rgba(14,24,24,0.94), rgba(7,10,11,0.98));
+}
+
+.nba-metric-value {
+    font-family: var(--font-display);
+    color: var(--accent-copper);
+    font-size: 28px;
+    line-height: 1;
+}
+
+.nba-metric-label {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.nba-top-play-feature {
+    display: grid;
+    grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr) minmax(190px, .7fr);
+    gap: 14px;
+}
+
+.nba-top-play-player a {
+    color: var(--accent);
+    font-weight: 900;
+}
+
+.nba-top-play-line {
+    color: var(--text-bright);
+    font-size: 20px;
+    font-weight: 900;
+    margin-top: 7px;
+}
+
+.nba-action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.nba-action-card {
+    display: block;
+    text-decoration: none;
+    border: 1px solid rgba(212,175,55,0.34);
+    border-radius: 10px;
+    padding: 16px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.035), transparent 30%),
+        linear-gradient(145deg, rgba(13,24,24,0.96), rgba(6,10,11,0.98));
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.nba-action-card:hover,
+.nba-action-card:focus-visible {
+    transform: translateY(-4px);
+    border-color: rgba(241,193,91,0.72);
+    box-shadow: 0 18px 38px rgba(0,0,0,0.30), 0 0 0 1px rgba(241,193,91,0.16);
+    background:
+        radial-gradient(circle at 92% 10%, rgba(241,193,91,0.14), transparent 34%),
+        linear-gradient(145deg, rgba(18,35,42,0.98), rgba(7,10,11,0.98));
+    outline: none;
+}
+
+.nba-action-title {
+    color: var(--text-bright);
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.nba-action-copy {
+    margin-top: 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+@media (max-width: 1100px) {
+    .sport-flow-track,
+    .nba-workspace-band,
+    .nba-pulse-strip,
+    .nba-guide-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .nba-lens-row,
+    .nba-guide-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .lens-board-grid:has(.lens-card:only-child) .lens-card,
+    .nba-matchup-stage,
+    .nba-proof-feature,
+    .nba-top-play-feature,
+    .nba-metric-row,
+    .nba-action-grid,
+    .nba-matchup-row,
+    .nba-series-row {
+        grid-template-columns: 1fr;
+    }
+
+    .nba-pulse-intro,
+    .nba-pulse-stat,
+    .nba-guide-intro {
+        border-right: 0;
+        border-bottom: 1px solid rgba(212,175,55,0.18);
+    }
+}
 </style>
 
-<div class="page-hero">
-    <div>
-        <div class="page-kicker">NBA Matchup Method</div>
-        <h1>Matchup <span class="accent">Lens</span></h1>
-        <div class="page-subtitle">The dedicated NBA matchup workspace for reading slate context, playoff series state, opponent environment, and whether a prop or trend actually fits tonight’s spot.</div>
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url('nba') }}" alt="NBA logo">
+        </div>
+        <div>
+            <div class="page-kicker">{% if matchup_lens_mode %}NBA Matchup Method{% else %}NBA Command Center{% endif %}</div>
+            <h1>{% if matchup_lens_mode %}Matchup <span class="accent">Lens</span>{% else %}NBA <span class="accent">Command Center</span>{% endif %}</h1>
+            <div class="page-subtitle">{% if matchup_lens_mode %}The dedicated NBA matchup workspace for reading slate context, playoff series state, opponent environment, and whether a prop or trend actually fits tonight's spot.{% else %}The NBA sport workspace. Use the toolbar above to move from the command center into props, market, parlays, review, trends, injuries, and system layers without returning Home.{% endif %}</div>
+        </div>
     </div>
-    <div class="hero-actions">
-        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-primary btn-sm">Open Market Edge</a>
-        <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-secondary btn-sm">Open Parlay Builder</a>
-    </div>
-</div>
-
-<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Platform Lens</div>
-        <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}&sample=current" class="btn btn-secondary btn-sm">Open Market Edge</a>
-    </div>
-    <div class="grid-4 p-16" style="gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Where the number moved</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use open-to-now movement, book splits, and price disagreement before trusting any prop row.</div>
-            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> Opened 12.5, now 13.5. The over got more expensive, so the early number was the better one.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How tonight should play</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This board exists to turn team-vs-defense context into a cleaner read on game script and angle fit.</div>
-            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> If the opponent gives up a lot of guard threes, a shooting guard over may deserve more trust than usual.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Short sample or real support?</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Trend support only matters when the line history and current-team sample are not fighting the play.</div>
-            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> 4 of the last 5 only matters if the player was in the same role and playing similar minutes.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Attack, support, or avoid</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is not to flood the card with plays. It is to understand which spots actually deserve action.</div>
-            <div style="font-size: 11px; color: var(--text-bright); margin-top: 8px; line-height: 1.55;"><strong>Example:</strong> Attack = clean edge, Support = usable but fragile, Avoid = too many conflicts.</div>
-        </div>
+    <div class="hero-actions command-center-actions">
+        <a href="{{ url_for('free_sport_preview', sport_key='nba') }}" class="btn btn-primary btn-sm">Open Preview Board</a>
     </div>
 </div>
 
-<div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">NBA Data Pulse</div>
-        <span class="badge badge-accent">Trust Layer</span>
-    </div>
-    <div class="p-16" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker">Today's slate source</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.schedule_source }}</div>
-            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">The game list is being built from live sportsbook schedule data. {{ nba_data_pulse.schedule_games }} slate rows are loaded.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker">Results current through</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.results_last_date }}</div>
-            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">This is the most recent playoff result date already saved into the system.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker">Sportsbooks compared</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.prop_books }}</div>
-            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">That is how many books are currently feeding the live prop board for line shopping and split reads.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker">Props last refreshed</div>
-            <div style="font-size:16px; font-weight:700; color:var(--text-bright);">{{ nba_data_pulse.props_last_updated }}</div>
-            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Use this to judge whether the prop board is current before trusting the numbers.</div>
-        </div>
-    </div>
+<div class="bk-status-strip mb-16">
+    <strong>NBA Data Pulse</strong>
+    <span class="dot">&middot;</span>
+    <span>{{ nba_data_pulse.schedule_games }} slate rows</span>
+    <span class="dot">&middot;</span>
+    <span>{{ nba_data_pulse.prop_books }} books</span>
+    <span class="dot">&middot;</span>
+    <span>Props refreshed {{ nba_data_pulse.props_last_updated }}</span>
+    <span class="dot">&middot;</span>
+    <span>Results through {{ nba_data_pulse.results_last_date }}</span>
 </div>
 
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">How To Use Matchup Lens</div>
-        <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#betting-board-terms" class="btn btn-secondary btn-sm">Glossary</a>
-    </div>
-    <div class="p-16" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
-        <div class="parlay-surface-soft" style="padding:14px;">
-            <div class="page-kicker" style="margin-bottom:6px;">What It Is</div>
-            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_it_is }}</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:14px;">
-            <div class="page-kicker" style="margin-bottom:6px;">Best Use Case</div>
-            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.best_use_case }}</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:14px;">
-            <div class="page-kicker" style="margin-bottom:6px;">What Confirms It</div>
-            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_confirms_it }}</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding:14px;">
-            <div class="page-kicker" style="margin-bottom:6px;">What Makes It Risky</div>
-            <div style="font-size:13px; color:var(--text-muted); line-height:1.6;">{{ matchup_guide.what_makes_it_risky }}</div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-24">
-    <div class="control-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch; gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Mode</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ focus_mode_label if postseason_only else regular_mode_label }}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">{{ focus_mode_description if postseason_only else 'Full-league view across all teams and boards.' }}</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Games In View</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Today, tomorrow, and upcoming combined</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Board Depth</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ total_props }} props</div>
-            <div style="font-size: 11px; color: var(--text-muted);">{{ top_plays|length }} featured plays highlighted below</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Workflow</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Matchup -> Method -> Parlay</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Use this page as the clean starting point before choosing the betting method that fits the spot.</div>
-        </div>
-    </div>
-</div>
 
 {% if tonight_cards %}
 <div class="card mb-24 dashboard-spotlight">
@@ -653,104 +1242,123 @@
             <div class="tonight-card {{ card.tone }}">
                 <div class="tonight-card-topline">
                     <div>
-                        <div class="tonight-card-title">{{ card.title }}</div>
+                        <div class="tonight-card-title">
+                            <a href="{{ card.href }}" style="color: inherit; text-decoration: none; border-bottom: 1px solid rgba(127,247,238,.28);">
+                                {{ card.title }}
+                            </a>
+                        </div>
                         <div class="tonight-card-subtitle">{{ card.series_label }}</div>
+                        <div class="tonight-chip-explain" style="margin-top: 8px;">
+                            <a href="{{ card.href }}" style="color: var(--accent); font-weight: 800; text-decoration: none;">Open full matchup breakdown</a>
+                            <span style="color: var(--text-muted);">for market, sample, environment, and prop-fit details.</span>
+                        </div>
                     </div>
                     <div style="text-align:right;">
                         <div class="tonight-card-time">{{ card.time }}</div>
                         <div class="badge {% if card.market_loaded %}badge-accent{% else %}badge{% endif %}" style="margin-top:6px;">{{ card.series_status }}</div>
+                        <div class="tonight-card-top-actions">
+                            <a href="{{ card.href }}" class="btn btn-primary btn-sm">Open Matchup</a>
+                            <a href="{{ card.series_href }}" class="btn btn-secondary btn-sm">Open Series</a>
+                        </div>
                     </div>
                 </div>
                 <div class="tonight-card-layout">
-                    <div class="tonight-card-stack">
-                        <div class="tonight-card-summary">{{ card.summary }}</div>
-                        {% if card.driver_tags %}
-                        <div class="tonight-chip-row">
-                            {% for tag in card.driver_tags %}
-                            <span class="tonight-chip">{{ tag }}</span>
+                    <div class="tonight-card-summary">{{ card.summary }}</div>
+                    {% if card.driver_tags %}
+                    <div class="tonight-chip-row">
+                        {% for tag in card.driver_tags %}
+                        <span class="tonight-chip">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                    {% for tag_detail in card.driver_tag_details if tag_detail.meaning %}
+                    <div class="tonight-chip-explain"><strong style="color: var(--text-bright);">{{ tag_detail.label }}:</strong> {{ tag_detail.meaning }}</div>
+                    {% endfor %}
+                    {% endif %}
+                    <div class="tonight-context-grid">
+                        <div class="tonight-card-stack">
+                            <div class="tonight-split">
+                                <div class="tonight-panel">
+                                    <div class="tonight-label">Side Lean</div>
+                                    <div class="tonight-value">{{ card.side_lean }}</div>
+                                    <div class="tonight-copy">{{ card.side_reason }}</div>
+                                </div>
+                                <div class="tonight-panel">
+                                    <div class="tonight-label">Total Environment</div>
+                                    <div class="tonight-value">{{ card.total_lean }}</div>
+                                    <div class="tonight-copy">{{ card.total_reason }}</div>
+                                </div>
+                            </div>
+                            <div class="tonight-avoid"><strong style="color:var(--text-bright);">What to avoid:</strong> {{ card.avoid_note }}</div>
+                        </div>
+                        <div class="tonight-card-stack">
+                            <div class="tonight-panel">
+                                <div class="tonight-label">Sample Read</div>
+                                <div class="tonight-panel-value-compact">{{ card.sample_label }}</div>
+                                <div class="tonight-copy">{{ card.sample_reason }}</div>
+                            </div>
+                            <div class="tonight-panel">
+                                <div class="tonight-label">Market Read</div>
+                                <div class="tonight-panel-value-compact">{{ card.market_summary }}</div>
+                                <div class="tonight-copy">
+                                    {% if card.market_loaded %}
+                                    Current loaded line context for this matchup.{% if card.market_updated %} Last update: {{ card.market_updated }}.{% endif %}
+                                    {% else %}
+                                    Game-line feed has not fully populated this matchup yet.
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if card.angles %}
+                    <div class="tonight-panel">
+                        <div class="tonight-label">Best Fits Tonight</div>
+                        <div class="tonight-angle-list">
+                            {% for angle in card.angles %}
+                            <div class="tonight-angle">
+                                <div class="tonight-angle-text">
+                                    {% if angle.player %}
+                                    <a class="player-link accent-link" href="/player/{{ angle.player|urlencode }}">{{ angle.label }}</a>
+                                    {% else %}
+                                    {{ angle.label }}
+                                    {% endif %}
+                                </div>
+                                <div class="tonight-angle-reason">{{ angle.reason }}</div>
+                                {% if angle.bet_tier %}
+                                <div class="tonight-angle-reason" style="color: {% if angle.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif angle.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ angle.bet_tier.label }}</div>
+                                {% endif %}
+                                {% if angle.bet_tier_explanation %}
+                                <div class="tonight-angle-reason">{{ angle.bet_tier_explanation }}</div>
+                                {% endif %}
+                                <div class="tonight-angle-reason" style="color: var(--text-muted);">
+                                    Profile {{ (angle.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if angle.series_game_number %} | G{{ angle.series_game_number }}{% endif %}
+                                    | <span style="color: {% if angle.volatility_flag == 'HIGH' %}var(--danger){% elif angle.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ angle.volatility_flag or 'STABLE' }}</span>
+                                    | <span style="color: {% if angle.market_gate == 'HOLD' %}var(--danger){% elif angle.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ angle.market_gate or 'CLEAR' }}</span>
+                                </div>
+                                {% if angle.profile_explanation %}
+                                <div class="tonight-angle-reason">{{ angle.profile_explanation }}</div>
+                                {% endif %}
+                                {% if angle.market_summary %}
+                                <div class="tonight-angle-reason" style="color: var(--text-bright);">{{ angle.market_summary }}</div>
+                                {% endif %}
+                                {% if angle.verdict_note %}
+                                <div class="tonight-angle-reason" style="color: var(--accent-copper);">{{ angle.verdict_note }}</div>
+                                {% endif %}
+                                <div class="tonight-angle-confidence">{{ angle.confidence }}%</div>
+                            </div>
                             {% endfor %}
                         </div>
-                        {% for tag_detail in card.driver_tag_details if tag_detail.meaning %}
-                        <div class="tonight-chip-explain"><strong style="color: var(--text-bright);">{{ tag_detail.label }}:</strong> {{ tag_detail.meaning }}</div>
-                        {% endfor %}
-                        {% endif %}
-                        <div class="tonight-split">
-                            <div class="tonight-panel">
-                                <div class="tonight-label">Side Lean</div>
-                                <div class="tonight-value">{{ card.side_lean }}</div>
-                                <div class="tonight-copy">{{ card.side_reason }}</div>
-                            </div>
-                            <div class="tonight-panel">
-                                <div class="tonight-label">Total Environment</div>
-                                <div class="tonight-value">{{ card.total_lean }}</div>
-                                <div class="tonight-copy">{{ card.total_reason }}</div>
-                            </div>
-                        </div>
-                        <div class="tonight-avoid"><strong style="color:var(--text-bright);">What to avoid:</strong> {{ card.avoid_note }}</div>
                     </div>
-                    <div class="tonight-card-stack">
-                        <div class="tonight-panel">
-                            <div class="tonight-label">Sample Read</div>
-                            <div class="tonight-panel-value-compact">{{ card.sample_label }}</div>
-                            <div class="tonight-copy">{{ card.sample_reason }}</div>
-                        </div>
-                        <div class="tonight-panel">
-                            <div class="tonight-label">Market Read</div>
-                            <div class="tonight-panel-value-compact">{{ card.market_summary }}</div>
-                            <div class="tonight-copy">
-                                {% if card.market_loaded %}
-                                Current loaded line context for this matchup.{% if card.market_updated %} Last update: {{ card.market_updated }}.{% endif %}
-                                {% else %}
-                                Game-line feed has not fully populated this matchup yet.
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% if card.angles %}
-                        <div class="tonight-panel">
-                            <div class="tonight-label">Best Fits Tonight</div>
-                            <div class="tonight-angle-list">
-                                {% for angle in card.angles %}
-                                <div class="tonight-angle">
-                                    <div class="tonight-angle-text">{{ angle.label }}</div>
-                                    <div class="tonight-angle-reason">{{ angle.reason }}</div>
-                                    {% if angle.bet_tier %}
-                                    <div class="tonight-angle-reason" style="color: {% if angle.bet_tier.label == 'FULL UNIT' %}var(--accent){% elif angle.bet_tier.label == 'HALF UNIT' %}#FFB800{% else %}var(--danger){% endif %}; font-weight: 700;">{{ angle.bet_tier.label }}</div>
-                                    {% endif %}
-                                    {% if angle.bet_tier_explanation %}
-                                    <div class="tonight-angle-reason">{{ angle.bet_tier_explanation }}</div>
-                                    {% endif %}
-                                    <div class="tonight-angle-reason" style="color: var(--text-muted);">
-                                        Profile {{ (angle.weight_profile or 'regular')|replace('_', ' ')|upper }}{% if angle.series_game_number %} | G{{ angle.series_game_number }}{% endif %}
-                                        | <span style="color: {% if angle.volatility_flag == 'HIGH' %}var(--danger){% elif angle.volatility_flag == 'ELEVATED' %}#FFB800{% else %}var(--accent){% endif %}; font-weight: 700;">{{ angle.volatility_flag or 'STABLE' }}</span>
-                                        | <span style="color: {% if angle.market_gate == 'HOLD' %}var(--danger){% elif angle.market_gate == 'SPLIT MARKET' %}#FFB800{% else %}var(--text-muted){% endif %}; font-weight: 700;">{{ angle.market_gate or 'CLEAR' }}</span>
-                                    </div>
-                                    {% if angle.profile_explanation %}
-                                    <div class="tonight-angle-reason">{{ angle.profile_explanation }}</div>
-                                    {% endif %}
-                                    {% if angle.market_summary %}
-                                    <div class="tonight-angle-reason" style="color: var(--text-bright);">{{ angle.market_summary }}</div>
-                                    {% endif %}
-                                    {% if angle.verdict_note %}
-                                    <div class="tonight-angle-reason" style="color: var(--accent-copper);">{{ angle.verdict_note }}</div>
-                                    {% endif %}
-                                    <div class="tonight-angle-confidence">{{ angle.confidence }}%</div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="tonight-actions">
-                    <a href="{{ card.href }}" class="btn btn-primary btn-sm">Open Matchup</a>
-                    <a href="{{ card.series_href }}" class="btn btn-secondary btn-sm">Open Series</a>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
-        </div>
     </div>
 </div>
 {% endif %}
+
+{% set sport_key = 'nba' %}
+{% set sport_label = 'NBA' %}
+{% include "partials/sport_locked_depth.html" %}
 
 {% if market_watch and (market_watch.movers or market_watch.splits) %}
 {% set mws = market_watch.synthesis %}
@@ -909,7 +1517,7 @@
                 {% if card.score_note %}
                 <div class="lens-driver-note">{{ card.score_note }}</div>
                 {% endif %}
-                <div class="lens-cta">{{ card.cta }} -></div>
+                <div class="lens-cta">{{ card.cta }} <span aria-hidden="true">&rsaquo;</span></div>
             </a>
             {% endfor %}
         </div>
@@ -918,36 +1526,45 @@
 {% endif %}
 
 {% if postseason_only and postseason_matchups %}
-<div class="card mb-24 dashboard-spotlight">
+<div class="card mb-24 dashboard-spotlight nba-playoff-panel">
     <div class="card-header">
         <div class="card-title">{{ focus_mode_label }} Matchups</div>
         <span class="badge badge-accent">{{ postseason_matchups|length }}</span>
     </div>
-    <div class="p-20">
-        <div class="grid-2" style="gap: 16px;">
+    <div class="nba-matchup-compact-list">
             {% for game in postseason_matchups %}
-            <a href="{% if game.series_id %}/series/{{ game.series_id }}?postseason=1{% else %}/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1{% endif %}" class="matchup-card">
-                <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;">
-                    <div>
-                        <div class="matchup-kicker" style="color: {% if game.series_type == 'playoff' %}var(--accent-copper){% else %}#ddb25f{% endif %};">{{ game.series_label or 'Postseason Matchup' }}</div>
-                        <div class="matchup-teams" style="font-size: 21px;">{{ matchup_mark(game.Away, game.Home, '@', 'md') }}</div>
+            <a href="{% if game.series_id %}/series/{{ game.series_id }}?postseason=1{% else %}/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1{% endif %}" class="nba-matchup-row">
+                <div class="nba-matchup-main">
+                        <div class="nba-matchup-kicker">{{ game.series_label or 'Postseason Matchup' }}</div>
+                        <div class="nba-matchup-name">{{ matchup_mark(game.Away, game.Home, '@', 'md') }}</div>
                         {% if game.series_status %}
-                        <div style="margin-top: 6px; font-size: 12px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>
+                        <div class="nba-matchup-note">{{ game.series_status }}</div>
                         {% endif %}
                         {% if game.last_result %}
-                        <div style="margin-top: 4px; font-size: 11px; color: var(--text-muted);">{{ game.last_result }}</div>
+                        <div class="nba-series-note" style="color: var(--text-muted);">{{ game.last_result }}</div>
                         {% endif %}
-                    </div>
+                </div>
+                <div class="nba-check-cell">
+                    <div class="nba-matchup-kicker">Market</div>
+                    <div class="nba-series-note" style="color: var(--text-bright);">{{ game.market_summary or 'Market waiting' }}</div>
+                    <div class="nba-series-note" style="color: var(--text-muted);">Use the number before trusting any prop.</div>
+                </div>
+                <div class="nba-check-cell">
+                    <div class="nba-matchup-kicker">Read First</div>
+                    <div class="nba-series-note" style="color: var(--text-bright);">Series state, spread, total, and role stability.</div>
+                    <div class="nba-series-note" style="color: var(--text-muted);">This tells you whether today supports overs, unders, or a pass.</div>
+                </div>
+                <div class="nba-matchup-meta">
                     <span class="status-pill {% if game.bucket == 'today' %}today{% elif game.bucket == 'tomorrow' %}tomorrow{% else %}upcoming{% endif %}">
                         {% if game.bucket == 'today' %}Today{% elif game.bucket == 'tomorrow' %}Tmr{% else %}Upcoming{% endif %}
                     </span>
+                    <span>{{ game.Time }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</span>
+                    <span class="lens-cta">Open Read <span aria-hidden="true">&rsaquo;</span></span>
                 </div>
-                <div class="matchup-meta">{{ game.Time }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>
             </a>
             {% endfor %}
         </div>
     </div>
-</div>
 {% endif %}
 
 {% if 0 %}
@@ -966,7 +1583,7 @@
                     <span style="font-size: 11px; color: var(--text-muted);">{{ game.Time }}</span>
                 </div>
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
-                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
             </a>
             {% endfor %}
@@ -990,7 +1607,7 @@
             <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}" style="display: block; padding: 10px 16px; border-bottom: 1px solid var(--border); text-decoration: none;" onmouseover="this.style.background='var(--bg-elevated)'" onmouseout="this.style.background='transparent'">
                 <div>{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</div>
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
-                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
             </a>
             {% endfor %}
@@ -1014,7 +1631,7 @@
             <a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}" style="display: block; padding: 10px 16px; border-bottom: 1px solid var(--border); text-decoration: none;" onmouseover="this.style.background='var(--bg-elevated)'" onmouseout="this.style.background='transparent'">
                 <div>{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</div>
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
-                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} • Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
+                {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
             </a>
             {% endfor %}
@@ -1029,39 +1646,39 @@
 </div>
 {% endif %}
 
-{% if postseason_only and best_by_series %}
-<div class="card mb-24 panel-glow" style="border-color: rgba(184,115,51,0.28);">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Best By Series</div>
-        <span class="badge" style="background: linear-gradient(135deg, rgba(184,115,51,0.92) 0%, rgba(110,168,166,0.9) 100%); color: #08110f; border: 1px solid rgba(184,115,51,0.45);">{{ best_by_series|length }}</span>
+{% if postseason_only and postseason_matchups %}
+<div class="nba-playoff-panel mb-24">
+    <div class="nba-playoff-panel-head">
+        <div>
+            <div class="nba-playoff-panel-title">Series Read Checklist</div>
+            <div class="nba-playoff-panel-subtitle">Use this before opening props. It keeps the command center focused on the game, not one repeated player.</div>
+        </div>
+        <span class="badge">{{ postseason_matchups|length }}</span>
     </div>
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>Series</th>
-                <th>Player</th>
-                <th>Prop</th>
-                <th>Play</th>
-                <th>Pressure</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for play in best_by_series %}
-            <tr>
-                <td><a href="/series/{{ play.series_id }}?postseason=1" style="color: var(--accent-copper); font-weight: 700;">{{ play.series_label }}</a></td>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                        <span>{{ play.player }}</span>
-                        {{ team_mark(play.team, size='xs', show_name=False) }}
-                    </div>
-                </td>
-                <td><span class="badge">{{ play.stat }}</span> <strong>{{ play.line }}</strong></td>
-                <td><span class="play-pill-gloss {% if play.direction == 'OVER' %}over{% else %}under{% endif %}">{{ play.direction }} {{ play.confidence|round|int }}%</span></td>
-                <td>{% for tag in play.tags[:2] %}<span style="background: var(--bg-elevated); color: #FFB800; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px;">{{ tag }}</span>{% endfor %}{% if play.support_note %}<div style="margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ play.support_note }}</div>{% endif %}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="nba-series-compact-list">
+        {% for game in postseason_matchups[:4] %}
+        <a href="{% if game.series_id %}/series/{{ game.series_id }}?postseason=1{% else %}/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1{% endif %}" class="nba-series-row">
+            <div class="nba-check-cell">
+                <div class="nba-series-kicker">Game Context</div>
+                <div class="nba-series-name">{{ game.Away }} @ {{ game.Home }}</div>
+                <div class="nba-series-note">{{ game.series_status or 'Series status waiting' }}</div>
+            </div>
+            <div class="nba-check-cell">
+                <div class="nba-series-kicker">Price Check</div>
+                <div class="nba-series-note" style="color: var(--text-bright);">{{ game.market_summary or 'Market waiting' }}</div>
+                <div class="nba-series-note" style="color: var(--text-muted);">Price decides whether the read is still playable.</div>
+            </div>
+            <div class="nba-check-cell">
+                <div class="nba-series-kicker">Role Check</div>
+                <div class="nba-series-note" style="color: var(--text-bright);">Minutes, matchup, injury news.</div>
+                <div class="nba-series-note" style="color: var(--text-muted);">The same prop can flip if the role changes.</div>
+            </div>
+            <div class="nba-series-meta">
+                <span class="lens-cta">Open Read <span aria-hidden="true">&rsaquo;</span></span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 
@@ -1090,19 +1707,31 @@
 </div>
 {% endif %}
 
-<div class="grid-4 mb-24" style="gap: 12px;">
-    <div class="stat-card" style="background: linear-gradient(135deg, rgba(78,120,194,0.08) 0%, var(--bg-card) 40%, rgba(110,168,166,0.16) 100%);">
-        <div class="stat-value" style="color: var(--accent);">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
-        <div class="stat-label">Total Games</div>
+<div class="nba-metric-row mb-24">
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
+        <div class="nba-metric-label">Total Games</div>
     </div>
-    <div class="stat-card"><div class="stat-value">{{ total_props }}</div><div class="stat-label">Props</div></div>
-    <div class="stat-card"><div class="stat-value">{{ teams|length }}</div><div class="stat-label">Teams</div></div>
-    <div class="stat-card"><div class="stat-value" style="color: var(--accent);">{{ top_plays|length }}</div><div class="stat-label">Hot Plays</div></div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ total_props }}</div>
+        <div class="nba-metric-label">Props</div>
+    </div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ teams|length }}</div>
+        <div class="nba-metric-label">Teams</div>
+    </div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ top_plays|length }}</div>
+        <div class="nba-metric-label">Hot Plays</div>
+    </div>
 </div>
 
-<div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">Top Plays</div>
+<div class="card mb-24 nba-playoff-panel">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Top Plays</div>
+            <div class="nba-playoff-panel-subtitle">The strongest live rows with market status and signal notes in one place.</div>
+        </div>
         <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Board</a>
     </div>
     {% if top_plays %}
@@ -1153,22 +1782,26 @@
     {% endif %}
 </div>
 
-<div class="grid-4" style="gap: 16px;">
-    <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
-        <div style="font-weight: 600;">Market Edge</div>
-        <div style="font-size: 12px; color: var(--text-muted);">Best book and price context</div>
+<div class="nba-action-grid">
+    <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="nba-action-card">
+        <div class="nba-feature-label">Next Read</div>
+        <div class="nba-action-title">Market Edge</div>
+        <div class="nba-action-copy">Best book, price context, line movement, and whether the number is still playable.</div>
     </a>
-    <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
-        <div style="font-weight: 600;">Parlay Builder</div>
-        <div style="font-size: 12px; color: var(--text-muted);">Build anchors and round robins</div>
+    <a href="/parlay?postseason={{ 1 if postseason_only else 0 }}" class="nba-action-card">
+        <div class="nba-feature-label">Ticket Path</div>
+        <div class="nba-action-title">Parlay Builder</div>
+        <div class="nba-action-copy">Build anchors, round robins, and risk checks only after the read survives the board.</div>
     </a>
-    <a href="/props/unders?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
-        <div style="font-weight: 600;">Under Plays</div>
-        <div style="font-size: 12px; color: var(--text-muted);">Situational unders</div>
+    <a href="/props/unders?postseason={{ 1 if postseason_only else 0 }}" class="nba-action-card">
+        <div class="nba-feature-label">Prop Lane</div>
+        <div class="nba-action-title">Under Plays</div>
+        <div class="nba-action-copy">Find slower environments, role limits, and usage spots where the under is the cleaner side.</div>
     </a>
-    <a href="/trends/PTS?postseason={{ 1 if postseason_only else 0 }}" class="card panel-glow" style="text-align: center; padding: 18px; text-decoration: none; border-color: rgba(132,215,210,0.24);" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='none'">
-        <div style="font-weight: 600;">Trends</div>
-        <div style="font-size: 12px; color: var(--text-muted);">Ride streaks and recent form</div>
+    <a href="/trends/PTS?postseason={{ 1 if postseason_only else 0 }}" class="nba-action-card">
+        <div class="nba-feature-label">Context Check</div>
+        <div class="nba-action-title">Streak Patterns</div>
+        <div class="nba-action-copy">Use recent form as support, not as the whole reason to touch a play.</div>
     </a>
 </div>
 {% endblock %}

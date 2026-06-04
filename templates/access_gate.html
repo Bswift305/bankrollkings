@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = 'access' %}
+{% extends "public_base.html" %}
 {% block title %}Unlock {{ required_plan_label }} Access{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="container">

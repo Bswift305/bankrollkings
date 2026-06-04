@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = 'glossary' %}
+{% extends "bk_base.html" %}
 {% block title %}Glossary - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -11,7 +14,7 @@
     <div class="hero-actions">
         <a href="/info?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">How It Works</a>
         {% if show_ops_strip %}
-        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Test Drive</a>
+        <a href="/test-drive?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open Tester Workflow</a>
         {% endif %}
     </div>
 </div>

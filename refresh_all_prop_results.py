@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 
 from app import (
@@ -25,6 +26,18 @@ SPORT_LOGS = {
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Refresh all-prop result snapshots.")
+    parser.add_argument(
+        "--sport",
+        default="all",
+        help="Sport to refresh: nba, wnba, mlb, nfl, ncaaf, or all. Default: all.",
+    )
+    args = parser.parse_args()
+    requested_sport = str(args.sport or "all").strip().upper()
+    if requested_sport != "ALL" and requested_sport not in SPORT_LOGS:
+        print(f"[FAIL] Unsupported sport: {args.sport}")
+        return 2
+
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     archive_df = load_candidate_archive()
     total_rows = 0
@@ -34,7 +47,8 @@ def main() -> int:
     print("=" * 70)
     print(f"Checked at: {checked_at}")
 
-    for sport, loader in SPORT_LOGS.items():
+    selected_logs = SPORT_LOGS if requested_sport == "ALL" else {requested_sport: SPORT_LOGS[requested_sport]}
+    for sport, loader in selected_logs.items():
         gamelog_map = {sport: loader()}
         snapshot = write_all_prop_results_snapshot_for_sport(
             sport,

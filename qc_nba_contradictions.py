@@ -22,6 +22,13 @@ from services.qc_tracking import (
 
 
 def build_runtime() -> dict:
+    def featured_signature(row: dict) -> tuple[str, str, str, str, str, str, str]:
+        return (
+            *prop_key(row),
+            str(row.get("best_book", "")).strip().upper(),
+            str(row.get("current_line", row.get("line", ""))).strip(),
+        )
+
     board_all = build_live_props_board(
         postseason_only=True,
         date_filter="all",
@@ -38,14 +45,14 @@ def build_runtime() -> dict:
     )
     scored_props = list((board_all or {}).get("props", []))
     featured_props = build_featured_nba_top_plays(list((board_today or {}).get("props", [])), limit=20, min_confidence=70)
-    featured_keys = {prop_key(row) for row in featured_props}
+    featured_keys = {featured_signature(row) for row in featured_props}
 
     injuries = load_injuries()
     return_overrides = load_return_overrides()
     freshness_age = build_injury_context_age(injuries, return_overrides)
 
     for row in scored_props:
-        row["_is_featured"] = prop_key(row) in featured_keys
+        row["_is_featured"] = featured_signature(row) in featured_keys
 
     return {
         "scored_props": scored_props,

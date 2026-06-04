@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{% block meta_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
+  <meta name="theme-color" content="#0b1418">
+  <meta property="og:title" content="{% block og_title %}Bankroll Kings - Betting Intelligence{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
+  <meta property="og:image" content="{{ url_for('static', filename='brand-latest-logo.webp', _external=True) }}">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>{% block title %}Bankroll Kings{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand-latest-logo-thumb.webp') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260530-header-flare">
+  <style>
+    html,
+    body {
+      min-height: 100%;
+      overflow: auto;
+    }
+    .bk-public-shell {
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .bk-public-topbar {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--window-border);
+      background: rgba(5, 7, 10, 0.92);
+      backdrop-filter: blur(10px);
+    }
+    .bk-public-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      text-decoration: none;
+      font-family: var(--font-display);
+      font-size: 21px;
+      letter-spacing: 0.08em;
+    }
+    .bk-public-brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: cover;
+      border: 1px solid var(--window-border-soft);
+    }
+    .bk-public-nav {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .bk-public-nav a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 7px 12px;
+      border: 1px solid var(--window-border-soft);
+      border-radius: 7px;
+      background: rgba(17,23,26,0.94);
+      color: var(--text2);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      text-decoration: none;
+    }
+    .bk-public-nav a:hover {
+      color: var(--text);
+      border-color: var(--border2);
+      background: rgba(215,167,79,0.10);
+    }
+    .bk-public-nav a.primary {
+      color: #07100e;
+      border-color: rgba(255,209,109,0.58);
+      background: linear-gradient(135deg, rgba(245,200,96,0.94), rgba(157,244,236,0.86));
+    }
+    .bk-public-main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+    .bk-public-footer {
+      width: min(1180px, calc(100% - 32px));
+      margin: auto auto 0;
+      padding: 20px 0 28px;
+      color: var(--text3);
+      font-size: 12px;
+      border-top: 1px solid var(--window-border-soft);
+    }
+    @media (max-width: 720px) {
+      .bk-public-topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px 16px;
+      }
+      .bk-public-nav {
+        margin-left: 0;
+      }
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <div class="bk-page-loading" id="bk-page-loading" aria-hidden="true"></div>
+  <div class="bk-public-shell">
+    <header class="bk-public-topbar">
+      <a class="bk-public-brand" href="{{ url_for('frontpage') }}">
+        <img src="/static/brand-latest-logo-thumb.webp" alt="Bankroll Kings" loading="eager">
+        <span>BANKROLL KINGS</span>
+      </a>
+      <nav class="bk-public-nav" aria-label="Public navigation">
+        {% if not current_user %}
+        <a href="{{ url_for('pricing') }}">Pricing</a>
+        {% else %}
+        <a href="{{ url_for('pricing') }}">Pricing</a>
+        {% endif %}
+        {% if current_user %}
+        <a class="primary" href="{{ url_for('dashboard') }}">Home</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+        <a href="{{ url_for('login') }}">Sign In</a>
+        <a class="primary" href="{{ url_for('signup', plan='free') }}">Create Free Account</a>
+        {% endif %}
+      </nav>
+    </header>
+    <main class="bk-public-main">
+      <div class="bk-compat-content">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+    <footer class="bk-public-footer">
+      Bankroll Kings is an analytics platform, not a sportsbook. For entertainment and research use only.
+    </footer>
+  </div>
+  <script>
+    const loadingBar = document.getElementById('bk-page-loading');
+    function showPageLoading() {
+      if (loadingBar) loadingBar.classList.add('active');
+    }
+    document.addEventListener('click', event => {
+      const link = event.target.closest('a[href]');
+      if (!link) return;
+      const href = link.getAttribute('href') || '';
+      if (!href || href.startsWith('#') || link.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      showPageLoading();
+    });
+    document.addEventListener('submit', event => {
+      if (event.target && event.target.matches('form')) showPageLoading();
+    });
+  </script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -194,13 +195,21 @@ def archive_available_props_for_sport(sport, props, max_rows=10000):
     return written
 
 
-def archive_available_props():
+def archive_available_props(sports=None):
+    requested = {str(sport).strip().upper() for sport in (sports or []) if str(sport).strip()}
+    loaders = {
+        'NBA': load_props,
+        'WNBA': load_wnba_props,
+        'MLB': load_mlb_props,
+        'NFL': load_nfl_props,
+        'NCAAF': load_ncaaf_props,
+    }
+    if not requested:
+        requested = set(loaders)
     return {
-        'NBA': archive_available_props_for_sport('NBA', load_props()),
-        'WNBA': archive_available_props_for_sport('WNBA', load_wnba_props()),
-        'MLB': archive_available_props_for_sport('MLB', load_mlb_props()),
-        'NFL': archive_available_props_for_sport('NFL', load_nfl_props()),
-        'NCAAF': archive_available_props_for_sport('NCAAF', load_ncaaf_props()),
+        sport: archive_available_props_for_sport(sport, loader())
+        for sport, loader in loaders.items()
+        if sport in requested
     }
 
 
@@ -302,14 +311,24 @@ def archive_row_count():
         return 0
 
 
+def _parse_sports(raw):
+    return {item.strip().upper() for item in str(raw or '').split(',') if item.strip()}
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Archive daily candidate rows.")
+    parser.add_argument("--sports", default="nba,wnba,mlb,nfl,ncaaf", help="Comma-separated sports to archive.")
+    parser.add_argument("--skip-routes", action="store_true", help="Skip expensive route render checks.")
+    args = parser.parse_args()
+
+    sports = _parse_sports(args.sports)
     before = archive_row_count()
-    statuses = archive_routes()
-    available_written = archive_available_props()
-    trend_written = archive_trends()
-    wnba_written = archive_wnba()
-    mlb_written = archive_mlb()
-    football_written = archive_football()
+    statuses = [] if args.skip_routes else archive_routes()
+    available_written = archive_available_props(sports)
+    trend_written = archive_trends() if 'NBA' in sports else 0
+    wnba_written = archive_wnba() if 'WNBA' in sports else {}
+    mlb_written = archive_mlb() if 'MLB' in sports else {}
+    football_written = archive_football() if {'NFL', 'NCAAF'} & sports else {}
     after = archive_row_count()
 
     print("BANKROLL KINGS - Archive Daily Candidates")

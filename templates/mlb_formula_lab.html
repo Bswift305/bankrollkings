@@ -1,0 +1,172 @@
+{% extends "bk_base.html" %}
+
+{% block title %}MLB Formula Lab{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block sidebar %}
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">MLB Formula</div>
+  <a class="bk-sidebar-item active" href="#overview"><span class="si-icon">OV</span><span class="si-name">Overview</span></a>
+  <a class="bk-sidebar-item" href="#bands"><span class="si-icon">SC</span><span class="si-name">Score Bands</span></a>
+  <a class="bk-sidebar-item" href="#buckets"><span class="si-icon">BK</span><span class="si-name">Buckets</span></a>
+  <a class="bk-sidebar-item" href="#notes"><span class="si-icon">NT</span><span class="si-name">Notes</span></a>
+</div>
+{% endblock sidebar %}
+
+{% block main %}
+<div class="bk-page-header" id="overview">
+  <div>
+    <div class="bk-page-title">MLB FORMULA LAB</div>
+    <div class="bk-page-sub">HitterScore, PitcherScore, market quality, park/weather context, and bucket calibration.</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary"><span class="sp-label">Rows</span><span class="sp-val">{{ totals.rows }}</span></div>
+    <div class="bk-stat-pill info"><span class="sp-label">Resolved</span><span class="sp-val">{{ totals.resolved }}</span></div>
+    <div class="bk-stat-pill"><span class="sp-label">Hit Rate</span><span class="sp-val">{{ totals.hit_rate }}</span></div>
+  </div>
+</div>
+
+<div class="bk-content mlb-lab">
+  <section class="bk-card mlb-hero">
+    <div>
+      <div class="bk-dashboard-kicker">MLB ContextScore v1</div>
+      <h1>Baseball needs market + environment before player hype.</h1>
+      <p>
+        This layer separates hitter props from pitcher props, then blends confidence, book depth,
+        price shape, game total, park factor, weather hooks, and umpire-zone hooks when available.
+      </p>
+    </div>
+    <div class="mlb-hero-grid">
+      <div><span>ContextScore 20+</span><strong>{{ high_score.rate }}</strong><small>{{ high_score.sample }} rows</small></div>
+      <div><span>Best Promote</span><strong>{{ best_promote.rate }}</strong><small>{{ best_promote.label }}</small></div>
+      <div><span>Biggest Avoid</span><strong>{{ worst_reduce.rate }}</strong><small>{{ worst_reduce.label }}</small></div>
+    </div>
+  </section>
+
+  <section class="bk-card" id="bands">
+    <div class="bk-card-title">ContextScore Bands</div>
+    <div class="mlb-band-list">
+      {% for row in score_bands %}
+      <div class="mlb-band">
+        <span>{{ row.BucketLabel }}</span>
+        <strong>{{ row.ActualRatePct }}</strong>
+        <small>{{ row.SampleSize }} rows | {{ row.Classification }}</small>
+        <div class="mlb-meter"><i style="width: {{ row.WidthPct }}%"></i></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="mlb-grid" id="buckets">
+    <article class="bk-card">
+      <div class="bk-card-title">Promote Candidates</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Bucket</th><th>Actual</th><th>Rows</th></tr></thead>
+        <tbody>
+          {% for row in promote_rows %}
+          <tr><td class="primary">{{ row.BucketType }}: {{ row.BucketLabel }}</td><td>{{ row.ActualRatePct }}</td><td>{{ row.SampleSize }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+    <article class="bk-card">
+      <div class="bk-card-title">Reduce Trust</div>
+      <table class="bk-table compact">
+        <thead><tr><th>Bucket</th><th>Actual</th><th>Rows</th></tr></thead>
+        <tbody>
+          {% for row in reduce_rows %}
+          <tr><td class="primary">{{ row.BucketType }}: {{ row.BucketLabel }}</td><td>{{ row.ActualRatePct }}</td><td>{{ row.SampleSize }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+
+  <section class="bk-card" id="notes">
+    <div class="bk-card-title">Human Calibration Notes</div>
+    <pre class="mlb-notes">{{ notes }}</pre>
+  </section>
+</div>
+
+<style>
+.mlb-lab .bk-card { margin-bottom: 12px; }
+.mlb-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: 16px;
+  align-items: center;
+}
+.mlb-hero h1 {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  font-size: clamp(30px, 4vw, 48px);
+  margin: 0 0 8px;
+}
+.mlb-hero p { color: var(--text2); line-height: 1.55; }
+.mlb-hero-grid,
+.mlb-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.mlb-hero-grid { grid-template-columns: repeat(3, 1fr); }
+.mlb-hero-grid div,
+.mlb-band {
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(215,167,79,0.05);
+}
+.mlb-hero-grid span,
+.mlb-hero-grid small,
+.mlb-band span,
+.mlb-band small {
+  display: block;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mlb-hero-grid strong,
+.mlb-band strong {
+  display: block;
+  color: var(--bk-gold2);
+  font-family: var(--font-display);
+  font-size: 30px;
+  letter-spacing: 0.06em;
+  margin: 4px 0;
+}
+.mlb-band-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.mlb-meter {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  margin-top: 8px;
+}
+.mlb-meter i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--bk-primary2), var(--bk-gold));
+}
+.bk-table.compact th,
+.bk-table.compact td { padding: 8px 10px; }
+.mlb-notes {
+  white-space: pre-wrap;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+@media (max-width: 1000px) {
+  .mlb-hero,
+  .mlb-hero-grid,
+  .mlb-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock main %}

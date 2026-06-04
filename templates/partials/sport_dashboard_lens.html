@@ -1,0 +1,52 @@
+{% set lens_sport = (sport_key if sport_key is defined and sport_key else active_sport)|lower %}
+{% set lens_profile = sport_profile if sport_profile is defined and sport_profile else get_sport_model_profile(lens_sport) %}
+{% set lens_label = sport_title if sport_title is defined and sport_title else (lens_sport|upper) %}
+
+{% if lens_profile %}
+<div class="card mb-24 panel-glow sport-dashboard-lens sport-flow-panel">
+    <div class="sport-flow-head">
+        <div>
+            <div class="page-kicker">{{ lens_label }} Command Center Map</div>
+            <h2>Read The Board In Order</h2>
+            <p>This sport has its own workflow. Follow the path from game context to market truth, then decide whether the sport-specific drivers actually support the play.</p>
+        </div>
+        <span class="badge badge-accent">{{ lens_profile.label }}</span>
+    </div>
+    <div class="sport-flow-track" aria-label="{{ lens_label }} workflow">
+        <div class="sport-flow-step is-primary">
+            <span class="sport-flow-number">1</span>
+            <div class="page-kicker">Start With The Game</div>
+            <strong>
+                {% if lens_sport in ['nfl', 'ncaaf', 'ncaamb', 'ncaawb'] %}Line, total, tempo{% elif lens_sport == 'mlb' %}Slate, pitcher, park{% else %}Minutes, role, matchup{% endif %}
+            </strong>
+            <p>{{ lens_profile.summary }}</p>
+        </div>
+        <div class="sport-flow-step is-market">
+            <span class="sport-flow-number">2</span>
+            <div class="page-kicker">Check The Market</div>
+            <strong>Price before opinion</strong>
+            <p>Book splits, line ranges, best book, and CLV context decide whether the number is still worth touching.</p>
+        </div>
+        <div class="sport-flow-step is-drivers">
+            <span class="sport-flow-number">3</span>
+            <div class="page-kicker">Trust What Fits</div>
+            <strong>Drivers for this sport</strong>
+            <div class="micro-cluster">
+                {% for driver in lens_profile.core_drivers %}
+                <span class="micro-chip soft">{{ driver }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="sport-flow-step is-surface">
+            <span class="sport-flow-number">4</span>
+            <div class="page-kicker">Know The Surface</div>
+            <strong>Markets we care about</strong>
+            <div class="micro-cluster">
+                {% for market in lens_profile.primary_markets %}
+                <span class="micro-chip {% if loop.first %}copper{% else %}soft{% endif %}">{{ market }}</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -1,7 +1,12 @@
-{% extends "base.html" %}
+{% set active_page = 'parlay_builder' %}
+{% set active_sport = parlay_sport_key|default('nba') %}
+{% extends "bk_base.html" %}
 {% block title %}Parlay Builder - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
+{% set parlay_sport_param = '&sport=' ~ (active_sport|default('nba')|urlencode) %}
 <style>
     .parlay-shell {
         display: flex;
@@ -14,14 +19,31 @@
         grid-template-columns: minmax(0, 2.2fr) minmax(340px, 0.9fr);
         gap: 20px;
         align-items: start;
+        height: calc(100vh - 86px);
+        min-height: 0;
     }
 
     .parlay-main {
         min-width: 0;
+        min-height: 0;
+        max-height: 100%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
     }
 
     .parlay-side {
         min-width: 0;
+        max-height: 100%;
+        overflow: auto !important;
+    }
+
+    .bk-compat-content .parlay-sticky-card.parlay-side {
+        overflow: auto !important;
+    }
+
+    .parlay-sidebar-saved {
+        display: none !important;
     }
 
     .parlay-hero {
@@ -94,8 +116,9 @@
     }
 
     .parlay-layout .table-shell {
-        overflow-x: auto;
+        overflow: auto;
         padding-bottom: 4px;
+        min-height: 0;
     }
 
     .parlay-layout .table-shell::-webkit-scrollbar {
@@ -143,8 +166,8 @@
     }
 
     .parlay-sticky-card {
-        position: sticky;
-        top: 16px;
+        position: sticky !important;
+        top: 0;
         align-self: start;
     }
 
@@ -171,8 +194,18 @@
         padding: 12px;
     }
 
-    .parlay-side .empty-state-copy {
+        .parlay-side .empty-state-copy {
         max-width: 360px;
+    }
+
+    .handoff-card {
+        border-color: rgba(132, 215, 210, 0.34);
+        box-shadow: 0 0 28px rgba(132, 215, 210, 0.10), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .handoff-card.needs-line {
+        border-color: rgba(184, 115, 51, 0.42);
+        box-shadow: 0 0 28px rgba(184, 115, 51, 0.08), inset 0 1px 0 rgba(255,255,255,0.05);
     }
 </style>
 
@@ -192,8 +225,8 @@
         </div>
     </div>
     <div class="parlay-btn-row">
-        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
-        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ parlay_sport_param }}{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ parlay_sport_param }}{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
     </div>
 </div>
 
@@ -203,8 +236,8 @@
         <div class="parlay-meta-line">Anchor plays can lean on current-team-only samples when a player changed teams midseason, with a quick way back to full-season context if you want the larger body of work.</div>
     </div>
     <div class="parlay-btn-row">
-        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
-        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+        <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
     </div>
 </div>
 
@@ -323,14 +356,14 @@
 <div class="parlay-control-strip">
     <div class="parlay-btn-row">
         <span class="parlay-chip-label">Build For</span>
-        <a href="/parlay?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
-        <a href="/parlay?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
-        <a href="/parlay?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/parlay?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="/parlay?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="/parlay?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
         <div style="width: 1px; height: 24px; background: var(--border); margin: 0 8px;"></div>
         <span class="parlay-chip-label">Play Type</span>
-        <a href="/parlay?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-        <a href="/parlay?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
-        <a href="/parlay?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+        <a href="/parlay?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="/parlay?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="/parlay?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
     </div>
 </div>
 {% if team_query or player_query or stat_query %}
@@ -341,7 +374,30 @@
         {% if player_query %}<span class="badge badge-accent">Player {{ player_query }}</span>{% endif %}
         {% if stat_query %}<span class="badge badge-accent">Stat {{ stat_query }}</span>{% endif %}
     </div>
-    <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Clear Filters</a>
+    <a href="/parlay?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{{ parlay_sport_param }}" class="btn btn-secondary btn-sm">Clear Filters</a>
+</div>
+{% endif %}
+
+{% if handoff_context %}
+<div class="parlay-control-strip handoff-card {% if handoff_context.status != 'matched' %}needs-line{% endif %}">
+    <div class="parlay-control-copy">
+        <div class="parlay-section-label">Incoming Parlay Leg</div>
+        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright); margin-bottom: 4px;">
+            {{ handoff_context.leg.player or 'Unknown Player' }}
+            <span class="badge">{{ handoff_context.leg.sport }}</span>
+            {% if handoff_context.leg.stat %}<span class="badge">{{ handoff_context.leg.stat }}</span>{% endif %}
+            {% if handoff_context.leg.direction %}<span class="play-pill-gloss {% if handoff_context.leg.direction == 'OVER' %}over{% else %}under{% endif %}" style="margin-left:4px;">{{ handoff_context.leg.direction }}</span>{% endif %}
+            {% if handoff_context.leg.line %}<span style="font-size:13px; color:var(--text-muted);">line {{ handoff_context.leg.line }}</span>{% endif %}
+        </div>
+        <div class="parlay-meta-line">{{ handoff_context.message }}</div>
+    </div>
+    <div class="parlay-btn-row">
+        {% if handoff_context.status == 'matched' %}
+        <span class="badge badge-accent">Auto-selected</span>
+        {% else %}
+        <a href="/candidate-review?profile_player={{ handoff_context.leg.player|urlencode }}&profile_sport={{ handoff_context.leg.sport }}&profile_stat={{ handoff_context.leg.stat }}&profile_direction={{ handoff_context.leg.direction }}" class="btn btn-secondary btn-sm">Open Profile Slice</a>
+        {% endif %}
+    </div>
 </div>
 {% endif %}
 
@@ -373,12 +429,16 @@
                     <tr style="{% if prop.plays_today %}background: rgba(110,168,166,0.08);{% elif prop.plays_tomorrow %}background: rgba(184,115,51,0.08);{% endif %}">
                         <td>
                             <input type="checkbox" class="prop-checkbox"
+                                data-sport="{{ prop.sport or 'NBA' }}"
                                 data-player="{{ prop.player }}"
                                 data-team="{{ prop.team }}"
                                 data-stat="{{ prop.stat }}"
                                 data-line="{{ prop.line }}"
                                 data-direction="{{ prop.direction }}"
                                 data-confidence="{{ prop.confidence }}"
+                                data-market-price="{{ prop.market_price if prop.market_price is not none else '' }}"
+                                data-model-prob="{{ prop.model_prob if prop.model_prob is not none else prop.confidence }}"
+                                data-ev-pct="{{ prop.ev_pct if prop.ev_pct is not none else '' }}"
                                 data-matchup="{{ prop.matchup }}"
                                 data-tier="{{ prop.tier }}"
                                 style="width: 18px; height: 18px; cursor: pointer;">
@@ -421,7 +481,9 @@
                         </td>
                         <td style="font-size: 12px;">
                             <div style="display: flex; flex-direction: column; gap: 4px;">
-                                <div><span style="color: var(--accent);">{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span>/<span style="color: #FF6B6B;">{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span></div>
+                                {% set formula_over = prop.weighted_over_rate if postseason_only and prop.weighted_over_rate is defined else prop.over_rate %}
+                                {% set formula_under = prop.weighted_under_rate if postseason_only and prop.weighted_under_rate is defined else prop.under_rate %}
+                                <div><span style="color: {{ ou_rate_color(formula_over) }};">{{ formula_over }}%</span>/<span style="color: {{ ou_rate_color(formula_under) }};">{{ formula_under }}%</span></div>
                                 {% if prop.public_trend_note %}
                                 <div style="font-size: 11px; color: var(--text-bright); line-height: 1.45;">{{ prop.public_trend_note }}</div>
                                 {% endif %}
@@ -562,12 +624,14 @@
                 <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; margin-bottom: 4px;">RULES</div>
                 <div style="font-size: 10px; color: var(--text-muted); line-height: 1.7;">
                     <div id="rule1">1 per player &middot; 2 per game</div>
+                    <div id="rule2">Max 2 per game</div>
                     <div id="rule3">4&ndash;6 legs for main build</div>
                 </div>
             </div>
             <div style="flex: 1;">
                 <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; letter-spacing: 0.8px; margin-bottom: 4px;">FORMULA</div>
                 <div style="font-size: 10px; color: var(--text-muted); line-height: 1.5;"><strong style="color: var(--text);">4 Tier 1</strong> anchors + round robins for most bankroll.</div>
+                <div id="buildGradeNote" style="font-size:10px; color:var(--text-muted); line-height:1.45; margin-top:5px;">Select props and the builder will grade the ticket quality.</div>
             </div>
         </div>
 
@@ -609,6 +673,29 @@
                         <div style="font-size: 12px; font-weight: 700; color: {{ strategy.slate_strength.accent }};">{{ strategy.slate_strength.badge }}</div>
                     </div>
                 </div>
+                <div id="bankrollIqPanel" style="margin: 0 10px 8px; padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(166,233,229,0.12);">
+                    <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                        <div>
+                            <div style="font-size:10px; color:var(--accent-copper); font-weight:800; letter-spacing:0.8px;">BANKROLLIQ</div>
+                            <div id="bankrollIqLabel" style="font-size:14px; font-weight:800; color:var(--text-bright); margin-top:3px;">Waiting</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div id="kellyPct" style="font-size:13px; font-weight:800; color:var(--accent);">-</div>
+                            <div id="kellyAmount" style="font-size:10px; color:var(--text-muted);">Stake cap</div>
+                        </div>
+                    </div>
+                    <div id="bankrollIqNote" style="font-size:10px; color:var(--text-muted); line-height:1.45; margin-top:6px;">Select priced legs to compare model probability against book odds.</div>
+                </div>
+                <div id="correlationIqPanel" style="margin: 0 10px 8px; padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(166,233,229,0.12);">
+                    <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                        <div>
+                            <div style="font-size:10px; color:var(--accent-copper); font-weight:800; letter-spacing:0.8px;">CORRELATIONIQ</div>
+                            <div id="correlationIqLabel" style="font-size:14px; font-weight:800; color:var(--text-bright); margin-top:3px;">Waiting</div>
+                        </div>
+                        <div id="correlationIqScore" style="font-size:13px; font-weight:800; color:var(--accent);">0/100</div>
+                    </div>
+                    <div id="correlationIqNote" style="font-size:10px; color:var(--text-muted); line-height:1.45; margin-top:6px;">Select at least two legs to measure same-game and cross-sport exposure.</div>
+                </div>
                 <div id="stakePlan" style="display: flex; flex-direction: column; gap: 4px; padding: 0 10px 8px;"></div>
             </div>
 
@@ -625,7 +712,7 @@
                     <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 6px;">{{ slate_scope_label }}</div>
                     {% if strategy.anchor %}
                         {% for prop in strategy.anchor %}
-                        <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;">{{ prop.player }} <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
+                        <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;"><a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a> <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
                         {% endfor %}
                     {% else %}
                         <div style="font-size: 10px; color: var(--text-muted);">Need 4 Tier 1 plays.</div>
@@ -635,7 +722,7 @@
                     <div style="font-size: 10px; color: var(--accent-copper); font-weight: 700; margin-bottom: 4px;">RR Pool</div>
                     <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 6px;">{{ slate_scope_label }}</div>
                     {% for prop in strategy.rr_pool %}
-                    <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;">{{ prop.player }} <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
+                    <div style="font-size: 10px; margin-bottom: 3px; line-height: 1.3;"><a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a> <span style="color: var(--text-muted);">{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }}</span></div>
                     {% endfor %}
                 </div>
             </div>
@@ -662,9 +749,10 @@
                 <button onclick="saveParlayTicket()" class="btn btn-primary" style="width: 100%; padding: 7px;">Save Picks</button>
                 <button onclick="clearParlay()" class="btn btn-secondary" style="width: 100%; padding: 7px;">Clear All</button>
             </div>
+            <a href="/parlay/tickets?sport={{ active_sport }}&sample={{ sample_mode }}" class="btn btn-secondary" style="width: 100%; margin-top: 8px;">Open Saved Tickets</a>
         </div>
 
-        <div style="padding: 8px 12px;">
+        <div class="parlay-sidebar-saved" style="padding: 8px 12px;">
             <div class="parlay-surface" style="padding: 12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom: 8px;">
                     <div style="font-size: 11px; color: var(--accent-copper); font-weight: 700;">Saved Tickets</div>
@@ -880,7 +968,7 @@
                                         <span style="color: var(--accent);">({{ pick.confidence|round|int }}%)</span>
                                     </div>
                                     <span class="badge" style="background: {% if pick.outcome_state == 'win' %}rgba(132,215,210,0.18){% elif pick.outcome_state == 'loss' %}rgba(255,107,107,0.16){% elif pick.outcome_state == 'push' %}rgba(110,162,255,0.18){% else %}rgba(255,255,255,0.08){% endif %}; color: {% if pick.outcome_state == 'win' %}var(--accent){% elif pick.outcome_state == 'loss' %}var(--danger){% elif pick.outcome_state == 'push' %}var(--accent-blue){% else %}var(--text-muted){% endif %}; border-color: rgba(255,255,255,0.08);">
-                                        {% if pick.outcome_state == 'win' %}Win{% elif pick.outcome_state == 'loss' %}Loss{% elif pick.outcome_state == 'push' %}Push{% else %}Pending{% endif %}
+                                        {% if pick.outcome_state == 'win' %}Win{% elif pick.outcome_state == 'loss' %}Loss{% elif pick.outcome_state == 'push' %}Push{% elif pick.outcome_state == 'settled' %}Settled{% else %}Pending{% endif %}
                                     </span>
                                 </div>
                                 {% if pick.actual_value is not none %}
@@ -926,24 +1014,178 @@ let selectedProps = [];
 const budgetPlan = {{ strategy.budget|tojson }};
 const savedParlayMap = {{ saved_parlays|tojson }};
 const selectedTicketId = {{ selected_ticket_id|tojson }};
+const handoffContext = {{ handoff_context|tojson }};
+
+function propFromCheckbox(checkbox) {
+    return {
+        sport: checkbox.dataset.sport || 'NBA',
+        player: checkbox.dataset.player,
+        team: checkbox.dataset.team,
+        stat: checkbox.dataset.stat,
+        line: checkbox.dataset.line,
+        direction: checkbox.dataset.direction,
+        confidence: parseFloat(checkbox.dataset.confidence || 0),
+        marketPrice: checkbox.dataset.marketPrice ? parseFloat(checkbox.dataset.marketPrice) : null,
+        modelProb: checkbox.dataset.modelProb ? parseFloat(checkbox.dataset.modelProb) : parseFloat(checkbox.dataset.confidence || 0),
+        evPct: checkbox.dataset.evPct ? parseFloat(checkbox.dataset.evPct) : null,
+        matchup: checkbox.dataset.matchup,
+        tier: checkbox.dataset.tier
+    };
+}
+
+function americanToDecimal(odds) {
+    const value = parseFloat(odds);
+    if (!Number.isFinite(value) || value === 0) return null;
+    return value > 0 ? 1 + (value / 100) : 1 + (100 / Math.abs(value));
+}
+
+function calculateBankrollIq(trueProb, decimalOdds, bankroll, maxFraction = 0.03) {
+    if (!Number.isFinite(trueProb) || !Number.isFinite(decimalOdds) || trueProb <= 0 || trueProb >= 1 || decimalOdds <= 1) {
+        return {
+            label: 'NO PRICE READ',
+            color: 'var(--text-muted)',
+            pct: 0,
+            amount: 0,
+            kellyPct: null,
+            note: 'Need model probability and book prices before the ticket can size with Kelly.'
+        };
+    }
+    const b = decimalOdds - 1;
+    const q = 1 - trueProb;
+    const fullKelly = ((b * trueProb) - q) / b;
+    let quarterKelly = Math.max(0, fullKelly * 0.25);
+    const recommended = Math.max(0, Math.min(maxFraction, quarterKelly));
+    let label = 'PASS';
+    let color = 'var(--danger)';
+    let note = 'Book price does not clear the model probability. Track it, but do not force stake.';
+    if (fullKelly > 0 && recommended < 0.0025) {
+        label = 'TRACK';
+        color = 'var(--accent-copper)';
+        note = 'Positive but thin edge. Keep it below a quarter-percent of bankroll if played.';
+    } else if (recommended >= 0.0025 && recommended < 0.0075) {
+        label = 'SMALL';
+        color = 'var(--accent-blue)';
+        note = 'Small Kelly edge. Better as controlled exposure than a main ticket.';
+    } else if (recommended >= 0.0075 && recommended < 0.015) {
+        label = 'STANDARD';
+        color = 'var(--accent)';
+        note = 'Solid Kelly read. Keep parlay exposure capped and confirm correlation.';
+    } else if (recommended >= 0.015) {
+        label = 'STRONG';
+        color = 'var(--accent)';
+        note = 'Strong sizing read, capped for parlay variance. Confirm the number before acting.';
+    }
+    return {
+        label,
+        color,
+        pct: recommended * 100,
+        amount: (parseFloat(bankroll) || 0) * recommended,
+        kellyPct: fullKelly * 100,
+        note
+    };
+}
+
+function calculateCorrelationIq(legs) {
+    if (!legs.length || legs.length < 2) {
+        return {
+            label: 'WAITING',
+            score: 0,
+            color: 'var(--text-bright)',
+            note: 'Select at least two legs to measure same-game and cross-sport exposure.'
+        };
+    }
+    let score = 0;
+    let hardBlock = false;
+    const notes = [];
+    for (let i = 0; i < legs.length; i += 1) {
+        for (let j = i + 1; j < legs.length; j += 1) {
+            const a = legs[i];
+            const b = legs[j];
+            const sameSport = String(a.sport || '').toUpperCase() === String(b.sport || '').toUpperCase();
+            const sameGame = sameSport && a.matchup && b.matchup && String(a.matchup).toUpperCase() === String(b.matchup).toUpperCase();
+            const samePlayer = a.player && b.player && String(a.player).toUpperCase() === String(b.player).toUpperCase();
+            const sameTeam = sameSport && a.team && b.team && String(a.team).toUpperCase() === String(b.team).toUpperCase();
+            const sameStatSide = String(a.stat || '').toUpperCase() === String(b.stat || '').toUpperCase() &&
+                String(a.direction || '').toUpperCase() === String(b.direction || '').toUpperCase();
+            let pairScore = 0;
+            const reasons = [];
+            if (samePlayer) {
+                pairScore += 50;
+                hardBlock = true;
+                reasons.push('same player');
+            }
+            if (sameGame) {
+                pairScore += 22;
+                reasons.push('same game');
+            } else if (!sameSport) {
+                pairScore -= 4;
+            }
+            if (sameTeam) {
+                pairScore += 8;
+                reasons.push('same team');
+            }
+            if (sameStatSide) {
+                pairScore += 4;
+                reasons.push('same stat side');
+            }
+            score += pairScore;
+            if (pairScore > 0 && reasons.length) {
+                notes.push(`${a.player} / ${b.player}: ${reasons.join(', ')}`);
+            }
+        }
+    }
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    if (hardBlock || score >= 60) {
+        return {
+            label: 'HIGH',
+            score,
+            color: 'var(--danger)',
+            note: `Correlation is stacked. ${notes[0] || 'Same-game exposure is high.'} Prefer round robins or shrink stake.`
+        };
+    }
+    if (score >= 30) {
+        return {
+            label: 'MEDIUM',
+            score,
+            color: 'var(--accent-copper)',
+            note: `Some legs share script risk. ${notes[0] || 'Keep the stake smaller than raw EV suggests.'}`
+        };
+    }
+    return {
+        label: 'LOW',
+        score,
+        color: 'var(--accent)',
+        note: 'Legs are diversified enough that one game script should not control the whole ticket.'
+    };
+}
+
+function propIdentityMatches(prop, checkbox) {
+    return prop.player === checkbox.dataset.player &&
+        prop.stat === checkbox.dataset.stat &&
+        String(prop.line) === String(checkbox.dataset.line) &&
+        prop.direction === checkbox.dataset.direction;
+}
+
+function addPropToSelection(prop) {
+    const exists = selectedProps.some(existing =>
+        existing.player === prop.player &&
+        existing.stat === prop.stat &&
+        String(existing.line) === String(prop.line) &&
+        existing.direction === prop.direction
+    );
+    if (!exists) {
+        selectedProps.push(prop);
+    }
+}
 
 document.querySelectorAll('.prop-checkbox').forEach(checkbox => {
     checkbox.addEventListener('change', function() {
-        const prop = {
-            player: this.dataset.player,
-            team: this.dataset.team,
-            stat: this.dataset.stat,
-            line: this.dataset.line,
-            direction: this.dataset.direction,
-            confidence: parseFloat(this.dataset.confidence),
-            matchup: this.dataset.matchup,
-            tier: this.dataset.tier
-        };
+        const prop = propFromCheckbox(this);
 
         if (this.checked) {
-            selectedProps.push(prop);
+            addPropToSelection(prop);
         } else {
-            selectedProps = selectedProps.filter(p => !(p.player === prop.player && p.stat === prop.stat));
+            selectedProps = selectedProps.filter(p => !(p.player === prop.player && p.stat === prop.stat && String(p.line) === String(prop.line) && p.direction === prop.direction));
         }
         updateParlay();
     });
@@ -971,6 +1213,7 @@ function updateParlay() {
         buildGrade.textContent = 'Waiting';
         buildGrade.style.color = 'var(--text-bright)';
         buildGradeNote.textContent = 'Select props and the builder will grade the ticket quality, not just count the legs.';
+        updateStakePlan();
         return;
     }
 
@@ -984,7 +1227,7 @@ function updateParlay() {
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-elevated); border-radius: 6px; border-left: 3px solid ${isOver ? 'var(--accent-copper)' : '#FF6B6B'};">
                 <div>
                     <div style="font-weight: 600; font-size: 12px;">${prop.player}</div>
-                    <div style="font-size: 10px; color: var(--text-muted);">${prop.stat} ${isOver ? 'O' : 'U'}${prop.line} • ${prop.tier}</div>
+                    <div style="font-size: 10px; color: var(--text-muted);">${prop.sport || 'NBA'} • ${prop.stat} ${isOver ? 'O' : 'U'}${prop.line} • ${prop.tier || 'Watch'}</div>
                 </div>
                 <span style="font-size: 11px; color: ${isOver ? 'var(--accent-copper)' : '#FF6B6B'}; font-weight: 600;">${Math.round(prop.confidence)}%</span>
             </div>
@@ -1034,6 +1277,7 @@ function updateParlay() {
     } else {
         formulaStatus.textContent = 'Aim for 4 Tier 1 plays for the anchor, then use round robins for the rest.';
     }
+    updateStakePlan();
 }
 
 function updateStakePlan() {
@@ -1042,8 +1286,52 @@ function updateStakePlan() {
     const slateBudget = bankroll * (riskPct / 100);
     const slateBudgetValue = document.getElementById('slateBudgetValue');
     const stakePlan = document.getElementById('stakePlan');
+    const bankrollIqLabel = document.getElementById('bankrollIqLabel');
+    const bankrollIqNote = document.getElementById('bankrollIqNote');
+    const kellyPct = document.getElementById('kellyPct');
+    const kellyAmount = document.getElementById('kellyAmount');
+    const correlationIqLabel = document.getElementById('correlationIqLabel');
+    const correlationIqScore = document.getElementById('correlationIqScore');
+    const correlationIqNote = document.getElementById('correlationIqNote');
 
     slateBudgetValue.textContent = `$${slateBudget.toFixed(2)}`;
+
+    const corrRead = calculateCorrelationIq(selectedProps);
+    correlationIqLabel.textContent = corrRead.label;
+    correlationIqLabel.style.color = corrRead.color;
+    correlationIqScore.textContent = `${corrRead.score}/100`;
+    correlationIqScore.style.color = corrRead.color;
+    correlationIqNote.textContent = corrRead.note;
+
+    const pricedLegs = selectedProps.filter(p => p.marketPrice !== null && americanToDecimal(p.marketPrice));
+    if (!selectedProps.length) {
+        bankrollIqLabel.textContent = 'Waiting';
+        bankrollIqLabel.style.color = 'var(--text-bright)';
+        bankrollIqNote.textContent = 'Select priced legs to compare model probability against book odds.';
+        kellyPct.textContent = '-';
+        kellyAmount.textContent = 'Stake cap';
+    } else if (pricedLegs.length !== selectedProps.length) {
+        bankrollIqLabel.textContent = 'PRICE NEEDED';
+        bankrollIqLabel.style.color = 'var(--accent-copper)';
+        bankrollIqNote.textContent = `${selectedProps.length - pricedLegs.length} selected leg(s) are missing book price, so BankrollIQ is holding the Kelly read.`;
+        kellyPct.textContent = '-';
+        kellyAmount.textContent = 'No cap';
+    } else {
+        const trueProb = selectedProps.reduce((product, p) => product * ((parseFloat(p.modelProb || p.confidence || 50)) / 100), 1);
+        const decimalOdds = selectedProps.reduce((product, p) => product * americanToDecimal(p.marketPrice), 1);
+        const matchupCounts = {};
+        selectedProps.forEach(p => {
+            if (p.matchup && p.matchup !== 'N/A') matchupCounts[p.matchup] = (matchupCounts[p.matchup] || 0) + 1;
+        });
+        const sameGameStacks = Object.values(matchupCounts).filter(count => count > 1).length;
+        const maxFraction = sameGameStacks ? 0.02 : 0.03;
+        const read = calculateBankrollIq(trueProb, decimalOdds, bankroll, maxFraction);
+        bankrollIqLabel.textContent = read.label;
+        bankrollIqLabel.style.color = read.color;
+        bankrollIqNote.textContent = `True ${(trueProb * 100).toFixed(1)}% vs book implied ${(100 / decimalOdds).toFixed(1)}%. ${read.note}`;
+        kellyPct.textContent = read.kellyPct === null ? '-' : `${read.pct.toFixed(2)}%`;
+        kellyAmount.textContent = read.amount > 0 ? `$${read.amount.toFixed(2)} cap` : 'No stake';
+    }
 
     if (!budgetPlan.length || slateBudget <= 0) {
         stakePlan.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);">Enter a bankroll and slate risk to see exact bet sizing.</div>';
@@ -1089,7 +1377,8 @@ function checkRules() {
 function clearParlay() {
     selectedProps = [];
     document.querySelectorAll('.prop-checkbox').forEach(cb => cb.checked = false);
-    document.getElementById('saveLabelInput').value = '';
+    const labelInput = document.getElementById('saveLabelInput');
+    if (labelInput) labelInput.value = '';
     updateParlay();
 }
 
@@ -1098,7 +1387,8 @@ async function saveParlayTicket() {
     const bankroll = parseFloat(document.getElementById('bankrollInput').value) || 0;
     const riskPct = parseFloat(document.getElementById('riskInput').value) || 0;
     const slateBudget = bankroll * (riskPct / 100);
-    const label = document.getElementById('saveLabelInput').value.trim();
+    const labelInput = document.getElementById('saveLabelInput');
+    const label = labelInput ? labelInput.value.trim() : '';
 
     if (!selectedProps.length) {
         saveStatus.textContent = 'Select at least one prop before saving.';
@@ -1132,11 +1422,10 @@ async function saveParlayTicket() {
             throw new Error(result.error || 'Unable to save ticket.');
         }
 
-        saveStatus.textContent = result.message + ' Refresh to see it in Saved Tickets.';
+        const savedMessage = result.message || 'Ticket saved.';
+        clearParlay();
+        saveStatus.textContent = savedMessage + ' Ticket cleared so you can build the next one.';
         saveStatus.style.color = 'var(--accent)';
-        if (!label) {
-            document.getElementById('saveLabelInput').value = result.label;
-        }
     } catch (error) {
         saveStatus.textContent = error.message || 'Unable to save ticket.';
         saveStatus.style.color = 'var(--danger)';
@@ -1153,26 +1442,26 @@ function loadSavedTicket(ticketId) {
     }
 
     selectedProps = ticket.picks.map(pick => ({
+        sport: pick.sport || pick.Sport || 'NBA',
         player: pick.player,
         team: pick.team,
         stat: pick.stat,
         line: String(pick.line),
         direction: pick.direction,
         confidence: parseFloat(pick.confidence || 0),
+        marketPrice: pick.market_price ? parseFloat(pick.market_price) : null,
+        modelProb: pick.model_prob ? parseFloat(pick.model_prob) : parseFloat(pick.confidence || 0),
+        evPct: pick.ev_pct ? parseFloat(pick.ev_pct) : null,
         matchup: pick.matchup || '',
         tier: pick.tier || ''
     }));
 
     document.querySelectorAll('.prop-checkbox').forEach(cb => {
-        cb.checked = selectedProps.some(p =>
-            p.player === cb.dataset.player &&
-            p.stat === cb.dataset.stat &&
-            String(p.line) === String(cb.dataset.line) &&
-            p.direction === cb.dataset.direction
-        );
+        cb.checked = selectedProps.some(p => propIdentityMatches(p, cb));
     });
 
-    document.getElementById('saveLabelInput').value = ticket.label || '';
+    const labelInput = document.getElementById('saveLabelInput');
+    if (labelInput) labelInput.value = ticket.label || '';
     if (ticket.bankroll) document.getElementById('bankrollInput').value = ticket.bankroll;
     if (ticket.risk_pct) document.getElementById('riskInput').value = ticket.risk_pct;
     updateStakePlan();
@@ -1249,6 +1538,35 @@ updateStakePlan();
 
 if (selectedTicketId) {
     loadSavedTicket(selectedTicketId);
+}
+
+if (handoffContext && handoffContext.status === 'matched' && handoffContext.leg) {
+    const incoming = {
+        sport: handoffContext.leg.sport || 'NBA',
+        player: handoffContext.leg.player,
+        team: handoffContext.leg.team || '',
+        stat: handoffContext.leg.stat,
+        line: String(handoffContext.leg.line),
+        direction: handoffContext.leg.direction,
+        confidence: parseFloat(handoffContext.leg.confidence || 0),
+        marketPrice: handoffContext.leg.market_price ? parseFloat(handoffContext.leg.market_price) : null,
+        modelProb: handoffContext.leg.model_prob ? parseFloat(handoffContext.leg.model_prob) : parseFloat(handoffContext.leg.confidence || 0),
+        evPct: handoffContext.leg.ev_pct ? parseFloat(handoffContext.leg.ev_pct) : null,
+        matchup: handoffContext.leg.matchup || '',
+        tier: handoffContext.leg.tier || ''
+    };
+    addPropToSelection(incoming);
+    document.querySelectorAll('.prop-checkbox').forEach(cb => {
+        if (propIdentityMatches(incoming, cb)) {
+            cb.checked = true;
+            const row = cb.closest('tr');
+            if (row) {
+                row.style.outline = '2px solid rgba(132,215,210,0.65)';
+                row.style.boxShadow = 'inset 4px 0 0 rgba(132,215,210,0.8)';
+            }
+        }
+    });
+    updateParlay();
 }
 </script>
 {% endblock %}

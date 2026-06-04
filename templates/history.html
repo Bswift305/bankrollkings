@@ -1,0 +1,79 @@
+{% extends "bk_base.html" %}
+
+{% block title %}History{% endblock %}
+
+{# No bet slip on History page #}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+
+{% block main %}
+<div class="bk-page-header">
+  <div>
+    <div class="bk-page-title">SESSION HISTORY</div>
+    <div class="bk-page-sub">All-time · {{ total_sessions }} sessions tracked</div>
+  </div>
+  <div class="bk-stat-pills">
+    <div class="bk-stat-pill primary">
+      <span class="sp-label">Win Rate</span>
+      <span class="sp-val">{{ win_rate }}%</span>
+    </div>
+    <div class="bk-stat-pill {% if net_profit >= 0 %}primary{% else %}danger{% endif %}">
+      <span class="sp-label">Net P&L</span>
+      <span class="sp-val">{{ '+' if net_profit >= 0 }}${{ net_profit }}</span>
+    </div>
+    <div class="bk-stat-pill info">
+      <span class="sp-label">Avg Legs</span>
+      <span class="sp-val">{{ avg_legs }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="bk-toolbar">
+  <span class="bk-toolbar-label">Filter:</span>
+  <button class="bk-btn active">All Time</button>
+  <button class="bk-btn">This Month</button>
+  <button class="bk-btn">This Week</button>
+  <div class="bk-toolbar-spacer"></div>
+  <span class="bk-toolbar-count">{{ sessions | length }} sessions</span>
+</div>
+
+<div class="bk-content">
+  <div class="bk-card">
+    <table class="bk-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Sport</th>
+          <th>Legs</th>
+          <th>Type</th>
+          <th>Wager</th>
+          <th>Odds</th>
+          <th>Result</th>
+          <th>P&L</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td class="mono">{{ s.date }}</td>
+          <td>{{ s.sport }}</td>
+          <td class="mono">{{ s.legs }}</td>
+          <td>{{ s.type }}</td>
+          <td class="mono">${{ s.wager }}</td>
+          <td class="mono primary">+{{ s.odds }}</td>
+          <td>
+            <span style="color:{{ 'var(--bk-primary)' if s.result == 'WIN' else 'var(--color-red)' }}">
+              {{ s.result }}
+            </span>
+          </td>
+          <td class="mono {{ 'primary' if s.pnl >= 0 else 'danger' }}">
+            {{ '+' if s.pnl >= 0 }}${{ s.pnl }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock main %}

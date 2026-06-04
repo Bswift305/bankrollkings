@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
 {% block title %}{{ away }} @ {{ home }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -13,6 +17,9 @@
         {% endif %}
         <div class="page-subtitle">
             {% if series_type in ['playoff', 'play-in', 'postseason'] %}{{ series_score.status }}{% else %}Single-game matchup view{% endif %}
+        </div>
+        <div class="page-subtitle" style="margin-top: 8px; max-width: 920px;">
+            Full matchup breakdown: game market, series state, sample trust, team-vs-defense fit, live prop angles, and the main conditions that can swing the outcome.
         </div>
     </div>
     <div class="hero-actions">
@@ -38,12 +45,16 @@
                 {% if current_market.total is not none %}<span class="micro-chip soft">O/U {{ current_market.total }}</span>{% endif %}
             </div>
             {% endif %}
-            <div style="font-size: 11px; color: var(--text-muted);">{% if current_market_summary %}{{ current_market_summary }}{% else %}Refresh game lines to load spread, total, and ML.{% endif %}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{% if current_market_summary %}{{ current_market_summary|replace('â€¢', '|')|replace('•', '|') }}{% else %}Refresh game lines to load spread, total, and ML.{% endif %}</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Series State</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if series_type in ['playoff', 'play-in', 'postseason'] %}{{ series_score.team_a_wins }} - {{ series_score.team_b_wins }}{% else %}Single Game{% endif %}</div>
             <div style="font-size: 11px; color: var(--text-muted);">{{ series_score.status if series_type in ['playoff', 'play-in', 'postseason'] else away ~ ' @ ' ~ home }}</div>
+            {% if regular_season_h2h and regular_season_h2h.games %}
+            <div style="font-size: 11px; color: var(--accent); margin-top: 6px;">Regular season series: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
+            {% endif %}
+            <div style="margin-top: 6px;"><a href="/team/{{ away|urlencode }}" style="font-size: 11px; color: var(--accent); text-decoration: none;">{{ away }}</a> <span style="color: var(--text-muted);">|</span> <a href="/team/{{ home|urlencode }}" style="font-size: 11px; color: var(--accent); text-decoration: none;">{{ home }}</a></div>
             {% if series_context_teaching_note %}
             <div style="font-size: 11px; color: var(--text-bright); margin-top: 6px; line-height: 1.5;">{{ series_context_teaching_note }}</div>
             {% endif %}
@@ -52,6 +63,9 @@
             <div class="page-kicker" style="margin-bottom: 6px;">Head-to-Head</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ h2h_away_wins }} - {{ h2h_home_wins }}</div>
             <div style="font-size: 11px; color: var(--text-muted);">{{ h2h_avg_total }} average total points</div>
+            {% if regular_season_h2h and regular_season_h2h.games %}
+            <div style="font-size: 11px; color: var(--accent); margin-top: 6px;">Regular season: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
+            {% endif %}
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Playable Props</div>
@@ -73,6 +87,9 @@
         <span class="badge badge-accent">{{ away }} @ {{ home }}</span>
     </div>
     <div class="p-16">
+        {% if regular_season_h2h and regular_season_h2h.games %}
+        <div style="font-size: 12px; color: var(--accent); margin-bottom: 10px;">Regular season series: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
+        {% endif %}
         {% if matchup_editorial.driver_tags %}
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
             {% for tag in matchup_editorial.driver_tags %}
@@ -80,46 +97,49 @@
             {% endfor %}
         </div>
         {% endif %}
-        <div class="grid-2" style="gap: 14px; margin-bottom: 14px;">
+        <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
             <div class="parlay-surface-soft" style="padding: 12px;">
                 <div class="page-kicker" style="margin-bottom: 6px;">Side Lean</div>
-                <div style="font-size: 18px; font-weight: 800; color: var(--text-bright); margin-bottom: 4px;">{{ matchup_editorial.side_lean }}</div>
-                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ matchup_editorial.side_reason }}</div>
+                <div style="font-size: 17px; font-weight: 800; color: var(--text-bright); margin-bottom: 4px;">{{ matchup_editorial.side_lean }}</div>
+                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ matchup_editorial.side_reason }}</div>
             </div>
             <div class="parlay-surface-soft" style="padding: 12px;">
                 <div class="page-kicker" style="margin-bottom: 6px;">Total Environment</div>
-                <div style="font-size: 18px; font-weight: 800; color: var(--text-bright); margin-bottom: 4px;">{{ matchup_editorial.total_lean }}</div>
-                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ matchup_editorial.total_reason }}</div>
+                <div style="font-size: 17px; font-weight: 800; color: var(--text-bright); margin-bottom: 4px;">{{ matchup_editorial.total_lean }}</div>
+                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.45;">{{ matchup_editorial.total_reason }}</div>
             </div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px; margin-bottom: 14px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Context</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px;">{{ current_market_summary if current_market_summary else 'Market feed waiting' }}</div>
-            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">
-                {% if current_market_summary %}
-                Loaded line context for this matchup.{% if matchup_editorial.market_updated %} Last update: {{ matchup_editorial.market_updated }}.{% endif %}
-                {% else %}
-                Refresh the game-line feed to load the current spread, total, and moneyline.
-                {% endif %}
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Market Context</div>
+                <div style="font-size: 15px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px;">{{ current_market_summary|replace('â€¢', '|')|replace('•', '|') if current_market_summary else 'Market feed waiting' }}</div>
+                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.45;">
+                    {% if current_market_summary %}
+                    Loaded line context for this matchup.{% if matchup_editorial.market_updated %} Last update: {{ matchup_editorial.market_updated }}.{% endif %}
+                    {% else %}
+                    Refresh the game-line feed to load the current spread, total, and moneyline.
+                    {% endif %}
+                </div>
             </div>
         </div>
         {% if matchup_editorial.angles %}
-        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap:10px; margin-bottom:12px;">
             {% for angle in matchup_editorial.angles %}
-            <div class="parlay-surface-soft" style="padding: 10px 12px; display:flex; justify-content:space-between; gap:12px; align-items:center;">
-                <div>
-                    <div style="font-size: 12px; color: var(--text-bright); font-weight: 700;">{{ angle.label }}</div>
-                    <div style="font-size: 11px; color: var(--text-muted); line-height: 1.45;">
-                        {% if angle.best_book %}Best book {{ angle.best_book }}{% endif %}
-                        {% if angle.line_low is not none and angle.line_high is not none and angle.line_low != angle.line_high %}
-                        {% if angle.best_book %} • {% endif %}Range {{ angle.line_low }} to {{ angle.line_high }}
-                        {% elif angle.open_line is not none or angle.current_line is not none %}
-                        {% if angle.best_book %} • {% endif %}Open {{ angle.open_line if angle.open_line is not none else '-' }} → Now {{ angle.current_line if angle.current_line is not none else '-' }}
-                        {% endif %}
-                        {% if angle.move_label %} • {{ angle.move_label }}{% endif %}
-                    </div>
+            <div class="parlay-surface-soft" style="padding: 10px 12px;">
+                <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:4px;">
+                    <div style="font-size: 12px; color: var(--text-bright); font-weight: 700; line-height: 1.35;">{{ angle.label }}</div>
+                    <div style="font-size: 11px; color: var(--accent); font-weight: 800; white-space: nowrap;">{{ angle.confidence }}%</div>
                 </div>
-                <div style="font-size: 11px; color: var(--accent); font-weight: 800;">{{ angle.confidence }}%</div>
+                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+                    {% if angle.best_book %}Best book {{ angle.best_book }}{% endif %}
+                    {% if angle.line_low is not none and angle.line_high is not none and angle.line_low != angle.line_high %}
+                    {% if angle.best_book %} • {% endif %}Range {{ angle.line_low }} to {{ angle.line_high }}
+                    {% elif angle.open_line is not none or angle.current_line is not none %}
+                    {% if angle.best_book %} • {% endif %}Open {{ angle.open_line if angle.open_line is not none else '-' }} -> Now {{ angle.current_line if angle.current_line is not none else '-' }}
+                    {% endif %}
+                    {% if angle.move_label %} • {{ angle.move_label }}{% endif %}
+                </div>
+                {% if angle.reason %}
+                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.45; margin-top: 6px;">{{ angle.reason }}</div>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -195,7 +215,8 @@
         {% if card %}
         <div class="parlay-surface-soft" style="padding: 12px; border-color: {% if card.label == 'Avoid' %}rgba(255,107,107,0.26){% elif card.direction == 'UNDER' %}rgba(110,162,255,0.24){% else %}rgba(132,215,210,0.24){% endif %};">
             <div class="page-kicker" style="margin-bottom: 6px; color: {% if card.label == 'Avoid' %}#FFB3B3{% elif card.direction == 'UNDER' %}var(--accent-blue){% else %}var(--accent){% endif %};">{{ card.label }}</div>
-            <div style="font-size: 15px; font-weight: 800; color: var(--text-bright); line-height: 1.25;">{{ card.player }}</div>
+            <div style="font-size: 15px; font-weight: 800; color: var(--text-bright); line-height: 1.25;"><a href="/player/{{ card.player|urlencode }}" style="color: inherit; text-decoration: none;">{{ card.player }}</a></div>
+            <div style="font-size: 11px; color: var(--accent); margin-top: 4px;"><a href="/team/{{ card.team|urlencode }}" style="color: inherit; text-decoration: none;">{{ card.team }}</a></div>
             <div class="micro-cluster" style="margin-top: 8px;">
                 <span class="micro-chip soft">{{ card.stat }} {{ card.line }}</span>
                 <span class="micro-chip {% if card.direction == 'UNDER' %}blue{% else %}accent{% endif %}">{{ card.direction }}</span>
@@ -222,12 +243,14 @@
             {% for prop in matchup_props %}
             <tr>
                 <td><a href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>{% if prop.has_injury_flag %}<div style="margin-top: 6px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}</td>
-                <td>{{ team_mark(prop.team, size='xs') }}</td>
+                <td><a href="/team/{{ prop.team|urlencode }}" style="color: inherit; text-decoration: none;">{{ team_mark(prop.team, size='xs') }}</a></td>
                 <td><span class="badge">{{ prop.stat }}</span></td>
                 <td><strong>{{ prop.line }}</strong></td>
                 <td>{{ prop.avg }}</td>
                   <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
-                  <td><span style="color: var(--accent);">O:{% if postseason_only and prop.weighted_over_rate is defined %}{{ prop.weighted_over_rate }}{% else %}{{ prop.over_rate }}{% endif %}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #ffb8b8;">U:{% if postseason_only and prop.weighted_under_rate is defined %}{{ prop.weighted_under_rate }}{% else %}{{ prop.under_rate }}{% endif %}%</span></td>
+                  {% set matchup_over = prop.weighted_over_rate if postseason_only and prop.weighted_over_rate is defined else prop.over_rate %}
+                  {% set matchup_under = prop.weighted_under_rate if postseason_only and prop.weighted_under_rate is defined else prop.under_rate %}
+                  <td><span style="color: {{ ou_rate_color(matchup_over) }};">O:{{ matchup_over }}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: {{ ou_rate_color(matchup_under) }};">U:{{ matchup_under }}%</span></td>
                   <td style="font-size: 11px; line-height: 1.45;">
                       {% if prop.market_summary %}
                       <div style="color: var(--text-bright);">{{ prop.market_summary }}</div>
@@ -323,6 +346,25 @@
             {% if series_score.games %}
             <div style="margin-top: 10px; color: var(--text-muted); font-size: 12px; text-align: center;">Last completed game: {{ series_score.games[-1].date }} | {{ team_mark(away, size='xs') }} {{ series_score.games[-1].team_a_score }} - {{ series_score.games[-1].team_b_score }} {{ team_mark(home, size='xs') }}</div>
             {% endif %}
+        </div>
+        {% endif %}
+        {% if regular_season_h2h and regular_season_h2h.games %}
+        <div style="margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border);">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Regular season head-to-head</div>
+            <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: center; text-align: center;">
+                <div>
+                    <div style="font-size: 12px; color: var(--text-muted);">{{ team_mark(away, size='xs') }}</div>
+                    <div style="font-size: 28px; font-weight: 700; color: {% if regular_season_h2h.leader == away %}var(--accent){% else %}var(--text-bright){% endif %};">{{ regular_season_h2h.team_a_wins }}</div>
+                </div>
+                <div style="font-size: 11px; letter-spacing: 1px; color: var(--text-muted); text-transform: uppercase;">Regular Season</div>
+                <div>
+                    <div style="font-size: 12px; color: var(--text-muted);">{{ team_mark(home, size='xs') }}</div>
+                    <div style="font-size: 28px; font-weight: 700; color: {% if regular_season_h2h.leader == home %}var(--accent){% else %}var(--text-bright){% endif %};">{{ regular_season_h2h.team_b_wins }}</div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; color: var(--text-muted); font-size: 12px; text-align: center;">
+                {{ regular_season_h2h.status }}{% if regular_season_h2h.avg_total %} Average total: {{ regular_season_h2h.avg_total }}.{% endif %}
+            </div>
         </div>
         {% endif %}
         <div class="grid-3" style="gap: 14px; text-align: center;">

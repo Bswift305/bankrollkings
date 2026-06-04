@@ -1,0 +1,186 @@
+{% set active_page = 'missed' %}
+{% extends "bk_base.html" %}
+{% block title %}Missed Winners - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Proof Lab</div>
+        <h1>Missed <span class="accent">Winners</span></h1>
+        <div class="page-subtitle">Resolved board props that hit, graded strong before the game, but were not promoted on a featured surface. This shows where the formula was right and the promotion layer stayed too quiet.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/candidate-review" class="btn btn-secondary btn-sm">Candidate Review</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="control-panel">
+        <form method="get" action="/missed-opportunities" class="control-group" style="width: 100%;">
+            <span class="control-label">Filters</span>
+            <select name="sport" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="">All Sports</option>
+                {% for sport in sport_options %}
+                <option value="{{ sport }}" {% if sport == sport_filter %}selected{% endif %}>{{ sport }}</option>
+                {% endfor %}
+            </select>
+            <select name="stat" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="">All Stats</option>
+                {% for stat in stat_options %}
+                <option value="{{ stat }}" {% if stat == stat_filter %}selected{% endif %}>{{ stat }}</option>
+                {% endfor %}
+            </select>
+            <select name="grade" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
+                <option value="">All Grades</option>
+                {% for grade in grade_options %}
+                <option value="{{ grade }}" {% if grade == grade_filter %}selected{% endif %}>{{ grade }}</option>
+                {% endfor %}
+            </select>
+            <select name="min_grade" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 135px;">
+                <option value="">Any Score</option>
+                <option value="85" {% if min_grade == '85' %}selected{% endif %}>85+ A+</option>
+                <option value="70" {% if min_grade == '70' %}selected{% endif %}>70+ A</option>
+                <option value="55" {% if min_grade == '55' %}selected{% endif %}>55+ B</option>
+            </select>
+            <input type="date" name="start_date" value="{{ start_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px;">
+            <input type="date" name="end_date" value="{{ end_date }}" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px;">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="/missed-opportunities" class="btn btn-secondary btn-sm">Clear</a>
+        </form>
+    </div>
+</div>
+
+<div class="grid-4 mb-24">
+    <div class="stat-card">
+        <div class="stat-label">Missed Winners</div>
+        <div class="stat-value">{{ summary.total }}</div>
+        <div class="stat-note">Resolved hits that were not featured</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">A+ Misses</div>
+        <div class="stat-value">{{ summary.a_plus }}</div>
+        <div class="stat-note">Cleanest hindsight proof rows</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">A Or Better</div>
+        <div class="stat-value">{{ summary.a_or_better }}</div>
+        <div class="stat-note">Strong signal left off featured boards</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Avg Grade</div>
+        <div class="stat-value">{{ summary.avg_grade if summary.avg_grade is not none else '-' }}</div>
+        <div class="stat-note">Avg confidence {{ summary.avg_confidence if summary.avg_confidence is not none else '-' }}</div>
+    </div>
+</div>
+
+<div class="grid-3 mb-24">
+    <div class="card">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">By Sport</div>
+        </div>
+        <div class="p-16">
+            {% for row in charts.by_sport %}
+            <div style="margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; gap:12px; font-size:13px; font-weight:800;">
+                    <span>{{ row.sport }}</span>
+                    <span>{{ row.count }} | avg {{ row.avg_grade }}</span>
+                </div>
+                <div style="height:8px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; margin-top:6px;">
+                    <div style="height:100%; width:{{ [row.avg_grade, 100]|min }}%; background:linear-gradient(90deg, var(--accent), var(--accent-copper));"></div>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">No resolved missed winners in this filter.</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">By Grade</div>
+        </div>
+        <div class="p-16">
+            {% for row in charts.by_grade %}
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom: 12px;">
+                <span class="badge badge-accent" style="min-width:42px; justify-content:center;">{{ row.grade }}</span>
+                <div style="flex:1; height:8px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden;">
+                    <div style="height:100%; width:{{ [row.count * 4, 100]|min }}%; background:linear-gradient(90deg, #8bb8ff, var(--accent));"></div>
+                </div>
+                <strong>{{ row.count }}</strong>
+            </div>
+            {% else %}
+            <div class="empty-state">No grade distribution yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">Top Stat Buckets</div>
+        </div>
+        <div class="p-16">
+            {% for row in charts.by_stat[:8] %}
+            <div style="margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; gap:12px; font-size:13px; font-weight:800;">
+                    <span>{{ row.stat }}</span>
+                    <span>{{ row.count }} | A+ {{ row.a_plus }}</span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">Avg grade {{ row.avg_grade }}{% if row.avg_confidence %} | conf {{ row.avg_confidence }}{% endif %}</div>
+            </div>
+            {% else %}
+            <div class="empty-state">No stat buckets in this filter.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Could-Be Winners Leaderboard</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Top 15 missed winners, sorted by missed-opportunity grade, then original confidence.</div>
+        </div>
+        <span class="badge badge-outline">Top {{ [rows|length, 15]|min }} / {{ rows|length }} Rows</span>
+    </div>
+    <div class="p-16">
+        <div class="bk-compact-list">
+            {% for row in rows[:15] %}
+            <article class="bk-compact-row">
+                <div class="bk-compact-row-main">
+                    <div>
+                        <div class="bk-compact-title">
+                            <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        </div>
+                        <span class="bk-compact-meta">{{ row.sport }} | {{ row.team }} | {{ row.snapshot_date }}</span>
+                    </div>
+                    <div class="bk-compact-cell">
+                        <span class="badge badge-outline">{{ row.stat }}</span>
+                        <strong>{{ row.direction }} {{ row.line }}</strong>
+                        <small>Actual {{ row.actual }} | conf {{ row.confidence if row.confidence is not none else '-' }}</small>
+                    </div>
+                    <div class="bk-compact-cell">
+                        <strong>{{ row.matchup }}</strong>
+                        <small>Matchup context</small>
+                    </div>
+                    <div class="bk-compact-cell">
+                        <strong>{{ row.why }}</strong>
+                        {% if row.baseline_reason %}<small>{{ row.baseline_reason[:120] }}</small>{% endif %}
+                    </div>
+                    <div class="bk-compact-signal">{{ row.grade }} {{ row.grade_score }}</div>
+                </div>
+                <details>
+                    <summary>Read more</summary>
+                    <div class="bk-compact-detail-grid">
+                        <div class="bk-compact-detail"><strong>Proof</strong>{{ row.why }}</div>
+                        <div class="bk-compact-detail"><strong>Baseline</strong>{{ row.baseline_reason or 'No baseline reason stored.' }}</div>
+                        <div class="bk-compact-detail"><strong>Use</strong>Review this player/stat bucket before the next slate and decide whether the promotion rule is too quiet.</div>
+                    </div>
+                </details>
+            </article>
+            {% else %}
+            <div class="empty-state">No missed winners found for this filter yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

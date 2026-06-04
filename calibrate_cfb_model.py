@@ -14,6 +14,8 @@ from services.qc_tracking import append_qc_run_log
 
 
 BASE_DIR = Path(__file__).resolve().parent
+GAME_LINE_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NCAAF_GameLineResults_Scored.csv"
+FEATURED_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NCAAF_FeaturedResults.csv"
 
 
 def cfb_recommendation(bucket_label: str, classification: str, gap: float | None, sample_size: int) -> str:
@@ -24,12 +26,13 @@ def cfb_recommendation(bucket_label: str, classification: str, gap: float | None
 
 
 def main() -> int:
+    results_path = GAME_LINE_RESULTS_PATH if GAME_LINE_RESULTS_PATH.exists() else FEATURED_RESULTS_PATH
     config = CalibrationConfig(
         sport="NCAAF",
-        results_path=BASE_DIR / "data" / "tracking" / "NCAAF_FeaturedResults.csv",
+        results_path=results_path,
         output_path=BASE_DIR / "data" / "tracking" / "NCAAF_Calibration_Report.csv",
         confidence_source_column="Confidence",
-        default_method="Featured Top Play",
+        default_method="Game Line Backfill",
         classify_rule_family=classify_featured_rule_family,
         role_signal_fn=default_role_signal,
         recommendation_fn=cfb_recommendation,

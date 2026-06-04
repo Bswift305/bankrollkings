@@ -4,7 +4,7 @@ Bankroll Kings - Sports Analytics Platform
 NBA prop betting analysis with Sharp Factors + Over/Under System
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response, session, send_from_directory
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import Counter
@@ -13,12 +13,13 @@ from statistics import NormalDist
 from urllib.parse import urlencode, quote
 from uuid import uuid4
 from markupsafe import Markup, escape
+from jinja2 import FileSystemBytecodeCache
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import hashlib
 import os
+import pickle
 import re
-import secrets
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -44,11 +45,19 @@ from services.review_center import (
     build_bet_review_export_rows as build_bet_review_export_rows_service,
     build_bet_review_model_export_rows as build_bet_review_model_export_rows_service,
     build_candidate_review_context as build_candidate_review_context_service,
+    build_missed_opportunities_context as build_missed_opportunities_context_service,
+    build_missed_winner_bucket_frequency as build_missed_winner_bucket_frequency_service,
+    calculate_promotion_signal as calculate_promotion_signal_service,
     build_floor_reliability_table as build_floor_reliability_table_service,
     build_player_hit_profiles as build_player_hit_profiles_service,
     build_player_profile_summary as build_player_profile_summary_service,
+    build_archived_player_page_context as build_archived_player_page_context_service,
+    load_all_prop_results_for_review as load_all_prop_results_for_review_service,
+    build_streak_heat_chart as build_streak_heat_chart_service,
     load_floor_play_index as load_floor_play_index_service,
 )
+from services.ngs_loader import build_ngs_player_context, build_ngs_prop_signal
+from services.statcast_loader import build_statcast_player_context, build_statcast_prop_signal
 try:
     from openpyxl import load_workbook
 except Exception:
@@ -66,12 +75,106 @@ CANDIDATE_ARCHIVE_PATH = DATA_DIR / 'tracking' / 'NBA_CandidateArchive.csv'
 # APP SETUP
 # =============================================================================
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY') or secrets.token_urlsafe(48)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    raise ValueError('SECRET_KEY environment variable not set')
+app.secret_key = app.config['SECRET_KEY']
 
 app.template_folder = str(TEMPLATES_DIR)
 app.static_folder = str(STATIC_DIR)
+JINJA_CACHE_DIR = DATA_DIR / 'cache' / 'jinja'
+JINJA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+app.jinja_env.bytecode_cache = FileSystemBytecodeCache(str(JINJA_CACHE_DIR), '%s.cache')
 DATAFRAME_CACHE = {}
 RUNTIME_TTL_CACHE = {}
+LOGIN_ATTEMPT_CACHE = {}
+
+
+@app.route('/manifest.webmanifest')
+def manifest_webmanifest():
+    response = send_from_directory(STATIC_DIR, 'manifest.webmanifest', mimetype='application/manifest+json')
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
+@app.route('/service-worker.js')
+def service_worker():
+    response = send_from_directory(STATIC_DIR, 'service-worker.js', mimetype='application/javascript')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
+
+def _login_rate_key(email=''):
+    forwarded = str(request.headers.get('X-Forwarded-For', '') or '').split(',', 1)[0].strip()
+    remote = forwarded or str(request.remote_addr or 'unknown')
+    email_key = str(email or '').strip().lower()
+    return f"{remote}|{email_key}"
+
+
+def _login_rate_limited(email='', limit=10, window_seconds=60):
+    now = datetime.now(timezone.utc).timestamp()
+    key = _login_rate_key(email)
+    attempts = [
+        stamp for stamp in LOGIN_ATTEMPT_CACHE.get(key, [])
+        if now - float(stamp or 0) <= window_seconds
+    ]
+    if len(attempts) >= limit:
+        LOGIN_ATTEMPT_CACHE[key] = attempts
+        return True
+    attempts.append(now)
+    LOGIN_ATTEMPT_CACHE[key] = attempts
+    return False
+
+
+@app.route('/favicon.ico')
+def favicon():
+    response = send_from_directory(STATIC_DIR, 'favicon.png', mimetype='image/png')
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+@app.after_request
+def apply_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('X-XSS-Protection', '0')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if request.is_secure or str(os.getenv('ENABLE_HSTS', '')).strip().lower() in {'1', 'true', 'yes'}:
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    if not response.headers.get('Content-Security-Policy'):
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+    return response
+
+
+def render_error_page(status_code=404, title='Page not found', message='That page is not available.'):
+    return render_template(
+        'error.html',
+        status_code=status_code,
+        error_title=title,
+        error_message=message,
+    ), status_code
+
+
+@app.errorhandler(404)
+def handle_not_found(error):
+    return render_error_page(404, 'Page not found', 'The page you requested is not available or has moved.')
+
+
+@app.errorhandler(500)
+def handle_server_error(error):
+    return render_error_page(500, 'Something went wrong', 'The app hit an unexpected error. Please try again in a moment.')
 
 PRICING_TIERS = [
     {
@@ -82,13 +185,13 @@ PRICING_TIERS = [
         'monthly_label': '$0',
         'annual_label': '$0',
         'badge': 'Start Here',
-        'summary': 'Track your own work and learn the platform before paying for the sharper layers.',
+        'summary': 'Know what is happening tonight across every sport. Slate, environment, top plays, and injuries — no subscription required.',
         'best_for': 'Casual bettors and first-time users',
         'features': [
-            'Account, login, and saved tickets',
-            'Limited access to dashboards and public boards',
-            'Bet review history and saved parlays',
-            'Pricing page and plan selection',
+            'Tonight\'s slate with game environment labels across NBA, MLB, WNBA, and NFL',
+            'Top 3 highest-confidence props per sport with hit rates',
+            'Injury report — player status across all active sports',
+            'Free account, saved tickets, and platform access',
         ],
         'cta': 'Create Free Account',
     },
@@ -100,15 +203,135 @@ PRICING_TIERS = [
         'monthly_label': '$29/mo',
         'annual_label': '$299/yr',
         'badge': 'Recommended',
-        'summary': 'The right consumer tier for people who want daily decision support without paying pro-bettor scanner prices.',
-        'best_for': 'Serious daily users',
+        'summary': 'Full boards across every sport. The complete prop workflow — player pages, matchup context, floor plays, and the parlay builder — all in one place.',
+        'best_for': 'Serious daily bettors',
         'features': [
-            'Full NBA, NFL, and CFB boards',
-            'Market Edge, Props, Matchup Lens, and raw data explorer',
-            'Player pages, line overlays, and review tools',
-            'Historical context and calibration views',
+            'Full prop boards across NBA, MLB, WNBA, NFL, and CFB',
+            'Player pages, team pages, and matchup analysis',
+            'Floor plays, market edge, and parlay builder',
+            'Injury impact analysis, calibration history, and bet review',
         ],
         'cta': 'Choose Pro',
+    },
+    {
+        'key': 'nba_pass',
+        'name': 'NBA Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'NBA-only access for users who want the basketball prop workflow without paying for every league.',
+        'best_for': 'NBA-only bettors',
+        'sport_access': ['nba'],
+        'is_sport_pass': True,
+        'features': [
+            'NBA dashboard and live prop board',
+            'NBA market edge, trends, injuries, and matchup lens',
+            'NBA player pages and review context',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose NBA Pass',
+    },
+    {
+        'key': 'wnba_pass',
+        'name': 'WNBA Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'WNBA-only access for users focused on women’s hoops props, floor reads, and market movement.',
+        'best_for': 'WNBA-only bettors',
+        'sport_access': ['wnba'],
+        'is_sport_pass': True,
+        'features': [
+            'WNBA dashboard and live prop board',
+            'WNBA market edge, floor reads, trends, and matchups',
+            'WNBA player pages and review context',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose WNBA Pass',
+    },
+    {
+        'key': 'mlb_pass',
+        'name': 'MLB Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'MLB-only access for users who want the baseball slate, pitcher/hitter context, and matchup reads.',
+        'best_for': 'MLB-only bettors',
+        'sport_access': ['mlb'],
+        'is_sport_pass': True,
+        'features': [
+            'MLB dashboard and live prop board',
+            'MLB market edge, floor reads, trends, and slate intelligence',
+            'MLB player pages and review context',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose MLB Pass',
+    },
+    {
+        'key': 'nfl_pass',
+        'name': 'NFL Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'NFL-only access for users focused on football game lines, totals, props, trends, and matchups.',
+        'best_for': 'NFL-only bettors',
+        'sport_access': ['nfl'],
+        'is_sport_pass': True,
+        'features': [
+            'NFL dashboard and weekly football board',
+            'NFL game lines, totals, trends, props, and matchup context',
+            'NFL player pages and review context',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose NFL Pass',
+    },
+    {
+        'key': 'cfb_pass',
+        'name': 'CFB Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'College football-only access for users focused on game lines, totals, matchup context, trends, and selective props.',
+        'best_for': 'CFB-only bettors',
+        'sport_access': ['ncaaf'],
+        'is_sport_pass': True,
+        'features': [
+            'CFB dashboard and weekly football board',
+            'CFB game lines, totals, trends, props, and matchup context',
+            'CFB review layers as the season data matures',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose CFB Pass',
+    },
+    {
+        'key': 'cbb_pass',
+        'name': 'CBB Pass',
+        'monthly_price': 19,
+        'annual_price': 199,
+        'monthly_label': '$19/mo',
+        'annual_label': '$199/yr',
+        'badge': 'Single Sport',
+        'summary': 'College basketball access covering both men’s and women’s hoops as those boards and matchup layers continue to expand.',
+        'best_for': 'College hoops bettors',
+        'sport_access': ['ncaamb', 'ncaawb'],
+        'is_sport_pass': True,
+        'features': [
+            'Men’s and women’s college hoops access under one pass',
+            'College matchup, game-environment, and line-context workflow',
+            'Future-ready path for CBB calibration as season data matures',
+            'Upgrade path into all-sports Pro, Sharp, or Elite',
+        ],
+        'cta': 'Choose CBB Pass',
     },
     {
         'key': 'sharp',
@@ -118,13 +341,14 @@ PRICING_TIERS = [
         'monthly_label': '$79/mo',
         'annual_label': '$799/yr',
         'badge': 'Power User',
-        'summary': 'Positioned between mass-market picks tools and expensive pro scanners for users who actually live inside the data.',
-        'best_for': 'Heavy-volume users and small betting teams',
+        'summary': 'The intelligence layer. NFL NextGen Stats, MLB Statcast, NBA tracking data, and market edge signals — the data serious bettors pay hundreds for, built into one workflow.',
+        'best_for': 'High-volume bettors and small betting teams',
         'features': [
             'Everything in Pro',
-            'Priority access to advanced review and calibration layers',
-            'Deeper archive views and operator-facing QC context',
-            'Calibration views for model tuning and risk review',
+            'NFL NextGen Stats — air yards share, separation, RYOE, CPOE, route participation',
+            'MLB Statcast — spin rate, exit velocity, barrel rate, xBA, pitch mix, CSW rate',
+            'NBA tracking — defensive matchups, contested shots, drives, touch data',
+            'Market edge signals, line movement, officiating tendency profiles, and calibration grades',
         ],
         'cta': 'Choose Sharp',
     },
@@ -136,14 +360,14 @@ PRICING_TIERS = [
         'monthly_label': '$149/mo',
         'annual_label': '$1,499/yr',
         'badge': 'Operator',
-        'summary': 'The premium cockpit: personal ROI, cross-sport parlay EV, market timing, weekly lessons, and launch-grade edges in one workflow.',
-        'best_for': 'High-conviction users who want a betting operating system',
+        'summary': 'The full betting operating system. Every intelligence layer plus cross-sport parlay EV, personal performance tracking, and the complete analytical stack.',
+        'best_for': 'High-conviction bettors who treat this as a business',
         'features': [
             'Everything in Sharp',
-            'Personal performance tracker and leak finder',
-            'Cross-sport parlay EV builder',
-            'Sharp report cards and action queue',
-            'Early access to line movement and market-gate scanners',
+            'Personal performance tracker — ROI by sport, tier, and prop type',
+            'Cross-sport parlay EV builder with correlation analysis',
+            'Sharp report cards, leak finder, and action queue',
+            'All labs — MLB lab, NFL formula lab, calibration lab, and quant systems',
         ],
         'cta': 'Choose Elite',
     },
@@ -151,10 +375,27 @@ PRICING_TIERS = [
 
 PLAN_RANKS = {
     'free': 0,
-    'pro': 1,
-    'sharp': 2,
-    'elite': 3,
+    'nba_pass': 1,
+    'wnba_pass': 1,
+    'mlb_pass': 1,
+    'nfl_pass': 1,
+    'cfb_pass': 1,
+    'cbb_pass': 1,
+    'pro': 2,
+    'sharp': 3,
+    'elite': 4,
 }
+
+SPORT_PASS_ACCESS = {
+    'nba_pass': {'nba'},
+    'wnba_pass': {'wnba'},
+    'mlb_pass': {'mlb'},
+    'nfl_pass': {'nfl'},
+    'cfb_pass': {'ncaaf'},
+    'cbb_pass': {'ncaamb', 'ncaawb'},
+}
+
+ALL_SPORT_PLAN_KEYS = {'pro', 'sharp', 'elite'}
 
 ACTIVE_PLAN_STATUSES = {'active', 'selected', 'trial'}
 OWNER_EMAILS = {
@@ -163,7 +404,10 @@ OWNER_EMAILS = {
 
 PUBLIC_ENDPOINTS = {
     'static',
+    'manifest_webmanifest',
+    'service_worker',
     'frontpage',
+    'global_feature_preview',
     'pricing',
     'login',
     'signup',
@@ -176,11 +420,16 @@ PUBLIC_ENDPOINTS = {
     'checkout_start',
     'checkout_success',
     'billing_portal',
-    'method_hub',
+}
+
+FREE_ENDPOINTS = {
+    'free_tier',
+    'free_sport_preview',
 }
 
 PRO_ENDPOINTS = {
     'dashboard',
+    'method_hub',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -211,6 +460,7 @@ PRO_ENDPOINTS = {
     'heatmap',
     'trends',
     'trend_board',
+    'tendencies',
     'nfl_game_lines_page',
     'nfl_totals_page',
     'nfl_trends_page',
@@ -227,6 +477,7 @@ SHARP_ENDPOINTS = {
     'bet_review_export',
     'bet_review_model_export',
     'candidate_review',
+    'derivatives_lab',
     'nba_calibration',
     'injuries_page',
     'elite_dashboard',
@@ -282,6 +533,99 @@ def _get_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
     return value
 
 
+def _get_disk_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
+    now = datetime.now().timestamp()
+    cached = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached:
+        expires_at = float(cached.get('expires_at', 0) or 0)
+        cached_version = cached.get('version')
+        if now < expires_at and cached_version == version:
+            return cached.get('value')
+
+    safe_key = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(cache_key or '').strip())
+    cache_path = DATA_DIR / 'cache' / f'{safe_key}.pkl'
+    if cache_path.exists():
+        try:
+            with cache_path.open('rb') as handle:
+                document = pickle.load(handle)
+            expires_at = float(document.get('expires_at', 0) or 0)
+            cached_version = document.get('version')
+            if now < expires_at and cached_version == version:
+                value = document.get('value')
+                RUNTIME_TTL_CACHE[cache_key] = {
+                    'expires_at': expires_at,
+                    'version': version,
+                    'value': value,
+                }
+                return value
+        except Exception:
+            pass
+
+    value = builder()
+    payload = {
+        'expires_at': now + max(int(ttl_seconds or 0), 1),
+        'version': version,
+        'value': value,
+    }
+    RUNTIME_TTL_CACHE[cache_key] = payload
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open('wb') as handle:
+            pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
+    return value
+
+
+def _read_disk_ttl_cached_value(cache_key, version=None):
+    now = datetime.now().timestamp()
+    cached = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached:
+        expires_at = float(cached.get('expires_at', 0) or 0)
+        cached_version = cached.get('version')
+        if now < expires_at and cached_version == version:
+            return True, cached.get('value')
+
+    safe_key = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(cache_key or '').strip())
+    cache_path = DATA_DIR / 'cache' / f'{safe_key}.pkl'
+    if cache_path.exists():
+        try:
+            with cache_path.open('rb') as handle:
+                document = pickle.load(handle)
+            expires_at = float(document.get('expires_at', 0) or 0)
+            cached_version = document.get('version')
+            if now < expires_at and cached_version == version:
+                value = document.get('value')
+                RUNTIME_TTL_CACHE[cache_key] = {
+                    'expires_at': expires_at,
+                    'version': version,
+                    'value': value,
+                }
+                return True, value
+        except Exception:
+            pass
+    return False, None
+
+
+def _write_disk_ttl_cached_value(cache_key, ttl_seconds, value, version=None):
+    now = datetime.now().timestamp()
+    payload = {
+        'expires_at': now + max(int(ttl_seconds or 0), 1),
+        'version': version,
+        'value': value,
+    }
+    RUNTIME_TTL_CACHE[cache_key] = payload
+    safe_key = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(cache_key or '').strip())
+    cache_path = DATA_DIR / 'cache' / f'{safe_key}.pkl'
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with cache_path.open('wb') as handle:
+            pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        pass
+    return value
+
+
 def _json_safe_value(value):
     if isinstance(value, set):
         return sorted(value)
@@ -323,7 +667,7 @@ def write_runtime_snapshot(snapshot_key, payload, meta=None):
     return path
 
 
-def load_runtime_snapshot(snapshot_key, max_age_minutes=30):
+def load_runtime_snapshot(snapshot_key, max_age_minutes=30, allow_stale=False, stale_max_age_minutes=None):
     path = get_runtime_snapshot_path(snapshot_key)
     if not path.exists():
         return None
@@ -335,8 +679,16 @@ def load_runtime_snapshot(snapshot_key, max_age_minutes=30):
     if pd.isna(generated_at):
         return None
     age_seconds = (datetime.now(timezone.utc) - generated_at.to_pydatetime()).total_seconds()
-    if age_seconds > max(int(max_age_minutes or 0), 1) * 60:
+    fresh_seconds = max(int(max_age_minutes or 0), 1) * 60
+    is_stale = age_seconds > fresh_seconds
+    if is_stale and not allow_stale:
         return None
+    if is_stale and stale_max_age_minutes is not None:
+        stale_seconds = max(int(stale_max_age_minutes or 0), 1) * 60
+        if age_seconds > stale_seconds:
+            return None
+    document['snapshot_age_seconds'] = age_seconds
+    document['snapshot_is_stale'] = bool(is_stale)
     return document
 
 
@@ -481,12 +833,220 @@ def is_owner_user(user):
     return email in OWNER_EMAILS or role == 'owner' or is_admin
 
 
+def normalize_sport_access_key(sport_key):
+    sport_key = str(sport_key or '').strip().lower()
+    return {
+        'nba': 'nba',
+        'wnba': 'wnba',
+        'mlb': 'mlb',
+        'nfl': 'nfl',
+        'ncaaf': 'ncaaf',
+        'cfb': 'ncaaf',
+        'ncaamb': 'ncaamb',
+        'cbb': 'ncaamb',
+        'ncaawb': 'ncaawb',
+        'wcbb': 'ncaawb',
+    }.get(sport_key, sport_key)
+
+
+def get_user_sport_access(user):
+    plan = normalize_user_plan(user)
+    if plan in ALL_SPORT_PLAN_KEYS:
+        return {'all'}
+    return set(SPORT_PASS_ACCESS.get(plan, set()))
+
+
+def user_has_sport_access(user, sport_key):
+    if not user:
+        return False
+    access = get_user_sport_access(user)
+    sport_key = normalize_sport_access_key(sport_key)
+    return 'all' in access or sport_key in access
+
+
+def get_sport_key_for_access_path(path):
+    clean_path = str(path or '').strip().lower().split('?', 1)[0]
+    if clean_path.startswith('/sports/'):
+        parts = [part for part in clean_path.split('/') if part]
+        if len(parts) >= 2:
+            sport_key = normalize_sport_access_key(parts[1])
+            if sport_key in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
+                return sport_key
+
+    nba_paths = (
+        '/props', '/smart-picks', '/market-edge', '/matchup-lens', '/parlay',
+        '/heatmap', '/trends', '/trend-board', '/injuries', '/season-review',
+        '/team/', '/player/', '/schedule', '/game-lines', '/series/', '/matchup/',
+    )
+    if any(clean_path == prefix or clean_path.startswith(prefix) for prefix in nba_paths):
+        return 'nba'
+    return ''
+
+
+def get_sport_pass_plan_for_sport(sport_key):
+    sport_key = normalize_sport_access_key(sport_key)
+    for plan_key, sports in SPORT_PASS_ACCESS.items():
+        if sport_key in sports:
+            return plan_key
+    return 'pro'
+
+
+def _count_csv_rows(path):
+    path = Path(path)
+    if not path.exists():
+        return 0
+    cache_key = f'csv_row_count::{path.resolve()}'
+    token = _get_path_mtime_token(path)
+
+    def _build():
+        try:
+            with path.open('r', encoding='utf-8', errors='ignore') as handle:
+                return max(sum(1 for _ in handle) - 1, 0)
+        except Exception:
+            return 0
+
+    return int(_get_ttl_cached_value(cache_key, 300, _build, version=token) or 0)
+
+
+def get_sidebar_sport_counts():
+    return {
+        'nba_count': _count_csv_rows(DATA_DIR / 'props' / 'NBA_Props.csv'),
+        'wnba_count': _count_csv_rows(DATA_DIR / 'props' / 'WNBA_Props.csv'),
+        'mlb_count': _count_csv_rows(DATA_DIR / 'props' / 'MLB_Props.csv'),
+        'nfl_count': _count_csv_rows(DATA_DIR / 'props' / 'NFL_Props.csv'),
+        'cfb_count': _count_csv_rows(DATA_DIR / 'props' / 'NCAAF_Props.csv'),
+        'ncaamb_count': 0,
+        'ncaawb_count': 0,
+    }
+
+
+def build_sport_workflow_nav(active_sport='', active_page=''):
+    sport_key = normalize_sport_access_key(active_sport)
+    sport_label = {
+        'nba': 'NBA',
+        'wnba': 'WNBA',
+        'mlb': 'MLB',
+        'nfl': 'NFL',
+        'ncaaf': 'CFB',
+        'ncaamb': 'Men CBB',
+        'ncaawb': 'Women CBB',
+    }.get(sport_key, '')
+
+    sport_home = {
+        'nba': '/sports/nba',
+        'wnba': '/sports/wnba',
+        'mlb': '/sports/mlb',
+        'nfl': '/sports/nfl',
+        'ncaaf': '/sports/ncaaf',
+        'ncaamb': '/sports/ncaamb',
+        'ncaawb': '/sports/ncaawb',
+    }.get(sport_key, '/dashboard')
+
+    global_feature_href = {
+        'props': '/home/props',
+        'parlay_builder': '/home/parlay',
+        'review': '/home/review',
+        'market': '/home/market',
+        'trends': '/home/trends',
+        'tendencies': '/tendencies',
+        'derivatives': '/home/systems',
+        'officiating': '/home/officiating',
+        'hot_streaks': '/home/hot-streaks',
+        'injuries': '/home/injuries',
+        'systems': '/home/systems',
+        'calibration_lab': '/home/calibration',
+        'missed': '/home/missed',
+        'elite': '/home/elite',
+    }
+
+    sport_props = {
+        'nba': '/sports/nba/props',
+        'wnba': '/sports/wnba/props',
+        'mlb': '/sports/mlb/props',
+        'nfl': '/sports/nfl/props',
+        'ncaaf': '/sports/ncaaf/props',
+        'ncaamb': '/sports/ncaamb',
+        'ncaawb': '/sports/ncaawb',
+    }.get(sport_key, '/tools/props')
+
+    sport_market = {
+        'nba': '/sports/nba/market-edge',
+        'wnba': '/sports/wnba/market-edge',
+        'mlb': '/sports/mlb/market-edge',
+        'nfl': '/sports/nfl/game-lines',
+        'ncaaf': '/sports/ncaaf/game-lines',
+        'ncaamb': '/sports/ncaamb',
+        'ncaawb': '/sports/ncaawb',
+    }.get(sport_key, '/tools/market-edge')
+
+    sport_trends = {
+        'nba': '/sports/nba/trends',
+        'wnba': '/sports/wnba/trends',
+        'mlb': '/sports/mlb/trends',
+        'nfl': '/sports/nfl/trends',
+        'ncaaf': '/sports/ncaaf/trends',
+        'ncaamb': '/sports/ncaamb',
+        'ncaawb': '/sports/ncaawb',
+    }.get(sport_key, '/tools/trends')
+
+    query_sport = sport_label if sport_label else ''
+    if sport_key == 'ncaaf':
+        query_sport = 'NCAAF'
+    elif sport_key == 'ncaamb':
+        query_sport = 'NCAAMB'
+    elif sport_key == 'ncaawb':
+        query_sport = 'NCAAWB'
+
+    sport_heat_map = f"/heat-map?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['hot_streaks']
+    sport_injuries = f"/injuries?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['injuries']
+
+    items = [{
+        'key': 'dashboard',
+        'label': 'Command Center' if sport_key else 'Home',
+        'href': sport_home,
+    }]
+
+    items.extend([
+        {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
+        {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
+        {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
+        {'key': 'market', 'label': 'Market', 'href': sport_market if sport_key else global_feature_href['market']},
+        {'key': 'trends', 'label': 'Streak Patterns', 'href': sport_trends if sport_key else global_feature_href['trends']},
+        {'key': 'tendencies', 'label': 'Tendencies', 'href': f"/tendencies?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['tendencies']},
+        {'key': 'derivatives', 'label': 'Derivatives', 'href': f"/derivatives?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['derivatives']},
+        {'key': 'officiating', 'label': 'Officiating', 'href': f"/derivatives?sport={quote(query_sport, safe='')}#officiating" if query_sport else global_feature_href['officiating']},
+        {'key': 'hot_streaks', 'label': 'Active Streaks', 'href': sport_heat_map},
+        {'key': 'injuries', 'label': 'Injuries', 'href': sport_injuries},
+        {'key': 'systems', 'label': 'Systems Lab', 'href': f"/systems-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['systems']},
+        {'key': 'calibration_lab', 'label': 'Calibration', 'href': f"/calibration-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['calibration_lab']},
+        {'key': 'missed', 'label': 'Missed Opps', 'href': f"/missed-opportunities?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['missed']},
+        {'key': 'elite', 'label': 'Elite', 'href': f"/elite?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['elite']},
+    ])
+
+    active_key = 'dashboard' if str(active_page or '').strip() == 'home' else str(active_page or '').strip()
+    for item in items:
+        item['active'] = item['key'] == active_key
+    if active_page in {'', None} and sport_key in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
+        for item in items:
+            if item['key'] == 'dashboard':
+                item['active'] = True
+                break
+    return items
+
+
 def get_required_plan_for_endpoint(endpoint):
     endpoint = str(endpoint or '').strip()
+    if endpoint in FREE_ENDPOINTS:
+        return 'free'
     if endpoint in SHARP_ENDPOINTS:
         return 'sharp'
     if endpoint in PRO_ENDPOINTS:
         return 'pro'
+    try:
+        if get_sport_key_for_access_path(request.path):
+            return 'pro'
+    except RuntimeError:
+        pass
     return None
 
 
@@ -496,7 +1056,8 @@ def build_requested_path():
 
 
 def build_access_gate_notice(mode, required_plan=''):
-    required_label = str(required_plan or '').strip().title() or 'Pro'
+    tier = get_pricing_tier(required_plan)
+    required_label = tier.get('name') or str(required_plan or '').strip().replace('_', ' ').title() or 'Pro'
     if mode == 'login_required':
         return f"Sign in to access this {required_label} research surface."
     if mode == 'upgrade_required':
@@ -777,23 +1338,30 @@ SPORT_MODEL_PROFILES = {
     },
     'ncaawb': {
         'label': 'Lines + Totals First',
-        'summary': 'Women’s college hoops should prioritize game lines and totals first, with team strength and tempo carrying more weight than prop-heavy workflows.',
+        'summary': "Women's college hoops should prioritize game lines and totals first, with team strength and tempo carrying more weight than prop-heavy workflows.",
         'primary_markets': ['Game line', 'Game total', 'Team form boards', 'Matchup tempo reads'],
         'core_drivers': ['Pace', 'Team efficiency', 'Rotation stability', 'Recent team form'],
     },
 }
 
 METHOD_GUIDES = {
+    'props': {
+        'label': 'Props',
+        'what_it_is': 'The full MLB prop board shows every current baseball prop the system has loaded, with player reliability, book split, game environment, and simulation context attached to each row.',
+        'best_use_case': 'Start here when you want the broadest board before narrowing into Market Edge, Floor Plays, or Trends.',
+        'what_confirms_it': 'The best rows have a clean play verdict, strong market agreement, useful player history, and matchup context that supports the same side.',
+        'what_makes_it_risky': 'Rows with thin samples, avoid reliability, missing book comparison, or a game environment that fights the side should stay in review instead of becoming parlay anchors.',
+    },
     'floor_plays': {
         'label': 'Floor Plays',
         'what_it_is': 'Floor Plays are your safer anchor method. They focus on stable minutes, stable role, and lower stat targets that fit the player instead of pretending every market should be attacked the same way.',
         'best_use_case': 'Use them when the player has a secure workload, the matchup is clean enough, and you want anchor material for round robins or disciplined smaller-leg builds.',
-        'what_confirms_it': 'You want minutes security, role-hold signals, steady recent production, and a number that still sits beneath the player’s normal working range.',
-        'what_makes_it_risky': 'Role-slip tags, shaky minutes, bench volatility, and stacking too many “safe” legs into one bloated parlay all weaken the whole point of the method.',
+        'what_confirms_it': "You want minutes security, role-hold signals, steady recent production, and a number that still sits beneath the player's normal working range.",
+        'what_makes_it_risky': 'Role-slip tags, shaky minutes, bench volatility, and stacking too many "safe" legs into one bloated parlay all weaken the whole point of the method.',
     },
     'trends': {
-        'label': 'Trends',
-        'what_it_is': 'Trends is the hot-hand method. It looks for players who have been clearing or missing a number repeatedly enough that the streak matters and the market still may not be fully caught up.',
+        'label': 'Streak Patterns',
+        'what_it_is': 'Streak Patterns is the hot-hand method. It looks for players who have been clearing or missing a number repeatedly enough that the run matters and the market still may not be fully caught up.',
         'best_use_case': 'Use it when you want to ride recent form, especially once a player has a clear streak of 3 or more and the line still has not moved far enough to price that in.',
         'what_confirms_it': 'The best trend spots have a clean recent streak, a supporting average above or below the number, and matchup context that does not immediately argue against the run continuing.',
         'what_makes_it_risky': 'A streak by itself is not enough. If the line has already jumped, the matchup flipped, or the role changed, you can end up paying peak price for old form.',
@@ -807,7 +1375,7 @@ METHOD_GUIDES = {
     },
     'matchup_lens': {
         'label': 'Matchup Lens',
-        'what_it_is': 'Matchup Lens is the context method. It explains whether a prop, streak, or floor play actually fits tonight’s opponent, pace, spread, total, and role environment.',
+        'what_it_is': "Matchup Lens is the context method. It explains whether a prop, streak, or floor play actually fits tonight's opponent, pace, spread, total, and role environment.",
         'best_use_case': 'Use it before locking in any play that looks good on trend or price alone. This is the method that helps you decide whether the spot actually supports the bet continuing tonight.',
         'what_confirms_it': 'Good matchup spots line up when the opponent profile, game environment, injury context, and likely role all point in the same direction as the play.',
         'what_makes_it_risky': 'If the matchup context fights the trend or the price, that conflict matters. A great streak in the wrong environment can be one of the easiest traps on the board.',
@@ -1087,10 +1655,113 @@ def _load_cached_json_records(path, default=None):
     return df.copy()
 
 
+COMBINED_PROP_COMPONENTS = {
+    'NBA': {
+        'PRA': ['PTS', 'REB', 'AST'],
+        'PTS+REB+AST': ['PTS', 'REB', 'AST'],
+        'POINTS+REBOUNDS+ASSISTS': ['PTS', 'REB', 'AST'],
+        'PTS+REB': ['PTS', 'REB'],
+        'POINTS+REBOUNDS': ['PTS', 'REB'],
+        'PTS+AST': ['PTS', 'AST'],
+        'POINTS+ASSISTS': ['PTS', 'AST'],
+        'REB+AST': ['REB', 'AST'],
+        'REBOUNDS+ASSISTS': ['REB', 'AST'],
+        'STL+BLK': ['STL', 'BLK'],
+        'STEALS+BLOCKS': ['STL', 'BLK'],
+    },
+    'WNBA': {
+        'PRA': ['PTS', 'REB', 'AST'],
+        'PTS+REB+AST': ['PTS', 'REB', 'AST'],
+        'POINTS+REBOUNDS+ASSISTS': ['PTS', 'REB', 'AST'],
+        'PTS+REB': ['PTS', 'REB'],
+        'POINTS+REBOUNDS': ['PTS', 'REB'],
+        'PTS+AST': ['PTS', 'AST'],
+        'POINTS+ASSISTS': ['PTS', 'AST'],
+        'REB+AST': ['REB', 'AST'],
+        'REBOUNDS+ASSISTS': ['REB', 'AST'],
+        'STL+BLK': ['STL', 'BLK'],
+        'STEALS+BLOCKS': ['STL', 'BLK'],
+    },
+    'MLB': {
+        'HRR': ['H', 'R', 'RBI'],
+        'HITS+RUNS+RBIS': ['H', 'R', 'RBI'],
+        'HITS+RUNS+RBI': ['H', 'R', 'RBI'],
+        'HITS + RUNS + RBIS': ['H', 'R', 'RBI'],
+        'HITS + RUNS + RBI': ['H', 'R', 'RBI'],
+        'XBH': ['2B', '3B', 'HR'],
+        'EXTRA BASE HITS': ['2B', '3B', 'HR'],
+        'K+BB': ['P_SO', 'P_BB'],
+        'STRIKEOUTS+WALKS': ['P_SO', 'P_BB'],
+    },
+    'NFL': {
+        'RUSH+REC YDS': ['RushYds', 'RecYds'],
+        'RUSHING+RECEIVING YARDS': ['RushYds', 'RecYds'],
+        'PASS+RUSH YDS': ['PassYds', 'RushYds'],
+        'PASSING+RUSHING YARDS': ['PassYds', 'RushYds'],
+    },
+}
+
+
+COMBINED_PROP_ALIASES = {
+    'PRA': 'PRA',
+    'PTS + REB + AST': 'PRA',
+    'PTS+REB+AST': 'PRA',
+    'POINTS + REBOUNDS + ASSISTS': 'PRA',
+    'POINTS+REBOUNDS+ASSISTS': 'PRA',
+    'PTS + REB': 'PTS+REB',
+    'POINTS + REBOUNDS': 'PTS+REB',
+    'PTS + AST': 'PTS+AST',
+    'POINTS + ASSISTS': 'PTS+AST',
+    'REB + AST': 'REB+AST',
+    'REBOUNDS + ASSISTS': 'REB+AST',
+    'STL + BLK': 'STL+BLK',
+    'STEALS + BLOCKS': 'STL+BLK',
+    'HITS + RUNS + RBIS': 'HRR',
+    'HITS + RUNS + RBI': 'HRR',
+    'HITS_RUNS_RBIS': 'HRR',
+    'BATTER_HITS_RUNS_RBIS': 'HRR',
+    'EXTRA BASE HITS': 'XBH',
+    'K + BB': 'K+BB',
+    'STRIKEOUTS + WALKS': 'K+BB',
+    'RUSH + REC YDS': 'RUSH+REC YDS',
+    'RUSHING + RECEIVING YARDS': 'RUSH+REC YDS',
+    'PASS + RUSH YDS': 'PASS+RUSH YDS',
+    'PASSING + RUSHING YARDS': 'PASS+RUSH YDS',
+}
+
+
+def normalize_combined_prop_key(stat_name):
+    text = str(stat_name or '').strip().upper()
+    text = re.sub(r'\s+', ' ', text)
+    compact = text.replace(' ', '')
+    return COMBINED_PROP_ALIASES.get(text) or COMBINED_PROP_ALIASES.get(compact) or text
+
+
+def _add_component_sum_columns(df, sport_key):
+    sport_key = str(sport_key or '').strip().upper()
+    specs = COMBINED_PROP_COMPONENTS.get(sport_key, {})
+    if not specs:
+        return df
+    working = df.copy()
+    for output_col, components in specs.items():
+        if output_col in working.columns:
+            continue
+        if all(component in working.columns for component in components):
+            total = pd.Series(0, index=working.index, dtype='float64')
+            for component in components:
+                total = total + pd.to_numeric(working[component], errors='coerce').fillna(0)
+            working[output_col] = total
+    return working
+
+
 def _format_gamelogs(df):
     df = df.copy()
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        try:
+            parsed_dates = pd.to_datetime(df['Date'], errors='coerce', format='mixed')
+        except TypeError:
+            parsed_dates = pd.to_datetime(df['Date'], errors='coerce')
+        df['Date'] = parsed_dates.dt.strftime('%Y-%m-%d')
     if 'Matchup' in df.columns:
         matchup_series = df['Matchup'].astype(str).fillna('').str.strip()
         if 'Team' not in df.columns:
@@ -1121,6 +1792,7 @@ def _format_gamelogs(df):
             df.loc[missing_team, 'Team'] = matchup_series[missing_team].apply(_team_from_matchup)
         if missing_opp.any():
             df.loc[missing_opp, 'Opp'] = matchup_series[missing_opp].apply(_opp_from_matchup)
+    df = _add_component_sum_columns(df, 'NBA')
     return df
 
 
@@ -1133,6 +1805,9 @@ def _format_mlb_gamelogs(df):
         df['1B'] = (df['H'] - df['2B'] - df['3B'] - df['HR']).clip(lower=0)
     if {'H', 'R', 'RBI'}.issubset(df.columns):
         df['HRR'] = df['H'] + df['R'] + df['RBI']
+    if {'2B', '3B', 'HR'}.issubset(df.columns):
+        df['XBH'] = df['2B'] + df['3B'] + df['HR']
+    df = _add_component_sum_columns(df, 'MLB')
     return df
 
 
@@ -1250,6 +1925,13 @@ def load_nfl_props():
         if not df.empty:
             return df
     return pd.DataFrame()
+
+
+def load_nfl_current_roster():
+    path = DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'
+    if path.exists():
+        return _load_cached_csv(path, transform=_format_nfl_current_roster, default=pd.DataFrame())
+    return pd.DataFrame(columns=['PlayerID', 'PlayerJoinKey', 'Player', 'CurrentTeam', 'TeamName', 'Position', 'Jersey', 'Status', 'LastUpdated', 'Source'])
 
 
 def load_ncaaf_props():
@@ -1423,6 +2105,103 @@ def _normalize_position_group(value):
     if pos in {'K', 'P', 'PK', 'LS'}:
         return 'ST'
     return pos[:3]
+
+
+def _normalize_nfl_team_abbr(value):
+    cleaned = str(value or '').strip().upper()
+    if not cleaned:
+        return ''
+    aliases = {
+        'JAC': 'JAX',
+        'WSH': 'WAS',
+        'WSN': 'WAS',
+        'LA': 'LAR',
+        'STL': 'LAR',
+        'SD': 'LAC',
+        'OAK': 'LV',
+    }
+    if cleaned in aliases:
+        return aliases[cleaned]
+    compact = ''.join(ch for ch in cleaned if ch.isalnum())
+    if compact in NFL_HISTORICAL_TEAM_ALIASES:
+        return compact
+    for abbr, display in NFL_HISTORICAL_TEAM_ALIASES.items():
+        if compact == ''.join(ch for ch in display.upper() if ch.isalnum()):
+            return aliases.get(abbr, abbr)
+    return cleaned
+
+
+def _normalize_nfl_roster_player_key(value):
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    tokens = [
+        token for token in raw.replace(',', ' ').split()
+        if token.strip('.').lower() not in {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+    ]
+    return _normalize_player_join_key(' '.join(tokens))
+
+
+def _format_nfl_current_roster(df):
+    roster = df.copy()
+    rename_map = {}
+    for col in roster.columns:
+        key = ''.join(ch.lower() for ch in str(col).strip() if ch.isalnum() or ch == '_')
+        mapped = {
+            'playerid': 'PlayerID',
+            'id': 'PlayerID',
+            'player': 'Player',
+            'playername': 'Player',
+            'fullname': 'Player',
+            'displayname': 'Player',
+            'name': 'Player',
+            'currentteam': 'CurrentTeam',
+            'team': 'CurrentTeam',
+            'teamabbr': 'CurrentTeam',
+            'abbreviation': 'CurrentTeam',
+            'teamname': 'TeamName',
+            'position': 'Position',
+            'pos': 'Position',
+            'jersey': 'Jersey',
+            'number': 'Jersey',
+            'status': 'Status',
+            'lastupdated': 'LastUpdated',
+            'source': 'Source',
+        }.get(key)
+        if mapped:
+            rename_map[col] = mapped
+    roster = roster.rename(columns=rename_map).copy()
+    for col in ['PlayerID', 'Player', 'CurrentTeam', 'TeamName', 'Position', 'Jersey', 'Status', 'LastUpdated', 'Source']:
+        if col not in roster.columns:
+            roster[col] = ''
+        roster[col] = roster[col].fillna('').astype(str).str.strip()
+    roster['CurrentTeam'] = roster['CurrentTeam'].apply(_normalize_nfl_team_abbr)
+    roster['PlayerJoinKey'] = roster['PlayerID']
+    fallback = roster['Player'].apply(_normalize_player_join_key)
+    roster.loc[roster['PlayerJoinKey'] == '', 'PlayerJoinKey'] = fallback
+    roster['NameJoinKey'] = fallback
+    return roster[['PlayerID', 'PlayerJoinKey', 'NameJoinKey', 'Player', 'CurrentTeam', 'TeamName', 'Position', 'Jersey', 'Status', 'LastUpdated', 'Source']]
+
+
+def build_nfl_current_roster_lookup():
+    roster = load_nfl_current_roster()
+    if roster is None or roster.empty:
+        return {}
+    lookup = {}
+    for _, row in roster.iterrows():
+        player_key = _normalize_player_join_key(row.get('Player'))
+        stripped_key = _normalize_nfl_roster_player_key(row.get('Player'))
+        if not player_key:
+            continue
+        record = {
+            'team': _normalize_nfl_team_abbr(row.get('CurrentTeam')),
+            'position': str(row.get('Position') or '').strip().upper(),
+            'status': str(row.get('Status') or '').strip(),
+        }
+        lookup[player_key] = record
+        if stripped_key and stripped_key not in lookup:
+            lookup[stripped_key] = record
+    return lookup
 
 
 def _format_ncaaf_current_roster(df):
@@ -1976,7 +2755,7 @@ def load_nfl_floor_play_preview():
                 in_parameters = True
                 in_top_plays = False
                 continue
-            if upper.startswith('⭐ TOP FLOOR PLAYS') or upper.startswith('TOP FLOOR PLAYS'):
+            if upper.startswith(' TOP FLOOR PLAYS') or upper.startswith('TOP FLOOR PLAYS'):
                 in_top_plays = True
                 in_parameters = False
                 continue
@@ -2198,10 +2977,21 @@ def build_mlb_board_status(schedule_df, odds_df, props_df, gamelogs_df, upcoming
         stage = 'Waiting On Feed'
         next_layer = 'No MLB source files are loaded yet. Add schedule, odds, props, and game logs before the prop engine begins.'
 
+    latest_schedule_date = ''
+    loaded_slate_games = 0
+    if not schedule_df.empty and 'Date' in schedule_df.columns:
+        parsed_dates = pd.to_datetime(schedule_df['Date'], errors='coerce')
+        if parsed_dates.notna().any():
+            latest_date = parsed_dates.max().normalize()
+            latest_schedule_date = latest_date.strftime('%Y-%m-%d')
+            loaded_slate_games = int((parsed_dates.dt.normalize() == latest_date).sum())
+
     return {
         'schedule_games': len(schedule_df),
         'today_games': len(upcoming.get('today', [])),
         'tomorrow_games': len(upcoming.get('tomorrow', [])),
+        'loaded_slate_games': loaded_slate_games,
+        'latest_schedule_date': latest_schedule_date,
         'props_rows': int(len(props_df)),
         'odds_rows': int(len(odds_df)),
         'gamelog_rows': int(len(gamelogs_df)),
@@ -2333,6 +3123,129 @@ def enrich_rows_with_game_environment(rows, sport='NBA', odds_df=None):
     return enriched
 
 
+def _team_strength_prior_key(value):
+    return ' '.join(str(value or '').strip().upper().split())
+
+
+def load_team_strength_prior_lookup():
+    path = DATA_DIR / 'tracking' / 'Team_Strength_Priors.csv'
+    cache_key = 'team_strength_prior_lookup'
+    cache_version = _build_file_token(path)
+    cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached_entry and cached_entry.get('version') == cache_version:
+        return cached_entry['value']
+
+    lookup = {}
+    if path.exists():
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            df = pd.DataFrame()
+        if not df.empty:
+            working = df.copy()
+            working['Sport'] = working.get('Sport', '').fillna('').astype(str).str.strip().str.upper()
+            working['Team'] = working.get('Team', '').fillna('').astype(str).str.strip()
+            working['TeamKey'] = working['Team'].apply(_team_strength_prior_key)
+            for _, row in working.iterrows():
+                sport = str(row.get('Sport') or '').strip().upper()
+                team_key = str(row.get('TeamKey') or '').strip().upper()
+                if not sport or not team_key:
+                    continue
+                lookup[(sport, team_key)] = row.to_dict()
+
+    RUNTIME_TTL_CACHE[cache_key] = {
+        'created_at': datetime.now(timezone.utc),
+        'value': lookup,
+        'version': cache_version,
+    }
+    return lookup
+
+
+def attach_team_strength_priors_to_rows(rows, sport='NBA'):
+    if not rows:
+        return rows
+    sport_key = str(sport or '').strip().upper()
+    lookup = load_team_strength_prior_lookup()
+    if not lookup:
+        return rows
+
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        team_candidates = [
+            item.get('team'),
+            item.get('Team'),
+            item.get('team_name'),
+            item.get('team_abbr'),
+            item.get('player_team'),
+        ]
+        prior = None
+        for candidate in team_candidates:
+            key = _team_strength_prior_key(candidate)
+            if not key:
+                continue
+            prior = lookup.get((sport_key, key))
+            if prior:
+                break
+        if not prior:
+            enriched.append(item)
+            continue
+
+        score = _safe_float(prior.get('TeamPriorScore'))
+        market_prob = _safe_float(prior.get('MarketWinProb'))
+        avg_spread = _safe_float(prior.get('AvgSpread'))
+        label = str(prior.get('PriorLabel') or '').strip()
+        source = str(prior.get('Source') or '').strip()
+        item['team_prior_team'] = str(prior.get('Team') or '').strip()
+        item['team_prior_score'] = round(score, 1) if score is not None else None
+        item['team_prior_label'] = label
+        item['team_prior_source'] = source
+        item['team_market_win_prob'] = round(market_prob, 1) if market_prob is not None else None
+        item['team_prior_spread'] = round(avg_spread, 1) if avg_spread is not None else None
+        detail_bits = []
+        if item.get('team_prior_score') is not None:
+            detail_bits.append(f"Prior {item['team_prior_score']}")
+        if label:
+            detail_bits.append(label.title())
+        if item.get('team_market_win_prob') is not None:
+            detail_bits.append(f"market {item['team_market_win_prob']}%")
+        item['team_prior_note'] = ' | '.join(detail_bits)
+        if source:
+            item['team_prior_note'] = f"{item['team_prior_note']} via {source}" if item['team_prior_note'] else f"via {source}"
+        enriched.append(item)
+    return enriched
+
+
+def build_board_intelligence_summary(rows):
+    rows = rows or []
+    prior_rows = [row for row in rows if _safe_float(row.get('team_prior_score')) is not None]
+    sim_rows = [row for row in rows if _safe_float(row.get('calibrated_sim_hit_probability')) is not None]
+    prior_counts = {}
+    for row in prior_rows:
+        label = str(row.get('team_prior_label') or 'UNKNOWN').strip().upper() or 'UNKNOWN'
+        prior_counts[label] = prior_counts.get(label, 0) + 1
+    top_priors = sorted(
+        prior_rows,
+        key=lambda row: _safe_float(row.get('team_prior_score')) or 0,
+        reverse=True,
+    )[:3]
+    top_sims = sorted(
+        sim_rows,
+        key=lambda row: _safe_float(row.get('calibrated_sim_hit_probability')) or 0,
+        reverse=True,
+    )[:3]
+    return {
+        'row_count': len(rows),
+        'prior_count': len(prior_rows),
+        'sim_count': len(sim_rows),
+        'prior_counts': prior_counts,
+        'top_priors': top_priors,
+        'top_sims': top_sims,
+        'live_sim_count': sum(1 for row in sim_rows if str(row.get('simulation_authority') or '').upper() == 'LIVE_AUTHORITY'),
+        'watch_sim_count': sum(1 for row in sim_rows if str(row.get('simulation_authority') or '').upper() == 'WATCH'),
+    }
+
+
 def build_wnba_recent_form_note(player_name, stat, line, gamelogs, sample_size=5):
     if gamelogs is None or gamelogs.empty or stat not in gamelogs.columns or 'Player' not in gamelogs.columns:
         return ''
@@ -2439,6 +3352,14 @@ MLB_STAT_COLUMN_MAP = {
     'Hits + Runs + RBIs': 'HRR',
     'HITS + RUNS + RBIS': 'HRR',
     'HITS_RUNS_RBIS': 'HRR',
+    'BATTER_HITS_RUNS_RBIS': 'HRR',
+    'Extra Base Hits': 'XBH',
+    'EXTRA BASE HITS': 'XBH',
+    'XBH': 'XBH',
+    'K + BB': 'K+BB',
+    'K+BB': 'K+BB',
+    'Strikeouts + Walks': 'K+BB',
+    'STRIKEOUTS + WALKS': 'K+BB',
     'Pitcher Ks': 'P_SO',
     'PITCHER KS': 'P_SO',
     'PITCHER_KS': 'P_SO',
@@ -2491,6 +3412,22 @@ def build_mlb_reliability_tables(results_df=None):
             cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
             if cached_age <= 600 and cached_entry.get('version') == cache_version:
                 return cached_entry['value']
+        disk_hit, disk_payload = _read_disk_ttl_cached_value(f'disk::{cache_key}', version=cache_version)
+        if disk_hit:
+            RUNTIME_TTL_CACHE[cache_key] = {
+                'created_at': datetime.now(timezone.utc),
+                'value': disk_payload,
+                'version': cache_version,
+            }
+            return disk_payload
+        disk_hit, disk_payload = _read_disk_ttl_cached_value(f'disk::{cache_key}', version=cache_version)
+        if disk_hit:
+            RUNTIME_TTL_CACHE[cache_key] = {
+                'created_at': datetime.now(timezone.utc),
+                'value': disk_payload,
+                'version': cache_version,
+            }
+            return disk_payload
 
     results = load_mlb_all_prop_results() if results_df is None else results_df
     empty = {
@@ -2622,6 +3559,7 @@ def build_mlb_reliability_tables(results_df=None):
             'value': payload,
             'version': cache_version,
         }
+        _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, payload, version=cache_version)
     return payload
 
 
@@ -2805,6 +3743,7 @@ def build_mlb_launch_lab(results_df=None, gamelogs_df=None):
             'value': payload,
             'version': cache_version,
         }
+        _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, payload, version=cache_version)
     return payload
 
 
@@ -2974,7 +3913,7 @@ def build_mlb_odds_lookup(odds_df, schedule_df):
     for _, row in merged.iterrows():
         away = str(row.get('AwayFull') or row.get('Away') or '').strip()
         home = str(row.get('HomeFull') or row.get('Home') or '').strip()
-        if not away or not home:
+        if not away or not home or away.lower() in {'nan', 'none', 'null'} or home.lower() in {'nan', 'none', 'null'}:
             continue
         game_key = f'{away}@{home}'
         slug = build_matchup_slug(away, home)
@@ -3130,12 +4069,132 @@ def build_mlb_recent_form_note(player_name, stat, line, gamelogs, sample_size=5)
     return f'Averaging {avg} {stat_label} over the last {actual_n} games with a mixed hit profile around {line_value:g}.'
 
 
-def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_filter='today', stat_filter='', direction_filter='all', search_query=''):
-    cache_key = 'mlb_prop_board::{date_filter}::{stat_filter}::{direction_filter}::{search_query}'.format(
+def build_mlb_recent_form_lookup(gamelogs, sample_size=5):
+    if gamelogs is None or gamelogs.empty or 'Player' not in gamelogs.columns:
+        return {}
+    working = gamelogs.copy()
+    if 'Date' in working.columns:
+        working['Date'] = pd.to_datetime(working['Date'], errors='coerce')
+        working = working.sort_values(['Player', 'Date'], ascending=[True, False])
+    lookup = {}
+    for player_name, player_logs in working.groupby('Player', sort=False):
+        player_key = str(player_name or '').strip()
+        if player_key:
+            lookup[player_key] = player_logs.head(sample_size).copy()
+    return lookup
+
+
+def build_mlb_recent_form_note_from_lookup(player_name, stat, line, recent_form_lookup, sample_size=5):
+    if not recent_form_lookup:
+        return ''
+    player_logs = recent_form_lookup.get(str(player_name or '').strip())
+    if player_logs is None or player_logs.empty:
+        return ''
+    stat_col = MLB_STAT_COLUMN_MAP.get(str(stat or '').strip())
+    if not stat_col or stat_col not in player_logs.columns:
+        return ''
+
+    recent = player_logs.head(sample_size).copy()
+    values = pd.to_numeric(recent[stat_col], errors='coerce').dropna()
+    if values.empty:
+        return ''
+
+    line_value = pd.to_numeric(line, errors='coerce')
+    if pd.isna(line_value):
+        return ''
+
+    avg = round(float(values.mean()), 1)
+    hits_over = int((values > float(line_value)).sum())
+    hits_under = int((values < float(line_value)).sum())
+    actual_n = int(len(values))
+    stat_label = str(stat or '').strip().lower()
+
+    if hits_over == actual_n:
+        return f'Cleared {line_value:g} in all of the last {actual_n} games, averaging {avg} {stat_label}.'
+    if hits_under == actual_n:
+        return f'Stayed below {line_value:g} in all of the last {actual_n} games, averaging {avg} {stat_label}.'
+    if hits_over > hits_under:
+        return f'Averaging {avg} {stat_label} over the last {actual_n} games and clearing {line_value:g} in {hits_over} of them.'
+    if hits_under > hits_over:
+        return f'Averaging {avg} {stat_label} over the last {actual_n} games and staying below {line_value:g} in {hits_under} of them.'
+    return f'Averaging {avg} {stat_label} over the last {actual_n} games with a mixed hit profile around {line_value:g}.'
+
+
+MLB_BATTER_LINEUP_STATS = {
+    'HITS', 'TOTAL BASES', 'RUNS', 'RBIS', 'HOME RUNS', 'DOUBLES', 'TRIPLES',
+    'SINGLES', 'STOLEN BASES', 'BATTER WALKS', 'BATTER STRIKEOUTS',
+}
+
+MLB_PITCHER_LINEUP_STATS = {
+    'PITCHER STRIKEOUTS', 'STRIKEOUTS', 'PITCHER OUTS', 'OUTS RECORDED',
+    'EARNED RUNS', 'PITCHER WALKS', 'HITS ALLOWED',
+}
+
+
+def classify_mlb_lineup_gate(stat, source_row=None):
+    row = source_row if source_row is not None else {}
+    status_fields = [
+        'LineupStatus', 'lineup_status', 'ConfirmedLineup', 'confirmed_lineup',
+        'StartingStatus', 'starting_status', 'BattingOrder', 'batting_order',
+    ]
+    raw_status = ''
+    for field in status_fields:
+        if hasattr(row, 'get'):
+            value = row.get(field)
+            if value is not None and not pd.isna(value) and str(value).strip():
+                raw_status = str(value).strip()
+                break
+
+    normalized_status = raw_status.upper()
+    stat_key = str(stat or '').strip().upper()
+    is_pitcher_market = stat_key in MLB_PITCHER_LINEUP_STATS or 'PITCHER' in stat_key
+    is_batter_market = stat_key in MLB_BATTER_LINEUP_STATS or not is_pitcher_market
+
+    if normalized_status in {'CONFIRMED', 'STARTING', 'LOCKED', 'YES', 'TRUE', '1'}:
+        return {
+            'status': 'CONFIRMED',
+            'label': 'LINEUP CONFIRMED',
+            'class': 'confirmed',
+            'note': 'Starting status is present in the feed.',
+            'is_confirmed': True,
+        }
+
+    if is_pitcher_market:
+        return {
+            'status': 'PROBABLE',
+            'label': 'PITCHER PROBABLE',
+            'class': 'watch',
+            'note': 'Pitcher markets can be reviewed before batting orders lock, but confirm starter/news before final ticket build.',
+            'is_confirmed': False,
+        }
+
+    if is_batter_market:
+        return {
+            'status': 'PENDING',
+            'label': 'LINEUP PENDING',
+            'class': 'pending',
+            'note': 'Do not treat this batter prop as final until starting lineup and batting order are confirmed.',
+            'is_confirmed': False,
+        }
+
+    return {
+        'status': 'UNKNOWN',
+        'label': 'CONFIRM ROLE',
+        'class': 'pending',
+        'note': 'Starting role was not confirmed by the current feed.',
+        'is_confirmed': False,
+    }
+
+
+def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_filter='today', stat_filter='', direction_filter='all', search_query='', cache_namespace='default', max_groups=None, fast_mode=False):
+    cache_key = 'mlb_prop_board::fast_mode_v5::{cache_namespace}::{date_filter}::{stat_filter}::{direction_filter}::{search_query}::{max_groups}::{fast_mode}'.format(
+        cache_namespace=str(cache_namespace or 'default'),
         date_filter=str(date_filter or ''),
         stat_filter=str(stat_filter or ''),
         direction_filter=str(direction_filter or ''),
         search_query=str(search_query or '').strip().lower(),
+        max_groups=str(max_groups or ''),
+        fast_mode=int(bool(fast_mode)),
     )
     cache_version = _build_file_token(
         DATA_DIR / 'props' / 'MLB_Props.csv',
@@ -3145,7 +4204,9 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
         DATA_DIR / 'injuries' / 'MLB_Injuries.csv',
         DATA_DIR / 'tracking' / 'MLB_Calibration_Report.csv',
+        DATA_DIR / 'tracking' / 'MLB_Simulation_Results.csv',
         DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'Team_Strength_Priors.csv',
     )
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
@@ -3153,15 +4214,58 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
 
+    disk_cache_key = f'disk::{cache_key}'
+    disk_hit, disk_rows = _read_disk_ttl_cached_value(disk_cache_key, version=cache_version)
+    if disk_hit:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': disk_rows,
+            'version': cache_version,
+        }
+        return disk_rows
+
     if props_df is None or props_df.empty:
         return []
 
     odds_lookup = build_mlb_odds_lookup(odds_df, schedule_df)
+    stat_filter = str(stat_filter or '').strip()
+    direction_filter = str(direction_filter or 'all').strip().lower() or 'all'
+    search_query = str(search_query or '').strip().lower()
+
+    today = pd.Timestamp.now().normalize()
+    tomorrow = today + pd.Timedelta(days=1)
+    if date_filter in {'today', 'tomorrow'} and 'Game' in props_df.columns:
+        target_day = today if date_filter == 'today' else tomorrow
+        allowed_games = set()
+        for key, market in odds_lookup.items():
+            if '-' in str(key or ''):
+                continue
+            parsed_date = pd.to_datetime(str(market.get('date') or '').strip(), errors='coerce')
+            if pd.notna(parsed_date) and parsed_date.normalize() == target_day:
+                allowed_games.add(_mlb_prop_game_key(key))
+        if allowed_games:
+            props_df = props_df[props_df['Game'].astype(str).map(_mlb_prop_game_key).isin(allowed_games)].copy()
+        else:
+            props_df = props_df.iloc[0:0].copy()
+    if props_df.empty:
+        return []
+
+    if stat_filter and 'Stat' in props_df.columns:
+        props_df = props_df[props_df['Stat'].astype(str).str.strip() == stat_filter].copy()
+    if search_query:
+        search_cols = [col for col in ['Player', 'Stat', 'Game', 'Team', 'Book'] if col in props_df.columns]
+        if search_cols:
+            haystack = props_df[search_cols].astype(str).agg(' '.join, axis=1).str.lower()
+            props_df = props_df[haystack.str.contains(re.escape(search_query), na=False)].copy()
+    if props_df.empty:
+        return []
+
     reliability_tables = build_mlb_reliability_tables()
     bucket_reliability_lookup = reliability_tables.get('bucket_lookup', {})
     player_reliability_lookup = reliability_tables.get('player_lookup', {})
     latest_team_map = {}
     environment_lookup = build_mlb_game_environment_lookup()
+    recent_form_lookup = build_mlb_recent_form_lookup(gamelogs)
     if gamelogs is not None and not gamelogs.empty and {'Player', 'Team', 'Date'}.issubset(gamelogs.columns):
         latest_logs = gamelogs.copy()
         latest_logs['Date'] = pd.to_datetime(latest_logs['Date'], errors='coerce')
@@ -3176,12 +4280,6 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         )
 
     rows = []
-    today = pd.Timestamp.now().normalize()
-    tomorrow = today + pd.Timedelta(days=1)
-    stat_filter = str(stat_filter or '').strip()
-    direction_filter = str(direction_filter or 'all').strip().lower() or 'all'
-    search_query = str(search_query or '').strip().lower()
-
     group_cols = [col for col in ['Player', 'Stat', 'Game'] if col in props_df.columns]
     if len(group_cols) < 3:
         return []
@@ -3189,6 +4287,8 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
     grouped = props_df.groupby(group_cols, dropna=False, sort=False)
 
     for (player, stat, game), market_rows in grouped:
+        if max_groups is not None and len(rows) >= int(max_groups):
+            break
         player = str(player or '').strip()
         stat = str(stat or '').strip()
         game = str(game or '').strip()
@@ -3240,7 +4340,7 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
 
         book_probs = []
         one_sided_books = []
-        for _, book_row in market_rows.iterrows():
+        for book_row in market_rows.to_dict('records'):
             over_prob = american_odds_to_implied_prob(book_row.get('OverOdds'))
             under_prob = american_odds_to_implied_prob(book_row.get('UnderOdds'))
             total_prob = (over_prob or 0) + (under_prob or 0)
@@ -3364,6 +4464,22 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             verdict_note = 'The market lean is still light here, so this reads more like a lean than a true play.'
             guardrail_tags.append('LIGHT EDGE')
 
+        lineup_gate = classify_mlb_lineup_gate(stat, primary_row)
+        if lineup_gate.get('status') == 'PENDING':
+            if play_verdict == 'PLAY':
+                play_verdict = 'CONFLICTED'
+                verdict_note = lineup_gate.get('note') or verdict_note
+            guardrail_tags.append('LINEUP PENDING')
+        elif lineup_gate.get('status') == 'PROBABLE':
+            guardrail_tags.append('CONFIRM STARTER')
+
+        statcast_signal = build_statcast_prop_signal(player, stat, direction)
+        statcast_delta = float(statcast_signal.get('score_delta') or 0.0) if statcast_signal.get('available') else 0.0
+        statcast_note = str(statcast_signal.get('note') or '').strip() if statcast_signal.get('available') else ''
+        for tag in statcast_signal.get('tags') or []:
+            if tag and tag not in guardrail_tags:
+                guardrail_tags.append(tag)
+
         rows.append({
             'player': player,
             'team': team_name,
@@ -3381,7 +4497,8 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             'over_rate': over_rate,
             'under_rate': under_rate,
             'market_prob': round(float(lean_prob), 1),
-            'market_confidence': normalize_confidence_rate(lean_prob),
+            'market_confidence': round(max(50.0, min(normalize_confidence_rate(lean_prob) + statcast_delta, 99.0)), 1),
+            'raw_market_confidence': normalize_confidence_rate(lean_prob),
             'lean_gap': lean_gap,
             'lean_strength': 'One-sided' if is_one_sided else 'Strong' if lean_gap >= 10 else 'Medium' if lean_gap >= 5 else 'Light',
             'market_price': int(market_price) if market_price is not None and not pd.isna(market_price) else None,
@@ -3402,7 +4519,7 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             'environment_tags': environment_payload.get('context_tags', []),
             'game_environment_label': game_environment_label,
             'game_environment_summary': game_environment_summary,
-            'trend_note': build_mlb_recent_form_note(player, stat, line, gamelogs),
+            'trend_note': build_mlb_recent_form_note_from_lookup(player, stat, line, recent_form_lookup),
             'historical_reliability': reliability_label,
             'historical_hit_rate': reliability_hit_rate,
             'historical_resolved': reliability_resolved,
@@ -3417,6 +4534,14 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             'play_verdict_note': verdict_note,
             'guardrail_tags': guardrail_tags,
             'guardrail_note': verdict_note,
+            'statcast_signal': statcast_signal,
+            'statcast_score_delta': statcast_delta,
+            'statcast_note': statcast_note,
+            'lineup_gate_status': lineup_gate.get('status'),
+            'lineup_gate_label': lineup_gate.get('label'),
+            'lineup_gate_class': lineup_gate.get('class'),
+            'lineup_gate_note': lineup_gate.get('note'),
+            'lineup_confirmed': bool(lineup_gate.get('is_confirmed')),
         })
 
     verdict_rank = {'PLAY': 2, 'CONFLICTED': 1, 'PASS': 0}
@@ -3431,10 +4556,17 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
     )
     rows = annotate_prop_rows_with_injuries(rows, load_sport_injuries('mlb'))
     rows = apply_mlb_contradiction_guardrails(rows, featured_top_n=0)
-    rows = apply_live_calibration_adjustments(rows, 'MLB', score_field='market_confidence')
+    if not fast_mode:
+        rows = apply_live_calibration_adjustments(rows, 'MLB', score_field='market_confidence')
+    rows = attach_promotion_signals_to_props(rows, sport='MLB', score_fields=('market_confidence',))
+    if not fast_mode:
+        rows = attach_active_simulation_insights_to_rows(rows, sport='MLB')
+    rows = attach_team_strength_priors_to_rows(rows, sport='MLB')
+    rows = apply_mlb_contradiction_guardrails(rows, featured_top_n=0)
     rows.sort(
         key=lambda item: (
             -_mlb_verdict_sort_rank(item),
+            -float(item.get('promotion_boost') or 0),
             -float(item.get('lean_gap') or 0),
             -float(item.get('market_prob') or 0),
             item.get('player', ''),
@@ -3446,18 +4578,21 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         'value': rows,
         'version': cache_version,
     }
+    _write_disk_ttl_cached_value(disk_cache_key, 43200, rows, version=cache_version)
     return rows
 
 
-def build_mlb_method_board(method_key, props_df, odds_df, schedule_df, gamelogs=None, date_filter='today', stat_filter='', direction_filter='all', search_query='', featured_top_n=12):
+def build_mlb_method_board(method_key, props_df, odds_df, schedule_df, gamelogs=None, date_filter='today', stat_filter='', direction_filter='all', search_query='', featured_top_n=12, max_groups=None, fast_mode=False):
     method_key = str(method_key or 'market_edge').strip().lower()
-    cache_key = 'mlb_method_board::{method_key}::{date_filter}::{stat_filter}::{direction_filter}::{search_query}::{featured_top_n}'.format(
+    cache_key = 'mlb_method_board::fast_mode_v3::{method_key}::{date_filter}::{stat_filter}::{direction_filter}::{search_query}::{featured_top_n}::{max_groups}::{fast_mode}'.format(
         method_key=method_key,
         date_filter=str(date_filter or ''),
         stat_filter=str(stat_filter or ''),
         direction_filter=str(direction_filter or ''),
         search_query=str(search_query or '').strip().lower(),
         featured_top_n=int(featured_top_n or 0),
+        max_groups=str(max_groups or ''),
+        fast_mode=int(bool(fast_mode)),
     )
     cache_version = _build_file_token(
         DATA_DIR / 'props' / 'MLB_Props.csv',
@@ -3474,102 +4609,125 @@ def build_mlb_method_board(method_key, props_df, odds_df, schedule_df, gamelogs=
         if cached_age <= 43200 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
 
-    base_rows = build_mlb_prop_board(
-        props_df,
-        odds_df,
-        schedule_df,
-        gamelogs=gamelogs,
-        date_filter=date_filter,
-        stat_filter=stat_filter,
-        direction_filter=direction_filter,
-        search_query=search_query,
-    )
-    enriched = []
-    for row in base_rows:
-        market_prob = pd.to_numeric(row.get('market_prob'), errors='coerce')
-        market_conf = pd.to_numeric(row.get('market_confidence'), errors='coerce')
-        lean_gap = pd.to_numeric(row.get('lean_gap'), errors='coerce')
-        book_count = pd.to_numeric(row.get('book_count'), errors='coerce')
-        line_low = pd.to_numeric(row.get('line_low'), errors='coerce')
-        line_high = pd.to_numeric(row.get('line_high'), errors='coerce')
-        range_span = abs(float(line_high) - float(line_low)) if pd.notna(line_low) and pd.notna(line_high) else 0.0
-        trend_ready = bool(str(row.get('trend_note') or '').strip())
-        historical_reliability = str(row.get('historical_reliability') or '').strip().upper()
-        score = float(market_conf) if pd.notna(market_conf) else float(market_prob) if pd.notna(market_prob) else 50.0
-        tags = []
-        note = str(row.get('market_note') or '').strip()
-        if historical_reliability == 'ANCHOR':
-            score += 8.0
-            tags.append('MLB ANCHOR')
-        elif historical_reliability == 'WATCH':
-            score += 4.0
-            tags.append('MLB WATCH')
-        elif historical_reliability == 'AVOID':
-            score -= 10.0
-            tags.append('MLB AVOID')
-
-        if method_key == 'market_edge':
-            score += min(float(lean_gap) if pd.notna(lean_gap) else 0.0, 18.0)
-            if pd.notna(book_count) and float(book_count) >= 2:
+    def _build_enriched_method_board():
+        base_rows = build_mlb_prop_board(
+            props_df,
+            odds_df,
+            schedule_df,
+            gamelogs=gamelogs,
+            date_filter=date_filter,
+            stat_filter=stat_filter,
+            direction_filter=direction_filter,
+            search_query=search_query,
+            max_groups=max_groups,
+            fast_mode=fast_mode,
+        )
+        enriched_rows = []
+        for row in base_rows:
+            market_prob = pd.to_numeric(row.get('market_prob'), errors='coerce')
+            market_conf = pd.to_numeric(row.get('market_confidence'), errors='coerce')
+            lean_gap = pd.to_numeric(row.get('lean_gap'), errors='coerce')
+            book_count = pd.to_numeric(row.get('book_count'), errors='coerce')
+            line_low = pd.to_numeric(row.get('line_low'), errors='coerce')
+            line_high = pd.to_numeric(row.get('line_high'), errors='coerce')
+            range_span = abs(float(line_high) - float(line_low)) if pd.notna(line_low) and pd.notna(line_high) else 0.0
+            trend_ready = bool(str(row.get('trend_note') or '').strip())
+            historical_reliability = str(row.get('historical_reliability') or '').strip().upper()
+            score = float(market_conf) if pd.notna(market_conf) else float(market_prob) if pd.notna(market_prob) else 50.0
+            tags = []
+            note = str(row.get('market_note') or '').strip()
+            if historical_reliability == 'ANCHOR':
+                score += 8.0
+                tags.append('MLB ANCHOR')
+            elif historical_reliability == 'WATCH':
                 score += 4.0
-                tags.append('MULTI-BOOK')
-            if range_span >= 0.5:
-                tags.append('LINE RANGE')
-            if row.get('book_comparison_note'):
-                tags.append('PRICE SPLIT')
-            note = str(row.get('book_comparison_note') or row.get('market_note') or '').strip()
-        elif method_key == 'floor_plays':
-            score += 6.0 if pd.notna(book_count) and float(book_count) >= 2 else 0.0
-            score += 6.0 if trend_ready else 0.0
-            score += 4.0 if range_span <= 0.5 else 0.0
-            score -= min(range_span * 4.0, 6.0)
-            if trend_ready:
-                tags.append('TREND READY')
-            if range_span <= 0.5:
-                tags.append('TIGHT RANGE')
-            if pd.notna(book_count) and float(book_count) >= 2:
-                tags.append('CONFIRMED')
-            note = str(row.get('trend_note') or row.get('environment_note') or row.get('market_note') or '').strip()
-        else:
-            score += 10.0 if trend_ready else -8.0
-            score += min((float(lean_gap) if pd.notna(lean_gap) else 0.0) * 0.5, 8.0)
-            if trend_ready:
-                tags.append('RECENT FORM')
-            if pd.notna(market_prob) and float(market_prob) >= 60:
-                tags.append('MARKET AGREES')
-            note = str(row.get('trend_note') or row.get('market_note') or row.get('environment_note') or '').strip()
+                tags.append('MLB WATCH')
+            elif historical_reliability == 'AVOID':
+                score -= 10.0
+                tags.append('MLB AVOID')
 
-        row_copy = dict(row)
-        row_copy['method_score'] = round(max(50.0, min(score, 99.0)), 1)
-        row_copy['method_tags'] = tags
-        row_copy['method_note'] = note
-        enriched.append(row_copy)
+            if method_key == 'props':
+                score += min((float(lean_gap) if pd.notna(lean_gap) else 0.0) * 0.35, 6.0)
+                if pd.notna(book_count) and float(book_count) >= 2:
+                    tags.append('MULTI-BOOK')
+                if trend_ready:
+                    tags.append('TREND READY')
+                note = str(row.get('environment_note') or row.get('market_note') or row.get('trend_note') or '').strip()
+            elif method_key == 'market_edge':
+                score += min(float(lean_gap) if pd.notna(lean_gap) else 0.0, 18.0)
+                if pd.notna(book_count) and float(book_count) >= 2:
+                    score += 4.0
+                    tags.append('MULTI-BOOK')
+                if range_span >= 0.5:
+                    tags.append('LINE RANGE')
+                if row.get('book_comparison_note'):
+                    tags.append('PRICE SPLIT')
+                note = str(row.get('book_comparison_note') or row.get('market_note') or '').strip()
+            elif method_key == 'floor_plays':
+                score += 6.0 if pd.notna(book_count) and float(book_count) >= 2 else 0.0
+                score += 6.0 if trend_ready else 0.0
+                score += 4.0 if range_span <= 0.5 else 0.0
+                score -= min(range_span * 4.0, 6.0)
+                if trend_ready:
+                    tags.append('TREND READY')
+                if range_span <= 0.5:
+                    tags.append('TIGHT RANGE')
+                if pd.notna(book_count) and float(book_count) >= 2:
+                    tags.append('CONFIRMED')
+                note = str(row.get('trend_note') or row.get('environment_note') or row.get('market_note') or '').strip()
+            else:
+                score += 10.0 if trend_ready else -8.0
+                score += min((float(lean_gap) if pd.notna(lean_gap) else 0.0) * 0.5, 8.0)
+                if trend_ready:
+                    tags.append('RECENT FORM')
+                if pd.notna(market_prob) and float(market_prob) >= 60:
+                    tags.append('MARKET AGREES')
+                note = str(row.get('trend_note') or row.get('market_note') or row.get('environment_note') or '').strip()
 
-    if method_key == 'floor_plays':
-        enriched = [row for row in enriched if row.get('method_score', 0) >= 64]
-    elif method_key == 'trends':
-        enriched = [row for row in enriched if str(row.get('trend_note') or '').strip()]
+            row_copy = dict(row)
+            row_copy['method_score'] = round(max(50.0, min(score, 99.0)), 1)
+            row_copy['method_tags'] = tags
+            row_copy['method_note'] = note
+            enriched_rows.append(row_copy)
 
-    verdict_rank = {'PLAY': 2, 'CONFLICTED': 1, 'PASS': 0}
-    enriched.sort(
-        key=lambda item: (
-            -verdict_rank.get(str(item.get('play_verdict') or 'PLAY').upper(), 1),
-            -float(item.get('method_score') or 0),
-            -float(item.get('market_prob') or 0),
-            -float(item.get('lean_gap') or 0),
-            item.get('player', ''),
+        if method_key == 'floor_plays':
+            enriched_rows = [row for row in enriched_rows if row.get('method_score', 0) >= 64]
+        elif method_key == 'trends':
+            enriched_rows = [row for row in enriched_rows if str(row.get('trend_note') or '').strip()]
+
+        verdict_rank = {'PLAY': 2, 'CONFLICTED': 1, 'PASS': 0}
+        enriched_rows.sort(
+            key=lambda item: (
+                -verdict_rank.get(str(item.get('play_verdict') or 'PLAY').upper(), 1),
+                -float(item.get('method_score') or 0),
+                -float(item.get('market_prob') or 0),
+                -float(item.get('lean_gap') or 0),
+                item.get('player', ''),
+            )
         )
-    )
-    enriched = apply_mlb_contradiction_guardrails(enriched, featured_top_n=featured_top_n)
-    enriched = apply_live_calibration_adjustments(enriched, 'MLB', score_field='method_score')
-    enriched.sort(
-        key=lambda item: (
-            -_mlb_verdict_sort_rank(item),
-            -float(item.get('method_score') or 0),
-            -float(item.get('market_prob') or 0),
-            -float(item.get('lean_gap') or 0),
-            item.get('player', ''),
+        enriched_rows = apply_mlb_contradiction_guardrails(enriched_rows, featured_top_n=featured_top_n)
+        enriched_rows = apply_live_calibration_adjustments(enriched_rows, 'MLB', score_field='method_score')
+        enriched_rows = attach_promotion_signals_to_props(enriched_rows, sport='MLB', score_fields=('method_score',))
+        enriched_rows = attach_active_simulation_insights_to_rows(enriched_rows, sport='MLB')
+        enriched_rows = attach_team_strength_priors_to_rows(enriched_rows, sport='MLB')
+        enriched_rows = apply_mlb_contradiction_guardrails(enriched_rows, featured_top_n=featured_top_n)
+        enriched_rows.sort(
+            key=lambda item: (
+                -_mlb_verdict_sort_rank(item),
+                -float(item.get('promotion_boost') or 0),
+                -float(item.get('method_score') or 0),
+                -float(item.get('market_prob') or 0),
+                -float(item.get('lean_gap') or 0),
+                item.get('player', ''),
+            )
         )
+        return apply_mlb_contradiction_guardrails(enriched_rows, featured_top_n=featured_top_n)
+
+    enriched = _get_disk_ttl_cached_value(
+        f'disk::{cache_key}',
+        43200,
+        _build_enriched_method_board,
+        version=cache_version,
     )
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
@@ -3704,17 +4862,23 @@ def split_market_game_label(game_label):
     if '@' in text:
         away, home = text.split('@', 1)
         return away.strip(), home.strip()
-    if ' vs ' in text.lower():
-        parts = text.split('vs', 1)
-        if len(parts) == 2:
-            return parts[0].strip(), parts[1].strip()
+    parts = re.split(r'\s+vs\.?\s+', text, maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
     return text, ''
+
+
+def split_game_label(game_label):
+    return split_market_game_label(game_label)
 
 
 def build_matchup_slug(away, home):
     def _slug_part(value):
+        text = str(value or '').strip()
+        if not text or text.lower() in {'nan', 'none', 'null'}:
+            return ''
         return '-'.join(
-            ''.join(ch.lower() if ch.isalnum() else ' ' for ch in str(value or '')).split()
+            ''.join(ch.lower() if ch.isalnum() else ' ' for ch in text).split()
         )
     away_slug = _slug_part(away)
     home_slug = _slug_part(home)
@@ -3786,7 +4950,7 @@ def build_wnba_odds_lookup(odds_df, schedule_df):
     for _, row in merged.iterrows():
         away = str(row.get('AwayFull') or row.get('Away') or '').strip()
         home = str(row.get('HomeFull') or row.get('Home') or '').strip()
-        if not away or not home:
+        if not away or not home or away.lower() in {'nan', 'none', 'null'} or home.lower() in {'nan', 'none', 'null'}:
             continue
         game_key = f'{away}@{home}'
         slug = build_matchup_slug(away, home)
@@ -3870,6 +5034,9 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
         DATA_DIR / 'gamelogs' / 'WNBA_GameLogs.csv',
         DATA_DIR / 'injuries' / 'WNBA_Injuries.csv',
         DATA_DIR / 'tracking' / 'WNBA_Calibration_Report.csv',
+        DATA_DIR / 'tracking' / 'WNBA_Simulation_Results.csv',
+        DATA_DIR / 'tracking' / 'WNBA_Simulation_Results.csv',
+        DATA_DIR / 'tracking' / 'Team_Strength_Priors.csv',
     )
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
@@ -4087,15 +5254,12 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
     rows = annotate_prop_rows_with_injuries(rows, load_sport_injuries('wnba'))
     rows = apply_wnba_contradiction_guardrails(rows, featured_top_n=featured_top_n)
     rows = apply_live_calibration_adjustments(rows, 'WNBA', score_field='market_confidence')
-    rows.sort(
-        key=lambda item: (
-            -_wnba_verdict_sort_rank(item),
-            -float(item.get('lean_gap') or 0),
-            -float(item.get('market_prob') or 0),
-            item.get('player', ''),
-            item.get('stat', ''),
-        )
-    )
+    rows = attach_promotion_signals_to_props(rows, sport='WNBA', score_fields=('market_confidence',))
+    rows = attach_active_simulation_insights_to_rows(rows, sport='WNBA')
+    rows = attach_team_strength_priors_to_rows(rows, sport='WNBA')
+    rows = sort_wnba_rows_for_promotion(rows, score_field='market_confidence')
+    rows = apply_wnba_contradiction_guardrails(rows, featured_top_n=featured_top_n)
+    rows = sort_wnba_rows_for_promotion(rows, score_field='market_confidence')
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
         'value': rows,
@@ -4127,6 +5291,16 @@ def build_wnba_matchup_cards(odds_df, schedule_df):
         })
     cards.sort(key=lambda item: (item.get('date') or '', item.get('time') or '', item.get('away') or ''))
     return cards
+
+
+def wnba_snapshot_has_invalid_matchups(payload):
+    for card in (payload or {}).get('matchup_cards', []) or []:
+        away = str((card or {}).get('away') or '').strip().lower()
+        home = str((card or {}).get('home') or '').strip().lower()
+        slug = str((card or {}).get('slug') or '').strip().lower()
+        if away in {'nan', 'none', 'null'} or home in {'nan', 'none', 'null'} or 'nan' in slug:
+            return True
+    return False
 
 
 def build_live_game_lookup(odds_df, schedule_df):
@@ -5051,38 +6225,56 @@ def summarize_football_game_line_patterns(lines_history):
 def build_football_history_lab(sport_key):
     sport_key = str(sport_key or 'nfl').strip().lower()
     if sport_key == 'ncaaf':
-        props_history = load_ncaaf_props_history()
-        lines_history = load_ncaaf_game_lines_history()
         label = 'College Football'
         required_files = [
             'data/historical/NCAAF_Props_History.csv',
             'data/historical/NCAAF_GameLines_History.csv',
         ]
+        props_loader = load_ncaaf_props_history
+        lines_loader = load_ncaaf_game_lines_history
+        token_paths = [
+            DATA_DIR / 'historical' / 'NCAAF_Props_History.csv',
+            DATA_DIR / 'historical' / 'NCAAF_GameLines_History.csv',
+        ]
     else:
-        props_history = load_nfl_props_history()
-        lines_history = load_nfl_game_lines_history()
         label = 'NFL'
         required_files = [
             'data/historical/NFL_Props_History.csv',
             'data/historical/NFL_GameLines_History.csv',
         ]
+        props_loader = load_nfl_props_history
+        lines_loader = load_nfl_game_lines_history
+        token_paths = [
+            DATA_DIR / 'historical' / 'NFL_Props_History.csv',
+            DATA_DIR / 'historical' / 'NFL_GameLines_History.csv',
+        ]
 
-    hot_hand = summarize_football_hot_hand(props_history)
-    if sport_key == 'nfl' and not hot_hand.get('ready'):
-        hot_hand = summarize_nfl_player_hot_hand()
-    prop_review = build_football_prop_review_lab(props_history)
-    line_patterns = summarize_football_game_line_patterns(lines_history)
-    return {
-        'sport_key': sport_key,
-        'label': label,
-        'props_history_rows': int(len(props_history)) if props_history is not None and not props_history.empty else 0,
-        'game_line_history_rows': int(len(lines_history)) if lines_history is not None and not lines_history.empty else 0,
-        'hot_hand': hot_hand,
-        'prop_review': prop_review,
-        'line_patterns': line_patterns,
-        'required_files': required_files,
-        'ready': hot_hand.get('ready') or line_patterns.get('ready') or prop_review.get('ready'),
-    }
+    def _build_history_lab():
+        props_history = props_loader()
+        lines_history = lines_loader()
+        hot_hand = summarize_football_hot_hand(props_history)
+        if sport_key == 'nfl' and not hot_hand.get('ready'):
+            hot_hand = summarize_nfl_player_hot_hand()
+        prop_review = build_football_prop_review_lab(props_history)
+        line_patterns = summarize_football_game_line_patterns(lines_history)
+        return {
+            'sport_key': sport_key,
+            'label': label,
+            'props_history_rows': int(len(props_history)) if props_history is not None and not props_history.empty else 0,
+            'game_line_history_rows': int(len(lines_history)) if lines_history is not None and not lines_history.empty else 0,
+            'hot_hand': hot_hand,
+            'prop_review': prop_review,
+            'line_patterns': line_patterns,
+            'required_files': required_files,
+            'ready': hot_hand.get('ready') or line_patterns.get('ready') or prop_review.get('ready'),
+        }
+
+    return _get_disk_ttl_cached_value(
+        f'football_history_lab::{sport_key}',
+        43200,
+        _build_history_lab,
+        version=_build_file_token(*token_paths),
+    )
 
 
 def build_football_history_status(history_lab):
@@ -5480,6 +6672,25 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
 def build_football_historical_market_rows(sport_key, method_key):
     sport_key = str(sport_key or 'nfl').strip().lower()
     method_key = str(method_key or 'game_lines').strip().lower()
+    cache_key = f'football_historical_market_rows::{sport_key}::{method_key}'
+    if sport_key == 'ncaaf':
+        cache_version = _build_file_token(
+            DATA_DIR / 'historical' / 'NCAAF_GameLines_History.csv',
+            DATA_DIR / 'rosters' / 'NCAAF_CurrentRoster.csv',
+            DATA_DIR / 'tracking' / 'NCAAF_ReturningProduction.csv',
+            DATA_DIR / 'tracking' / 'NCAAF_TransferPortal.csv',
+        )
+    else:
+        cache_version = _build_file_token(
+            DATA_DIR / 'historical' / 'NFL_GameLines_History.csv',
+            DATA_DIR / 'historical' / 'NFL_Archive_10Y_SBR.json',
+            DATA_DIR / 'historical' / 'NFL_Lines_09_19.csv',
+            DATA_DIR / 'historical' / 'NFL_Games_nfldata.csv',
+        )
+    disk_hit, disk_rows = _read_disk_ttl_cached_value(f'disk::{cache_key}', version=cache_version)
+    if disk_hit:
+        return disk_rows
+
     ncaaf_signal_map = build_ncaaf_team_signal_map() if sport_key == 'ncaaf' else {}
     if sport_key == 'ncaaf':
         lines_history = load_ncaaf_game_lines_history()
@@ -5487,15 +6698,15 @@ def build_football_historical_market_rows(sport_key, method_key):
         lines_history = load_nfl_game_lines_history()
 
     if lines_history is None or lines_history.empty:
-        return []
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, [], version=cache_version)
 
     required = {'Away', 'Home', 'AwayScore', 'HomeScore', 'Date'}
     if not required.issubset(lines_history.columns):
-        return []
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, [], version=cache_version)
 
     history = lines_history.dropna(subset=['Away', 'Home', 'AwayScore', 'HomeScore', 'Date']).copy()
     if history.empty:
-        return []
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, [], version=cache_version)
     history = history.sort_values('Date')
 
     team_rows = []
@@ -5809,7 +7020,9 @@ def build_football_historical_market_rows(sport_key, method_key):
         ),
         reverse=True,
     )
-    return rows[:24]
+    result = rows[:24]
+    _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, result, version=cache_version)
+    return result
 
 
 def _round_nfl_line_proxy(value, stat_key):
@@ -5882,7 +7095,23 @@ def estimate_nfl_proxy_line(season_values, stat_key, position):
 
 
 def build_nfl_historical_player_trend_rows(method_key='trends'):
+    method_key = str(method_key or 'trends').strip().lower()
+    cache_key = f'nfl_historical_player_trend_rows::{method_key}'
+    cache_version = _build_file_token(
+        DATA_DIR / 'historical' / 'NFL_Props_History.csv',
+        DATA_DIR / 'historical' / 'NFL_PlayerStats_2020.csv',
+        DATA_DIR / 'historical' / 'NFL_PlayerStats_2021.csv',
+        DATA_DIR / 'historical' / 'NFL_PlayerStats_2022.csv',
+        DATA_DIR / 'historical' / 'NFL_PlayerStats_2023.csv',
+        DATA_DIR / 'historical' / 'NFL_PlayerStats_2024.csv',
+        DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv',
+    )
+    disk_hit, disk_rows = _read_disk_ttl_cached_value(f'disk::{cache_key}', version=cache_version)
+    if disk_hit:
+        return disk_rows
+
     props_history = load_nfl_props_history()
+    current_roster_lookup = build_nfl_current_roster_lookup()
     if props_history is not None and not props_history.empty:
         props_history = props_history.dropna(subset=['Actual', 'Line']).copy()
         if not props_history.empty:
@@ -5972,8 +7201,20 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
                     stability = None
 
                 latest_line = round(float(season_line.iloc[-1]), 1) if not season_line.empty else None
-                team = str(season_group['Team'].iloc[-1]).strip() if 'Team' in season_group.columns and not season_group.empty else ''
-                opponent = str(season_group['Opponent'].iloc[-1]).strip() if 'Opponent' in season_group.columns and not season_group.empty else ''
+                historical_team = _normalize_nfl_team_abbr(season_group['Team'].iloc[-1]) if 'Team' in season_group.columns and not season_group.empty else ''
+                historical_opponent = _normalize_nfl_team_abbr(season_group['Opponent'].iloc[-1]) if 'Opponent' in season_group.columns and not season_group.empty else ''
+                roster_info = current_roster_lookup.get(_normalize_nfl_roster_player_key(player)) or current_roster_lookup.get(_normalize_player_join_key(player), {})
+                team = roster_info.get('team') or historical_team
+                position = roster_info.get('position') or ''
+                context_matchup_note = ''
+                if historical_team and historical_opponent:
+                    context_matchup_note = f"Last historical sample: {team_display_name(historical_team, sport_key='nfl')} vs {team_display_name(historical_opponent, sport_key='nfl')}"
+                if team and historical_team and team != historical_team:
+                    context_matchup_note = (
+                        f"Current roster: {team_display_name(team, sport_key='nfl')} | "
+                        f"last sample was {team_display_name(historical_team, sport_key='nfl')}"
+                        + (f" vs {team_display_name(historical_opponent, sport_key='nfl')}" if historical_opponent else '')
+                    )
                 book = str(season_group['Book'].iloc[-1]).strip() if 'Book' in season_group.columns and not season_group.empty else 'DraftKings'
                 review_row = review_map.get(str(stat).strip(), {})
                 governance = governance_map.get(str(stat).strip(), {})
@@ -6068,8 +7309,11 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
                 rows.append({
                     'player': player,
                     'team': team,
-                    'opponent': opponent,
-                    'position': '',
+                    'opponent': '',
+                    'position': position,
+                    'historical_team': historical_team,
+                    'historical_opponent': historical_opponent,
+                    'context_matchup_note': context_matchup_note,
                     'stat': str(stat),
                     'stat_key': str(stat).lower().replace(' ', '_'),
                     'line_proxy': latest_line,
@@ -6117,13 +7361,15 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
                         float(item.get('follow_3_rate') or 0),
                     ),
                     reverse=True,
-                )
+            )
             if rows:
-                return rows[:36]
+                result = rows[:36]
+                _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, result, version=cache_version)
+                return result
 
     history = load_nfl_player_stats_history()
     if history is None or history.empty:
-        return []
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, [], version=cache_version)
 
     stat_configs = [
         {'key': 'passing_yards', 'label': 'Pass Yds', 'positions': {'QB'}},
@@ -6138,11 +7384,11 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
     rows = []
     current_season = int(history['season'].dropna().max()) if 'season' in history.columns and not history['season'].dropna().empty else None
     if current_season is None:
-        return rows
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, rows, version=cache_version)
 
     last_season_df = history[history['season'] == current_season].copy()
     if last_season_df.empty:
-        return rows
+        return _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, rows, version=cache_version)
 
     for config in stat_configs:
         stat_key = config['key']
@@ -6205,8 +7451,21 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
             opp5_count = int(len(opportunities_5))
             hit_rate = round(float(np.mean(hit_series) * 100), 1) if hit_series else None
             last5_values = pd.to_numeric(season_group[stat_key], errors='coerce').tail(5).tolist()
-            team = str(season_group['team'].dropna().iloc[-1]).strip() if 'team' in season_group.columns and not season_group['team'].dropna().empty else ''
-            opponent = str(season_group['opponent_team'].dropna().iloc[-1]).strip() if 'opponent_team' in season_group.columns and not season_group['opponent_team'].dropna().empty else ''
+            historical_team = _normalize_nfl_team_abbr(season_group['team'].dropna().iloc[-1]) if 'team' in season_group.columns and not season_group['team'].dropna().empty else ''
+            historical_opponent = _normalize_nfl_team_abbr(season_group['opponent_team'].dropna().iloc[-1]) if 'opponent_team' in season_group.columns and not season_group['opponent_team'].dropna().empty else ''
+            roster_info = current_roster_lookup.get(_normalize_nfl_roster_player_key(player)) or current_roster_lookup.get(_normalize_player_join_key(player), {})
+            team = roster_info.get('team') or historical_team
+            if roster_info.get('position'):
+                position = roster_info.get('position')
+            context_matchup_note = ''
+            if historical_team and historical_opponent:
+                context_matchup_note = f"Last historical sample: {team_display_name(historical_team, sport_key='nfl')} vs {team_display_name(historical_opponent, sport_key='nfl')}"
+            if team and historical_team and team != historical_team:
+                context_matchup_note = (
+                    f"Current roster: {team_display_name(team, sport_key='nfl')} | "
+                    f"last sample was {team_display_name(historical_team, sport_key='nfl')}"
+                    + (f" vs {team_display_name(historical_opponent, sport_key='nfl')}" if historical_opponent else '')
+                )
 
             score = 50.0
             tags = []
@@ -6260,8 +7519,11 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
             rows.append({
                 'player': player,
                 'team': team,
-                'opponent': opponent,
+                'opponent': '',
                 'position': position,
+                'historical_team': historical_team,
+                'historical_opponent': historical_opponent,
+                'context_matchup_note': context_matchup_note,
                 'stat': config['label'],
                 'stat_key': stat_key,
                 'line_proxy': line_proxy,
@@ -6305,7 +7567,9 @@ def build_nfl_historical_player_trend_rows(method_key='trends'):
             reverse=True,
         )
 
-    return rows[:36]
+    result = rows[:36]
+    _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, result, version=cache_version)
+    return result
 
 
 def build_nfl_historical_player_scorecards(rows):
@@ -6737,6 +8001,15 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
                 tags.append('TIGHT RANGE')
             note = build_football_environment_note(market.get('total'), market.get('spread'), stat_family, direction) or build_football_market_note(direction, over_rate, under_rate)
 
+        ngs_signal = build_ngs_prop_signal(player, stat, direction) if sport_key == 'nfl' else {'available': False, 'score_delta': 0.0, 'tags': [], 'note': ''}
+        if ngs_signal.get('available'):
+            score += float(ngs_signal.get('score_delta') or 0.0)
+            for tag in ngs_signal.get('tags') or []:
+                if tag and tag not in tags:
+                    tags.append(tag)
+            if ngs_signal.get('note'):
+                note = f"{note} NGS: {ngs_signal['note']}".strip()
+
         rows.append({
             'player': player,
             'stat': stat,
@@ -6770,8 +8043,14 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
             'method_score': round(max(50.0, min(score, 99.0)), 1),
             'method_tags': tags,
             'method_note': note,
+            'ngs_signal': ngs_signal,
+            'ngs_score_delta': ngs_signal.get('score_delta') if ngs_signal.get('available') else 0.0,
+            'ngs_note': ngs_signal.get('note', '') if ngs_signal.get('available') else '',
         })
 
+    if sport_key == 'nfl':
+        rows = attach_nfl_quant_insights_to_rows(rows)
+        rows = attach_promotion_signals_to_props(rows, sport='NFL', score_fields=('method_score', 'market_confidence'))
     rows = annotate_prop_rows_with_injuries(rows, load_sport_injuries(sport_key))
     rows.sort(key=lambda item: (float(item.get('method_score') or 0), float(item.get('market_prob') or 0), float(item.get('lean_gap') or 0), item.get('player') or ''), reverse=True)
     return rows
@@ -6870,16 +8149,12 @@ def build_wnba_method_board(method_key, props_df, odds_df, schedule_df, gamelogs
 
     enriched = apply_wnba_contradiction_guardrails(enriched, featured_top_n=featured_top_n)
     enriched = apply_live_calibration_adjustments(enriched, 'WNBA', score_field='method_score')
-    enriched.sort(
-        key=lambda item: (
-            _wnba_verdict_sort_rank(item),
-            float(item.get('method_score') or 0),
-            float(item.get('market_prob') or 0),
-            float(item.get('lean_gap') or 0),
-            item.get('player') or '',
-        ),
-        reverse=True,
-    )
+    enriched = attach_promotion_signals_to_props(enriched, sport='WNBA', score_fields=('method_score',))
+    enriched = attach_active_simulation_insights_to_rows(enriched, sport='WNBA')
+    enriched = attach_team_strength_priors_to_rows(enriched, sport='WNBA')
+    enriched = sort_wnba_rows_for_promotion(enriched, score_field='method_score')
+    enriched = apply_wnba_contradiction_guardrails(enriched, featured_top_n=featured_top_n)
+    enriched = sort_wnba_rows_for_promotion(enriched, score_field='method_score')
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
         'value': enriched,
@@ -6891,6 +8166,11 @@ def build_wnba_method_board(method_key, props_df, odds_df, schedule_df, gamelogs
 def _safe_float(value):
     if value is None:
         return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
     if isinstance(value, (int, float, np.integer, np.floating)):
         try:
             return float(value)
@@ -6904,16 +8184,6 @@ def _safe_float(value):
         return None
     try:
         return float(keep)
-    except Exception:
-        return None
-
-
-def _safe_int(value):
-    num = _safe_float(value)
-    if num is None:
-        return None
-    try:
-        return int(round(num))
     except Exception:
         return None
 
@@ -6993,6 +8263,17 @@ def load_nfl_floor_board():
             cached_board = dict(cached_entry['value'])
             cached_board['from_cache'] = True
             return cached_board
+    disk_cache_key = f'disk::{cache_key}'
+    disk_hit, disk_board = _read_disk_ttl_cached_value(disk_cache_key, version=cache_version)
+    if disk_hit:
+        cached_board = dict(disk_board or {})
+        cached_board['from_cache'] = True
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': cached_board,
+            'version': cache_version,
+        }
+        return cached_board
 
     try:
         wb = load_workbook(workbook_path, read_only=True, data_only=True)
@@ -7020,7 +8301,7 @@ def load_nfl_floor_board():
                     in_parameters = True
                     in_top_plays = False
                     continue
-                if upper.startswith('⭐ TOP FLOOR PLAYS') or upper.startswith('TOP FLOOR PLAYS'):
+                if upper.startswith(' TOP FLOOR PLAYS') or upper.startswith('TOP FLOOR PLAYS'):
                     in_top_plays = True
                     in_parameters = False
                     continue
@@ -7071,6 +8352,7 @@ def load_nfl_floor_board():
     board = apply_nfl_workbook_governance(board)
     board = attach_nfl_game_script_to_board(board)
     board = apply_nfl_board_contradictions(board)
+    _write_disk_ttl_cached_value(disk_cache_key, 43200, board, version=cache_version)
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
         'value': board,
@@ -7441,7 +8723,7 @@ def logout_user():
 @app.before_request
 def enforce_access_gate():
     endpoint = str(request.endpoint or '').strip()
-    if not endpoint or endpoint in PUBLIC_ENDPOINTS or endpoint.startswith('static'):
+    if not endpoint or endpoint in PUBLIC_ENDPOINTS or endpoint in FREE_ENDPOINTS or endpoint.startswith('static'):
         return None
 
     required_plan = get_required_plan_for_endpoint(endpoint)
@@ -7450,21 +8732,29 @@ def enforce_access_gate():
 
     current_user = get_current_user()
     requested_path = build_requested_path()
+    sport_access_key = get_sport_key_for_access_path(request.path)
+    gate_required_plan = (
+        get_sport_pass_plan_for_sport(sport_access_key)
+        if sport_access_key and required_plan == 'pro'
+        else required_plan
+    )
 
     if not current_user:
         if request.method != 'GET':
             return jsonify({
                 'ok': False,
                 'error': 'login_required',
-                'required_plan': required_plan,
-                'login_url': url_for('login', next=requested_path, gate='login_required', required=required_plan),
+                'required_plan': gate_required_plan,
+                'login_url': url_for('login', next=requested_path, gate='login_required', required=gate_required_plan),
             }), 401
-        return render_access_gate_response(required_plan, requested_path, current_user=None)
+        return render_access_gate_response(gate_required_plan, requested_path, current_user=None)
 
     if is_owner_user(current_user):
         return None
 
     current_plan = normalize_user_plan(current_user)
+    if sport_access_key and required_plan == 'pro' and user_has_sport_access(current_user, sport_access_key):
+        return None
     if get_plan_rank(current_plan) >= get_plan_rank(required_plan):
         return None
 
@@ -7472,10 +8762,10 @@ def enforce_access_gate():
         return jsonify({
             'ok': False,
             'error': 'upgrade_required',
-            'required_plan': required_plan,
-            'pricing_url': url_for('pricing', next=requested_path, gate='upgrade_required', required=required_plan),
+            'required_plan': gate_required_plan,
+            'pricing_url': url_for('pricing', next=requested_path, gate='upgrade_required', required=gate_required_plan),
         }), 403
-    return render_access_gate_response(required_plan, requested_path, current_user=current_user)
+    return render_access_gate_response(gate_required_plan, requested_path, current_user=current_user)
 
 
 def filter_saved_parlays_for_user(df, user=None):
@@ -7643,6 +8933,15 @@ def _latest_glob_mtime(pattern):
     return latest
 
 
+def _latest_any_log_mtime(*patterns):
+    latest = None
+    for pattern in patterns:
+        mtime = _latest_glob_mtime(pattern)
+        if mtime and (latest is None or mtime > latest):
+            latest = mtime
+    return latest
+
+
 def _latest_qc_scope_entry(scope):
     qc_log = load_qc_run_log()
     if qc_log.empty or 'Scope' not in qc_log.columns:
@@ -7754,7 +9053,11 @@ def build_ops_status_strip():
         {
             'label': 'Football',
             'kind': 'task',
-            'mtime': _latest_file_mtime(logs_dir / 'refresh_football.log'),
+            'mtime': _latest_any_log_mtime(
+                logs_dir / 'refresh_football*.log',
+                logs_dir / 'refresh_everything_*_football.log',
+                logs_dir / 'manual_football_refresh_*.log',
+            ),
             'good_hours': 30,
             'watch_hours': 54,
             'detail': 'NFL/CFB data refresh',
@@ -7762,7 +9065,12 @@ def build_ops_status_strip():
         {
             'label': 'NBA',
             'kind': 'task',
-            'mtime': _latest_file_mtime(logs_dir / 'refresh_nba_daily.log'),
+            'mtime': _latest_any_log_mtime(
+                logs_dir / 'refresh_nba_daily*.log',
+                logs_dir / 'refresh_everything_*_nba.log',
+                logs_dir / 'manual_nba_refresh_*.log',
+                logs_dir / 'manual_nba_playerlog_retry_*.log',
+            ),
             'good_hours': 30,
             'watch_hours': 54,
             'detail': 'NBA daily refresh',
@@ -7770,7 +9078,11 @@ def build_ops_status_strip():
         {
             'label': 'WNBA',
             'kind': 'task',
-            'mtime': _latest_file_mtime(logs_dir / 'refresh_wnba.log'),
+            'mtime': _latest_any_log_mtime(
+                logs_dir / 'refresh_wnba*.log',
+                logs_dir / 'refresh_everything_*_wnba.log',
+                logs_dir / 'manual_wnba_refresh_*.log',
+            ),
             'good_hours': 30,
             'watch_hours': 54,
             'detail': 'WNBA data refresh',
@@ -7778,7 +9090,11 @@ def build_ops_status_strip():
         {
             'label': 'MLB',
             'kind': 'task',
-            'mtime': _latest_file_mtime(logs_dir / 'refresh_mlb.log'),
+            'mtime': _latest_any_log_mtime(
+                logs_dir / 'refresh_mlb*.log',
+                logs_dir / 'refresh_everything_*_mlb.log',
+                logs_dir / 'manual_mlb_refresh_*.log',
+            ),
             'good_hours': 30,
             'watch_hours': 54,
             'detail': 'MLB data refresh',
@@ -7794,7 +9110,10 @@ def build_ops_status_strip():
         {
             'label': 'Scorecard',
             'kind': 'task',
-            'mtime': _latest_file_mtime(logs_dir / 'prelaunch_scorecard.log'),
+            'mtime': _latest_any_log_mtime(
+                logs_dir / 'prelaunch_scorecard*.log',
+                DATA_DIR / 'tracking' / 'Prelaunch_Scorecard.csv',
+            ),
             'good_hours': 30,
             'watch_hours': 54,
             'detail': 'Prelaunch scorecard run',
@@ -7896,6 +9215,8 @@ def _build_qc_scope_summary(scope, label):
         status = 'good'
 
     notes = str(entry.get('Notes', '') or '').strip()
+    if notes.lower() in {'nan', 'none', 'null'}:
+        notes = ''
     detail_bits = [f'PASS {pass_count}', f'WARN {warning_count}', f'FAIL {failure_count}']
     if notes:
         detail_bits.append(notes)
@@ -8913,6 +10234,96 @@ def apply_live_calibration_adjustments(rows, sport, score_field='method_score'):
     return adjusted_rows
 
 
+def _active_sim_line_key(value):
+    parsed = pd.to_numeric(value, errors='coerce')
+    if pd.isna(parsed):
+        return ''
+    return f"{float(parsed):.2f}"
+
+
+def load_active_sport_simulation_lookup(sport='NBA'):
+    sport_key = str(sport or '').strip().upper()
+    if sport_key not in {'NBA', 'WNBA', 'MLB'}:
+        return {}
+    path = DATA_DIR / 'tracking' / f'{sport_key}_Simulation_Results.csv'
+    if not path.exists() or path.stat().st_size <= 2:
+        return {}
+    cache_key = f'active_sport_sim_lookup::{sport_key}'
+    cache_version = _build_file_token(path)
+    cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached_entry and cached_entry.get('version') == cache_version:
+        return cached_entry.get('value') or {}
+    try:
+        df = _load_cached_csv(path, default=pd.DataFrame())
+    except Exception:
+        df = pd.DataFrame()
+    lookup = {}
+    if not df.empty:
+        df = df.copy()
+        df['_SnapshotDate'] = pd.to_datetime(df.get('SnapshotDate'), errors='coerce')
+        df = df.sort_values('_SnapshotDate')
+        for row in df.to_dict('records'):
+            player = str(row.get('Player') or '').strip().upper()
+            stat = str(row.get('Stat') or '').strip().upper()
+            direction = str(row.get('Direction') or '').strip().upper()
+            line_key = _active_sim_line_key(row.get('Line'))
+            if not player or not stat or direction not in {'OVER', 'UNDER'}:
+                continue
+            payload = row
+            exact_key = (player, stat, direction, line_key)
+            fallback_key = (player, stat, direction, '')
+            lookup[exact_key] = payload
+            lookup[fallback_key] = payload
+    RUNTIME_TTL_CACHE[cache_key] = {
+        'created_at': datetime.now(timezone.utc),
+        'value': lookup,
+        'version': cache_version,
+    }
+    return lookup
+
+
+def attach_active_simulation_insights_to_rows(rows, sport='NBA'):
+    if not rows:
+        return rows
+    sport_key = str(sport or '').strip().upper()
+    lookup = load_active_sport_simulation_lookup(sport_key)
+    if not lookup:
+        return rows
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        player = str(item.get('player') or item.get('Player') or '').strip().upper()
+        stat = str(item.get('stat') or item.get('Stat') or '').strip().upper()
+        direction = str(item.get('direction') or item.get('Direction') or '').strip().upper()
+        line_key = _active_sim_line_key(item.get('line') if item.get('line') is not None else item.get('Line'))
+        sim = lookup.get((player, stat, direction, line_key)) or lookup.get((player, stat, direction, ''))
+        if not sim:
+            enriched.append(item)
+            continue
+        raw_sim = _safe_float(sim.get('SimHitProbability'))
+        calibrated = _safe_float(sim.get('CalibratedSimHitProbability'))
+        authority = str(sim.get('SimulationAuthority') or '').strip().upper()
+        if calibrated is None and raw_sim is None:
+            enriched.append(item)
+            continue
+        item['sim_hit_probability'] = round(raw_sim, 1) if raw_sim is not None else None
+        item['calibrated_sim_hit_probability'] = round(calibrated, 1) if calibrated is not None else item.get('sim_hit_probability')
+        item['simulation_authority'] = authority or 'CALIBRATION_NEEDED'
+        item['simulation_mode'] = str(sim.get('SimulationMode') or '').strip()
+        item['simulation_detail'] = str(sim.get('SimulationCalibrationDetail') or '').strip()
+        item['simulation_source'] = str(sim.get('DistributionSource') or '').strip()
+        item['simulation_sample'] = _safe_int(sim.get('DistributionSample')) or 0
+        item['simulation_training_rows'] = _safe_int(sim.get('TrainingResolvedRows')) or 0
+        item['simulation_mean'] = _safe_float(sim.get('SimMean'))
+        item['simulation_volatility'] = _safe_float(sim.get('SimVolatility'))
+        item['simulation_edge_pct'] = _safe_float(sim.get('SimEdgePct'))
+        if sport_key == 'NBA' and authority in {'LIVE_AUTHORITY'}:
+            item['simulation_authority'] = 'WATCH'
+            item['simulation_detail'] = (item['simulation_detail'] + ' | NBA sim capped at WATCH').strip(' |')
+        enriched.append(item)
+    return enriched
+
+
 def grade_candidate_archive_rows(archive_df, gamelog_map=None):
     if archive_df is None or archive_df.empty:
         return pd.DataFrame()
@@ -8945,8 +10356,11 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
     def _resolve_archive_stat_column(sport_name, stat_name):
         sport_key = str(sport_name or '').strip().upper()
         stat_key = str(stat_name or '').strip()
+        combined_key = normalize_combined_prop_key(stat_key)
+        if combined_key in COMBINED_PROP_COMPONENTS.get(sport_key, {}):
+            return combined_key
         if sport_key == 'MLB':
-            return MLB_STAT_COLUMN_MAP.get(stat_key, stat_key)
+            return MLB_STAT_COLUMN_MAP.get(stat_key) or MLB_STAT_COLUMN_MAP.get(combined_key) or stat_key
         return stat_key
 
     for idx, row in graded.iterrows():
@@ -9511,8 +10925,11 @@ def get_saved_pick_sport(pick):
 def get_saved_pick_stat_column(sport, stat):
     stat_key = str(stat or '').strip()
     stat_upper = stat_key.upper()
+    combined_key = normalize_combined_prop_key(stat_key)
+    if combined_key in COMBINED_PROP_COMPONENTS.get(str(sport or '').strip().upper(), {}):
+        return combined_key
     if sport == 'MLB':
-        return MLB_STAT_COLUMN_MAP.get(stat_key) or MLB_STAT_COLUMN_MAP.get(stat_upper) or stat_upper
+        return MLB_STAT_COLUMN_MAP.get(stat_key) or MLB_STAT_COLUMN_MAP.get(stat_upper) or MLB_STAT_COLUMN_MAP.get(combined_key) or stat_upper
     if sport in {'NBA', 'WNBA'}:
         aliases = {
             'THREES': '3PM',
@@ -9524,7 +10941,7 @@ def get_saved_pick_stat_column(sport, stat):
             'STEALS': 'STL',
             'BLOCKS': 'BLK',
         }
-        return aliases.get(stat_upper, stat_upper)
+        return aliases.get(stat_upper, combined_key if combined_key in COMBINED_PROP_COMPONENTS.get(sport, {}) else stat_upper)
     return stat_upper
 
 
@@ -9558,13 +10975,14 @@ def resolve_saved_leg_outcome(pick, saved_at, regular_logs, playoff_logs, sport_
         if opponent and 'Opp' in working.columns:
             opponent_filtered = working[working['Opp'].astype(str).str.upper() == opponent]
             if not opponent_filtered.empty:
-                working = opponent_filtered
+                working = opponent_filtered.copy()
         if use_team and team and 'Team' in working.columns:
             team_filtered = working[working['Team'].astype(str).str.upper() == team]
             if not team_filtered.empty:
-                working = team_filtered
+                working = team_filtered.copy()
         if working.empty:
             return None
+        working = working.copy()
         working['DateParsed'] = pd.to_datetime(working['Date'], errors='coerce')
         working = working.dropna(subset=['DateParsed']).sort_values('DateParsed')
         future = working[(working['DateParsed'] >= saved_dt.normalize()) & (working['DateParsed'] <= saved_dt.normalize() + pd.Timedelta(days=7))]
@@ -9763,8 +11181,8 @@ def format_saved_parlays_for_view(df, live_props=None, limit=12):
             'bankroll': float(row.get('Bankroll', 0) or 0),
             'risk_pct': float(row.get('RiskPct', 0) or 0),
             'slate_budget': float(row.get('SlateBudget', 0) or 0),
-            'stake': float(row.get('Stake', row.get('SlateBudget', 0)) or 0),
-            'payout': float(row.get('Payout', 0) or 0),
+            'stake': 0.0 if pd.isna(row.get('Stake', row.get('SlateBudget', 0))) else float(row.get('Stake', row.get('SlateBudget', 0)) or 0),
+            'payout': 0.0 if pd.isna(row.get('Payout', 0)) else float(row.get('Payout', 0) or 0),
             'model_version': str(row.get('ModelVersion', '')).strip() or ('legacy' if any(bool(p.get('legacy_confidence_scale')) for p in display_picks) else 'unknown'),
             'confidence_scale': str(row.get('ConfidenceScale', '')).strip() or ('legacy' if any(bool(p.get('legacy_confidence_scale')) for p in display_picks) else 'unknown'),
             'postseason_only': ticket_postseason_only,
@@ -9773,6 +11191,59 @@ def format_saved_parlays_for_view(df, live_props=None, limit=12):
             'picks': display_picks,
             'analysis': analysis
         })
+        ticket_state = analysis.get('results_summary', {}).get('ticket_state', 'Pending')
+        manual_result = saved[-1]['result']
+        saved_dt = parse_saved_ticket_datetime(saved[-1]['saved_at'])
+        is_prior_day_ticket = bool(saved_dt is not None and saved_dt.normalize() < pd.Timestamp.now().normalize())
+        stake_value = float(saved[-1].get('stake', 0) or 0)
+        payout_value = float(saved[-1].get('payout', 0) or 0)
+        has_money_settlement = bool(is_prior_day_ticket and stake_value > 0)
+        if manual_result and manual_result != 'Pending':
+            display_result = manual_result
+            display_result_source = 'manual'
+        elif has_money_settlement and payout_value > stake_value:
+            display_result = 'Win'
+            display_result_source = 'settled'
+        elif has_money_settlement and payout_value == stake_value:
+            display_result = 'Push'
+            display_result_source = 'settled'
+        elif has_money_settlement and payout_value < stake_value:
+            display_result = 'Loss'
+            display_result_source = 'settled'
+        elif ticket_state == 'Won Outright':
+            display_result = 'Win'
+            display_result_source = 'auto'
+        elif ticket_state == 'Dead':
+            display_result = 'Loss'
+            display_result_source = 'auto'
+        elif ticket_state == 'Clean So Far':
+            display_result = 'Clean So Far'
+            display_result_source = 'auto'
+        elif ticket_state == 'Alive':
+            display_result = 'Alive'
+            display_result_source = 'auto'
+        else:
+            display_result = 'Pending'
+            display_result_source = 'pending'
+        saved[-1]['display_result'] = display_result
+        saved[-1]['display_result_source'] = display_result_source
+
+        if display_result in {'Win', 'Loss', 'Push'} and display_result_source in {'manual', 'settled', 'auto'}:
+            settled_pending = 0
+            for pick_copy in display_picks:
+                if str(pick_copy.get('outcome_state', 'pending')).strip().lower() == 'pending':
+                    pick_copy['outcome_state'] = 'settled'
+                    settled_pending += 1
+            if settled_pending:
+                results_summary = dict(saved[-1].get('analysis', {}).get('results_summary', {}) or {})
+                results_summary['pending'] = 0
+                results_summary['settled_without_leg_result'] = settled_pending
+                results_summary['ticket_state'] = display_result
+                note = str(results_summary.get('note', '') or '').strip()
+                settle_note = f"{settled_pending} leg(s) were settled from the final ticket result because no historical leg row was available."
+                results_summary['note'] = f"{note} {settle_note}".strip() if note else settle_note
+                saved[-1]['analysis']['results_summary'] = results_summary
+
         saved[-1]['legacy_leg_count'] = sum(1 for p in display_picks if bool(p.get('legacy_confidence_scale')))
         saved[-1]['has_legacy_confidence'] = saved[-1]['legacy_leg_count'] > 0
         saved[-1]['is_native_v2_ticket'] = (
@@ -9783,13 +11254,14 @@ def format_saved_parlays_for_view(df, live_props=None, limit=12):
 
         money = {'stake': saved[-1]['stake'], 'payout': saved[-1]['payout'], 'profit': 0.0, 'roi': None}
         ticket_state = analysis.get('results_summary', {}).get('ticket_state')
-        if ticket_state == 'Won Outright':
+        display_result = saved[-1].get('display_result', saved[-1]['result'])
+        if display_result == 'Win' or ticket_state == 'Won Outright':
             money['profit'] = money['payout'] - money['stake']
             money['roi'] = (money['profit'] / money['stake'] * 100) if money['stake'] > 0 else None
-        elif ticket_state == 'Dead':
+        elif display_result == 'Loss' or ticket_state == 'Dead':
             money['profit'] = -money['stake']
             money['roi'] = (money['profit'] / money['stake'] * 100) if money['stake'] > 0 else None
-        elif saved[-1]['result'] == 'Push':
+        elif display_result == 'Push' or saved[-1]['result'] == 'Push':
             money['profit'] = 0.0
             money['roi'] = 0.0 if money['stake'] > 0 else None
         saved[-1]['money'] = money
@@ -10761,6 +12233,148 @@ def _american_decimal_odds(value):
     return 1.0 + (100.0 / abs(odds))
 
 
+def calculate_bankroll_iq(true_probability=None, decimal_odds=None, bankroll=100.0, max_fraction=0.03, kelly_fraction=0.25):
+    try:
+        p = float(true_probability)
+    except Exception:
+        p = None
+    try:
+        dec = float(decimal_odds)
+    except Exception:
+        dec = None
+    try:
+        bankroll_value = max(float(bankroll or 0), 0.0)
+    except Exception:
+        bankroll_value = 0.0
+
+    if p is None or dec is None or p <= 0 or p >= 1 or dec <= 1:
+        return {
+            'label': 'NO PRICE READ',
+            'tone': 'muted',
+            'kelly_pct': None,
+            'quarter_kelly_pct': None,
+            'recommended_pct': 0.0,
+            'recommended_amount': 0.0,
+            'note': 'Need both a true probability and a book price before sizing with Kelly.',
+        }
+
+    b = dec - 1.0
+    q = 1.0 - p
+    full_kelly = ((b * p) - q) / b if b > 0 else 0.0
+    fractional = full_kelly * float(kelly_fraction or 0.25)
+    recommended = max(0.0, min(float(max_fraction or 0.03), fractional))
+
+    if full_kelly <= 0:
+        label = 'PASS'
+        tone = 'danger'
+        note = 'Book price does not clear the model probability. Track it, but do not force stake.'
+        recommended = 0.0
+    elif recommended < 0.0025:
+        label = 'TRACK'
+        tone = 'copper'
+        note = 'Positive but thin edge. If played, keep it below a quarter-percent of bankroll.'
+    elif recommended < 0.0075:
+        label = 'SMALL'
+        tone = 'blue'
+        note = 'Small Kelly edge. Better as controlled exposure than a main ticket.'
+    elif recommended < 0.015:
+        label = 'STANDARD'
+        tone = 'accent'
+        note = 'Solid Kelly read. Still keep parlay exposure capped and avoid chasing.'
+    else:
+        label = 'STRONG'
+        tone = 'accent'
+        note = 'Strong sizing read, capped for parlay variance. Confirm price and correlation before acting.'
+
+    return {
+        'label': label,
+        'tone': tone,
+        'kelly_pct': round(full_kelly * 100, 2),
+        'quarter_kelly_pct': round(max(0.0, fractional) * 100, 2),
+        'recommended_pct': round(recommended * 100, 2),
+        'recommended_amount': round(bankroll_value * recommended, 2),
+        'note': note,
+    }
+
+
+def calculate_correlation_iq(legs):
+    legs = list(legs or [])
+    if len(legs) < 2:
+        return {
+            'label': 'WAITING',
+            'score': 0,
+            'tone': 'muted',
+            'note': 'Select at least two legs before correlation risk can be measured.',
+            'pair_notes': [],
+        }
+
+    score = 0
+    pair_notes = []
+    hard_block = False
+    for left, right in combinations(legs, 2):
+        l_sport = str(left.get('sport') or left.get('Sport') or '').strip().upper()
+        r_sport = str(right.get('sport') or right.get('Sport') or '').strip().upper()
+        l_matchup = str(left.get('matchup') or left.get('Matchup') or '').strip().upper()
+        r_matchup = str(right.get('matchup') or right.get('Matchup') or '').strip().upper()
+        l_player = str(left.get('player') or left.get('Player') or '').strip().upper()
+        r_player = str(right.get('player') or right.get('Player') or '').strip().upper()
+        l_team = str(left.get('team') or left.get('Team') or '').strip().upper()
+        r_team = str(right.get('team') or right.get('Team') or '').strip().upper()
+        l_stat = str(left.get('stat') or left.get('Stat') or '').strip().upper()
+        r_stat = str(right.get('stat') or right.get('Stat') or '').strip().upper()
+        l_direction = str(left.get('direction') or left.get('Direction') or '').strip().upper()
+        r_direction = str(right.get('direction') or right.get('Direction') or '').strip().upper()
+
+        pair_score = 0
+        reasons = []
+        if l_player and l_player == r_player:
+            pair_score += 50
+            hard_block = True
+            reasons.append('same player')
+        if l_sport and r_sport and l_sport == r_sport and l_matchup and l_matchup == r_matchup:
+            pair_score += 22
+            reasons.append('same game')
+        elif l_sport and r_sport and l_sport != r_sport:
+            pair_score -= 4
+            reasons.append('cross-sport diversification')
+        if l_team and r_team and l_team == r_team and l_sport == r_sport:
+            pair_score += 8
+            reasons.append('same team')
+        if l_stat and l_stat == r_stat and l_direction and l_direction == r_direction:
+            pair_score += 4
+            reasons.append('same stat side')
+        score += pair_score
+        if reasons and pair_score > 0:
+            pair_notes.append({
+                'pair': f"{left.get('player') or left.get('Player') or 'Leg'} / {right.get('player') or right.get('Player') or 'Leg'}",
+                'score': pair_score,
+                'reason': ', '.join(reasons),
+            })
+
+    score = int(max(0, min(100, round(score))))
+    if hard_block or score >= 60:
+        label = 'HIGH'
+        tone = 'danger'
+        note = 'Correlation is stacked. Prefer round robins, remove duplicate player exposure, or shrink stake.'
+    elif score >= 30:
+        label = 'MEDIUM'
+        tone = 'copper'
+        note = 'Some legs share game or team dependence. Keep the stake smaller than the raw EV suggests.'
+    else:
+        label = 'LOW'
+        tone = 'accent'
+        note = 'Legs are diversified enough that one game script should not control the whole ticket.'
+
+    pair_notes.sort(key=lambda item: item.get('score', 0), reverse=True)
+    return {
+        'label': label,
+        'score': score,
+        'tone': tone,
+        'note': note,
+        'pair_notes': pair_notes[:5],
+    }
+
+
 def _elite_candidate_from_prop(prop, sport):
     price = prop.get('market_price')
     true_prob = pd.to_numeric(prop.get('historical_hit_rate'), errors='coerce')
@@ -10887,6 +12501,8 @@ def build_elite_parlay_ev(candidates, target_legs=4):
             'decimal_odds': None,
             'correlation_label': 'WAITING',
             'correlation_note': 'No eligible cross-sport legs are available yet.',
+            'correlation_iq': calculate_correlation_iq([]),
+            'bankroll_iq': calculate_bankroll_iq(),
             'save_payload': {},
         }
 
@@ -10926,17 +12542,10 @@ def build_elite_parlay_ev(candidates, target_legs=4):
 
     book_implied = (1.0 / decimal_product) if has_all_prices and decimal_product > 1 else None
     ev_pct = ((true_prob * decimal_product) - 1.0) * 100 if has_all_prices and decimal_product > 1 else None
-    sports = {leg['sport'] for leg in selected}
+    correlation_iq = calculate_correlation_iq(selected)
     same_matchup_pairs = sum(1 for _, count in Counter([f"{leg['sport']}::{leg['matchup']}" for leg in selected]).items() if count > 1)
-    if len(sports) >= 2 and same_matchup_pairs == 0:
-        correlation_label = 'LOW'
-        correlation_note = 'Cross-sport legs with no same-game stack. This is the cleanest parlay structure.'
-    elif same_matchup_pairs <= 1:
-        correlation_label = 'MEDIUM'
-        correlation_note = 'Mostly diversified, but one matchup has multiple legs.'
-    else:
-        correlation_label = 'HIGH'
-        correlation_note = 'Too much same-game dependence for an Elite-style build.'
+    correlation_label = correlation_iq['label']
+    correlation_note = correlation_iq['note']
 
     save_picks = []
     for leg in selected:
@@ -10967,6 +12576,14 @@ def build_elite_parlay_ev(candidates, target_legs=4):
         'decimal_odds': round(decimal_product, 2) if has_all_prices and decimal_product > 1 else None,
         'correlation_label': correlation_label,
         'correlation_note': correlation_note,
+        'correlation_iq': correlation_iq,
+        'bankroll_iq': calculate_bankroll_iq(
+            true_probability=true_prob if has_all_prices else None,
+            decimal_odds=decimal_product if has_all_prices and decimal_product > 1 else None,
+            bankroll=100.0,
+            max_fraction=0.02 if same_matchup_pairs else 0.03,
+            kelly_fraction=0.25,
+        ),
         'save_payload': {
             'label': f"Elite Cross-Sport EV | {datetime.now().strftime('%Y-%m-%d %I:%M %p')}",
             'mode': 'Elite Cross-Sport EV',
@@ -11445,8 +13062,6 @@ def load_mlb_game_context_lookup():
 def build_mlb_game_environment_lookup():
     odds = load_mlb_game_market_odds()
     if odds is None or odds.empty:
-        odds = load_mlb_odds()
-    if odds is None or odds.empty:
         return {}
     context_lookup = load_mlb_game_context_lookup()
     df = odds.copy()
@@ -11516,6 +13131,153 @@ def build_mlb_game_environment_lookup():
         lookup[game_key] = payload
         lookup[_mlb_prop_game_key(f'{away} @ {home}')] = payload
     return lookup
+
+
+def _clean_context_value(value, default='-'):
+    if value is None:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    text = str(value).strip()
+    if not text or text.lower() == 'nan' or text == '-':
+        return default
+    return text
+
+
+def _format_american(value):
+    num = pd.to_numeric(value, errors='coerce')
+    if pd.isna(num):
+        return '-'
+    num = int(round(float(num)))
+    return f'+{num}' if num > 0 else str(num)
+
+
+def _format_decimal_line(value):
+    num = pd.to_numeric(value, errors='coerce')
+    if pd.isna(num):
+        return '-'
+    return f'{float(num):g}'
+
+
+def build_mlb_matchup_game_detail(matchup_slug, odds_df, schedule_df=None):
+    matchup_slug = str(matchup_slug or '').strip()
+    frames = [df for df in [odds_df, schedule_df] if df is not None and not df.empty]
+    detail = {
+        'books': [],
+        'book_count': 0,
+        'total': '-',
+        'total_range': '-',
+        'run_line': '-',
+        'spread_range': '-',
+        'moneyline': '-',
+        'line_rows': [],
+        'context': {},
+        'weather_note': 'Weather context has not loaded for this game yet.',
+        'umpire_note': 'Home plate umpire assignment is still pending.',
+        'market_note': 'Game-line market is not loaded yet.',
+        'prop_fit_note': 'Props are currently being judged from market, reliability, and player trend context.',
+    }
+    if not frames:
+        return detail
+
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    matches = []
+    for _, row in combined.iterrows():
+        raw_away = _clean_context_value(row.get('AwayFull'), '') or _clean_context_value(row.get('Away'), '')
+        raw_home = _clean_context_value(row.get('HomeFull'), '') or _clean_context_value(row.get('Home'), '')
+        away = MLB_TEAM_ABBR_TO_NAME.get(raw_away, raw_away)
+        home = MLB_TEAM_ABBR_TO_NAME.get(raw_home, raw_home)
+        if away and home and build_matchup_slug(away, home) == matchup_slug:
+            matches.append(row)
+    if not matches:
+        return detail
+
+    game_df = pd.DataFrame(matches)
+    raw_away = _clean_context_value(game_df.iloc[0].get('AwayFull'), '') or _clean_context_value(game_df.iloc[0].get('Away'), '')
+    raw_home = _clean_context_value(game_df.iloc[0].get('HomeFull'), '') or _clean_context_value(game_df.iloc[0].get('Home'), '')
+    away = MLB_TEAM_ABBR_TO_NAME.get(raw_away, raw_away)
+    home = MLB_TEAM_ABBR_TO_NAME.get(raw_home, raw_home)
+    detail['away'] = away
+    detail['home'] = home
+
+    context = load_mlb_game_context_lookup().get(_mlb_prop_game_key(f'{away}@{home}'), {})
+    detail['context'] = context
+
+    totals = pd.to_numeric(game_df.get('Total', pd.Series(dtype=float)), errors='coerce').dropna()
+    spreads = pd.to_numeric(game_df.get('Spread', pd.Series(dtype=float)), errors='coerce').dropna()
+    away_ml = pd.to_numeric(game_df.get('AwayML', pd.Series(dtype=float)), errors='coerce').dropna()
+    home_ml = pd.to_numeric(game_df.get('HomeML', pd.Series(dtype=float)), errors='coerce').dropna()
+    books = sorted({str(book).strip() for book in game_df.get('Book', pd.Series(dtype=str)).dropna().tolist() if str(book).strip()})
+    detail['books'] = books
+    detail['book_count'] = len(books)
+    if not totals.empty:
+        total_avg = round(float(totals.mean()), 1)
+        detail['total'] = f'{total_avg:g}'
+        detail['total_range'] = f'{round(float(totals.max() - totals.min()), 1):g}' if len(totals) > 1 else '0'
+    else:
+        total_avg = None
+    if not spreads.empty:
+        spread_avg = round(float(spreads.mean()), 1)
+        detail['run_line'] = f'{spread_avg:g}'
+        detail['spread_range'] = f'{round(float(spreads.max() - spreads.min()), 1):g}' if len(spreads) > 1 else '0'
+    if not away_ml.empty and not home_ml.empty:
+        detail['moneyline'] = f'{away} {_format_american(away_ml.mean())} / {home} {_format_american(home_ml.mean())}'
+
+    for _, row in game_df.drop_duplicates(subset=[col for col in ['Book', 'Total', 'Spread'] if col in game_df.columns]).head(12).iterrows():
+        detail['line_rows'].append({
+            'book': _clean_context_value(row.get('Book')),
+            'away_ml': _format_american(row.get('AwayML')),
+            'home_ml': _format_american(row.get('HomeML')),
+            'run_line': _format_decimal_line(row.get('Spread')),
+            'run_line_price': _format_american(row.get('SpreadOdds')),
+            'total': _format_decimal_line(row.get('Total')),
+            'over': _format_american(row.get('OverOdds')),
+            'under': _format_american(row.get('UnderOdds')),
+        })
+
+    temp = context.get('temperature')
+    wind = context.get('wind_mph')
+    wind_dir = _clean_context_value(context.get('wind_direction'))
+    ballpark = _clean_context_value(context.get('ballpark'))
+    park_hr = context.get('park_hr_factor')
+    weather_bits = []
+    if temp is not None:
+        weather_bits.append(f'{float(temp):.0f}F')
+    if wind is not None:
+        weather_bits.append(f'{float(wind):.1f} mph wind {wind_dir}')
+    if ballpark != '-':
+        weather_bits.append(ballpark)
+    if park_hr is not None:
+        weather_bits.append(f'HR factor {float(park_hr):.2f}')
+    if weather_bits:
+        detail['weather_note'] = ' | '.join(weather_bits)
+
+    umpire = _clean_context_value(context.get('umpire'))
+    zone = _clean_context_value(context.get('umpire_zone'), '')
+    if umpire != '-':
+        detail['umpire_note'] = f'{umpire}' + (f' | {zone} zone profile' if zone else ' | zone profile pending')
+
+    market_notes = []
+    if total_avg is not None:
+        if total_avg <= 7.5:
+            market_notes.append('Low total supports hitter unders and cleaner pitcher-control reads.')
+        elif total_avg >= 9:
+            market_notes.append('High total supports hitter overs but raises risk on pitcher overs.')
+        else:
+            market_notes.append('Neutral total means player reliability and book disagreement matter more.')
+    total_range = pd.to_numeric(detail.get('total_range'), errors='coerce')
+    if pd.notna(total_range) and float(total_range) >= 0.5:
+        market_notes.append(f'Books differ by {detail["total_range"]} runs on the total, so shop the number.')
+    if wind is not None and float(wind) >= 12:
+        market_notes.append('Wind is meaningful enough to check power and total-base props before acting.')
+    if umpire != '-':
+        market_notes.append('Umpire is confirmed, so pitcher K/walk context can be judged with more confidence.')
+    detail['market_note'] = ' '.join(market_notes) if market_notes else detail['market_note']
+    detail['prop_fit_note'] = detail['market_note']
+    return detail
 
 
 def build_mlb_hitter_power_profiles(gamelogs=None):
@@ -12070,6 +13832,7 @@ def build_elite_dashboard_context(current_user):
     best_books = build_elite_best_book_board(candidates)
     weekly_report = build_elite_weekly_report(review, candidates, parlay_ev)
     mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8)
+    streak_heat = build_streak_heat_chart_service(limit=5)
     weekly = {'tickets': 0, 'staked': 0.0, 'profit': 0.0, 'roi_pct': None}
     cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
     for ticket in user_tickets:
@@ -12095,6 +13858,7 @@ def build_elite_dashboard_context(current_user):
         'alert_history': alert_history,
         'best_books': best_books,
         'mlb_power_suppression': mlb_power_suppression,
+        'streak_heat': streak_heat,
         'weekly_report': weekly_report,
         'weekly': weekly,
     }
@@ -12134,7 +13898,7 @@ def normalize_player_lookup_name(name):
     raw = str(name or '').strip()
     if not raw:
         return ''
-    cleaned = re.sub(r"[.,'`’]", '', raw).strip().lower()
+    cleaned = re.sub(r"[.,'`']", '', raw).strip().lower()
     cleaned = re.sub(r'\s+', ' ', cleaned)
     cleaned = re.sub(r'\b(jr|sr|ii|iii|iv|v)\b$', '', cleaned).strip()
     return cleaned
@@ -12208,6 +13972,33 @@ def apply_current_team_context(props_df, gamelogs, player_snapshot=None, current
         resolved_teams.append(resolved)
     props['Team'] = resolved_teams
     return props
+
+
+def filter_props_to_active_slate(props_df, team_game_lookup):
+    if props_df is None or props_df.empty or not team_game_lookup:
+        return props_df
+
+    filtered_rows = []
+    for _, row in props_df.iterrows():
+        team = normalize_team_for_filter(row.get('Team'))
+        scheduled_game = team_game_lookup.get(team) if team else None
+        if not scheduled_game:
+            filtered_rows.append(row.to_dict())
+            continue
+
+        scheduled_matchup = str(scheduled_game.get('matchup') or '')
+        scheduled_away, scheduled_home = parse_game_matchup_to_abbrs(scheduled_matchup.replace(' @ ', '@'))
+        prop_away, prop_home = parse_game_matchup_to_abbrs(row.get('Game', ''))
+
+        if scheduled_away and scheduled_home and prop_away and prop_home:
+            if {scheduled_away, scheduled_home} != {prop_away, prop_home}:
+                continue
+
+        filtered_rows.append(row.to_dict())
+
+    if not filtered_rows:
+        return pd.DataFrame(columns=props_df.columns)
+    return pd.DataFrame(filtered_rows)
 
 
 def get_player_analysis_logs(player_name, gamelogs, current_team_map=None, sample_mode='full', postseason_logs=None, postseason_only=False):
@@ -12652,6 +14443,28 @@ def football_logo_url(value, sport_key=None):
 
 def sport_logo_url(sport_key):
     key = str(sport_key or '').strip().lower()
+    league_icons = {
+        'nba': '/static/logos/leagues/official/nba.png',
+        'basketball_nba': '/static/logos/leagues/official/nba.png',
+        'wnba': '/static/logos/leagues/official/wnba.png',
+        'basketball_wnba': '/static/logos/leagues/official/wnba.png',
+        'mlb': '/static/logos/leagues/official/mlb.png',
+        'baseball_mlb': '/static/logos/leagues/official/mlb.png',
+        'nfl': '/static/logos/leagues/official/nfl.png',
+        'americanfootball_nfl': '/static/logos/leagues/official/nfl.png',
+        'ncaaf': '/static/logos/leagues/official/ncaaf.png',
+        'cfb': '/static/logos/leagues/official/ncaaf.png',
+        'ncaamb': '/static/logos/leagues/official/ncaamb.png',
+        'ncaawb': '/static/logos/leagues/official/ncaawb.png',
+        'cbb': '/static/logos/leagues/official/ncaamb.png',
+        'review': '/static/logos/leagues/review.svg',
+        'missed': '/static/logos/leagues/review.svg',
+        'game-lines': '/static/logos/leagues/game-lines.svg',
+        'props': '/static/logos/leagues/game-lines.svg',
+        'injuries': '/static/logos/leagues/injuries.svg',
+    }
+    if key in league_icons:
+        return league_icons[key]
     if key == 'nfl':
         candidate = FOOTBALL_LOGO_DIR / 'NFL.png'
         if candidate.exists():
@@ -12842,6 +14655,16 @@ def render_glossary_hint(label, section_id, show_icon=True, variant='default', t
     return Markup(f'<span class="glossary-inline-help">{label_html}{icon_html}</span>')
 
 
+def ou_rate_color(value):
+    try:
+        numeric = float(value)
+    except Exception:
+        return 'var(--text-muted)'
+    if numeric >= 50:
+        return 'var(--accent)'
+    return '#FF6B6B'
+
+
 def _format_game_market_odds(df):
     working = df.copy()
     rename_map = {}
@@ -12988,7 +14811,7 @@ def format_game_market_summary(market, home_team=None):
         bits.append(f"O/U {float(total):g}")
     if home_ml is not None and away_ml is not None and not pd.isna(home_ml) and not pd.isna(away_ml):
         bits.append(f"ML {int(away_ml):+d}/{int(home_ml):+d}")
-    return ' • '.join(bits)
+    return ' | '.join(bits)
 
 
 def build_compact_prop_market_summary(draftkings_line=None, vegas_line=None, line_low=None, line_high=None, best_book='', book_count=0, current_line=None):
@@ -13468,7 +15291,7 @@ def build_team_season_review(team, gamelogs, player_advanced, current_team_map=N
     }
 
 
-def build_formula_backtest(gamelogs, player_snapshot=None):
+def build_formula_backtest(gamelogs, player_snapshot=None, max_slates=None):
     summary = {
         'tested_slates': 0,
         'candidate_props': 0,
@@ -13504,6 +15327,8 @@ def build_formula_backtest(gamelogs, player_snapshot=None):
     }
     team_results = {'baseline': {}, 'snapshot': {}}
     slate_dates = sorted(logs['Date'].dt.normalize().unique())
+    if max_slates:
+        slate_dates = slate_dates[-max(int(max_slates), 1):]
     baseline_slates = []
     snapshot_slates = []
 
@@ -13735,6 +15560,36 @@ def build_formula_backtest(gamelogs, player_snapshot=None):
     summary['team_comparison'] = sorted(team_comparison, key=lambda x: (x['lift'], x['snapshot_hit_rate']), reverse=True)
 
     return summary
+
+
+def build_cached_season_review(max_backtest_slates=3, force_refresh=False):
+    version = _build_file_token(
+        DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
+        DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv',
+        DATA_DIR / 'tracking' / 'NBA_PlayerSnapshot.csv',
+        DATA_DIR / 'tracking' / 'NBA_Playoff_History.csv',
+    ) + (int(max_backtest_slates or 0),)
+
+    def _build():
+        gamelogs = load_gamelogs()
+        player_advanced = load_player_advanced()
+        player_snapshot = load_player_snapshot()
+        review = build_season_review(gamelogs, player_advanced)
+        review['formula_backtest'] = build_formula_backtest(
+            gamelogs,
+            player_snapshot,
+            max_slates=max_backtest_slates,
+        )
+        return review
+
+    if force_refresh:
+        return _build()
+    return _get_disk_ttl_cached_value(
+        'nba_season_review_page_v2',
+        ttl_seconds=12 * 60 * 60,
+        builder=_build,
+        version=version,
+    )
 
 
 def normalize_props_market_data(df):
@@ -14075,7 +15930,7 @@ def load_active_boosts():
     """Load active boost plays"""
     path = DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv'
     if path.exists():
-        return filter_injury_impacts_to_current_teams(pd.read_csv(path))
+        return filter_injury_impacts_to_current_teams(_load_cached_csv(path))
     injuries = load_injuries()
     boosts = load_boosts()
     if injuries.empty or boosts.empty:
@@ -14129,7 +15984,7 @@ def load_return_impacts():
     """Load likely teammate return suppressions from injury report + boost history."""
     path = DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv'
     if path.exists():
-        return pd.read_csv(path)
+        return _load_cached_csv(path)
 
     injuries = load_injuries()
     return_overrides = load_return_overrides()
@@ -14383,6 +16238,58 @@ def load_ncaaf_schedule():
     path = DATA_DIR / 'schedules' / 'NCAAF_Schedule.csv'
     odds_schedule_path = DATA_DIR / 'schedules' / 'NCAAF_Odds.csv'
     odds_primary_path = DATA_DIR / 'odds' / 'NCAAF_Odds.csv'
+
+    schedule_df = _load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
+    odds_df = pd.DataFrame()
+    if odds_schedule_path.exists():
+        odds_df = _load_cached_csv(odds_schedule_path, transform=_format_schedule, default=pd.DataFrame())
+    elif odds_primary_path.exists():
+        odds_df = _load_cached_csv(odds_primary_path, transform=_format_schedule, default=pd.DataFrame())
+
+    if schedule_df.empty:
+        return odds_df
+    if odds_df.empty:
+        return schedule_df
+
+    combined = pd.concat([schedule_df, odds_df], ignore_index=True, sort=False)
+    if {'Date', 'Away', 'Home'}.issubset(combined.columns):
+        combined = combined.drop_duplicates(subset=['Date', 'Away', 'Home'], keep='last')
+    sort_cols = [col for col in ['Date', 'Time', 'Away', 'Home'] if col in combined.columns]
+    if sort_cols:
+        combined = combined.sort_values(sort_cols).reset_index(drop=True)
+    return combined
+
+
+def load_ncaamb_schedule():
+    path = DATA_DIR / 'schedules' / 'NCAAMB_Schedule.csv'
+    odds_schedule_path = DATA_DIR / 'schedules' / 'NCAAMB_Odds.csv'
+    odds_primary_path = DATA_DIR / 'odds' / 'NCAAMB_Odds.csv'
+
+    schedule_df = _load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
+    odds_df = pd.DataFrame()
+    if odds_schedule_path.exists():
+        odds_df = _load_cached_csv(odds_schedule_path, transform=_format_schedule, default=pd.DataFrame())
+    elif odds_primary_path.exists():
+        odds_df = _load_cached_csv(odds_primary_path, transform=_format_schedule, default=pd.DataFrame())
+
+    if schedule_df.empty:
+        return odds_df
+    if odds_df.empty:
+        return schedule_df
+
+    combined = pd.concat([schedule_df, odds_df], ignore_index=True, sort=False)
+    if {'Date', 'Away', 'Home'}.issubset(combined.columns):
+        combined = combined.drop_duplicates(subset=['Date', 'Away', 'Home'], keep='last')
+    sort_cols = [col for col in ['Date', 'Time', 'Away', 'Home'] if col in combined.columns]
+    if sort_cols:
+        combined = combined.sort_values(sort_cols).reset_index(drop=True)
+    return combined
+
+
+def load_ncaawb_schedule():
+    path = DATA_DIR / 'schedules' / 'NCAAWB_Schedule.csv'
+    odds_schedule_path = DATA_DIR / 'schedules' / 'NCAAWB_Odds.csv'
+    odds_primary_path = DATA_DIR / 'odds' / 'NCAAWB_Odds.csv'
 
     schedule_df = _load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
     odds_df = pd.DataFrame()
@@ -14856,24 +16763,6 @@ def build_matchup_lens_board(postseason_matchups, best_by_series, role_changes, 
             'cta': 'Open Matchup',
         })
 
-    for play in best_by_series[:4]:
-        tag_note = str(play.get('support_note') or '').strip()
-        if not tag_note:
-            tag_note = ', '.join(play.get('tags', [])[:2]) if play.get('tags') else 'Series context is supporting this angle.'
-        trend_tags = [str(tag).upper() for tag in (play.get('tags') or [])[:3]]
-        cards.append({
-            'type': 'Series Angle',
-            'tone': 'copper',
-            'title': f"{play['player']} {play['stat']} {play['line']}",
-            'kicker': play.get('series_label') or 'Series read',
-            'summary': f"{play['direction']} {round(play['confidence'])}% | {tag_note}",
-            'context_score': int(round(play.get('confidence', 0))),
-            'score_note': build_lens_explanation(trend_tags or ['SERIES ANGLE']),
-            'context_drivers': trend_tags or ['SERIES ANGLE'],
-            'href': f"/series/{play['series_id']}?postseason=1",
-            'cta': 'Open Series Read',
-        })
-
     for role in role_changes[:4]:
         role_drivers = [
             'INJURY SHIFT',
@@ -15025,6 +16914,28 @@ def get_series_id(team_a, team_b):
     normalized_b = normalize_team_for_filter(team_b)
     series = SERIES_LOOKUP.get(frozenset({normalized_a, normalized_b}))
     return series['id'] if series else None
+
+def resolve_series_config(series_id, schedule=None):
+    series_id = str(series_id or '').strip()
+    if not series_id:
+        return None
+    if series_id in SERIES_CONFIG:
+        return SERIES_CONFIG[series_id]
+
+    if schedule is None:
+        schedule = load_schedule()
+    for active_series in build_active_series(schedule):
+        if str(active_series.get('id') or '').strip() != series_id:
+            continue
+        teams = tuple(active_series.get('teams') or ())
+        if len(teams) != 2:
+            return None
+        return {
+            'teams': teams,
+            'label': active_series.get('label') or 'Postseason Matchup',
+            'type': active_series.get('type') or 'postseason',
+        }
+    return None
 
 def build_active_series(schedule):
     active = []
@@ -15255,6 +17166,15 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
         if cached_age <= 300 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
+    disk_cache_key = f'disk::{cache_key}'
+    disk_hit, disk_snapshots = _read_disk_ttl_cached_value(disk_cache_key, version=cache_version)
+    if disk_hit:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': disk_snapshots,
+            'version': cache_version,
+        }
+        return disk_snapshots
 
     today = datetime.now().date().isoformat()
     sport_configs = [
@@ -15358,6 +17278,10 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
                     'href': matchup_href,
                     'slug': matchup_slug,
                 })
+        if not game_names and not props.empty and 'Game' in props.columns:
+            game_names = props['Game'].dropna().astype(str).str.strip()
+            game_names = [name for name in game_names.unique().tolist() if name]
+
         directional_best = _dashboard_best_props_for_games(props, game_names)
         best_over = directional_best.get('OVER')
         best_under = directional_best.get('UNDER')
@@ -15365,6 +17289,12 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             best_under['matchup'] = best_sport_prop.get('matchup')
         if best_over and not best_over.get('matchup') and best_sport_prop:
             best_over['matchup'] = best_sport_prop.get('matchup')
+        if best_sport_prop is None:
+            best_sport_prop = max(
+                [candidate for candidate in (best_under, best_over) if candidate],
+                key=lambda candidate: float(candidate.get('implied') or 0),
+                default=None,
+            )
 
         snapshots.append({
             **config,
@@ -15395,7 +17325,775 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
         'value': snapshots,
         'version': cache_version,
     }
+    _write_disk_ttl_cached_value(disk_cache_key, 43200, snapshots, version=cache_version)
     return snapshots
+
+
+def build_cross_sport_top_props(sport_snapshots, limit=9):
+    rows = []
+    seen = set()
+    for sport in sport_snapshots or []:
+        for lane, prop in (
+            ('Best Under', sport.get('best_under')),
+            ('Best Over', sport.get('best_over')),
+            ('Best Board Read', sport.get('best_prop')),
+        ):
+            if not prop:
+                continue
+            key = (
+                str(sport.get('key') or '').lower(),
+                str(prop.get('player') or '').lower(),
+                str(prop.get('stat') or '').lower(),
+                str(prop.get('direction') or '').lower(),
+                str(prop.get('line') or ''),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                'sport': sport.get('sport') or '',
+                'sport_key': sport.get('key') or '',
+                'lane': lane,
+                'player': prop.get('player') or 'Player prop',
+                'stat': prop.get('stat') or 'Prop',
+                'direction': prop.get('direction') or '',
+                'line': prop.get('line'),
+                'price': prop.get('price') or '',
+                'implied': prop.get('implied') or 0,
+                'book': prop.get('book') or '',
+                'matchup': prop.get('matchup') or sport.get('preview_matchup') or '',
+                'href': sport.get('href') or '/dashboard',
+            })
+
+    rows.sort(key=lambda row: float(row.get('implied') or 0), reverse=True)
+    return rows[:limit]
+
+
+FREE_SPORT_PREVIEW_CONFIG = {
+    'nba': {
+        'sport': 'NBA',
+        'kicker': 'Free NBA Preview',
+        'title': 'NBA Preview Board',
+        'summary': 'A limited NBA prop-board experience with real rows, one matchup read, and locked deeper filters.',
+        'drivers': ['Minutes', 'Usage', 'Pace', 'Role changes'],
+    },
+    'wnba': {
+        'sport': 'WNBA',
+        'kicker': 'Free WNBA Preview',
+        'title': 'WNBA Preview Board',
+        'summary': 'A limited women’s hoops preview with floor-play style reads, current props, and locked reliability depth.',
+        'drivers': ['Role stability', 'Floor reads', 'Trend profiles', 'Market split'],
+    },
+    'mlb': {
+        'sport': 'MLB',
+        'kicker': 'Free MLB Preview',
+        'title': 'MLB Preview Board',
+        'summary': 'A limited baseball slate preview with hitter/pitcher prop rows, matchup context, and locked slate intelligence.',
+        'drivers': ['Pitcher context', 'Ballpark', 'Lineups', 'Book price'],
+    },
+    'nfl': {
+        'sport': 'NFL',
+        'kicker': 'Free NFL Season Prep',
+        'title': 'NFL Preview Board',
+        'summary': 'A season-prep preview built around game script, usage, historical backfill, and formula education until the slate is live.',
+        'drivers': ['EPA', 'Usage', 'Game script', 'Weather'],
+    },
+    'ncaaf': {
+        'sport': 'CFB',
+        'kicker': 'Free CFB Season Prep',
+        'title': 'CFB Preview Board',
+        'summary': 'A game-lines and totals preview for college football, focused on team stats, tempo, returning strength, and odds history.',
+        'drivers': ['Tempo', 'Efficiency', 'Returning production', 'Line value'],
+    },
+    'ncaamb': {
+        'sport': 'Men CBB',
+        'kicker': 'Free Men CBB Season Prep',
+        'title': 'Men CBB Preview Board',
+        'summary': 'A game-lines and totals preview for men’s college hoops, built around tempo, efficiency, travel, and matchup profile.',
+        'drivers': ['Tempo', 'Efficiency', 'Travel', 'Matchup'],
+    },
+    'ncaawb': {
+        'sport': 'Women CBB',
+        'kicker': 'Free Women CBB Season Prep',
+        'title': 'Women CBB Preview Board',
+        'summary': 'A game-lines and totals preview for women’s college hoops, with team profile and market education until live data arrives.',
+        'drivers': ['Tempo', 'Efficiency', 'Team form', 'Market line'],
+    },
+}
+
+
+FREE_SPORT_LOCKED_FEATURES = {
+    'nba': [
+        {'plan': 'Pro', 'title': 'Full props by game', 'description': 'Every row, filter, sort, player link, and matchup link for tonight instead of the teaser rows.', 'href': '/sports/nba/props'},
+        {'plan': 'Pro', 'title': 'Player + team pages', 'description': 'Stat trajectory, hit rates, role notes, team splits, and position-defense context from each game row.', 'href': '/sports/nba'},
+        {'plan': 'Sharp', 'title': 'Market edge signals', 'description': 'Line movement, book disagreement, best-book context, and price-path notes on key names.', 'href': '/sports/nba/market-edge'},
+        {'plan': 'Sharp', 'title': 'Floor play builder', 'description': 'Lower-volatility parlay legs with floor reads, risk notes, and correlation checks.', 'href': '/parlay?sport=nba&sample=current'},
+        {'plan': 'Elite', 'title': 'Deep matchup builder', 'description': 'Game-by-game matchup construction for usage, position leaks, and high-conviction card building.', 'href': '/elite/matchup-builder'},
+    ],
+    'wnba': [
+        {'plan': 'Pro', 'title': 'Full WNBA board', 'description': 'Every available prop with market-depth labels and current-slate context.', 'href': '/sports/wnba'},
+        {'plan': 'Pro', 'title': 'Reliability depth', 'description': 'Player reliability ratings and sample-size warnings stay visible because thinner markets need more proof.', 'href': '/sports/wnba/trends'},
+        {'plan': 'Sharp', 'title': 'Thin-market flags', 'description': 'Book-count, one-sided market, and stale-price warnings before a row is treated as playable.', 'href': '/sports/wnba/market-edge'},
+        {'plan': 'Sharp', 'title': 'Floor play shortlist', 'description': 'Parlay-friendly floor reads that avoid forcing fragile overs in thin markets.', 'href': '/sports/wnba/floor'},
+        {'plan': 'Elite', 'title': 'Cross-sport ticket context', 'description': 'Use WNBA legs inside broader EV, bankroll, and correlation workflows.', 'href': '/elite'},
+    ],
+    'mlb': [
+        {'plan': 'Pro', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
+        {'plan': 'Pro', 'title': 'Pitcher and batter fits', 'description': 'Pitcher strikeout tendencies, opposing lineup fit, and hitter props that match the environment.', 'href': '/sports/mlb/props'},
+        {'plan': 'Sharp', 'title': 'MLB market edge', 'description': 'Book splits, one-sided markets, and line range warnings for daily baseball pricing.', 'href': '/sports/mlb/market-edge'},
+        {'plan': 'Sharp', 'title': 'Floor and trend filters', 'description': 'Sort baseball props into safer floor plays and trend-backed reads.', 'href': '/sports/mlb/floor'},
+        {'plan': 'Elite', 'title': 'Launch lab', 'description': 'The baseball launch lab ties slate intelligence, confidence governance, and calibration into the daily board.', 'href': '/elite/mlb-lab'},
+    ],
+    'nfl': [
+        {'plan': 'Pro', 'title': 'Weekly game board', 'description': 'Spread, total, implied-team-total, weather, and matchup links for every game.', 'href': '/sports/nfl'},
+        {'plan': 'Pro', 'title': 'Team tendency pages', 'description': 'Weekly prep built around team behavior, scheme, and opponent fit rather than daily props.', 'href': '/sports/nfl/trends'},
+        {'plan': 'Sharp', 'title': 'Spread and total leans', 'description': 'Best game-line reads and totals context before digging into player props.', 'href': '/sports/nfl/game-lines'},
+        {'plan': 'Sharp', 'title': 'Game-script prop angles', 'description': 'Favorite/underdog scripts, target share, rushing volume, and injury role impact by matchup.', 'href': '/sports/nfl/props'},
+        {'plan': 'Elite', 'title': 'Weekly builder cockpit', 'description': 'A deeper game-script builder for weekly prep, tickets, and cross-sport portfolio context.', 'href': '/elite'},
+    ],
+}
+
+
+def get_free_sport_locked_features(sport_key):
+    sport_key = normalize_sport_access_key(sport_key)
+    if sport_key in {'ncaaf', 'ncaamb', 'ncaawb'}:
+        return [
+            {'plan': 'Pro', 'title': 'Full game-line board', 'description': 'Tempo, efficiency, spread, total, and team-profile context once the sport is in season.', 'href': f'/sports/{sport_key}'},
+            {'plan': 'Pro', 'title': 'Team matchup context', 'description': 'College markets need team-strength and matchup reads before any prop-style workflow.', 'href': f'/sports/{sport_key}'},
+            {'plan': 'Sharp', 'title': 'Formula lab access', 'description': 'Calibration notes, line history, and formula maturity as the season data fills in.', 'href': '/calibration-lab'},
+            {'plan': 'Elite', 'title': 'Cross-sport portfolio tools', 'description': 'Use college edges inside EV, bankroll, and correlation workflows with the rest of the slate.', 'href': '/elite'},
+        ]
+    return FREE_SPORT_LOCKED_FEATURES.get(sport_key, FREE_SPORT_LOCKED_FEATURES['nba'])
+
+
+def _props_file_for_free_sport(sport_key):
+    sport_key = normalize_sport_access_key(sport_key)
+    filenames = {
+        'nba': 'NBA_Props.csv',
+        'wnba': 'WNBA_Props.csv',
+        'mlb': 'MLB_Props.csv',
+        'nfl': 'NFL_Props.csv',
+        'ncaaf': 'NCAAF_Props.csv',
+        'ncaamb': 'NCAAMB_Props.csv',
+        'ncaawb': 'NCAAWB_Props.csv',
+    }
+    filename = filenames.get(sport_key)
+    return DATA_DIR / 'props' / filename if filename else None
+
+
+def build_free_sport_prop_rows(sport_key, limit=6):
+    path = _props_file_for_free_sport(sport_key)
+    if not path or not path.exists():
+        return []
+    try:
+        props = _load_cached_csv(path)
+    except Exception:
+        return []
+    if props.empty:
+        return []
+
+    rows = []
+    seen = set()
+    for _, row in props.iterrows():
+        player = str(row.get('Player') or '').strip()
+        stat = str(row.get('Stat') or '').strip()
+        line = row.get('Line')
+        matchup = str(row.get('Game') or '').strip()
+        book = str(row.get('Book') or '').strip()
+        if not player or not stat:
+            continue
+        for direction, odds_field in [('OVER', 'OverOdds'), ('UNDER', 'UnderOdds')]:
+            odds = row.get(odds_field)
+            implied = _american_implied_probability(odds)
+            if implied is None:
+                continue
+            unique_key = (player.lower(), stat.lower(), str(line), direction)
+            if unique_key in seen:
+                continue
+            seen.add(unique_key)
+            rows.append({
+                'sport_key': normalize_sport_access_key(sport_key),
+                'sport': FREE_SPORT_PREVIEW_CONFIG.get(normalize_sport_access_key(sport_key), {}).get('sport', str(sport_key).upper()),
+                'player': player,
+                'stat': stat,
+                'line': line,
+                'direction': direction,
+                'price': _format_american_price(odds),
+                'implied': round(implied * 100, 1),
+                'book': book,
+                'matchup': matchup,
+                'read': (
+                    'Market leans this side hardest in the free sample.'
+                    if implied >= 0.7 else
+                    'Playable preview row; full board unlocks confidence, context, and filters.'
+                ),
+            })
+    rows.sort(key=lambda item: float(item.get('implied') or 0), reverse=True)
+    return rows[:limit]
+
+
+def build_free_sport_preview_context(sport_key, sport_snapshots=None):
+    sport_key = normalize_sport_access_key(sport_key)
+    config = FREE_SPORT_PREVIEW_CONFIG.get(sport_key, FREE_SPORT_PREVIEW_CONFIG['nba'])
+    sport_snapshots = sport_snapshots if sport_snapshots is not None else build_cross_sport_dashboard_snapshots(postseason_only=postseason_only_enabled())
+    snapshot = next((sport for sport in sport_snapshots if str(sport.get('key') or '').lower() == sport_key), {})
+    sample_rows = build_free_sport_prop_rows(sport_key, limit=6)
+    matchups = []
+    for row in sample_rows:
+        matchup = str(row.get('matchup') or '').strip()
+        if matchup and matchup not in matchups:
+            matchups.append(matchup)
+        if len(matchups) >= 3:
+            break
+    status = 'Live sample' if sample_rows else 'Season-prep sample'
+    locked_features = get_free_sport_locked_features(sport_key)
+    return {
+        **config,
+        'key': sport_key,
+        'href': f"/free/{sport_key}",
+        'paid_href': f"/sports/{sport_key}",
+        'sample_rows': sample_rows,
+        'matchups': matchups,
+        'snapshot': snapshot,
+        'status': status,
+        'locked_features': locked_features,
+        'today_games': int(snapshot.get('today_games') or 0),
+        'props_rows': int(snapshot.get('props_rows') or 0),
+        'best_prop': snapshot.get('best_prop') or (sample_rows[0] if sample_rows else None),
+    }
+
+
+def build_free_tier_context(active_sport=''):
+    postseason_only = postseason_only_enabled()
+    sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    sports = [
+        build_free_sport_preview_context(sport_key, sport_snapshots=sport_snapshots)
+        for sport_key in FREE_SPORT_PREVIEW_CONFIG
+    ]
+    active_key = normalize_sport_access_key(active_sport) if active_sport else 'overview'
+    active_preview = next((sport for sport in sports if sport['key'] == active_key), None)
+    return {
+        'postseason_only': postseason_only,
+        'sports': sports,
+        'active_key': active_key,
+        'active_preview': active_preview,
+        'sport_snapshots': sport_snapshots,
+        'cross_sport_top_props': build_cross_sport_top_props(sport_snapshots, limit=8),
+    }
+
+
+GLOBAL_FEATURE_PREVIEWS = {
+    'props': {
+        'nav_key': 'props',
+        'title': 'Cross-Sport Props Preview',
+        'kicker': 'Free Command Preview',
+        'subtitle': 'A taste of the live prop board across every active sport. Paid sport access unlocks the full table, filters, player pages, and matchup context.',
+        'primary_cta': 'Open your sport',
+        'proof_label': 'Best live reads',
+        'steps': [
+            ('Compare sports first', 'See which leagues have the deepest board and strongest current reads.'),
+            ('Open the paid board', 'Drill into the sport you own for full filters, player rows, and matchup detail.'),
+            ('Keep context attached', 'Every prop is meant to carry game, market, and reliability context with it.'),
+        ],
+    },
+    'parlay': {
+        'nav_key': 'parlay_builder',
+        'title': 'Cross-Sport Parlay Preview',
+        'kicker': 'Free Build Preview',
+        'preview_heading': 'Sample Ticket Build',
+        'preview_copy': 'See how selected legs are grouped, checked for overlap, and prepared for full ticket grading.',
+        'subtitle': 'Use the sampler to see which sports have playable legs today. Paid sport access unlocks the full parlay builder and saved ticket workflow.',
+        'primary_cta': 'Open builder',
+        'proof_label': 'Possible legs',
+        'steps': [
+            ('Start with independence', 'Cross-sport legs can lower correlation when the matchups do not share the same game script.'),
+            ('Check reliability', 'Anchor and Watch buckets should drive the first version of any parlay.'),
+            ('Size the ticket', 'BankrollIQ and CorrelationIQ stay in the paid builder for full ticket grading.'),
+        ],
+    },
+    'review': {
+        'nav_key': 'review',
+        'title': 'Review Center',
+        'kicker': 'Proof Loop Preview',
+        'preview_heading': 'From Result To Next Read',
+        'preview_copy': 'See how a finished bet becomes a result, a reason, a lesson, and a smarter board for the next slate.',
+        'subtitle': 'The Review Center is where Bankroll Kings proves whether the process worked. It shows what won, what lost, why it happened, what the model learned, and how that should affect the next betting decision.',
+        'primary_cta': 'Open review',
+        'proof_label': 'Learning signals',
+        'steps': [
+            ('Score the result', 'Every finished prop or ticket should become win, loss, push, pending, or missed opportunity.'),
+            ('Explain the why', 'Review connects CLV, role, injury, matchup, market, and trend context to the outcome.'),
+            ('Adjust tomorrow', 'The lesson becomes promote, reduce, avoid, recalibrate, or bankroll-note context.'),
+        ],
+    },
+    'market': {
+        'nav_key': 'market',
+        'title': 'Market Watch Preview',
+        'kicker': 'Line Intelligence Preview',
+        'preview_heading': 'Sample Market Read',
+        'preview_copy': 'See how book price, line movement, and market disagreement change whether a number is still worth touching.',
+        'subtitle': 'A cross-sport look at book disagreement, best available numbers, and where market movement supports or fights the model.',
+        'primary_cta': 'Open market',
+        'proof_label': 'Market reads',
+        'steps': [
+            ('Shop the number', 'Best-book differences can decide whether a prop still has value.'),
+            ('Watch movement', 'A good prop at one number can become a pass after the market moves.'),
+            ('Respect conflict', 'When market and model disagree, the platform should explain the hold.'),
+        ],
+    },
+    'trends': {
+        'nav_key': 'trends',
+        'title': 'Streak Patterns Preview',
+        'kicker': 'Momentum Preview',
+        'preview_heading': 'Sample Streak Pattern Read',
+        'preview_copy': 'See how recent form is weighed against sample size, role, matchup, and today-slate availability.',
+        'subtitle': 'Spot current form, player heat, bucket streaks, and matchup trend context across live sports before opening a specific league.',
+        'primary_cta': 'Open streak patterns',
+        'proof_label': 'Streak reads',
+        'steps': [
+            ('Use recent form carefully', 'Hot hands are only useful when the player actually plays today.'),
+            ('Separate luck from signal', 'Trend reads need sample size and reliability context.'),
+            ('Feed the workflow', 'A trend should point you to a board, not replace the board.'),
+        ],
+    },
+    'hot-streaks': {
+        'nav_key': 'hot_streaks',
+        'title': 'Active Streaks Preview',
+        'kicker': 'Momentum Preview',
+        'preview_heading': 'Sample Streak Check',
+        'preview_copy': 'See how current streaks are filtered into today-only momentum instead of stale historical noise.',
+        'subtitle': 'A live-slate view of players and buckets currently running hot, filtered so stale offseason streaks do not pollute today\'s board.',
+        'primary_cta': 'Open heat chart',
+        'proof_label': 'Current heat reads',
+        'steps': [
+            ('Only today matters', 'Hot hands should come from players with a game on the current slate.'),
+            ('Streak plus sample', 'A run means more when the bucket has enough resolved history behind it.'),
+            ('Use as a feeder', 'Heat should point you toward a prop board or parlay build, not replace the full read.'),
+        ],
+    },
+    'injuries': {
+        'nav_key': 'injuries',
+        'title': 'Injury Watch Preview',
+        'kicker': 'Availability Preview',
+        'preview_heading': 'Sample Injury Impact',
+        'preview_copy': 'See how availability news turns into usage, minutes, target, matchup, and prop-board context.',
+        'subtitle': 'A cross-sport taste of role, minutes, lineup, and availability checks that explain why a prop changes before the line fully catches up.',
+        'primary_cta': 'Open injury watch',
+        'proof_label': 'Availability reads',
+        'steps': [
+            ('Start with status', 'Out, questionable, minutes limits, and lineup changes should change the read immediately.'),
+            ('Translate to role', 'The value is not the injury itself. It is who gains usage, minutes, shots, targets, or plate appearances.'),
+            ('Connect to props', 'Every injury note should either support, warn, or neutralize the prop board.'),
+        ],
+    },
+    'officiating': {
+        'nav_key': 'officiating',
+        'title': 'Officiating Edge Preview',
+        'kicker': 'Whistle And Zone Preview',
+        'preview_heading': 'Sample Officiating Read',
+        'preview_copy': 'See how confirmed officials, umpire zones, crew tendencies, and game-flow pressure can support or weaken a bet.',
+        'subtitle': 'A free look at how umpire zones, crews, foul environments, pace, and assignment status become a betting context layer before a prop or total graduates.',
+        'primary_cta': 'Open officiating',
+        'proof_label': 'Officiating reads',
+        'steps': [
+            ('Confirm the assignment', 'The first question is whether the umpire or crew is actually known for today\'s game.'),
+            ('Translate tendency', 'Wide zones, tight zones, foul rates, pace, and crew style can move the read before the market fully prices it.'),
+            ('Attach to the board', 'Officiating should show up as support, caution, or pass context on props, totals, and derivative builds.'),
+        ],
+    },
+    'systems': {
+        'nav_key': 'systems',
+        'title': 'Systems Lab Preview',
+        'kicker': 'Quant Framework Preview',
+        'preview_heading': 'Sample System Layer',
+        'preview_copy': 'See how EV, calibration, simulation, market timing, and correlation thinking fit into the decision engine.',
+        'subtitle': 'How EV, Kelly, market timing, Bayesian updates, simulations, and correlation thinking map into the Bankroll Kings engine.',
+        'primary_cta': 'Open systems',
+        'proof_label': 'Engine layers',
+        'steps': [
+            ('No single formula wins', 'The edge comes from combining weighted signals better than the public.'),
+            ('Simulate outcomes', 'Probability distributions matter more than one exact prediction.'),
+            ('Calibrate by sport', 'NFL, NBA, WNBA, MLB, CFB, and CBB need their own drivers.'),
+        ],
+    },
+    'calibration': {
+        'nav_key': 'calibration_lab',
+        'title': 'Calibration Lab Preview',
+        'kicker': 'Model Discipline Preview',
+        'subtitle': 'The calibration layer checks whether confidence bands, sport formulas, and simulation probabilities match real outcomes.',
+        'primary_cta': 'Open calibration',
+        'proof_label': 'Calibration reads',
+        'steps': [
+            ('Backfill first', 'Historical seasons train discipline before the next season starts.'),
+            ('Use prior-only windows', 'Live authority should only use data the model could have known before game time.'),
+            ('Track drift', 'When a bucket stops working, the platform should catch it.'),
+        ],
+    },
+    'missed': {
+        'nav_key': 'missed',
+        'title': 'Missed Winners Preview',
+        'kicker': 'Proof Engine Preview',
+        'subtitle': 'Missed winners show props the formula liked that hit anyway, giving you proof material and promotion candidates for the next slate.',
+        'primary_cta': 'Open missed opps',
+        'proof_label': 'Missed value',
+        'steps': [
+            ('Find what hit quietly', 'Unfeatured hits show where the formula had signal beyond the main board.'),
+            ('Grade the miss', 'A+ missed winners should trigger promotion review.'),
+            ('Close the loop', 'Recurring missed buckets become future board boosts.'),
+        ],
+    },
+    'elite': {
+        'nav_key': 'elite',
+        'title': 'Elite Upgrade Preview',
+        'kicker': 'Beyond Pro',
+        'preview_heading': 'Sample Elite Cockpit',
+        'preview_copy': 'Pro gives you the live boards and core tools. Elite adds the cutting-edge layer: timing alerts, deeper ticket intelligence, bankroll tracking, saved-performance review, and operator-level signals.',
+        'subtitle': 'Pro includes the core boards, props, market reads, parlay builder, review center, trends, injuries, officiating previews, and sport command surfaces. Elite is for users who want more advanced data and decision support: cross-sport EV, CorrelationIQ, BankrollIQ, saved tickets, bankroll counter intelligence, matchup builders, line-move alerts, leak finding, and weekly performance review.',
+        'primary_cta': 'Open elite',
+        'proof_label': 'Elite signals',
+        'steps': [
+            ('Pro gives the board', 'Use Pro for the sport boards, props, markets, parlays, review, injuries, trends, and officiating context.'),
+            ('Elite adds the edge layer', 'Elite adds line-move alerts, deeper market timing, cross-sport EV, ticket correlation, and bankroll risk reads.'),
+            ('Elite closes the loop', 'Saved tickets, bankroll counter movement, leak finding, personal performance review, and weekly reports turn results into the next adjustment.'),
+        ],
+    },
+}
+
+
+def get_global_feature_preview(feature_key):
+    key = str(feature_key or '').strip().lower().replace('_', '-')
+    aliases = {
+        'parlay-builder': 'parlay',
+        'review-center': 'review',
+        'calibration-lab': 'calibration',
+        'missed-opps': 'missed',
+        'missed-opportunities': 'missed',
+        'systems-lab': 'systems',
+        'heat-map': 'hot-streaks',
+        'heatmap': 'hot-streaks',
+        'hot-streaks': 'hot-streaks',
+        'hot-hands': 'hot-streaks',
+        'injury-watch': 'injuries',
+        'officials': 'officiating',
+        'officiating-edge': 'officiating',
+        'referees': 'officiating',
+        'umpires': 'officiating',
+    }
+    key = aliases.get(key, key)
+    return key, GLOBAL_FEATURE_PREVIEWS.get(key, GLOBAL_FEATURE_PREVIEWS['props'])
+
+
+def _frontpage_game_key(value):
+    return re.sub(r'\s+', '', str(value or '').replace(' vs. ', '@').replace(' vs ', '@').casefold())
+
+
+def build_today_playable_hot_hands(sport_snapshots, limit=3):
+    active_sports = [
+        str(sport.get('key') or '').strip().lower()
+        for sport in (sport_snapshots or [])
+        if sport.get('is_live') and int(sport.get('today_games') or 0) > 0
+    ]
+    if not active_sports:
+        return []
+
+    today = datetime.now().date().isoformat()
+    configs = {
+        'nba': {
+            'sport': 'NBA',
+            'schedule': DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'NBA_Props.csv',
+        },
+        'wnba': {
+            'sport': 'WNBA',
+            'schedule': DATA_DIR / 'schedules' / 'WNBA_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'WNBA_Props.csv',
+        },
+        'mlb': {
+            'sport': 'MLB',
+            'schedule': DATA_DIR / 'schedules' / 'MLB_Schedule.csv',
+            'props': DATA_DIR / 'props' / 'MLB_Props.csv',
+        },
+    }
+
+    playable_players = set()
+    for key in active_sports:
+        config = configs.get(key)
+        if not config:
+            continue
+        schedule = _load_cached_csv(config['schedule'])
+        props = _load_cached_csv(config['props'])
+        if schedule.empty or props.empty or 'Player' not in props.columns:
+            continue
+        today_games = schedule[schedule.get('Date', pd.Series(dtype=str)).astype(str).str[:10] == today].copy()
+        if today_games.empty:
+            continue
+        game_keys = set()
+        for _, game in today_games.iterrows():
+            away_values = [game.get('AwayFull'), game.get('Away')]
+            home_values = [game.get('HomeFull'), game.get('Home')]
+            for away in away_values:
+                for home in home_values:
+                    if str(away or '').strip() and str(home or '').strip():
+                        game_keys.add(_frontpage_game_key(f'{away}@{home}'))
+                        game_keys.add(_frontpage_game_key(f'{away} @ {home}'))
+        if 'Game' in props.columns and game_keys:
+            working = props[props['Game'].astype(str).map(_frontpage_game_key).isin(game_keys)].copy()
+        else:
+            working = props.copy()
+        for player in working['Player'].dropna().astype(str).str.strip():
+            if player:
+                playable_players.add((config['sport'], player.lower()))
+
+    if not playable_players:
+        return []
+
+    heat_rows = build_streak_heat_chart_service(limit=500)
+    active_sport_labels = {
+        str(configs.get(key, {}).get('sport') or key).upper()
+        for key in active_sports
+        if key in configs
+    }
+    by_sport = {sport: [] for sport in active_sport_labels}
+    fallback_by_sport = {sport: [] for sport in active_sport_labels}
+    for row in heat_rows:
+        sport = str(row.get('sport') or '').strip().upper()
+        player = str(row.get('player') or '').strip()
+        if sport in fallback_by_sport and len(fallback_by_sport[sport]) < 3:
+            fallback_by_sport[sport].append(row)
+        if (sport, player.lower()) in playable_players:
+            by_sport.setdefault(sport, []).append(row)
+
+    for sport, fallback_rows in fallback_by_sport.items():
+        if not by_sport.get(sport):
+            by_sport[sport] = fallback_rows[:1]
+
+    ordered_sports = [
+        str(configs.get(key, {}).get('sport') or key).upper()
+        for key in active_sports
+        if str(configs.get(key, {}).get('sport') or key).upper() in by_sport
+    ]
+    filtered = []
+    seen = set()
+    while len(filtered) < int(limit or 3):
+        added = False
+        for sport in ordered_sports:
+            rows = by_sport.get(sport) or []
+            if not rows:
+                continue
+            row = rows.pop(0)
+            key = (row.get('sport'), row.get('player'), row.get('stat'), row.get('direction'))
+            if key in seen:
+                continue
+            filtered.append(row)
+            seen.add(key)
+            added = True
+            if len(filtered) >= int(limit or 3):
+                break
+        if not added:
+            break
+    return filtered
+
+
+def _build_clv_command_summary():
+    try:
+        results = load_all_prop_results_for_review_service()
+    except Exception:
+        results = pd.DataFrame()
+    summary = {
+        'count': 0,
+        'avg_line': None,
+        'positive_rate': None,
+        'label': 'Waiting',
+        'detail': 'CLV rows will appear as closing numbers settle.',
+    }
+    if results is None or results.empty or 'ClvLine' not in results.columns:
+        return summary
+
+    clv_values = pd.to_numeric(results.get('ClvLine'), errors='coerce').dropna()
+    if clv_values.empty:
+        return summary
+
+    count = int(len(clv_values))
+    avg_line = round(float(clv_values.mean()), 2)
+    positive_rate = round(float((clv_values > 0).mean()) * 100, 1)
+    if positive_rate >= 58:
+        label = 'Beating close'
+    elif positive_rate >= 48:
+        label = 'Tracking'
+    else:
+        label = 'Needs work'
+    return {
+        'count': count,
+        'avg_line': avg_line,
+        'positive_rate': positive_rate,
+        'label': label,
+        'detail': f'{positive_rate}% positive CLV across {count} graded rows.',
+    }
+
+
+def _build_dashboard_promotion_signals(limit=5):
+    try:
+        context = _build_live_promotion_signal_context()
+        profiles = list((context.get('profiles') or {}).values())
+        bucket_frequency = context.get('bucket_frequency') or {}
+    except Exception:
+        return []
+
+    signal_order = {'PROMOTE HARD': 0, 'PROMOTE': 1, 'SURFACE': 2, 'HOLD': 3}
+    rows = []
+    for profile in profiles:
+        try:
+            signal = calculate_promotion_signal_service(profile, bucket_frequency)
+        except Exception:
+            continue
+        name = str(signal.get('signal') or 'STANDARD').strip().upper()
+        if name == 'STANDARD':
+            continue
+        rows.append({
+            'player': str(profile.get('player') or '').strip(),
+            'sport': str(profile.get('sport') or '').strip().upper(),
+            'stat': str(profile.get('stat') or '').strip().upper(),
+            'direction': str(profile.get('direction') or '').strip().upper(),
+            'signal': signal.get('signal'),
+            'reason': signal.get('reason'),
+            'action': signal.get('action'),
+            'missed_count': int(signal.get('missed_count', 0) or 0),
+            'a_plus': int(signal.get('bucket_a_plus', 0) or 0),
+            'hit_rate': profile.get('hit_rate'),
+            'resolved': profile.get('resolved'),
+            'reliability': str(profile.get('reliability') or '').strip().upper(),
+        })
+
+    rows.sort(
+        key=lambda row: (
+            signal_order.get(str(row.get('signal') or '').upper(), 99),
+            -int(row.get('missed_count') or 0),
+            -float(row.get('hit_rate') or 0),
+            -int(row.get('resolved') or 0),
+        )
+    )
+    return rows[:int(limit or 5)]
+
+
+def _build_dashboard_ev_preview_candidates(limit=24):
+    floor_path = DATA_DIR / 'tracking' / 'Floor_Play_Index.csv'
+    if not floor_path.exists():
+        return []
+    try:
+        floor = _load_cached_csv(floor_path, default=pd.DataFrame())
+    except Exception:
+        floor = pd.DataFrame()
+    if floor is None or floor.empty:
+        return []
+
+    working = floor.copy()
+    for col in ['Sport', 'OutcomeState', 'FloorReliability', 'Player', 'Stat', 'Direction', 'Matchup', 'Book', 'Method']:
+        if col in working.columns:
+            working[col] = working[col].fillna('').astype(str).str.strip()
+    if 'OutcomeState' in working.columns:
+        working = working[working['OutcomeState'].eq('Pending')].copy()
+    if 'Sport' in working.columns:
+        working = working[working['Sport'].isin(['WNBA', 'MLB', 'NBA'])].copy()
+    if 'FloorReliability' in working.columns:
+        working = working[working['FloorReliability'].isin(['ANCHOR', 'WATCH', 'DEVELOPING', 'SMALL SAMPLE'])].copy()
+    if working.empty:
+        return []
+    if 'Confidence' in working.columns:
+        working['Confidence'] = pd.to_numeric(working['Confidence'], errors='coerce')
+        working = working.sort_values('Confidence', ascending=False)
+
+    candidates = []
+    seen = set()
+    for _, row in working.head(120).iterrows():
+        payload = {
+            'player': row.get('Player'),
+            'team': row.get('Team'),
+            'stat': row.get('Stat'),
+            'direction': row.get('Direction'),
+            'line': row.get('Line'),
+            'matchup': row.get('Matchup'),
+            'book': row.get('Book'),
+            'market_price': row.get('MarketPrice'),
+            'market_prob': row.get('Confidence'),
+            'historical_reliability': row.get('FloorReliability') or 'DEVELOPING',
+            'method': row.get('Method'),
+        }
+        sport = str(row.get('Sport') or '').strip().upper()
+        candidate = _elite_candidate_from_prop(payload, sport)
+        key = (candidate['sport'], candidate['player'].upper(), candidate['stat'].upper(), candidate['direction'], str(candidate['line']))
+        if candidate['player'] and candidate['stat'] and candidate['direction'] and key not in seen:
+            candidates.append(candidate)
+            seen.add(key)
+        if len(candidates) >= int(limit or 24):
+            break
+
+    candidates.sort(key=lambda item: (item.get('reliability') == 'ANCHOR', item.get('score') or 0), reverse=True)
+    return candidates[:int(limit or 24)]
+
+
+def build_phase2_dashboard_context():
+    cache_version = _build_file_token(
+        DATA_DIR / 'tracking' / 'NBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'WNBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'Floor_Play_Index.csv',
+        DATA_DIR / 'tracking' / 'NBA_99_Scorecard.csv',
+        DATA_DIR / 'tracking' / 'WNBA_99_Scorecard.csv',
+        DATA_DIR / 'tracking' / 'MLB_99_Scorecard.csv',
+        DATA_DIR / 'tracking' / 'NFL_99_Scorecard.csv',
+    )
+
+    def _build():
+        try:
+            missed = build_missed_opportunities_context_service(limit=8)
+        except Exception:
+            missed = {
+                'summary': {'total': 0, 'a_plus': 0, 'a_or_better': 0, 'avg_grade': None},
+                'rows': [],
+                'charts': {'by_sport': [], 'by_stat': [], 'by_grade': [], 'by_day': []},
+            }
+        try:
+            streak_heat = build_streak_heat_chart_service(limit=5)
+        except Exception:
+            streak_heat = []
+        try:
+            candidates = _build_dashboard_ev_preview_candidates(limit=48)
+            parlay_ev = build_elite_parlay_ev(candidates, target_legs=4)
+        except Exception:
+            candidates = []
+            parlay_ev = build_elite_parlay_ev([], target_legs=4)
+        try:
+            ops = build_ops_status_strip()
+        except Exception:
+            ops = {'overall_label': 'Ops Unknown', 'sport_scorecards': [], 'items': []}
+
+        promotion_signals = _build_dashboard_promotion_signals(limit=5)
+        clv = _build_clv_command_summary()
+        scorecards = list(ops.get('sport_scorecards') or [])
+        ready_scorecards = sum(1 for row in scorecards if str(row.get('status') or '') == 'good')
+        scorecard_watch = sum(1 for row in scorecards if str(row.get('status') or '') in {'watch', 'stale', 'missing'})
+
+        return {
+            'clv': clv,
+            'missed': missed,
+            'missed_top': (missed.get('rows') or [])[:4],
+            'promotion_signals': promotion_signals,
+            'streak_heat': streak_heat,
+            'parlay_ev': parlay_ev,
+            'parlay_candidates': candidates[:8],
+            'ops': ops,
+            'scorecards': scorecards,
+            'ready_scorecards': ready_scorecards,
+            'scorecard_watch': scorecard_watch,
+        }
+
+    return _get_disk_ttl_cached_value(
+        'phase2_dashboard_context',
+        300,
+        _build,
+        version=cache_version,
+    )
 
 
 def get_active_sport_for_path(path):
@@ -15417,138 +18115,6 @@ def get_active_sport_for_path(path):
     if any(clean_path.startswith(prefix) for prefix in nba_paths):
         return 'nba'
     return 'dashboard'
-
-
-def build_command_center_for_sport(active_sport, postseason_only=False, current_path=''):
-    postseason_flag = 1 if postseason_only else 0
-    current_path = str(current_path or '').strip()
-
-    def item(label, href, tone='', exact=False, prefixes=None):
-        prefixes = prefixes or []
-        is_active = current_path == href if exact else any(
-            current_path == prefix or current_path.startswith(prefix)
-            for prefix in ([href] + prefixes)
-        )
-        return {
-            'label': label,
-            'href': f"{href}?postseason={postseason_flag}" if '?' not in href else href,
-            'tone': tone,
-            'active': bool(is_active),
-        }
-
-    global_links = [
-        item('Home', '/', exact=True),
-        item('Today', '/dashboard', tone='accent', exact=True),
-        item('Review Lab', '/candidate-review', tone='copper', exact=True),
-    ]
-
-    sport = str(active_sport or '').strip().lower()
-    if sport == 'wnba':
-        return {
-            'label': 'WNBA Command Center',
-            'groups': [
-                [
-                    item('WNBA Home', '/sports/wnba', tone='accent', exact=True),
-                    item('Market Edge', '/sports/wnba/market-edge', tone='blue', exact=True),
-                    item('Floor', '/sports/wnba/floor', tone='copper', exact=True),
-                    item('Trends', '/sports/wnba/trends', exact=True),
-                ],
-            ],
-        }
-    if sport == 'nfl':
-        return {
-            'label': 'NFL Command Center',
-            'groups': [
-                [
-                    item('NFL Home', '/sports/nfl', tone='accent', exact=True),
-                    item('Game Lines', '/sports/nfl/game-lines', tone='blue', exact=True),
-                    item('Totals', '/sports/nfl/totals', tone='copper', exact=True),
-                    item('Trends', '/sports/nfl/trends', exact=True),
-                    item('Props', '/sports/nfl/props', tone='accent', exact=True),
-                ],
-            ],
-        }
-    if sport == 'ncaaf':
-        return {
-            'label': 'CFB Command Center',
-            'groups': [
-                [
-                    item('CFB Home', '/sports/ncaaf', tone='accent', exact=True),
-                    item('Game Lines', '/sports/ncaaf/game-lines', tone='blue', exact=True),
-                    item('Totals', '/sports/ncaaf/totals', tone='copper', exact=True),
-                    item('Trends', '/sports/ncaaf/trends', exact=True),
-                    item('Props', '/sports/ncaaf/props', tone='accent', exact=True),
-                ],
-            ],
-        }
-    if sport == 'mlb':
-        return {
-            'label': 'MLB Command Center',
-            'groups': [
-                [
-                    item('MLB Home', '/sports/mlb', tone='accent', exact=True),
-                    item('Market Edge', '/sports/mlb/market-edge', tone='blue', exact=True),
-                    item('Floor', '/sports/mlb/floor', tone='copper', exact=True),
-                    item('Trends', '/sports/mlb/trends', exact=True),
-                ],
-            ],
-        }
-    if sport == 'nba':
-        return {
-            'label': 'NBA Command Center',
-            'groups': [
-                [
-                    item('NBA Home', '/sports/nba', tone='accent', exact=True),
-                    item('Matchup Lens', '/matchup-lens', tone='blue', exact=True),
-                    item('Props', '/props', tone='accent', prefixes=['/props/']),
-                    item('Market Edge', '/market-edge', tone='blue', prefixes=['/smart-picks']),
-                    item('Parlay', '/parlay', tone='copper', exact=True),
-                    item('Bet Review', '/bet-review', exact=True),
-                ],
-            ],
-        }
-
-    return {
-        'label': 'Command Center',
-        'groups': [
-            [
-                item('Home', '/', exact=True),
-                item('Today', '/dashboard', tone='accent', exact=True),
-                item('Matchup Lens', '/matchup-lens', tone='blue', exact=True),
-                item('Review Lab', '/candidate-review', tone='copper', exact=True),
-            ],
-        ],
-    }
-
-
-def build_global_command_center(postseason_only=False, current_path=''):
-    postseason_flag = 1 if postseason_only else 0
-    current_path = str(current_path or '').strip()
-
-    def item(label, href, tone='', prefixes=None):
-        prefixes = prefixes or []
-        candidates = [href] + prefixes
-        is_active = any(current_path == prefix or current_path.startswith(prefix) for prefix in candidates)
-        return {
-            'label': label,
-            'href': f"{href}?postseason={postseason_flag}" if '?' not in href else href,
-            'tone': tone,
-            'active': bool(is_active),
-        }
-
-    return {
-        'label': 'Command Center',
-        'groups': [[
-            item('Today', '/tools/today', tone='accent'),
-            item('Matchup Lens', '/tools/matchup-lens', tone='blue'),
-            item('Props', '/tools/props'),
-            item('Market Edge', '/tools/market-edge'),
-            item('Injuries', '/tools/injuries', tone='copper'),
-            item('Trends', '/tools/trends', tone='blue'),
-            item('Parlay', '/tools/parlay'),
-            item('Bet Review', '/bet-review'),
-        ]],
-    }
 
 
 def _normalize_hub_sport_key(value):
@@ -15589,10 +18155,10 @@ def build_method_hub_context(method_key, postseason_only=False, selected_sport='
         })
 
     requested_key = _normalize_hub_sport_key(selected_sport)
-    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None)
-    if not active_card:
+    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None) if requested_key else None
+    if requested_key and not active_card:
         active_card = next((card for card in cards if str(card.get('status') or '').lower() == 'live'), None)
-    if not active_card and cards:
+    if requested_key and not active_card and cards:
         active_card = cards[0]
 
     return {
@@ -15602,7 +18168,7 @@ def build_method_hub_context(method_key, postseason_only=False, selected_sport='
         'summary': config.get('summary', ''),
         'cards': cards,
         'active_card': active_card,
-        'active_sport': (active_card or {}).get('sport_key', ''),
+        'active_sport': (active_card or {}).get('sport_key', '') if requested_key else '',
     }
 
 
@@ -15632,6 +18198,8 @@ def build_today_hub_context(postseason_only=False, selected_sport=''):
         ('mlb', 'MLB', '/sports/mlb', load_mlb_schedule, False),
         ('nfl', 'NFL', '/sports/nfl', load_nfl_schedule, False),
         ('cfb', 'CFB', '/sports/ncaaf', load_ncaaf_schedule, False),
+        ('ncaamb', 'Men CBB', '/sports/ncaamb', load_ncaamb_schedule, False),
+        ('ncaawb', 'Women CBB', '/sports/ncaawb', load_ncaawb_schedule, False),
     ]
     for sport_key, sport, href, loader, use_filter in sport_specs:
         try:
@@ -15654,10 +18222,10 @@ def build_today_hub_context(postseason_only=False, selected_sport=''):
             'tab_href': f"/tools/today?sport={sport_key}&postseason={postseason_flag}",
         })
     requested_key = _normalize_hub_sport_key(selected_sport)
-    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None)
-    if not active_card:
+    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None) if requested_key else None
+    if requested_key and not active_card:
         active_card = max(cards, key=lambda card: int(card.get('game_count') or 0), default=None)
-    if not active_card and cards:
+    if requested_key and not active_card and cards:
         active_card = cards[0]
     return {
         'method_key': 'today',
@@ -15666,42 +18234,27 @@ def build_today_hub_context(postseason_only=False, selected_sport=''):
         'summary': 'Use this page as the universal daily slate selector. Each card shows what is actually on today across the sports we support.',
         'cards': cards,
         'active_card': active_card,
-        'active_sport': (active_card or {}).get('sport_key', ''),
+        'active_sport': (active_card or {}).get('sport_key', '') if requested_key else '',
     }
+
 
 
 def build_matchup_lens_hub_context(postseason_only=False, selected_sport=''):
     postseason_flag = 1 if postseason_only else 0
     cards = [
         {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Matchup Lens', 'href': f'/sports/nba/matchup-lens?postseason={postseason_flag}', 'status': 'live', 'note': 'Dedicated NBA matchup lens with playoff context, series state, and prop fit.'},
-        {'sport': 'WNBA', 'label': 'WNBA Matchup Lens', 'href': f'/sports/wnba?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the WNBA board and matchup cards as the current women’s-hoops matchup layer.'},
-        {'sport': 'MLB', 'label': 'MLB Matchup Lens', 'href': f'/sports/mlb?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the MLB board as the current baseball matchup environment read.'},
-        {'sport': 'NFL', 'label': 'NFL Matchup Lens', 'href': f'/sports/nfl?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the NFL board and matchup routes for weekly football matchup context.'},
-        {'sport': 'CFB', 'label': 'CFB Matchup Lens', 'href': f'/sports/ncaaf?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the CFB board and matchup routes for college-football matchup context.'},
-    ]
-    return {
-        'method_key': 'matchup-lens',
-        'title': 'Matchup Lens',
-        'headline': 'Choose a sport for matchup context',
-        'summary': 'Matchup Lens is now a universal entry point. Pick the sport first, then step into that sport’s matchup workflow instead of defaulting to NBA.',
-        'cards': cards,
-    }
-
-
-def build_matchup_lens_hub_context(postseason_only=False, selected_sport=''):
-    postseason_flag = 1 if postseason_only else 0
-    cards = [
-        {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Matchup Lens', 'href': f'/sports/nba/matchup-lens?postseason={postseason_flag}', 'status': 'live', 'note': 'Dedicated NBA matchup lens with playoff context, series state, and prop fit.'},
-        {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Matchup Lens', 'href': f'/sports/wnba?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the WNBA board and matchup cards as the current women’s-hoops matchup layer.'},
+        {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Matchup Lens', 'href': f'/sports/wnba?postseason={postseason_flag}', 'status': 'live', 'note': "Use the WNBA board and matchup cards as the current women's-hoops matchup layer."},
         {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Matchup Lens', 'href': f'/sports/mlb?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the MLB board as the current baseball matchup environment read.'},
         {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Matchup Lens', 'href': f'/sports/nfl?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the NFL board and matchup routes for weekly football matchup context.'},
         {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Matchup Lens', 'href': f'/sports/ncaaf?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the CFB board and matchup routes for college-football matchup context.'},
+        {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Matchup Lens', 'href': f'/sports/ncaamb?postseason={postseason_flag}', 'status': 'watch', 'note': 'Men college hoops currently routes through the expansion board while matchup-specific workflow catches up.'},
+        {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Matchup Lens', 'href': f'/sports/ncaawb?postseason={postseason_flag}', 'status': 'watch', 'note': 'Women college hoops currently routes through the expansion board while matchup-specific workflow catches up.'},
     ]
     for card in cards:
         card['tab_href'] = f"/tools/matchup-lens?sport={card['sport_key']}&postseason={postseason_flag}"
     requested_key = _normalize_hub_sport_key(selected_sport)
-    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None)
-    if not active_card and cards:
+    active_card = next((card for card in cards if card.get('sport_key') == requested_key), None) if requested_key else None
+    if requested_key and not active_card and cards:
         active_card = cards[0]
     return {
         'method_key': 'matchup-lens',
@@ -15710,7 +18263,7 @@ def build_matchup_lens_hub_context(postseason_only=False, selected_sport=''):
         'summary': 'Matchup Lens is now a universal entry point. Pick the sport first, then step into that sport workflow instead of defaulting to NBA.',
         'cards': cards,
         'active_card': active_card,
-        'active_sport': (active_card or {}).get('sport_key', ''),
+        'active_sport': (active_card or {}).get('sport_key', '') if requested_key else '',
     }
 
 
@@ -15754,15 +18307,15 @@ def explain_dashboard_label(label):
     if 'ROLE SHIFT' in upper_text:
         return 'Role shift means injuries or rotation changes are changing who should handle more minutes or usage.'
     if 'RUN TAKEOVER' in upper_text:
-        return 'Run takeover means this angle is leaning heavily on the player’s recent stretch of results, so you should make sure the role is still the same.'
+        return "Run takeover means this angle is leaning heavily on the player's recent stretch of results, so you should make sure the role is still the same."
     if 'LOW ROLE' in upper_text:
         return 'Low role means the player does not need star-level usage to get there, but it also means the stat can be fragile if minutes slip.'
     if 'STREAK-' in upper_text or 'STREAK +' in upper_text or upper_text.startswith('STREAK'):
         return 'Streak tags tell you recent form is helping the play, but streaks are only useful when the minutes and role still match.'
     if upper_text.startswith('TOTAL '):
-        return 'This is the game total from the betting market, which is the market’s expectation for combined points.'
+        return "This is the game total from the betting market, which is the market's expectation for combined points."
     if 'TODAY' in upper_text:
-        return 'This game is on today’s slate, so the board can treat it as immediately playable.'
+        return "This game is on today's slate, so the board can treat it as immediately playable."
     return ''
 
 
@@ -16047,6 +18600,66 @@ def build_head_to_head_summary(gamelogs, team_a, team_b, allow_regular_fallback=
     elif summary['games']:
         tied = summary['team_a_wins']
         summary['status'] = f"Series tied {tied}-{tied}."
+
+    return summary
+
+
+def build_regular_season_head_to_head_summary(gamelogs, team_a, team_b):
+    team_a = normalize_team_for_filter(team_a)
+    team_b = normalize_team_for_filter(team_b)
+    summary = {
+        'games': [],
+        'team_a_wins': 0,
+        'team_b_wins': 0,
+        'avg_total': 0,
+        'leader': None,
+        'status': f"Regular season tied 0-0.",
+        'last_winner': None,
+    }
+
+    if gamelogs.empty or 'Team' not in gamelogs.columns or 'Opp' not in gamelogs.columns or 'Date' not in gamelogs.columns:
+        return summary
+
+    team_a_logs = gamelogs[(gamelogs['Team'] == team_a) & (gamelogs['Opp'] == team_b)].copy()
+    if team_a_logs.empty or 'PTS' not in team_a_logs.columns:
+        return summary
+
+    totals = []
+    for date in sorted(team_a_logs['Date'].dropna().unique(), key=lambda value: pd.to_datetime(value, errors='coerce')):
+        away_side = gamelogs[(gamelogs['Team'] == team_a) & (gamelogs['Date'] == date)]
+        home_side = gamelogs[(gamelogs['Team'] == team_b) & (gamelogs['Date'] == date)]
+        team_a_pts = away_side['PTS'].sum() if 'PTS' in away_side.columns else 0
+        team_b_pts = home_side['PTS'].sum() if 'PTS' in home_side.columns else 0
+        if team_a_pts <= 0 or team_b_pts <= 0:
+            continue
+
+        winner = team_a if team_a_pts > team_b_pts else team_b
+        if winner == team_a:
+            summary['team_a_wins'] += 1
+        else:
+            summary['team_b_wins'] += 1
+
+        totals.append(team_a_pts + team_b_pts)
+        summary['games'].append({
+            'date': date,
+            'team_a_score': int(team_a_pts),
+            'team_b_score': int(team_b_pts),
+            'winner': winner,
+        })
+
+    if totals:
+        summary['avg_total'] = round(sum(totals) / len(totals), 1)
+        summary['last_winner'] = summary['games'][-1]['winner']
+
+    if summary['team_a_wins'] > summary['team_b_wins']:
+        summary['leader'] = team_a
+        summary['status'] = f"Regular season: {team_a} led {summary['team_a_wins']}-{summary['team_b_wins']}."
+    elif summary['team_b_wins'] > summary['team_a_wins']:
+        summary['leader'] = team_b
+        summary['status'] = f"Regular season: {team_b} led {summary['team_b_wins']}-{summary['team_a_wins']}."
+    elif summary['games']:
+        tied = summary['team_a_wins']
+        summary['status'] = f"Regular season tied {tied}-{tied}."
 
     return summary
 
@@ -16483,6 +19096,245 @@ def build_player_splits(player_logs, team=None, upcoming_opponent=None):
 
     return sections
 
+
+def _decision_stat_value(value, suffix=''):
+    if value is None:
+        return '-'
+    try:
+        if pd.isna(value):
+            return '-'
+    except Exception:
+        pass
+    try:
+        numeric = float(value)
+        if numeric.is_integer():
+            return f"{int(numeric)}{suffix}"
+        return f"{round(numeric, 1)}{suffix}"
+    except Exception:
+        text = str(value).strip()
+        return text if text else '-'
+
+
+def _average_column(rows_df, column):
+    if rows_df is None or rows_df.empty or column not in rows_df.columns:
+        return None
+    values = pd.to_numeric(rows_df[column], errors='coerce').dropna()
+    if values.empty:
+        return None
+    return round(float(values.mean()), 1)
+
+
+def _find_upcoming_game_for_team(schedule, team, days=7):
+    upcoming = get_upcoming_games(schedule, days=days) if schedule is not None else {}
+    team_key = normalize_team_for_filter(team)
+    for bucket in ['today', 'tomorrow', 'upcoming']:
+        for game in upcoming.get(bucket, []) or []:
+            away_team = normalize_team_for_filter(game.get('Away', ''))
+            home_team = normalize_team_for_filter(game.get('Home', ''))
+            if team_key in {away_team, home_team}:
+                opponent = home_team if away_team == team_key else away_team
+                return {
+                    'bucket': bucket,
+                    'opponent': opponent,
+                    'game': game,
+                    'is_home': home_team == team_key,
+                }
+    return {'bucket': '', 'opponent': '', 'game': {}, 'is_home': None}
+
+
+def build_player_decision_context(
+    player_name,
+    team,
+    sport_key,
+    player_logs,
+    player_context,
+    factors,
+    prop_analysis,
+    selected_stat,
+    selected_line,
+    upcoming_game_context,
+    split_sections,
+    injury_info=None,
+):
+    sport_key = normalize_sport_access_key(sport_key or 'nba')
+    sport_label = sport_key.upper()
+    selected_prop = next(
+        (prop for prop in prop_analysis or [] if str(prop.get('stat', '')).upper() == str(selected_stat).upper()),
+        (prop_analysis or [{}])[0] if prop_analysis else {},
+    )
+    opponent = (upcoming_game_context or {}).get('opponent') or ''
+    game = (upcoming_game_context or {}).get('game') or {}
+    selected_floor = factors.get(f'{selected_stat}_FLOOR')
+    selected_avg = factors.get(f'{selected_stat}_SEASON')
+    role_note = f"Minutes {factors.get('MIN_AVG', '-')} avg, floor {factors.get('MIN_FLOOR', '-')}, ceiling {factors.get('MIN_CEIL', '-')}."
+    if factors.get('MIN_CONSISTENCY'):
+        role_note = f"{role_note} Role tag: {factors.get('MIN_CONSISTENCY')}."
+
+    matchup_row = None
+    for section in split_sections or []:
+        if section.get('title') == 'Vs Upcoming Opponent' and section.get('rows'):
+            matchup_row = section['rows'][0]
+            break
+
+    prop_tabs = []
+    seen_stats = set()
+    for prop in sorted(prop_analysis or [], key=lambda item: (str(item.get('stat')) != str(selected_stat), -float(item.get('confidence', 0) or 0))):
+        stat = str(prop.get('stat') or '').upper()
+        if not stat or stat in seen_stats:
+            continue
+        seen_stats.add(stat)
+        prop_tabs.append({
+            'stat': stat,
+            'line': _decision_stat_value(prop.get('line')),
+            'direction': str(prop.get('best_direction') or '').upper() or '-',
+            'hit_rate': _decision_stat_value(prop.get('hit_rate'), '%'),
+            'over_rate': _decision_stat_value(prop.get('over_rate'), '%'),
+            'under_rate': _decision_stat_value(prop.get('under_rate'), '%'),
+            'avg': _decision_stat_value(prop.get('avg')),
+            'market': prop.get('market_summary') or prop.get('market_gate_note') or '',
+            'grade': prop.get('grade') or '',
+        })
+        if len(prop_tabs) >= 6:
+            break
+
+    if not prop_tabs and selected_stat:
+        prop_tabs.append({
+            'stat': selected_stat,
+            'line': _decision_stat_value(selected_line),
+            'direction': '-',
+            'hit_rate': '-',
+            'over_rate': '-',
+            'under_rate': '-',
+            'avg': _decision_stat_value(selected_avg),
+            'market': '',
+            'grade': '',
+        })
+
+    sport_questions = {
+        'nba': 'Does the role support the line tonight?',
+        'wnba': 'Does the rotation and market depth support the line tonight?',
+        'mlb': 'Does the matchup environment support the prop tonight?',
+        'nfl': 'Does the game script support the needed volume?',
+    }
+
+    return {
+        'sport_key': sport_key,
+        'sport_label': sport_label,
+        'question': sport_questions.get(sport_key, sport_questions['nba']),
+        'tonight': [
+            {
+                'label': 'Tonight',
+                'value': f"vs {team_display_name(opponent, sport_key=sport_key)}" if opponent else 'No listed game',
+                'note': f"{game.get('Time', 'TBD')} | {'Home' if (upcoming_game_context or {}).get('is_home') else 'Road' if (upcoming_game_context or {}).get('is_home') is False else 'Site TBD'}",
+            },
+            {
+                'label': 'Line vs Floor',
+                'value': f"{selected_stat} {_decision_stat_value(selected_line)}",
+                'note': f"Floor {_decision_stat_value(selected_floor)} | Avg {_decision_stat_value(selected_avg)}",
+            },
+            {
+                'label': 'Role',
+                'value': factors.get('MIN_CONSISTENCY') or 'Tracked',
+                'note': role_note,
+            },
+            {
+                'label': 'Market',
+                'value': selected_prop.get('play_verdict') or selected_prop.get('market_gate') or 'Review',
+                'note': selected_prop.get('market_summary') or selected_prop.get('rank_explanation') or 'Use current book count and line range before firing.',
+            },
+        ],
+        'prop_tabs': prop_tabs,
+        'matchup': [
+            {
+                'label': 'Vs This Defense',
+                'value': f"{selected_stat} {_decision_stat_value(matchup_row.get(selected_stat.lower()) if matchup_row else None)}" if matchup_row else 'Limited sample',
+                'note': f"{matchup_row.get('gp')} games vs upcoming opponent" if matchup_row else 'Opponent-specific player sample appears here when game logs exist.',
+                'plan': 'Free',
+            },
+            {
+                'label': 'Game Script',
+                'value': selected_prop.get('volatility_flag') or 'Check spread',
+                'note': selected_prop.get('volatility_note') or selected_prop.get('featured_risk_note') or 'Spread, total, and blowout risk should confirm the role.',
+                'plan': 'Pro',
+            },
+            {
+                'label': 'Role/Usage',
+                'value': f"{player_context.get('current_team_games', '-')} team games",
+                'note': f"Sample: {player_context.get('sample_label', 'current')}." + (f" Injury: {injury_info.get('short_label') or injury_info.get('status')}." if injury_info else ''),
+                'plan': 'Pro',
+            },
+            {
+                'label': 'Player vs Player',
+                'value': 'Sharp layer',
+                'note': 'Defender and direct matchup history belong behind the higher-value Sharp/Elite gate.',
+                'plan': 'Sharp',
+            },
+        ],
+    }
+
+
+def build_team_decision_context(team, sport_key, team_logs, players, schedule=None, odds_df=None):
+    sport_key = normalize_sport_access_key(sport_key or 'nba')
+    sport_label = sport_key.upper()
+    upcoming_context = _find_upcoming_game_for_team(schedule, team) if schedule is not None else {}
+    opponent = upcoming_context.get('opponent') or ''
+    game = upcoming_context.get('game') or {}
+    market = {}
+    if odds_df is not None and not odds_df.empty and game:
+        market_lookup = build_game_market_lookup(odds_df)
+        away = normalize_team_for_filter(game.get('Away', ''))
+        home = normalize_team_for_filter(game.get('Home', ''))
+        game_date = str(game.get('Date', '') or '')
+        market = market_lookup.get((game_date, away, home)) or market_lookup.get(('any', away, home)) or {}
+
+    leaders = sorted(players or [], key=lambda item: item.get('PTS', 0), reverse=True)[:3]
+    leader_note = ' / '.join(f"{row.get('name')} {row.get('PTS', '-')}" for row in leaders) if leaders else 'No current rotation sample.'
+    team_averages = {
+        'pts': _average_column(team_logs, 'PTS'),
+        'reb': _average_column(team_logs, 'REB'),
+        'ast': _average_column(team_logs, 'AST'),
+        'threes': _average_column(team_logs, '3PM'),
+        'min': _average_column(team_logs, 'MIN'),
+    }
+    question_map = {
+        'nba': 'What does this team do to prop and game-total decisions?',
+        'wnba': 'What does this team do to prop decisions when rotation and market depth matter?',
+        'mlb': 'Does this lineup pressure the opposing pitcher and total?',
+        'nfl': 'What do scheme and game script do to position props?',
+    }
+    market_summary = format_game_market_summary(market, game.get('Home')) if market else ''
+    environment = classify_prop_game_environment(
+        market.get('total') if market else None,
+        market.get('spread') if market else None,
+        sport=sport_label,
+    ) if market else {}
+
+    return {
+        'sport_key': sport_key,
+        'sport_label': sport_label,
+        'question': question_map.get(sport_key, question_map['nba']),
+        'does': [
+            {'label': 'Scoring Shape', 'value': _decision_stat_value(team_averages['pts']), 'note': 'Average player scoring output in the current roster sample.'},
+            {'label': 'Ball Movement', 'value': _decision_stat_value(team_averages['ast']), 'note': 'Assist environment for guards, wings, and combo props.'},
+            {'label': 'Glass', 'value': _decision_stat_value(team_averages['reb']), 'note': 'Rebound context for frontcourt and PRA decisions.'},
+            {'label': 'Rotation Leaders', 'value': f"{len(players or [])} players", 'note': leader_note},
+        ],
+        'allows': [
+            {'label': 'Position Defense', 'value': 'Matchup lens', 'note': 'Opponent position-defense rankings plug into this row as the defensive table matures.', 'plan': 'Free'},
+            {'label': 'Roster Depth', 'value': 'Pro layer', 'note': 'Usage, injuries, and teammate-out bumps are Pro team-page context.', 'plan': 'Pro'},
+            {'label': 'Team vs Player', 'value': 'Sharp layer', 'note': 'Inline player-vs-this-defense intersections belong here and on player pages.', 'plan': 'Sharp'},
+        ],
+        'tonight': [
+            {
+                'label': 'Opponent',
+                'value': f"vs {team_display_name(opponent, sport_key=sport_key)}" if opponent else 'No listed game',
+                'note': f"{game.get('Time', 'TBD')} | {'Home' if upcoming_context.get('is_home') else 'Road' if upcoming_context.get('is_home') is False else 'Site TBD'}",
+            },
+            {'label': 'Market', 'value': market_summary or 'No market yet', 'note': environment.get('note') or 'Total, spread, and book context appears here when odds are present.'},
+            {'label': 'Volatility', 'value': environment.get('label') or 'Normal', 'note': 'Use this before trusting player volume, blowout-sensitive props, or totals.'},
+        ],
+    }
+
 def build_tonights_card(postseason_matchups, top_plays, best_by_series=None):
     if not postseason_matchups:
         return []
@@ -16656,6 +19508,7 @@ def build_tonights_card(postseason_matchups, top_plays, best_by_series=None):
             if key not in deduped_plays:
                 deduped_plays[key] = {
                     'label': f"{play.get('player')} {play.get('stat')} {play.get('direction')} {play.get('line')}",
+                    'player': play.get('player'),
                     'confidence': int(round(float(play.get('confidence', play.get('hit_rate', 0)) or 0))),
                     'reason': build_angle_reason(play),
                     'team': play.get('team'),
@@ -16693,6 +19546,7 @@ def build_tonights_card(postseason_matchups, top_plays, best_by_series=None):
                     continue
                 angle_cards.append({
                     'label': f"{play.get('player')} {play.get('stat')} {play.get('direction')} {play.get('line')}",
+                    'player': play.get('player'),
                     'confidence': int(round(float(play.get('confidence', 0) or 0))),
                     'reason': str(play.get('support_note') or 'Series shortlist fallback while the live prop board catches up.'),
                     'team': play.get('team'),
@@ -17224,8 +20078,13 @@ def annotate_teaching_fields_batch(rows):
 
 def build_featured_nba_top_plays(live_props, limit=20, min_confidence=70):
     deduped_top_plays = {}
+    live_props = attach_promotion_signals_to_props(
+        [dict(prop) for prop in (live_props or [])],
+        sport='NBA',
+        score_fields=('confidence',),
+    )
     eligible_props = [
-        p for p in (live_props or [])
+        p for p in live_props
         if float(p.get('confidence', 0) or 0) >= min_confidence
         and str(p.get('play_verdict', 'PLAY')).upper() == 'PLAY'
         and 'LINE HISTORY CAP' not in (p.get('guardrail_tags') or [])
@@ -17279,6 +20138,10 @@ def build_featured_nba_top_plays(live_props, limit=20, min_confidence=70):
             'market_gate_note': str(play.get('market_gate_note', '') or '').strip(),
             'role_label': play.get('role_label'),
             'return_impact_pct': play.get('return_impact_pct'),
+            'promotion_signal': play.get('promotion_signal', 'STANDARD'),
+            'promotion_reason': play.get('promotion_reason', ''),
+            'promotion_boost': play.get('promotion_boost', 0.0),
+            'missed_winner_count': play.get('missed_winner_count', 0),
         }
         row['market_summary'] = build_compact_prop_market_summary(
             draftkings_line=row.get('draftkings_line'),
@@ -17370,6 +20233,22 @@ def _wnba_verdict_sort_rank(row):
     return {'PLAY': 2, 'CONFLICTED': 1, 'PASS': 0}.get(verdict, 0)
 
 
+def sort_wnba_rows_for_promotion(rows, score_field='market_confidence'):
+    rows = list(rows or [])
+    rows.sort(
+        key=lambda item: (
+            -_wnba_verdict_sort_rank(item),
+            -float(item.get('promotion_boost') or 0),
+            -float(item.get(score_field) or 0),
+            -float(item.get('market_prob') or 0),
+            -float(item.get('lean_gap') or 0),
+            item.get('player') or '',
+            item.get('stat') or '',
+        )
+    )
+    return rows
+
+
 def _mlb_verdict_sort_rank(row):
     verdict = str((row or {}).get('play_verdict', 'PLAY') or 'PLAY').upper()
     return {'PLAY': 2, 'CONFLICTED': 1, 'PASS': 0}.get(verdict, 0)
@@ -17407,7 +20286,7 @@ def apply_mlb_contradiction_guardrails(rows, featured_top_n=0):
             for score_field in ('market_confidence', 'method_score'):
                 if updated.get(score_field) is not None:
                     try:
-                        updated[score_field] = round(min(float(updated.get(score_field) or 0), 69.9), 1)
+                        updated[score_field] = round(min(float(updated.get(score_field) or 0), 65.9), 1)
                     except Exception:
                         pass
 
@@ -17642,6 +20521,7 @@ def build_matchup_editorial(away, home, series_label, series_score, matchup_prof
         seen.add(key)
         angle_cards.append({
             'label': f"{prop.get('player')} {prop.get('stat')} {prop.get('direction')} {prop.get('line')}",
+            'player': prop.get('player'),
             'confidence': int(round(float(prop.get('confidence', 0) or 0))),
             'best_book': prop.get('best_book'),
             'book_count': prop.get('book_count'),
@@ -18955,7 +21835,7 @@ def build_core_model_read(stat, direction, baseline, line):
         )
         compact_tags.append(compact)
     if compact_tags:
-        summary = f"{summary} | {' • '.join(compact_tags)}"
+        summary = f"{summary} | {' | '.join(compact_tags)}"
 
     return summary
 
@@ -19723,6 +22603,149 @@ def classify_floor_parlay_tier(prop):
     return 'Tier 3'
 
 
+def _promotion_lookup_key(player='', sport='', stat='', direction=''):
+    return (
+        str(player or '').strip().lower(),
+        str(sport or '').strip().upper(),
+        str(stat or '').strip().upper(),
+        str(direction or '').strip().upper(),
+    )
+
+
+def _build_live_promotion_signal_context():
+    cache_key = 'live_promotion_signal_context'
+    cache_version = _build_file_token(
+        DATA_DIR / 'tracking' / 'NBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'WNBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NBA_CandidateArchive.csv',
+        DATA_DIR / 'tracking' / 'CandidateArchive.csv',
+    )
+    cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
+    if cached_entry:
+        cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
+        if cached_age <= 900 and cached_entry.get('version') == cache_version:
+            return cached_entry['value']
+
+    disk_cache_key = f'disk::{cache_key}'
+    disk_hit, disk_value = _read_disk_ttl_cached_value(disk_cache_key, version=cache_version)
+    if disk_hit:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': disk_value,
+            'version': cache_version,
+        }
+        return disk_value
+
+    try:
+        results_df = load_all_prop_results_for_review_service()
+        player_profiles = build_player_hit_profiles_service(results_df)
+        bucket_frequency = build_missed_winner_bucket_frequency_service(results_df, lookback_days=7)
+    except Exception:
+        player_profiles = []
+        bucket_frequency = {}
+
+    profile_lookup = {
+        _promotion_lookup_key(
+            row.get('player'),
+            row.get('sport'),
+            row.get('stat'),
+            row.get('direction'),
+        ): row
+        for row in player_profiles
+    }
+    value = {
+        'profiles': profile_lookup,
+        'bucket_frequency': bucket_frequency,
+    }
+    _write_disk_ttl_cached_value(disk_cache_key, 900, value, version=cache_version)
+    RUNTIME_TTL_CACHE[cache_key] = {
+        'created_at': datetime.now(timezone.utc),
+        'value': value,
+        'version': cache_version,
+    }
+    return value
+
+
+def _promotion_boost_for_signal(signal):
+    signal = str(signal or '').strip().upper()
+    if signal == 'PROMOTE HARD':
+        return 4.5
+    if signal == 'PROMOTE':
+        return 2.5
+    if signal == 'SURFACE':
+        return 1.0
+    if signal == 'HOLD':
+        return -8.0
+    return 0.0
+
+
+def attach_promotion_signals_to_props(props, sport='NBA', score_fields=None):
+    if not props:
+        return props
+    score_fields = tuple(score_fields or ('confidence', 'market_confidence', 'method_score', 'build_quality_score'))
+    sport = str(sport or '').strip().upper()
+    context = _build_live_promotion_signal_context()
+    profile_lookup = context.get('profiles') or {}
+    bucket_frequency = context.get('bucket_frequency') or {}
+
+    for prop in props:
+        prop_sport = str(prop.get('sport') or sport or '').strip().upper()
+        player = str(prop.get('player') or prop.get('Player') or '').strip()
+        stat = str(prop.get('stat') or prop.get('Stat') or prop.get('stat_type') or '').strip().upper()
+        direction = str(prop.get('direction') or prop.get('play') or prop.get('Direction') or '').strip().upper()
+        if direction not in {'OVER', 'UNDER'}:
+            prop['promotion_signal'] = 'STANDARD'
+            prop['promotion_reason'] = 'No over/under direction available for promotion scoring.'
+            prop['promotion_boost'] = 0.0
+            continue
+
+        profile = profile_lookup.get(_promotion_lookup_key(player, prop_sport, stat, direction))
+        if not profile:
+            profile = {
+                'player': player,
+                'sport': prop_sport,
+                'stat': stat,
+                'direction': direction,
+                'reliability': prop.get('player_reliability') or prop.get('historical_reliability') or '',
+                'resolved': prop.get('player_resolved') or prop.get('historical_resolved') or 0,
+                'hit_rate': prop.get('player_hit_rate') or prop.get('historical_hit_rate'),
+            }
+
+        signal = calculate_promotion_signal_service(profile, bucket_frequency)
+        signal_name = signal.get('signal', 'STANDARD')
+        boost = _promotion_boost_for_signal(signal_name)
+        play_verdict = str(prop.get('play_verdict') or prop.get('verdict') or '').strip().upper()
+        if boost > 0 and play_verdict == 'PASS':
+            boost = 0.0
+        if boost > 0 and any(str(tag).strip().upper() == 'PASS' for tag in prop.get('guardrail_tags') or []):
+            boost = 0.0
+
+        prop['promotion_signal'] = signal_name
+        prop['promotion_reason'] = signal.get('reason', '')
+        prop['promotion_action'] = signal.get('action', '')
+        prop['promotion_boost'] = round(boost, 1)
+        prop['missed_winner_count'] = int(signal.get('missed_count', 0) or 0)
+        prop['missed_winner_a_plus_count'] = int(signal.get('bucket_a_plus', 0) or 0)
+        prop['missed_winner_avg_grade'] = signal.get('bucket_avg_grade')
+        prop['promotion_last_seen'] = signal.get('last_seen', '')
+
+        if signal_name != 'STANDARD':
+            tags = list(prop.get('promotion_tags') or [])
+            if signal_name not in tags:
+                tags.append(signal_name)
+            prop['promotion_tags'] = tags
+
+        if boost:
+            for field in score_fields:
+                raw_value = prop.get(field)
+                numeric = pd.to_numeric(raw_value, errors='coerce')
+                if pd.notna(numeric):
+                    prop[field] = round(max(0.0, min(float(numeric) + boost, 99.0)), 1)
+    return props
+
+
 def attach_floor_reliability_to_props(props, sport='NBA'):
     if not props:
         return props
@@ -19781,7 +22804,79 @@ def attach_floor_reliability_to_props(props, sport='NBA'):
             prop['player_hit_rate'] = None
             prop['player_resolved'] = 0
             prop['player_profile_note'] = ''
-    return props
+    return attach_promotion_signals_to_props(
+        props,
+        sport=sport,
+        score_fields=('confidence', 'build_quality_score', 'strategy_score'),
+    )
+
+
+def build_parlay_handoff_context(available):
+    player = str(request.args.get('player') or '').strip()
+    stat = str(request.args.get('stat') or '').strip().upper()
+    direction = str(request.args.get('direction') or '').strip().upper()
+    sport = str(request.args.get('sport') or request.args.get('league') or 'NBA').strip().upper() or 'NBA'
+    line = str(request.args.get('line') or '').strip()
+    source = str(request.args.get('source') or '').strip()
+    if not player and not stat and not direction:
+        return None
+
+    line_num = pd.to_numeric(pd.Series([line]), errors='coerce').iloc[0] if line else np.nan
+    matched = None
+    for prop in available or []:
+        prop_player = str(prop.get('player') or '').strip()
+        prop_stat = str(prop.get('stat') or '').strip().upper()
+        prop_direction = str(prop.get('direction') or '').strip().upper()
+        if player and prop_player.lower() != player.lower():
+            continue
+        if stat and prop_stat != stat:
+            continue
+        if direction and prop_direction != direction:
+            continue
+        if pd.notna(line_num):
+            prop_line = pd.to_numeric(pd.Series([prop.get('line')]), errors='coerce').iloc[0]
+            if pd.isna(prop_line) or abs(float(prop_line) - float(line_num)) > 0.001:
+                continue
+        matched = prop
+        break
+
+    if matched:
+        return {
+            'status': 'matched',
+            'message': 'Matched this incoming leg to the live parlay board and preselected it.',
+            'source': source or 'handoff',
+            'leg': {
+                'sport': str(matched.get('sport') or sport or 'NBA').strip().upper(),
+                'player': matched.get('player'),
+                'team': matched.get('team'),
+                'stat': matched.get('stat'),
+                'line': matched.get('line'),
+                'direction': matched.get('direction'),
+                'confidence': matched.get('confidence'),
+                'matchup': matched.get('matchup'),
+                'tier': matched.get('tier'),
+            },
+        }
+
+    return {
+        'status': 'needs_line',
+        'message': (
+            'This handoff came from a profile or streak bucket, but the current NBA parlay board could not find a live matching line. '
+            'Use it as a watchlist signal until the matching market is loaded.'
+        ),
+        'source': source or 'handoff',
+        'leg': {
+            'sport': sport,
+            'player': player,
+            'team': '',
+            'stat': stat,
+            'line': line,
+            'direction': direction,
+            'confidence': request.args.get('confidence', ''),
+            'matchup': request.args.get('matchup', ''),
+            'tier': '',
+        },
+    }
 
 
 def select_unique_props(props, limit, max_per_game=2):
@@ -20433,20 +23528,21 @@ def build_live_prop_runtime_context(postseason_only=False):
         player_snapshot = load_player_snapshot()
         current_team_overrides = load_current_team_overrides()
         current_team_map = build_current_team_map(gamelogs, player_snapshot, current_team_overrides)
+        playoff_gamelogs = load_playoff_gamelogs() if postseason_only else pd.DataFrame()
+        team_filter = get_team_filter(postseason_only)
+        upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
+        game_odds = load_game_market_odds()
+        market_lookup = build_game_market_lookup(game_odds)
+        for bucket_name in ['today', 'tomorrow', 'upcoming']:
+            upcoming[bucket_name] = attach_market_to_games(upcoming.get(bucket_name, []), market_lookup)
+        team_game_lookup = build_team_game_lookup(upcoming)
         raw_props, refresh_meta = load_live_props_feed(require_fresh=True)
         resolved_props = apply_current_team_context(raw_props, gamelogs, player_snapshot, current_team_overrides)
+        resolved_props = filter_props_to_active_slate(resolved_props, team_game_lookup)
         props_market_groups = build_prop_market_groups(resolved_props)
         props_df = dedupe_props_to_anchor_book(resolved_props)
         active_boosts = load_active_boosts()
         return_impacts = load_return_impacts()
-        game_odds = load_game_market_odds()
-        market_lookup = build_game_market_lookup(game_odds)
-        playoff_gamelogs = load_playoff_gamelogs() if postseason_only else pd.DataFrame()
-        team_filter = get_team_filter(postseason_only)
-        upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
-        for bucket_name in ['today', 'tomorrow', 'upcoming']:
-            upcoming[bucket_name] = attach_market_to_games(upcoming.get(bucket_name, []), market_lookup)
-        team_game_lookup = build_team_game_lookup(upcoming)
         return {
             'gamelogs': gamelogs,
             'schedule': schedule,
@@ -20468,9 +23564,9 @@ def build_live_prop_runtime_context(postseason_only=False):
             'team_game_lookup': team_game_lookup,
         }
 
-    return _get_ttl_cached_value(
+    return _get_disk_ttl_cached_value(
         cache_key=f'live_prop_runtime::{int(bool(postseason_only))}',
-        ttl_seconds=180,
+        ttl_seconds=43200,
         builder=_build_runtime,
         version=cache_version,
     )
@@ -21661,22 +24757,463 @@ def build_bet_tier(play):
 # =============================================================================
 # CONTEXT PROCESSOR
 # =============================================================================
+def load_formula_status_context() -> dict:
+    path = DATA_DIR / 'tracking' / 'Formula_Status.json'
+    if not path.exists():
+        return {'formula_status_rows': [], 'formula_status_by_sport': {}}
+    try:
+        rows = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        rows = []
+    if not isinstance(rows, list):
+        rows = []
+    by_sport = {
+        str(row.get('Sport') or '').strip().lower(): row
+        for row in rows
+        if isinstance(row, dict) and str(row.get('Sport') or '').strip()
+    }
+    return {'formula_status_rows': rows, 'formula_status_by_sport': by_sport}
+
+
+def load_run_status_context(limit=8) -> dict:
+    path = DATA_DIR / 'tracking' / 'Run_Status.json'
+    fallback = {
+        'overall': 'UNKNOWN',
+        'counts': {'FRESH': 0, 'AGING': 0, 'STALE': 0, 'MISSING': 0},
+        'rows': [],
+        'generated_at': '',
+        'fresh_count': 0,
+        'watch_count': 0,
+    }
+    if not path.exists():
+        return fallback
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return fallback
+    if not isinstance(payload, dict):
+        return fallback
+    rows = payload.get('rows') if isinstance(payload.get('rows'), list) else []
+    decorated = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        try:
+            age = float(item.get('AgeHours') or 0)
+            item['AgeLabel'] = f"{age:.1f}h"
+        except Exception:
+            item['AgeLabel'] = '-'
+        last_run = str(item.get('LastRunAt') or '')
+        if last_run:
+            try:
+                dt = datetime.fromisoformat(last_run)
+                item['LastRunLabel'] = dt.strftime('%b %d, %I:%M %p')
+            except Exception:
+                item['LastRunLabel'] = last_run[:16]
+        else:
+            item['LastRunLabel'] = 'Not found'
+        item['StatusClass'] = str(item.get('Status') or 'UNKNOWN').lower()
+        decorated.append(item)
+    counts = payload.get('counts') if isinstance(payload.get('counts'), dict) else {}
+    return {
+        'overall': payload.get('overall') or 'UNKNOWN',
+        'counts': counts,
+        'rows': decorated[:limit] if limit else decorated,
+        'generated_at': payload.get('generated_at') or '',
+        'fresh_count': int(counts.get('FRESH') or 0),
+        'watch_count': int(counts.get('AGING') or 0) + int(counts.get('STALE') or 0) + int(counts.get('MISSING') or 0),
+    }
+
+
+def _formula_bucket_key(*parts) -> str:
+    return " | ".join(str(part or "").strip().upper() for part in parts if str(part or "").strip())
+
+
+def load_formula_driver_lookup() -> dict:
+    path = DATA_DIR / 'tracking' / 'Sport_Driver_Calibration.csv'
+    if not path.exists():
+        return {}
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return {}
+    lookup = {}
+    for _, row in df.iterrows():
+        sport = str(row.get('Sport') or '').strip().upper()
+        driver = str(row.get('Driver') or '').strip()
+        bucket = str(row.get('Bucket') or '').strip().upper()
+        if not sport or not driver or not bucket:
+            continue
+        lookup[(sport, driver, bucket)] = row.to_dict()
+    return lookup
+
+
+def load_nfl_simulation_lookup() -> dict:
+    path = DATA_DIR / 'tracking' / 'NFL_Simulation_Results.csv'
+    if not path.exists():
+        return {}
+    def _build_lookup():
+        try:
+            df = pd.read_csv(path, low_memory=False)
+        except Exception:
+            return {}
+        lookup = {}
+        for _, row in df.iterrows():
+            key = (
+                str(row.get('Player') or '').strip().lower(),
+                str(row.get('Stat') or '').strip().upper(),
+                str(row.get('Direction') or '').strip().upper(),
+                _line_lookup_key(row.get('Line')),
+            )
+            if key[0] and key[1] and key[2]:
+                lookup[key] = row.to_dict()
+                lookup[(key[0], key[1], key[2], '')] = row.to_dict()
+        return lookup
+    return _get_disk_ttl_cached_value(
+        'nfl_simulation_lookup',
+        43200,
+        _build_lookup,
+        version=_build_file_token(path),
+    )
+
+
+def _line_lookup_key(value):
+    try:
+        return f"{float(value):.1f}"
+    except Exception:
+        return str(value or '').strip()
+
+
+def load_nfl_scored_lookup() -> dict:
+    path = DATA_DIR / 'tracking' / 'NFL_AllPropResults_Scored.csv'
+    if not path.exists():
+        return {}
+    def _build_lookup():
+        try:
+            df = pd.read_csv(path, low_memory=False)
+        except Exception:
+            return {}
+        lookup = {}
+        sort_cols = [col for col in ['Season', 'Week', 'SnapshotDate'] if col in df.columns]
+        if sort_cols:
+            df = df.sort_values(sort_cols)
+        for _, row in df.iterrows():
+            key = (
+                str(row.get('Player') or '').strip().lower(),
+                str(row.get('Stat') or '').strip().upper(),
+                str(row.get('Direction') or '').strip().upper(),
+                _line_lookup_key(row.get('Line')),
+            )
+            if key[0] and key[1] and key[2]:
+                lookup[key] = row.to_dict()
+                lookup[(key[0], key[1], key[2], '')] = row.to_dict()
+        return lookup
+    return _get_disk_ttl_cached_value(
+        'nfl_scored_lookup',
+        43200,
+        _build_lookup,
+        version=_build_file_token(path),
+    )
+
+
+def _score_label(value):
+    try:
+        return f"{float(value):.1f}"
+    except Exception:
+        return ''
+
+
+def attach_nfl_quant_insights_to_rows(rows, default_direction='OVER'):
+    if not rows:
+        return rows
+    scored_lookup = load_nfl_scored_lookup()
+    sim_lookup = load_nfl_simulation_lookup()
+    for row in rows:
+        player = str(row.get('player') or row.get('Player') or '').strip().lower()
+        stat = str(row.get('stat') or row.get('Stat') or '').strip().upper()
+        direction = str(row.get('direction') or row.get('Direction') or default_direction or 'OVER').strip().upper()
+        line = row.get('line') if row.get('line') is not None else row.get('line_proxy')
+        key = (player, stat, direction, _line_lookup_key(line))
+        scored = scored_lookup.get(key) or scored_lookup.get((player, stat, direction, ''))
+        if scored:
+            edge = _score_label(scored.get('BK_NFL_EdgeScore'))
+            prop = _score_label(scored.get('BK_NFL_PropScore'))
+            if edge:
+                row['nfl_edge_score'] = edge
+                row['edge_score_detail'] = (
+                    f"Projection {scored.get('ProjectionEdge', '-')} | Market {scored.get('MarketEdge', '-')} | "
+                    f"Script {scored.get('GameScriptEdge', '-')} | Risk {scored.get('RiskPenalty', '-')}"
+                )
+            if prop:
+                row['nfl_prop_score'] = prop
+                prop_parts = [
+                    f"Usage {scored.get('UsageStability', '-')}",
+                    f"Matchup {scored.get('MatchupAdvantage', '-')}",
+                    f"Script {scored.get('GameScriptFit', '-')}",
+                    f"Line {scored.get('LineValue', '-')}",
+                ]
+                ngs_modifier = _score_label(scored.get('NGSModifier'))
+                if ngs_modifier:
+                    prop_parts.append(f"NGS {ngs_modifier}")
+                row['prop_score_detail'] = " | ".join(prop_parts)
+                if scored.get('NGSNote'):
+                    row['ngs_note'] = str(scored.get('NGSNote') or '').strip()
+        sim = sim_lookup.get(key) or sim_lookup.get((player, stat, direction, ''))
+        if sim:
+            try:
+                row['sim_hit_probability'] = round(float(sim.get('SimHitProbability')), 1)
+            except Exception:
+                row['sim_hit_probability'] = sim.get('SimHitProbability')
+            row['sim_detail'] = (
+                f"Mean {sim.get('SimMean', '-')} | P25 {sim.get('SimP25', '-')} | "
+                f"P75 {sim.get('SimP75', '-')} | Vol {sim.get('SimVolatility', '-')}"
+            )
+    return rows
+
+
+def build_nfl_simulation_summary_card(rows):
+    if not rows:
+        return None
+    values = []
+    for row in rows:
+        try:
+            values.append(float(row.get('sim_hit_probability')))
+        except Exception:
+            continue
+    if not values:
+        return None
+    return {
+        'label': 'Simulation',
+        'value': f"{round(sum(values) / len(values), 1)}%",
+        'note': f"avg simulated hit probability across {len(values)} matched NFL rows",
+    }
+
+
+def attach_formula_insights_to_rows(rows, *, sport='NBA'):
+    if not rows:
+        return rows
+    sport_key = str(sport or '').strip().upper()
+    driver_lookup = load_formula_driver_lookup()
+    sim_lookup = load_nfl_simulation_lookup() if sport_key == 'NFL' else {}
+    for row in rows:
+        stat = str(row.get('stat') or row.get('Stat') or '').strip().upper()
+        direction = str(row.get('direction') or row.get('Direction') or '').strip().upper()
+        role = str(row.get('role_label') or row.get('RoleLabel') or '').strip().upper() or 'UNSPECIFIED'
+        method = str(row.get('method') or row.get('Method') or '').strip()
+        volatility = str(row.get('volatility_flag') or row.get('VolatilityFlag') or '').strip().upper() or 'STABLE'
+        market_gate = str(row.get('market_gate') or row.get('MarketGate') or '').strip().upper() or 'CLEAR'
+
+        candidates = []
+        if sport_key == 'NBA':
+            candidates = [
+                ('Minutes/Usage Proxy', _formula_bucket_key(stat, direction, role)),
+                ('Market Gate', _formula_bucket_key(direction, market_gate)),
+            ]
+        elif sport_key == 'WNBA':
+            candidates = [
+                ('Role Stability', _formula_bucket_key(method, direction, volatility)),
+                ('Stat Direction', _formula_bucket_key(stat, direction)),
+            ]
+        elif sport_key == 'MLB':
+            candidates = [('Pitcher/Hitter Context', _formula_bucket_key(stat, direction))]
+        elif sport_key == 'NFL':
+            candidates = [('EPA/Game Script Proxy', _formula_bucket_key(stat, direction))]
+
+        formula_row = None
+        for driver, bucket in candidates:
+            formula_row = driver_lookup.get((sport_key, driver, bucket))
+            if formula_row:
+                break
+        if formula_row:
+            rate = formula_row.get('HitRate')
+            try:
+                rate_label = f"{float(rate) * 100:.1f}%"
+            except Exception:
+                rate_label = '-'
+            row['formula_badge'] = formula_row.get('Classification') or 'CALIBRATED'
+            row['formula_driver'] = formula_row.get('Driver') or ''
+            row['formula_hit_rate'] = rate_label
+            row['formula_sample'] = int(float(formula_row.get('SampleSize') or 0))
+            row['formula_detail'] = f"{row['formula_driver']}: {rate_label} on {row['formula_sample']} resolved"
+
+        if sim_lookup:
+            line = str(row.get('line') or row.get('Line') or '').strip()
+            sim_key = (
+                str(row.get('player') or row.get('Player') or '').strip().lower(),
+                stat,
+                direction,
+                line,
+            )
+            sim = sim_lookup.get(sim_key)
+            if sim:
+                for key in ['SimHitProbability', 'SimulationHitProbability', 'ProjectedHitProbability']:
+                    if key in sim:
+                        try:
+                            row['sim_hit_probability'] = round(float(sim.get(key)) * 100, 1)
+                        except Exception:
+                            row['sim_hit_probability'] = sim.get(key)
+                        break
+    return rows
+
+
 @app.context_processor
 def inject_globals():
-    gamelogs = load_gamelogs()
-    schedule = load_schedule()
-    postseason_only = postseason_only_enabled()
     current_user = get_current_user()
-    team_filter = get_team_filter(postseason_only, schedule)
-    upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
-    active_series = build_active_series(schedule) if postseason_only else []
-    teams = sorted(gamelogs['Team'].dropna().unique().tolist()) if not gamelogs.empty and 'Team' in gamelogs.columns else []
-    teams = filter_teams_list(teams, team_filter)
-    mode_labels = get_focus_mode_labels(postseason_only)
+    active_page_key = str(request.endpoint or '').strip()
+    public_shell_endpoints = {
+        'frontpage',
+        'global_feature_preview',
+        'pricing',
+        'login',
+        'signup',
+        'info',
+        'glossary',
+        'legal_page',
+    }
+    # Logged-out visitors hitting a gated member endpoint are short-circuited by
+    # enforce_access_gate() to the access gate, which extends public_base.html and
+    # never uses the heavy member shell (teams/upcoming/sidebar counts). Serving the
+    # lightweight context here keeps the conversion funnel from parsing gamelogs just
+    # to render a 401 upgrade prompt. The predicate mirrors enforce_access_gate so we
+    # never light-shell a FREE/PUBLIC page that actually renders the member layout.
+    gated_logged_out = (
+        not current_user
+        and active_page_key
+        and active_page_key not in PUBLIC_ENDPOINTS
+        and active_page_key not in FREE_ENDPOINTS
+        and not active_page_key.startswith('static')
+        and bool(get_required_plan_for_endpoint(active_page_key))
+    )
+    if (active_page_key in public_shell_endpoints and not current_user) or gated_logged_out:
+        return {
+            'current_user': current_user,
+            'current_plan': 'free',
+            'current_sport_access': [],
+            'team_logo_url': team_logo_url,
+            'sport_logo_url': sport_logo_url,
+            'team_display_name': team_display_name,
+            'team_mark': render_team_mark,
+            'matchup_mark': render_matchup_mark,
+            'glossary_href': glossary_href,
+            'glossary_hint': render_glossary_hint,
+            'ou_rate_color': ou_rate_color,
+            'today': datetime.now().strftime('%B %d, %Y'),
+            'today_date': datetime.now().strftime('%Y-%m-%d'),
+            'tomorrow_date': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
+            'season': get_current_nba_season(),
+            'active_page': 'home' if active_page_key == 'frontpage' else active_page_key,
+            'show_ops_strip': False,
+            'ops_status': None,
+            'method_guides': METHOD_GUIDES,
+            'get_sport_model_profile': get_sport_model_profile,
+            'get_free_sport_locked_features': get_free_sport_locked_features,
+            'postseason_only': postseason_only_enabled(),
+            **get_focus_mode_labels(postseason_only_enabled()),
+        }
+
+    postseason_only = postseason_only_enabled()
+
+    def _build_shell_context():
+        schedule = load_schedule()
+        team_filter = get_team_filter(postseason_only, schedule)
+        upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
+        active_series = build_active_series(schedule) if postseason_only else []
+        # The shell only needs the team dropdown list out of the (large) gamelogs
+        # file. Cache that derivation keyed by the file's mtime so the 60s shell
+        # rebuild does not re-copy and re-scan the full frame on every cycle; it is
+        # only recomputed after a refresh actually rewrites the gamelogs CSV.
+        gamelogs_path = DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv'
+
+        def _all_team_names():
+            gamelogs = load_gamelogs()
+            if gamelogs.empty or 'Team' not in gamelogs.columns:
+                return []
+            return sorted(gamelogs['Team'].dropna().unique().tolist())
+
+        all_teams = _get_ttl_cached_value(
+            'shell_team_names',
+            3600,
+            _all_team_names,
+            version=_get_path_mtime_token(gamelogs_path),
+        )
+        teams = filter_teams_list(all_teams, team_filter)
+        return {
+            'upcoming': upcoming,
+            'active_series': active_series,
+            'teams': teams,
+            'mode_labels': get_focus_mode_labels(postseason_only),
+            'formula_status': load_formula_status_context(),
+            'sport_sidebar_counts': get_sidebar_sport_counts(),
+        }
+
+    shell_context = _get_ttl_cached_value(
+        f"context_processor_shell::{int(bool(postseason_only))}",
+        60,
+        _build_shell_context,
+    )
+    upcoming = shell_context['upcoming']
+    active_series = shell_context['active_series']
+    teams = shell_context['teams']
+    mode_labels = shell_context['mode_labels']
+    formula_status = shell_context['formula_status']
+    sport_sidebar_counts = shell_context['sport_sidebar_counts']
     active_sport = get_active_sport_for_path(request.path)
-    command_center = build_global_command_center(postseason_only=postseason_only, current_path=request.path)
+    query_sport = normalize_sport_access_key(request.args.get('sport', ''))
+    if query_sport in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'} and not request.path.startswith('/sports/'):
+        active_sport = query_sport
     show_ops_strip = bool(current_user and (is_owner_user(current_user) or bool(current_user.get('is_admin'))))
     ops_status = build_ops_status_strip() if show_ops_strip else None
+    if request.path.startswith('/sports/') and request.path.endswith('/props'):
+        active_page_key = 'props'
+    elif request.path.startswith('/sports/') and any(request.path.endswith(suffix) for suffix in ('/market-edge', '/game-lines')):
+        active_page_key = 'market'
+    elif request.path.startswith('/sports/') and request.path.endswith('/trends'):
+        active_page_key = 'trends'
+    elif request.path.startswith('/sports/'):
+        active_page_key = 'dashboard'
+    elif active_page_key in {'props', 'smart_picks', 'smart_picks_legacy_redirect'}:
+        active_page_key = 'props'
+    elif active_page_key in {'parlay', 'parlay_builder'}:
+        active_page_key = 'parlay_builder'
+    elif active_page_key in {'candidate_review', 'bet_review'}:
+        active_page_key = 'review'
+    elif active_page_key in {'quant_systems'}:
+        active_page_key = 'systems'
+    elif active_page_key in {'missed_opportunities'}:
+        active_page_key = 'missed'
+    elif active_page_key in {'derivatives_lab'}:
+        active_page_key = 'derivatives'
+    elif active_page_key in {'elite_dashboard', 'elite_matchup_builder', 'elite_mlb_lab'}:
+        active_page_key = 'elite'
+    elif active_page_key in {'calibration_lab', 'nba_calibration'}:
+        active_page_key = 'calibration_lab'
+    elif active_page_key in {'free_tier', 'free_sport_preview'}:
+        active_page_key = 'free_tier'
+    elif active_page_key == 'heat_map':
+        active_page_key = 'hot_streaks'
+    elif active_page_key == 'injuries_page':
+        active_page_key = 'injuries'
+    elif active_page_key == 'method_hub':
+        method_nav_key = str((request.view_args or {}).get('method_key', '') or '').strip().lower()
+        active_page_key = {
+            'props': 'props',
+            'market-edge': 'market',
+            'trends': 'trends',
+            'injuries': 'injuries',
+            'parlay': 'parlay_builder',
+        }.get(method_nav_key, 'props')
+    elif active_page_key == 'global_feature_preview':
+        _, feature_preview = get_global_feature_preview((request.view_args or {}).get('feature_key', 'props'))
+        active_page_key = feature_preview.get('nav_key', 'props')
+    elif active_page_key == 'dashboard':
+        active_page_key = 'home'
+    if request.endpoint == 'method_hub':
+        nav_sport = query_sport if query_sport in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'} else ''
+    else:
+        nav_sport = '' if active_page_key in {'home', 'free_tier'} or request.endpoint == 'global_feature_preview' else active_sport
+    top_nav_items = build_sport_workflow_nav(nav_sport, active_page_key)
+    top_nav_by_key = {item['key']: item for item in top_nav_items}
     sports_nav_items = [
         {
             **item,
@@ -21688,9 +25225,25 @@ def inject_globals():
 
     def get_method_guide(method_key):
         return METHOD_GUIDES.get(str(method_key or '').strip().lower(), {})
+
+    def sport_home_href(sport_key):
+        sport_key = str(sport_key or '').strip().lower()
+        return {
+            'nba': '/sports/nba',
+            'wnba': '/sports/wnba',
+            'mlb': '/sports/mlb',
+            'nfl': '/sports/nfl',
+            'ncaaf': '/sports/ncaaf',
+            'cfb': '/sports/ncaaf',
+            'ncaamb': '/sports/ncaamb',
+            'ncaawb': '/sports/ncaawb',
+        }.get(sport_key, '/dashboard')
     
     return {
         'current_user': current_user,
+        'current_plan': normalize_user_plan(current_user) if current_user else 'free',
+        'current_sport_access': sorted(get_user_sport_access(current_user)) if current_user else [],
+        **sport_sidebar_counts,
         'team_logo_url': team_logo_url,
         'sport_logo_url': sport_logo_url,
         'team_display_name': team_display_name,
@@ -21698,6 +25251,7 @@ def inject_globals():
         'matchup_mark': render_matchup_mark,
         'glossary_href': glossary_href,
         'glossary_hint': render_glossary_hint,
+        'ou_rate_color': ou_rate_color,
         'today': datetime.now().strftime('%B %d, %Y'),
         'today_date': datetime.now().strftime('%Y-%m-%d'),
         'tomorrow_date': (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),
@@ -21709,12 +25263,18 @@ def inject_globals():
         'teams': teams,
         'active_series': active_series,
         'active_sport': active_sport,
-        'command_center': command_center,
+        'active_page': active_page_key,
+        'top_nav_items': top_nav_items,
+        'top_nav_by_key': top_nav_by_key,
+        **formula_status,
         'sports_nav_items': sports_nav_items,
         'show_ops_strip': show_ops_strip,
         'ops_status': ops_status,
         'method_guides': METHOD_GUIDES,
         'get_method_guide': get_method_guide,
+        'get_sport_model_profile': get_sport_model_profile,
+        'get_free_sport_locked_features': get_free_sport_locked_features,
+        'sport_home_href': sport_home_href,
         'show_nba_subnav': False,
         'postseason_only': postseason_only,
         'postseason_team_count': len(POSTSEASON_TEAMS),
@@ -21726,9 +25286,40 @@ def inject_globals():
 # =============================================================================
 @app.route('/')
 def frontpage():
+    if get_current_user():
+        return redirect(url_for('dashboard'))
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
+    nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
+    sports_launch_cards = build_sports_launch_cards(
+        postseason_only,
+        upcoming=nba_context['upcoming'],
+        total_props=nba_context['total_props'],
+        total_players=len(nba_context['teams']),
+        top_plays_count=len(nba_context['top_plays']),
+        best_by_series_count=len(nba_context['best_by_series'])
+    )
+    sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    cross_sport_top_props = build_cross_sport_top_props(sport_snapshots)
+    phase2 = build_phase2_dashboard_context()
+    run_status = load_run_status_context(limit=8)
+    return render_template(
+        'dashboard_overview.html',
+        public_tour=True,
+        sports_launch_cards=sports_launch_cards,
+        sport_snapshots=sport_snapshots,
+        cross_sport_top_props=cross_sport_top_props,
+        nba_summary=nba_context['nba_summary'],
+        phase2=phase2,
+        run_status=run_status,
+        postseason_only=postseason_only,
+        active_page='home',
+        bankroll='0.00',
+    )
+
+    snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     if snapshot:
         payload = snapshot.get('payload') or {}
         upcoming = payload.get('upcoming') or {'today': [], 'tomorrow': [], 'upcoming': []}
@@ -21745,6 +25336,7 @@ def frontpage():
             best_by_series_count=len(best_by_series),
         )
         sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+        streak_heat = build_today_playable_hot_hands(sport_snapshots, limit=3)
         return render_template('frontpage.html',
             num_games_today=len(upcoming.get('today', [])),
             num_games_tomorrow=len(upcoming.get('tomorrow', [])),
@@ -21761,7 +25353,8 @@ def frontpage():
             best_by_series=best_by_series,
             role_changes=payload.get('role_changes') or [],
             sports_launch_cards=sports_launch_cards,
-            sport_snapshots=sport_snapshots)
+            sport_snapshots=sport_snapshots,
+            streak_heat=streak_heat)
 
     gamelogs, schedule = load_gamelogs(), load_schedule()
     player_snapshot = load_player_snapshot()
@@ -21770,7 +25363,6 @@ def frontpage():
     game_odds = load_game_market_odds()
     market_lookup = build_game_market_lookup(game_odds)
     postseason_only = postseason_only_enabled()
-    playoff_gamelogs = load_playoff_gamelogs() if postseason_only else pd.DataFrame()
     team_filter = get_team_filter(postseason_only, schedule)
     upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
     postseason_matchups = build_postseason_matchups(upcoming, gamelogs, schedule) if postseason_only else []
@@ -21781,12 +25373,10 @@ def frontpage():
     upcoming_tomorrow = attach_market_to_games(upcoming_tomorrow, market_lookup)
     upcoming_future = attach_market_to_games(upcoming_future, market_lookup)
     postseason_matchups = attach_market_to_games(postseason_matchups, market_lookup) if postseason_matchups else []
-    injuries = load_injuries()
-    active_boosts = load_active_boosts()
-    return_impacts = load_return_impacts()
+    injuries = load_injuries() if postseason_only else pd.DataFrame()
+    active_boosts = load_active_boosts() if postseason_only else pd.DataFrame()
     role_changes = build_role_change_candidates(injuries, active_boosts, team_filter, gamelogs) if postseason_only else []
     best_by_series = build_series_best_plays(props, gamelogs, schedule) if postseason_only else []
-    defense_cache = {}
     
     total_players = gamelogs['Player'].nunique() if not gamelogs.empty and 'Player' in gamelogs.columns else 0
     top_plays = []
@@ -21836,6 +25426,7 @@ def frontpage():
         best_by_series_count=len(best_by_series)
     )
     sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    streak_heat = build_today_playable_hot_hands(sport_snapshots, limit=3)
     
     return render_template('frontpage.html', 
         num_games_today=len(upcoming['today']),
@@ -21853,7 +25444,8 @@ def frontpage():
         best_by_series=best_by_series,
         role_changes=role_changes,
         sports_launch_cards=sports_launch_cards,
-        sport_snapshots=sport_snapshots)
+        sport_snapshots=sport_snapshots,
+        streak_heat=streak_heat)
 
 
 def build_nba_command_center_context(postseason_only):
@@ -21871,6 +25463,15 @@ def build_nba_command_center_context(postseason_only):
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
         if cached_age <= 180 and cached_entry.get('version') == cache_version:
             return cached_entry['value']
+    disk_cache_key = f'disk::{cache_key}'
+    disk_hit, disk_context = _read_disk_ttl_cached_value(disk_cache_key, version=cache_version)
+    if disk_hit:
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'created_at': datetime.now(timezone.utc),
+            'value': disk_context,
+            'version': cache_version,
+        }
+        return disk_context
 
     gamelogs, schedule = load_gamelogs(), load_schedule()
     playoff_results = load_playoff_results()
@@ -22036,13 +25637,14 @@ def build_nba_command_center_context(postseason_only):
         'value': context,
         'version': cache_version,
     }
+    _write_disk_ttl_cached_value(disk_cache_key, 43200, context, version=cache_version)
     return context
 
 @app.route('/dashboard')
 def dashboard():
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     sports_launch_cards = build_sports_launch_cards(
         postseason_only,
@@ -22053,29 +25655,110 @@ def dashboard():
         best_by_series_count=len(nba_context['best_by_series'])
     )
     sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    cross_sport_top_props = build_cross_sport_top_props(sport_snapshots)
+    phase2 = build_phase2_dashboard_context()
+    run_status = load_run_status_context(limit=8)
     return render_template(
         'dashboard_overview.html',
         sports_launch_cards=sports_launch_cards,
         sport_snapshots=sport_snapshots,
+        cross_sport_top_props=cross_sport_top_props,
         nba_summary=nba_context['nba_summary'],
+        phase2=phase2,
+        run_status=run_status,
         postseason_only=postseason_only,
+        active_page='home',
+        bankroll='2,450.00',
     )
+
+
+@app.route('/free')
+def free_tier():
+    context = build_free_tier_context()
+    return render_template(
+        'free_tier.html',
+        **context,
+        active_page='free_tier',
+        bankroll='2,450.00',
+    )
+
+
+@app.route('/free/<sport_key>')
+def free_sport_preview(sport_key):
+    context = build_free_tier_context(active_sport=sport_key)
+    if context.get('active_preview') is None:
+        return redirect(url_for('free_tier'))
+    return render_template(
+        'free_tier.html',
+        **context,
+        active_page='free_tier',
+        bankroll='2,450.00',
+    )
+
+
+@app.route('/home/<feature_key>')
+def global_feature_preview(feature_key):
+    normalized_feature, feature = get_global_feature_preview(feature_key)
+    postseason_only = postseason_only_enabled()
+    sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
+    live_sports = [
+        sport for sport in sport_snapshots
+        if sport.get('is_live') or int(sport.get('props_rows') or 0) > 0
+    ]
+    cross_sport_top_props = build_cross_sport_top_props(sport_snapshots, limit=12)
+    playable_hot_hands = build_today_playable_hot_hands(sport_snapshots, limit=8)
+    phase2 = build_phase2_dashboard_context()
+    current_user = get_current_user()
+    sport_access = get_user_sport_access(current_user) if current_user else set()
+    all_sports_access = normalize_user_plan(current_user) in ALL_SPORT_PLAN_KEYS if current_user else False
+    sport_cards = []
+    for sport in sport_snapshots:
+        sport_key = str(sport.get('key') or '').strip().lower()
+        unlocked = bool(all_sports_access or sport_key in sport_access or is_owner_user(current_user))
+        sport_cards.append({
+            **sport,
+            'unlocked': unlocked,
+            'lock_label': 'Unlocked' if unlocked else 'Preview',
+            'full_href': sport.get('href') or f"/sports/{sport_key}" if sport_key else '/dashboard',
+        })
+    return render_template(
+        'global_feature_preview.html',
+        feature_key=normalized_feature,
+        feature=feature,
+        sport_snapshots=sport_cards,
+        live_sports=live_sports,
+        cross_sport_top_props=cross_sport_top_props,
+        playable_hot_hands=playable_hot_hands,
+        phase2=phase2,
+        postseason_only=postseason_only,
+        active_page=feature.get('nav_key', 'props'),
+        bankroll='2,450.00',
+    )
+
+
+def render_nba_matchup_lens_page():
+    postseason_only = postseason_only_enabled()
+    snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
+    nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
+    return render_template('dashboard.html', matchup_lens_mode=True, **nba_context)
 
 
 @app.route('/matchup-lens')
 def matchup_lens():
-    postseason_only = postseason_only_enabled()
-    snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
-    nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
-    return render_template('dashboard.html', matchup_lens_mode=True, **nba_context)
+    query = request.args.to_dict(flat=True)
+    if query:
+        target = f"/tools/matchup-lens?{urlencode(query)}"
+    else:
+        target = '/tools/matchup-lens'
+    return redirect(target, code=302)
 
 
 @app.route('/sports/nba')
 def nba_page():
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
-    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+    snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     return render_template('dashboard.html', **nba_context)
 
@@ -22112,9 +25795,9 @@ def build_nfl_dashboard_runtime_bundle():
             'history_status': history_status,
         }
 
-    return _get_ttl_cached_value(
+    return _get_disk_ttl_cached_value(
         cache_key='nfl_dashboard_runtime',
-        ttl_seconds=180,
+        ttl_seconds=43200,
         builder=_build_bundle,
         version=cache_version,
     )
@@ -22124,7 +25807,7 @@ def build_nfl_dashboard_runtime_bundle():
 def nfl_page():
     postseason_only = postseason_only_enabled()
     if not request.args:
-        snapshot = load_runtime_snapshot('nfl_dashboard', max_age_minutes=720)
+        snapshot = load_runtime_snapshot('nfl_dashboard', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
             top_props = annotate_mlb_rows_with_reliability(payload.get('top_props', []))
@@ -22386,6 +26069,10 @@ def _render_football_method_page(sport_key, method_key):
                     {'label': 'Books', 'value': live_refresh_meta.get('book_count', 0), 'note': ', '.join(live_refresh_meta.get('books', [])[:4]) or 'No books loaded'},
                     {'label': 'Families', 'value': len(families), 'note': ', '.join(families[:3]) if families else 'No stat families loaded'},
                 ]
+                if sport_key == 'nfl':
+                    sim_card = build_nfl_simulation_summary_card(method_view['live_plays'])
+                    if sim_card:
+                        method_view['summary_cards'].append(sim_card)
             elif not live_props.empty:
                 method_view['source'] = 'empty_live'
                 method_view['live_empty_reason'] = 'Football prop files exist, but no live prop rows were returned for the current window.'
@@ -22410,6 +26097,8 @@ def _render_football_method_page(sport_key, method_key):
     if sport_key == 'nfl' and method_key in {'trends', 'props'}:
         historical_player_rows = build_nfl_historical_player_trend_rows(method_key)
         if historical_player_rows:
+            historical_player_rows = attach_nfl_quant_insights_to_rows(historical_player_rows, default_direction='OVER')
+            historical_player_rows = attach_promotion_signals_to_props(historical_player_rows, sport='NFL', score_fields=('fit_score',))
             method_view['history_player_rows'] = historical_player_rows
             method_view['history_player_scorecards'] = build_nfl_historical_player_scorecards(historical_player_rows)
             real_line_rows = sum(1 for row in historical_player_rows if str(row.get('line_source') or '').strip())
@@ -22424,6 +26113,9 @@ def _render_football_method_page(sport_key, method_key):
                     {'label': 'Season', 'value': historical_player_rows[0].get('season') or '-', 'note': 'latest historical season in view'},
                     {'label': 'Avg Fit', 'value': avg_fit, 'note': 'player continuation score'},
                 ]
+            sim_card = build_nfl_simulation_summary_card(historical_player_rows)
+            if sim_card:
+                method_view['summary_cards'].append(sim_card)
 
     if sport_key == 'nfl':
         method_view['history_prop_review'] = history_lab.get('prop_review', {})
@@ -22506,7 +26198,7 @@ def nfl_matchup_page(sheet_name):
     board = load_nfl_floor_board()
     matchup = load_nfl_floor_matchup(sheet_name)
     if not matchup:
-        return "NFL matchup page not found", 404
+        return render_error_page(404, 'NFL matchup not found', 'That football matchup is not available yet.')
     sport_profile = get_sport_model_profile('nfl')
     market_groups = get_nfl_market_groups()
     filter_state = build_nfl_filter_state(request.args, matchup)
@@ -22532,29 +26224,35 @@ def wnba_page():
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('wnba_dashboard_today', max_age_minutes=720)
+        snapshot = load_runtime_snapshot('wnba_dashboard_today', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
-            top_props = enrich_rows_with_game_environment(
-                payload.get('top_props', []),
-                sport='WNBA',
-                odds_df=load_wnba_game_market_odds(),
-            )
-            return render_template(
-                'wnba_dashboard.html',
-                postseason_only=postseason_only,
-                sport_profile=payload.get('sport_profile', {}),
-                market_groups=payload.get('market_groups', []),
-                refresh_meta=payload.get('refresh_meta', {}),
-                board_status=payload.get('board_status', {}),
-                upcoming=payload.get('upcoming', {}),
-                top_props=top_props,
-                matchup_cards=payload.get('matchup_cards', []),
-                date_filter=date_filter,
-                stat_filter=stat_filter,
-                direction_filter=direction_filter,
-                search_query=search_query,
-            )
+            if wnba_snapshot_has_invalid_matchups(payload):
+                payload = {}
+            else:
+                top_props = enrich_rows_with_game_environment(
+                    payload.get('top_props', []),
+                    sport='WNBA',
+                    odds_df=load_wnba_game_market_odds(),
+                )
+                top_props = attach_team_strength_priors_to_rows(top_props, sport='WNBA')
+                board_intelligence = build_board_intelligence_summary(top_props)
+                return render_template(
+                    'wnba_dashboard.html',
+                    postseason_only=postseason_only,
+                    sport_profile=payload.get('sport_profile', {}),
+                    market_groups=payload.get('market_groups', []),
+                    refresh_meta=payload.get('refresh_meta', {}),
+                    board_status=payload.get('board_status', {}),
+                    upcoming=payload.get('upcoming', {}),
+                    top_props=top_props,
+                    board_intelligence=board_intelligence,
+                    matchup_cards=payload.get('matchup_cards', []),
+                    date_filter=date_filter,
+                    stat_filter=stat_filter,
+                    direction_filter=direction_filter,
+                    search_query=search_query,
+                )
     sport_profile = get_sport_model_profile('wnba')
     market_groups = get_wnba_market_groups()
     props_df, refresh_meta = load_wnba_live_props_feed(require_fresh=True)
@@ -22575,6 +26273,7 @@ def wnba_page():
         direction_filter=direction_filter,
         search_query=search_query,
     )
+    board_intelligence = build_board_intelligence_summary(top_props)
     if should_auto_archive_candidates(
         postseason_only=False,
         sample_mode='current',
@@ -22607,6 +26306,7 @@ def wnba_page():
         board_status=board_status,
         upcoming=upcoming,
         top_props=top_props[:80],
+        board_intelligence=board_intelligence,
         matchup_cards=matchup_cards,
         date_filter=date_filter,
         stat_filter=stat_filter,
@@ -22620,32 +26320,9 @@ def wnba_props_page():
     return redirect(f"/sports/wnba?{urlencode(request.args.to_dict(flat=True) or {'postseason': 1 if postseason_only_enabled() else 0})}", code=302)
 
 
-@app.route('/sports/nba/props')
-def nba_props_page():
-    query = request.args.to_dict(flat=True)
-    if 'sample' not in query:
-        query['sample'] = 'current'
-    if 'postseason' not in query:
-        query['postseason'] = 1 if postseason_only_enabled() else 0
-    return redirect(f"/props?{urlencode(query)}", code=302)
-
-
-@app.route('/sports/nba/market-edge')
-def nba_market_edge_page():
-    query = request.args.to_dict(flat=True)
-    if 'sample' not in query:
-        query['sample'] = 'current'
-    if 'postseason' not in query:
-        query['postseason'] = 1 if postseason_only_enabled() else 0
-    return redirect(f"/market-edge?{urlencode(query)}", code=302)
-
-
 @app.route('/sports/nba/matchup-lens')
 def nba_matchup_lens_page():
-    query = request.args.to_dict(flat=True)
-    if 'postseason' not in query:
-        query['postseason'] = 1 if postseason_only_enabled() else 0
-    return redirect(f"/matchup-lens?{urlencode(query)}", code=302)
+    return render_nba_matchup_lens_page()
 
 
 @app.route('/sports/nba/trends')
@@ -22671,33 +26348,36 @@ def _render_wnba_method_page(method_key):
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if method_key == 'market_edge' and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('wnba_market_edge_today', max_age_minutes=720)
+        snapshot = load_runtime_snapshot('wnba_market_edge_today', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
-            guide = METHOD_GUIDES.get(method_key, {})
-            summary_cards = [
-                {'label': 'Rows', 'value': len(payload.get('rows', [])), 'note': 'qualified WNBA market spots'},
-                {'label': 'Books', 'value': (payload.get('refresh_meta', {}) or {}).get('book_count', 0), 'note': ', '.join(((payload.get('refresh_meta', {}) or {}).get('books', [])[:4])) or 'No books loaded'},
-                {'label': 'Top Edge', 'value': f"{max([float(r.get('lean_gap') or 0) for r in payload.get('rows', [])], default=0):.1f}%", 'note': 'widest current O/U split'},
-            ]
-            rows = annotate_mlb_rows_with_reliability(payload.get('rows', []))
-            return render_template(
-                'wnba_method_board.html',
-                postseason_only=postseason_only,
-                sport_profile=payload.get('sport_profile', {}),
-                refresh_meta=payload.get('refresh_meta', {}),
-                matchup_cards=payload.get('matchup_cards', []),
-                rows=rows,
-                date_filter=date_filter,
-                stat_filter=stat_filter,
-                direction_filter=direction_filter,
-                search_query=search_query,
-                method_key=method_key,
-                method_title='Market Edge',
-                method_guide=guide,
-                summary_cards=summary_cards,
-                trend_ready=True,
-            )
+            if wnba_snapshot_has_invalid_matchups(payload):
+                payload = {}
+            else:
+                guide = METHOD_GUIDES.get(method_key, {})
+                summary_cards = [
+                    {'label': 'Rows', 'value': len(payload.get('rows', [])), 'note': 'qualified WNBA market spots'},
+                    {'label': 'Books', 'value': (payload.get('refresh_meta', {}) or {}).get('book_count', 0), 'note': ', '.join(((payload.get('refresh_meta', {}) or {}).get('books', [])[:4])) or 'No books loaded'},
+                    {'label': 'Top Edge', 'value': f"{max([float(r.get('lean_gap') or 0) for r in payload.get('rows', [])], default=0):.1f}%", 'note': 'widest current O/U split'},
+                ]
+                rows = annotate_mlb_rows_with_reliability(payload.get('rows', []))
+                return render_template(
+                    'wnba_method_board.html',
+                    postseason_only=postseason_only,
+                    sport_profile=payload.get('sport_profile', {}),
+                    refresh_meta=payload.get('refresh_meta', {}),
+                    matchup_cards=payload.get('matchup_cards', []),
+                    rows=rows,
+                    date_filter=date_filter,
+                    stat_filter=stat_filter,
+                    direction_filter=direction_filter,
+                    search_query=search_query,
+                    method_key=method_key,
+                    method_title='Market Edge',
+                    method_guide=guide,
+                    summary_cards=summary_cards,
+                    trend_ready=True,
+                )
     sport_profile = get_sport_model_profile('wnba')
     props_df, refresh_meta = load_wnba_live_props_feed(require_fresh=True)
     odds_df = load_wnba_game_market_odds()
@@ -22718,7 +26398,7 @@ def _render_wnba_method_page(method_key):
     method_names = {
         'market_edge': 'Market Edge',
         'floor_plays': 'Floor Plays',
-        'trends': 'Trends',
+        'trends': 'Streak Patterns',
     }
     method_title = method_names.get(method_key, 'WNBA Method')
     guide = METHOD_GUIDES.get(method_key, {})
@@ -22730,12 +26410,12 @@ def _render_wnba_method_page(method_key):
         ],
         'floor_plays': [
             {'label': 'Rows', 'value': len(rows), 'note': 'steady WNBA floor candidates'},
-            {'label': 'Trend Ready', 'value': sum(1 for r in rows if str(r.get('trend_note') or '').strip()), 'note': 'rows with recent form support'},
+            {'label': 'Streak Ready', 'value': sum(1 for r in rows if str(r.get('trend_note') or '').strip()), 'note': 'rows with recent form support'},
             {'label': 'Confirmed', 'value': sum(1 for r in rows if int(r.get('book_count') or 0) >= 2), 'note': 'multi-book confirmations'},
         ],
         'trends': [
             {'label': 'Rows', 'value': len(rows), 'note': 'trend-backed WNBA candidates'},
-            {'label': 'Trend Feed', 'value': 'Ready' if not gamelogs_df.empty else 'Waiting', 'note': f"{len(gamelogs_df)} WNBA log rows"},
+            {'label': 'Streak Feed', 'value': 'Ready' if not gamelogs_df.empty else 'Waiting', 'note': f"{len(gamelogs_df)} WNBA log rows"},
             {'label': 'Top Market Read', 'value': f"{max([float(r.get('market_prob') or 0) for r in rows], default=0):.1f}%", 'note': 'strongest market favorite side'},
         ],
     }.get(method_key, [])
@@ -22814,7 +26494,7 @@ def wnba_matchup_page(matchup_slug):
     matchup_cards = build_wnba_matchup_cards(odds_df, schedule_df)
     matchup_card = next((card for card in matchup_cards if card.get('slug') == matchup_slug), None)
     if not matchup_card:
-        return "WNBA matchup page not found", 404
+        return render_error_page(404, 'WNBA matchup not found', 'That WNBA matchup is not available yet.')
 
     matchup_props = [
         prop for prop in build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=gamelogs_df, date_filter='all', featured_top_n=0)
@@ -22834,11 +26514,14 @@ def wnba_matchup_page(matchup_slug):
 def mlb_dashboard():
     postseason_only = postseason_only_enabled()
     date_filter = request.args.get('date', 'today').strip().lower() or 'today'
+    all_dates_fallback = date_filter == 'all'
+    if all_dates_fallback:
+        date_filter = 'today'
     stat_filter = request.args.get('stat', '').strip()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
     if date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('mlb_dashboard_today', max_age_minutes=720)
+        snapshot = load_runtime_snapshot('mlb_dashboard_today', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
             mlb_launch_lab = payload.get('mlb_launch_lab') or build_mlb_launch_lab()
@@ -22847,7 +26530,9 @@ def mlb_dashboard():
                 sport='MLB',
                 odds_df=load_mlb_game_market_odds(),
             )
+            top_props = attach_team_strength_priors_to_rows(top_props, sport='MLB')
             mlb_slate_intelligence = build_mlb_slate_intelligence(load_mlb_game_market_odds(), top_props)
+            board_intelligence = build_board_intelligence_summary(top_props)
             return render_template(
                 'mlb_dashboard.html',
                 postseason_only=postseason_only,
@@ -22861,10 +26546,12 @@ def mlb_dashboard():
                 direction_filter=direction_filter,
                 search_query=search_query,
                 top_props=top_props,
+                board_intelligence=board_intelligence,
                 summary_cards=payload.get('summary_cards', []),
                 stat_options=payload.get('stat_options', []),
                 mlb_launch_lab=mlb_launch_lab,
                 mlb_slate_intelligence=mlb_slate_intelligence,
+                all_dates_fallback=all_dates_fallback,
             )
     sport_profile = get_sport_model_profile('mlb')
     market_groups = get_mlb_market_groups()
@@ -22884,7 +26571,10 @@ def mlb_dashboard():
         stat_filter=stat_filter,
         direction_filter=direction_filter,
         search_query=search_query,
+        max_groups=250 if date_filter == 'all' and not search_query else None,
+        fast_mode=True,
     )
+    board_intelligence = build_board_intelligence_summary(top_props)
     mlb_slate_intelligence = build_mlb_slate_intelligence(odds_df, top_props)
     summary_cards = [
         {'label': 'Board Rows', 'value': len(top_props), 'note': 'props matching the current filter set'},
@@ -22939,26 +26629,95 @@ def mlb_dashboard():
         direction_filter=direction_filter,
         search_query=search_query,
         top_props=top_props[:80],
+        board_intelligence=board_intelligence,
         summary_cards=summary_cards,
         stat_options=stat_options,
         mlb_launch_lab=mlb_launch_lab,
         mlb_slate_intelligence=mlb_slate_intelligence,
+        all_dates_fallback=all_dates_fallback,
     )
 
 
 @app.route('/sports/mlb/props')
 def mlb_props_page():
-    return redirect(f"/sports/mlb?{urlencode(request.args.to_dict(flat=True) or {'postseason': 1 if postseason_only_enabled() else 0})}", code=302)
+    return _render_mlb_method_page('props')
+
+
+@app.route('/sports/mlb/matchup/<matchup_slug>')
+def mlb_matchup_page(matchup_slug):
+    date_filter = request.args.get('date', 'today').strip().lower() or 'today'
+    if date_filter == 'all':
+        date_filter = 'today'
+    props_df, refresh_meta = load_mlb_live_props_feed(require_fresh=True)
+    odds_df = load_mlb_game_market_odds()
+    schedule_df = load_mlb_schedule()
+    gamelogs_df = load_mlb_gamelogs()
+    rows = build_mlb_prop_board(
+        props_df,
+        odds_df,
+        schedule_df,
+        gamelogs=gamelogs_df,
+        date_filter=date_filter,
+        stat_filter=request.args.get('stat', '').strip(),
+        direction_filter=request.args.get('direction', 'all').strip().lower() or 'all',
+        search_query='',
+        fast_mode=True,
+    )
+    matched_rows = [row for row in rows if str(row.get('matchup_slug') or '').strip() == str(matchup_slug or '').strip()]
+    game_detail = build_mlb_matchup_game_detail(matchup_slug, odds_df, schedule_df)
+    if not matched_rows:
+        if 'Game' in props_df.columns and game_detail:
+            away = str(game_detail.get('away') or '').strip()
+            home = str(game_detail.get('home') or '').strip()
+            matchup_keys = {
+                _mlb_prop_game_key(f'{away}@{home}'),
+                _mlb_prop_game_key(f'{home}@{away}'),
+            }
+            matchup_props_df = props_df[props_df['Game'].astype(str).map(_mlb_prop_game_key).isin(matchup_keys)].copy()
+        else:
+            matchup_props_df = props_df
+        all_rows = build_mlb_prop_board(
+            matchup_props_df,
+            odds_df,
+            schedule_df,
+            gamelogs=gamelogs_df,
+            date_filter='today',
+            stat_filter=request.args.get('stat', '').strip(),
+            direction_filter=request.args.get('direction', 'all').strip().lower() or 'all',
+            search_query='',
+            max_groups=250,
+            fast_mode=True,
+        )
+        matched_rows = [row for row in all_rows if str(row.get('matchup_slug') or '').strip() == str(matchup_slug or '').strip()]
+        rows = all_rows
+    slate_rows = build_mlb_slate_intelligence(odds_df, rows)
+    matchup_card = next((row for row in slate_rows if str(row.get('slug') or '').strip() == str(matchup_slug or '').strip()), None)
+    return render_template(
+        'mlb_matchup.html',
+        matchup_slug=matchup_slug,
+        matchup=matchup_card,
+        game_detail=game_detail,
+        rows=matched_rows[:160],
+        refresh_meta=refresh_meta,
+        date_filter=date_filter,
+    )
 
 
 def _render_mlb_method_page(method_key):
     postseason_only = postseason_only_enabled()
     date_filter = request.args.get('date', 'today').strip().lower() or 'today'
+    all_dates_fallback = date_filter == 'all'
+    if all_dates_fallback:
+        date_filter = 'today'
     stat_filter = request.args.get('stat', '').strip()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
-    if method_key == 'market_edge' and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
-        snapshot = load_runtime_snapshot('mlb_market_edge_today', max_age_minutes=720)
+    method_snapshot_keys = {
+        'market_edge': 'mlb_market_edge_today',
+        'props': 'mlb_props_today',
+    }
+    if method_key in method_snapshot_keys and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
+        snapshot = load_runtime_snapshot(method_snapshot_keys[method_key], max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
             guide = METHOD_GUIDES.get(method_key, {})
@@ -22966,6 +26725,12 @@ def _render_mlb_method_page(method_key):
             mlb_launch_lab = build_mlb_launch_lab(gamelogs_df=gamelogs_df)
             rows = annotate_mlb_rows_with_reliability(payload.get('rows', []))
             mlb_slate_intelligence = build_mlb_slate_intelligence(load_mlb_game_market_odds(), rows)
+            method_names = {
+                'props': 'Props',
+                'market_edge': 'Market Edge',
+                'floor_plays': 'Floor Plays',
+                'trends': 'Streak Patterns',
+            }
             return render_template(
                 'mlb_method_board.html',
                 postseason_only=postseason_only,
@@ -22977,13 +26742,14 @@ def _render_mlb_method_page(method_key):
                 direction_filter=direction_filter,
                 search_query=search_query,
                 method_key=method_key,
-                method_title='Market Edge',
+                method_title=method_names.get(method_key, 'MLB Method'),
                 method_guide=guide,
                 rows=rows,
                 summary_cards=payload.get('summary_cards', []),
                 stat_options=payload.get('stat_options', []),
                 mlb_launch_lab=mlb_launch_lab,
                 mlb_slate_intelligence=mlb_slate_intelligence,
+                all_dates_fallback=all_dates_fallback,
             )
     sport_profile = get_sport_model_profile('mlb')
     props_df, refresh_meta = load_mlb_live_props_feed(require_fresh=True)
@@ -23004,12 +26770,15 @@ def _render_mlb_method_page(method_key):
         direction_filter=direction_filter,
         search_query=search_query,
         featured_top_n=12,
+        max_groups=250 if date_filter == 'all' and not search_query else None,
+        fast_mode=True,
     )
     mlb_slate_intelligence = build_mlb_slate_intelligence(odds_df, rows)
     method_names = {
+        'props': 'Props',
         'market_edge': 'Market Edge',
         'floor_plays': 'Floor Plays',
-        'trends': 'Trends',
+        'trends': 'Streak Patterns',
     }
     method_title = method_names.get(method_key, 'MLB Method')
     guide = METHOD_GUIDES.get(method_key, {})
@@ -23021,7 +26790,7 @@ def _render_mlb_method_page(method_key):
             'note': 'rows that still read as clean plays after lightweight guardrails',
         },
         {
-            'label': 'Trend Ready',
+            'label': 'Streak Ready',
             'value': sum(1 for row in rows if str(row.get('trend_note') or '').strip()),
             'note': 'rows with real recent-form support from MLB game logs',
         },
@@ -23045,6 +26814,7 @@ def _render_mlb_method_page(method_key):
         ),
     ):
         archive_method_name = {
+            'props': 'Props',
             'market_edge': 'Market Edge',
             'floor_plays': 'Floor Plays',
             'trends': 'Trends',
@@ -23076,6 +26846,7 @@ def _render_mlb_method_page(method_key):
         stat_options=stat_options,
         mlb_launch_lab=mlb_launch_lab,
         mlb_slate_intelligence=mlb_slate_intelligence,
+        all_dates_fallback=all_dates_fallback,
     )
 
 
@@ -23105,13 +26876,175 @@ def method_hub(method_key):
     selected_sport = request.args.get('sport', '').strip().lower()
     context = build_method_hub_context(method_key, postseason_only=postseason_only, selected_sport=selected_sport)
     if not context:
-        return "Method hub not found", 404
+        return render_error_page(404, 'Method hub not found', 'That method hub is not available yet.')
     return render_template('method_hub.html', postseason_only=postseason_only, **context)
 
 
 @app.route('/glossary')
 def glossary():
     return render_template('glossary.html', glossary_sections=GLOSSARY_SECTIONS)
+
+
+LEGAL_PAGE_CONTENT = {
+    'terms': {
+        'title': 'Terms of Service',
+        'kicker': 'Platform Terms',
+        'headline': 'Terms of Service',
+        'summary': 'Bankroll Kings is an analytics and education platform. It does not take bets, hold funds, or guarantee outcomes.',
+        'updated_at': 'May 30, 2026',
+        'sections': [
+            {
+                'heading': 'What the platform is',
+                'body': [
+                    'Bankroll Kings provides sports betting research, calibration, simulation, ticket-building support, and educational tools.',
+                    'The platform is not a sportsbook, bookmaker, gambling operator, broker, or payment custodian.',
+                ],
+            },
+            {
+                'heading': 'No guarantees and no financial advice',
+                'body': [
+                    'All content is informational and educational only. Model scores, confidence tags, and rankings are decision-support signals, not guarantees.',
+                    'You remain fully responsible for your betting decisions, bankroll management, and compliance with the laws in your location.',
+                ],
+            },
+            {
+                'heading': 'Eligibility and lawful use',
+                'body': [
+                    'You must be at least 18 years old, or the legal gambling age in your jurisdiction if it is higher, to use paid betting-oriented features.',
+                    'You may not use the platform in any way that violates local law, platform security, or account integrity requirements.',
+                ],
+            },
+            {
+                'heading': 'Subscriptions',
+                'body': [
+                    'Paid plans unlock additional research depth, saved workflows, and premium tools. Access may change if a subscription expires, is canceled, or is refunded.',
+                    'Pricing, plan structure, and feature scope may change over time. Material billing changes should be communicated before renewal where required.',
+                ],
+            },
+        ],
+    },
+    'privacy': {
+        'title': 'Privacy Policy',
+        'kicker': 'Data & Privacy',
+        'headline': 'Privacy Policy',
+        'summary': 'This page explains what account and usage data the platform stores, why it is stored, and how it is used to operate the service.',
+        'updated_at': 'May 30, 2026',
+        'sections': [
+            {
+                'heading': 'What data is collected',
+                'body': [
+                    'The platform may store account details, authentication credentials, subscription status, saved tickets, review activity, and normal usage telemetry needed to operate the site.',
+                    'Operational logs may also capture refresh status, scorecard health, error events, and internal run metadata.',
+                ],
+            },
+            {
+                'heading': 'How the data is used',
+                'body': [
+                    'Data is used to authenticate users, protect accounts, personalize the product, restore saved work, and support billing and subscription access.',
+                    'Operational data is also used to monitor platform health, investigate issues, and improve the quality of scores, boards, and teaching layers.',
+                ],
+            },
+            {
+                'heading': 'Sharing and storage',
+                'body': [
+                    'Bankroll Kings does not sell personal data. Limited third-party services may be used for payments, infrastructure, analytics, or email operations as the platform matures.',
+                    'Data retention and deletion practices should be updated as the production stack moves from local CSV-backed workflows into managed infrastructure.',
+                ],
+            },
+            {
+                'heading': 'Regional rights',
+                'body': [
+                    'Users may have rights to request access, correction, or deletion of personal data depending on their jurisdiction, including GDPR or CCPA-style rights where applicable.',
+                    'Before public launch, this policy should receive a final legal review so the language matches the live production architecture.',
+                ],
+            },
+        ],
+    },
+    'refund': {
+        'title': 'Refund Policy',
+        'kicker': 'Billing Terms',
+        'headline': 'Refund Policy',
+        'summary': 'Subscription access is digital and begins when the plan is activated, so refunds need clear rules before public launch.',
+        'updated_at': 'May 30, 2026',
+        'sections': [
+            {
+                'heading': 'General policy',
+                'body': [
+                    'Unless required by law, subscription fees are generally non-refundable after access has been granted to premium digital features.',
+                    'Users should be able to cancel recurring billing through the billing portal before the next renewal date.',
+                ],
+            },
+            {
+                'heading': 'When exceptions may apply',
+                'body': [
+                    'Refund exceptions may be appropriate for duplicate charges, billing errors, or technical access failures that prevent reasonable use of the paid product.',
+                    'If a refund is granted, access to the refunded premium tier may be reduced or removed at the same time.',
+                ],
+            },
+            {
+                'heading': 'Pre-launch note',
+                'body': [
+                    'This draft policy should be finalized alongside live Stripe activation and attorney review before public launch.',
+                ],
+            },
+        ],
+    },
+    'responsible-gambling': {
+        'title': 'Responsible Gambling',
+        'kicker': 'Play Responsibly',
+        'headline': 'Responsible Gambling',
+        'summary': 'The platform is built to support discipline, not impulsive betting. If betting stops feeling controlled, pause and get help.',
+        'updated_at': 'May 30, 2026',
+        'sections': [
+            {
+                'heading': 'Use the platform responsibly',
+                'body': [
+                    'Treat betting as entertainment or a limited-risk analytical activity, not as guaranteed income.',
+                    'Use fixed unit sizing, respect loss limits, and avoid increasing exposure just because a slate feels active or emotional.',
+                ],
+            },
+            {
+                'heading': 'Know the warning signs',
+                'body': [
+                    'Chasing losses, hiding betting activity, borrowing to gamble, or feeling unable to stop are all warning signs that betting may no longer be healthy.',
+                ],
+            },
+            {
+                'heading': 'Get support',
+                'body': [
+                    'If you or someone you know needs help, call or text 1-800-GAMBLER (1-800-426-2537) where available, or visit 1-800-522-4700 / the National Council on Problem Gambling resources for support options.',
+                ],
+            },
+        ],
+    },
+}
+
+
+def render_legal_page(page_key):
+    page = LEGAL_PAGE_CONTENT.get(page_key)
+    if not page:
+        return render_error_page(404, 'Page not found', 'That preview page is not available.')
+    return render_template('legal_page.html', legal_page=page)
+
+
+@app.route('/terms')
+def terms():
+    return render_legal_page('terms')
+
+
+@app.route('/privacy')
+def privacy():
+    return render_legal_page('privacy')
+
+
+@app.route('/refund-policy')
+def refund_policy():
+    return render_legal_page('refund')
+
+
+@app.route('/responsible-gambling')
+def responsible_gambling():
+    return render_legal_page('responsible-gambling')
 
 
 SPORTS_LAUNCH_PAGES = {
@@ -23135,20 +27068,20 @@ SPORTS_LAUNCH_PAGES = {
     },
     'wnba': {
         'title': 'WNBA',
-        'kicker': 'Live Women’s Hoops',
+        'kicker': "Live Women's Hoops",
         'summary': 'WNBA is live with schedule, lines, props, trend reads, floor plays, and matchup workflow support beside the NBA and MLB boards.',
         'highlights': ['Player props', 'Game lines + totals', 'Trend profiles', 'Floor plays']
     },
     'ncaamb': {
-        'title': 'Men’s College Hoops',
+        'title': "Men's College Hoops",
         'kicker': 'College Basketball Expansion',
-        'summary': 'Men’s college basketball pages are being built with game line and total reads first, then team form and matchup context underneath.',
+        'summary': "Men's college basketball pages are being built with game line and total reads first, then team form and matchup context underneath.",
         'highlights': ['Game environment context', 'Game line / O-U board', 'Team form boards', 'Tempo + efficiency tracking']
     },
     'ncaawb': {
-        'title': 'Women’s College Hoops',
-        'kicker': 'Women’s College Expansion',
-        'summary': 'Women’s college basketball pages are being built around team-driven line and total reads, with matchup context carrying more weight than prop volume.',
+        'title': "Women's College Hoops",
+        'kicker': "Women's College Expansion",
+        'summary': "Women's college basketball pages are being built around team-driven line and total reads, with matchup context carrying more weight than prop volume.",
         'highlights': ['Game line / O-U board', 'Matchup context', 'Tempo tracking', 'Postseason workflow']
     }
 }
@@ -23168,13 +27101,15 @@ METHOD_HUB_CONFIG = {
     'props': {
         'title': 'Props',
         'headline': 'Choose a sport for prop research',
-        'summary': 'Props is now a cross-sport entry point. Pick the sport first, then work inside that sport’s prop board.',
+        'summary': "Props is now a cross-sport entry point. Pick the sport first, then work inside that sport's prop board.",
         'cards': [
             {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Props', 'href': '/sports/nba/props?sample=current', 'status': 'live', 'note': 'Live NBA prop board with matchup, market, and contradiction layers.'},
             {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Props', 'href': '/sports/wnba/props', 'status': 'live', 'note': 'WNBA prop board built from the current WNBA dashboard feed.'},
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Props', 'href': '/sports/mlb/props', 'status': 'live', 'note': 'MLB prop board centered on the daily baseball slate.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Props', 'href': '/sports/nfl/props', 'status': 'live', 'note': 'Weekly football prop board built from the NFL workbook flow.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Props', 'href': '/sports/ncaaf/props', 'status': 'live', 'note': 'College football props with the current CFB board rules.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Props', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops props are not fully live yet, so use the expansion board as the current entry point.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Props', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops props are not fully live yet, so use the expansion board as the current entry point.'},
         ],
     },
     'market-edge': {
@@ -23183,10 +27118,12 @@ METHOD_HUB_CONFIG = {
         'summary': 'Market Edge should be sport-aware. Use this hub to jump into the sport where line movement and book disagreement matter most.',
         'cards': [
             {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Market Edge', 'href': '/sports/nba/market-edge?sample=current', 'status': 'live', 'note': 'NBA market-edge board with teaching copy and line-move explanation.'},
-            {'sport': 'WNBA', 'label': 'WNBA Market Edge', 'href': '/sports/wnba/market-edge', 'status': 'live', 'note': 'WNBA market-edge board using the current women’s hoops prop feed.'},
+            {'sport': 'WNBA', 'label': 'WNBA Market Edge', 'href': '/sports/wnba/market-edge', 'status': 'live', 'note': "WNBA market-edge board using the current women's hoops prop feed."},
             {'sport': 'MLB', 'label': 'MLB Market Edge', 'href': '/sports/mlb/market-edge', 'status': 'live', 'note': 'MLB market-edge board for daily baseball pricing and book splits.'},
             {'sport': 'NFL', 'label': 'NFL Market Edge', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL still leans more on the full football board than a separate market-edge page.'},
             {'sport': 'CFB', 'label': 'CFB Market Edge', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB still leans more on the full football board than a separate market-edge page.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Market Edge', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops still uses the expansion board while market-edge workflow is being built out.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Market Edge', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops still uses the expansion board while market-edge workflow is being built out.'},
         ],
     },
     'parlay': {
@@ -23199,6 +27136,8 @@ METHOD_HUB_CONFIG = {
             {'sport': 'MLB', 'label': 'MLB Parlay', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB boards are live, but the baseball-specific parlay layer is still thinner than NBA.'},
             {'sport': 'NFL', 'label': 'NFL Parlay', 'href': '/sports/nfl', 'status': 'watch', 'note': 'Use the NFL board first while the dedicated football parlay workflow catches up.'},
             {'sport': 'CFB', 'label': 'CFB Parlay', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'Use the CFB board first while the college-football parlay workflow catches up.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops should be researched from the expansion board until a dedicated parlay flow exists.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops should be researched from the expansion board until a dedicated parlay flow exists.'},
         ],
     },
     'injuries': {
@@ -23211,18 +27150,22 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Injury Context', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB injury badges and feed health are live, but the main baseball board is still the best place to start.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Injury Context', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL injury data is loaded, but the sport still leans on the full football board instead of a dedicated injury page.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Injury Context', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB injury support is thinner, so use the main college-football board first.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Injury Context', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops injury context is still light, so the expansion board is the current entry point.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Injury Context', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops injury context is still light, so the expansion board is the current entry point.'},
         ],
     },
     'trends': {
-        'title': 'Trends',
-        'headline': 'Choose a sport for trend research',
-        'summary': 'Trend research should not assume NBA by default. Pick the sport first, then move into that sport’s trend workflow.',
+        'title': 'Streak Patterns',
+        'headline': 'Choose a sport for streak-pattern research',
+        'summary': "Streak research should not assume NBA by default. Pick the sport first, then move into that sport's hot-hand and consistency workflow.",
         'cards': [
-            {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Trends', 'href': '/sports/nba/trends', 'status': 'live', 'note': 'NBA trend board is the deepest streak and consistency workflow on the site.'},
-            {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Trends', 'href': '/sports/wnba/trends', 'status': 'live', 'note': 'WNBA trend board is live and built from current women’s hoops game logs.'},
-            {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Trends', 'href': '/sports/mlb/trends', 'status': 'live', 'note': 'MLB trend board is live and tied to the current baseball board.'},
-            {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Trends', 'href': '/sports/nfl/trends', 'status': 'live', 'note': 'NFL trends are organized inside the current football method board.'},
-            {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Trends', 'href': '/sports/ncaaf/trends', 'status': 'live', 'note': 'CFB trends are available through the current college-football method board.'},
+            {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Streak Patterns', 'href': '/sports/nba/trends', 'status': 'live', 'note': 'NBA has the deepest hot-hand and consistency workflow on the site.'},
+            {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Streak Patterns', 'href': '/sports/wnba/trends', 'status': 'live', 'note': "WNBA streak patterns are live and built from current women's hoops game logs."},
+            {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Streak Patterns', 'href': '/sports/mlb/trends', 'status': 'live', 'note': 'MLB streak patterns are live and tied to the current baseball board.'},
+            {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Streak Patterns', 'href': '/sports/nfl/trends', 'status': 'live', 'note': 'NFL streak patterns are organized inside the current football method board.'},
+            {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Streak Patterns', 'href': '/sports/ncaaf/trends', 'status': 'live', 'note': 'CFB streak patterns are available through the current college-football method board.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Streak Patterns', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops streak workflow is still emerging, so use the expansion board first.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Streak Patterns', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops streak workflow is still emerging, so use the expansion board first.'},
         ],
     },
 }
@@ -23290,9 +27233,9 @@ GLOSSARY_SECTIONS = [
         'id': 'samples-time-windows',
         'title': 'Samples + Time Windows',
         'items': [
-            {'term': 'Current Team Sample', 'meaning': 'Only games with the player’s current team.', 'why': 'Important for traded players whose role changed.'},
+            {'term': 'Current Team Sample', 'meaning': "Only games with the player's current team.", 'why': 'Important for traded players whose role changed.'},
             {'term': 'Full Season Sample', 'meaning': 'All season games, including prior teams if applicable.', 'why': 'Gives a bigger sample but can blend different roles.'},
-            {'term': 'Current Playoff Run', 'meaning': 'Only playoff games in the current postseason sample.', 'why': 'Useful for seeing how a player’s role is changing under playoff pressure.'},
+            {'term': 'Current Playoff Run', 'meaning': 'Only playoff games in the current postseason sample.', 'why': "Useful for seeing how a player's role is changing under playoff pressure."},
             {'term': 'L5 / L10 / L20', 'meaning': 'Last 5, 10, or 20 games.', 'why': 'Shows recent form relative to the full season.'},
         ]
     },
@@ -23301,7 +27244,7 @@ GLOSSARY_SECTIONS = [
         'title': 'Model + Teaching Language',
         'items': [
             {'term': 'CLV', 'meaning': 'Closing line value.', 'why': 'It shows whether your number beat the market by the time the market settled.'},
-            {'term': 'Market Gate', 'meaning': 'The model’s market-safety label.', 'why': 'CLEAR means the market is not blocking the play, SPLIT MARKET means books disagree, and HOLD means the market moved hard against the read.'},
+            {'term': 'Market Gate', 'meaning': "The model's market-safety label.", 'why': 'CLEAR means the market is not blocking the play, SPLIT MARKET means books disagree, and HOLD means the market moved hard against the read.'},
             {'term': 'Weight Profile', 'meaning': 'How the model divided its attention across sample, role, matchup, streak, and market context.', 'why': 'A late-series playoff prop should not be weighted the same way as a random regular-season prop.'},
             {'term': 'Volatility Flag', 'meaning': 'A warning about how swingy the stat or sample is.', 'why': 'High-volatility props can look strong on paper but still break quickly because one event changes everything.'},
             {'term': 'Contradiction QC', 'meaning': 'A rules layer that catches props whose context and recommendation do not agree.', 'why': 'It stops the platform from promoting props that the raw score liked but the surrounding context should have blocked.'},
@@ -23327,25 +27270,34 @@ GLOSSARY_SECTIONS = [
 
 @app.route('/sports/<league>')
 def sport_under_construction(league):
+    league_key = str(league or '').strip().lower()
     current_user = get_current_user()
-    if not current_user:
-        return redirect(url_for('login', next=build_requested_path()))
-    if not is_owner_user(current_user):
-        return make_response("Owner access required.", 403)
-    config = SPORTS_LAUNCH_PAGES.get(league.lower())
+    config = SPORTS_LAUNCH_PAGES.get(league_key)
     if not config:
-        return "Sport page not found", 404
+        return render_error_page(404, 'Sport page not found', 'That sport page is not available yet.')
+    if not current_user:
+        required_plan = get_sport_pass_plan_for_sport(league_key)
+        return render_access_gate_response(required_plan, build_requested_path(), current_user=None)
+    if not is_owner_user(current_user):
+        current_plan = normalize_user_plan(current_user)
+        if not (
+            get_plan_rank(current_plan) >= get_plan_rank('pro')
+            or user_has_sport_access(current_user, league_key)
+        ):
+            required_plan = get_sport_pass_plan_for_sport(league_key)
+            return render_access_gate_response(required_plan, build_requested_path(), current_user=current_user)
     postseason_only = postseason_only_enabled()
-    workbook_preview = load_nfl_floor_play_preview() if league.lower() == 'nfl' else None
-    sport_profile = get_sport_model_profile(league.lower())
-    football_methods = get_football_method_modules(league.lower()) if league.lower() in {'nfl', 'ncaaf'} else []
+    workbook_preview = load_nfl_floor_play_preview() if league_key == 'nfl' else None
+    sport_profile = get_sport_model_profile(league_key)
+    football_methods = get_football_method_modules(league_key) if league_key in {'nfl', 'ncaaf'} else []
     return render_template(
         'under_construction.html',
         page=config,
         postseason_only=postseason_only,
         workbook_preview=workbook_preview,
         sport_profile=sport_profile,
-        football_methods=football_methods
+        football_methods=football_methods,
+        sport_key=league_key,
     )
 
 @app.route('/test-drive')
@@ -23381,9 +27333,14 @@ def test_drive():
             'note': 'Build, save, load, and grade a ticket like a real user would.'
         },
         {
-            'label': 'Trend Board',
+            'label': 'Streak Patterns',
             'href': f"/trend-board?postseason={1 if postseason_only else 0}",
-            'note': 'Stress-test whether the streak logic actually helps you find bets.'
+            'note': 'Stress-test whether consistency patterns actually help you find bets.'
+        },
+        {
+            'label': 'Tendencies',
+            'href': '/tendencies',
+            'note': 'Confirm the conditional-hit-rate concept is clearly separated from streak research.'
         },
         {
             'label': 'Season Review',
@@ -23426,11 +27383,8 @@ def save_feedback():
 
 @app.route('/season-review')
 def season_review():
-    gamelogs = load_gamelogs()
-    player_advanced = load_player_advanced()
-    player_snapshot = load_player_snapshot()
-    review = build_season_review(gamelogs, player_advanced)
-    review['formula_backtest'] = build_formula_backtest(gamelogs, player_snapshot)
+    force_refresh = request.args.get('refresh', '').strip() == '1'
+    review = build_cached_season_review(force_refresh=force_refresh)
     return render_template('season_review.html', review=review)
 
 @app.route('/season-review/team/<team>')
@@ -23444,7 +27398,7 @@ def team_season_review(team):
     postseason_only = postseason_only_enabled()
     review = build_team_season_review(team.upper(), gamelogs, player_advanced, current_team_map)
     if not review:
-        return "Team review not found", 404
+        return render_error_page(404, 'Team review not found', 'That team review is not available yet.')
     team_filter = get_team_filter(postseason_only)
     upcoming = get_upcoming_games(schedule, days=7, allowed_teams=team_filter)
     team_game_lookup = build_team_game_lookup(upcoming)
@@ -23578,6 +27532,8 @@ def game_lines_page():
 @app.route('/team/<team>')
 def team(team):
     gamelogs = load_gamelogs()
+    schedule = load_schedule()
+    odds_df = load_game_market_odds()
     player_advanced = load_player_advanced()
     player_tracking = load_player_tracking()
     player_snapshot = load_player_snapshot()
@@ -23633,7 +27589,16 @@ def team(team):
                 stats['AVG_SPEED'] = round(float(avg_speed), 2)
             stats['STOCKS'] = round(stats.get('STL', 0) + stats.get('BLK', 0), 1)
             player_stats.append(stats)
-    return render_template('team.html', team=team, players=sorted(player_stats, key=lambda x: x.get('PTS', 0), reverse=True))
+    players_sorted = sorted(player_stats, key=lambda x: x.get('PTS', 0), reverse=True)
+    team_decision_context = build_team_decision_context(
+        team,
+        'nba',
+        team_logs,
+        players_sorted,
+        schedule=schedule,
+        odds_df=odds_df,
+    )
+    return render_template('team.html', team=team, players=players_sorted, team_decision_context=team_decision_context)
 
 
 @app.route('/raw-data')
@@ -23801,6 +27766,8 @@ def raw_data():
 def player(player_name):
     from urllib.parse import unquote
     player_name = unquote(player_name)
+    ngs_context = build_ngs_player_context(player_name)
+    statcast_context = build_statcast_player_context(player_name)
     gamelogs = load_gamelogs()
     playoff_gamelogs = load_playoff_gamelogs()
     schedule = load_schedule()
@@ -23815,6 +27782,16 @@ def player(player_name):
     selected_stat = normalize_stat_filter(request.args.get('stat', 'PTS'))
     player_logs_all = gamelogs[gamelogs['Player'] == player_name] if not gamelogs.empty else pd.DataFrame()
     if player_logs_all.empty:
+        archived_context = build_archived_player_page_context_service(player_name)
+        if archived_context.get('available') or ngs_context.get('available') or statcast_context.get('available'):
+            return render_template(
+                'player_archive.html',
+                player=player_name,
+                archive=archived_context,
+                ngs_context=ngs_context,
+                statcast_context=statcast_context,
+                postseason_only=postseason_only_enabled(),
+            )
         return render_template('player_not_found.html', player=player_name)
     player_logs, player_context = get_player_analysis_logs(
         player_name,
@@ -23828,20 +27805,8 @@ def player(player_name):
         player_logs = player_logs.sort_values('Date', ascending=False)
     team = player_context.get('current_team') or current_team_map.get(player_name, player_logs.iloc[0]['Team'] if 'Team' in player_logs.columns else 'UNK')
     playoff_summary = build_player_playoff_summary(player_name, team, playoff_gamelogs, schedule)
-    upcoming = get_upcoming_games(schedule, days=7)
-    upcoming_opponent = None
-    for bucket in ['today', 'tomorrow', 'upcoming']:
-        for game in upcoming.get(bucket, []):
-            away_team = normalize_team_for_filter(game.get('Away', ''))
-            home_team = normalize_team_for_filter(game.get('Home', ''))
-            if away_team == team:
-                upcoming_opponent = home_team
-                break
-            if home_team == team:
-                upcoming_opponent = away_team
-                break
-        if upcoming_opponent:
-            break
+    upcoming_game_context = _find_upcoming_game_for_team(schedule, team, days=7)
+    upcoming_opponent = upcoming_game_context.get('opponent')
     split_sections = build_player_splits(player_logs, team=team, upcoming_opponent=upcoming_opponent)
     
     factors = calculate_sharp_factors(player_name, player_logs)
@@ -24098,7 +28063,7 @@ def player(player_name):
                 recent_games_df['Date'] = pd.to_datetime(recent_games_df['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
 
     try:
-        historical_prop_profile = build_player_profile_summary_service(load_floor_play_index_service(), player_name)
+        historical_prop_profile = build_player_profile_summary_service(load_all_prop_results_for_review_service(), player_name)
     except Exception:
         historical_prop_profile = {
             'available': False,
@@ -24109,6 +28074,21 @@ def player(player_name):
             'recent': [],
             'current_streak': '',
         }
+    archived_context = build_archived_player_page_context_service(player_name)
+    player_decision_context = build_player_decision_context(
+        player_name,
+        team,
+        'nba',
+        player_logs,
+        player_context,
+        factors,
+        prop_analysis,
+        selected_stat,
+        selected_line,
+        upcoming_game_context,
+        split_sections,
+        injury_info=injury_info,
+    )
 
     return render_template('player.html', player=player_name, team=team, factors=factors,
         props=sorted(prop_analysis, key=lambda x: x['confidence'], reverse=True),
@@ -24117,13 +28097,15 @@ def player(player_name):
         split_sections=split_sections, upcoming_opponent=upcoming_opponent,
         selected_stat=selected_stat, stat_options=RAW_DATA_STATS, stat_trajectory=stat_trajectory,
         player_prop_book_lines=player_prop_book_lines, refresh_meta=refresh_meta, injury_info=injury_info,
-        historical_prop_profile=historical_prop_profile)
+        historical_prop_profile=historical_prop_profile, archived_context=archived_context,
+        player_decision_context=player_decision_context, ngs_context=ngs_context,
+        statcast_context=statcast_context)
 
 @app.route('/series/<series_id>')
 def series_page(series_id):
-    series = SERIES_CONFIG.get(series_id)
+    series = resolve_series_config(series_id)
     if not series:
-        return "Series not found", 404
+        return render_error_page(404, 'Series not found', 'That series page is not available yet.')
 
     model_debug = request.args.get('model_debug', '').strip() == '1'
     postseason_only = postseason_only_enabled()
@@ -24576,6 +28558,7 @@ def matchup(matchup):
     matchup_decision = build_matchup_decision_cards(matchup_props)
     
     series_context_teaching_note = build_series_context_teaching_note(series_score, series_label=series_label, series_type=series_type)
+    regular_season_h2h = build_regular_season_head_to_head_summary(gamelogs, away, home)
 
     return render_template('matchup.html', away=away, home=home, away_players=away_players, home_players=home_players,
         h2h_games=h2h_games, h2h_away_wins=h2h_away_wins, h2h_home_wins=h2h_home_wins, h2h_avg_total=h2h_avg_total,
@@ -24584,7 +28567,8 @@ def matchup(matchup):
         series_score=series_score, postseason_only=postseason_only, matchup_profiles=matchup_profiles, current_market=current_market,
         current_market_summary=current_market_summary, current_market_environment=current_market_environment,
         matchup_editorial=matchup_editorial, matchup_decision=matchup_decision, model_debug=model_debug,
-        sample_context=sample_context, refresh_meta=refresh_meta, series_context_teaching_note=series_context_teaching_note)
+        sample_context=sample_context, refresh_meta=refresh_meta, series_context_teaching_note=series_context_teaching_note,
+        regular_season_h2h=regular_season_h2h)
 
 def build_live_props_board(filter_type=None, postseason_only=False, date_filter=None, direction_filter='all',
                            team_query='', player_query='', stat_query='', sample_mode='full',
@@ -24724,6 +28708,7 @@ def build_market_edge_board(postseason_only=False, date_filter=None, direction_f
         sort_by=str(sort_by or ''),
         sort_dir=str(sort_dir or ''),
     )
+    disk_cache_key = f'disk::{cache_key}'
     cache_version = _build_file_token(
         DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
         DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
@@ -24807,12 +28792,501 @@ def build_market_edge_board(postseason_only=False, date_filter=None, direction_f
         'value': board,
         'version': cache_version,
     }
+    _write_disk_ttl_cached_value(disk_cache_key, 43200, board, version=cache_version)
     return board
 
 
-@app.route('/props')
-@app.route('/props/<filter_type>')
-def props(filter_type=None):
+DERIVATIVE_SPORT_PROP_PATHS = {
+    'NBA': DATA_DIR / 'props' / 'NBA_Props.csv',
+    'WNBA': DATA_DIR / 'props' / 'WNBA_Props.csv',
+    'MLB': DATA_DIR / 'props' / 'MLB_Props.csv',
+    'NFL': DATA_DIR / 'props' / 'NFL_Props.csv',
+    'NCAAF': DATA_DIR / 'props' / 'NCAAF_Props.csv',
+}
+
+
+def _derivative_value(row, *names, default=''):
+    lower_lookup = {str(column).strip().lower(): column for column in getattr(row, 'index', [])}
+    for name in names:
+        column = lower_lookup.get(str(name).strip().lower())
+        if column is None:
+            continue
+        value = row.get(column)
+        try:
+            if pd.isna(value):
+                continue
+        except Exception:
+            pass
+        value = str(value).strip() if isinstance(value, str) else value
+        if value not in ['', None]:
+            return value
+    return default
+
+
+def _derivative_float(value, default=None):
+    try:
+        if value in ['', None] or pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _derivative_price_label(value):
+    price = _derivative_float(value)
+    if price is None:
+        return '-'
+    return f'+{int(price)}' if price > 0 else str(int(price))
+
+
+def _derivative_game_parts(game):
+    game = str(game or '').replace(' vs. ', '@').replace(' vs ', '@').strip()
+    if '@' in game:
+        away, home = [part.strip() for part in game.split('@', 1)]
+        return away, home, f'{away} @ {home}'
+    return '', '', game
+
+
+def _derivative_side_from_prices(over_odds, under_odds):
+    over_prob = american_odds_to_implied_prob(over_odds)
+    under_prob = american_odds_to_implied_prob(under_odds)
+    if over_prob is None and under_prob is None:
+        return 'OVER', None, 'No priced split'
+    if over_prob is None:
+        return 'UNDER', round(under_prob * 100, 1), f"Under priced {_derivative_price_label(under_odds)}"
+    if under_prob is None:
+        return 'OVER', round(over_prob * 100, 1), f"Over priced {_derivative_price_label(over_odds)}"
+    if over_prob >= under_prob:
+        return 'OVER', round(over_prob * 100, 1), f"Book leans over {round(over_prob * 100, 1)}% / under {round(under_prob * 100, 1)}%"
+    return 'UNDER', round(under_prob * 100, 1), f"Book leans under {round(under_prob * 100, 1)}% / over {round(over_prob * 100, 1)}%"
+
+
+def _load_derivative_prop_rows(sport_filter=''):
+    sport_filter = str(sport_filter or '').strip().upper()
+    rows = []
+    for sport, path in DERIVATIVE_SPORT_PROP_PATHS.items():
+        if sport_filter and sport != sport_filter:
+            continue
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        for _, row in df.iterrows():
+            player = str(_derivative_value(row, 'Player', 'player')).strip()
+            stat = str(_derivative_value(row, 'Stat', 'stat', 'StatType')).strip().upper()
+            game = str(_derivative_value(row, 'Game', 'Matchup', 'matchup')).strip()
+            line = _derivative_float(_derivative_value(row, 'CurrentLine', 'Line', 'line'))
+            if not player or not stat or line is None:
+                continue
+            over_odds = _derivative_value(row, 'OverOdds', 'BestOverOdds', 'over_odds', default='')
+            under_odds = _derivative_value(row, 'UnderOdds', 'BestUnderOdds', 'under_odds', default='')
+            side, implied, split_note = _derivative_side_from_prices(over_odds, under_odds)
+            away, home, matchup = _derivative_game_parts(game)
+            open_line = _derivative_float(_derivative_value(row, 'OpenLine', 'open_line'))
+            movement = round(line - open_line, 2) if open_line is not None else None
+            book = str(_derivative_value(row, 'BetBook', 'Book', 'book', default='')).strip()
+            confidence = implied or 50.0
+            movement_bonus = 4 if movement and ((movement > 0 and side == 'OVER') or (movement < 0 and side == 'UNDER')) else 0
+            score = round(min(99.0, max(1.0, confidence + movement_bonus)), 1)
+            rows.append({
+                'sport': sport,
+                'player': player,
+                'team': str(_derivative_value(row, 'Team', 'team', default='')).strip(),
+                'stat': stat,
+                'market_key': str(_derivative_value(row, 'MarketKey', 'market_key', default='')).strip(),
+                'line': line,
+                'game': matchup,
+                'away': away,
+                'home': home,
+                'book': book,
+                'side': side,
+                'implied': implied,
+                'score': score,
+                'over_odds': over_odds,
+                'under_odds': under_odds,
+                'price': _derivative_price_label(over_odds if side == 'OVER' else under_odds),
+                'open_line': open_line,
+                'movement': movement,
+                'split_note': split_note,
+                'last_updated': str(_derivative_value(row, 'LastUpdated', 'last_updated', default='')).strip(),
+                'player_href': f"/player/{quote(player)}",
+            })
+    rows.sort(key=lambda item: (float(item.get('score') or 0), float(item.get('implied') or 0)), reverse=True)
+    return rows
+
+
+def _load_derivative_combined_coverage(sport_filter=''):
+    sport_filter = str(sport_filter or '').strip().upper()
+    path = DATA_DIR / 'tracking' / 'Combined_Prop_Coverage.csv'
+    if not path.exists():
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'live': 0, 'component_ready': 0}}
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'live': 0, 'component_ready': 0}}
+    if sport_filter and 'Sport' in df.columns:
+        df = df[df['Sport'].astype(str).str.upper() == sport_filter].copy()
+    if df.empty:
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'live': 0, 'component_ready': 0}}
+
+    def _bool_col(column):
+        if column not in df.columns:
+            return pd.Series(False, index=df.index)
+        return df[column].astype(str).str.upper().isin({'TRUE', '1', 'YES', 'READY'})
+
+    ready_mask = _bool_col('ResolvedColumnReady') | df.get('Status', pd.Series('', index=df.index)).astype(str).str.upper().eq('READY')
+    live_mask = _bool_col('PropMarketLive')
+    component_mask = _bool_col('ComponentColumnsReady')
+    display = df.copy()
+    display['_rank'] = live_mask.astype(int) * 3 + ready_mask.astype(int) * 2 + component_mask.astype(int)
+    display = display.sort_values(['_rank', 'Sport', 'CombinedStat'], ascending=[False, True, True])
+
+    rows = []
+    for _, row in display.head(14).iterrows():
+        is_live = str(row.get('PropMarketLive', '')).upper() in {'TRUE', '1', 'YES'}
+        is_ready = str(row.get('ResolvedColumnReady', '')).upper() in {'TRUE', '1', 'YES'} or str(row.get('Status', '')).upper() == 'READY'
+        components_ready = str(row.get('ComponentColumnsReady', '')).upper() in {'TRUE', '1', 'YES'}
+        if is_live and is_ready:
+            status = 'LIVE + READY'
+        elif is_ready:
+            status = 'MODEL READY'
+        elif components_ready:
+            status = 'COMPONENT READY'
+        else:
+            status = 'NEEDS DATA'
+        rows.append({
+            'sport': str(row.get('Sport') or '').upper(),
+            'stat': str(row.get('CombinedStat') or '').upper(),
+            'components': str(row.get('Components') or ''),
+            'prop_rows': int(_derivative_float(row.get('PropRows'), 0) or 0),
+            'status': status,
+            'live': is_live,
+            'ready': is_ready,
+            'checked_at': str(row.get('CheckedAt') or ''),
+        })
+    return {
+        'rows': rows,
+        'summary': {
+            'total': int(len(df)),
+            'ready': int(ready_mask.sum()),
+            'live': int(live_mask.sum()),
+            'component_ready': int(component_mask.sum()),
+        }
+    }
+
+
+def _load_derivative_officiating_status(sport_filter=''):
+    sport_filter = str(sport_filter or '').strip().upper()
+    path = DATA_DIR / 'context' / 'OfficiatingContext.csv'
+    if not path.exists():
+        return {'rows': [], 'summary': {'total': 0, 'confirmed': 0, 'pending': 0}}
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {'rows': [], 'summary': {'total': 0, 'confirmed': 0, 'pending': 0}}
+    if sport_filter and 'Sport' in df.columns:
+        df = df[df['Sport'].astype(str).str.upper() == sport_filter].copy()
+    if df.empty:
+        return {'rows': [], 'summary': {'total': 0, 'confirmed': 0, 'pending': 0}}
+    status_series = df.get('AssignmentStatus', pd.Series('', index=df.index)).astype(str).str.upper()
+    official_series = df.get('Official', pd.Series('', index=df.index)).fillna('').astype(str).str.strip()
+    confirmed_mask = status_series.eq('CONFIRMED') | official_series.ne('')
+    display = df.copy()
+    display['_confirmed'] = confirmed_mask.astype(int)
+    display = display.sort_values(['_confirmed', 'Sport', 'Date'], ascending=[False, True, False])
+    rows = []
+    for _, row in display.head(12).iterrows():
+        official = str(row.get('Official') or '').strip()
+        status = 'CONFIRMED' if official or str(row.get('AssignmentStatus') or '').upper() == 'CONFIRMED' else 'PENDING'
+        away = str(row.get('Away') or '').strip()
+        home = str(row.get('Home') or '').strip()
+        rows.append({
+            'sport': str(row.get('Sport') or '').upper(),
+            'game': f"{away} @ {home}".strip(' @'),
+            'official': official or 'Pending assignment',
+            'status': status,
+            'zone': str(row.get('ZoneProfile') or '').strip(),
+            'impact_markets': str(row.get('ImpactMarkets') or '').strip(),
+            'note': str(row.get('ContextNote') or '').strip(),
+            'source': str(row.get('Source') or '').strip(),
+        })
+    return {
+        'rows': rows,
+        'summary': {
+            'total': int(len(df)),
+            'confirmed': int(confirmed_mask.sum()),
+            'pending': int(len(df) - confirmed_mask.sum()),
+        }
+    }
+
+
+def _load_official_tendency_status(sport_filter=''):
+    sport_filter = str(sport_filter or '').strip().upper()
+    path = DATA_DIR / 'context' / 'Official_TendencyProfiles.csv'
+    if not path.exists():
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'event_fed': 0, 'assignment_only': 0}}
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'event_fed': 0, 'assignment_only': 0}}
+    if sport_filter and 'Sport' in df.columns:
+        df = df[df['Sport'].astype(str).str.upper() == sport_filter].copy()
+    if df.empty:
+        return {'rows': [], 'summary': {'total': 0, 'ready': 0, 'event_fed': 0, 'assignment_only': 0}}
+    status = df.get('DataStatus', pd.Series('', index=df.index)).astype(str).str.upper()
+    attribution = df.get('AttributionLevel', pd.Series('', index=df.index)).astype(str).str.upper()
+    ready_mask = status.eq('READY')
+    event_mask = attribution.isin({'INDIVIDUAL_WHISTLE', 'CREW_GAME'})
+    assignment_mask = attribution.isin({'ASSIGNMENT_ONLY', 'NEEDS_ASSIGNMENT'})
+    display = df.copy()
+    display['_rank'] = ready_mask.astype(int) * 3 + event_mask.astype(int) * 2 + display.get('SampleGames', pd.Series(0, index=df.index)).fillna(0).astype(float).clip(upper=20) / 20
+    display = display.sort_values(['_rank', 'Sport', 'Official', 'MetricKey'], ascending=[False, True, True, True])
+    rows = []
+    for _, row in display.head(12).iterrows():
+        value = _derivative_float(row.get('ValuePerGame'))
+        rows.append({
+            'sport': str(row.get('Sport') or '').upper(),
+            'official': str(row.get('Official') or '').strip() or 'Pending Crew',
+            'metric': str(row.get('MetricLabel') or row.get('MetricKey') or '').strip(),
+            'value': '' if value is None else round(float(value), 2),
+            'sample_games': int(_derivative_float(row.get('SampleGames'), 0) or 0),
+            'status': str(row.get('DataStatus') or '').upper() or 'PENDING',
+            'attribution': str(row.get('AttributionLevel') or '').upper(),
+            'note': str(row.get('ContextNote') or '').strip(),
+        })
+    return {
+        'rows': rows,
+        'summary': {
+            'total': int(len(df)),
+            'ready': int(ready_mask.sum()),
+            'event_fed': int(event_mask.sum()),
+            'assignment_only': int(assignment_mask.sum()),
+        }
+    }
+
+
+def _derivative_row(title, tag, row, detail, score_bonus=0, action='Review'):
+    score = round(min(99.0, float(row.get('score') or 0) + score_bonus), 1)
+    return {
+        'title': title,
+        'tag': tag,
+        'sport': row.get('sport') or '',
+        'player': row.get('player') or '',
+        'stat': row.get('stat') or '',
+        'side': row.get('side') or '',
+        'line': row.get('line'),
+        'game': row.get('game') or '',
+        'price': row.get('price') or '-',
+        'score': score,
+        'detail': detail,
+        'action': action,
+        'href': row.get('player_href') or '#',
+    }
+
+
+def build_derivative_markets_context(sport_filter=''):
+    sport_filter = str(sport_filter or '').strip().upper()
+    rows = _load_derivative_prop_rows(sport_filter=sport_filter)
+    priced_rows = [row for row in rows if row.get('implied') is not None]
+    combined_coverage = _load_derivative_combined_coverage(sport_filter=sport_filter)
+    officiating_status = _load_derivative_officiating_status(sport_filter=sport_filter)
+    official_tendencies = _load_official_tendency_status(sport_filter=sport_filter)
+
+    half_quarter_edges = []
+    for row in priced_rows[:60]:
+        if row['sport'] == 'MLB':
+            tag = 'F5 / Early Game'
+            detail = 'MLB derivative read: first-five and early-game props should start from the same pitcher, park, and book split context as this full prop.'
+        elif row['sport'] in {'NFL', 'NCAAF'}:
+            tag = '1H / Drive Script'
+            detail = 'Football derivative read: first-half and drive windows need pace, pass rate, and game-script fit before copying the full-game line.'
+        else:
+            tag = '1H / Quarter'
+            detail = 'Hoops derivative read: quarter and half props should follow minutes, rotation slot, and early usage, not just a divided full-game line.'
+        half_quarter_edges.append(_derivative_row(
+            f"{row['player']} {row['stat']} {row['side']}",
+            tag,
+            row,
+            detail,
+            action='Check split'
+        ))
+        if len(half_quarter_edges) >= 10:
+            break
+
+    grouped = {}
+    for row in priced_rows:
+        key = (row.get('sport'), row.get('game'), row.get('stat'))
+        grouped.setdefault(key, []).append(row)
+
+    h2h_edges = []
+    combined_edges = []
+    for (_, game, stat), group_rows in grouped.items():
+        unique_players = []
+        seen_players = set()
+        for row in sorted(group_rows, key=lambda item: float(item.get('score') or 0), reverse=True):
+            player_key = str(row.get('player') or '').lower()
+            if player_key in seen_players:
+                continue
+            seen_players.add(player_key)
+            unique_players.append(row)
+        if len(unique_players) < 2:
+            continue
+        a, b = unique_players[0], unique_players[1]
+        gap = round(float(a.get('score') or 0) - float(b.get('score') or 0), 1)
+        if len(h2h_edges) < 10:
+            h2h_edges.append({
+                'title': f"{a['player']} vs {b['player']}",
+                'tag': f"{a['sport']} H2H",
+                'sport': a.get('sport'),
+                'player': a.get('player'),
+                'stat': stat,
+                'side': a.get('side'),
+                'line': a.get('line'),
+                'game': game,
+                'price': a.get('price'),
+                'score': round(float(a.get('score') or 0), 1),
+                'detail': f"{a['player']} owns the stronger priced read by {gap} points in this same-game {stat} bucket. Use this as the first pass for book H2H markets.",
+                'action': 'Grade H2H',
+                'href': a.get('player_href') or '#',
+            })
+        same_side = [row for row in unique_players if row.get('side') == a.get('side')]
+        if len(same_side) >= 2 and len(combined_edges) < 10:
+            x, y = same_side[0], same_side[1]
+            combined_line = round(float(x.get('line') or 0) + float(y.get('line') or 0), 2)
+            avg_score = round((float(x.get('score') or 0) + float(y.get('score') or 0)) / 2, 1)
+            combined_edges.append({
+                'title': f"{x['player']} + {y['player']}",
+                'tag': f"{x['sport']} Combined",
+                'sport': x.get('sport'),
+                'player': x.get('player'),
+                'stat': stat,
+                'side': x.get('side'),
+                'line': combined_line,
+                'game': game,
+                'price': 'combo',
+                'score': avg_score,
+                'detail': f"Both legs lean {x.get('side')} in the same {stat} market. Combined props need correlation checked before trusting simple addition.",
+                'action': 'Check combo',
+                'href': x.get('player_href') or '#',
+            })
+
+    alt_line_edges = []
+    for row in priced_rows[:80]:
+        if (row.get('implied') or 0) < 60 and abs(float(row.get('movement') or 0)) < 0.5:
+            continue
+        movement_text = f" Line moved {row.get('movement')} from open." if row.get('movement') not in [None, 0] else ''
+        alt_line_edges.append(_derivative_row(
+            f"{row['player']} {row['stat']} alt ladder",
+            'Alt Line',
+            row,
+            f"Start from the priced side, then use simulation percentiles before buying or selling points.{movement_text}",
+            score_bonus=2,
+            action='Price alt'
+        ))
+        if len(alt_line_edges) >= 10:
+            break
+
+    defensive_watch = []
+    for row in priced_rows[:60]:
+        if row['sport'] == 'MLB':
+            tag = 'Pitcher/Batter Context'
+            detail = 'Team and park context are active. Next precision layer is pitcher handedness, batter splits, umpire zone, and weather.'
+        elif row['sport'] in {'NFL', 'NCAAF'}:
+            tag = 'Coverage Proxy'
+            detail = 'Team-level defense can flag the spot now. Individual CB shadow, nickel/dime, and double-team data are the next feed.'
+        else:
+            tag = 'Defensive Role Proxy'
+            detail = 'Team matchup and role context are active. Add primary defender, scheme, and positional allowance for the deeper read.'
+        defensive_watch.append(_derivative_row(
+            f"{row['player']} vs {row['game']}",
+            tag,
+            row,
+            detail,
+            action='Open profile'
+        ))
+        if len(defensive_watch) >= 10:
+            break
+
+    avoid_markets = []
+    for row in rows:
+        if row.get('implied') is not None and row['implied'] >= 56:
+            continue
+        avoid_markets.append(_derivative_row(
+            f"{row['player']} {row['stat']} {row['side']}",
+            'Price Caution',
+            row,
+            'This market is listed but the current book split is not strong enough to treat as a derivative feeder without a better number.',
+            action='Hold'
+        ))
+        if len(avoid_markets) >= 8:
+            break
+
+    sport_counts = {}
+    for row in rows:
+        sport_counts[row['sport']] = sport_counts.get(row['sport'], 0) + 1
+
+    return {
+        'sport_filter': sport_filter,
+        'sport_options': list(DERIVATIVE_SPORT_PROP_PATHS.keys()),
+        'sport_counts': sport_counts,
+        'summary': {
+            'props_loaded': len(rows),
+            'priced_props': len(priced_rows),
+            'games': len({row.get('game') for row in rows if row.get('game')}),
+            'markets': len({row.get('stat') for row in rows if row.get('stat')}),
+            'combined_ready': combined_coverage['summary']['ready'],
+            'officials_confirmed': officiating_status['summary']['confirmed'],
+            'tendency_ready': official_tendencies['summary']['ready'],
+        },
+        'combined_coverage': combined_coverage,
+        'officiating_status': officiating_status,
+        'official_tendencies': official_tendencies,
+        'sections': [
+            {
+                'key': 'halves',
+                'title': 'Half / Quarter Windows',
+                'subtitle': 'Markets where books often divide the full-game number too mechanically.',
+                'rows': half_quarter_edges,
+            },
+            {
+                'key': 'h2h',
+                'title': 'Head-To-Head Player Props',
+                'subtitle': 'Same-game player pairs where one side is carrying the stronger priced read.',
+                'rows': h2h_edges,
+            },
+            {
+                'key': 'combined',
+                'title': 'Combined Player Props',
+                'subtitle': 'Two-player ladders that need correlation review before trusting the posted number.',
+                'rows': combined_edges,
+            },
+            {
+                'key': 'alt-lines',
+                'title': 'Alternate Line Value',
+                'subtitle': 'Alt ladders that deserve a fair-price check against simulation percentiles.',
+                'rows': alt_line_edges,
+            },
+            {
+                'key': 'defense',
+                'title': 'Defensive Matchup Watch',
+                'subtitle': 'Current team-level matchup proxy, ready for defender/officiating feeds.',
+                'rows': defensive_watch,
+            },
+            {
+                'key': 'avoid',
+                'title': 'Avoid / Bad Price Watch',
+                'subtitle': 'Derivative markets listed on the board but not supported enough yet.',
+                'rows': avoid_markets,
+            },
+        ],
+    }
+
+
+def render_nba_props_page(filter_type=None):
     postseason_only = postseason_only_enabled()
     request_context = build_live_prop_request_context(postseason_only=postseason_only)
     date_filter = request_context['date_filter']
@@ -24832,7 +29306,7 @@ def props(filter_type=None):
     )
     if use_default_snapshot:
         snapshot_key = 'nba_floor_props_postseason_today_current' if filter_type == 'floor' else 'nba_props_postseason_today_current'
-        snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
+        snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             board = snapshot.get('payload') or {}
         else:
@@ -24863,7 +29337,9 @@ def props(filter_type=None):
             sort_by=sort_by,
             sort_dir=sort_dir,
         )
-    all_props = enrich_rows_with_game_environment(board['props'], sport='NBA')
+    all_props = attach_formula_insights_to_rows(enrich_rows_with_game_environment(board['props'], sport='NBA'), sport='NBA')
+    all_props = attach_active_simulation_insights_to_rows(all_props, sport='NBA')
+    all_props = attach_team_strength_priors_to_rows(all_props, sport='NBA')
     refresh_meta = board['refresh_meta']
     upcoming = board['upcoming']
     from_cache = bool(board.get('from_cache'))
@@ -24873,12 +29349,12 @@ def props(filter_type=None):
     except (TypeError, ValueError):
         page = 1
     try:
-        page_size = int(request.args.get('page_size', 25))
+        page_size = int(request.args.get('page_size', 15))
     except (TypeError, ValueError):
-        page_size = 25
-    allowed_page_sizes = (25, 50, 100, 200)
+        page_size = 15
+    allowed_page_sizes = (10, 15, 25, 50)
     if page_size not in allowed_page_sizes:
-        page_size = 25
+        page_size = 15
     page_count = max(1, (total_props + page_size - 1) // page_size)
     page = max(1, min(page, page_count))
     page_start = (page - 1) * page_size
@@ -24967,18 +29443,39 @@ def props(filter_type=None):
         upcoming=upcoming, postseason_only=postseason_only, team_query=team_query, player_query=player_query,
         stat_query=stat_query, query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
         base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug,
-        pagination=pagination)
+        pagination=pagination, board_intelligence=build_board_intelligence_summary(all_props))
+
+
+@app.route('/sports/nba/props')
+@app.route('/sports/nba/props/<filter_type>')
+def nba_props_page(filter_type=None):
+    return render_nba_props_page(filter_type)
+
+
+@app.route('/props')
+@app.route('/props/<filter_type>')
+def props(filter_type=None):
+    query = request.args.to_dict(flat=True)
+    if filter_type:
+        target = f"/sports/nba/props/{filter_type}"
+        if query:
+            target = f"{target}?{urlencode(query)}"
+        return redirect(target, code=302)
+    if 'sport' in query:
+        return redirect(f"/tools/props?{urlencode(query)}", code=302)
+    if query:
+        return redirect(f"/sports/nba/props?{urlencode(query)}", code=302)
+    return redirect('/tools/props', code=302)
 
 @app.route('/smart-picks')
 def smart_picks_legacy_redirect():
     query_string = request.query_string.decode().strip()
-    target = '/market-edge'
+    target = '/sports/nba/market-edge'
     if query_string:
         target = f'{target}?{query_string}'
     return redirect(target, code=302)
 
-@app.route('/market-edge')
-def smart_picks():
+def render_nba_market_edge_page():
     postseason_only = postseason_only_enabled()
     request_context = build_live_prop_request_context(postseason_only=postseason_only)
     date_filter = request_context['date_filter']
@@ -24997,7 +29494,7 @@ def smart_picks():
         and sort_by == 'confidence' and sort_dir == 'desc'
     )
     if use_default_snapshot:
-        snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=720)
+        snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             board = snapshot.get('payload') or {}
         else:
@@ -25026,7 +29523,7 @@ def smart_picks():
             sort_by=sort_by,
             sort_dir=sort_dir,
         )
-    picks = board['picks']
+    picks = attach_formula_insights_to_rows(board['picks'], sport='NBA')
     refresh_meta = board['refresh_meta']
     upcoming = board['upcoming']
     from_cache = bool(board.get('from_cache'))
@@ -25069,16 +29566,41 @@ def smart_picks():
         'stat': stat_query or None,
     }
 
-    return render_template('smart_picks_v2.html', picks=picks[:150], 
+    market_page_limit = 15
+
+    return render_template('smart_picks_v2.html', picks=picks[:market_page_limit], 
         stat_options=STAT_COLUMNS, date_filter=date_filter, direction_filter=direction_filter, upcoming=upcoming,
         postseason_only=postseason_only, team_query=team_query, player_query=player_query, stat_query=stat_query,
         query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
         base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug)
 
+
+@app.route('/sports/nba/market-edge')
+def nba_market_edge_page():
+    return render_nba_market_edge_page()
+
+
+@app.route('/market-edge')
+def smart_picks():
+    query = request.args.to_dict(flat=True)
+    if 'sport' in query:
+        return redirect(f"/tools/market-edge?{urlencode(query)}", code=302)
+    if query:
+        return redirect(f"/sports/nba/market-edge?{urlencode(query)}", code=302)
+    return redirect('/tools/market-edge', code=302)
+
+
+@app.route('/derivatives')
+def derivatives_lab():
+    sport_filter = str(request.args.get('sport', '') or '').strip().upper()
+    context = build_derivative_markets_context(sport_filter=sport_filter)
+    return render_template('derivatives.html', **context)
+
+
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     postseason_only = postseason_only_enabled()
-    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/parlay?postseason=1&sample=current'
+    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/dashboard'
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url_encoded = quote(next_url, safe='')
     tiers = get_pricing_tiers()
@@ -25142,7 +29664,7 @@ def signup():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     postseason_only = postseason_only_enabled()
-    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/parlay?postseason=1&sample=current'
+    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/dashboard'
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url_encoded = quote(next_url, safe='')
     error = ''
@@ -25150,12 +29672,15 @@ def login():
     if request.method == 'POST':
         email = str(request.form.get('email', '')).strip().lower()
         password = str(request.form.get('password', '')).strip()
-        user = find_user_by_email(email)
-        if not user or not check_password_hash(str(user.get('PasswordHash', '')), password):
-            error = 'Invalid email or password.'
+        if _login_rate_limited(email):
+            error = 'Too many login attempts. Please wait a minute and try again.'
         else:
-            login_user(user)
-            return redirect(next_url)
+            user = find_user_by_email(email)
+            if not user or not check_password_hash(str(user.get('PasswordHash', '')), password):
+                error = 'Invalid email or password.'
+            else:
+                login_user(user)
+                return redirect(next_url)
 
     return render_template('login.html', postseason_only=postseason_only, next_url=next_url, next_url_encoded=next_url_encoded, error=error, pricing_tiers=tiers, gate_notice=gate_notice)
 
@@ -25260,11 +29785,16 @@ def pricing():
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url = request.args.get('next', '').strip()
     checkout_config = get_checkout_configuration_report()
+    pricing_cards = build_pricing_cards(current_user, next_url)
+    sport_pricing_cards = [card for card in pricing_cards if bool(card.get('is_sport_pass'))]
+    platform_pricing_cards = [card for card in pricing_cards if not bool(card.get('is_sport_pass'))]
     return render_template(
         'pricing.html',
         postseason_only=postseason_only,
         pricing_tiers=get_pricing_tiers(),
-        pricing_cards=build_pricing_cards(current_user, next_url),
+        pricing_cards=pricing_cards,
+        sport_pricing_cards=sport_pricing_cards,
+        platform_pricing_cards=platform_pricing_cards,
         selected_plan=selected_plan,
         current_user=current_user,
         gate_notice=gate_notice,
@@ -25296,8 +29826,9 @@ def checkout_start():
     if not current_user:
         next_url = request.args.get('next', '').strip() or '/pricing'
         next_suffix = f"&next={quote(next_url, safe='')}" if next_url else ''
-        target = f"/checkout/start?plan={request.args.get('plan', '').strip()}&billing={request.args.get('billing', 'monthly').strip()}{next_suffix}"
-        return redirect(url_for('login', next=target, gate='login_required', required='pro'))
+        requested_plan = str(request.args.get('plan', '') or '').strip().lower() or 'pro'
+        target = f"/checkout/start?plan={requested_plan}&billing={request.args.get('billing', 'monthly').strip()}{next_suffix}"
+        return redirect(url_for('login', next=target, gate='login_required', required=requested_plan))
 
     plan = str(request.args.get('plan', '') or '').strip().lower()
     billing = str(request.args.get('billing', 'monthly') or 'monthly').strip().lower()
@@ -25381,7 +29912,7 @@ def billing_portal():
         return redirect(url_for('login', next='/billing'))
     next_url = request.args.get('next', '').strip() or '/pricing'
     plan = normalize_user_plan(current_user)
-    if get_plan_rank(plan) < get_plan_rank('pro'):
+    if get_plan_rank(plan) <= get_plan_rank('free'):
         return redirect(url_for('pricing', next=next_url, gate='upgrade_required', required='pro'))
 
     billing_portal_url = get_stripe_billing_portal_url()
@@ -25404,6 +29935,9 @@ def logout():
 def parlay():
     current_user = get_current_user()
     postseason_only = postseason_only_enabled()
+    parlay_sport_key = normalize_sport_access_key(request.args.get('sport', 'nba') or 'nba')
+    if parlay_sport_key not in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
+        parlay_sport_key = 'nba'
     request_context = build_live_prop_request_context(postseason_only=postseason_only, include_ticket=True)
     runtime = build_live_prop_runtime_context(postseason_only=postseason_only)
     gamelogs = runtime['gamelogs']
@@ -25481,8 +30015,10 @@ def parlay():
             prop['tier'] = 'Tier 3'
             prop['strategy_score'] = score_floor_parlay_candidate(prop)
         prop['rank_driver_chips'] = build_rank_driver_chips(prop)
+        prop['sport'] = prop.get('sport') or 'NBA'
 
     available = sort_prop_rows(available, sort_by, sort_dir)
+    handoff_context = build_parlay_handoff_context(available)
 
     query_params = {}
     if team_query:
@@ -25512,7 +30048,34 @@ def parlay():
         postseason_only=postseason_only, team_query=team_query, player_query=player_query, stat_query=stat_query,
         query_suffix=query_suffix, sample_mode=sample_mode, saved_parlays=saved_parlays,
         slate_scope_label=slate_scope_label, refresh_meta=refresh_meta, selected_ticket_id=selected_ticket_id,
-        current_user=current_user, sort_by=sort_by, sort_dir=sort_dir, model_debug=model_debug)
+        current_user=current_user, sort_by=sort_by, sort_dir=sort_dir, model_debug=model_debug,
+        handoff_context=handoff_context, parlay_sport_key=parlay_sport_key)
+
+
+@app.route('/parlay/tickets')
+def parlay_tickets():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=request.full_path.rstrip('?')))
+    postseason_only = postseason_only_enabled()
+    sport_key = normalize_sport_access_key(request.args.get('sport', 'nba') or 'nba')
+    if sport_key not in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
+        sport_key = 'nba'
+    sample_mode = request.args.get('sample', 'current').strip().lower()
+    if sample_mode not in {'current', 'full', 'playoffs'}:
+        sample_mode = 'current'
+    saved_tickets = format_saved_parlays_for_view(
+        filter_saved_parlays_for_user(load_saved_parlays(), current_user),
+        live_props=[]
+    )
+    return render_template(
+        'parlay_tickets.html',
+        saved_tickets=saved_tickets,
+        sport_key=sport_key,
+        sample_mode=sample_mode,
+        postseason_only=postseason_only,
+        current_user=current_user
+    )
 
 
 @app.route('/parlay/save', methods=['POST'])
@@ -25544,7 +30107,9 @@ def save_parlay():
             'market_calibration_tags': [str(tag).strip() for tag in (pick.get('market_calibration_tags') or []) if str(tag).strip()],
             'book_count': int(pick.get('book_count', 0) or 0),
             'book': str(pick.get('book', '')).strip(),
-            'market_price': pick.get('market_price'),
+            'market_price': pick.get('market_price', pick.get('marketPrice')),
+            'model_prob': pick.get('model_prob', pick.get('modelProb')),
+            'ev_pct': pick.get('ev_pct', pick.get('evPct')),
             'historical_reliability': str(pick.get('historical_reliability', '')).strip(),
         })
 
@@ -25666,7 +30231,9 @@ def bet_review():
     start_date = request.args.get('start_date', '').strip()
     end_date = request.args.get('end_date', '').strip()
     result_filter = request.args.get('result', 'all').strip().lower()
-    stat_filter = request.args.get('stat', 'all').strip().upper()
+    stat_filter = request.args.get('stat', 'PTS').strip().upper()
+    if stat_filter not in {'ALL', *STAT_COLUMNS}:
+        stat_filter = 'PTS'
     structure_filter = request.args.get('structure', 'all').strip()
     review_context = build_bet_review_context_service(
         saved_tickets,
@@ -25795,7 +30362,7 @@ def bet_review_model_export():
 def elite_dashboard():
     current_user = get_current_user()
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
-    snapshot_key = f"elite_dashboard_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    snapshot_key = f"elite_dashboard_v2_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     if snapshot:
         context = snapshot.get('payload') or {}
@@ -26294,7 +30861,7 @@ def trend_board():
 
     return render_template(
         'trend_board.html',
-        rows=rows[:400],
+        rows=rows[:15],
         postseason_only=postseason_only,
         stat_filter=stat_filter,
         team_query=team_query,
@@ -26310,14 +30877,47 @@ def trend_board():
 
 @app.route('/candidate-review')
 def candidate_review():
-    archive_df = load_candidate_archive()
-    gamelog_map = {
-        'NBA': load_nba_review_gamelogs(),
-        'WNBA': load_wnba_gamelogs(),
-        'MLB': load_mlb_gamelogs(),
-        'NFL': load_nfl_gamelogs(),
-        'NCAAF': load_ncaaf_gamelogs(),
-    }
+    archive_cache_version = _build_file_token(
+        CANDIDATE_ARCHIVE_PATH,
+        DATA_DIR / 'tracking' / 'Floor_Play_Index.csv',
+        DATA_DIR / 'tracking' / 'NBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'WNBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_AllPropResults.csv',
+        BASE_DIR / 'services' / 'review_center.py',
+    )
+
+    def _load_candidate_review_archive_source():
+        source_df = load_floor_play_index_service()
+        if source_df is None or source_df.empty:
+            source_df = load_all_prop_results_for_review_service()
+        return {
+            'using_pregraded_results': source_df is not None and not source_df.empty,
+            'rows': source_df.to_dict('records') if source_df is not None and not source_df.empty else [],
+        }
+
+    archive_source = _get_disk_ttl_cached_value(
+        'candidate_review_archive_source',
+        43200,
+        _load_candidate_review_archive_source,
+        version=archive_cache_version,
+    )
+    archive_df = pd.DataFrame(archive_source.get('rows') or [])
+    using_pregraded_results = bool(archive_source.get('using_pregraded_results')) and not archive_df.empty
+    if using_pregraded_results:
+        gamelog_map = {}
+        grade_rows_for_review = lambda df, gamelog_map=None: df.copy()
+    else:
+        archive_df = load_candidate_archive()
+        gamelog_map = {
+            'NBA': load_nba_review_gamelogs(),
+            'WNBA': load_wnba_gamelogs(),
+            'MLB': load_mlb_gamelogs(),
+            'NFL': load_nfl_gamelogs(),
+            'NCAAF': load_ncaaf_gamelogs(),
+        }
+        grade_rows_for_review = grade_candidate_archive_rows
     postseason_only = postseason_only_enabled()
     sport_filter = request.args.get('sport', '').strip().upper()
     method_filter = request.args.get('method', '').strip()
@@ -26332,34 +30932,79 @@ def candidate_review():
     market_gate_filter = request.args.get('market_gate', '').strip().upper()
     bet_tier_filter = request.args.get('bet_tier', '').strip()
     floor_reliability_filter = request.args.get('floor_reliability', '').strip().upper()
+    profile_sport_filter = request.args.get('profile_sport', '').strip().upper()
+    profile_stat_filter = request.args.get('profile_stat', '').strip().upper()
+    profile_direction_filter = request.args.get('profile_direction', '').strip().upper()
+    profile_reliability_filter = request.args.get('profile_reliability', '').strip().upper()
+    profile_model_filter = request.args.get('profile_model', '').strip().upper()
+    profile_promotion_filter = request.args.get('profile_promotion', '').strip().upper()
+    profile_player_filter = request.args.get('profile_player', '').strip()
+    streak_sport_filter = request.args.get('streak_sport', '').strip().upper()
     days_to_result_filter = request.args.get('days_to_result', '').strip().lower()
     start_date = request.args.get('start_date', '').strip()
     end_date = request.args.get('end_date', '').strip()
     min_confidence = request.args.get('min_confidence', '').strip()
-    review_context = build_candidate_review_context_service(
-        archive_df,
-        gamelog_map,
-        postseason_only=postseason_only,
-        sport_filter=sport_filter,
-        method_filter=method_filter,
-        outcome_filter=outcome_filter,
-        stat_filter=stat_filter,
-        direction_filter=direction_filter,
-        player_search_filter=player_search_filter,
-        market_depth_filter=market_depth_filter,
-        player_tier_filter=player_tier_filter,
-        weight_profile_filter=weight_profile_filter,
-        volatility_filter=volatility_filter,
-        market_gate_filter=market_gate_filter,
-        bet_tier_filter=bet_tier_filter,
-        floor_reliability_filter=floor_reliability_filter,
-        days_to_result_filter=days_to_result_filter,
-        start_date=start_date,
-        end_date=end_date,
-        min_confidence=min_confidence,
-        grade_candidate_archive_rows=grade_candidate_archive_rows,
-        summarize_candidate_archive=summarize_candidate_archive,
+    try:
+        row_limit = int(request.args.get('review_limit', 100) or 100)
+    except (TypeError, ValueError):
+        row_limit = 100
+    try:
+        profile_limit = int(request.args.get('profile_limit', 100) or 100)
+    except (TypeError, ValueError):
+        profile_limit = 100
+    cache_version = _build_file_token(
+        CANDIDATE_ARCHIVE_PATH,
+        DATA_DIR / 'tracking' / 'Floor_Play_Index.csv',
+        DATA_DIR / 'tracking' / 'NBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'WNBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_AllPropResults.csv',
+        DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
+        DATA_DIR / 'gamelogs' / 'NBA_Playoff_GameLogs.csv',
+        DATA_DIR / 'gamelogs' / 'WNBA_GameLogs.csv',
+        DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
+        BASE_DIR / 'services' / 'review_center.py',
     )
+    cache_key = f"candidate_review::{hashlib.md5(request.full_path.encode('utf-8')).hexdigest()}"
+
+    def _build_review_context():
+        return build_candidate_review_context_service(
+            archive_df,
+            gamelog_map,
+            postseason_only=postseason_only,
+            sport_filter=sport_filter,
+            method_filter=method_filter,
+            outcome_filter=outcome_filter,
+            stat_filter=stat_filter,
+            direction_filter=direction_filter,
+            player_search_filter=player_search_filter,
+            market_depth_filter=market_depth_filter,
+            player_tier_filter=player_tier_filter,
+            weight_profile_filter=weight_profile_filter,
+            volatility_filter=volatility_filter,
+            market_gate_filter=market_gate_filter,
+            bet_tier_filter=bet_tier_filter,
+            floor_reliability_filter=floor_reliability_filter,
+            profile_sport_filter=profile_sport_filter,
+            profile_stat_filter=profile_stat_filter,
+            profile_direction_filter=profile_direction_filter,
+            profile_reliability_filter=profile_reliability_filter,
+            profile_model_filter=profile_model_filter,
+            profile_promotion_filter=profile_promotion_filter,
+            profile_player_filter=profile_player_filter,
+            streak_sport_filter=streak_sport_filter,
+            days_to_result_filter=days_to_result_filter,
+            start_date=start_date,
+            end_date=end_date,
+            min_confidence=min_confidence,
+            row_limit=row_limit,
+            profile_limit=profile_limit,
+            grade_candidate_archive_rows=grade_rows_for_review,
+            summarize_candidate_archive=summarize_candidate_archive,
+        )
+
+    review_context = _get_disk_ttl_cached_value(cache_key, 3600, _build_review_context, version=cache_version)
 
     return render_template(
         'candidate_review.html',
@@ -26381,10 +31026,20 @@ def candidate_review():
         market_gate_filter=review_context['market_gate_filter'],
         bet_tier_filter=review_context['bet_tier_filter'],
         floor_reliability_filter=review_context['floor_reliability_filter'],
+        profile_sport_filter=review_context['profile_sport_filter'],
+        profile_stat_filter=review_context['profile_stat_filter'],
+        profile_direction_filter=review_context['profile_direction_filter'],
+        profile_reliability_filter=review_context['profile_reliability_filter'],
+        profile_model_filter=review_context['profile_model_filter'],
+        profile_promotion_filter=review_context['profile_promotion_filter'],
+        profile_player_filter=review_context['profile_player_filter'],
+        streak_sport_filter=review_context['streak_sport_filter'],
         days_to_result_filter=review_context['days_to_result_filter'],
         start_date=review_context['start_date'],
         end_date=review_context['end_date'],
         min_confidence=review_context['min_confidence'],
+        row_limit=review_context['row_limit'],
+        profile_limit=review_context['profile_limit'],
         method_options=review_context['method_options'],
         stat_options=review_context['stat_options'],
         market_depth_options=review_context['market_depth_options'],
@@ -26395,6 +31050,847 @@ def candidate_review():
         bet_tier_options=review_context['bet_tier_options'],
         floor_reliability_options=review_context['floor_reliability_options'],
     )
+
+
+@app.route('/missed-opportunities')
+def missed_opportunities():
+    context = build_missed_opportunities_context_service(
+        sport_filter=request.args.get('sport', '').strip(),
+        stat_filter=request.args.get('stat', '').strip(),
+        grade_filter=request.args.get('grade', '').strip(),
+        start_date=request.args.get('start_date', '').strip(),
+        end_date=request.args.get('end_date', '').strip(),
+        min_grade=request.args.get('min_grade', '').strip(),
+    )
+    return render_template(
+        'missed_opportunities.html',
+        rows=context['rows'],
+        summary=context['summary'],
+        charts=context['charts'],
+        sport_filter=context['sport_filter'],
+        stat_filter=context['stat_filter'],
+        grade_filter=context['grade_filter'],
+        start_date=context['start_date'],
+        end_date=context['end_date'],
+        min_grade=context['min_grade'],
+        sport_options=context['sport_options'],
+        stat_options=context['stat_options'],
+        grade_options=context['grade_options'],
+        postseason_only=postseason_only_enabled(),
+        active_sport='missed-opportunities',
+    )
+
+
+def _bk_workstation_initials(player_name):
+    parts = [part for part in re.split(r'\s+', str(player_name or '').strip()) if part]
+    if not parts:
+        return 'BK'
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return ''.join(part[0] for part in parts[:2]).upper()
+
+
+def _bk_workstation_float(value, default=0.0):
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _bk_workstation_floor_rows(sport='nba', limit=30):
+    sport_key = str(sport or 'nba').upper()
+    try:
+        df = load_floor_play_index_service()
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        return []
+
+    rows = df[df.get('Sport', '').astype(str).str.upper() == sport_key].copy()
+    if 'OutcomeState' in rows.columns:
+        rows = rows[rows['OutcomeState'].astype(str).str.upper().isin(['PENDING', ''])]
+    if 'Method' in rows.columns:
+        floor_mask = rows['Method'].astype(str).str.contains('floor', case=False, na=False)
+    else:
+        floor_mask = pd.Series(False, index=rows.index)
+    if 'IsFloorPlay' in rows.columns:
+        floor_mask = floor_mask | rows['IsFloorPlay'].fillna(False).astype(bool)
+    if floor_mask.any():
+        rows = rows[floor_mask].copy()
+
+    if rows.empty:
+        rows = df[df.get('Sport', '').astype(str).str.upper() == sport_key].copy()
+
+    if 'Confidence' in rows.columns:
+        rows['__sort_conf'] = pd.to_numeric(rows['Confidence'], errors='coerce').fillna(0)
+        rows = rows.sort_values('__sort_conf', ascending=False)
+
+    plays = []
+    for idx, row in rows.head(limit).iterrows():
+        player = str(row.get('Player', 'Unknown Player') or 'Unknown Player')
+        stat = str(row.get('Stat', row.get('StatType', 'PROP')) or 'PROP').upper()
+        direction = str(row.get('Direction', 'OVER') or 'OVER').upper()
+        confidence = round(_bk_workstation_float(row.get('Confidence'), 0), 1)
+        avg = _bk_workstation_float(row.get('Avg'), 0)
+        line = _bk_workstation_float(row.get('Line', row.get('CurrentLine')), 0)
+        floor_gap = abs(avg - line) / line if line else 0.0
+        plays.append({
+            'id': f"{sport_key}-{idx}",
+            'player_initials': _bk_workstation_initials(player),
+            'player_name': player,
+            'team': str(row.get('Team', '') or sport_key),
+            'position': str(row.get('RoleLabel', '') or 'PROP'),
+            'matchup': str(row.get('Matchup', '') or row.get('Opponent', '') or 'Today'),
+            'boost_tag': str(row.get('FloorReliability', '') or row.get('ReviewTier', '') or 'Floor Play'),
+            'boost_type': 'floor',
+            'prop_type': f"{stat} {direction}",
+            'line': line if line % 1 else int(line),
+            'season_avg': round(avg, 1) if avg else '-',
+            'floor_gap': floor_gap,
+            'hit_rate': confidence,
+            'games_sample': int(max(1, _bk_workstation_float(row.get('BookCount'), 1))),
+        })
+    return plays
+
+
+@app.route('/floor-plays')
+def floor_plays():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+
+    active_sport = request.args.get('sport', 'nba').strip().lower() or 'nba'
+    plays = _bk_workstation_floor_rows(active_sport, limit=36)
+    avg_hit_rate = round(sum(_bk_workstation_float(p.get('hit_rate')) for p in plays) / len(plays), 1) if plays else 0
+    avg_floor_gap = round(sum(_bk_workstation_float(p.get('floor_gap')) for p in plays) / len(plays) * 100, 1) if plays else 0
+    categories = []
+    by_stat = {}
+    for play in plays:
+        stat = str(play.get('prop_type', 'PROP')).split()[0]
+        bucket = by_stat.setdefault(stat, {'name': stat.title(), 'key': stat.lower(), 'rates': []})
+        bucket['rates'].append(_bk_workstation_float(play.get('hit_rate')))
+    for bucket in by_stat.values():
+        rates = bucket.pop('rates')
+        bucket['enabled'] = True
+        bucket['hit_rate'] = round(sum(rates) / len(rates)) if rates else 0
+        categories.append(bucket)
+
+    return render_template(
+        'floor_plays.html',
+        active_page='floor_plays',
+        active_sport=active_sport,
+        bankroll='2,450.00',
+        nba_count=len(_bk_workstation_floor_rows('nba', limit=500)),
+        nfl_count=len(_bk_workstation_floor_rows('nfl', limit=500)),
+        wnba_count=len(_bk_workstation_floor_rows('wnba', limit=500)),
+        mlb_count=len(_bk_workstation_floor_rows('mlb', limit=500)),
+        prop_categories=categories[:12],
+        threshold=70,
+        injuries=[],
+        injury_update_time='latest refresh',
+        today_label=datetime.now().strftime('%A %b %d'),
+        plays=plays,
+        avg_hit_rate=avg_hit_rate,
+        avg_floor_gap=avg_floor_gap,
+    )
+
+
+@app.route('/history')
+def history():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+
+    rows = []
+    try:
+        df = load_floor_play_index_service()
+    except Exception:
+        df = pd.DataFrame()
+    if not df.empty:
+        sample = df[df.get('OutcomeState', '').astype(str).isin(['Hit', 'Miss'])].copy()
+        if sample.empty:
+            sample = df.head(12).copy()
+        if 'SnapshotDate' in sample.columns:
+            sample = sample.sort_values('SnapshotDate', ascending=False)
+        for _, row in sample.head(20).iterrows():
+            outcome = str(row.get('OutcomeState', 'PENDING') or 'PENDING').upper()
+            hit = outcome == 'HIT'
+            rows.append({
+                'date': str(row.get('SnapshotDate', row.get('ResultDate', '')) or ''),
+                'sport': str(row.get('Sport', '') or ''),
+                'legs': 1,
+                'type': str(row.get('Method', 'Prop') or 'Prop'),
+                'wager': '10.00',
+                'odds': abs(int(_bk_workstation_float(row.get('MarketPrice'), 110))),
+                'result': 'WIN' if hit else 'LOSS',
+                'pnl': 9.1 if hit else -10.0,
+            })
+
+    wins = sum(1 for row in rows if row.get('result') == 'WIN')
+    net_profit = round(sum(_bk_workstation_float(row.get('pnl')) for row in rows), 2)
+    return render_template(
+        'history.html',
+        active_page='history',
+        active_sport='history',
+        bankroll='2,450.00',
+        total_sessions=len(rows),
+        win_rate=round((wins / len(rows)) * 100, 1) if rows else 0,
+        net_profit=net_profit,
+        avg_legs=1,
+        sessions=rows,
+    )
+
+
+def _pct_label(value):
+    try:
+        if pd.isna(value):
+            return '-'
+        return f"{float(value) * 100:.1f}%"
+    except Exception:
+        return '-'
+
+
+def _load_nfl_formula_lab_context():
+    scored_path = DATA_DIR / 'tracking' / 'NFL_AllPropResults_Scored.csv'
+    summary_path = DATA_DIR / 'tracking' / 'NFL_Formula_Calibration_Summary.csv'
+    notes_path = DATA_DIR / 'tracking' / 'Calibration_Notes_NFL_2025.txt'
+    sim_path = DATA_DIR / 'tracking' / 'NFL_Simulation_Results.csv'
+
+    scored = pd.read_csv(scored_path, low_memory=False) if scored_path.exists() else pd.DataFrame()
+    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
+
+    resolved = scored[scored.get('OutcomeState', pd.Series(dtype=str)).isin(['Hit', 'Miss'])].copy() if not scored.empty else pd.DataFrame()
+    hit_rate = float(resolved['OutcomeState'].eq('Hit').mean()) if not resolved.empty else None
+
+    def decorate_rows(rows, limit=None):
+        output = []
+        if rows is None or len(rows) == 0:
+            return output
+        frame = rows.head(limit).copy() if limit else rows.copy()
+        for _, row in frame.iterrows():
+            item = row.to_dict()
+            item['ActualRatePct'] = _pct_label(item.get('ActualRate'))
+            try:
+                item['WidthPct'] = max(2, min(100, round(float(item.get('ActualRate') or 0) * 100, 1)))
+            except Exception:
+                item['WidthPct'] = 2
+            output.append(item)
+        return output
+
+    def band_rows(bucket_type, order):
+        if summary.empty:
+            return []
+        rows = summary[summary['BucketType'].eq(bucket_type)].copy()
+        rows['Order'] = rows['BucketLabel'].map({label: idx for idx, label in enumerate(order)})
+        rows = rows.sort_values(['Order', 'BucketLabel'])
+        return decorate_rows(rows)
+
+    edge_bands = band_rows('EdgeScoreBand', ['<0', '0-10', '10-20', '20+'])
+    prop_bands = band_rows('PropScoreBand', ['<0', '0-15', '15-25', '25+'])
+    sim_bands = band_rows('SimulationProbability', ['<50', '50-60', '60-70', '70+'])
+
+    def find_band(rows, label):
+        for row in rows:
+            if row.get('BucketLabel') == label:
+                return {'rate': row.get('ActualRatePct', '-'), 'sample': f"{int(row.get('SampleSize') or 0):,}"}
+        return {'rate': '-', 'sample': '0'}
+
+    promote = summary[summary['Classification'].eq('UNDERWEIGHTED')].sort_values(
+        ['ActualRate', 'SampleSize'], ascending=[False, False]
+    ) if not summary.empty else pd.DataFrame()
+    reduce = summary[summary['Classification'].eq('OVERWEIGHTED')].sort_values(
+        ['ActualRate', 'SampleSize'], ascending=[True, False]
+    ) if not summary.empty else pd.DataFrame()
+
+    files = [
+        {'label': 'Scored Results', 'status': 'LIVE' if scored_path.exists() else 'MISS'},
+        {'label': 'Simulation', 'status': 'LIVE' if sim_path.exists() else 'MISS'},
+        {'label': 'Summary', 'status': 'LIVE' if summary_path.exists() else 'MISS'},
+        {'label': 'Notes', 'status': 'LIVE' if notes_path.exists() else 'MISS'},
+    ]
+    return {
+        'totals': {
+            'rows': f"{len(scored):,}",
+            'resolved': f"{len(resolved):,}",
+            'hit_rate': _pct_label(hit_rate),
+        },
+        'edge_bands': edge_bands,
+        'prop_bands': prop_bands,
+        'sim_bands': sim_bands,
+        'edge_high': find_band(edge_bands, '20+'),
+        'prop_high': find_band(prop_bands, '25+'),
+        'sim_high': find_band(sim_bands, '70+'),
+        'promote_rows': decorate_rows(promote, 8),
+        'reduce_rows': decorate_rows(reduce, 8),
+        'notes': notes_path.read_text(encoding='utf-8') if notes_path.exists() else 'Run generate_nfl_calibration_notes.py to build notes.',
+        'files': files,
+    }
+
+
+@app.route('/nfl-formula-lab')
+def nfl_formula_lab():
+    return render_template(
+        'nfl_formula_lab.html',
+        active_page='nfl_lab',
+        active_sport='nfl',
+        bankroll='2,450.00',
+        **_load_nfl_formula_lab_context(),
+    )
+
+
+def _load_calibration_lab_context():
+    summary_path = DATA_DIR / 'tracking' / 'CrossSport_Calibration_Summary.csv'
+    notes_path = DATA_DIR / 'tracking' / 'CrossSport_Calibration_Notes.txt'
+    profile_path = DATA_DIR / 'tracking' / 'CrossSport_Player_Reliability_Summary.csv'
+    promotion_path = DATA_DIR / 'tracking' / 'Missed_Winner_Promotion_Candidates.csv'
+    promotion_notes_path = DATA_DIR / 'tracking' / 'Promotion_Signal_Notes.txt'
+    driver_path = DATA_DIR / 'tracking' / 'Sport_Driver_Calibration.csv'
+    driver_notes_path = DATA_DIR / 'tracking' / 'Sport_Driver_Calibration_Notes.txt'
+    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
+    profiles = pd.read_csv(profile_path, low_memory=False) if profile_path.exists() else pd.DataFrame()
+    promotions = pd.read_csv(promotion_path, low_memory=False) if promotion_path.exists() else pd.DataFrame()
+    drivers = pd.read_csv(driver_path, low_memory=False) if driver_path.exists() else pd.DataFrame()
+
+    sports = []
+    if not summary.empty:
+        for _, row in summary.iterrows():
+            item = row.to_dict()
+            resolved = int(item.get('ResolvedRows') or 0)
+            high_rows = int(item.get('HighConfidenceRows') or 0)
+            overall = item.get('OverallHitRate')
+            high = item.get('HighConfidenceHitRate')
+            item['ResolvedRowsFmt'] = f"{resolved:,}"
+            item['HighConfidenceRowsFmt'] = f"{high_rows:,}"
+            item['OverallHitRatePct'] = _pct_label(overall)
+            item['HighConfidenceHitRatePct'] = _pct_label(high)
+            status = str(item.get('OverallStatus') or 'NO_DATA')
+            data_status = str(item.get('DataStatus') or 'NO_DATA')
+            if data_status != 'LIVE':
+                read = 'No usable resolved rows yet. Build backfill or wait for live results before calibrating.'
+            elif high_rows < 50:
+                read = 'High-confidence sample is still thin. Use the overall bucket reads before trusting the 70+ rate.'
+            elif status == 'STRONG':
+                read = 'Strong overall shape. Promote only the buckets that also survive sport-specific QC.'
+            elif status == 'WEAK':
+                read = 'Weak current shape. Find the lying buckets before using this sport for promotion.'
+            else:
+                read = 'Usable but mixed. Let bucket-level reliability decide what moves forward.'
+            item['Read'] = read
+            sports.append(item)
+
+    live_sports = [row for row in sports if row.get('DataStatus') == 'LIVE']
+    total_resolved = sum(int(row.get('ResolvedRows') or 0) for row in sports)
+    report_count = sum(1 for row in sports if int(row.get('CalibrationBuckets') or 0) > 0)
+
+    best = None
+    for row in live_sports:
+        high_rows = int(row.get('HighConfidenceRows') or 0)
+        high = row.get('HighConfidenceHitRate')
+        if high_rows < 100 or pd.isna(high):
+            continue
+        if best is None or float(high) > float(best.get('HighConfidenceHitRate') or 0):
+            best = row
+    if best:
+        best_read = f"{best.get('Sport')} 70+ CONF"
+        best_read_note = f"{_pct_label(best.get('HighConfidenceHitRate'))} on {int(best.get('HighConfidenceRows') or 0):,} rows."
+    else:
+        best_read = 'No large-sample 70+ leader yet'
+        best_read_note = 'Use sport bucket reports and formula labs until the high-confidence samples mature.'
+
+    return {
+        'sports': sports,
+        'live_count': len(live_sports),
+        'total_resolved': f"{total_resolved:,}",
+        'report_count': report_count,
+        'best_read': best_read,
+        'best_read_note': best_read_note,
+        'notes': notes_path.read_text(encoding='utf-8') if notes_path.exists() else 'Run generate_cross_sport_calibration_summary.py to build notes.',
+        'promotion_notes': promotion_notes_path.read_text(encoding='utf-8') if promotion_notes_path.exists() else 'Run generate_promotion_signal_inputs.py to build promotion notes.',
+        'driver_rows': drivers.head(24).to_dict('records') if not drivers.empty else [],
+        'driver_notes': driver_notes_path.read_text(encoding='utf-8') if driver_notes_path.exists() else 'Run generate_sport_driver_calibration.py to build driver notes.',
+        'profile_count': f"{len(profiles):,}",
+        'promotion_count': f"{len(promotions):,}",
+        'anchor_count': f"{int(profiles.get('Reliability', pd.Series(dtype=str)).fillna('').eq('ANCHOR').sum()):,}" if not profiles.empty else '0',
+        'watch_count': f"{int(profiles.get('Reliability', pd.Series(dtype=str)).fillna('').eq('WATCH').sum()):,}" if not profiles.empty else '0',
+        'promote_hard_count': f"{int(promotions.get('PromotionSignal', pd.Series(dtype=str)).fillna('').eq('PROMOTE_HARD').sum()):,}" if not promotions.empty else '0',
+        'promote_count': f"{int(promotions.get('PromotionSignal', pd.Series(dtype=str)).fillna('').isin(['PROMOTE_HARD', 'PROMOTE']).sum()):,}" if not promotions.empty else '0',
+    }
+
+
+@app.route('/calibration-lab')
+def calibration_lab():
+    return render_template(
+        'calibration_lab.html',
+        active_page='calibration_lab',
+        active_sport='calibration',
+        bankroll='2,450.00',
+        **_load_calibration_lab_context(),
+    )
+
+
+def _load_mlb_formula_lab_context():
+    scored_path = DATA_DIR / 'tracking' / 'MLB_AllPropResults_Scored.csv'
+    summary_path = DATA_DIR / 'tracking' / 'MLB_Formula_Calibration_Summary.csv'
+    notes_path = DATA_DIR / 'tracking' / 'Calibration_Notes_MLB_2026.txt'
+    scored = pd.read_csv(scored_path, low_memory=False) if scored_path.exists() else pd.DataFrame()
+    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
+    resolved = scored[scored.get('OutcomeState', pd.Series(dtype=str)).isin(['Hit', 'Miss'])].copy() if not scored.empty else pd.DataFrame()
+    hit_rate = float(resolved['OutcomeState'].eq('Hit').mean()) if not resolved.empty else None
+
+    def decorate(frame, limit=None):
+        if frame is None or len(frame) == 0:
+            return []
+        working = frame.head(limit).copy() if limit else frame.copy()
+        rows = []
+        for _, row in working.iterrows():
+            item = row.to_dict()
+            item['ActualRatePct'] = _pct_label(item.get('ActualRate'))
+            try:
+                item['WidthPct'] = max(2, min(100, round(float(item.get('ActualRate') or 0) * 100, 1)))
+            except Exception:
+                item['WidthPct'] = 2
+            rows.append(item)
+        return rows
+
+    if not summary.empty:
+        score_bands_df = summary[summary['BucketType'].eq('ContextScoreBand')].copy()
+        score_bands_df['Order'] = score_bands_df['BucketLabel'].map({'<0': 0, '0-10': 1, '10-20': 2, '20+': 3})
+        score_bands_df = score_bands_df.sort_values('Order')
+        promote_df = summary[summary['Classification'].eq('UNDERWEIGHTED')].sort_values(['ActualRate', 'SampleSize'], ascending=[False, False])
+        reduce_df = summary[summary['Classification'].eq('OVERWEIGHTED')].sort_values(['ActualRate', 'SampleSize'], ascending=[True, False])
+    else:
+        score_bands_df = promote_df = reduce_df = pd.DataFrame()
+
+    score_bands = decorate(score_bands_df)
+    promote_rows = decorate(promote_df, 8)
+    reduce_rows = decorate(reduce_df, 8)
+
+    def first_read(rows, fallback):
+        if rows:
+            row = rows[0]
+            return {'rate': row.get('ActualRatePct', '-'), 'sample': f"{int(row.get('SampleSize') or 0):,}", 'label': row.get('BucketLabel', fallback)}
+        return {'rate': '-', 'sample': '0', 'label': fallback}
+
+    high_score = next((row for row in score_bands if row.get('BucketLabel') == '20+'), None)
+    high_score_read = {
+        'rate': high_score.get('ActualRatePct', '-') if high_score else '-',
+        'sample': f"{int(high_score.get('SampleSize') or 0):,}" if high_score else '0',
+    }
+    return {
+        'totals': {
+            'rows': f"{len(scored):,}",
+            'resolved': f"{len(resolved):,}",
+            'hit_rate': _pct_label(hit_rate),
+        },
+        'score_bands': score_bands,
+        'promote_rows': promote_rows,
+        'reduce_rows': reduce_rows,
+        'high_score': high_score_read,
+        'best_promote': first_read(promote_rows, 'None'),
+        'worst_reduce': first_read(reduce_rows, 'None'),
+        'notes': notes_path.read_text(encoding='utf-8') if notes_path.exists() else 'Run calculate_mlb_context_scores.py to build notes.',
+    }
+
+
+@app.route('/mlb-formula-lab')
+def mlb_formula_lab():
+    return render_template(
+        'mlb_formula_lab.html',
+        active_page='mlb_lab',
+        active_sport='mlb',
+        bankroll='2,450.00',
+        **_load_mlb_formula_lab_context(),
+    )
+
+
+@app.route('/quant-systems')
+@app.route('/systems-lab')
+def quant_systems():
+    systems = [
+        {
+            'key': 'ev-kelly',
+            'name': 'Expected Value + Kelly',
+            'category': 'Bankroll Math',
+            'fit': 'Live',
+            'status_class': 'live',
+            'summary': 'The foundation: estimate true win probability, compare it to book price, then size risk so one bad run does not wreck the bankroll.',
+            'lesson': 'Positive EV only matters if bet sizing survives variance.',
+            'translation': 'Use fair price, edge percentage, confidence calibration, and bankroll sizing recommendations instead of flat gut bets.',
+            'modules': ['EV', 'Fair Price', 'Confidence Bands', 'Bankroll'],
+        },
+        {
+            'key': 'benter-weighted-models',
+            'name': 'Benter-Style Weighted Models',
+            'category': 'Variable Weighting',
+            'fit': 'Live',
+            'status_class': 'live',
+            'summary': 'No single metric wins by itself. Edge comes from weighting pace, matchup, player form, market data, and context better than the public.',
+            'lesson': 'Combine weak signals into one stronger probability read.',
+            'translation': 'Our confidence score blends player history, game environment, reliability labels, market depth, and contradiction checks.',
+            'modules': ['Weight Profiles', 'Matchup Context', 'Reliability', 'QC'],
+        },
+        {
+            'key': 'walters-market-timing',
+            'name': 'Market Timing Tracker',
+            'category': 'Execution Edge',
+            'fit': 'Live',
+            'status_class': 'live',
+            'summary': 'Sometimes execution beats prediction. The same prop can be good at one number and bad after the market moves.',
+            'lesson': 'Speed, stale numbers, and line movement can create or erase edge.',
+            'translation': 'Market Watch, CLV, book splits, best book, and line movement alerts show when the number is still worth acting on.',
+            'modules': ['CLV', 'Line Movement', 'Book Splits', 'Best Book'],
+        },
+        {
+            'key': 'bayesian-updating',
+            'name': 'Bayesian Update Layer',
+            'category': 'Dynamic Probability',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'Probabilities should move when new information appears: injury news, lineup changes, weather, umpire, market steam, or role shifts.',
+            'lesson': 'The latest reliable information should update the prior probability.',
+            'translation': 'Refreshes, injury checks, game context, and market movement should adjust confidence after the first model score.',
+            'modules': ['Injuries', 'Refresh Pipeline', 'Role Change', 'Market Steam'],
+        },
+        {
+            'key': 'monte-carlo',
+            'name': 'Monte Carlo Simulation',
+            'category': 'Distribution Modeling',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'A prop is not one prediction. It is a distribution of outcomes. Simulation helps estimate tails, volatility, and parlay risk.',
+            'lesson': 'Know the full range of outcomes, not only the average.',
+            'translation': 'Use player distributions and game scripts to simulate hit rates, alternate lines, floor plays, and correlated parlays.',
+            'modules': ['Outcome Ranges', 'Alt Lines', 'Volatility', 'Parlay EV'],
+        },
+        {
+            'key': 'poisson-markov',
+            'name': 'Poisson + Markov Models',
+            'category': 'State/Scoring Math',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'Low-frequency scoring and possession states need different math than simple trend charts.',
+            'lesson': 'Some sports are better modeled by event rates and state transitions.',
+            'translation': 'MLB, NHL, soccer, and football drive/possession markets should use scoring rates, state changes, and game script.',
+            'modules': ['Scoring Rates', 'Game Script', 'Drive State', 'Low-Frequency Props'],
+        },
+        {
+            'key': 'correlation-matrix',
+            'name': 'Correlation Matrix',
+            'category': 'Parlay Construction',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'Parlays are not just a list of good legs. The relationship between legs determines real risk and true expected value.',
+            'lesson': 'Correlation can either strengthen a ticket or quietly stack risk.',
+            'translation': 'Cross-sport floor plays, same-game props, hot streaks, and EV builder legs need correlation scoring before promotion.',
+            'modules': ['SGP Logic', 'Cross-Sport Mix', 'EV Builder', 'Risk Score'],
+        },
+        {
+            'key': 'rotation-exploitation',
+            'name': 'Rotation Exploitation Layer',
+            'category': 'Usage + Minutes',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'NBA and WNBA props often break when the minutes, substitution pattern, or teammate usage tree changes before the line fully adjusts.',
+            'lesson': 'Rotations create hidden edges before they show up in season averages.',
+            'translation': 'Minutes security, role-slip tags, teammate boost, injury pivots, and current-team samples should decide whether a player profile is still valid tonight.',
+            'modules': ['Minutes', 'Usage', 'Role Shift', 'Teammate Boost'],
+        },
+        {
+            'key': 'information-signal-filter',
+            'name': 'Information Theory Filter',
+            'category': 'Signal vs Noise',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'More data is not automatically better. The system needs to separate true predictive signal from noisy trends, public bias, and thin samples.',
+            'lesson': 'The edge is finding information content, not collecting every stat.',
+            'translation': 'Sample gates, contradiction QC, confidence calibration, volatility labels, and stale-data prechecks keep weak information from pretending to be edge.',
+            'modules': ['Sample Gate', 'Volatility', 'QC', 'Calibration'],
+        },
+        {
+            'key': 'arb-middle-finder',
+            'name': 'Arbitrage + Middle Finder',
+            'category': 'Book Inefficiency',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'When books disagree enough on spread, total, or prop lines, the best play may be shopping the number, finding a middle, or passing a bad book.',
+            'lesson': 'Price differences across books are market inefficiencies.',
+            'translation': 'Best book, line range, book split, and game-line boards should flag where one sportsbook gives a materially better number than the rest.',
+            'modules': ['Best Book', 'Line Range', 'Middles', 'Book Split'],
+        },
+        {
+            'key': 'regression-elo-ratings',
+            'name': 'Regression + ELO Ratings',
+            'category': 'Team Strength',
+            'fit': 'Build',
+            'status_class': 'build',
+            'summary': 'Some markets need a team-strength prior before player props are judged: pace, opponent quality, defensive scheme, and projected game script.',
+            'lesson': 'A good baseline makes every downstream prop estimate cleaner.',
+            'translation': 'Team ratings should feed matchup environment, schedule difficulty, player tier context, and spread/total interpretation before props are promoted.',
+            'modules': ['Team Rating', 'Opponent Strength', 'Pace Prior', 'Schedule Context'],
+        },
+    ]
+    engine_layers = [
+        {
+            'name': 'Market Mispricing',
+            'status': 'Live Layer',
+            'status_short': 'EV',
+            'description': 'Find where the model probability and book price disagree enough to matter.',
+            'current': 'Fair price, edge percentage, market split, best book.',
+            'next': 'Add stronger no-vig probability and book-specific calibration.',
+        },
+        {
+            'name': 'Player Reliability',
+            'status': 'Live Layer',
+            'status_short': 'PR',
+            'description': 'Separate player-specific truth from generic stat trends.',
+            'current': 'Player hit profiles, reliability labels, overvalued/undervalued flags.',
+            'next': 'Feed reliability directly into tomorrow morning promotion scores.',
+        },
+        {
+            'name': 'Missed Winners Feedback Loop',
+            'status': 'Live Layer',
+            'status_short': 'MW',
+            'description': 'Use high-grade winners we did not feature as proof and as promotion fuel.',
+            'current': 'Missed opportunities, grade chart, profile cross-reference.',
+            'next': 'Auto-promote repeated missed winner buckets that also have strong player profiles.',
+        },
+        {
+            'name': 'Game Environment',
+            'status': 'Build Layer',
+            'status_short': 'GE',
+            'description': 'A prop should never exist outside its game context.',
+            'current': 'Game total, spread, matchup label, environment read on several boards.',
+            'next': 'Deeper MLB weather, umpire, ballpark, and NFL game-script tags.',
+        },
+        {
+            'name': 'Risk and Bankroll',
+            'status': 'Build Layer',
+            'status_short': 'RB',
+            'description': 'Turn confidence into responsible exposure instead of just showing picks.',
+            'current': 'Parlay builder and ticket review language.',
+            'next': 'Kelly-style suggested stake bands and portfolio exposure by sport/stat.',
+        },
+    ]
+    sport_stacks = [
+        {
+            'sport': 'NBA / WNBA',
+            'math': 'Usage, minutes, pace, Bayesian injury/role updates',
+            'props': 'PTS, REB, AST, 3PM, stocks, floor plays',
+            'focus': 'Minutes security, role shifts, player hit profiles, floor reliability',
+        },
+        {
+            'sport': 'MLB',
+            'math': 'Event rates, splits, Poisson-style scoring, weather/park factors',
+            'props': 'Hits, total bases, HR, pitcher Ks, outs, F5 totals',
+            'focus': 'Pitcher/hitter context, book disagreement, suppression spots',
+        },
+        {
+            'sport': 'NFL / CFB',
+            'math': 'Game script, EPA/play, snap share, drive-state logic',
+            'props': 'Passing yards, receptions, rush attempts, TDs, sacks',
+            'focus': 'Projected script, weather, role volume, offensive line/injury context',
+        },
+        {
+            'sport': 'NHL / Soccer',
+            'math': 'xG, shot rates, Poisson scoring, state transitions',
+            'props': 'Shots, saves, goals, cards, corners, first-half markets',
+            'focus': 'Future expansion for low-frequency event modeling',
+        },
+    ]
+    build_checklist = [
+        {
+            'system': 'EV + Kelly',
+            'status': 'Live',
+            'status_class': 'live',
+            'artifact': 'Parlay EV, fair price, edge percentage',
+            'next': 'Add stake bands tied to bankroll and confidence calibration.',
+        },
+        {
+            'system': 'Benter Weighted Models',
+            'status': 'Live',
+            'status_class': 'live',
+            'artifact': 'Confidence, reliability, QC, driver calibration',
+            'next': 'Feed promote/reduce drivers directly into next-day scoring.',
+        },
+        {
+            'system': 'Market Timing Tracker',
+            'status': 'Live',
+            'status_class': 'live',
+            'artifact': 'CLV watch, line movement, book splits',
+            'next': 'Turn major aligned movement into Elite alerts.',
+        },
+        {
+            'system': 'Bayesian Update Layer',
+            'status': 'In Build',
+            'status_class': 'build',
+            'artifact': 'Injury refresh, role tags, game context',
+            'next': 'Apply update deltas to confidence after injury and lineup changes.',
+        },
+        {
+            'system': 'Monte Carlo Simulation',
+            'status': 'NFL v1',
+            'status_class': 'live',
+            'artifact': 'NFL simulation results and prop probabilities',
+            'next': 'Add NBA/WNBA minutes simulations and MLB event-rate simulation.',
+        },
+        {
+            'system': 'Poisson + Markov',
+            'status': 'Planned',
+            'status_class': 'build',
+            'artifact': 'Not yet surfaced',
+            'next': 'Use for MLB scoring rates, soccer/NHL expansion, and football drive states.',
+        },
+        {
+            'system': 'Correlation Matrix',
+            'status': 'In Build',
+            'status_class': 'build',
+            'artifact': 'Cross-sport mix + EV builder scaffolding',
+            'next': 'Score same-game and cross-sport correlation before parlay promotion.',
+        },
+        {
+            'system': 'Rotation Exploitation',
+            'status': 'In Build',
+            'status_class': 'build',
+            'artifact': 'RoleLabel, Situations, injury context',
+            'next': 'Separate minutes/usage shifts from generic trend strength.',
+        },
+        {
+            'system': 'Information Filter',
+            'status': 'Live',
+            'status_class': 'live',
+            'artifact': 'Scorecards, sample gates, contradiction QC',
+            'next': 'Make stale-source and thin-sample warnings visible on every board.',
+        },
+        {
+            'system': 'Arb + Middle Finder',
+            'status': 'Planned',
+            'status_class': 'build',
+            'artifact': 'Best book + line range fields exist',
+            'next': 'Flag actionable line gaps and middle opportunities across books.',
+        },
+        {
+            'system': 'Regression + ELO',
+            'status': 'Planned',
+            'status_class': 'build',
+            'artifact': 'Sport driver priors only',
+            'next': 'Create team-strength priors feeding game environment and prop context.',
+        },
+    ]
+    return render_template(
+        'quant_systems.html',
+        systems=systems,
+        engine_layers=engine_layers,
+        sport_stacks=sport_stacks,
+        build_checklist=build_checklist,
+        active_page='systems',
+        active_sport='systems',
+        bankroll='2,450.00',
+    )
+
+
+@app.route('/parlay-builder')
+def parlay_builder():
+    return redirect(url_for('parlay'))
+
+
+@app.route('/heat-map')
+def heat_map():
+    sport_filter = request.args.get('sport', '').strip().upper()
+    active_sport_key = normalize_sport_access_key(sport_filter.lower()) if sport_filter else ''
+    min_resolved = _safe_int(request.args.get('min_resolved'), 3)
+    min_resolved = max(1, min(min_resolved, 25))
+    streak_heat_all = build_streak_heat_chart_service(min_resolved=min_resolved, limit=120)
+    sport_options = sorted({str(row.get('sport') or '').upper() for row in streak_heat_all if row.get('sport')})
+    if sport_filter:
+        streak_heat = [
+            row for row in streak_heat_all
+            if str(row.get('sport') or '').upper() == sport_filter
+        ]
+    else:
+        streak_heat = streak_heat_all
+
+    top_row = streak_heat[0] if streak_heat else None
+    avg_heat = None
+    if streak_heat:
+        heat_values = [
+            float(row.get('heat_score') or 0)
+            for row in streak_heat
+            if row.get('heat_score') is not None
+        ]
+        avg_heat = round(sum(heat_values) / len(heat_values), 1) if heat_values else None
+
+    return render_template(
+        'heat_map.html',
+        streak_heat=streak_heat[:15],
+        sport_options=sport_options,
+        sport_filter=sport_filter,
+        min_resolved=min_resolved,
+        top_row=top_row,
+        avg_heat=avg_heat,
+        active_page='hot_streaks',
+        active_sport=active_sport_key,
+        bankroll='2,450.00',
+    )
+
+
+@app.route('/tendencies')
+def tendencies():
+    sport_filter = request.args.get('sport', '').strip().upper()
+    active_sport_key = normalize_sport_access_key(sport_filter.lower()) if sport_filter else ''
+    sport_options = ['NBA', 'WNBA', 'MLB', 'NFL', 'NCAAF']
+    situational_splits = [
+        {
+            'label': 'Home / Away',
+            'status': 'Design ready',
+            'detail': 'Conditional hit rate by venue so a player can show reliable home overs without hiding road weakness.',
+        },
+        {
+            'label': 'Rest Profile',
+            'status': 'Design ready',
+            'detail': 'Back-to-back, one-day rest, and two-plus-days rest splits from dated game logs.',
+        },
+        {
+            'label': 'Favorite / Underdog',
+            'status': 'Needs line join',
+            'detail': 'Prop hit rate when the team is favored, short dog, or long dog after game-line history is joined.',
+        },
+        {
+            'label': 'Game Total Band',
+            'status': 'Needs line join',
+            'detail': 'High-total versus low-total environments for points, assists, rebounds, strikeouts, and yardage markets.',
+        },
+        {
+            'label': 'Opponent Type',
+            'status': 'Model scaffold',
+            'detail': 'Opponent defense and pace buckets so the condition is about matchup shape, not just the team name.',
+        },
+        {
+            'label': 'Officiating Context',
+            'status': 'Live feed seeded',
+            'detail': 'Official, umpire, and crew profiles become a support or caution layer once assignments are confirmed.',
+        },
+    ]
+    officiating_status = _load_derivative_officiating_status(sport_filter=sport_filter)
+    official_tendencies = _load_official_tendency_status(sport_filter=sport_filter)
+    return render_template(
+        'tendencies.html',
+        sport_filter=sport_filter,
+        sport_options=sport_options,
+        situational_splits=situational_splits,
+        officiating_status=officiating_status,
+        official_tendencies=official_tendencies,
+        active_page='tendencies',
+        active_sport=active_sport_key,
+        bankroll='2,450.00',
+    )
+
+
+@app.route('/settings')
+def settings():
+    return redirect(url_for('account'))
 
 
 @app.route('/nba-calibration')
@@ -26424,12 +31920,15 @@ def ops_dashboard():
 @app.route('/injuries')
 def injuries_page():
     """Display current injuries and boost opportunities"""
+    requested_sport = normalize_sport_access_key(request.args.get('sport', '').strip().lower())
     injuries = load_injuries()
     boosts = load_boosts()
     active_boosts = load_active_boosts()
     postseason_only = postseason_only_enabled()
     schedule = load_schedule()
     team_filter = get_active_playoff_team_filter(schedule) if postseason_only else get_team_filter(False)
+    if requested_sport and requested_sport != 'nba':
+        team_filter = set()
     
     injuries_by_team = {}
     filtered_injuries = injuries.copy()
@@ -26473,7 +31972,19 @@ def injuries_page():
             if len(top_boosts) >= 30:
                 break
     
-    role_changes = build_role_change_candidates(filtered_injuries, active_boosts, team_filter, load_gamelogs())
+    role_cache_version = _build_file_token(
+        DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
+        DATA_DIR / 'injuries' / 'NBA_Injuries_Manual.csv',
+        DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
+        DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
+    )
+    role_cache_key = f"injury_role_changes::{requested_sport or 'nba'}::{int(bool(postseason_only))}"
+    role_changes = _get_disk_ttl_cached_value(
+        role_cache_key,
+        43200,
+        lambda: build_role_change_candidates(filtered_injuries, active_boosts, team_filter, load_gamelogs()),
+        version=role_cache_version,
+    )
     status_counts = filtered_injuries['Status'].value_counts().to_dict() if not filtered_injuries.empty else {}
     last_updated = filtered_injuries.iloc[0]['Updated'] if not filtered_injuries.empty and 'Updated' in filtered_injuries.columns else 'Unknown'
     
@@ -26485,7 +31996,9 @@ def injuries_page():
         last_updated=last_updated,
         total_injuries=len(filtered_injuries),
         total_boosts=len(top_boosts),
-        postseason_only=postseason_only
+        postseason_only=postseason_only,
+        active_page='injuries',
+        active_sport=requested_sport or 'nba',
     )
 
 if __name__ == '__main__':

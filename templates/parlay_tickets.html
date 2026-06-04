@@ -1,0 +1,245 @@
+{% set active_page = 'parlay_builder' %}
+{% set active_sport = sport_key|default('nba') %}
+{% extends "bk_base.html" %}
+{% block title %}Saved Parlay Tickets - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<style>
+  .ticket-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .ticket-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: linear-gradient(145deg, rgba(31,46,58,0.34), rgba(8,12,15,0.96));
+  }
+
+  .ticket-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 12px;
+  }
+
+  .ticket-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background:
+      linear-gradient(145deg, rgba(31,46,58,0.28), rgba(8,12,15,0.96)),
+      rgba(255,255,255,0.018);
+    overflow: hidden;
+  }
+
+  .ticket-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(49,70,90,0.35);
+  }
+
+  .ticket-title {
+    color: var(--text);
+    font-weight: 800;
+    font-size: 13px;
+  }
+
+  .ticket-meta,
+  .ticket-note {
+    color: var(--text2);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .ticket-body {
+    padding: 12px 14px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .ticket-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ticket-metric {
+    border: 1px solid rgba(145,168,184,0.10);
+    border-radius: 7px;
+    padding: 8px;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .ticket-metric span {
+    display: block;
+    color: var(--text3);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .ticket-metric strong {
+    display: block;
+    color: var(--text);
+    font-size: 14px;
+    margin-top: 3px;
+  }
+
+  .ticket-leg-list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .ticket-leg {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid rgba(145,168,184,0.10);
+    border-radius: 7px;
+    padding: 8px 9px;
+    background: rgba(0,0,0,0.16);
+  }
+
+  .ticket-leg strong,
+  .ticket-leg small {
+    display: block;
+  }
+
+  .ticket-leg strong {
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  .ticket-leg small {
+    color: var(--text2);
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .ticket-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 4px;
+  }
+</style>
+
+<div class="ticket-page">
+  <div class="ticket-header">
+    <div>
+      <div class="parlay-kicker">Parlay Workspace</div>
+      <h1 style="margin: 0 0 6px;">Saved <span class="accent">Tickets</span></h1>
+      <div class="ticket-note">Saved builds live here so the active parlay builder can stay clean and focused.</div>
+    </div>
+    <div class="ticket-actions">
+      <a class="btn btn-primary" href="/parlay?sport={{ sport_key }}&sample={{ sample_mode }}">Back To Builder</a>
+      <a class="btn btn-secondary" href="/bet-review?history_scope=native&postseason={{ 1 if postseason_only else 0 }}">Open Bet Review</a>
+    </div>
+  </div>
+
+  {% if saved_tickets %}
+  <div class="ticket-grid">
+    {% for ticket in saved_tickets %}
+    <article class="ticket-card" id="saved-ticket-{{ ticket.ticket_id }}">
+      <div class="ticket-card-head">
+        <div>
+          <div class="ticket-title">{{ ticket.label }}</div>
+          <div class="ticket-meta">{{ ticket.saved_at }} | {{ ticket.leg_count }} legs | {{ ticket.avg_confidence|round(1) }}% avg</div>
+        </div>
+        <span class="badge {% if ticket.display_result in ['Win', 'Clean So Far', 'Alive'] %}badge-accent{% elif ticket.display_result == 'Loss' %}badge-warning{% endif %}">
+          {{ ticket.display_result }}
+          {% if ticket.display_result_source in ['auto', 'settled'] %}<small style="margin-left:4px; color:var(--text3);">{{ ticket.display_result_source }}</small>{% endif %}
+        </span>
+      </div>
+      <div class="ticket-body">
+        <div class="ticket-metrics">
+          <div class="ticket-metric"><span>Tier 1</span><strong>{{ ticket.tier1_count }}</strong></div>
+          <div class="ticket-metric"><span>Eff Conf</span><strong>{{ ticket.avg_effective_confidence|round(1) }}%</strong></div>
+          <div class="ticket-metric"><span>Stake</span><strong>${{ '%.2f'|format(ticket.stake) }}</strong></div>
+          <div class="ticket-metric"><span>Profit</span><strong>${{ '%.2f'|format(ticket.money.profit) }}</strong></div>
+        </div>
+
+        <div class="ticket-note">
+          <strong style="color: var(--text);">{{ ticket.analysis.grade }}</strong> | {{ ticket.analysis.profile }}. {{ ticket.analysis.recommendation }}
+        </div>
+
+        <div class="ticket-leg-list">
+          {% for pick in ticket.picks[:8] %}
+          <div class="ticket-leg">
+            <div>
+              <strong>{{ pick.player }}</strong>
+              <small>{{ pick.sport or 'NBA' }} | {{ pick.stat }} {{ pick.direction[0] }}{{ pick.line }} | {{ pick.confidence|round|int }}%</small>
+            </div>
+            <span class="badge">
+              {% if pick.outcome_state == 'win' %}Win{% elif pick.outcome_state == 'loss' %}Loss{% elif pick.outcome_state == 'push' %}Push{% elif pick.outcome_state == 'settled' %}Settled{% else %}Pending{% endif %}
+            </span>
+          </div>
+          {% endfor %}
+          {% if ticket.picks|length > 8 %}
+          <div class="ticket-note">+{{ ticket.picks|length - 8 }} more legs</div>
+          {% endif %}
+        </div>
+
+        <div class="ticket-actions">
+          <a class="btn btn-primary btn-sm" href="/parlay?sport={{ sport_key }}&sample={{ sample_mode }}&ticket_id={{ ticket.ticket_id }}">Load In Builder</a>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Pending')">Pending</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Win')">Win</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Loss')">Loss</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="setSavedTicketResult('{{ ticket.ticket_id }}', 'Push')">Push</button>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="deleteSavedTicket('{{ ticket.ticket_id }}')">Delete</button>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state" style="padding: 28px;">
+    <div class="empty-state-title">No saved tickets yet</div>
+    <div class="empty-state-copy">Build a ticket, save it, and it will show up here for review and reload.</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+async function deleteSavedTicket(ticketId) {
+  if (!confirm('Delete this saved ticket?')) return;
+  const response = await fetch('/parlay/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket_id: ticketId })
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) {
+    alert(result.error || 'Unable to delete ticket.');
+    return;
+  }
+  const card = document.getElementById(`saved-ticket-${ticketId}`);
+  if (card) card.remove();
+}
+
+async function setSavedTicketResult(ticketId, resultLabel) {
+  const response = await fetch('/parlay/result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket_id: ticketId, result: resultLabel })
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) {
+    alert(result.error || 'Unable to update result.');
+    return;
+  }
+  window.location.reload();
+}
+</script>
+{% endblock %}

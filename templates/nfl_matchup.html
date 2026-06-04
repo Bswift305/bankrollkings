@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
 {% block title %}NFL Matchup Board{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">

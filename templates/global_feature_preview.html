@@ -1,0 +1,1232 @@
+{% extends "bk_base.html" if current_user else "public_base.html" %}
+
+{% block title %}{{ feature.title }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block workflow_toolbar %}{% endblock workflow_toolbar %}
+{% block betslip %}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .bk-sampler-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .bk-sampler-copy,
+  .bk-sampler-panel {
+    border: 1px solid rgba(91, 209, 198, .18);
+    background: linear-gradient(145deg, rgba(13, 26, 25, .92), rgba(8, 15, 14, .86));
+    border-radius: 10px;
+    padding: 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .bk-sampler-kicker {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    margin-bottom: 8px;
+  }
+  .bk-sampler-copy h1 {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 4vw, 54px);
+    line-height: .92;
+    letter-spacing: .04em;
+    margin: 0 0 10px;
+    color: var(--bk-text);
+  }
+  .bk-sampler-copy p {
+    max-width: 860px;
+    color: var(--bk-muted);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .bk-sampler-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .bk-sampler-panel {
+    display: grid;
+    gap: 10px;
+  }
+  .bk-sampler-step {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 10px;
+    border: 1px solid rgba(91, 209, 198, .12);
+    border-radius: 8px;
+    background: rgba(255,255,255,.025);
+  }
+  .bk-step-num {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    color: #07100f;
+    background: linear-gradient(145deg, #7feee4, #f1c15b);
+    font-weight: 800;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .bk-sampler-step strong {
+    display: block;
+    color: var(--bk-text);
+    margin-bottom: 3px;
+  }
+  .bk-sampler-step small {
+    color: var(--bk-muted);
+    line-height: 1.45;
+  }
+  .bk-sampler-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 2px 10px;
+  }
+  .bk-sampler-section-title h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    letter-spacing: .06em;
+    font-size: 24px;
+  }
+  .bk-sampler-section-title span {
+    color: var(--bk-muted);
+    font-size: 12px;
+  }
+  .bk-sampler-sports {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .bk-sampler-sport-card {
+    position: relative;
+    min-height: 178px;
+    padding: 14px;
+    border: 1px solid rgba(91, 209, 198, .14);
+    border-radius: 10px;
+    background: linear-gradient(145deg, rgba(13, 26, 25, .92), rgba(7, 13, 12, .9));
+    overflow: hidden;
+  }
+  .bk-sampler-sport-card:after {
+    content: "";
+    position: absolute;
+    right: -24px;
+    bottom: -24px;
+    width: 120px;
+    height: 120px;
+    background: var(--sport-logo) center / contain no-repeat;
+    opacity: .08;
+  }
+  .bk-sampler-sport-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .bk-sampler-sport-head img {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+  }
+  .bk-sampler-sport-head strong {
+    font-size: 16px;
+  }
+  .bk-sampler-sport-head em {
+    margin-left: auto;
+    color: var(--bk-gold);
+    font-style: normal;
+    font-size: 11px;
+    border: 1px solid rgba(241, 193, 91, .25);
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+  .bk-sampler-metrics {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .bk-sampler-metrics span {
+    border: 1px solid rgba(91, 209, 198, .15);
+    background: rgba(91, 209, 198, .05);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--bk-muted);
+    font-size: 11px;
+  }
+  .bk-sampler-best {
+    color: var(--bk-text);
+    line-height: 1.4;
+    margin-bottom: 12px;
+  }
+  .bk-sampler-best small {
+    display: block;
+    color: var(--bk-muted);
+  }
+  .bk-sampler-card-actions {
+    display: flex;
+    gap: 8px;
+    position: relative;
+    z-index: 1;
+  }
+  .bk-sampler-note-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .bk-sampler-read-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+    position: relative;
+    z-index: 2;
+  }
+  .bk-sampler-read-card {
+    display: grid;
+    gap: 7px;
+    min-height: 128px;
+    padding: 14px;
+    border: 1px solid rgba(91, 209, 198, .22);
+    border-radius: 10px;
+    background:
+      radial-gradient(circle at 12% 8%, rgba(127, 238, 228, .10), transparent 32%),
+      linear-gradient(145deg, rgba(14, 28, 26, .98), rgba(8, 13, 13, .96));
+    color: var(--bk-text);
+    text-decoration: none;
+    box-shadow: 0 10px 26px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .bk-sampler-read-card:hover {
+    border-color: rgba(241, 193, 91, .55);
+    transform: translateY(-1px);
+  }
+  .bk-sampler-read-sport {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--bk-gold);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .bk-sampler-read-sport img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+  }
+  .bk-sampler-read-card strong {
+    font-size: 18px;
+    color: var(--bk-text);
+  }
+  .bk-sampler-read-card small {
+    color: var(--bk-muted);
+    line-height: 1.35;
+  }
+  .bk-sampler-read-card em {
+    color: var(--bk-primary);
+    font-style: normal;
+    font-size: 12px;
+    margin-top: auto;
+  }
+  .bk-sampler-empty {
+    border: 1px dashed rgba(91, 209, 198, .24);
+    border-radius: 10px;
+    padding: 18px;
+    color: var(--bk-muted);
+    background: rgba(255,255,255,.025);
+  }
+  .bk-testdrive {
+    border: 1px solid rgba(241, 193, 91, .18);
+    border-radius: 12px;
+    padding: 16px;
+    background:
+      radial-gradient(circle at 8% 10%, rgba(241, 193, 91, .08), transparent 28%),
+      linear-gradient(145deg, rgba(14, 24, 24, .96), rgba(7, 12, 12, .92));
+  }
+  .bk-testdrive-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .bk-testdrive-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 28px;
+    letter-spacing: .06em;
+  }
+  .bk-testdrive-head p {
+    margin: 3px 0 0;
+    color: var(--bk-muted);
+  }
+  .bk-demo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .bk-demo-card,
+  .bk-demo-row {
+    border: 1px solid rgba(91, 209, 198, .18);
+    border-radius: 10px;
+    padding: 12px;
+    background: rgba(255,255,255,.035);
+  }
+  .bk-demo-card span,
+  .bk-demo-row span {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .bk-demo-card strong,
+  .bk-demo-row strong {
+    display: block;
+    color: var(--bk-text);
+    font-size: 16px;
+    margin: 5px 0 3px;
+  }
+  .bk-demo-card small,
+  .bk-demo-row small {
+    display: block;
+    color: var(--bk-muted);
+    line-height: 1.35;
+  }
+  .bk-demo-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 10px;
+  }
+  .bk-demo-table th,
+  .bk-demo-table td {
+    padding: 10px 11px;
+    border-bottom: 1px solid rgba(91, 209, 198, .10);
+    text-align: left;
+    vertical-align: top;
+  }
+  .bk-demo-table th {
+    color: var(--bk-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    background: rgba(91, 209, 198, .055);
+  }
+  .bk-demo-table td {
+    color: var(--bk-text);
+  }
+  .bk-demo-lock {
+    display: inline-flex;
+    border: 1px solid rgba(241, 193, 91, .28);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--bk-gold);
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .bk-parlay-demo {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr);
+    gap: 12px;
+  }
+  .bk-parlay-leg {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 11px;
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 10px;
+    background: rgba(255,255,255,.025);
+  }
+  .bk-parlay-leg em {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-grid;
+    place-items: center;
+    color: #05100f;
+    background: linear-gradient(145deg, #9dfff7, #d7a74f);
+    font-style: normal;
+    font-weight: 900;
+  }
+  .bk-parlay-leg strong,
+  .bk-parlay-ticket strong {
+    display: block;
+    color: var(--bk-text);
+  }
+  .bk-parlay-leg small,
+  .bk-parlay-ticket small {
+    color: var(--bk-muted);
+    line-height: 1.4;
+  }
+  .bk-parlay-chip {
+    border: 1px solid rgba(127,238,228,.22);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--bk-primary2);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .bk-parlay-ticket {
+    border: 1px solid rgba(241,193,91,.24);
+    border-radius: 12px;
+    padding: 14px;
+    background:
+      radial-gradient(circle at 90% 15%, rgba(241,193,91,.12), transparent 35%),
+      linear-gradient(145deg, rgba(14,22,22,.96), rgba(8,10,11,.96));
+  }
+  .bk-parlay-ticket-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(127,238,228,.10);
+  }
+  .bk-parlay-ticket-row:last-child {
+    border-bottom: 0;
+  }
+  .bk-parlay-ticket-row span {
+    color: var(--bk-muted);
+    font-size: 12px;
+  }
+  .bk-parlay-ticket-row b {
+    color: var(--bk-gold2);
+  }
+  .bk-ticket-preview-shell {
+    display: grid;
+    grid-template-columns: minmax(0, .95fr) minmax(280px, .72fr) minmax(340px, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .bk-ticket-window {
+    border: 1px solid rgba(241,193,91,.32);
+    border-radius: 12px;
+    background:
+      radial-gradient(circle at 85% 12%, rgba(241,193,91,.10), transparent 34%),
+      linear-gradient(145deg, rgba(12,22,23,.96), rgba(7,10,11,.98));
+    padding: 14px;
+    min-height: 100%;
+  }
+  .bk-ticket-window-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .bk-ticket-input {
+    border: 1px solid rgba(127,238,228,.18);
+    border-radius: 8px;
+    background: rgba(5,12,13,.82);
+    padding: 9px 10px;
+    color: var(--bk-text);
+    font-size: 12px;
+    width: 100%;
+  }
+  .bk-ticket-field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .bk-ticket-label {
+    display: block;
+    color: var(--bk-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .bk-ticket-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .bk-ticket-status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .bk-ticket-mini-analysis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .bk-ticket-mini-analysis div {
+    border: 1px solid rgba(127,238,228,.12);
+    border-radius: 9px;
+    background: rgba(255,255,255,.025);
+    padding: 9px;
+  }
+  .bk-ticket-mini-analysis span {
+    display: block;
+    color: var(--bk-muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 4px;
+  }
+  .bk-ticket-mini-analysis strong {
+    color: var(--bk-text);
+    font-size: 12px;
+  }
+  .bk-review-preview-shell {
+    display: grid;
+    gap: 12px;
+  }
+  .bk-review-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .bk-review-stat {
+    border: 1px solid rgba(241,193,91,.26);
+    border-radius: 10px;
+    background: linear-gradient(145deg, rgba(14,24,24,.94), rgba(7,10,11,.96));
+    padding: 12px;
+  }
+  .bk-review-stat span,
+  .bk-review-panel-title,
+  .bk-review-row-label {
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .bk-review-stat strong {
+    display: block;
+    color: var(--bk-text);
+    font-size: 28px;
+    line-height: 1;
+    margin: 6px 0 4px;
+  }
+  .bk-review-stat small {
+    color: var(--bk-muted);
+  }
+  .bk-review-two-col {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    gap: 12px;
+  }
+  .bk-review-panel {
+    border: 1px solid rgba(127,238,228,.16);
+    border-radius: 12px;
+    background: rgba(255,255,255,.025);
+    padding: 12px;
+  }
+  .bk-review-bar-row {
+    display: grid;
+    gap: 5px;
+    margin-top: 10px;
+  }
+  .bk-review-bar-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--bk-muted);
+    font-size: 11px;
+  }
+  .bk-review-bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.08);
+    overflow: hidden;
+  }
+  .bk-review-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--bk-primary2), var(--bk-gold2));
+  }
+  .bk-review-proof-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .bk-review-proof-row {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) auto;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid rgba(127,238,228,.14);
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(8,14,15,.74);
+  }
+  .bk-review-proof-row strong {
+    color: var(--bk-text);
+    display: block;
+  }
+  .bk-review-proof-row small {
+    color: var(--bk-muted);
+  }
+  .bk-review-grade {
+    color: var(--bk-gold2);
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  @media (max-width: 1000px) {
+    .bk-parlay-demo,
+    .bk-ticket-preview-shell,
+    .bk-review-two-col,
+    .bk-review-stat-grid { grid-template-columns: 1fr; }
+  }
+  .bk-sampler-note {
+    border: 1px solid rgba(91, 209, 198, .12);
+    border-radius: 10px;
+    padding: 14px;
+    background: rgba(255,255,255,.025);
+  }
+  .bk-sampler-note span {
+    display: block;
+    color: var(--bk-gold);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 6px;
+  }
+  .bk-sampler-note strong {
+    display: block;
+    color: var(--bk-text);
+    margin-bottom: 5px;
+  }
+  .bk-sampler-note small {
+    color: var(--bk-muted);
+    line-height: 1.45;
+  }
+  @media (max-width: 1200px) {
+    .bk-sampler-hero,
+    .bk-sampler-read-grid,
+    .bk-sampler-sports,
+    .bk-sampler-note-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bk-toolbar bk-command-toolbar">
+  <span class="bk-toolbar-label">Open:</span>
+  <a class="bk-btn" href="{{ url_for('dashboard') if current_user else url_for('frontpage') }}">Home</a>
+  <a class="bk-btn {% if feature_key == 'props' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='props') }}">Props</a>
+  <a class="bk-btn {% if feature_key == 'parlay' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">Parlay Builder</a>
+  <a class="bk-btn {% if feature_key == 'review' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='review') }}">Review Center</a>
+  <a class="bk-btn {% if feature_key == 'market' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='market') }}">Market</a>
+  <a class="bk-btn {% if feature_key == 'trends' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='trends') }}">Streak Patterns</a>
+  <a class="bk-btn" href="{{ url_for('tendencies') }}">Tendencies</a>
+  <a class="bk-btn {% if feature_key == 'systems' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='systems') }}">Derivatives</a>
+  <a class="bk-btn {% if feature_key == 'officiating' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='officiating') }}">Officiating</a>
+  <a class="bk-btn {% if feature_key == 'hot-streaks' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='hot-streaks') }}">Hot Streaks</a>
+  <a class="bk-btn {% if feature_key == 'injuries' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='injuries') }}">Injuries</a>
+  <a class="bk-btn {% if feature_key == 'elite' %}active{% endif %}" href="{{ url_for('global_feature_preview', feature_key='elite') }}">Elite</a>
+  <div class="bk-toolbar-spacer"></div>
+  <span class="bk-toolbar-count">{{ live_sports|length }} active boards</span>
+</div>
+
+<section class="bk-content bk-sampler-hero">
+  <div class="bk-sampler-copy">
+    <div class="bk-sampler-kicker">{{ feature.kicker }}</div>
+    <h1>{{ feature.title }}</h1>
+    <p>{{ feature.subtitle }}</p>
+    <div class="bk-sampler-actions">
+      <a class="bk-open-btn" href="{{ url_for('dashboard') if current_user else url_for('frontpage') }}">Home</a>
+      <a class="bk-btn" href="{{ url_for('pricing') }}">Compare Access</a>
+    </div>
+    {% if cross_sport_top_props and feature_key not in ['review'] %}
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:18px;">
+      {% for prop in cross_sport_top_props[:3] %}
+      <a href="{{ prop.href }}" style="display:block; padding:11px 12px; border:1px solid rgba(127,238,228,.30); border-radius:9px; background:rgba(127,238,228,.055); color:#f4f7fb; text-decoration:none;">
+        <span style="display:flex; align-items:center; gap:7px; color:#f1c15b; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px;">
+          <img src="{{ sport_logo_url(prop.sport_key) }}" alt="" style="width:16px;height:16px;object-fit:contain;">{{ prop.sport }} · {{ prop.lane }}
+        </span>
+        <strong style="display:block; font-size:15px; margin-bottom:3px;">{{ prop.player }}</strong>
+        <small style="display:block; color:#a8b6c0;">{{ prop.stat }} {{ prop.direction }} {{ prop.line }}{% if prop.price %} · {{ prop.price }}{% endif %}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="bk-sampler-panel">
+    {% for title, body in feature.steps %}
+    <div class="bk-sampler-step">
+      <span class="bk-step-num">{{ loop.index }}</span>
+      <span><strong>{{ title }}</strong><small>{{ body }}</small></span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bk-content bk-testdrive">
+  <div class="bk-testdrive-head">
+    <div>
+      <h2>{{ feature.preview_heading|default(feature.title|replace(' Preview', '') ~ ' Sample') }}</h2>
+      <p>{{ feature.preview_copy|default('Preview the signals, context, and workflow this feature adds before opening the full board.') }}</p>
+    </div>
+    <span class="bk-demo-lock">Sample View</span>
+  </div>
+
+  {% if feature_key == 'props' %}
+  <table class="bk-demo-table">
+    <thead><tr><th>Sport</th><th>Player</th><th>Prop</th><th>Read</th><th>Why It Matters</th></tr></thead>
+    <tbody>
+      {% for prop in cross_sport_top_props[:6] %}
+      <tr>
+        <td>{{ prop.sport }}</td>
+        <td><strong>{{ prop.player }}</strong><br><small>{{ prop.matchup }}</small></td>
+        <td>{{ prop.stat }} {{ prop.direction }} {{ prop.line }}<br><small>{{ prop.price }} {{ prop.book }}</small></td>
+        <td>{{ prop.implied }}%</td>
+        <td><small>Preview shows the row shape. Full boards unlock filters, player pages, market notes, and matchup context.</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% elif feature_key == 'parlay' %}
+  <div class="bk-ticket-preview-shell">
+    <div class="bk-ticket-window">
+      <div class="bk-ticket-window-title">
+        <span>Selected Props</span>
+        <span class="bk-parlay-chip">{{ [cross_sport_top_props|length, 3]|min }} Legs</span>
+      </div>
+      <div style="display:grid; gap:8px;">
+        {% for prop in cross_sport_top_props[:3] %}
+        <div class="bk-parlay-leg">
+          <em>{{ loop.index }}</em>
+          <div>
+            <strong>{{ prop.player }}</strong>
+            <small>{{ prop.sport }} &middot; {{ prop.stat }} {{ prop.direction }} {{ prop.line }}{% if prop.matchup %} &middot; {{ prop.matchup }}{% endif %}</small>
+          </div>
+          <span class="bk-parlay-chip">{{ prop.implied }}%</span>
+        </div>
+        {% else %}
+        <div class="bk-parlay-leg">
+          <em>1</em>
+          <div><strong>Sample Anchor Leg</strong><small>Live sample rows will appear after the daily refresh loads active props.</small></div>
+          <span class="bk-parlay-chip">Preview</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="bk-ticket-mini-analysis">
+        <div><span>Build Grade</span><strong>Anchor Watch</strong></div>
+        <div><span>CorrelationIQ</span><strong>Clean Mix</strong></div>
+        <div><span>BankrollIQ</span><strong>Controlled</strong></div>
+        <div><span>Best Use</span><strong>Round Robin</strong></div>
+      </div>
+    </div>
+
+    <div class="bk-ticket-window">
+      <div class="bk-ticket-window-title">
+        <span>Save Ticket</span>
+        <span class="bk-demo-lock">Paid Tool</span>
+      </div>
+      <label class="bk-ticket-label" for="parlay-preview-label">Label</label>
+      <input id="parlay-preview-label" class="bk-ticket-input" value="Tonight's anchor / RR card" readonly>
+      <div class="bk-ticket-field-grid">
+        <div>
+          <label class="bk-ticket-label" for="parlay-preview-stake">Stake</label>
+          <input id="parlay-preview-stake" class="bk-ticket-input" value="$25.00" readonly>
+        </div>
+        <div>
+          <label class="bk-ticket-label" for="parlay-preview-payout">Target Payout</label>
+          <input id="parlay-preview-payout" class="bk-ticket-input" value="$186.40" readonly>
+        </div>
+      </div>
+      <div class="bk-ticket-actions">
+        <span class="bk-open-btn" style="text-align:center;">Save Picks</span>
+        <span class="bk-btn" style="text-align:center;">Clear All</span>
+      </div>
+      <a class="bk-btn" href="{{ url_for('pricing') }}" style="width:100%; margin-top:8px; text-align:center;">Open Saved Tickets</a>
+      <small style="display:block; margin-top:10px;">Paid users save the card, reload it later, add stake and payout, then send it into Review Center after results settle.</small>
+    </div>
+
+    <div class="bk-ticket-window">
+      <div class="bk-ticket-window-title">
+        <span>Saved Ticket</span>
+        <span class="bk-parlay-chip">Pending</span>
+      </div>
+      <strong style="display:block; color:var(--bk-text); font-size:15px;">Tonight's anchor / RR card</strong>
+      <small style="display:block; color:var(--bk-muted); margin-top:4px;">Preview save &middot; 3 legs &middot; 82.4% avg confidence</small>
+      <div class="bk-ticket-mini-analysis">
+        <div><span>Ticket Analysis</span><strong>B+ Build</strong></div>
+        <div><span>Leg Results</span><strong>0W / 0L / 3P</strong></div>
+        <div><span>Model Review</span><strong>Clean Process</strong></div>
+        <div><span>Profit / ROI</span><strong>$0.00</strong></div>
+      </div>
+      <div style="display:grid; gap:6px; margin-top:10px;">
+        {% for prop in cross_sport_top_props[:3] %}
+        <div class="bk-parlay-leg" style="grid-template-columns:minmax(0,1fr) auto;">
+          <div>
+            <strong>{{ prop.player }}</strong>
+            <small>{{ prop.stat }} {{ prop.direction[0] }}{{ prop.line }} &middot; {{ prop.sport }}</small>
+          </div>
+          <span class="bk-parlay-chip">Pending</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="bk-ticket-status-grid">
+        <span class="bk-btn" style="text-align:center;">Pending</span>
+        <span class="bk-btn" style="text-align:center;">Win</span>
+        <span class="bk-btn" style="text-align:center;">Loss</span>
+        <span class="bk-btn" style="text-align:center;">Push</span>
+      </div>
+    </div>
+  </div>
+
+  {% elif feature_key == 'review' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Candidates</span><strong>459</strong><small>NBA archived method plays</small></div>
+      <div class="bk-review-stat"><span>Resolved Hit Rate</span><strong>57.3%</strong><small>161 hits / 120 misses</small></div>
+      <div class="bk-review-stat"><span>Pending</span><strong>178</strong><small>waiting on the next game</small></div>
+      <div class="bk-review-stat"><span>Missed Winners</span><strong>37</strong><small>A/B+ reads not promoted</small></div>
+    </div>
+
+    <div class="bk-review-two-col">
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">Confidence Calibration</div>
+        <div class="bk-review-bar-row">
+          <div class="bk-review-bar-meta"><span>80+ premium bucket</span><b>50 / 88 hits &middot; 56.8%</b></div>
+          <div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:56.8%;"></span></div>
+        </div>
+        <div class="bk-review-bar-row">
+          <div class="bk-review-bar-meta"><span>70-79 support bucket</span><b>64 / 109 hits &middot; 58.7%</b></div>
+          <div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:58.7%;"></span></div>
+        </div>
+        <div class="bk-review-bar-row">
+          <div class="bk-review-bar-meta"><span>Watch bucket</span><b>47 / 91 hits &middot; 51.6%</b></div>
+          <div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:51.6%;"></span></div>
+        </div>
+      </div>
+
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">Player Proof</div>
+        <div class="bk-review-proof-list">
+          <div class="bk-review-proof-row">
+            <div><strong>Jalen Brunson</strong><small>NBA &middot; BLK UNDER 0.5 &middot; Knicks @ Spurs</small></div>
+            <span class="bk-review-grade">A+ hit</span>
+          </div>
+          <div class="bk-review-proof-row">
+            <div><strong>Sandy Leon</strong><small>MLB &middot; Doubles UNDER 0.5 &middot; Blue Jays @ Braves</small></div>
+            <span class="bk-review-grade">A read</span>
+          </div>
+          <div class="bk-review-proof-row">
+            <div><strong>Skylar Diggins-Smith</strong><small>WNBA &middot; 3PM OVER 0.5 &middot; Sky @ Mystics</small></div>
+            <span class="bk-review-grade">Watch</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <table class="bk-demo-table">
+      <thead><tr><th>Sport</th><th>Player / Team</th><th>Outcome</th><th>Why It Happened</th><th>Next Board Action</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>NBA</td>
+          <td><strong>Jalen Brunson</strong><br><small>New York Knicks</small></td>
+          <td><span class="bk-review-grade">Hit</span></td>
+          <td><small>Role and matchup supported the under, and the line did not move against the read.</small></td>
+          <td><small>Keep in premium bucket when similar role and opponent profile return.</small></td>
+        </tr>
+        <tr>
+          <td>MLB</td>
+          <td><strong>Jackson Chourio</strong><br><small>Milwaukee Brewers</small></td>
+          <td><span class="bk-review-grade">Missed winner</span></td>
+          <td><small>The prop hit, but the board did not promote it hard enough before first pitch.</small></td>
+          <td><small>Boost comparable hitter spots when market and matchup both support.</small></td>
+        </tr>
+        <tr>
+          <td>WNBA</td>
+          <td><strong>Skylar Diggins-Smith</strong><br><small>Seattle Storm</small></td>
+          <td><span class="bk-review-grade">Hold</span></td>
+          <td><small>The result was useful, but sample and role context were not strong enough to overlearn.</small></td>
+          <td><small>Keep as watchlist until minutes, usage, and market agree again.</small></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'market' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Best Price</span><strong>-110</strong><small>available before the move</small></div>
+      <div class="bk-review-stat"><span>Line Range</span><strong>0.5</strong><small>books disagree by half a point</small></div>
+      <div class="bk-review-stat"><span>Steam</span><strong>+18%</strong><small>handle shifted toward over</small></div>
+      <div class="bk-review-stat"><span>Market Gate</span><strong>Hold</strong><small>edge faded after price moved</small></div>
+    </div>
+    <div class="bk-review-two-col">
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">Line Movement</div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Open 23.5 to current 24.5</span><b>over got expensive</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:72%;"></span></div></div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Book agreement</span><b>5 of 7 books aligned</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:71%;"></span></div></div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Model vs market</span><b>thin edge left</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:38%;"></span></div></div>
+      </div>
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">Book Split</div>
+        <div class="bk-review-proof-list">
+          <div class="bk-review-proof-row"><div><strong>DraftKings</strong><small>24.5 at -115</small></div><span class="bk-review-grade">Current</span></div>
+          <div class="bk-review-proof-row"><div><strong>FanDuel</strong><small>23.5 at -125</small></div><span class="bk-review-grade">Bad number</span></div>
+          <div class="bk-review-proof-row"><div><strong>BetMGM</strong><small>24.5 at +102</small></div><span class="bk-review-grade">Best price</span></div>
+        </div>
+      </div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Sport</th><th>Player</th><th>Market</th><th>Open</th><th>Current</th><th>Read</th></tr></thead>
+      <tbody>
+        <tr><td>NBA</td><td><strong>Jalen Brunson</strong><br><small>Knicks @ Spurs</small></td><td>Points Over</td><td>23.5 -110</td><td>24.5 -115</td><td><small>Good read, worse number. Hold unless best book improves.</small></td></tr>
+        <tr><td>MLB</td><td><strong>Jackson Chourio</strong><br><small>Giants @ Brewers</small></td><td>Hits Over</td><td>0.5 -235</td><td>0.5 -279</td><td><small>Market agrees, but price is now expensive.</small></td></tr>
+        <tr><td>WNBA</td><td><strong>Skylar Diggins-Smith</strong><br><small>Sky @ Mystics</small></td><td>3PM Over</td><td>0.5 -188</td><td>0.5 -223</td><td><small>Steam supports the angle, but stake size should shrink.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key in ['trends', 'hot-streaks'] %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Active Streaks</span><strong>18</strong><small>live players with 3+ straight</small></div>
+      <div class="bk-review-stat"><span>Best Heat</span><strong>87</strong><small>role plus recent form</small></div>
+      <div class="bk-review-stat"><span>Role Checks</span><strong>9</strong><small>minutes or usage changed</small></div>
+      <div class="bk-review-stat"><span>Pass Flags</span><strong>6</strong><small>trend conflicts with matchup</small></div>
+    </div>
+    <div class="bk-review-two-col">
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">{% if feature_key == 'hot-streaks' %}Heat Board{% else %}Streak Pattern Board{% endif %}</div>
+        <div class="bk-review-proof-list">
+          <div class="bk-review-proof-row"><div><strong>Stephen Castle</strong><small>NBA STL UNDER 1.5 | last 10: W W W L W</small></div><span class="bk-review-grade">Heat 87</span></div>
+          <div class="bk-review-proof-row"><div><strong>Luis Torrens</strong><small>MLB Doubles UNDER 0.5 | last 10: W W W W L</small></div><span class="bk-review-grade">Heat 82</span></div>
+          <div class="bk-review-proof-row"><div><strong>Azzi Fudd</strong><small>WNBA 3PM UNDER 2.5 | role watch</small></div><span class="bk-review-grade">Heat 74</span></div>
+        </div>
+      </div>
+      <div class="bk-review-panel">
+        <div class="bk-review-panel-title">Trend Trust Check</div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Recent form</span><b>strong</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:84%;"></span></div></div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Same role sample</span><b>medium</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:62%;"></span></div></div>
+        <div class="bk-review-bar-row"><div class="bk-review-bar-meta"><span>Today's matchup fit</span><b>caution</b></div><div class="bk-review-bar-track"><span class="bk-review-bar-fill" style="width:46%;"></span></div></div>
+      </div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Sport</th><th>Player</th><th>Trend</th><th>Role Check</th><th>Decision</th></tr></thead>
+      <tbody>
+        <tr><td>NBA</td><td><strong>Stephen Castle</strong></td><td>4 of last 5 under</td><td>same minutes band</td><td><small>Support if market has not moved too far.</small></td></tr>
+        <tr><td>MLB</td><td><strong>Luis Torrens</strong></td><td>9 of last 10 under</td><td>lineup confirmed</td><td><small>Readable, but price must stay playable.</small></td></tr>
+        <tr><td>WNBA</td><td><strong>Azzi Fudd</strong></td><td>3 straight under</td><td>usage changed</td><td><small>Watch only until role stabilizes.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'injuries' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Out</span><strong>4</strong><small>removed from build pool</small></div>
+      <div class="bk-review-stat"><span>Questionable</span><strong>11</strong><small>needs lineup confirmation</small></div>
+      <div class="bk-review-stat"><span>Minute Limits</span><strong>3</strong><small>usage cap warning</small></div>
+      <div class="bk-review-stat"><span>Role Boosts</span><strong>7</strong><small>teammates gaining volume</small></div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Sport</th><th>Player</th><th>Status</th><th>Who Benefits</th><th>Prop Impact</th></tr></thead>
+      <tbody>
+        <tr><td>NBA</td><td><strong>Starting Guard</strong><br><small>questionable ankle</small></td><td>Game-time</td><td>Backup guard assists</td><td><small>Boost usage only after starter is ruled out.</small></td></tr>
+        <tr><td>NFL</td><td><strong>WR1</strong><br><small>limited practice</small></td><td>Limited</td><td>WR2 targets</td><td><small>Receiving props stay watch until snap expectation clears.</small></td></tr>
+        <tr><td>MLB</td><td><strong>Catcher Rest</strong><br><small>lineup shift</small></td><td>Out</td><td>Pitcher framing risk</td><td><small>Strikeout reads lose support without normal catcher.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'officiating' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Assignments</span><strong>8</strong><small>confirmed today</small></div>
+      <div class="bk-review-stat"><span>Wide Zones</span><strong>2</strong><small>pitcher K support</small></div>
+      <div class="bk-review-stat"><span>Foul Crews</span><strong>3</strong><small>free throw pressure</small></div>
+      <div class="bk-review-stat"><span>Pass Flags</span><strong>5</strong><small>unconfirmed officials</small></div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Sport</th><th>Official / Crew</th><th>Tendency</th><th>Market</th><th>Board Impact</th></tr></thead>
+      <tbody>
+        <tr><td>MLB</td><td><strong>Plate Umpire A</strong></td><td>wide strike zone</td><td>Pitcher Ks</td><td><small>Supports strikeout overs and walk unders.</small></td></tr>
+        <tr><td>NBA</td><td><strong>Crew B</strong></td><td>high foul rate</td><td>FT / points</td><td><small>Supports attack guards, warns against fragile unders.</small></td></tr>
+        <tr><td>NFL</td><td><strong>Crew C</strong></td><td>defensive holding heavy</td><td>Totals / passing</td><td><small>Adds pace and penalty context, not a standalone play.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'systems' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>True Prob</span><strong>61.8%</strong><small>model estimate</small></div>
+      <div class="bk-review-stat"><span>Book Prob</span><strong>54.5%</strong><small>-120 implied</small></div>
+      <div class="bk-review-stat"><span>Edge</span><strong>+7.3</strong><small>percentage points</small></div>
+      <div class="bk-review-stat"><span>Kelly</span><strong>1.4%</strong><small>controlled stake</small></div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Input</th><th>Weight</th><th>Signal</th><th>Impact</th><th>Decision</th></tr></thead>
+      <tbody>
+        <tr><td>Player history</td><td>28%</td><td>stable role</td><td>supports true probability</td><td><small>Keep in model.</small></td></tr>
+        <tr><td>Market price</td><td>24%</td><td>best book still playable</td><td>protects edge</td><td><small>Bet only at -125 or better.</small></td></tr>
+        <tr><td>Matchup context</td><td>19%</td><td>opponent allows stat</td><td>raises confidence</td><td><small>Support, not anchor alone.</small></td></tr>
+        <tr><td>Volatility</td><td>12%</td><td>small sample risk</td><td>reduces stake</td><td><small>Cap exposure.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'calibration' %}
+  <div class="bk-demo-grid">
+    <div class="bk-demo-card"><span>Confidence Bands</span><strong>Does 80% act like 80%?</strong><small>Calibration compares projected probability against actual resolved hit rates.</small></div>
+    <div class="bk-demo-card"><span>Backfill Discipline</span><strong>Prior-only windows</strong><small>Historical testing must only use what the model knew before the game.</small></div>
+    <div class="bk-demo-card"><span>Drift Detection</span><strong>Edges expire</strong><small>When featured buckets cool off, the system should flag the drop.</small></div>
+  </div>
+
+  {% elif feature_key == 'missed' %}
+  <div class="bk-demo-grid">
+    {% for row in phase2.missed_top[:4] %}
+    <div class="bk-demo-card">
+      <span>{{ row.grade }} missed winner</span>
+      <strong>{{ row.player }}</strong>
+      <small>{{ row.sport }} · {{ row.stat }} {{ row.direction }} · {{ row.confidence or '—' }} confidence</small>
+    </div>
+    {% else %}
+    <div class="bk-demo-card"><span>Missed winners</span><strong>No graded misses yet</strong><small>Resolved rows will populate this proof engine after grading.</small></div>
+    {% endfor %}
+  </div>
+
+  {% elif feature_key == 'elite' %}
+  <div class="bk-review-preview-shell">
+    <div class="bk-review-stat-grid">
+      <div class="bk-review-stat"><span>Bankroll</span><strong>$2,450</strong><small>profile counter</small></div>
+      <div class="bk-review-stat"><span>Alerts</span><strong>12</strong><small>line and market gates</small></div>
+      <div class="bk-review-stat"><span>Ticket EV</span><strong>+8.6%</strong><small>cross-sport build</small></div>
+      <div class="bk-review-stat"><span>Leak Finder</span><strong>3</strong><small>habits costing money</small></div>
+    </div>
+    <table class="bk-demo-table">
+      <thead><tr><th>Elite Layer</th><th>What It Shows</th><th>Example</th><th>User Action</th></tr></thead>
+      <tbody>
+        <tr><td>Line Alert</td><td>best number disappearing</td><td>NBA over moved from -108 to -132</td><td><small>Take now or pass when price is gone.</small></td></tr>
+        <tr><td>Ticket IQ</td><td>correlation and bankroll risk</td><td>two legs depend on same game script</td><td><small>Split into RR or remove weakest leg.</small></td></tr>
+        <tr><td>Bankroll Counter</td><td>wins, losses, stake, ROI</td><td>+$186.40 ticket settlement</td><td><small>Track profile profit, not just picks.</small></td></tr>
+        <tr><td>Leak Finder</td><td>where the user bleeds</td><td>WNBA unders after late steam are -14% ROI</td><td><small>Reduce or block that habit.</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% elif feature_key == 'elite_legacy' %}
+  <div class="bk-demo-grid">
+    <div class="bk-demo-card"><span>Elite Builder</span><strong>{{ phase2.parlay_ev.ev_pct if phase2.parlay_ev.ev_pct is not none else '—' }}{% if phase2.parlay_ev.ev_pct is not none %}% EV{% endif %}</strong><small>{{ phase2.parlay_ev.correlation_label }} correlation preview.</small></div>
+    <div class="bk-demo-card"><span>Action Queue</span><strong>{{ phase2.promotion_signals|length }} signals</strong><small>Paid users see what to build, hold, avoid, or review.</small></div>
+    <div class="bk-demo-card"><span>Weekly Report</span><strong>Locked</strong><small>Personal betting history, leak finder, and saved-ticket grading live in Elite.</small></div>
+  </div>
+  {% endif %}
+</section>
+
+<section class="bk-content">
+  <div class="bk-sampler-section-title">
+    <div>
+      {% if feature_key == 'props' %}
+      <h2>Board Reading Gems</h2>
+      <span>Props are not picks first. They are information rows.</span>
+      {% elif feature_key == 'parlay' %}
+      <h2>Ticket Building Gems</h2>
+      <span>A bigger payout is only useful when the legs make sense together.</span>
+      {% elif feature_key == 'review' %}
+      <h2>Review Center Gems</h2>
+      <span>Yesterday's results should teach tomorrow's board.</span>
+    {% elif feature_key == 'market' %}
+      <h2>Market Reading Gems</h2>
+      <span>The number can make a good angle playable, stale, or dead.</span>
+      {% elif feature_key in ['trends', 'hot-streaks'] %}
+      <h2>{% if feature_key == 'hot-streaks' %}Heat Check Gems{% else %}Trend Reading Gems{% endif %}</h2>
+      <span>Recent form only matters when role, sample, and today's matchup agree.</span>
+      {% elif feature_key == 'injuries' %}
+      <h2>Injury Translation Gems</h2>
+      <span>The edge is not the injury. The edge is who benefits or loses role.</span>
+      {% elif feature_key == 'officiating' %}
+      <h2>Officiating Gems</h2>
+      <span>Officials matter when their tendencies change the betting environment.</span>
+      {% elif feature_key == 'systems' %}
+      <h2>Systems Lab Gems</h2>
+      <span>The math is useful only when it changes a decision.</span>
+      {% elif feature_key == 'elite' %}
+      <h2>What Makes Elite Elite</h2>
+      <span>Elite turns boards into an operating system for decisions, tickets, and bankroll movement.</span>
+      {% else %}
+      <h2>Feature Gems</h2>
+      <span>Every page should teach one specific part of the product.</span>
+      {% endif %}
+    </div>
+    <a class="bk-open-btn" href="{{ url_for('pricing') }}">Compare Access</a>
+  </div>
+  <div class="bk-sampler-note-grid">
+    {% if feature_key == 'props' %}
+    <div class="bk-sampler-note"><span>Line First</span><strong>A prop is a price problem</strong><small>The same player angle can be good at one number and unplayable after the line moves.</small></div>
+    <div class="bk-sampler-note"><span>Role Before Trend</span><strong>Minutes and usage decide trust</strong><small>A hot streak means less if the player's role, matchup, or workload has changed.</small></div>
+    <div class="bk-sampler-note"><span>Book Count</span><strong>One book is not a market</strong><small>More books create better confidence around range, price, and disagreement.</small></div>
+    <div class="bk-sampler-note"><span>Pass Is A Play</span><strong>Discipline protects the bankroll</strong><small>The board should tell users when the edge is not strong enough to touch.</small></div>
+    {% elif feature_key == 'parlay' %}
+    <div class="bk-sampler-note"><span>Correlation</span><strong>Stacking can quietly add risk</strong><small>Two good legs can become one bad ticket when they depend on the same game script.</small></div>
+    <div class="bk-sampler-note"><span>Anchor Leg</span><strong>Start with the cleanest read</strong><small>A ticket should begin with a reliable leg, not the biggest payout.</small></div>
+    <div class="bk-sampler-note"><span>BankrollIQ</span><strong>Size the risk</strong><small>The right ticket still needs the right stake against the user's bankroll.</small></div>
+    <div class="bk-sampler-note"><span>Saved Tickets</span><strong>Review what you built</strong><small>Parlays become useful data only when the platform grades how they performed.</small></div>
+    {% elif feature_key == 'review' %}
+    <div class="bk-sampler-note"><span>Good Loss</span><strong>Do not punish clean process</strong><small>If the line moved your way and the context was right, a loss can still be a trusted read.</small></div>
+    <div class="bk-sampler-note"><span>Bad Win</span><strong>Do not promote noise</strong><small>If the read won for the wrong reason, Review should keep the model from overlearning it.</small></div>
+    <div class="bk-sampler-note"><span>Missed Winner</span><strong>Find hidden signal</strong><small>A+ hits that were not featured become proof material for future promotion rules.</small></div>
+    <div class="bk-sampler-note"><span>Bankroll Truth</span><strong>Results move the profile</strong><small>Wins, losses, stakes, and ticket outcomes should connect back to bankroll movement.</small></div>
+    {% elif feature_key == 'market' %}
+    <div class="bk-sampler-note"><span>Best Book</span><strong>Price shopping is edge</strong><small>Getting the better number can decide whether a play has value.</small></div>
+    <div class="bk-sampler-note"><span>Line Range</span><strong>Wide ranges need caution</strong><small>If books disagree too much, the market may not be settled enough to trust.</small></div>
+    <div class="bk-sampler-note"><span>Movement</span><strong>Steam can help or hurt</strong><small>Movement confirms timing only when it moves in the direction of the read.</small></div>
+    <div class="bk-sampler-note"><span>Market Gate</span><strong>Hold when price is gone</strong><small>A strong model read should still pass when the current number is no longer playable.</small></div>
+    {% elif feature_key == 'injuries' %}
+    <div class="bk-sampler-note"><span>Status</span><strong>Availability comes first</strong><small>Questionable, out, limited, and return tags should change the board immediately.</small></div>
+    <div class="bk-sampler-note"><span>Beneficiary</span><strong>Find who gains the role</strong><small>The useful edge is the teammate or opponent whose usage changes.</small></div>
+    <div class="bk-sampler-note"><span>Minute Risk</span><strong>Returns can squeeze props</strong><small>A returning player can quietly reduce shots, rebounds, targets, or usage.</small></div>
+    <div class="bk-sampler-note"><span>Prop Connection</span><strong>Every note needs consequence</strong><small>Injury context should become support, caution, or pass logic.</small></div>
+    {% elif feature_key == 'officiating' %}
+    <div class="bk-sampler-note"><span>Assignment</span><strong>Confirmed beats assumed</strong><small>Officiating context should only strengthen once the actual official or crew is known.</small></div>
+    <div class="bk-sampler-note"><span>Zone Shape</span><strong>MLB umpires affect counts</strong><small>Wide and tight zones can change strikeout, walk, hitter, and total reads.</small></div>
+    <div class="bk-sampler-note"><span>Whistle Profile</span><strong>Crews change game flow</strong><small>Foul pressure, pace, and penalty tendencies can reshape totals and player props.</small></div>
+    <div class="bk-sampler-note"><span>Decision Layer</span><strong>Names are not enough</strong><small>The product value is translating tendencies into support, caution, or pass.</small></div>
+    {% elif feature_key == 'elite' %}
+    <div class="bk-sampler-note"><span>Beyond Pro</span><strong>Pro gives the boards</strong><small>Elite adds timing alerts, ticket intelligence, bankroll movement, and weekly review.</small></div>
+    <div class="bk-sampler-note"><span>Line Alerts</span><strong>Speed is the edge layer</strong><small>Elite should surface movement before a good number disappears.</small></div>
+    <div class="bk-sampler-note"><span>Bankroll Counter</span><strong>The profile tells the truth</strong><small>Wins, losses, stakes, and saved tickets should roll into performance movement.</small></div>
+    <div class="bk-sampler-note"><span>Leak Finder</span><strong>Know what costs money</strong><small>Elite should show which sports, stats, ticket types, or habits are hurting the user.</small></div>
+    {% else %}
+    <div class="bk-sampler-note"><span>Learn</span><strong>Understand the signal</strong><small>This page teaches what the feature does before asking users to pay for depth.</small></div>
+    <div class="bk-sampler-note"><span>Compare</span><strong>See what changes the read</strong><small>Good betting intelligence explains why the answer moves.</small></div>
+    <div class="bk-sampler-note"><span>Decide</span><strong>Support, caution, or pass</strong><small>The platform should help users make cleaner decisions.</small></div>
+    <div class="bk-sampler-note"><span>Upgrade</span><strong>Paid depth opens the workflow</strong><small>Full boards add filters, saved work, and sport-specific context.</small></div>
+    {% endif %}
+  </div>
+</section>
+
+{% if false %}
+{% if cross_sport_top_props %}
+<section class="bk-content">
+  <div class="bk-sampler-section-title">
+    <div>
+      <h2>{{ feature.proof_label }}</h2>
+      <span>Cross-sport snippets. Full row detail unlocks inside paid sport boards.</span>
+    </div>
+    <a class="bk-open-btn" href="{{ url_for('pricing') }}">Unlock Full Boards</a>
+  </div>
+  <div class="bk-sampler-read-grid" style="display:grid !important; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-top:12px; min-height:140px; position:relative; z-index:5;">
+    {% for prop in cross_sport_top_props[:9] %}
+    <a class="bk-sampler-read-card" href="{{ prop.href }}" style="display:grid !important; gap:7px; min-height:128px; padding:14px; border:1px solid rgba(91,209,198,.26); border-radius:10px; background:linear-gradient(145deg,rgba(14,28,26,.98),rgba(8,13,13,.96)); color:#f4f7fb; text-decoration:none; box-shadow:0 10px 26px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.05);">
+      <span class="bk-sampler-read-sport">
+        <img src="{{ sport_logo_url(prop.sport_key) }}" alt="">
+        {{ prop.sport }} · {{ prop.lane }}
+      </span>
+      <strong style="display:block; color:#f4f7fb; font-size:18px;">{{ prop.player }}</strong>
+      <small style="display:block; color:#a8b6c0; line-height:1.35;">{{ prop.stat }} {{ prop.direction }} {{ prop.line }}{% if prop.price %} · {{ prop.price }}{% endif %}</small>
+      <em style="display:block; color:#7feee4; font-style:normal; font-size:12px;">{{ prop.implied }}% implied{% if prop.matchup %} · {{ prop.matchup }}{% endif %}</em>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="bk-content">
+  <div class="bk-sampler-section-title">
+    <div>
+      <h2>{{ feature.proof_label }}</h2>
+      <span>Cross-sport snippets. Full row detail unlocks inside paid sport boards.</span>
+    </div>
+  </div>
+  <div class="bk-sampler-empty">
+    No live player reads are available for this preview right now. Run the daily refresh or open a paid sport board with active props.
+  </div>
+</section>
+{% endif %}
+
+<section class="bk-content">
+  <div class="bk-sampler-section-title">
+    <div>
+      <h2>Pick Your Sport</h2>
+      <span>Free users see the shape of the workflow. Paid members open full league surfaces.</span>
+    </div>
+  </div>
+  <div class="bk-sampler-sports">
+    {% for sport in sport_snapshots %}
+    <article class="bk-sampler-sport-card" style="--sport-logo: url('{{ sport_logo_url(sport.key) }}')">
+      <div class="bk-sampler-sport-head">
+        <img src="{{ sport_logo_url(sport.key) }}" alt="">
+        <strong>{{ sport.sport }}</strong>
+        <em>{{ sport.lock_label }}</em>
+      </div>
+      <div class="bk-sampler-metrics">
+        <span>{{ sport.today_games }} games</span>
+        <span>{{ sport.props_rows }} props</span>
+        <span>{{ sport.status }}</span>
+      </div>
+      <div class="bk-sampler-best">
+        {% if sport.best_prop %}
+          {{ sport.best_prop.player }}
+          <small>{{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }} · {{ sport.best_prop.implied }}%</small>
+        {% else %}
+          {{ sport.note }}
+        {% endif %}
+      </div>
+      <div class="bk-sampler-card-actions">
+        <a class="bk-btn" href="{{ sport.full_href }}">Open {{ sport.sport }}</a>
+        <a class="bk-btn" href="{{ url_for('pricing') }}">Access</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bk-content">
+  <div class="bk-sampler-section-title">
+    <div>
+      <h2>Why The Sampler Exists</h2>
+      <span>The free layer explains the site while protecting full sport depth.</span>
+    </div>
+  </div>
+  <div class="bk-sampler-note-grid">
+    <div class="bk-sampler-note">
+      <span>Home</span>
+      <strong>All-sport command board</strong>
+      <small>The first page after sign-in shows every active league and the best current entry points.</small>
+    </div>
+    <div class="bk-sampler-note">
+      <span>Preview Tabs</span>
+      <strong>Feature education</strong>
+      <small>Props, parlay, review, market, and trends explain the workflow with cross-sport snippets.</small>
+    </div>
+    <div class="bk-sampler-note">
+      <span>Sport Pages</span>
+      <strong>Paid drill-down</strong>
+      <small>Opening NBA, MLB, WNBA, NFL, CFB, or CBB moves from preview into that sport’s full board.</small>
+    </div>
+    <div class="bk-sampler-note">
+      <span>Cross-Sport</span>
+      <strong>Better ticket discovery</strong>
+      <small>The sampler helps users see when multiple sports have enough quality to build together.</small>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

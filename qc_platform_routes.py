@@ -19,7 +19,7 @@ class RouteCheck:
 
 
 ROUTE_CHECKS: tuple[RouteCheck, ...] = (
-    RouteCheck("/", "Home", ("Intelligence Stack", "Command Center"), "core", True),
+    RouteCheck("/dashboard", "Home", ("HOME", "Live Sports"), "core", True),
     RouteCheck("/dashboard?postseason=1", "Dashboard", ("Platform Lens", "Sports Dashboard"), "core"),
     RouteCheck("/pricing", "Pricing", ("Choose Your Edge", "Pricing"), "core"),
     RouteCheck("/login", "Login", ("Welcome Back", "Pricing"), "core"),
@@ -30,7 +30,7 @@ ROUTE_CHECKS: tuple[RouteCheck, ...] = (
     RouteCheck("/sports/nba?postseason=1", "NBA Command", ("NBA Data Pulse", "Tonight's Card"), "nba", True),
     RouteCheck("/schedule?postseason=1", "NBA Schedule", ("Schedule", "Upcoming"), "nba"),
     RouteCheck("/game-lines?postseason=1", "NBA Game Lines", ("Game Lines", "Market Read"), "nba"),
-    RouteCheck("/props?postseason=1&sample=current&date=today", "NBA Props", ("Props Screener", "Platform Lens"), "nba", True),
+    RouteCheck("/sports/nba/props?postseason=1&sample=current&date=today", "NBA Props", ("Props Screener", "Platform Lens"), "nba", True),
     RouteCheck("/props/floor?postseason=1", "NBA Floor Plays", ("Floor Plays", "How To Use Floor Plays"), "nba"),
     RouteCheck("/market-edge?postseason=1&sample=current&date=today", "NBA Market Edge", ("Platform Lens", "Market Edge"), "nba"),
     RouteCheck("/matchup-lens?postseason=1", "NBA Matchup Lens", ("Tonight's Card", "Matchup Lens"), "nba"),
@@ -111,7 +111,7 @@ def run_qc(tier: str = "fast", batch_size: int = 8) -> dict:
         batch_failures = 0
         batch_results: list[dict] = []
         for check in batch_checks:
-            response = client.get(check.path)
+            response = client.get(check.path, follow_redirects=True)
             text = response.get_data(as_text=True)
             ok = response.status_code == 200 and any(marker in text for marker in check.markers)
             result = {

@@ -16,6 +16,8 @@ from services.qc_tracking import append_qc_run_log
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "WNBA_99_Scorecard.csv"
 FEATURED_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "WNBA_FeaturedResults.csv"
 REFRESH_LOG_PATH = BASE_DIR / "logs" / "refresh_wnba.log"
+LIVE_PROPS_PATH = BASE_DIR / "data" / "props" / "WNBA_Props.csv"
+GAMELOGS_PATH = BASE_DIR / "data" / "gamelogs" / "WNBA_GameLogs.csv"
 
 
 def _load_featured_results() -> pd.DataFrame:
@@ -37,12 +39,15 @@ def _resolved_counts(df: pd.DataFrame) -> tuple[int, int]:
 
 
 def _refresh_reliability_status() -> tuple[str, str]:
-    if not REFRESH_LOG_PATH.exists():
-        return "WATCH", "WNBA refresh log is missing."
-    age_hours = (datetime.now() - datetime.fromtimestamp(REFRESH_LOG_PATH.stat().st_mtime)).total_seconds() / 3600.0
+    candidates = [REFRESH_LOG_PATH, FEATURED_RESULTS_PATH, LIVE_PROPS_PATH, GAMELOGS_PATH]
+    existing = [path for path in candidates if path.exists()]
+    if not existing:
+        return "WATCH", "WNBA refresh artifacts are missing."
+    latest = max(existing, key=lambda path: path.stat().st_mtime)
+    age_hours = (datetime.now() - datetime.fromtimestamp(latest.stat().st_mtime)).total_seconds() / 3600.0
     if age_hours <= 36:
-        return "PASS", f"WNBA refresh log is fresh ({age_hours:.1f}h old)."
-    return "WATCH", f"WNBA refresh log is aging ({age_hours:.1f}h old)."
+        return "PASS", f"WNBA refresh artifact is fresh ({latest.name}, {age_hours:.1f}h old)."
+    return "WATCH", f"WNBA refresh artifact is aging ({latest.name}, {age_hours:.1f}h old)."
 
 
 def _recent_qc_repeatability() -> tuple[str, str]:

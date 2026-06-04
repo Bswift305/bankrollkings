@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,80 @@ SavedConfidenceBucketLabel = Callable[[float], str]
 GradeCandidateArchiveRows = Callable[[pd.DataFrame, dict], pd.DataFrame]
 SummarizeCandidateArchive = Callable[[pd.DataFrame], dict]
 FLOOR_PLAY_INDEX_PATH = Path(__file__).resolve().parents[1] / 'data' / 'tracking' / 'Floor_Play_Index.csv'
+TRACKING_DIR = Path(__file__).resolve().parents[1] / 'data' / 'tracking'
+PLAYER_PROFILE_INDEX_PATH = TRACKING_DIR / 'Player_Profile_Index.csv'
+STREAK_HEAT_INDEX_PATH = TRACKING_DIR / 'Streak_Heat_Index.csv'
+ALL_PROP_RESULT_PATHS = {
+    'NBA': TRACKING_DIR / 'NBA_AllPropResults.csv',
+    'WNBA': TRACKING_DIR / 'WNBA_AllPropResults.csv',
+    'MLB': TRACKING_DIR / 'MLB_AllPropResults.csv',
+    'NFL': TRACKING_DIR / 'NFL_AllPropResults.csv',
+    'NCAAF': TRACKING_DIR / 'NCAAF_AllPropResults.csv',
+}
+_REVIEW_RUNTIME_CACHE: dict[tuple, object] = {}
+
+
+def _clean_display_value(value):
+    if isinstance(value, dict):
+        return {key: _clean_display_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clean_display_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clean_display_value(item) for item in value)
+    try:
+        if value is None or pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or re.search(r'\bnan\b', text, flags=re.IGNORECASE):
+            return ''
+        if text.lower() in {'none', 'null'}:
+            return ''
+        return text
+    return value
+
+
+def _path_token(path: Path) -> tuple:
+    try:
+        if not path.exists():
+            return (str(path), None, None)
+        stat = path.stat()
+        return (str(path), int(stat.st_mtime), int(stat.st_size))
+    except Exception:
+        return (str(path), None, None)
+
+
+def _all_prop_file_token() -> tuple:
+    return tuple(_path_token(path) for path in ALL_PROP_RESULT_PATHS.values())
+
+
+def _latest_source_mtime(paths: list[Path]) -> int:
+    mtimes = [token[1] for token in (_path_token(path) for path in paths) if token[1] is not None]
+    return max(mtimes) if mtimes else 0
+
+
+def _artifact_is_fresh(artifact_path: Path, source_paths: list[Path]) -> bool:
+    artifact_token = _path_token(artifact_path)
+    artifact_mtime = artifact_token[1]
+    if artifact_mtime is None:
+        return False
+    return int(artifact_mtime) >= int(_latest_source_mtime(source_paths))
+
+
+def _df_token(df: pd.DataFrame | None) -> tuple:
+    if df is None or df.empty:
+        return (0, (), '')
+    date_bits = []
+    for column in ['SnapshotWrittenAt', 'SavedAt', 'ResultDate', 'SnapshotDate']:
+        if column in df.columns:
+            try:
+                value = df[column].dropna().astype(str).max()
+            except Exception:
+                value = ''
+            date_bits.append((column, value))
+    return (int(len(df)), tuple(str(col) for col in df.columns), tuple(date_bits))
 
 
 def normalize_history_scope(history_scope: str) -> str:
@@ -208,6 +283,10 @@ def build_bet_review_model_export_rows(
 def load_floor_play_index() -> pd.DataFrame:
     if not FLOOR_PLAY_INDEX_PATH.exists():
         return pd.DataFrame()
+    cache_key = ('floor_play_index', _path_token(FLOOR_PLAY_INDEX_PATH))
+    cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
     try:
         index = pd.read_csv(FLOOR_PLAY_INDEX_PATH, low_memory=False)
     except Exception:
@@ -220,8 +299,478 @@ def load_floor_play_index() -> pd.DataFrame:
         index['IsFloorPlay'] = index.get('Method', pd.Series(dtype=str)).fillna('').astype(str).str.contains('floor', case=False, na=False)
     if 'Hit_Binary' not in index.columns:
         index['Hit_Binary'] = index.get('OutcomeState', pd.Series(dtype=str)).map({'Hit': 1, 'Miss': 0})
-    index = enrich_candidate_review_rows(index)
-    return apply_floor_reliability(index, build_floor_reliability_table(index))
+    if not {'ReviewTier', 'FailureReason', 'FailureSignals'}.issubset(index.columns):
+        index = enrich_candidate_review_rows(index)
+    if 'FloorReliability' not in index.columns:
+        index = apply_floor_reliability(index, build_floor_reliability_table(index))
+    _REVIEW_RUNTIME_CACHE[cache_key] = index.copy()
+    return index
+
+
+def load_all_prop_results_for_review() -> pd.DataFrame:
+    cache_key = ('all_prop_results', _all_prop_file_token())
+    cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
+    frames = []
+    for sport, path in ALL_PROP_RESULT_PATHS.items():
+        if not path.exists() or path.stat().st_size == 0:
+            continue
+        try:
+            df = pd.read_csv(path, low_memory=False)
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        if 'Sport' not in df.columns:
+            df['Sport'] = sport
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    combined = enrich_candidate_review_rows(combined)
+    _REVIEW_RUNTIME_CACHE[cache_key] = combined.copy()
+    return combined
+
+
+def _missed_prop_key(row: pd.Series) -> tuple:
+    return (
+        str(row.get('SnapshotDate') or '').strip(),
+        str(row.get('Sport') or '').strip().upper(),
+        str(row.get('Player') or '').strip().lower(),
+        str(row.get('Stat') or '').strip().upper(),
+        str(row.get('Direction') or '').strip().upper(),
+        str(row.get('Line') or '').strip(),
+        str(row.get('Matchup') or '').strip().lower(),
+    )
+
+
+def _clean_review_value(value) -> str:
+    if value is None:
+        return ''
+    try:
+        if pd.isna(value):
+            return ''
+    except Exception:
+        pass
+    text = str(value).strip()
+    return '' if text.lower() in {'nan', 'none', 'null'} else text
+
+
+def calculate_missed_opportunity_grade(row: pd.Series) -> tuple[int, str, list[str]]:
+    score = 0
+    reasons: list[str] = []
+
+    confidence = pd.to_numeric(row.get('Confidence'), errors='coerce')
+    if pd.notna(confidence):
+        if confidence >= 90:
+            score += 46
+            reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 80:
+            score += 40
+            reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 70:
+            score += 30
+            reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 60:
+            score += 18
+            reasons.append(f"{confidence:.1f} confidence")
+
+    bet_tier = _clean_review_value(row.get('BetTier')) or _clean_review_value(row.get('ReviewTier'))
+    if bet_tier == 'Tier 1':
+        score += 18
+        reasons.append('Tier 1')
+    elif bet_tier == 'Tier 2':
+        score += 12
+        reasons.append('Tier 2')
+    elif bet_tier == 'Tier 3':
+        score += 6
+        reasons.append('Tier 3')
+
+    market_gate = str(row.get('MarketGate') or '').strip().upper()
+    if market_gate == 'CLEAR':
+        score += 12
+        reasons.append('clear market gate')
+    elif market_gate == 'HOLD':
+        score -= 6
+        reasons.append('market hold')
+
+    volatility = str(row.get('VolatilityFlag') or '').strip().upper()
+    if volatility == 'STABLE':
+        score += 8
+        reasons.append('stable volatility')
+    elif volatility == 'HIGH':
+        score -= 8
+        reasons.append('high volatility')
+    elif volatility == 'ELEVATED':
+        score -= 3
+        reasons.append('elevated volatility')
+
+    market_depth = str(row.get('MarketDepthBucket') or '').strip().lower()
+    book_count = pd.to_numeric(row.get('BookCount'), errors='coerce')
+    if 'multi' in market_depth or (pd.notna(book_count) and book_count >= 3):
+        score += 14
+        reasons.append(f"{int(book_count) if pd.notna(book_count) else 'multi'} books")
+    elif 'two' in market_depth or (pd.notna(book_count) and book_count == 2):
+        score += 10
+        reasons.append('two-book support')
+    elif 'single' in market_depth or (pd.notna(book_count) and book_count <= 1):
+        score += 2
+        reasons.append('single-book market')
+
+    move_bucket = str(row.get('MarketMoveBucket') or '').strip().lower()
+    if 'toward' in move_bucket:
+        score += 8
+        reasons.append('line moved toward play')
+    elif 'against' in move_bucket:
+        score -= 5
+        reasons.append('line moved against play')
+
+    edge_pct = pd.to_numeric(row.get('EdgePct'), errors='coerce')
+    if pd.notna(edge_pct):
+        if edge_pct >= 15:
+            score += 8
+            reasons.append(f"{edge_pct:.1f}% edge")
+        elif edge_pct >= 8:
+            score += 5
+            reasons.append(f"{edge_pct:.1f}% edge")
+
+    situations = str(row.get('Situations') or '').upper()
+    risk_terms = ['CONTRADICTION', 'AVOID', 'PASS', 'HIGH VOL', 'SINGLE BOOK', 'WIDE RANGE']
+    if any(term in situations for term in risk_terms):
+        score -= 8
+        reasons.append('risk tag present')
+    else:
+        score += 6
+        score += 8
+        reasons.append('no obvious contradiction tag')
+
+    sample_mode = _clean_review_value(row.get('SampleMode')).lower()
+    method = _clean_review_value(row.get('Method')).lower()
+    if sample_mode in {'available', 'full_board'} or method in {'available props', 'main board'}:
+        score += 8
+        reasons.append('full-board hit')
+
+    method_tags = str(row.get('MarketTags') or row.get('MethodLabels') or '').upper()
+    if 'ANCHOR' in method_tags:
+        score += 12
+        reasons.append('anchor signal')
+    if 'CONFIRMED' in method_tags or 'MULTI-BOOK' in method_tags:
+        score += 6
+        reasons.append('confirmed market support')
+    if 'CALIBRATED+' in method_tags:
+        score += 6
+        reasons.append('calibrated plus tag')
+
+    score = int(max(0, min(100, round(score))))
+    if score >= 85:
+        label = 'A+'
+    elif score >= 70:
+        label = 'A'
+    elif score >= 55:
+        label = 'B'
+    elif score >= 40:
+        label = 'C'
+    else:
+        label = 'D'
+    return score, label, reasons[:5]
+
+
+def _missed_winner_candidates(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    working = df.copy()
+    for column in ['Method', 'OutcomeState', 'Sport', 'Stat', 'Direction', 'Player', 'Matchup', 'SnapshotDate']:
+        if column not in working.columns:
+            working[column] = ''
+        working[column] = working[column].fillna('').astype(str).str.strip()
+    methods = working['Method'].str.lower()
+    sample_mode = working.get('SampleMode', pd.Series('', index=working.index)).fillna('').astype(str).str.lower()
+    available = working[
+        working['OutcomeState'].eq('Hit')
+        & (
+            methods.eq('available props')
+            | methods.eq('main board')
+            | sample_mode.isin({'available', 'full_board'})
+        )
+    ].copy()
+    if available.empty:
+        return available
+    promoted = working[
+        ~methods.eq('available props')
+        & ~sample_mode.isin({'available', 'full_board'})
+        & working['Method'].ne('')
+    ].copy()
+    promoted_keys = {_missed_prop_key(row) for _, row in promoted.iterrows()}
+    available['_MissedKey'] = available.apply(_missed_prop_key, axis=1)
+    return available[~available['_MissedKey'].isin(promoted_keys)].copy()
+
+
+def build_missed_winner_bucket_frequency(df: pd.DataFrame | None = None, *, lookback_days: int = 7) -> dict:
+    cache_key = (
+        'missed_winner_bucket_frequency',
+        _df_token(df) if df is not None else _all_prop_file_token(),
+        int(lookback_days or 0),
+    )
+    cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+    source = df if df is not None else load_all_prop_results_for_review()
+    missed = _missed_winner_candidates(source)
+    if missed.empty:
+        return {}
+    missed['SnapshotDateParsed'] = pd.to_datetime(missed.get('SnapshotDate'), errors='coerce')
+    valid_dates = missed['SnapshotDateParsed'].dropna()
+    if not valid_dates.empty and lookback_days:
+        cutoff = valid_dates.max() - pd.Timedelta(days=int(lookback_days))
+        missed = missed[missed['SnapshotDateParsed'] >= cutoff].copy()
+    if missed.empty:
+        return {}
+
+    grades = missed.apply(calculate_missed_opportunity_grade, axis=1)
+    missed['MissedGradeScore'] = [item[0] for item in grades]
+    missed['MissedGrade'] = [item[1] for item in grades]
+    missed = missed[missed['MissedGrade'].isin(['A+', 'A', 'B'])].copy()
+    if missed.empty:
+        return {}
+
+    counts = {}
+    grouped = missed.groupby([
+        missed['Sport'].astype(str).str.upper(),
+        missed['Stat'].astype(str).str.upper(),
+        missed['Direction'].astype(str).str.upper(),
+    ], dropna=False)
+    for key, group in grouped:
+        sport, stat, direction = [str(part).strip().upper() for part in key]
+        if not sport or not stat or direction not in {'OVER', 'UNDER'}:
+            continue
+        counts[(sport, stat, direction)] = {
+            'count': int(len(group)),
+            'a_plus': int((group['MissedGrade'] == 'A+').sum()),
+            'avg_grade': round(float(group['MissedGradeScore'].mean()), 1),
+            'last_seen': group['SnapshotDateParsed'].max().strftime('%Y-%m-%d') if group['SnapshotDateParsed'].notna().any() else '',
+        }
+    _REVIEW_RUNTIME_CACHE[cache_key] = dict(counts)
+    return counts
+
+
+def calculate_promotion_signal(profile: dict, bucket_frequency: dict) -> dict:
+    key = (
+        str(profile.get('sport') or '').strip().upper(),
+        str(profile.get('stat') or '').strip().upper(),
+        str(profile.get('direction') or '').strip().upper(),
+    )
+    bucket = bucket_frequency.get(key, {})
+    missed_count = int(bucket.get('count', 0) or 0)
+    reliability = str(profile.get('reliability') or '').strip().upper()
+    resolved = int(profile.get('resolved', 0) or 0)
+    hit_rate = profile.get('hit_rate')
+
+    if reliability == 'AVOID':
+        signal = 'HOLD'
+        action = 'Demote or investigate before featuring.'
+    elif missed_count >= 3 and reliability in {'ANCHOR', 'WATCH'}:
+        signal = 'PROMOTE HARD'
+        action = 'Candidate for featured surface if live QC is clean.'
+    elif missed_count >= 2 and reliability in {'ANCHOR', 'WATCH'}:
+        signal = 'PROMOTE'
+        action = 'Move up the board when this bucket appears live.'
+    elif missed_count >= 1 and reliability == 'DEVELOPING':
+        signal = 'SURFACE'
+        action = 'Show on board, but do not force as a feature yet.'
+    else:
+        signal = 'STANDARD'
+        action = 'Use normal scoring and QC rules.'
+
+    if missed_count:
+        reason = f"{missed_count} recent missed winners in bucket"
+    else:
+        reason = "No recent missed-winner bucket pressure"
+    if reliability:
+        reason += f" | player {reliability}"
+    if resolved and hit_rate is not None:
+        reason += f" | {resolved} resolved at {hit_rate}%"
+    return {
+        'signal': signal,
+        'missed_count': missed_count,
+        'bucket_a_plus': int(bucket.get('a_plus', 0) or 0),
+        'bucket_avg_grade': bucket.get('avg_grade'),
+        'last_seen': bucket.get('last_seen', ''),
+        'reason': reason,
+        'action': action,
+    }
+
+
+def build_missed_opportunities_context(
+    *,
+    sport_filter: str = '',
+    stat_filter: str = '',
+    grade_filter: str = '',
+    start_date: str = '',
+    end_date: str = '',
+    min_grade: str = '',
+    limit: int = 250,
+) -> dict:
+    df = load_all_prop_results_for_review()
+    empty = {
+        'rows': [],
+        'summary': {'total': 0, 'a_plus': 0, 'a_or_better': 0, 'avg_grade': None, 'avg_confidence': None},
+        'charts': {'by_sport': [], 'by_stat': [], 'by_grade': [], 'by_day': []},
+        'sport_filter': sport_filter,
+        'stat_filter': stat_filter,
+        'grade_filter': grade_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'min_grade': min_grade,
+        'sport_options': [],
+        'stat_options': [],
+        'grade_options': ['A+', 'A', 'B', 'C', 'D'],
+    }
+    if df.empty:
+        return empty
+
+    for column in ['Method', 'OutcomeState', 'Sport', 'Stat', 'Direction', 'Player', 'Matchup', 'SnapshotDate']:
+        if column not in df.columns:
+            df[column] = ''
+        df[column] = df[column].fillna('').astype(str).str.strip()
+
+    available = _missed_winner_candidates(df)
+
+    if available.empty:
+        return empty | {
+            'sport_options': sorted(df['Sport'].dropna().astype(str).str.upper().unique().tolist()),
+            'stat_options': sorted(df['Stat'].dropna().astype(str).str.upper().unique().tolist()),
+        }
+
+    available['ConfidenceNum'] = pd.to_numeric(available.get('Confidence'), errors='coerce')
+    available['LineNum'] = pd.to_numeric(available.get('Line'), errors='coerce')
+    available['ResultValueNum'] = pd.to_numeric(available.get('ResultValue'), errors='coerce')
+    available['SnapshotDateParsed'] = pd.to_datetime(available['SnapshotDate'], errors='coerce')
+
+    grades = available.apply(calculate_missed_opportunity_grade, axis=1)
+    available['MissedGradeScore'] = [item[0] for item in grades]
+    available['MissedGrade'] = [item[1] for item in grades]
+    available['MissedReasons'] = ['; '.join(item[2]) for item in grades]
+
+    sport_options = sorted(available['Sport'].dropna().astype(str).str.upper().unique().tolist())
+    stat_options = sorted(available['Stat'].dropna().astype(str).str.upper().unique().tolist())
+
+    sport_filter = str(sport_filter or '').strip().upper()
+    stat_filter = str(stat_filter or '').strip().upper()
+    grade_filter = str(grade_filter or '').strip().upper()
+    if sport_filter:
+        available = available[available['Sport'].str.upper().eq(sport_filter)].copy()
+    if stat_filter:
+        available = available[available['Stat'].str.upper().eq(stat_filter)].copy()
+    if grade_filter:
+        available = available[available['MissedGrade'].str.upper().eq(grade_filter)].copy()
+    if min_grade:
+        threshold = pd.to_numeric(pd.Series([min_grade]), errors='coerce').iloc[0]
+        if pd.notna(threshold):
+            available = available[available['MissedGradeScore'] >= float(threshold)].copy()
+    if start_date:
+        start_dt = pd.to_datetime(start_date, errors='coerce')
+        if pd.notna(start_dt):
+            available = available[available['SnapshotDateParsed'] >= start_dt].copy()
+    if end_date:
+        end_dt = pd.to_datetime(end_date, errors='coerce')
+        if pd.notna(end_dt):
+            available = available[available['SnapshotDateParsed'] <= end_dt].copy()
+
+    if available.empty:
+        return empty | {'sport_options': sport_options, 'stat_options': stat_options}
+
+    available = available.sort_values(
+        ['MissedGradeScore', 'ConfidenceNum', 'SnapshotDateParsed'],
+        ascending=[False, False, False],
+    )
+
+    def chart_rows(group_col: str, label_key: str, top_n: int = 12) -> list[dict]:
+        rows = []
+        if group_col not in available.columns:
+            return rows
+        for label, group in available.groupby(group_col, dropna=False):
+            if not str(label).strip():
+                continue
+            rows.append({
+                label_key: str(label),
+                'count': int(len(group)),
+                'avg_grade': round(float(group['MissedGradeScore'].mean()), 1),
+                'avg_confidence': round(float(group['ConfidenceNum'].mean()), 1) if group['ConfidenceNum'].notna().any() else None,
+                'a_plus': int((group['MissedGrade'] == 'A+').sum()),
+            })
+        return sorted(rows, key=lambda row: (row['a_plus'], row['count'], row['avg_grade']), reverse=True)[:top_n]
+
+    by_day = []
+    day_source = available.dropna(subset=['SnapshotDateParsed']).copy()
+    if not day_source.empty:
+        day_source['DayLabel'] = day_source['SnapshotDateParsed'].dt.strftime('%Y-%m-%d')
+        by_day = chart_rows('DayLabel', 'date', top_n=20)
+        by_day = sorted(by_day, key=lambda row: row['date'])
+
+    by_grade = []
+    grade_order = {'A+': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4}
+    for label, group in available.groupby('MissedGrade'):
+        by_grade.append({
+            'grade': str(label),
+            'count': int(len(group)),
+            'avg_grade': round(float(group['MissedGradeScore'].mean()), 1),
+        })
+    by_grade = sorted(by_grade, key=lambda row: grade_order.get(row['grade'], 99))
+
+    rows = []
+    for _, row in available.head(int(limit or 250)).iterrows():
+        result_value = row.get('ResultValueNum')
+        line = row.get('LineNum')
+        book_count_value = pd.to_numeric(row.get('BookCount'), errors='coerce')
+        rows.append({
+            'snapshot_date': str(row.get('SnapshotDate') or '').strip(),
+            'sport': str(row.get('Sport') or '').strip().upper(),
+            'player': str(row.get('Player') or '').strip(),
+            'team': _clean_review_value(row.get('Team')),
+            'stat': str(row.get('Stat') or '').strip().upper(),
+            'direction': str(row.get('Direction') or '').strip().upper(),
+            'line': round(float(line), 1) if pd.notna(line) else row.get('Line'),
+            'actual': round(float(result_value), 1) if pd.notna(result_value) else '',
+            'confidence': round(float(row.get('ConfidenceNum')), 1) if pd.notna(row.get('ConfidenceNum')) else None,
+            'grade_score': int(row.get('MissedGradeScore') or 0),
+            'grade': str(row.get('MissedGrade') or ''),
+            'why': str(row.get('MissedReasons') or ''),
+            'book_count': int(book_count_value) if pd.notna(book_count_value) else '',
+            'market_depth': _clean_review_value(row.get('MarketDepthBucket')),
+            'market_move': _clean_review_value(row.get('MarketMoveBucket')),
+            'method': _clean_review_value(row.get('Method')),
+            'matchup': _clean_review_value(row.get('Matchup')),
+            'baseline_reason': _clean_review_value(row.get('BaselineReason')) or _clean_review_value(row.get('PublicTrendNote')),
+        })
+
+    total = int(len(available))
+    summary = {
+        'total': total,
+        'a_plus': int((available['MissedGrade'] == 'A+').sum()),
+        'a_or_better': int(available['MissedGrade'].isin(['A+', 'A']).sum()),
+        'avg_grade': round(float(available['MissedGradeScore'].mean()), 1),
+        'avg_confidence': round(float(available['ConfidenceNum'].mean()), 1) if available['ConfidenceNum'].notna().any() else None,
+    }
+    return {
+        'rows': rows,
+        'summary': summary,
+        'charts': {
+            'by_sport': chart_rows('Sport', 'sport'),
+            'by_stat': chart_rows('Stat', 'stat'),
+            'by_grade': by_grade,
+            'by_day': by_day,
+        },
+        'sport_filter': sport_filter,
+        'stat_filter': stat_filter,
+        'grade_filter': grade_filter,
+        'start_date': start_date,
+        'end_date': end_date,
+        'min_grade': min_grade,
+        'sport_options': sport_options,
+        'stat_options': stat_options,
+        'grade_options': ['A+', 'A', 'B', 'C', 'D'],
+    }
 
 
 def filter_floor_index_for_review(
@@ -472,6 +1021,22 @@ def calculate_player_line_sensitivity(player_df: pd.DataFrame) -> dict:
     }
 
 
+def calculate_player_reliability(resolved_count, hit_rate) -> str:
+    if hit_rate is None or pd.isna(hit_rate):
+        return 'NO SAMPLE'
+    if resolved_count < 3:
+        return 'TOO THIN'
+    if resolved_count >= 10 and hit_rate >= 0.65:
+        return 'ANCHOR'
+    if resolved_count >= 5 and hit_rate >= 0.60:
+        return 'WATCH'
+    if resolved_count >= 5 and hit_rate < 0.52:
+        return 'AVOID'
+    if resolved_count >= 3:
+        return 'DEVELOPING'
+    return 'TOO THIN'
+
+
 def _player_model_accuracy(avg_confidence, hit_rate) -> str:
     if avg_confidence is None or hit_rate is None or pd.isna(avg_confidence) or pd.isna(hit_rate):
         return 'CALIBRATED'
@@ -487,6 +1052,20 @@ def _player_model_accuracy(avg_confidence, hit_rate) -> str:
 def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
     if result_df is None or result_df.empty:
         return []
+    cache_key = ('player_hit_profiles', _df_token(result_df))
+    cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
+    if cached is not None:
+        return [dict(row) for row in cached]
+    source_paths = [FLOOR_PLAY_INDEX_PATH, *ALL_PROP_RESULT_PATHS.values()]
+    if len(result_df) >= 10000 and _artifact_is_fresh(PLAYER_PROFILE_INDEX_PATH, source_paths):
+        try:
+            artifact = pd.read_csv(PLAYER_PROFILE_INDEX_PATH, low_memory=False)
+        except Exception:
+            artifact = pd.DataFrame()
+        if not artifact.empty:
+            rows = artifact.where(pd.notna(artifact), None).to_dict('records')
+            _REVIEW_RUNTIME_CACHE[cache_key] = [dict(row) for row in rows]
+            return rows
     df = result_df.copy()
     for column in ['Player', 'Sport', 'Stat', 'Direction', 'OutcomeState']:
         if column not in df.columns:
@@ -495,8 +1074,23 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
     resolved = df[df['OutcomeState'].isin(['Hit', 'Miss'])].copy()
     if resolved.empty:
         return []
+    for column in ['SnapshotDate', 'ResultDate', 'Matchup', 'Line']:
+        if column not in resolved.columns:
+            resolved[column] = ''
+        resolved[column] = resolved[column].fillna('').astype(str)
     resolved['LineNum'] = pd.to_numeric(resolved.get('Line'), errors='coerce')
     resolved['ConfidenceNum'] = pd.to_numeric(resolved.get('Confidence'), errors='coerce')
+    resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
+    resolved['_ProfileLine'] = resolved['LineNum'].round(3).astype(str).where(resolved['LineNum'].notna(), resolved['Line'].astype(str))
+    resolved['_ConfidenceSort'] = resolved['ConfidenceNum'].fillna(-1)
+    resolved = (
+        resolved.sort_values('_ConfidenceSort', ascending=False)
+        .drop_duplicates(
+            subset=['_ProfileDate', 'Player', 'Sport', 'Stat', 'Direction', '_ProfileLine', 'Matchup', 'OutcomeState'],
+            keep='first',
+        )
+        .copy()
+    )
     rows = []
     grouped = resolved.groupby(['Player', 'Sport', 'Stat', 'Direction'], dropna=False)
     for keys, group in grouped:
@@ -510,7 +1104,7 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
         avg_line = group['LineNum'].mean()
         avg_conf = group['ConfidenceNum'].mean()
         sensitivity = calculate_player_line_sensitivity(group)
-        reliability = calculate_floor_reliability(resolved_count, hit_rate_raw)
+        reliability = calculate_player_reliability(resolved_count, hit_rate_raw)
         rows.append({
             'player': player,
             'sport': sport.upper(),
@@ -529,7 +1123,7 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
         })
     order = {'ANCHOR': 0, 'WATCH': 1, 'DEVELOPING': 2, 'SMALL SAMPLE': 3, 'AVOID': 4}
     model_order = {'UNDERVALUED': 0, 'CALIBRATED': 1, 'OVERVALUED': 2}
-    return sorted(
+    rows = sorted(
         rows,
         key=lambda row: (
             model_order.get(row['model_accuracy'], 9),
@@ -538,6 +1132,14 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
             -row['resolved'],
         ),
     )
+    if len(result_df) >= 10000:
+        try:
+            PLAYER_PROFILE_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(rows).to_csv(PLAYER_PROFILE_INDEX_PATH, index=False)
+        except Exception:
+            pass
+    _REVIEW_RUNTIME_CACHE[cache_key] = [dict(row) for row in rows]
+    return rows
 
 
 def player_profile_lookup(player_profiles: list[dict]) -> dict:
@@ -573,7 +1175,7 @@ def apply_player_profiles(df: pd.DataFrame, player_profiles: list[dict]) -> pd.D
             str(row.get('Direction') or '').strip().upper(),
         )
         profile = lookup.get(key)
-        if profile:
+        if profile and int(profile.get('resolved', 0) or 0) >= 3:
             labels.append(profile.get('reliability', ''))
             models.append(profile.get('model_accuracy', ''))
             rate = profile.get('hit_rate')
@@ -624,6 +1226,22 @@ def build_player_profile_summary(result_df: pd.DataFrame, player_name: str) -> d
             'rows': profiles,
             'overall': {'resolved': 0, 'hits': 0, 'misses': 0, 'hit_rate': None, 'model_accuracy': 'PENDING'},
         }
+    for column in ['SnapshotDate', 'ResultDate', 'Matchup', 'Line', 'Player', 'Sport', 'Stat', 'Direction']:
+        if column not in resolved.columns:
+            resolved[column] = ''
+        resolved[column] = resolved[column].fillna('').astype(str)
+    resolved['_LineNum'] = pd.to_numeric(resolved.get('Line'), errors='coerce')
+    resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
+    resolved['_ProfileLine'] = resolved['_LineNum'].round(3).astype(str).where(resolved['_LineNum'].notna(), resolved['Line'].astype(str))
+    resolved['_ConfidenceSort'] = pd.to_numeric(resolved.get('Confidence'), errors='coerce').fillna(-1)
+    resolved = (
+        resolved.sort_values('_ConfidenceSort', ascending=False)
+        .drop_duplicates(
+            subset=['_ProfileDate', 'Player', 'Sport', 'Stat', 'Direction', '_ProfileLine', 'Matchup', 'OutcomeState'],
+            keep='first',
+        )
+        .copy()
+    )
     hits = int((resolved['OutcomeState'] == 'Hit').sum())
     misses = int((resolved['OutcomeState'] == 'Miss').sum())
     resolved_count = int(len(resolved))
@@ -672,6 +1290,353 @@ def build_player_profile_summary(result_df: pd.DataFrame, player_name: str) -> d
     }
 
 
+def build_archived_player_page_context(player_name: str) -> dict:
+    df = load_all_prop_results_for_review()
+    player_name = str(player_name or '').strip()
+    empty = {
+        'available': False,
+        'player': player_name,
+        'summary': {},
+        'profiles': [],
+        'streak_heat': [],
+        'recent_rows': [],
+        'sports': [],
+        'stats': [],
+    }
+    if df.empty or not player_name:
+        return empty
+    for column in ['Player', 'Sport', 'Stat', 'Direction', 'OutcomeState', 'SnapshotDate']:
+        if column not in df.columns:
+            df[column] = ''
+        df[column] = df[column].fillna('').astype(str)
+    player_df = df[df['Player'].str.lower() == player_name.lower()].copy()
+    if player_df.empty:
+        return empty
+
+    profiles = [
+        row for row in build_player_hit_profiles(player_df)
+        if row.get('resolved', 0) >= 3
+    ]
+    resolved = player_df[player_df['OutcomeState'].isin(['Hit', 'Miss'])].copy()
+    if not resolved.empty:
+        for column in ['SnapshotDate', 'ResultDate', 'Matchup', 'Line', 'Player', 'Sport', 'Stat', 'Direction']:
+            if column not in resolved.columns:
+                resolved[column] = ''
+            resolved[column] = resolved[column].fillna('').astype(str)
+        resolved['_LineNum'] = pd.to_numeric(resolved.get('Line'), errors='coerce')
+        resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
+        resolved['_ProfileLine'] = resolved['_LineNum'].round(3).astype(str).where(resolved['_LineNum'].notna(), resolved['Line'].astype(str))
+        resolved['_ConfidenceSort'] = pd.to_numeric(resolved.get('Confidence'), errors='coerce').fillna(-1)
+        resolved = (
+            resolved.sort_values('_ConfidenceSort', ascending=False)
+            .drop_duplicates(
+                subset=['_ProfileDate', 'Player', 'Sport', 'Stat', 'Direction', '_ProfileLine', 'Matchup', 'OutcomeState'],
+                keep='first',
+            )
+            .copy()
+        )
+    hits = int((resolved['OutcomeState'] == 'Hit').sum()) if not resolved.empty else 0
+    misses = int((resolved['OutcomeState'] == 'Miss').sum()) if not resolved.empty else 0
+    pending = int((player_df['OutcomeState'] == 'Pending').sum())
+    pushes = int((player_df['OutcomeState'] == 'Push').sum())
+    hit_rate = round(float(hits / len(resolved)) * 100, 1) if len(resolved) else None
+    avg_conf = pd.to_numeric(player_df.get('Confidence'), errors='coerce').mean()
+    recent_source = player_df.copy()
+    recent_source['SnapshotDateParsed'] = pd.to_datetime(recent_source['SnapshotDate'], errors='coerce')
+    recent_source = recent_source.sort_values('SnapshotDateParsed', ascending=False)
+    recent_rows = []
+    for _, row in recent_source.head(75).iterrows():
+        confidence = pd.to_numeric(row.get('Confidence'), errors='coerce')
+        line = pd.to_numeric(row.get('Line'), errors='coerce')
+        actual = pd.to_numeric(row.get('ResultValue'), errors='coerce')
+        recent_rows.append({
+            'snapshot_date': _clean_review_value(row.get('SnapshotDate')),
+            'sport': _clean_review_value(row.get('Sport')).upper(),
+            'method': _clean_review_value(row.get('Method')),
+            'matchup': _clean_review_value(row.get('Matchup')),
+            'stat': _clean_review_value(row.get('Stat')).upper(),
+            'direction': _clean_review_value(row.get('Direction')).upper(),
+            'line': round(float(line), 1) if pd.notna(line) else _clean_review_value(row.get('Line')),
+            'actual': round(float(actual), 1) if pd.notna(actual) else '',
+            'outcome': _clean_review_value(row.get('OutcomeState')),
+            'confidence': round(float(confidence), 1) if pd.notna(confidence) else None,
+            'tier': _clean_review_value(row.get('ReviewTier')) or _clean_review_value(row.get('BetTier')),
+            'book_count': _clean_review_value(row.get('BookCount')),
+        })
+    return {
+        'available': True,
+        'player': player_name,
+        'summary': {
+            'total_rows': int(len(player_df)),
+            'resolved': int(len(resolved)),
+            'hits': hits,
+            'misses': misses,
+            'pushes': pushes,
+            'pending': pending,
+            'hit_rate': hit_rate,
+            'avg_confidence': round(float(avg_conf), 1) if pd.notna(avg_conf) else None,
+        },
+        'profiles': profiles,
+        'streak_heat': build_player_streak_heat(player_df),
+        'recent_rows': recent_rows,
+        'sports': sorted({_clean_review_value(v).upper() for v in player_df['Sport'].tolist() if _clean_review_value(v)}),
+        'stats': sorted({_clean_review_value(v).upper() for v in player_df['Stat'].tolist() if _clean_review_value(v)}),
+    }
+
+
+def build_player_streak_heat(player_df: pd.DataFrame, *, max_streak: int = 10) -> list[dict]:
+    if player_df is None or player_df.empty:
+        return []
+    df = player_df.copy()
+    for column in ['SnapshotDate', 'ResultDate', 'Matchup', 'Line', 'Player', 'Sport', 'Stat', 'Direction', 'OutcomeState']:
+        if column not in df.columns:
+            df[column] = ''
+        df[column] = df[column].fillna('').astype(str)
+    resolved = df[df['OutcomeState'].isin(['Hit', 'Miss'])].copy()
+    if resolved.empty:
+        return []
+    resolved['_LineNum'] = pd.to_numeric(resolved.get('Line'), errors='coerce')
+    resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
+    resolved['_ProfileLine'] = resolved['_LineNum'].round(3).astype(str).where(resolved['_LineNum'].notna(), resolved['Line'].astype(str))
+    resolved['_ConfidenceSort'] = pd.to_numeric(resolved.get('Confidence'), errors='coerce').fillna(-1)
+    resolved['_ProfileDateParsed'] = pd.to_datetime(resolved['_ProfileDate'], errors='coerce')
+    resolved = (
+        resolved.sort_values(['_ProfileDateParsed', '_ConfidenceSort'], ascending=[True, False])
+        .drop_duplicates(
+            subset=['_ProfileDate', 'Player', 'Sport', 'Stat', 'Direction', '_ProfileLine', 'Matchup', 'OutcomeState'],
+            keep='first',
+        )
+        .copy()
+    )
+
+    rows = []
+    grouped = resolved.groupby(['Sport', 'Stat', 'Direction'], dropna=False)
+    for keys, group in grouped:
+        sport, stat, direction = [str(part).strip().upper() for part in keys]
+        if not sport or not stat or direction not in {'OVER', 'UNDER'}:
+            continue
+        group = group.sort_values('_ProfileDateParsed')
+        longest_hit = longest_miss = current_count = 0
+        current_outcome = ''
+        last_outcome = ''
+        run = 0
+        hits = int((group['OutcomeState'] == 'Hit').sum())
+        misses = int((group['OutcomeState'] == 'Miss').sum())
+        sequence = []
+        for _, item in group.iterrows():
+            outcome = str(item.get('OutcomeState') or '')
+            sequence.append('H' if outcome == 'Hit' else 'M')
+            if outcome == last_outcome:
+                run += 1
+            else:
+                last_outcome = outcome
+                run = 1
+            if outcome == 'Hit':
+                longest_hit = max(longest_hit, run)
+            elif outcome == 'Miss':
+                longest_miss = max(longest_miss, run)
+        if last_outcome:
+            current_outcome = last_outcome
+            current_count = run
+        resolved_count = int(len(group))
+        rows.append({
+            'sport': sport,
+            'stat': stat,
+            'direction': direction,
+            'label': f"{sport} {stat} {direction}",
+            'resolved': resolved_count,
+            'hits': hits,
+            'misses': misses,
+            'hit_rate': round(float(hits / resolved_count) * 100, 1) if resolved_count else None,
+            'longest_hit': int(longest_hit),
+            'longest_miss': int(longest_miss),
+            'best_streak': int(max(longest_hit, longest_miss)),
+            'current_outcome': current_outcome,
+            'current_count': int(current_count),
+            'sequence': ''.join(sequence[-10:]),
+            'heat_cells': [
+                {
+                    'n': value,
+                    'hit_active': value <= min(longest_hit, max_streak),
+                    'miss_active': value <= min(longest_miss, max_streak),
+                }
+                for value in range(1, max_streak + 1)
+            ],
+        })
+    return sorted(
+        rows,
+        key=lambda row: (row['best_streak'], row['resolved'], row['hit_rate'] or 0),
+        reverse=True,
+    )
+
+
+def calculate_heat_score(current_streak: int, hit_rate: float | None, total_resolved: int) -> int:
+    streak_score = min(max(int(current_streak or 0), 0) * 8, 50)
+    reliability_score = (float(hit_rate or 0) / 100) * 30
+    sample_score = min(max(int(total_resolved or 0), 0) / 2, 20)
+    return int(round(streak_score + reliability_score + sample_score))
+
+
+def heat_tier_from_score(score: int) -> int:
+    value = int(score or 0)
+    if value >= 85:
+        return 5
+    if value >= 70:
+        return 4
+    if value >= 55:
+        return 3
+    if value >= 40:
+        return 2
+    return 1
+
+
+def build_streak_heat_chart(
+    resolved_df: pd.DataFrame | None = None,
+    *,
+    min_resolved: int = 3,
+    max_streak: int = 10,
+    limit: int = 50,
+) -> list[dict]:
+    cache_key = (
+        'streak_heat_chart',
+        _df_token(resolved_df) if resolved_df is not None else _all_prop_file_token(),
+        int(min_resolved or 0),
+        int(max_streak or 0),
+        int(limit or 0),
+    )
+    cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
+    if cached is not None:
+        return [dict(row) for row in cached]
+    if resolved_df is None and _artifact_is_fresh(STREAK_HEAT_INDEX_PATH, list(ALL_PROP_RESULT_PATHS.values())):
+        try:
+            artifact = pd.read_csv(STREAK_HEAT_INDEX_PATH, low_memory=False)
+        except Exception:
+            artifact = pd.DataFrame()
+        if not artifact.empty:
+            rows = artifact.where(pd.notna(artifact), None).to_dict('records')[:int(limit or 50)]
+            _REVIEW_RUNTIME_CACHE[cache_key] = [dict(row) for row in rows]
+            return rows
+    df = resolved_df if resolved_df is not None else load_all_prop_results_for_review()
+    if df is None or df.empty:
+        return []
+    working = df.copy()
+    for column in ['SnapshotDate', 'ResultDate', 'Matchup', 'Line', 'Player', 'Sport', 'Stat', 'Direction', 'OutcomeState']:
+        if column not in working.columns:
+            working[column] = ''
+        working[column] = working[column].fillna('').astype(str)
+
+    resolved = working[working['OutcomeState'].isin(['Hit', 'Miss'])].copy()
+    if resolved.empty:
+        return []
+
+    resolved['_LineNum'] = pd.to_numeric(resolved.get('Line'), errors='coerce')
+    resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
+    resolved['_ProfileLine'] = resolved['_LineNum'].round(3).astype(str).where(resolved['_LineNum'].notna(), resolved['Line'].astype(str))
+    resolved['_ConfidenceSort'] = pd.to_numeric(resolved.get('Confidence'), errors='coerce').fillna(-1)
+    resolved['_ProfileDateParsed'] = pd.to_datetime(resolved['_ProfileDate'], errors='coerce')
+    resolved = (
+        resolved.sort_values(['_ProfileDateParsed', '_ConfidenceSort'], ascending=[True, False])
+        .drop_duplicates(
+            subset=['_ProfileDate', 'Player', 'Sport', 'Stat', 'Direction', '_ProfileLine', 'Matchup', 'OutcomeState'],
+            keep='first',
+        )
+        .copy()
+    )
+
+    rows: list[dict] = []
+    grouped = resolved.groupby(['Player', 'Sport', 'Stat', 'Direction'], dropna=False)
+    for keys, group in grouped:
+        player, sport, stat, direction = [str(part).strip() for part in keys]
+        sport = sport.upper()
+        stat = stat.upper()
+        direction = direction.upper()
+        if not player or not sport or not stat or direction not in {'OVER', 'UNDER'}:
+            continue
+        group = group.sort_values('_ProfileDateParsed')
+        if len(group) < int(min_resolved):
+            continue
+
+        outcomes = [str(value) for value in group['OutcomeState'].tolist()]
+        hits = outcomes.count('Hit')
+        misses = outcomes.count('Miss')
+        total = len(outcomes)
+        hit_rate = round(float(hits / total) * 100, 1) if total else 0
+
+        current_streak = 0
+        current_outcome = outcomes[-1] if outcomes else ''
+        for outcome in reversed(outcomes):
+            if outcome == current_outcome:
+                current_streak += 1
+            else:
+                break
+
+        longest_hit = 0
+        longest_miss = 0
+        running_outcome = ''
+        running_count = 0
+        for outcome in outcomes:
+            if outcome == running_outcome:
+                running_count += 1
+            else:
+                running_outcome = outcome
+                running_count = 1
+            if outcome == 'Hit':
+                longest_hit = max(longest_hit, running_count)
+            elif outcome == 'Miss':
+                longest_miss = max(longest_miss, running_count)
+
+        current_hit_streak = current_streak if current_outcome == 'Hit' else 0
+        heat_score = calculate_heat_score(current_hit_streak, hit_rate, total)
+        last_10 = ['H' if outcome == 'Hit' else 'M' for outcome in outcomes[-10:]]
+        last_5 = ['H' if outcome == 'Hit' else 'M' for outcome in outcomes[-5:]]
+        rows.append({
+            'player': player,
+            'sport': sport,
+            'stat': stat,
+            'direction': direction,
+            'bucket': f"{player} {sport} {stat} {direction}",
+            'current_streak': int(current_hit_streak),
+            'current_outcome': current_outcome,
+            'current_any_streak': int(current_streak),
+            'longest_streak': int(longest_hit),
+            'longest_miss_streak': int(longest_miss),
+            'total_resolved': int(total),
+            'hits': int(hits),
+            'misses': int(misses),
+            'hit_rate': hit_rate,
+            'heat_score': heat_score,
+            'heat_tier': heat_tier_from_score(heat_score),
+            'last_result': current_outcome,
+            'last_10': last_10,
+            'last_5': last_5,
+            'last_10_label': ''.join(last_10),
+            'heat_cells': [
+                {'n': value, 'active': value <= min(current_hit_streak, max_streak)}
+                for value in range(1, max_streak + 1)
+            ],
+        })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            row['current_streak'],
+            row['heat_score'],
+            row['longest_streak'],
+            row['total_resolved'],
+            row['hit_rate'],
+        ),
+        reverse=True,
+    )[:int(limit or 50)]
+    _REVIEW_RUNTIME_CACHE[cache_key] = [dict(row) for row in rows]
+    if resolved_df is None:
+        try:
+            STREAK_HEAT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(rows).to_csv(STREAK_HEAT_INDEX_PATH, index=False)
+        except Exception:
+            pass
+    return rows
+
+
 def build_candidate_review_context(
     archive_df: pd.DataFrame,
     gamelog_map: dict,
@@ -690,10 +1655,20 @@ def build_candidate_review_context(
     market_gate_filter: str = '',
     bet_tier_filter: str = '',
     floor_reliability_filter: str = '',
+    profile_sport_filter: str = '',
+    profile_stat_filter: str = '',
+    profile_direction_filter: str = '',
+    profile_reliability_filter: str = '',
+    profile_model_filter: str = '',
+    profile_promotion_filter: str = '',
+    profile_player_filter: str = '',
+    streak_sport_filter: str = '',
     days_to_result_filter: str = '',
     start_date: str = '',
     end_date: str = '',
     min_confidence: str = '',
+    row_limit: int = 100,
+    profile_limit: int = 100,
     grade_candidate_archive_rows: GradeCandidateArchiveRows,
     summarize_candidate_archive: SummarizeCandidateArchive,
 ) -> dict:
@@ -710,17 +1685,37 @@ def build_candidate_review_context(
     market_gate_filter = str(market_gate_filter or '').strip().upper()
     bet_tier_filter = str(bet_tier_filter or '').strip()
     floor_reliability_filter = str(floor_reliability_filter or '').strip().upper()
+    profile_sport_filter = str(profile_sport_filter or '').strip().upper()
+    profile_stat_filter = str(profile_stat_filter or '').strip().upper()
+    profile_direction_filter = str(profile_direction_filter or '').strip().upper()
+    profile_reliability_filter = str(profile_reliability_filter or '').strip().upper()
+    profile_model_filter = str(profile_model_filter or '').strip().upper()
+    profile_promotion_filter = str(profile_promotion_filter or '').strip().upper()
+    profile_player_filter = str(profile_player_filter or '').strip()
+    streak_sport_filter = str(streak_sport_filter or '').strip().upper()
     days_to_result_filter = str(days_to_result_filter or '').strip().lower()
     start_date = str(start_date or '').strip()
     end_date = str(end_date or '').strip()
     min_confidence = str(min_confidence or '').strip()
+    try:
+        row_limit = int(row_limit or 100)
+    except (TypeError, ValueError):
+        row_limit = 100
+    try:
+        profile_limit = int(profile_limit or 100)
+    except (TypeError, ValueError):
+        profile_limit = 100
+    row_limit = max(50, min(row_limit, 750))
+    profile_limit = max(50, min(profile_limit, 750))
 
     floor_index_full = load_floor_play_index()
     floor_buckets_full = build_floor_reliability_table(floor_index_full)
     player_profiles_full = build_player_hit_profiles(floor_index_full)
     graded = grade_candidate_archive_rows(archive_df, gamelog_map)
-    graded = enrich_candidate_review_rows(graded)
-    graded = apply_floor_reliability(graded, floor_buckets_full)
+    if not {'ReviewTier', 'FailureReason', 'FailureSignals'}.issubset(graded.columns):
+        graded = enrich_candidate_review_rows(graded)
+    if 'FloorReliability' not in graded.columns:
+        graded = apply_floor_reliability(graded, floor_buckets_full)
     graded = apply_player_profiles(graded, player_profiles_full)
     if postseason_only and not graded.empty and 'PostseasonOnly' in graded.columns:
         # Postseason mode is an NBA-specific lens here. Keep WNBA/MLB/etc. full-board
@@ -801,11 +1796,25 @@ def build_candidate_review_context(
     )
 
     recent_rows = []
-    charts = build_candidate_review_charts(graded, floor_index_df=floor_index)
+    charts = build_candidate_review_charts(
+        graded,
+        floor_index_df=floor_index,
+        profile_filters={
+            'sport': profile_sport_filter,
+            'stat': profile_stat_filter,
+            'direction': profile_direction_filter,
+            'reliability': profile_reliability_filter,
+            'model': profile_model_filter,
+            'promotion': profile_promotion_filter,
+            'player': profile_player_filter,
+        },
+        streak_sport_filter=streak_sport_filter,
+        profile_limit=profile_limit,
+    )
     if not graded.empty:
         working = graded.copy()
         working['SnapshotDate'] = pd.to_datetime(working['SnapshotDate'], errors='coerce')
-        recent_rows = working.sort_values(['SnapshotDate', 'Confidence'], ascending=[False, False]).head(5000).to_dict('records')
+        recent_rows = working.sort_values(['SnapshotDate', 'Confidence'], ascending=[False, False]).head(row_limit).to_dict('records')
 
     sport_options = sorted(
         {
@@ -864,7 +1873,7 @@ def build_candidate_review_context(
         }
     )
     bet_tier_options = ['Tier 1', 'Tier 2', 'Tier 3']
-    return {
+    context = {
         'summary': summarize_candidate_archive(graded),
         'charts': charts,
         'rows': recent_rows,
@@ -882,10 +1891,20 @@ def build_candidate_review_context(
         'market_gate_filter': market_gate_filter,
         'bet_tier_filter': bet_tier_filter,
         'floor_reliability_filter': floor_reliability_filter,
+        'profile_sport_filter': profile_sport_filter,
+        'profile_stat_filter': profile_stat_filter,
+        'profile_direction_filter': profile_direction_filter,
+        'profile_reliability_filter': profile_reliability_filter,
+        'profile_model_filter': profile_model_filter,
+        'profile_promotion_filter': profile_promotion_filter,
+        'profile_player_filter': profile_player_filter,
+        'streak_sport_filter': streak_sport_filter,
         'days_to_result_filter': days_to_result_filter,
         'start_date': start_date,
         'end_date': end_date,
         'min_confidence': min_confidence,
+        'row_limit': row_limit,
+        'profile_limit': profile_limit,
         'method_options': method_options,
         'stat_options': stat_options,
         'market_depth_options': market_depth_options,
@@ -896,6 +1915,7 @@ def build_candidate_review_context(
         'bet_tier_options': bet_tier_options,
         'floor_reliability_options': ['ANCHOR', 'WATCH', 'DEVELOPING', 'SMALL SAMPLE', 'AVOID'],
     }
+    return _clean_display_value(context)
 
 
 def expected_hit_rate_from_confidence(confidence: float) -> float | None:
@@ -933,6 +1953,15 @@ def _bet_tier_label(value) -> str:
     return text
 
 
+def _to_float_value(value, default=float('nan')) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def derive_review_tier(row) -> str:
     label = _bet_tier_label(row.get('BetTier')).upper()
     if 'TIER 1' in label or 'FULL UNIT' in label:
@@ -941,7 +1970,7 @@ def derive_review_tier(row) -> str:
         return 'Tier 2'
     if 'TIER 3' in label or 'SKIP' in label or 'WATCH' in label:
         return 'Tier 3'
-    confidence = pd.to_numeric(pd.Series([row.get('Confidence')]), errors='coerce').iloc[0]
+    confidence = _to_float_value(row.get('Confidence'))
     if pd.isna(confidence):
         return 'Tier 3'
     if float(confidence) >= 80:
@@ -955,9 +1984,9 @@ def candidate_failure_reason(row) -> tuple[str, str]:
     if str(row.get('OutcomeState') or '').strip() != 'Miss':
         return '', ''
     signals = []
-    confidence = pd.to_numeric(pd.Series([row.get('Confidence')]), errors='coerce').iloc[0]
-    clv_line = pd.to_numeric(pd.Series([row.get('ClvLine')]), errors='coerce').iloc[0]
-    book_count = pd.to_numeric(pd.Series([row.get('BookCount')]), errors='coerce').iloc[0]
+    confidence = _to_float_value(row.get('Confidence'))
+    clv_line = _to_float_value(row.get('ClvLine'))
+    book_count = _to_float_value(row.get('BookCount'))
     role = str(row.get('RoleLabel') or '').strip().upper()
     volatility = str(row.get('VolatilityFlag') or '').strip().upper()
     market_gate = str(row.get('MarketGate') or '').strip().upper()
@@ -995,10 +2024,24 @@ def enrich_candidate_review_rows(graded: pd.DataFrame) -> pd.DataFrame:
     if graded is None or graded.empty:
         return graded
     working = graded.copy()
-    working['ReviewTier'] = working.apply(derive_review_tier, axis=1)
-    failures = working.apply(candidate_failure_reason, axis=1)
-    working['FailureReason'] = [item[0] for item in failures]
-    working['FailureSignals'] = [item[1] for item in failures]
+    confidence = pd.to_numeric(working.get('Confidence'), errors='coerce')
+    working['ReviewTier'] = 'Tier 3'
+    working.loc[confidence >= 70, 'ReviewTier'] = 'Tier 2'
+    working.loc[confidence >= 80, 'ReviewTier'] = 'Tier 1'
+    if 'BetTier' in working.columns:
+        bet_text = working['BetTier'].fillna('').astype(str).str.upper()
+        working.loc[bet_text.str.contains('TIER 1|FULL UNIT', regex=True, na=False), 'ReviewTier'] = 'Tier 1'
+        working.loc[bet_text.str.contains('TIER 2|HALF UNIT', regex=True, na=False), 'ReviewTier'] = 'Tier 2'
+        working.loc[bet_text.str.contains('TIER 3|SKIP|WATCH', regex=True, na=False), 'ReviewTier'] = 'Tier 3'
+
+    working['FailureReason'] = ''
+    working['FailureSignals'] = ''
+    miss_mask = working.get('OutcomeState', pd.Series('', index=working.index)).astype(str).eq('Miss')
+    if miss_mask.any():
+        for idx, row in working.loc[miss_mask].iterrows():
+            reason, signals = candidate_failure_reason(row)
+            working.at[idx, 'FailureReason'] = reason
+            working.at[idx, 'FailureSignals'] = signals
     return working
 
 
@@ -1227,7 +2270,13 @@ def build_floor_play_review_charts(index_df: pd.DataFrame) -> tuple[dict, list[d
     )
 
 
-def build_candidate_review_charts(graded: pd.DataFrame, floor_index_df: pd.DataFrame | None = None) -> dict:
+def build_candidate_review_charts(
+    graded: pd.DataFrame,
+    floor_index_df: pd.DataFrame | None = None,
+    profile_filters: dict | None = None,
+    streak_sport_filter: str = '',
+    profile_limit: int = 100,
+) -> dict:
     empty = {
         'daily': [],
         'by_confidence': [],
@@ -1243,6 +2292,19 @@ def build_candidate_review_charts(graded: pd.DataFrame, floor_index_df: pd.DataF
         'floor_efficiency': {},
         'floor_reliability_table': [],
         'player_profiles': [],
+        'player_profile_total': 0,
+        'player_profile_options': {
+            'sports': [],
+            'stats': [],
+            'directions': ['OVER', 'UNDER'],
+            'reliabilities': ['ANCHOR', 'WATCH', 'DEVELOPING', 'AVOID'],
+            'models': ['UNDERVALUED', 'CALIBRATED', 'OVERVALUED'],
+            'promotions': ['PROMOTE HARD', 'PROMOTE', 'SURFACE', 'HOLD', 'STANDARD'],
+        },
+        'promotion_signals': [],
+        'streak_heat_chart': [],
+        'streak_heat_all': [],
+        'streak_heat_sports': [],
         'overvalued_players': [],
         'by_stat_time': [],
         'by_direction_time': [],
@@ -1421,11 +2483,76 @@ def build_candidate_review_charts(graded: pd.DataFrame, floor_index_df: pd.DataF
         floor_reliability_table,
     ) = build_floor_play_review_charts(floor_source)
 
-    player_profiles = build_player_hit_profiles(df)
-    player_profile_table = [
-        row for row in player_profiles
+    profile_source = floor_index_df if floor_index_df is not None and not floor_index_df.empty else df
+    player_profiles = [
+        row for row in build_player_hit_profiles(profile_source)
         if row.get('resolved', 0) >= 3
-    ][:25]
+    ]
+    missed_bucket_frequency = build_missed_winner_bucket_frequency(df, lookback_days=7)
+    for row in player_profiles:
+        promotion = calculate_promotion_signal(row, missed_bucket_frequency)
+        row['promotion_signal'] = promotion['signal']
+        row['promotion_reason'] = promotion['reason']
+        row['promotion_action'] = promotion['action']
+        row['missed_winner_count'] = promotion['missed_count']
+        row['missed_winner_a_plus'] = promotion['bucket_a_plus']
+        row['missed_winner_avg_grade'] = promotion['bucket_avg_grade']
+        row['missed_winner_last_seen'] = promotion['last_seen']
+    profile_filters = profile_filters or {}
+    try:
+        profile_limit = int(profile_limit or 100)
+    except (TypeError, ValueError):
+        profile_limit = 100
+    profile_limit = max(50, min(profile_limit, 750))
+    player_profile_options = {
+        'sports': sorted({row.get('sport') for row in player_profiles if row.get('sport')}),
+        'stats': sorted({row.get('stat') for row in player_profiles if row.get('stat')}),
+        'directions': ['OVER', 'UNDER'],
+        'reliabilities': ['ANCHOR', 'WATCH', 'DEVELOPING', 'AVOID'],
+        'models': ['UNDERVALUED', 'CALIBRATED', 'OVERVALUED'],
+        'promotions': ['PROMOTE HARD', 'PROMOTE', 'SURFACE', 'HOLD', 'STANDARD'],
+    }
+
+    player_profile_table = list(player_profiles)
+    profile_sport = str(profile_filters.get('sport') or '').strip().upper()
+    profile_stat = str(profile_filters.get('stat') or '').strip().upper()
+    profile_direction = str(profile_filters.get('direction') or '').strip().upper()
+    profile_reliability = str(profile_filters.get('reliability') or '').strip().upper()
+    profile_model = str(profile_filters.get('model') or '').strip().upper()
+    profile_promotion = str(profile_filters.get('promotion') or '').strip().upper()
+    profile_player = str(profile_filters.get('player') or '').strip()
+    if profile_sport:
+        player_profile_table = [row for row in player_profile_table if str(row.get('sport') or '').upper() == profile_sport]
+    if profile_stat:
+        player_profile_table = [row for row in player_profile_table if str(row.get('stat') or '').upper() == profile_stat]
+    if profile_direction in {'OVER', 'UNDER'}:
+        player_profile_table = [row for row in player_profile_table if str(row.get('direction') or '').upper() == profile_direction]
+    if profile_reliability:
+        player_profile_table = [row for row in player_profile_table if str(row.get('reliability') or '').upper() == profile_reliability]
+    if profile_model:
+        player_profile_table = [row for row in player_profile_table if str(row.get('model_accuracy') or '').upper() == profile_model]
+    if profile_promotion:
+        player_profile_table = [row for row in player_profile_table if str(row.get('promotion_signal') or '').upper() == profile_promotion]
+    if profile_player:
+        needle = profile_player.lower()
+        player_profile_table = [row for row in player_profile_table if needle in str(row.get('player') or '').lower()]
+    player_profile_filtered_total = len(player_profile_table)
+    player_profile_table = player_profile_table[:profile_limit]
+
+    promotion_order = {'PROMOTE HARD': 0, 'PROMOTE': 1, 'SURFACE': 2, 'HOLD': 3, 'STANDARD': 4}
+    promotion_signals = [
+        row for row in player_profiles
+        if row.get('promotion_signal') in {'PROMOTE HARD', 'PROMOTE', 'SURFACE', 'HOLD'}
+    ]
+    promotion_signals = sorted(
+        promotion_signals,
+        key=lambda row: (
+            promotion_order.get(row.get('promotion_signal'), 9),
+            -(row.get('missed_winner_count') or 0),
+            -(row.get('resolved') or 0),
+            -(row.get('hit_rate') or 0),
+        ),
+    )[:20]
     overvalued_players = [
         row for row in player_profiles
         if row.get('model_accuracy') == 'OVERVALUED' and row.get('resolved', 0) >= 10
@@ -1462,6 +2589,14 @@ def build_candidate_review_charts(graded: pd.DataFrame, floor_index_df: pd.DataF
             insights.append(f"{prefix} sweet spot: {best[label_key]} at {best['hit_rate']}% over {best['resolved']} resolved.")
             insights.append(f"{prefix} caution: {worst[label_key]} at {worst['hit_rate']}% over {worst['resolved']} resolved.")
 
+    streak_heat_all = build_streak_heat_chart(limit=50)
+    streak_heat_sports = sorted({row.get('sport') for row in streak_heat_all if row.get('sport')})
+    streak_sport_filter = str(streak_sport_filter or '').strip().upper()
+    streak_heat_chart = [
+        row for row in streak_heat_all
+        if not streak_sport_filter or row.get('sport') == streak_sport_filter
+    ][:25]
+
     return {
         'daily': daily,
         'by_confidence': by_confidence,
@@ -1475,8 +2610,15 @@ def build_candidate_review_charts(graded: pd.DataFrame, floor_index_df: pd.DataF
         'floor_mix_spots': floor_mix_spots,
         'cross_sport_mix': cross_sport_mix,
         'floor_efficiency': floor_efficiency,
-        'floor_reliability_table': floor_reliability_table,
+        'floor_reliability_table': floor_reliability_table[:80],
         'player_profiles': player_profile_table,
+        'player_profile_total': len(player_profiles),
+        'player_profile_filtered_total': player_profile_filtered_total,
+        'player_profile_options': player_profile_options,
+        'promotion_signals': promotion_signals,
+        'streak_heat_chart': streak_heat_chart,
+        'streak_heat_all': streak_heat_all,
+        'streak_heat_sports': streak_heat_sports,
         'overvalued_players': overvalued_players,
         'by_stat_time': time_series('Stat', top_n=7),
         'by_direction_time': time_series('Direction', top_n=2),

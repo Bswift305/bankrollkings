@@ -1,22 +1,24 @@
-{% extends "base.html" %}
-{% block title %}{{ stat_name }} Trends - Bankroll Kings{% endblock %}
+{% set active_page = 'heat_map' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ stat_name }} Streak Patterns - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 {% set trends_guide = get_method_guide('trends') %}
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-
     .trends-page {
-        --tr-bg: #0b0e13;
-        --tr-card: #111520;
-        --tr-elevated: #171d2b;
-        --tr-border: rgba(255,255,255,0.07);
-        --tr-accent: #2dd4bf;
-        --tr-copper: #c9803a;
-        --tr-gold: #facc15;
-        --tr-violet: #8b8fff;
-        --tr-text: #e8ecf4;
-        --tr-muted: #7a8499;
+        --tr-bg: var(--bg2);
+        --tr-card: var(--bg3);
+        --tr-elevated: var(--bg4);
+        --tr-border: var(--border);
+        --tr-accent: var(--accent);
+        --tr-copper: var(--bk-gold);
+        --tr-gold: var(--accent-copper);
+        --tr-violet: var(--bk-violet);
+        --tr-text: var(--text-bright);
+        --tr-muted: var(--text-muted);
         --tr-head: 'Barlow Condensed', sans-serif;
         --tr-body: 'DM Sans', sans-serif;
         --tr-mono: 'JetBrains Mono', monospace;
@@ -121,13 +123,13 @@
 <div class="trends-page">
 <div class="page-hero">
     <div>
-        <div class="page-kicker">{{ 'Playoff Color Mode' if playoff_palette_active else 'Trends Board' }}</div>
-        <h1>{{ stat_name }} <span class="accent">Trends</span></h1>
+        <div class="page-kicker">{{ 'Playoff Color Mode' if playoff_palette_active else 'Streak Patterns' }}</div>
+        <h1>{{ stat_name }} <span class="accent">Streak Patterns</span></h1>
         <div class="page-subtitle">
             {% if playoff_palette_active %}
             Playoff focus is active, so the board keeps one table but switches into a postseason palette for hits, misses, and opponent-specific reads.
             {% else %}
-            A cleaner read on recent hits, misses, and opponent-specific form so the trends board feels like the rest of the betting boards instead of a side utility.
+            A cleaner read on recent hits, misses, and opponent-specific form so the streak board feels like the rest of the betting boards instead of a side utility.
             {% endif %}
         </div>
     </div>
@@ -139,7 +141,7 @@
 
 <div class="trend-method-panel">
     <div class="trend-method-header">
-        <div class="trend-method-title">How To Use Trends</div>
+        <div class="trend-method-title">How To Use Streak Patterns</div>
         <a href="/glossary?postseason={{ 1 if postseason_only else 0 }}#samples-time-windows" class="btn btn-secondary btn-sm">Glossary</a>
     </div>
     <div class="trend-method-grid">
@@ -318,9 +320,9 @@
                     <td><strong>{{ player.line }}</strong></td>
                     <td>{{ player.avg }}</td>
                     <td>
-                        <span style="color: var(--accent);">O:{{ player.over_rate }}%</span>
+                        <span style="color: {{ ou_rate_color(player.over_rate) }};">O:{{ player.over_rate }}%</span>
                         <span style="color: var(--text-muted);">/</span>
-                        <span style="color: #ffb8b8;">U:{{ player.under_rate }}%</span>
+                        <span style="color: {{ ou_rate_color(player.under_rate) }};">U:{{ player.under_rate }}%</span>
                     </td>
                     <td>
                         <span class="{% if display_rate >= 80 %}hr-lock{% elif display_rate >= 70 %}hr-strong{% else %}hr-good{% endif %}">

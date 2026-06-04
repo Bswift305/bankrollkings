@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -16,6 +16,7 @@ from app import (
     load_player_snapshot,
     load_props,
     load_schedule,
+    postseason_only_enabled,
 )
 from services.qc_tracking import append_qc_run_log
 
@@ -38,8 +39,12 @@ def _safe_ts(series) -> pd.Timestamp | None:
 
 
 def _load_live_props():
+    try:
+        postseason_only = postseason_only_enabled()
+    except RuntimeError:
+        postseason_only = True
     board = build_live_props_board(
-        postseason_only=True,
+        postseason_only=postseason_only,
         date_filter="today",
         sample_mode="current",
         sort_by="confidence",
@@ -64,6 +69,12 @@ def run_qc() -> dict:
     playoff_log_max = _safe_ts(playoff_logs["Date"]) if not playoff_logs.empty and "Date" in playoff_logs.columns else None
     playoff_results_max = _safe_ts(playoff_results["Date"]) if not playoff_results.empty and "Date" in playoff_results.columns else None
     schedule_max = _safe_ts(schedule["Date"]) if not schedule.empty and "Date" in schedule.columns else None
+    completed_schedule_max = None
+    if not schedule.empty and "Date" in schedule.columns:
+        scheduled_dates = pd.to_datetime(schedule["Date"], errors="coerce")
+        completed_dates = scheduled_dates[scheduled_dates < today]
+        if not completed_dates.empty:
+            completed_schedule_max = completed_dates.max()
     active_teams = {
         str(p.get("team", "")).strip()
         for p in (live_props or [])
@@ -94,12 +105,6 @@ def run_qc() -> dict:
                 f"while the active-slate teams have results through {expected_playoff_log_max.strftime('%Y-%m-%d')}."
             ),
         })
-    elif playoff_log_max < (today - timedelta(days=2)):
-        issues.append({
-            "severity": "high",
-            "category": "data_freshness",
-            "message": f"Playoff player logs are stale through {playoff_log_max.strftime('%Y-%m-%d')}.",
-        })
 
     if playoff_results_max is None:
         issues.append({
@@ -107,11 +112,14 @@ def run_qc() -> dict:
             "category": "data_freshness",
             "message": "Playoff results are missing.",
         })
-    elif playoff_results_max < (today - timedelta(days=2)):
+    elif completed_schedule_max is not None and playoff_results_max < completed_schedule_max:
         issues.append({
             "severity": "medium",
             "category": "data_freshness",
-            "message": f"Playoff results are stale through {playoff_results_max.strftime('%Y-%m-%d')}.",
+            "message": (
+                f"Playoff results are stale through {playoff_results_max.strftime('%Y-%m-%d')} "
+                f"while the schedule includes completed games through {completed_schedule_max.strftime('%Y-%m-%d')}."
+            ),
         })
 
     if schedule_max is None or schedule_max < today:

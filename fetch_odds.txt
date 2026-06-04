@@ -1,0 +1,139 @@
+"""
+Bankroll Kings - Fetch Odds & Schedule
+======================================
+Run directly with: py fetch_odds.py
+"""
+
+import os
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+print("\n" + "="*50)
+print("  BANKROLL KINGS - Fetch Today's Games & Odds")
+print("="*50)
+
+# Setup paths
+BASE_DIR = Path(__file__).parent.resolve()
+DATA_DIR = BASE_DIR / 'data'
+SCHEDULES_DIR = DATA_DIR / 'schedules'
+
+SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    import pandas as pd
+except ImportError:
+    print("Installing pandas...")
+    os.system('pip install pandas --break-system-packages')
+    import pandas as pd
+
+try:
+    from nba_api.stats.endpoints import scoreboardv2
+    from nba_api.stats.static import teams
+except ImportError:
+    print("Installing nba_api...")
+    os.system('pip install nba_api --break-system-packages')
+    from nba_api.stats.endpoints import scoreboardv2
+    from nba_api.stats.static import teams
+
+# Build team ID to abbreviation map
+def get_team_abbrev_map():
+    """Create mapping of team ID to abbreviation"""
+    team_list = teams.get_teams()
+    return {t['id']: t['abbreviation'] for t in team_list}
+
+TEAM_MAP = get_team_abbrev_map()
+
+def fetch_nba_schedule():
+    """Fetch schedule from NBA Stats API"""
+    print(f"\n[1] Fetching schedule from NBA Stats API...")
+    
+    import time
+    schedule_data = []
+    
+    # Get games for today and next 6 days
+    for days_ahead in range(7):
+        game_date = (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+        
+        try:
+            time.sleep(0.7)  # Rate limit
+            scoreboard = scoreboardv2.ScoreboardV2(game_date=game_date)
+            
+            # Get the game header data
+            games_df = scoreboard.get_data_frames()[0]  # GameHeader
+            
+            if not games_df.empty:
+                print(f"    ✓ {game_date}: {len(games_df)} games")
+                
+                # Debug: print column names
+                if days_ahead == 0:
+                    print(f"    Columns: {list(games_df.columns)[:10]}...")
+                
+                for _, game in games_df.iterrows():
+                    # Try different column names for team IDs
+                    home_team_id = game.get('HOME_TEAM_ID', None)
+                    away_team_id = game.get('VISITOR_TEAM_ID', None)
+                    
+                    # Get abbreviations from our map
+                    home = TEAM_MAP.get(home_team_id, '')
+                    away = TEAM_MAP.get(away_team_id, '')
+                    
+                    # Fallback to direct abbreviation columns if available
+                    if not home:
+                        home = game.get('HOME_TEAM_ABBREVIATION', '')
+                    if not away:
+                        away = game.get('VISITOR_TEAM_ABBREVIATION', '')
+                    
+                    # Get game time
+                    game_status = game.get('GAME_STATUS_TEXT', 'TBD')
+                    
+                    if home and away and str(home) != 'nan' and str(away) != 'nan':
+                        schedule_data.append({
+                            'Date': game_date,
+                            'Away': str(away),
+                            'Home': str(home),
+                            'Time': str(game_status)
+                        })
+                    else:
+                        print(f"    ! Missing team data - Home ID: {home_team_id}, Away ID: {away_team_id}")
+            else:
+                if days_ahead == 0:
+                    print(f"    ! No games found for {game_date}")
+                    
+        except Exception as e:
+            print(f"    ! Error for {game_date}: {e}")
+            continue
+    
+    if schedule_data:
+        df = pd.DataFrame(schedule_data)
+        df.to_csv(SCHEDULES_DIR / 'NBA_Schedule.csv', index=False)
+        print(f"\n    ✓ Saved {len(schedule_data)} total games")
+        
+        # Show today's games
+        today = datetime.now().strftime('%Y-%m-%d')
+        todays = df[df['Date'] == today]
+        
+        print("\n" + "="*50)
+        print(f"  TODAY'S GAMES ({today})")
+        print("="*50)
+        
+        if not todays.empty:
+            for _, g in todays.iterrows():
+                print(f"    {g['Away']} @ {g['Home']} - {g['Time']}")
+        else:
+            print("    No games today")
+        
+        return True
+    else:
+        print("    ! No games found at all")
+        return False
+
+if __name__ == '__main__':
+    fetch_nba_schedule()
+    
+    print("\n" + "="*50)
+    print("  DONE! Run RUN.bat to start the server")
+    print("="*50 + "\n")
+    
+    # Keep window open
+    input("\nPress Enter to close...")

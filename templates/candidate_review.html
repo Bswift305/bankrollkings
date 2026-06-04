@@ -1,5 +1,8 @@
-{% extends "base.html" %}
+{% set active_page = 'review' %}
+{% extends "bk_base.html" %}
 {% block title %}Candidate Review - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -7,6 +10,9 @@
         <div class="page-kicker">Method Archive</div>
         <h1>Candidate <span class="accent">Review</span></h1>
         <div class="page-subtitle">A daily audit of what the system would have recommended, even if nobody saved a ticket. This is where we find which method ideas actually held up in the next game.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/missed-opportunities" class="btn btn-primary btn-sm">Missed Winners</a>
     </div>
 </div>
 
@@ -43,6 +49,16 @@
     <div class="control-panel">
         <form method="get" action="/candidate-review" class="control-group" style="width: 100%;">
             <span class="control-label">Filters</span>
+            <select name="review_limit" title="Archive rows to show" style="min-width: 125px;">
+                {% for option in [50, 100, 150, 250, 500, 750] %}
+                <option value="{{ option }}" {% if option == row_limit %}selected{% endif %}>{{ option }} archive rows</option>
+                {% endfor %}
+            </select>
+            <select name="profile_limit" title="Player profile buckets to show" style="min-width: 135px;">
+                {% for option in [50, 100, 150, 250, 500, 750] %}
+                <option value="{{ option }}" {% if option == profile_limit %}selected{% endif %}>{{ option }} profiles</option>
+                {% endfor %}
+            </select>
             <select name="sport" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
                 <option value="">All Sports</option>
                 {% for sport in sport_options %}
@@ -234,10 +250,17 @@
 {% if points %}
 <div style="display:grid; gap:11px; padding:12px;">
     {% for p in points %}
+    {% set is_top_bucket = p.bucket == '80+' %}
+    {% set strong_top_bucket = is_top_bucket and p.hit_rate is not none and p.hit_rate >= 75 %}
     <div>
         <div style="display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
-            <span>{{ p.bucket }}</span>
-            <span>{{ p.hit_rate }}% actual{% if p.expected_rate is not none %} / {{ p.expected_rate }}% expected{% endif %}</span>
+            <span>
+                {{ p.bucket }}
+                {% if strong_top_bucket %}
+                <span style="color:var(--accent); font-weight:800; margin-left:6px;">strong</span>
+                {% endif %}
+            </span>
+            <span>{{ p.hits }} / {{ p.resolved }} hits &middot; {{ p.hit_rate }}% actual{% if p.expected_rate is not none %} / {{ p.expected_rate }}% expected{% endif %}</span>
         </div>
         <div style="position:relative; height:10px; background:rgba(255,255,255,0.08); border-radius:999px;">
             <div style="height:100%; width:{{ p.hit_rate }}%; background:linear-gradient(90deg,var(--accent),var(--accent-copper)); border-radius:999px;"></div>
@@ -253,17 +276,39 @@
 {% endif %}
 {% endmacro %}
 
+<style>
+.heat-tier-1 { box-shadow: inset 0 0 0 1px rgba(132,215,210,0.04); }
+.heat-tier-2 { background: rgba(255, 200, 50, 0.08) !important; }
+.heat-tier-3 { background: rgba(255, 150, 30, 0.12) !important; }
+.heat-tier-4 { background: rgba(255, 100, 20, 0.18) !important; }
+.heat-tier-5 { background: rgba(255, 60, 10, 0.25) !important; border-color: rgba(255, 120, 40, 0.4) !important; }
+@media (max-width: 1100px) {
+    [class^="heat-tier-"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+</style>
+
 <div class="grid-3 mb-24">
     <div class="card">
         <div class="card-header"><div class="card-title">Hit Rate Over Time</div></div>
+        <div style="padding:10px 12px 0; color:var(--text-muted); font-size:12px; line-height:1.45;">
+            Daily resolved hit rate for the current filters. The dashed line is the expected rate from the model's average confidence, so this shows whether the board is beating or trailing its own projection over time.
+        </div>
         <div style="padding:12px;">{{ line_chart(charts.daily, 'date', charts.expected_rate) }}</div>
     </div>
     <div class="card">
         <div class="card-header"><div class="card-title">Confidence Calibration</div></div>
+        <div style="padding:10px 12px 0; color:var(--text-muted); font-size:12px; line-height:1.45;">
+            Each band compares actual hits to expected hit rate. The 80+ bucket is the premium signal bucket; when that stays high, the model's strongest grades are earning trust.
+        </div>
         {{ calibration_chart(charts.by_confidence) }}
     </div>
     <div class="card">
         <div class="card-header"><div class="card-title">Line Buckets</div></div>
+        <div style="padding:10px 12px 0; color:var(--text-muted); font-size:12px; line-height:1.45;">
+            Groups props by line size to show where outcomes are most predictable. Larger samples are more trustworthy; small buckets can be hot, but still need more confirmation.
+        </div>
         {{ bar_chart(charts.by_line, 'bucket') }}
     </div>
 </div>
@@ -372,7 +417,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in charts.floor_reliability_table %}
+                        {% for row in charts.floor_reliability_table[:15] %}
                         <tr>
                             <td>{{ row.sport }}</td>
                             <td>{{ row.stat }}</td>
@@ -426,7 +471,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in charts.floor_mix_spots %}
+                        {% for row in charts.floor_mix_spots[:15] %}
                         <tr>
                             <td>{{ row.label }}</td>
                             <td>{{ row.resolved }}</td>
@@ -445,54 +490,252 @@
     </div>
 </div>
 
+{% if charts.streak_heat_chart %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Cross-Sport Streak Heat Chart</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Hot hands across all sports, ranked by current hit streak, heat score, longest streak, and sample size. Unique prop outcomes only; duplicate method rows are removed.</div>
+        </div>
+        <span class="badge">Top {{ [charts.streak_heat_chart|length, 15]|min }} / {{ charts.streak_heat_chart|length }}</span>
+    </div>
+    <div class="control-panel" style="border-left:0; border-right:0; border-radius:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span class="page-kicker" style="margin:0;">Sport</span>
+        <a href="/candidate-review?streak_sport=" class="btn {% if not streak_sport_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        {% for sport in charts.streak_heat_sports %}
+        <a href="/candidate-review?streak_sport={{ sport }}" class="btn {% if streak_sport_filter == sport %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ sport }}</a>
+        {% endfor %}
+    </div>
+    <div style="padding:12px; display:grid; gap:8px;">
+        {% for row in charts.streak_heat_chart[:15] %}
+        <div class="heat-tier-{{ row.heat_tier }}" style="display:grid; grid-template-columns:42px minmax(180px,1.2fr) minmax(120px,.8fr) minmax(150px,1fr) minmax(110px,.7fr) minmax(110px,.7fr) 96px; gap:12px; align-items:center; padding:11px 12px; border-radius:8px; border:1px solid rgba(132,215,210,0.12); background:rgba(14,30,40,0.72);">
+            <div style="font-size:18px; font-weight:900; color:var(--accent);">#{{ loop.index }}</div>
+            <div>
+                <a href="/player/{{ row.player|urlencode }}" style="color:var(--text-bright); font-weight:900; text-decoration:none;">{{ row.player }}</a>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">{{ row.total_resolved }} resolved | {{ row.hits }}-{{ row.misses }} | {{ row.hit_rate }}%</div>
+            </div>
+            <div>
+                <span class="badge">{{ row.sport }}</span>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:5px;">{{ row.stat }} {{ row.direction }}</div>
+            </div>
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
+                    <span>Current hit streak</span>
+                    <span>{{ row.current_streak }}/10</span>
+                </div>
+                <div style="height:9px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden;">
+                    <div style="height:100%; width:{{ [row.current_streak * 10, 100]|min }}%; background:linear-gradient(90deg,var(--accent),var(--accent-copper));"></div>
+                </div>
+                <div style="display:flex; gap:3px; margin-top:6px;">
+                    {% for cell in row.heat_cells[:10] %}
+                    <span style="width:14px; height:14px; border-radius:4px; background:{% if cell.active %}linear-gradient(135deg,var(--accent),var(--accent-copper)){% else %}rgba(255,255,255,0.08){% endif %};"></span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted);">
+                <div style="color:var(--text-bright); font-weight:900;">Longest {{ row.longest_streak }}</div>
+                <div>Miss run {{ row.longest_miss_streak }}</div>
+            </div>
+            <div style="font-family:monospace; letter-spacing:2px; color:var(--text-muted);">
+                {% for result in row.last_5 %}
+                <span style="color:{% if result == 'H' %}var(--accent){% else %}var(--danger){% endif %};">{{ 'H' if result == 'H' else 'M' }}</span>
+                {% endfor %}
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:20px; color:var(--accent); font-weight:900;">{{ row.heat_score }}</div>
+                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px;">heat score</div>
+                <a href="/parlay?player={{ row.player|urlencode }}&sport={{ row.sport }}&stat={{ row.stat }}&direction={{ row.direction|lower }}&sample=current&source=streak_heat" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Parlay</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="table-shell">
+        <table class="data-table" data-sortable-table="streak-heat">
+            <thead>
+                <tr>
+                    <th data-sort-type="number">Rank</th>
+                    <th data-sort-type="text">Player</th>
+                    <th data-sort-type="text">Sport</th>
+                    <th data-sort-type="text">Stat</th>
+                    <th data-sort-type="text">Dir</th>
+                    <th data-sort-type="number">Current</th>
+                    <th data-sort-type="number">Longest</th>
+                    <th data-sort-type="number">Resolved</th>
+                    <th data-sort-type="number">Hit %</th>
+                    <th data-sort-type="number">Heat</th>
+                    <th data-sort-type="text">Last 10</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in charts.streak_heat_chart[:15] %}
+                <tr>
+                    <td data-sort-value="{{ loop.index }}">{{ loop.index }}</td>
+                    <td data-sort-value="{{ row.player }}"><a href="/player/{{ row.player|urlencode }}" style="font-weight:900;">{{ row.player }}</a></td>
+                    <td data-sort-value="{{ row.sport }}">{{ row.sport }}</td>
+                    <td data-sort-value="{{ row.stat }}">{{ row.stat }}</td>
+                    <td data-sort-value="{{ row.direction }}"><span class="badge">{{ row.direction }}</span></td>
+                    <td data-sort-value="{{ row.current_streak }}">{{ row.current_streak }}</td>
+                    <td data-sort-value="{{ row.longest_streak }}">{{ row.longest_streak }}</td>
+                    <td data-sort-value="{{ row.total_resolved }}">{{ row.total_resolved }}</td>
+                    <td data-sort-value="{{ row.hit_rate }}">{{ row.hit_rate }}%</td>
+                    <td data-sort-value="{{ row.heat_score }}"><span class="badge {% if row.heat_tier >= 4 %}badge-accent{% endif %}">{{ row.heat_score }}</span></td>
+                    <td data-sort-value="{{ row.last_10_label }}" style="font-family:monospace; letter-spacing:2px;">
+                        {% for result in row.last_10 %}
+                        <span style="color:{% if result == 'H' %}var(--accent){% else %}var(--danger){% endif %};">{{ result }}</span>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="card mb-24">
     <div class="card-header">
         <div>
             <div class="card-title">Player Hit Profiles</div>
             <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Actual hit/miss rate by player, sport, stat, and direction for this filtered slice.</div>
         </div>
-        <span class="badge">{{ charts.player_profiles|length }} Buckets</span>
+        <span class="badge">
+            Top {{ [charts.player_profiles|length, 15]|min }} shown
+            {% if charts.player_profile_filtered_total is defined %}
+            / {{ charts.player_profile_filtered_total }} filtered
+            {% endif %}
+            / {{ charts.player_profile_total }} total
+        </span>
     </div>
+    <div class="control-panel" style="border-left:0; border-right:0; border-radius:0; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <form method="get" action="/candidate-review" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; width:100%;">
+            <input type="hidden" name="sport" value="{{ sport_filter }}">
+            <input type="hidden" name="method" value="{{ method_filter }}">
+            <input type="hidden" name="outcome" value="{{ outcome_filter }}">
+            <input type="hidden" name="stat" value="{{ stat_filter }}">
+            <input type="hidden" name="direction" value="{{ direction_filter }}">
+            <input type="hidden" name="market_depth" value="{{ market_depth_filter }}">
+            <input type="hidden" name="player_tier" value="{{ player_tier_filter }}">
+            <input type="hidden" name="bet_tier" value="{{ bet_tier_filter }}">
+            <input type="hidden" name="floor_reliability" value="{{ floor_reliability_filter }}">
+            <input type="hidden" name="weight_profile" value="{{ weight_profile_filter }}">
+            <input type="hidden" name="volatility" value="{{ volatility_filter }}">
+            <input type="hidden" name="market_gate" value="{{ market_gate_filter }}">
+            <input type="hidden" name="days_to_result" value="{{ days_to_result_filter }}">
+            <input type="hidden" name="start_date" value="{{ start_date }}">
+            <input type="hidden" name="end_date" value="{{ end_date }}">
+            <input type="hidden" name="min_confidence" value="{{ min_confidence }}">
+            <input type="hidden" name="review_limit" value="{{ row_limit }}">
+            <input type="text" name="profile_player" value="{{ profile_player_filter }}" placeholder="Find player" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 180px;">
+            <select name="profile_limit" title="Player profile buckets to show" style="min-width: 135px;">
+                {% for option in [50, 100, 150, 250, 500, 750] %}
+                <option value="{{ option }}" {% if option == profile_limit %}selected{% endif %}>{{ option }} profiles</option>
+                {% endfor %}
+            </select>
+            <select name="profile_sport" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 120px;">
+                <option value="">All Sports</option>
+                {% for option in charts.player_profile_options.sports %}
+                <option value="{{ option }}" {% if option == profile_sport_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <select name="profile_stat" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 140px;">
+                <option value="">All Stats</option>
+                {% for option in charts.player_profile_options.stats %}
+                <option value="{{ option }}" {% if option == profile_stat_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <select name="profile_direction" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 130px;">
+                <option value="">All Directions</option>
+                {% for option in charts.player_profile_options.directions %}
+                <option value="{{ option }}" {% if option == profile_direction_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <select name="profile_reliability" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Reliability</option>
+                {% for option in charts.player_profile_options.reliabilities %}
+                <option value="{{ option }}" {% if option == profile_reliability_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <select name="profile_model" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 145px;">
+                <option value="">All Model Reads</option>
+                {% for option in charts.player_profile_options.models %}
+                <option value="{{ option }}" {% if option == profile_model_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <select name="profile_promotion" style="background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 8px; padding: 10px 12px; min-width: 155px;">
+                <option value="">All Promotion Signals</option>
+                {% for option in charts.player_profile_options.promotions %}
+                <option value="{{ option }}" {% if option == profile_promotion_filter %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Filter Profiles</button>
+            {% if profile_sport_filter or profile_stat_filter or profile_direction_filter or profile_reliability_filter or profile_model_filter or profile_promotion_filter or profile_player_filter %}
+            <a href="/candidate-review?sport={{ sport_filter }}&method={{ method_filter }}&outcome={{ outcome_filter }}&stat={{ stat_filter }}&direction={{ direction_filter }}&market_depth={{ market_depth_filter }}&player_tier={{ player_tier_filter }}&bet_tier={{ bet_tier_filter }}&floor_reliability={{ floor_reliability_filter }}&weight_profile={{ weight_profile_filter }}&volatility={{ volatility_filter }}&market_gate={{ market_gate_filter }}&days_to_result={{ days_to_result_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&min_confidence={{ min_confidence }}" class="btn btn-secondary btn-sm">Clear Profile Filters</a>
+            {% endif %}
+        </form>
+    </div>
+    {% if charts.promotion_signals %}
+    <div class="control-panel" style="border-left:0; border-right:0; border-radius:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px;">
+        {% for row in charts.promotion_signals[:6] %}
+        <a href="/candidate-review?profile_player={{ row.player|urlencode }}&profile_sport={{ row.sport }}&profile_stat={{ row.stat }}&profile_direction={{ row.direction }}" class="parlay-surface-soft" style="display:block; padding:12px; text-decoration:none;">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                <span class="badge {% if row.promotion_signal == 'PROMOTE HARD' %}badge-accent{% elif row.promotion_signal == 'HOLD' %}badge-danger{% endif %}">{{ row.promotion_signal }}</span>
+                <span style="font-size:11px; color:var(--text-muted);">{{ row.missed_winner_count }} missed hits</span>
+            </div>
+            <div style="margin-top:8px;"><span class="player-link">{{ row.player }}</span></div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">{{ row.sport }} {{ row.stat }} {{ row.direction }} | {{ row.resolved }} resolved at {{ row.hit_rate }}%</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:6px; line-height:1.45;">{{ row.promotion_reason }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
     {% if charts.player_profiles %}
     <div class="table-shell">
-        <table class="data-table">
+        <table class="data-table" data-sortable-table="player-profiles">
             <thead>
                 <tr>
-                    <th>Player</th>
-                    <th>Sport</th>
-                    <th>Stat</th>
-                    <th>Dir</th>
-                    <th>Resolved</th>
-                    <th>Hits</th>
-                    <th>Misses</th>
-                    <th>Hit %</th>
-                    <th>Avg Conf</th>
-                    <th>Model</th>
-                    <th>Reliability</th>
-                    <th>Line Split</th>
+                    <th data-sort-type="text">Player</th>
+                    <th data-sort-type="text">Sport</th>
+                    <th data-sort-type="text">Stat</th>
+                    <th data-sort-type="text">Dir</th>
+                    <th data-sort-type="number">Resolved</th>
+                    <th data-sort-type="number">Hits</th>
+                    <th data-sort-type="number">Misses</th>
+                    <th data-sort-type="number">Hit %</th>
+                    <th data-sort-type="number">Avg Conf</th>
+                    <th data-sort-type="text">Model</th>
+                    <th data-sort-type="text">Reliability</th>
+                    <th data-sort-type="text">Promotion</th>
+                    <th data-sort-type="number">Missed 7d</th>
+                    <th data-sort-type="text">Line Split</th>
                 </tr>
             </thead>
             <tbody>
-                {% for row in charts.player_profiles %}
+                {% for row in charts.player_profiles[:15] %}
                 <tr>
-                    <td>
-                        {% if row.sport == 'NBA' %}
+                    <td data-sort-value="{{ row.player }}">
                         <a href="/player/{{ row.player|urlencode }}" style="color:var(--text-bright); font-weight:800;">{{ row.player }}</a>
-                        {% else %}
-                        <span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>
+                    </td>
+                    <td data-sort-value="{{ row.sport }}">{{ row.sport }}</td>
+                    <td data-sort-value="{{ row.stat }}">{{ row.stat }}</td>
+                    <td data-sort-value="{{ row.direction }}"><span class="badge">{{ row.direction }}</span></td>
+                    <td data-sort-value="{{ row.resolved }}">{{ row.resolved }}</td>
+                    <td data-sort-value="{{ row.hits }}">{{ row.hits }}</td>
+                    <td data-sort-value="{{ row.misses }}">{{ row.misses }}</td>
+                    <td data-sort-value="{{ row.hit_rate }}">{{ row.hit_rate }}%</td>
+                    <td data-sort-value="{{ row.avg_confidence if row.avg_confidence is not none else -1 }}">{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}-{% endif %}</td>
+                    <td data-sort-value="{{ row.model_accuracy }}"><span class="badge {% if row.model_accuracy == 'OVERVALUED' %}badge-danger{% elif row.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.model_accuracy }}</span></td>
+                    <td data-sort-value="{{ row.reliability }}"><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% elif row.reliability == 'AVOID' %}badge-danger{% endif %}" style="white-space:nowrap;">{{ row.reliability }}</span></td>
+                    <td data-sort-value="{{ row.promotion_signal }}">
+                        <span class="badge {% if row.promotion_signal == 'PROMOTE HARD' %}badge-accent{% elif row.promotion_signal == 'HOLD' %}badge-danger{% endif %}" style="white-space:nowrap;">{{ row.promotion_signal }}</span>
+                        <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">{{ row.promotion_action }}</div>
+                    </td>
+                    <td data-sort-value="{{ row.missed_winner_count }}">
+                        {{ row.missed_winner_count }}
+                        {% if row.missed_winner_a_plus %}
+                        <div style="font-size:10px; color:var(--accent); margin-top:3px;">{{ row.missed_winner_a_plus }} A+</div>
                         {% endif %}
                     </td>
-                    <td>{{ row.sport }}</td>
-                    <td>{{ row.stat }}</td>
-                    <td><span class="badge">{{ row.direction }}</span></td>
-                    <td>{{ row.resolved }}</td>
-                    <td>{{ row.hits }}</td>
-                    <td>{{ row.misses }}</td>
-                    <td>{{ row.hit_rate }}%</td>
-                    <td>{% if row.avg_confidence is not none %}{{ row.avg_confidence }}{% else %}-{% endif %}</td>
-                    <td><span class="badge {% if row.model_accuracy == 'OVERVALUED' %}badge-danger{% elif row.model_accuracy == 'UNDERVALUED' %}badge-accent{% endif %}">{{ row.model_accuracy }}</span></td>
-                    <td><span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.reliability }}</span></td>
-                    <td style="font-size:11px; color:var(--text-muted);">
+                    <td data-sort-value="{{ row.line_note }}" style="font-size:11px; color:var(--text-muted);">
                         {{ row.line_note }}
                         {% if row.low_line_hit_rate is not none and row.high_line_hit_rate is not none %}
                         <div>Low {{ row.low_line_hit_rate }}% / High {{ row.high_line_hit_rate }}%</div>
@@ -731,7 +974,7 @@
 <div class="card">
     <div class="card-header">
         <div class="card-title">Recent Archived Candidates</div>
-        <span class="badge badge-accent">{{ rows|length }} Rows</span>
+        <span class="badge badge-accent">{{ rows|length }} shown / {{ summary.totals.candidates }} total</span>
     </div>
     {% if rows %}
     <div class="table-shell">
@@ -854,6 +1097,62 @@ document.querySelectorAll('[data-direction-choice]').forEach(function(button) {
         if (!input || !form) return;
         input.value = button.dataset.directionChoice || '';
         form.submit();
+    });
+});
+
+document.querySelectorAll('[data-sortable-table]').forEach(function(table) {
+    const headers = table.querySelectorAll('thead th');
+    headers.forEach(function(header, index) {
+        header.setAttribute('role', 'button');
+        header.setAttribute('tabindex', '0');
+        header.style.cursor = 'pointer';
+        header.title = 'Click to sort';
+
+        function sortColumn() {
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            const type = header.dataset.sortType || 'text';
+            const current = header.dataset.sortDir || '';
+            const next = current === 'asc' ? 'desc' : 'asc';
+            headers.forEach(function(other) {
+                other.dataset.sortDir = '';
+                other.classList.remove('sorted-asc', 'sorted-desc');
+                const original = other.dataset.sortLabel || other.textContent.replace(/[▲▼]/g, '').trim();
+                other.textContent = original;
+                other.dataset.sortLabel = original;
+            });
+            header.dataset.sortDir = next;
+            header.classList.add(next === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            const label = header.dataset.sortLabel || header.textContent.replace(/[▲▼]/g, '').trim();
+            header.dataset.sortLabel = label;
+            header.textContent = label + (next === 'asc' ? ' ▲' : ' ▼');
+
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort(function(a, b) {
+                const aCell = a.children[index];
+                const bCell = b.children[index];
+                let aValue = aCell ? (aCell.dataset.sortValue || aCell.textContent || '').trim() : '';
+                let bValue = bCell ? (bCell.dataset.sortValue || bCell.textContent || '').trim() : '';
+                if (type === 'number') {
+                    const aNum = parseFloat(String(aValue).replace(/[^0-9.-]/g, ''));
+                    const bNum = parseFloat(String(bValue).replace(/[^0-9.-]/g, ''));
+                    aValue = Number.isFinite(aNum) ? aNum : -Infinity;
+                    bValue = Number.isFinite(bNum) ? bNum : -Infinity;
+                    return next === 'asc' ? aValue - bValue : bValue - aValue;
+                }
+                const compare = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: 'base' });
+                return next === 'asc' ? compare : -compare;
+            });
+            rows.forEach(function(row) { tbody.appendChild(row); });
+        }
+
+        header.addEventListener('click', sortColumn);
+        header.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                sortColumn();
+            }
+        });
     });
 });
 </script>

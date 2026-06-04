@@ -1,10 +1,14 @@
-{% extends "base.html" %}
+{% set active_page = 'home' %}
+{% set active_sport = 'home' %}
+{% extends "public_base.html" %}
 {% block title %}Bankroll Kings - Betting Intelligence{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <section class="bk-public-hero">
     <div class="bk-public-copy">
-        <img src="/static/home-logo.webp" alt="Bankroll Kings" class="bk-public-logo">
+        <img src="/static/brand-latest-logo.webp" alt="Bankroll Kings" class="bk-public-logo">
         <div class="public-kicker">Betting intelligence for props, matchups, and market movement</div>
         <h1>Every prop has a story. This is where you read it.</h1>
         <p>
@@ -28,6 +32,42 @@
         </div>
     </div>
 </section>
+
+{% if streak_heat %}
+<section class="card mb-16 panel-glow playable-hot-card">
+    <div class="card-header compact-public-header playable-hot-header">
+        <div>
+            <div class="card-title">Playable Hot Hands</div>
+            <div class="cell-meta">Only players with a current prop on today's active slate. Offseason sports stay out of this preview.</div>
+        </div>
+        <a href="/candidate-review" class="btn btn-secondary btn-sm">Open Heat Chart</a>
+    </div>
+    <div class="playable-hot-list">
+            {% for row in streak_heat %}
+            <a href="{% if current_user %}/player/{{ row.player|urlencode }}{% else %}/pricing{% endif %}" class="playable-hot-row">
+                <span class="playable-rank">#{{ loop.index }}</span>
+                <span class="playable-player">
+                    <strong>{{ row.player }}</strong>
+                    <small>{{ row.sport }} · {{ row.stat }} {{ row.direction }}</small>
+                </span>
+                <span class="playable-track" aria-label="{{ row.current_streak }} straight hits">
+                    {% for i in range(1, 11) %}
+                    <i class="{% if i <= row.current_streak %}on{% endif %}"></i>
+                    {% endfor %}
+                </span>
+                <span class="playable-score">
+                    <strong>{{ row.current_streak }}</strong>
+                    <small>streak</small>
+                </span>
+                <span class="playable-score heat">
+                    <strong>{{ row.heat_score }}</strong>
+                    <small>heat</small>
+                </span>
+            </a>
+            {% endfor %}
+    </div>
+</section>
+{% endif %}
 
 <section class="card mb-16 panel-glow live-sports-card">
     <div class="card-header panel-header-gloss compact-public-header">
@@ -190,9 +230,9 @@
 
 <style>
 .bk-public-hero {
-    min-height: 360px;
-    margin-bottom: 12px;
-    padding: 28px 30px;
+    min-height: 270px;
+    margin-bottom: 10px;
+    padding: 20px 30px;
     border: 1px solid rgba(132,215,210,0.26);
     border-radius: 16px;
     position: relative;
@@ -201,7 +241,7 @@
     align-items: center;
     background:
         linear-gradient(90deg, rgba(2,7,10,0.96) 0%, rgba(5,17,24,0.92) 48%, rgba(0,0,0,0.34) 100%),
-        url('/static/king-bankroll.webp') right center / auto 112% no-repeat;
+        url('/static/king-bankroll.webp') right center / auto 108% no-repeat;
     box-shadow: 0 0 50px rgba(110,162,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .bk-public-hero::before {
@@ -219,9 +259,9 @@
     max-width: 720px;
 }
 .bk-public-logo {
-    width: min(100%, 320px);
+    width: min(100%, 232px);
     height: auto;
-    margin: 0 0 16px;
+    margin: 0 0 12px;
     display: block;
     filter: drop-shadow(0 0 22px rgba(132,215,210,0.24)) drop-shadow(0 0 42px rgba(110,162,255,0.16));
 }
@@ -231,20 +271,20 @@
     font-weight: 800;
     letter-spacing: 1.6px;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 .bk-public-copy h1 {
-    max-width: 680px;
-    margin: 0 0 12px;
-    font-size: 34px;
+    max-width: 670px;
+    margin: 0 0 9px;
+    font-size: 30px;
     line-height: 1.08;
 }
 .bk-public-copy p {
     max-width: 700px;
-    margin: 0 0 14px;
+    margin: 0 0 12px;
     color: #b8c8d2;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 13px;
+    line-height: 1.45;
 }
 .public-actions {
     display: flex;
@@ -256,11 +296,11 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 12px;
 }
 .public-grid {
     display: grid;
-    gap: 12px;
+    gap: 10px;
 }
 .public-grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
 .public-grid-4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
@@ -269,14 +309,14 @@
 .public-mini-panel {
     display: block;
     text-decoration: none;
-    padding: 12px;
-    border-radius: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
     border: 1px solid rgba(132,215,210,0.16);
     background:
         linear-gradient(180deg, rgba(255,255,255,0.028) 0%, rgba(255,255,255,0) 28%),
         linear-gradient(135deg, rgba(110,162,255,0.10) 0%, rgba(132,215,210,0.06) 48%, rgba(184,115,51,0.05) 100%),
         rgba(16, 29, 37, 0.96);
-    box-shadow: 0 16px 32px rgba(0,0,0,0.16);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.14);
 }
 .public-feature-card:hover,
 .public-sport-card:hover {
@@ -285,18 +325,139 @@
 }
 .public-feature-card h2,
 .public-sport-card h3 {
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     color: var(--text-bright);
-    font-size: 22px;
+    font-size: 19px;
     line-height: 1.15;
 }
 .public-feature-card p,
 .public-sport-card p,
 .public-mini-panel p {
-    margin: 0 0 12px;
+    margin: 0 0 8px;
     color: #aebdc6;
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.42;
+}
+.public-signal-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+.public-signal-panel .feature-kicker,
+.public-signal-panel .micro-chip {
+    grid-column: 1 / -1;
+}
+.public-signal-panel p {
+    margin: 2px 0 0;
+}
+.public-signal-metric {
+    min-width: 86px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    border: 1px solid rgba(215,167,79,0.24);
+    background: rgba(215,167,79,0.07);
+    text-align: right;
+}
+.public-signal-metric span {
+    display: block;
+    color: var(--bk-gold2);
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 800;
+}
+.public-signal-metric small,
+.public-signal-metric em {
+    display: block;
+    color: var(--text3);
+    font-size: 10px;
+    font-style: normal;
+}
+.playable-hot-card {
+    overflow: hidden;
+    border-color: rgba(132,215,210,0.18);
+}
+.playable-hot-header {
+    background:
+        linear-gradient(90deg, rgba(15,30,37,0.96), rgba(10,17,22,0.92)),
+        linear-gradient(110deg, transparent 0%, rgba(132,215,210,0.08) 46%, transparent 70%);
+}
+.playable-hot-list {
+    display: grid;
+    gap: 1px;
+    padding: 0;
+    background: rgba(132,215,210,0.10);
+}
+.playable-hot-row {
+    display: grid;
+    grid-template-columns: 44px minmax(180px, 1fr) minmax(160px, .85fr) 72px 72px;
+    gap: 12px;
+    align-items: center;
+    min-height: 68px;
+    padding: 12px 14px;
+    color: var(--text-muted);
+    text-decoration: none;
+    background:
+        linear-gradient(90deg, rgba(11,23,29,0.98), rgba(14,25,30,0.96));
+}
+.playable-hot-row:hover {
+    background:
+        linear-gradient(90deg, rgba(14,32,38,0.98), rgba(18,31,35,0.96));
+}
+.playable-rank {
+    color: var(--accent);
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: .04em;
+}
+.playable-player strong {
+    display: block;
+    color: var(--text-bright);
+    font-size: 14px;
+}
+.playable-player small {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.playable-track {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 4px;
+}
+.playable-track i {
+    display: block;
+    height: 7px;
+    border-radius: 99px;
+    background: rgba(145,168,184,0.16);
+}
+.playable-track i.on {
+    background: linear-gradient(90deg, #6de8df, #d7a74f);
+    box-shadow: 0 0 10px rgba(132,215,210,0.26);
+}
+.playable-score {
+    text-align: right;
+}
+.playable-score strong {
+    display: block;
+    color: var(--bk-gold2);
+    font-family: var(--font-mono);
+    font-size: 18px;
+    line-height: 1;
+}
+.playable-score.heat strong {
+    color: var(--accent);
+}
+.playable-score small {
+    display: block;
+    margin-top: 3px;
+    color: var(--text3);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
 }
 .public-feature-card span {
     color: var(--accent);
@@ -316,13 +477,13 @@
 .live-sport-strip {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
 }
 .live-sport-tile {
     display: block;
     min-width: 0;
-    padding: 12px;
-    border-radius: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
     border: 1px solid rgba(132,215,210,0.18);
     background: rgba(8, 20, 28, 0.90);
     text-decoration: none;
@@ -336,14 +497,14 @@
     gap: 10px;
     align-items: center;
     color: var(--text-bright);
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 900;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 .live-sport-statline {
     color: #b8c8d2;
     font-size: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 .live-sport-statline strong {
     color: var(--accent);
@@ -361,7 +522,7 @@
 }
 .live-sport-matchups {
     display: grid;
-    gap: 5px;
+    gap: 3px;
 }
 .live-sport-matchup-link {
     display: block;
@@ -370,7 +531,7 @@
     font-weight: 800;
     line-height: 1.25;
     text-decoration: none;
-    padding: 4px 0;
+    padding: 3px 0;
 }
 .live-sport-matchup-link:hover {
     color: var(--accent);
@@ -438,6 +599,13 @@
     }
     .live-sport-strip {
         grid-template-columns: 1fr;
+    }
+    .playable-hot-row {
+        grid-template-columns: 36px minmax(0, 1fr) 56px 56px;
+    }
+    .playable-track {
+        grid-column: 2 / -1;
+        order: 5;
     }
 }
 </style>

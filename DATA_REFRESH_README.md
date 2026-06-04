@@ -75,6 +75,43 @@ What the new columns do:
 - `Book` / `BetBook`: source book
 - `import_props.py`: converts rough CSV/XLS/XLSX exports into the app format
 
+### Football Game Lines and Futures
+
+Early NFL and CFB lines should be refreshed with:
+```
+py -3 refresh_football_line_movement.py
+```
+
+Championship/futures outrights should be refreshed with:
+```
+py -3 refresh_futures_odds.py
+```
+
+These commands write latest odds files and append movement history under `data/tracking/`. The first captured price becomes the opener/baseline; later runs show open-vs-current movement.
+
+### NFL Next Gen Stats
+
+Next Gen Stats passing, receiving, and rushing statboards can be refreshed with:
+```
+py -3 refresh_ngs_stats.py
+```
+
+For a targeted pull:
+```
+py -3 fetch_ngs_stats.py --season 2025 --season-types REG --categories passing,receiving,rushing --aggregate --weekly
+```
+
+Outputs write to `data/ngs/`. Regular-season aggregate files are available from the NGS endpoint. Postseason aggregate requests may return zero rows, so use the postseason weekly combined files for playoff samples.
+
+### MLB Statcast
+
+Baseball Savant Statcast hitter and pitcher aggregates can be refreshed with:
+```
+py -3 refresh_mlb_statcast.py
+```
+
+Outputs write to `data/statcast/`. The current pipeline builds merged hitter and pitcher profile files from expected stats, barrels/exit velocity, percentile ranks, sprint speed, and pitcher arsenal data.
+
 ---
 
 ## Rate Limits

@@ -1,0 +1,50 @@
+{% if ngs_context and ngs_context.available %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Next Gen Stats Profile</div>
+            <div class="cell-meta" style="margin-top:4px;">{{ ngs_context.season }} {{ ngs_context.season_type }} baseline{% if ngs_context.position %} · {{ ngs_context.position }}{% endif %}{% if ngs_context.team %} · {{ ngs_context.team }}{% endif %}</div>
+        </div>
+        <span class="badge badge-accent">NGS</span>
+    </div>
+    {% for profile in ngs_context.profiles %}
+    <div class="p-16" style="{% if not loop.last %}border-bottom:1px solid var(--border);{% endif %}">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+            <div>
+                <div class="page-kicker">{{ profile.title }} Layer</div>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">Public Next Gen statboard profile and last-four weekly trend where available.</div>
+            </div>
+            <span class="badge">{{ profile.position or profile.title }}</span>
+        </div>
+        <div class="grid-4" style="gap:12px;">
+            {% for metric in profile.metrics %}
+            <div class="stat-card">
+                <div class="page-kicker">{{ metric.label }}</div>
+                <div class="stat-value" style="font-size:22px;">{{ metric.value }}</div>
+                <div class="stat-note">{{ metric.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if profile.trends %}
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:12px;">
+            {% for trend in profile.trends %}
+            <div class="stat-card">
+                <div class="page-kicker">{{ trend.label }}</div>
+                <div class="stat-value" style="font-size:20px;">{{ trend.summary }}</div>
+                <div class="stat-note">
+                    {% if trend.points %}
+                        {% for point in trend.points %}
+                            W{{ point.week }} {{ point.value }}{% if not loop.last %} · {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        weekly sample pending
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

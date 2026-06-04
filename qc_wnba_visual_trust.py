@@ -7,7 +7,7 @@ from services.qc_tracking import append_qc_run_log
 
 
 ROUTES = (
-    ("/sports/wnba", ("WNBA Expansion", "Live Board Status", "Current Context Layer")),
+    ("/sports/wnba", ("WNBA Command Center", "Live Board Status", "Current Context Layer")),
     ("/sports/wnba/market-edge?date=all", ("WNBA Method Board", "How To Use", "Context")),
     ("/sports/wnba/floor?date=all", ("WNBA Method Board", "How To Use", "Context")),
     ("/sports/wnba/trends?date=all", ("WNBA Method Board", "How To Use", "Context")),
@@ -34,7 +34,7 @@ def run_qc() -> dict:
 
     for path, markers in ROUTES:
         route_count += 1
-        response = client.get(path)
+        response = client.get(path, follow_redirects=True)
         text = response.get_data(as_text=True)
         if response.status_code != 200:
             failures.append(f"{path}: returned {response.status_code}.")

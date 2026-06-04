@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'elite' %}
+{% set active_sport = 'mlb' %}
+{% extends "bk_base.html" %}
 {% block title %}Elite Cockpit - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero elite-hero-mascot">
@@ -93,6 +97,44 @@
     </div>
 </div>
 
+{% if streak_heat %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Top Hot Hands</div>
+            <div class="cell-meta" style="margin-top:4px;">Cross-sport streak heat from unique resolved outcomes.</div>
+        </div>
+        <a href="/candidate-review" class="btn btn-secondary btn-sm">Open Full Heat Chart</a>
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Bucket</th>
+                    <th>Current</th>
+                    <th>Resolved</th>
+                    <th>Heat</th>
+                    <th>Build</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in streak_heat %}
+                <tr>
+                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.last_10_label }}</div></td>
+                    <td><span class="badge">{{ row.sport }}</span> {{ row.stat }} {{ row.direction }}</td>
+                    <td>{{ row.current_streak }} hits</td>
+                    <td>{{ row.total_resolved }} | {{ row.hit_rate }}%</td>
+                    <td><span class="badge {% if row.heat_tier >= 4 %}badge-accent{% endif %}">{{ row.heat_score }}</span></td>
+                    <td><a href="/parlay?player={{ row.player|urlencode }}&sport={{ row.sport }}&stat={{ row.stat }}&direction={{ row.direction|lower }}&sample=current&source=streak_heat" class="btn btn-secondary btn-sm">+ Parlay</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
         <div>
@@ -119,7 +161,7 @@
             <tbody>
                 {% for row in mlb_power_suppression.rows %}
                 <tr>
-                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }} | {{ row.game }}</div></td>
+                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }} | {{ row.game }}</div></td>
                     <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}<div class="cell-meta">{{ row.book }} {{ '+' if row.under_price > 0 }}{{ row.under_price }}</div></td>
                     <td>
                         <div class="cell-meta">HR {{ row.hr_rate }}% | TB/G {{ row.tb_per_game }}</div>
@@ -272,7 +314,7 @@
                 {% for row in sharp_money %}
                 <tr>
                     <td>
-                        <strong>{{ row.player }}</strong>
+                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                         <div class="cell-meta">{{ row.sport }} · {{ row.stat }}{% if row.game %} · {{ row.game }}{% endif %}</div>
                     </td>
                     <td>{{ row.book or '-' }}</td>
@@ -358,7 +400,7 @@
                     {% for row in alert_history.recent %}
                     <div class="parlay-surface-soft" style="padding:10px;">
                         <div style="display:flex; justify-content:space-between; gap:10px;">
-                            <strong>{{ row.Player }}</strong>
+                        <a class="player-link" href="/player/{{ row.Player|urlencode }}">{{ row.Player }}</a>
                             <span class="badge">{{ row.OutcomeState or 'Pending' }}</span>
                         </div>
                         <div class="cell-meta" style="margin-top:5px;">{{ row.Sport }} | {{ row.SharpSide }} {{ row.Stat }} {{ row.CurrentLine }} | {{ row.Alignment }} | {{ row.Book }}</div>
@@ -396,7 +438,7 @@
                 {% for row in best_books %}
                 <tr>
                     <td>
-                        <strong>{{ row.player }}</strong>
+                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                         <div class="cell-meta">{{ row.sport }} · {{ row.direction }} {{ row.stat }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</div>
                     </td>
                     <td>
@@ -424,9 +466,9 @@
             <div class="card-title">Cross-Sport Parlay EV Builder</div>
             <div class="cell-meta" style="margin-top:4px;">Suggested from current MLB/WNBA reliability, market price, and correlation rules.</div>
         </div>
-        <span class="badge badge-accent">Correlation {{ parlay_ev.correlation_label }}</span>
+        <span class="badge badge-accent">Correlation {{ parlay_ev.correlation_label }}{% if parlay_ev.correlation_iq.score is not none %} / {{ parlay_ev.correlation_iq.score }}{% endif %}</span>
     </div>
-    <div class="grid-4 p-16" style="gap:12px;">
+    <div class="grid-5 p-16" style="gap:12px;">
         <div class="parlay-surface-soft" style="padding:12px;">
             <div class="page-kicker" style="margin-bottom:6px;">True Probability</div>
             <div style="font-size:26px; font-weight:800; color:var(--accent);">{% if parlay_ev.true_prob is not none %}{{ parlay_ev.true_prob }}%{% else %}-{% endif %}</div>
@@ -443,9 +485,24 @@
             <div class="page-kicker" style="margin-bottom:6px;">Decimal Odds</div>
             <div style="font-size:26px; font-weight:800; color:var(--accent-copper);">{% if parlay_ev.decimal_odds is not none %}{{ parlay_ev.decimal_odds }}x{% else %}-{% endif %}</div>
         </div>
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">BankrollIQ</div>
+            <div style="font-size:26px; font-weight:800; color:{% if parlay_ev.bankroll_iq.tone == 'danger' %}var(--danger){% elif parlay_ev.bankroll_iq.tone == 'copper' %}var(--accent-copper){% elif parlay_ev.bankroll_iq.tone == 'blue' %}var(--accent-blue){% else %}var(--accent){% endif %};">{{ parlay_ev.bankroll_iq.label }}</div>
+            <div class="cell-meta">{% if parlay_ev.bankroll_iq.recommended_pct is not none %}{{ parlay_ev.bankroll_iq.recommended_pct }}% bankroll cap{% else %}No stake read{% endif %}</div>
+        </div>
     </div>
     <div class="p-16" style="padding-top:0;">
-        <div class="cell-meta" style="line-height:1.55; margin-bottom:12px;">{{ parlay_ev.correlation_note }}</div>
+        <div class="cell-meta" style="line-height:1.55; margin-bottom:12px;">{{ parlay_ev.correlation_note }} {{ parlay_ev.bankroll_iq.note }}</div>
+        {% if parlay_ev.correlation_iq.pair_notes %}
+        <div class="parlay-surface-soft" style="padding:10px; margin-bottom:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">CorrelationIQ Pair Notes</div>
+            <div style="display:grid; gap:6px;">
+                {% for note in parlay_ev.correlation_iq.pair_notes %}
+                <div class="cell-meta"><strong style="color:var(--text-bright);">{{ note.pair }}</strong> · +{{ note.score }} · {{ note.reason }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         {% if parlay_ev.legs %}
         <div class="table-shell">
             <table class="data-table compact-board">

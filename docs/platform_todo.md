@@ -50,6 +50,10 @@
   - Completed on `2026-05-22`.
   - The extra `Today / Tomorrow / Upcoming` row is no longer shown below the main matchup cards.
 
+- Universal method routing now uses one honest model.
+  - Completed on `2026-05-30`.
+  - Global method clicks now land on `/tools/...` hubs, sport-specific work lives under `/sports/...`, and old root paths like `/props` and `/market-edge` only remain as compatibility redirects.
+
 ## Open
 
 - No active To-Do items at the moment.

@@ -1,5 +1,9 @@
-{% extends "base.html" %}
+{% set active_page = 'mlb_lab' %}
+{% set active_sport = 'mlb' %}
+{% extends "bk_base.html" %}
 {% block title %}Elite MLB Lab - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 <div class="page-hero">
@@ -88,7 +92,7 @@
             <tbody>
                 {% for row in suppression.rows %}
                 <tr>
-                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }}</div></td>
+                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }}</div></td>
                     <td>{{ row.game }}</td>
                     <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}</td>
                     <td>
@@ -134,7 +138,7 @@
             <tbody>
                 {% for row in one_sided_power.rows %}
                 <tr>
-                    <td><strong>{{ row.player }}</strong><div class="cell-meta">{{ row.team }}</div></td>
+                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }}</div></td>
                     <td>{{ row.game }}</td>
                     <td><span class="badge">YES</span> {{ row.stat }} {{ row.line }}</td>
                     <td>
@@ -169,7 +173,7 @@
             {% for row in pitcher_cards %}
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div style="display:flex; justify-content:space-between; gap:10px;">
-                    <strong>{{ row.player }}</strong>
+                    <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
                     <span class="badge">{{ row.tag }}</span>
                 </div>
                 <div class="cell-meta" style="margin-top:5px;">{{ row.team }} | {{ row.games }} games | WHIP {{ row.whip }} | H/9 {{ row.h_per_9 }} | K/9 {{ row.k_per_9 }} | Outs {{ row.outs_avg }}</div>

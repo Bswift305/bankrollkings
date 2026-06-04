@@ -1,27 +1,29 @@
-{% extends "base.html" %}
+{% set active_page = 'props' %}
+{% set active_sport = 'nba' %}
+{% extends "bk_base.html" %}
 {% block title %}Market Edge - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
 
 {% block content %}
 {% set market_edge_guide = get_method_guide('market_edge') %}
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-
     .market-edge-page {
-        --me-bg: #0b0e13;
-        --me-card: #111520;
-        --me-elevated: #171d2b;
-        --me-border: rgba(255,255,255,0.07);
-        --me-border-strong: rgba(184,115,51,0.35);
-        --me-accent: #2dd4bf;
-        --me-accent-dim: rgba(45,212,191,0.12);
-        --me-copper: #c9803a;
-        --me-copper-dim: rgba(201,128,58,0.12);
-        --me-green: #22c55e;
-        --me-red: #f87171;
-        --me-gold: #facc15;
-        --me-text: #e8ecf4;
-        --me-muted: #7a8499;
-        --me-dim: #4a5268;
+        --me-bg: var(--bg2);
+        --me-card: var(--bg3);
+        --me-elevated: var(--bg4);
+        --me-border: var(--border);
+        --me-border-strong: var(--border2);
+        --me-accent: var(--accent);
+        --me-accent-dim: var(--bk-glow-soft);
+        --me-copper: var(--bk-gold);
+        --me-copper-dim: rgba(214,151,58,0.12);
+        --me-green: var(--color-hit-high);
+        --me-red: var(--danger);
+        --me-gold: var(--accent-copper);
+        --me-text: var(--text-bright);
+        --me-muted: var(--text-muted);
+        --me-dim: var(--text3);
         --me-font-head: 'Barlow Condensed', sans-serif;
         --me-font-body: 'DM Sans', sans-serif;
         --me-font-mono: 'JetBrains Mono', monospace;
@@ -495,35 +497,6 @@
     </div>
 </div>
 
-<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.28);">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Platform Lens</div>
-        <a href="/props?postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}" class="btn btn-secondary btn-sm">Open Props Screener</a>
-    </div>
-    <div class="grid-4 p-16" style="gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent);">Where price is off</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">This board is built to show when the market is late, split, or still leaving a better number somewhere else.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">Can the spot support it?</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">A real edge still has to survive the role, matchup, and game-environment test.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">History with guardrails</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Line-history conflict and current-team checks keep the board from overrating thin streaks.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Verdict</div>
-            <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Edge or mirage</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use Market Edge to decide whether the number is actually helping you, not just whether the play sounds good.</div>
-        </div>
-    </div>
-</div>
-
 <div class="card mb-24">
     <div class="market-filter-bar" style="justify-content: space-between;">
         <div>
@@ -689,7 +662,9 @@
                     </td>
                     <td>
                         <div class="metric-stack">
-                            <div class="rate-line"><span style="color: var(--accent);">O {% if postseason_only and pick.weighted_over_rate is defined %}{{ pick.weighted_over_rate }}{% else %}{{ pick.over_rate }}{% endif %}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: #FF8C8C;">U {% if postseason_only and pick.weighted_under_rate is defined %}{{ pick.weighted_under_rate }}{% else %}{{ pick.under_rate }}{% endif %}%</span></div>
+                            {% set market_over = pick.weighted_over_rate if postseason_only and pick.weighted_over_rate is defined else pick.over_rate %}
+                            {% set market_under = pick.weighted_under_rate if postseason_only and pick.weighted_under_rate is defined else pick.under_rate %}
+                            <div class="rate-line"><span style="color: {{ ou_rate_color(market_over) }};">O {{ market_over }}%</span> <span style="color: var(--text-muted);">/</span> <span style="color: {{ ou_rate_color(market_under) }};">U {{ market_under }}%</span></div>
                             <div class="mini-note">Weighted playoff read</div>
                         </div>
                     </td>
@@ -717,6 +692,13 @@
                             <div class="cell-meta" style="color: {% if pick.ev_pct is not none and pick.ev_pct > 0 %}var(--accent){% elif pick.ev_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">{% if pick.ev_pct is not none %}{{ glossary_hint('EV', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ pick.ev_pct }}%{% else %}No price{% endif %}</div>
                             <div class="cell-meta" style="color: {% if pick.edge_pct is not none and pick.edge_pct > 0 %}var(--accent){% elif pick.edge_pct is not none %}#FF6B6B{% else %}var(--text-muted){% endif %};">{% if pick.edge_pct is not none %}{{ glossary_hint('Edge', 'betting-board-terms', show_icon=False, variant='quiet') }} {{ pick.edge_pct }}%{% else %}-{% endif %}</div>
                             <div class="cell-meta">Model {% if pick.model_prob is not none %}{{ pick.model_prob }}%{% else %}-{% endif %}{% if pick.implied_prob is not none %} • Book {{ pick.implied_prob }}%{% endif %}</div>
+                            {% if pick.formula_badge %}
+                            <div class="cell-meta" style="color:{% if pick.formula_badge == 'PROMOTE' %}var(--accent){% elif pick.formula_badge == 'REDUCE' %}#FF6B6B{% else %}var(--text-muted){% endif %}; font-weight:700;">{{ pick.formula_badge }} · {{ pick.formula_hit_rate }}</div>
+                            <div class="cell-meta">{{ pick.formula_detail }}</div>
+                            {% endif %}
+                            {% if pick.sim_hit_probability %}
+                            <div class="cell-meta" style="color:var(--accent-blue); font-weight:700;">Sim {{ pick.sim_hit_probability }}%</div>
+                            {% endif %}
                         </div>
                     </td>
                     <td>

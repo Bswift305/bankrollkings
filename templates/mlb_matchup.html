@@ -1,0 +1,189 @@
+{% set active_page = 'dashboard' %}
+{% set active_sport = 'mlb' %}
+{% extends "bk_base.html" %}
+{% block title %}MLB Matchup - {{ matchup.matchup if matchup else matchup_slug }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">MLB Matchup Lens</div>
+    <h1>{{ matchup.matchup if matchup else matchup_slug|replace('-', ' @ ') }}</h1>
+    <div class="page-subtitle">
+      Game environment, book agreement, reliability buckets, and every current prop tied to this matchup.
+    </div>
+  </div>
+  <div class="hero-actions">
+    <a href="/sports/mlb?date={{ date_filter }}" class="btn btn-secondary btn-sm">Back to MLB Dashboard</a>
+    <a href="/sports/mlb/props?date={{ date_filter }}" class="btn btn-primary btn-sm">MLB Props</a>
+  </div>
+</div>
+
+{% if matchup %}
+<div class="grid-3 mb-24" style="gap:12px;">
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker" style="margin-bottom:6px;">Run Environment</div>
+    <div style="font-size:24px; font-weight:800; color:var(--accent);">{{ matchup.environment }}</div>
+    <div class="cell-meta" style="margin-top:6px;">Total {{ matchup.total }} · range {{ matchup.total_range }}</div>
+  </div>
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker" style="margin-bottom:6px;">Props Loaded</div>
+    <div style="font-size:24px; font-weight:800; color:var(--text-bright);">{{ matchup.props }}</div>
+    <div class="cell-meta" style="margin-top:6px;">{{ matchup.books }}</div>
+  </div>
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker" style="margin-bottom:6px;">Reliability Mix</div>
+    <div style="font-size:14px; line-height:1.7;">
+      <strong>Anchor</strong> {{ matchup.anchors }} ·
+      <strong>Watch</strong> {{ matchup.watch }} ·
+      <strong>Avoid</strong> {{ matchup.avoid }}
+    </div>
+    <div class="cell-meta" style="margin-top:6px;">{{ matchup.note }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if game_detail %}
+<div class="card mb-24">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Game Lines + Environment</div>
+      <div class="cell-meta">The game market explains why the prop board leans the way it does.</div>
+    </div>
+    <span class="badge badge-accent">{{ game_detail.book_count }} book{{ 's' if game_detail.book_count != 1 }}</span>
+  </div>
+  <div class="grid-3 p-16" style="gap:12px;">
+    <div class="parlay-surface-soft" style="padding:14px;">
+      <div class="page-kicker" style="margin-bottom:6px;">Total / O-U</div>
+      <div style="font-size:26px; font-weight:800; color:var(--accent);">{{ game_detail.total }}</div>
+      <div class="cell-meta" style="margin-top:6px;">Range {{ game_detail.total_range }} · O/U prices by book below</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:14px;">
+      <div class="page-kicker" style="margin-bottom:6px;">Run Line / Moneyline</div>
+      <div style="font-size:18px; font-weight:800; color:var(--text-bright);">{{ game_detail.run_line }}</div>
+      <div class="cell-meta" style="margin-top:6px;">{{ game_detail.moneyline }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:14px;">
+      <div class="page-kicker" style="margin-bottom:6px;">Why It Matters</div>
+      <div class="cell-meta" style="line-height:1.55;">{{ game_detail.prop_fit_note }}</div>
+    </div>
+  </div>
+  <div class="grid-2 p-16" style="gap:12px; padding-top:0;">
+    <div class="parlay-surface-soft" style="padding:14px;">
+      <div class="page-kicker" style="margin-bottom:6px;">Weather / Park</div>
+      <div style="font-weight:800; color:var(--text-bright);">{{ game_detail.weather_note }}</div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:14px;">
+      <div class="page-kicker" style="margin-bottom:6px;">Officiating</div>
+      <div style="font-weight:800; color:var(--text-bright);">{{ game_detail.umpire_note }}</div>
+      <div class="cell-meta" style="margin-top:6px;">MLB uses home plate umpire context. NBA/WNBA/NFL/CFB/CBB will use crew/referee context once loaded.</div>
+    </div>
+  </div>
+  {% if game_detail.line_rows %}
+  <div class="table-shell">
+    <table class="data-table compact-board">
+      <thead>
+        <tr>
+          <th>Book</th>
+          <th>Away ML</th>
+          <th>Home ML</th>
+          <th>Run Line</th>
+          <th>Total</th>
+          <th>Over</th>
+          <th>Under</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in game_detail.line_rows %}
+        <tr>
+          <td><strong>{{ line.book }}</strong></td>
+          <td>{{ line.away_ml }}</td>
+          <td>{{ line.home_ml }}</td>
+          <td>{{ line.run_line }} ({{ line.run_line_price }})</td>
+          <td>{{ line.total }}</td>
+          <td>{{ line.over }}</td>
+          <td>{{ line.under }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if matchup and matchup.best_anchor %}
+<div class="card mb-24">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Best Anchor</div>
+      <div class="cell-meta">Highest reliability prop currently attached to this game.</div>
+    </div>
+    <span class="badge badge-accent">{{ matchup.best_anchor.hit_rate }}%</span>
+  </div>
+  <div class="p-16">
+    <a class="player-link accent-link" href="/player/{{ matchup.best_anchor.player|urlencode }}">{{ matchup.best_anchor.player }}</a>
+    <div class="cell-meta" style="margin-top:6px;">{{ matchup.best_anchor.stat }} {{ matchup.best_anchor.direction }} · {{ matchup.best_anchor.hit_rate }}%</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+  <div class="card-header">
+    <div>
+      <div class="card-title">Current Props In This Matchup</div>
+      <div class="cell-meta">{{ rows|length }} rows matched to this game.</div>
+    </div>
+    <span class="badge">{{ date_filter|upper }}</span>
+  </div>
+  {% if rows %}
+  <div class="table-shell">
+    <table class="data-table compact-board">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Stat</th>
+          <th>Line</th>
+          <th>Play</th>
+          <th>Reliability</th>
+          <th>Market</th>
+          <th>Context</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for prop in rows %}
+        <tr>
+          <td>
+            <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
+            <div class="cell-meta">{{ prop.team }}{% if prop.book %} · {{ prop.book }}{% endif %}</div>
+          </td>
+          <td><span class="badge">{{ prop.stat }}</span></td>
+          <td><strong>{{ prop.line }}</strong></td>
+          <td><span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span></td>
+          <td>
+            <span class="badge">{{ prop.historical_reliability or 'UNPROVEN' }}</span>
+            <div class="cell-meta">{% if prop.historical_hit_rate is not none %}{{ prop.historical_hit_rate }}%{% else %}-{% endif %}{% if prop.historical_resolved %} / {{ prop.historical_resolved }} resolved{% endif %}</div>
+          </td>
+          <td>
+            <div>{{ prop.lean_strength }} · {{ prop.market_prob }}%</div>
+            <div class="cell-meta">{{ prop.book_count }} book{{ 's' if prop.book_count != 1 }}</div>
+          </td>
+          <td>
+            <div class="cell-meta" style="line-height:1.5;">{{ prop.environment_note or prop.market_note or prop.trend_note }}</div>
+            {% if prop.guardrail_tags %}
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;">
+              {% for tag in prop.guardrail_tags[:3] %}<span class="badge">{{ tag }}</span>{% endfor %}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-16 cell-meta">No current prop rows matched this matchup yet.</div>
+  {% endif %}
+</div>
+{% endblock %}
