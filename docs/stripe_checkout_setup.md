@@ -52,11 +52,37 @@ Optional, for the future API-backed portal session flow:
   - pricing page clearly says no real charge should be assumed
 - `partial`
   - some checkout URLs configured, but not all
+  - or some checkout URLs still point to Stripe test links such as `https://buy.stripe.com/test_...`
   - or payment links are configured but the billing portal only has a Stripe `bpc_...` configuration ID and no URL/session flow yet
   - this is a QC failure state
 - `live`
-  - all required checkout URLs configured
+  - all required checkout URLs configured with production Stripe payment links
   - billing portal configured
+
+## Launch Link Count
+
+The app expects 18 hosted checkout links:
+
+- 6 single-sport passes x monthly/annual = 12 links
+- 3 platform plans x monthly/annual = 6 links
+
+If Stripe only shows the six sport-pass products with monthly and annual prices, the remaining links to create are:
+
+- Bankroll Kings Pro - $29/month
+- Bankroll Kings Pro - $299/year
+- Bankroll Kings Sharp - $79/month
+- Bankroll Kings Sharp - $799/year
+- Bankroll Kings Elite - $149/month
+- Bankroll Kings Elite - $1,499/year
+
+Paste those production payment links into:
+
+- `STRIPE_PRO_MONTHLY_URL`
+- `STRIPE_PRO_ANNUAL_URL`
+- `STRIPE_SHARP_MONTHLY_URL`
+- `STRIPE_SHARP_ANNUAL_URL`
+- `STRIPE_ELITE_MONTHLY_URL`
+- `STRIPE_ELITE_ANNUAL_URL`
 
 ## Recommended Verification
 

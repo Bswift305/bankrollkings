@@ -27,8 +27,11 @@ def run_qc() -> dict:
         "warnings": warnings,
         "failures": failures,
         "configured_count": int(config.get("configured_count", 0) or 0),
+        "production_count": int(config.get("production_count", 0) or 0),
+        "test_count": int(config.get("test_count", 0) or 0),
         "required_count": int(config.get("required_count", 0) or 0),
         "mode": config.get("mode", "demo"),
+        "entries": config.get("entries", []),
     }
     append_qc_run_log("checkout_readiness", report)
     return report
@@ -42,10 +45,21 @@ def main() -> int:
     print(f"Checked at: {report['checked_at']}")
     print(f"Mode: {report['mode']}")
     print(f"Configured URLs: {report['configured_count']}/{report['required_count']}")
+    print(f"Production-ready URLs: {report['production_count']}/{report['required_count']}")
+    print(f"Test-mode URLs: {report['test_count']}")
     print(f"Warnings: {report['warning_count']}")
     print(f"Failures: {report['failure_count']}")
     print(report["notes"])
     print()
+    test_entries = [
+        item for item in report.get("entries", [])
+        if str(item.get("stripe_mode", "")).lower() == "test"
+    ]
+    if test_entries:
+        print("Test-mode checkout URLs still configured:")
+        for item in test_entries:
+            print(f"- {item.get('env_key')} ({item.get('plan')} {item.get('billing_cycle')})")
+        print()
     for item in report["warnings"]:
         print(f"[WARN] {item}")
     for item in report["failures"]:

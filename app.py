@@ -709,27 +709,48 @@ def get_stripe_billing_portal_config_id():
     return str(os.environ.get('STRIPE_BILLING_PORTAL_CONFIG_ID', '') or '').strip()
 
 
+def classify_stripe_url(url):
+    url = str(url or '').strip()
+    if not url:
+        return 'missing'
+    if 'buy.stripe.com/test_' in url or 'billing.stripe.com/test_' in url:
+        return 'test'
+    if 'stripe.com' in url:
+        return 'live'
+    return 'custom'
+
+
 def uses_demo_checkout(plan_key, billing_cycle='monthly'):
     return not bool(get_stripe_checkout_url(plan_key, billing_cycle))
 
 
 def get_checkout_configuration_report():
     entries = []
-    live_count = 0
+    configured_count = 0
+    production_count = 0
+    test_count = 0
     for tier in get_pricing_tiers():
         key = str(tier.get('key', '')).strip().lower()
         if key == 'free':
             continue
         for billing_cycle in ('monthly', 'annual'):
             url = get_stripe_checkout_url(key, billing_cycle)
-            is_live = bool(url)
-            if is_live:
-                live_count += 1
+            stripe_mode = classify_stripe_url(url)
+            configured = stripe_mode != 'missing'
+            production_ready = stripe_mode in {'live', 'custom'}
+            if configured:
+                configured_count += 1
+            if production_ready:
+                production_count += 1
+            if stripe_mode == 'test':
+                test_count += 1
             entries.append({
                 'plan': key,
                 'billing_cycle': billing_cycle,
                 'env_key': f"STRIPE_{key.upper()}_{billing_cycle.upper()}_URL",
-                'configured': is_live,
+                'configured': configured,
+                'production_ready': production_ready,
+                'stripe_mode': stripe_mode,
                 'target': url,
             })
     total = len(entries)
@@ -737,27 +758,34 @@ def get_checkout_configuration_report():
     portal_config_id = get_stripe_billing_portal_config_id()
     billing_portal_configured = bool(portal_url)
     billing_portal_config_ready = bool(portal_config_id)
-    all_live = total > 0 and live_count == total and billing_portal_configured
-    partial_live = live_count > 0 and not all_live
+    portal_mode = classify_stripe_url(portal_url)
+    portal_production_ready = portal_mode in {'live', 'custom'}
+    all_live = total > 0 and production_count == total and portal_production_ready
+    partial_live = configured_count > 0 and not all_live
     mode = 'live' if all_live else 'partial' if partial_live else 'demo'
     summary = 'Stripe checkout is fully configured.'
     if mode == 'partial':
         summary = (
-            f"Stripe is partially configured. {live_count}/{total} checkout URLs are live and "
-            f"billing portal is {'configured' if billing_portal_configured else 'configured in Stripe but not wired to a URL/session' if billing_portal_config_ready else 'missing'}."
+            f"Stripe is partially configured. {production_count}/{total} checkout URLs are production-ready, "
+            f"{test_count} are still test-mode, and billing portal is "
+            f"{'production-ready' if portal_production_ready else 'test-mode' if portal_mode == 'test' else 'configured in Stripe but not wired to a URL/session' if billing_portal_config_ready else 'missing'}."
         )
     elif mode == 'demo':
         summary = (
-            f"Demo membership flow is active. {live_count}/{total} live Stripe checkout URLs are configured."
+            f"Demo membership flow is active. {configured_count}/{total} Stripe checkout URLs are configured."
         )
     return {
         'mode': mode,
         'all_live': all_live,
         'partial_live': partial_live,
-        'configured_count': live_count,
+        'configured_count': configured_count,
+        'production_count': production_count,
+        'test_count': test_count,
         'required_count': total,
         'billing_portal_configured': billing_portal_configured,
         'billing_portal_config_ready': billing_portal_config_ready,
+        'billing_portal_mode': portal_mode,
+        'billing_portal_production_ready': portal_production_ready,
         'billing_portal_url': portal_url,
         'billing_portal_config_id': portal_config_id,
         'entries': entries,
