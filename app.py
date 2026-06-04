@@ -32001,6 +32001,35 @@ def injuries_page():
         active_sport=requested_sport or 'nba',
     )
 
+def prewarm_caches():
+    """Best-effort warm of the heavy on-disk data caches.
+
+    Parsing the large gamelog/prop CSVs is what makes the first request after a
+    (re)start or data refresh slow (the per-process DATAFRAME_CACHE is lazy). Run
+    this at server boot so a real visitor never pays that cold cost. Under gunicorn
+    with preload_app=True it runs once in the master before workers fork, so every
+    worker inherits the warm cache via copy-on-write. Never raises.
+    """
+    warmers = [
+        ('nba_gamelogs', load_gamelogs),
+        ('nba_schedule', load_schedule),
+        ('mlb_gamelogs', load_mlb_gamelogs),
+        ('wnba_gamelogs', load_wnba_gamelogs),
+        ('nfl_gamelogs', load_nfl_gamelogs),
+        ('injuries', load_injuries),
+        ('nba_props', load_props),
+        ('mlb_props', load_mlb_props),
+    ]
+    warmed = []
+    for name, loader in warmers:
+        try:
+            loader()
+            warmed.append(name)
+        except Exception as exc:  # never let prewarm abort startup
+            print(f"[PREWARM] {name} failed: {exc}")
+    return warmed
+
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("  BANKROLL KINGS - Sports Analytics Platform")

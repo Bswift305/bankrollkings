@@ -1,5 +1,6 @@
 Flask>=3.0,<4
-gunicorn>=21.2,<24
+gunicorn>=21.2,<24 ; platform_system != "Windows"
+waitress>=3.0 ; platform_system == "Windows"
 numpy>=1.26
 openpyxl>=3.1
 pandas>=2.2
