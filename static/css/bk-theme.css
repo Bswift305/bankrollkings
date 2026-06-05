@@ -2543,6 +2543,29 @@ body::after {
   background: rgba(145,168,184,0.045) !important;
 }
 
+.bk-sidebar-mascot {
+  padding: 16px 12px 20px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.bk-sidebar-mascot img {
+  width: 116px;
+  max-width: 78%;
+  height: auto;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.5));
+}
+
+.bk-sidebar-mascot span {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bk-gold2);
+  opacity: 0.85;
+}
+
 .bk-compact-list {
   display: grid;
   gap: 8px;

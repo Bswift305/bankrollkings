@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="College football">
-  <path d="M8 32c7-14 17-21 24-21s17 7 24 21c-7 14-17 21-24 21S15 46 8 32z" fill="#264653" stroke="#4ecdc4" stroke-width="2"/>
-  <path d="M21 20l22 22M28 27l-8 8M34 33l-8 8M40 39l-8 8" stroke="#e8eaf0" stroke-width="3" stroke-linecap="round"/>
+  <defs><linearGradient id="cfb" x1="8" y1="11" x2="56" y2="53"><stop stop-color="#35c7bd"/><stop offset="1" stop-color="#d6973a"/></linearGradient></defs>
+  <path d="M8 32c7-14 17-21 24-21s17 7 24 21c-7 14-17 21-24 21S15 46 8 32z" fill="url(#cfb)" stroke="#06201d" stroke-width="2.5"/>
+  <path d="M23 32h18M32 25v14M27 28v8M37 28v8" fill="none" stroke="#06201d" stroke-width="3" stroke-linecap="round"/>
 </svg>

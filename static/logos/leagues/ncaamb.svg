@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="College basketball">
-  <circle cx="32" cy="32" r="25" fill="#1d8a7e" stroke="#e8eaf0" stroke-width="2"/>
-  <path d="M9 32h46M32 7c-7 8-10 16-10 25s3 17 10 25M32 7c7 8 10 16 10 25s-3 17-10 25M15 17c9 8 25 8 34 0M15 47c9-8 25-8 34 0" fill="none" stroke="#04100f" stroke-width="3" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="College basketball (men)">
+  <defs><linearGradient id="mbb" x1="12" y1="8" x2="54" y2="58"><stop stop-color="#35c7bd"/><stop offset="1" stop-color="#1b7d75"/></linearGradient></defs>
+  <circle cx="32" cy="32" r="25" fill="url(#mbb)" stroke="#ffd16d" stroke-width="2.5"/>
+  <path d="M9 32h46M32 7c-7 8-10 16-10 25s3 17 10 25M32 7c7 8 10 16 10 25s-3 17-10 25M15 17c9 8 25 8 34 0M15 47c9-8 25-8 34 0" fill="none" stroke="#06201d" stroke-width="3" stroke-linecap="round"/>
 </svg>
