@@ -44,8 +44,8 @@
 
   /* Text */
   --text:  #edf1f2;
-  --text2: #9aaab0;
-  --text3: #60747b;
+  --text2: #c2cfd5;
+  --text3: #93a4ab;
 
   /* Legacy aliases used by converted pages */
   --text-bright:   var(--text);
@@ -1541,7 +1541,7 @@ body::after {
 }
 
 .bk-flip {
-  perspective: 1000px;
+  position: relative;
   min-height: 172px;
   cursor: pointer;
   outline: none;
@@ -1551,28 +1551,44 @@ body::after {
   position: relative;
   width: 100%;
   min-height: 172px;
-  transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
-  transform-style: preserve-3d;
 }
 
-.bk-flip:hover .bk-flip-inner,
-.bk-flip:focus-visible .bk-flip-inner,
-.bk-flip.is-flipped .bk-flip-inner {
-  transform: rotateY(180deg);
-}
-
+/* Crossfade flip — front fades to back. No 3D transforms, so it can never
+   render a blank face from a preserve-3d/backface flatten. */
 .bk-flip-face {
   position: absolute;
   inset: 0;
   margin: 0;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.bk-flip-front {
+  opacity: 1;
+  transform: none;
 }
 
 .bk-flip-back {
-  transform: rotateY(180deg);
+  opacity: 0;
+  transform: scale(0.98);
+  pointer-events: none;
   border-color: rgba(215, 167, 79, 0.35);
   background: rgba(215, 167, 79, 0.07);
+}
+
+.bk-flip:hover .bk-flip-front,
+.bk-flip:focus-visible .bk-flip-front,
+.bk-flip.is-flipped .bk-flip-front {
+  opacity: 0;
+  transform: scale(0.98);
+  pointer-events: none;
+}
+
+.bk-flip:hover .bk-flip-back,
+.bk-flip:focus-visible .bk-flip-back,
+.bk-flip.is-flipped .bk-flip-back {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .bk-flip-cue {
