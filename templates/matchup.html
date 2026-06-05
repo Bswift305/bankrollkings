@@ -363,6 +363,7 @@
             </div>
         </div>
         {% endif %}
+        {% if series_type not in ['playoff', 'play-in', 'postseason'] %}
         <div class="grid-3" style="gap: 14px; text-align: center;">
             <div><div style="font-size: 36px; font-weight: 700; color: var(--accent);">{{ h2h_away_wins }}</div><div style="color: var(--text-muted);">{{ team_mark(away, size='xs') }} Wins</div></div>
             <div><div style="font-size: 36px; font-weight: 700;">{{ h2h_avg_total }}</div><div style="color: var(--text-muted);">Avg Total</div></div>
@@ -382,6 +383,7 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
         {% endif %}
     </div>
 </div>
