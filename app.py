@@ -1628,6 +1628,7 @@ SERIES_CONFIG = {
     'thunder-lakers': {'teams': ('OKC', 'LAL'), 'label': 'West Semifinals: Thunder vs Lakers', 'type': 'playoff'},
     'cavaliers-knicks': {'teams': ('CLE', 'NYK'), 'label': 'East Finals: Cavaliers vs Knicks', 'type': 'playoff'},
     'spurs-thunder': {'teams': ('SAS', 'OKC'), 'label': 'West Finals: Spurs vs Thunder', 'type': 'playoff'},
+    'knicks-spurs': {'teams': ('NYK', 'SAS'), 'label': 'NBA Finals: Knicks vs Spurs', 'type': 'playoff'},
     'warriors-clippers': {'teams': ('GSW', 'LAC'), 'label': 'West Play-In: Warriors vs Clippers', 'type': 'play-in'},
     'hornets-heat': {'teams': ('CHA', 'MIA'), 'label': 'East Play-In: Hornets vs Heat', 'type': 'play-in'},
     'suns-clippers': {'teams': ('PHX', 'LAC'), 'label': 'West Play-In: Suns vs Clippers', 'type': 'play-in'},

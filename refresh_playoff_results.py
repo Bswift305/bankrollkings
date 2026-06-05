@@ -52,6 +52,7 @@ SERIES_CONFIG = {
     "thunder-lakers": ("OKC", "LAL"),
     "cavaliers-knicks": ("CLE", "NYK"),
     "spurs-thunder": ("SAS", "OKC"),
+    "knicks-spurs": ("NYK", "SAS"),
     "warriors-clippers": ("GSW", "LAC"),
     "hornets-heat": ("CHA", "MIA"),
     "suns-clippers": ("PHX", "LAC"),
@@ -73,6 +74,8 @@ def infer_round(series_id: str) -> str:
         return "Play-In"
     if series_id in {"knicks-76ers", "pistons-cavaliers", "spurs-timberwolves", "thunder-lakers"}:
         return "Conference Semifinals"
+    if series_id == "knicks-spurs":
+        return "NBA Finals"
     if series_id in {"cavaliers-knicks", "spurs-thunder"}:
         return "Conference Finals"
     return "First Round"
