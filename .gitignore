@@ -43,7 +43,10 @@ data/tracking/
 *.lnk
 
 # Raw local asset dumps; app-ready assets live under static/
-Logos/
+# Leading slash anchors this to the repo root ONLY — without it, a
+# case-insensitive (Windows/macOS) filesystem also matches static/logos/
+# and silently drops the sidebar league logos from the repo.
+/Logos/
 
 # Keep intentional repo seed/config CSVs, not generated slate context
 !data/context/MLB_BallparkFactors.csv

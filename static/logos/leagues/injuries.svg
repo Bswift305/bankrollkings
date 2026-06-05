@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Injuries">
+  <path d="M32 8l26 46H6L32 8z" fill="#2b2010" stroke="#ffcf5a" stroke-width="3"/>
+  <path d="M32 23v14" stroke="#ffcf5a" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="32" cy="45" r="3" fill="#ffcf5a"/>
+</svg>

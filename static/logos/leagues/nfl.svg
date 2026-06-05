@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Football">
+  <defs><linearGradient id="g" x1="10" y1="12" x2="54" y2="52"><stop stop-color="#8a5a3b"/><stop offset="1" stop-color="#4b2a19"/></linearGradient></defs>
+  <path d="M8 32c7-14 17-21 24-21s17 7 24 21c-7 14-17 21-24 21S15 46 8 32z" fill="url(#g)" stroke="#7dd8cf" stroke-width="2"/>
+  <path d="M21 20l22 22M28 27l-8 8M34 33l-8 8M40 39l-8 8" stroke="#f7f3e8" stroke-width="3" stroke-linecap="round"/>
+</svg>
