@@ -2559,8 +2559,12 @@ body::after {
 
 .bk-compact-row-main {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) minmax(150px, 0.9fr) minmax(120px, 0.65fr) minmax(190px, 1fr) 90px;
-  gap: 12px;
+  /* Bounded px columns + justify-content:start keep the data clustered on the
+     left so the eye does not travel the full screen width; slack pools at the
+     right edge instead of stretching gaps between every column. */
+  grid-template-columns: minmax(190px, 300px) minmax(140px, 180px) minmax(110px, 140px) minmax(180px, 230px) 90px;
+  justify-content: start;
+  gap: 14px;
   align-items: center;
   padding: 10px 12px;
 }
@@ -2677,7 +2681,7 @@ body::after {
 }
 
 .bk-derivatives .bk-compact-row-main {
-  grid-template-columns: minmax(240px, 1.4fr) minmax(150px, 0.8fr) minmax(90px, 0.45fr) minmax(95px, 0.45fr);
+  grid-template-columns: minmax(220px, 320px) minmax(130px, 170px) minmax(90px, 120px) minmax(110px, 150px);
 }
 
 .bk-compact-player a {
