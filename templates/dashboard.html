@@ -31,16 +31,16 @@
 
 .lens-board-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 10px;
 }
 
 .lens-card {
     position: relative;
     display: block;
     text-decoration: none;
-    border-radius: 16px;
-    padding: 13px 14px;
+    border-radius: 12px;
+    padding: 11px 12px;
     border: 1px solid rgba(255,255,255,0.08);
     background:
         linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 30%),
@@ -83,11 +83,11 @@
 
 .lens-board-grid:has(.lens-card:only-child) .lens-card {
     display: grid;
-    grid-template-columns: minmax(280px, .58fr) minmax(360px, 1fr);
-    column-gap: 24px;
-    row-gap: 10px;
-    align-items: start;
-    padding: 16px 18px;
+    grid-template-columns: minmax(220px, .5fr) minmax(300px, 1fr);
+    column-gap: 16px;
+    row-gap: 6px;
+    align-items: center;
+    padding: 11px 14px;
     border-radius: 12px;
 }
 
@@ -1545,14 +1545,14 @@
                         {% endif %}
                 </div>
                 <div class="nba-check-cell">
-                    <div class="nba-matchup-kicker">Market</div>
+                    <div class="nba-matchup-kicker">Price Check</div>
                     <div class="nba-series-note" style="color: var(--text-bright);">{{ game.market_summary or 'Market waiting' }}</div>
-                    <div class="nba-series-note" style="color: var(--text-muted);">Use the number before trusting any prop.</div>
+                    <div class="nba-series-note" style="color: var(--text-muted);">Price decides whether the read is still playable.</div>
                 </div>
                 <div class="nba-check-cell">
-                    <div class="nba-matchup-kicker">Read First</div>
-                    <div class="nba-series-note" style="color: var(--text-bright);">Series state, spread, total, and role stability.</div>
-                    <div class="nba-series-note" style="color: var(--text-muted);">This tells you whether today supports overs, unders, or a pass.</div>
+                    <div class="nba-matchup-kicker">Role Check</div>
+                    <div class="nba-series-note" style="color: var(--text-bright);">Minutes, matchup, and injury news.</div>
+                    <div class="nba-series-note" style="color: var(--text-muted);">The same prop can flip if the role changes.</div>
                 </div>
                 <div class="nba-matchup-meta">
                     <span class="status-pill {% if game.bucket == 'today' %}today{% elif game.bucket == 'tomorrow' %}tomorrow{% else %}upcoming{% endif %}">
@@ -1642,42 +1642,6 @@
             </div>
             {% endif %}
         </div>
-    </div>
-</div>
-{% endif %}
-
-{% if postseason_only and postseason_matchups %}
-<div class="nba-playoff-panel mb-24">
-    <div class="nba-playoff-panel-head">
-        <div>
-            <div class="nba-playoff-panel-title">Series Read Checklist</div>
-            <div class="nba-playoff-panel-subtitle">Use this before opening props. It keeps the command center focused on the game, not one repeated player.</div>
-        </div>
-        <span class="badge">{{ postseason_matchups|length }}</span>
-    </div>
-    <div class="nba-series-compact-list">
-        {% for game in postseason_matchups[:4] %}
-        <a href="{% if game.series_id %}/series/{{ game.series_id }}?postseason=1{% else %}/matchup/{{ game.Away }}-{{ game.Home }}?postseason=1{% endif %}" class="nba-series-row">
-            <div class="nba-check-cell">
-                <div class="nba-series-kicker">Game Context</div>
-                <div class="nba-series-name">{{ game.Away }} @ {{ game.Home }}</div>
-                <div class="nba-series-note">{{ game.series_status or 'Series status waiting' }}</div>
-            </div>
-            <div class="nba-check-cell">
-                <div class="nba-series-kicker">Price Check</div>
-                <div class="nba-series-note" style="color: var(--text-bright);">{{ game.market_summary or 'Market waiting' }}</div>
-                <div class="nba-series-note" style="color: var(--text-muted);">Price decides whether the read is still playable.</div>
-            </div>
-            <div class="nba-check-cell">
-                <div class="nba-series-kicker">Role Check</div>
-                <div class="nba-series-note" style="color: var(--text-bright);">Minutes, matchup, injury news.</div>
-                <div class="nba-series-note" style="color: var(--text-muted);">The same prop can flip if the role changes.</div>
-            </div>
-            <div class="nba-series-meta">
-                <span class="lens-cta">Open Read <span aria-hidden="true">&rsaquo;</span></span>
-            </div>
-        </a>
-        {% endfor %}
     </div>
 </div>
 {% endif %}
