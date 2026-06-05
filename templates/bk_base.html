@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260605-compact-rows">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260605-admin-icons">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -113,7 +113,7 @@
     {% block sidebar %}
     <!-- Default sidebar: sport selector + injury alert -->
     <div class="bk-sidebar-section">
-      <div class="bk-sidebar-heading">Member</div>
+      <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
       <a href="{{ url_for('dashboard') }}"
          class="bk-sidebar-item {% if active_page == 'home' %}active{% endif %}">
         <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('review') }}" alt=""></span>

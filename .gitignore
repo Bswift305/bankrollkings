@@ -3,6 +3,13 @@
 .env.*
 !.env.example
 
+# SSH / private keys — never commit
+*.pem
+*.key
+*.ppk
+id_ed25519
+id_rsa
+
 # Python
 __pycache__/
 *.py[cod]

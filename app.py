@@ -836,13 +836,13 @@ def normalize_user_plan(user):
         return 'free'
     email = str(user.get('email', '') or user.get('Email', '') or '').strip().lower()
     if email in OWNER_EMAILS:
-        return 'sharp'
+        return 'elite'
     role = str(user.get('role', '') or user.get('Role', '') or '').strip().lower()
     if role == 'owner':
-        return 'sharp'
-    is_admin = str(user.get('is_admin', '') or user.get('IsAdmin', '') or '').strip() == '1'
+        return 'elite'
+    is_admin = str(user.get('is_admin', '') or user.get('IsAdmin', '') or '').strip().lower() in {'1', '1.0', 'true', 'yes'}
     if is_admin:
-        return 'sharp'
+        return 'elite'
     plan = str(user.get('plan', 'free') or 'free').strip().lower()
     status = str(user.get('plan_status', 'selected') or 'selected').strip().lower()
     if status not in ACTIVE_PLAN_STATUSES:
@@ -850,6 +850,21 @@ def normalize_user_plan(user):
     if plan == 'sharp' and str(user.get('elite_preview', '') or user.get('ElitePreview', '')).strip().lower() in {'1', 'true', 'yes'}:
         return 'elite'
     return plan if plan in PLAN_RANKS else 'free'
+
+
+def current_user_membership_label(user):
+    if not user:
+        return 'Guest'
+    role = str(user.get('role', '') or user.get('Role', '') or '').strip().lower()
+    is_admin = str(user.get('is_admin', '') or user.get('IsAdmin', '') or '').strip().lower() in {'1', '1.0', 'true', 'yes'}
+    email = str(user.get('email', '') or user.get('Email', '') or '').strip().lower()
+    if email in OWNER_EMAILS or role == 'owner':
+        return 'Owner'
+    if is_admin or role == 'admin':
+        return 'Admin'
+    plan = normalize_user_plan(user)
+    tier = get_pricing_tier(plan)
+    return str(tier.get('name') or plan or 'Member').title()
 
 
 def is_owner_user(user):
@@ -14472,19 +14487,19 @@ def football_logo_url(value, sport_key=None):
 def sport_logo_url(sport_key):
     key = str(sport_key or '').strip().lower()
     league_icons = {
-        'nba': '/static/logos/leagues/official/nba.png',
-        'basketball_nba': '/static/logos/leagues/official/nba.png',
-        'wnba': '/static/logos/leagues/official/wnba.png',
-        'basketball_wnba': '/static/logos/leagues/official/wnba.png',
-        'mlb': '/static/logos/leagues/official/mlb.png',
-        'baseball_mlb': '/static/logos/leagues/official/mlb.png',
-        'nfl': '/static/logos/leagues/official/nfl.png',
-        'americanfootball_nfl': '/static/logos/leagues/official/nfl.png',
-        'ncaaf': '/static/logos/leagues/official/ncaaf.png',
-        'cfb': '/static/logos/leagues/official/ncaaf.png',
-        'ncaamb': '/static/logos/leagues/official/ncaamb.png',
-        'ncaawb': '/static/logos/leagues/official/ncaawb.png',
-        'cbb': '/static/logos/leagues/official/ncaamb.png',
+        'nba': '/static/logos/leagues/nba.svg',
+        'basketball_nba': '/static/logos/leagues/nba.svg',
+        'wnba': '/static/logos/leagues/wnba.svg',
+        'basketball_wnba': '/static/logos/leagues/wnba.svg',
+        'mlb': '/static/logos/leagues/mlb.svg',
+        'baseball_mlb': '/static/logos/leagues/mlb.svg',
+        'nfl': '/static/logos/leagues/nfl.svg',
+        'americanfootball_nfl': '/static/logos/leagues/nfl.svg',
+        'ncaaf': '/static/logos/leagues/ncaaf.svg',
+        'cfb': '/static/logos/leagues/ncaaf.svg',
+        'ncaamb': '/static/logos/leagues/ncaamb.svg',
+        'ncaawb': '/static/logos/leagues/ncaawb.svg',
+        'cbb': '/static/logos/leagues/ncaamb.svg',
         'review': '/static/logos/leagues/review.svg',
         'missed': '/static/logos/leagues/review.svg',
         'game-lines': '/static/logos/leagues/game-lines.svg',
@@ -25117,6 +25132,7 @@ def inject_globals():
         return {
             'current_user': current_user,
             'current_plan': 'free',
+            'membership_label': current_user_membership_label(current_user),
             'current_sport_access': [],
             'team_logo_url': team_logo_url,
             'sport_logo_url': sport_logo_url,
@@ -25270,6 +25286,7 @@ def inject_globals():
     return {
         'current_user': current_user,
         'current_plan': normalize_user_plan(current_user) if current_user else 'free',
+        'membership_label': current_user_membership_label(current_user),
         'current_sport_access': sorted(get_user_sport_access(current_user)) if current_user else [],
         **sport_sidebar_counts,
         'team_logo_url': team_logo_url,

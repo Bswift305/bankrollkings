@@ -5,7 +5,7 @@
 
 {% block sidebar %}
 <div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Member</div>
+  <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
   <a class="bk-sidebar-item active" href="{{ url_for('dashboard') }}" title="Home">
     <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span><span class="si-name">Home</span>
   </a>
