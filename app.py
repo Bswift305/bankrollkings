@@ -31893,44 +31893,77 @@ def tendencies():
     sport_filter = request.args.get('sport', '').strip().upper()
     active_sport_key = normalize_sport_access_key(sport_filter.lower()) if sport_filter else ''
     sport_options = ['NBA', 'WNBA', 'MLB', 'NFL', 'NCAAF']
+    # Examples are themed to the selected sport's family so the illustration
+    # matches the league the user is viewing (hoops / baseball / football).
+    _tendency_family = (
+        'baseball' if sport_filter == 'MLB'
+        else 'football' if sport_filter in {'NFL', 'NCAAF'}
+        else 'basketball'
+    )
     situational_splits = [
         {
             'label': 'Home / Away',
             'status': 'Design ready',
             'detail': 'Conditional hit rate by venue so a player can show reliable home overs without hiding road weakness.',
-            'example': 'A guard clears his points line in 74% of home games but only 56% on the road — the venue split says buy the home over and pass on the road.',
+            'examples': {
+                'basketball': 'A guard clears his points line in 74% of home games but only 56% on the road — the venue split says buy the home over and pass on the road.',
+                'baseball': 'A hitter clears his total-bases line in 70% of home games but 49% on the road — ballpark and travel, not form, drive it.',
+                'football': 'A receiver hits his yards line in 72% of home games but 54% away — the home/road split separates the bet from the fade.',
+            },
         },
         {
             'label': 'Rest Profile',
             'status': 'Design ready',
             'detail': 'Back-to-back, one-day rest, and two-plus-days rest splits from dated game logs.',
-            'example': 'A forward hits his rebounds over 70% on 2+ days rest but just 47% on the back end of a back-to-back — rest, not form, is the real signal.',
+            'examples': {
+                'basketball': 'A forward hits his rebounds over 70% on 2+ days rest but just 47% on the back end of a back-to-back — rest, not form, is the real signal.',
+                'baseball': "A starting pitcher's strikeout over hits 68% on 5+ days rest but 44% on short rest — fatigue shows up in the whiff rate first.",
+                'football': "A running back on a short week (Thursday game) drops sharply on his rush-yard over versus a normal week of prep.",
+            },
         },
         {
             'label': 'Favorite / Underdog',
             'status': 'Needs line join',
             'detail': 'Prop hit rate when the team is favored, short dog, or long dog after game-line history is joined.',
-            'example': 'A running back\'s rush-yard over hits 63% when his team is favored (game script = carries) but drops to 41% as an underdog chasing points.',
+            'examples': {
+                'basketball': "A center's points over hits 63% when his team is favored but 45% as a big underdog when the game gets away early.",
+                'baseball': "A hitter's run + RBI over hits more often when his team is favored — favorites bat with more leads and more innings.",
+                'football': "A running back's rush-yard over hits 63% when favored (game script = carries) but 41% as an underdog forced to throw.",
+            },
         },
         {
             'label': 'Game Total Band',
             'status': 'Needs line join',
             'detail': 'High-total versus low-total environments for points, assists, rebounds, strikeouts, and yardage markets.',
-            'example': 'In games with a 230+ total, a wing\'s PRA over hits ~9% more often than in sub-215 grind-it-out environments.',
+            'examples': {
+                'basketball': "In games with a 230+ total, a wing's PRA over hits ~9% more often than in sub-215 grind-it-out environments.",
+                'baseball': 'In games with a 9+ run total, hitter total-base overs clear far more often than in sub-7 pitcher\'s duels.',
+                'football': 'In games with a 48+ total, a receiver\'s yard over hits meaningfully more than in a 40-point defensive battle.',
+            },
         },
         {
             'label': 'Opponent Type',
             'status': 'Model scaffold',
             'detail': 'Opponent defense and pace buckets so the condition is about matchup shape, not just the team name.',
-            'example': 'vs bottom-10 pace-up defenses a center\'s points over hits 62%; vs top-10 slow defenses it falls to 44% — same player, different matchup shape.',
+            'examples': {
+                'basketball': "vs bottom-10 pace-up defenses a center's points over hits 62%; vs top-10 slow defenses it falls to 44% — same player, different matchup shape.",
+                'baseball': 'vs a high-strikeout staff a hitter\'s K over leans up; vs contact-prone arms his hits and total-base overs improve.',
+                'football': "vs a bottom-10 pass defense a receiver's yard over hits 62%; vs a top-10 secondary it falls to 44% — the matchup, not the name.",
+            },
         },
         {
             'label': 'Officiating Context',
             'status': 'Live feed seeded',
             'detail': 'Official, umpire, and crew profiles become a support or caution layer once assignments are confirmed.',
-            'example': 'A high-whistle ref crew averages 4 more fouls per game — free-throw and team-total overs lean up when that crew is assigned.',
+            'examples': {
+                'basketball': 'A high-whistle ref crew averages 4 more fouls per game — free-throw and team-total overs lean up when that crew is assigned.',
+                'baseball': 'A wide-zone home-plate umpire boosts strikeout overs and suppresses walks and run totals — a real game-condition edge.',
+                'football': 'A flag-heavy crew extends drives and inflates totals — scoring and yardage overs lean up under that assignment.',
+            },
         },
     ]
+    for _split in situational_splits:
+        _split['example'] = _split['examples'].get(_tendency_family, _split['examples']['basketball'])
     officiating_status = _load_derivative_officiating_status(sport_filter=sport_filter)
     official_tendencies = _load_official_tendency_status(sport_filter=sport_filter)
     return render_template(
