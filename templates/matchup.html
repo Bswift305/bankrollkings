@@ -51,20 +51,19 @@
             <div class="page-kicker" style="margin-bottom: 6px;">Series State</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{% if series_type in ['playoff', 'play-in', 'postseason'] %}{{ series_score.team_a_wins }} - {{ series_score.team_b_wins }}{% else %}Single Game{% endif %}</div>
             <div style="font-size: 11px; color: var(--text-muted);">{{ series_score.status if series_type in ['playoff', 'play-in', 'postseason'] else away ~ ' @ ' ~ home }}</div>
-            {% if regular_season_h2h and regular_season_h2h.games %}
-            <div style="font-size: 11px; color: var(--accent); margin-top: 6px;">Regular season series: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
-            {% endif %}
             <div style="margin-top: 6px;"><a href="/team/{{ away|urlencode }}" style="font-size: 11px; color: var(--accent); text-decoration: none;">{{ away }}</a> <span style="color: var(--text-muted);">|</span> <a href="/team/{{ home|urlencode }}" style="font-size: 11px; color: var(--accent); text-decoration: none;">{{ home }}</a></div>
             {% if series_context_teaching_note %}
             <div style="font-size: 11px; color: var(--text-bright); margin-top: 6px; line-height: 1.5;">{{ series_context_teaching_note }}</div>
             {% endif %}
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">Head-to-Head</div>
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ h2h_away_wins }} - {{ h2h_home_wins }}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">{{ h2h_avg_total }} average total points</div>
+            <div class="page-kicker" style="margin-bottom: 6px;">Regular Season H2H</div>
             {% if regular_season_h2h and regular_season_h2h.games %}
-            <div style="font-size: 11px; color: var(--accent); margin-top: 6px;">Regular season: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ regular_season_h2h.avg_total }} avg total &middot; {{ regular_season_h2h.games|length }} {{ 'meeting' if regular_season_h2h.games|length == 1 else 'meetings' }}</div>
+            {% else %}
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-muted);">No meetings</div>
+            <div style="font-size: 11px; color: var(--text-muted);">No regular-season games on record</div>
             {% endif %}
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
@@ -87,9 +86,6 @@
         <span class="badge badge-accent">{{ away }} @ {{ home }}</span>
     </div>
     <div class="p-16">
-        {% if regular_season_h2h and regular_season_h2h.games %}
-        <div style="font-size: 12px; color: var(--accent); margin-bottom: 10px;">Regular season series: {{ regular_season_h2h.team_a_wins }} - {{ regular_season_h2h.team_b_wins }}</div>
-        {% endif %}
         {% if matchup_editorial.driver_tags %}
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
             {% for tag in matchup_editorial.driver_tags %}
