@@ -29111,6 +29111,9 @@ def _derivative_row(title, tag, row, detail, score_bonus=0, action='Review'):
         'line': row.get('line'),
         'game': row.get('game') or '',
         'price': row.get('price') or '-',
+        'implied': row.get('implied'),
+        'movement': row.get('movement'),
+        'book': row.get('book') or '',
         'score': score,
         'detail': detail,
         'action': action,
@@ -29178,6 +29181,9 @@ def build_derivative_markets_context(sport_filter=''):
                 'line': a.get('line'),
                 'game': game,
                 'price': a.get('price'),
+                'implied': a.get('implied'),
+                'movement': a.get('movement'),
+                'book': a.get('book') or '',
                 'score': round(float(a.get('score') or 0), 1),
                 'detail': f"{a['player']} owns the stronger priced read by {gap} points in this same-game {stat} bucket. Use this as the first pass for book H2H markets.",
                 'action': 'Grade H2H',
@@ -29208,14 +29214,13 @@ def build_derivative_markets_context(sport_filter=''):
     for row in priced_rows[:80]:
         if (row.get('implied') or 0) < 60 and abs(float(row.get('movement') or 0)) < 0.5:
             continue
-        movement_text = f" Line moved {row.get('movement')} from open." if row.get('movement') not in [None, 0] else ''
         alt_line_edges.append(_derivative_row(
-            f"{row['player']} {row['stat']} alt ladder",
+            f"{row['player']} - {row['stat'].title()} (Alt)",
             'Alt Line',
             row,
-            f"Start from the priced side, then use simulation percentiles before buying or selling points.{movement_text}",
+            f"Alternate {row['stat'].lower()} line at {row['line']} {row['side'].lower()}. Compare this priced number against the player's hit rate on the main line before buying or selling points.",
             score_bonus=2,
-            action='Price alt'
+            action='Alt line'
         ))
         if len(alt_line_edges) >= 10:
             break

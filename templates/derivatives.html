@@ -159,16 +159,24 @@
           <small>{{ row.price }}</small>
         </div>
         <div class="bk-compact-edge">
-          <strong>{{ row.score }}%</strong>
+          {% if row.implied is not none and row.price not in ['combo', '-', None] %}
+          <strong>{{ row.implied|round(0)|int }}%</strong>
+          <small>implied @ {{ row.price }}</small>
+          {% elif row.price not in ['-', None] %}
+          <strong>{{ row.price }}</strong>
           <small>{{ row.action }}</small>
+          {% else %}
+          <strong>{{ row.action }}</strong>
+          <small>review</small>
+          {% endif %}
         </div>
       </div>
       <details class="bk-compact-details">
         <summary>Read more</summary>
         <div class="bk-compact-detail-grid">
-          <div class="bk-compact-detail"><strong>Why it matters</strong>{{ row.detail }}</div>
-          <div class="bk-compact-detail"><strong>Next check</strong>Confirm best book, line movement, game environment, and whether the derivative number is stale.</div>
-          <div class="bk-compact-detail"><strong>Workflow</strong>Use as a feeder into Props, Market, Parlay Builder, or the player profile.</div>
+          <div class="bk-compact-detail"><strong>The number</strong>{{ row.stat }} {{ row.side }} {{ row.line }}{% if row.price not in ['-', None, 'combo'] %} at {{ row.price }}{% if row.implied is not none %} — {{ row.implied|round(0)|int }}% implied probability{% endif %}{% endif %}.</div>
+          <div class="bk-compact-detail"><strong>Line movement</strong>{% if row.movement %}Moved {{ '%+g'|format(row.movement) }} from the open{% if (row.movement > 0 and row.side == 'OVER') or (row.movement < 0 and row.side == 'UNDER') %} toward this side — the market is firming, the early number was better{% else %} against this side — the current price may be the value{% endif %}.{% else %}No movement from the opening number.{% endif %}</div>
+          <div class="bk-compact-detail"><strong>Read</strong>{{ row.detail }}{% if row.book %} Best book: {{ row.book }}.{% endif %}</div>
         </div>
       </details>
     </article>
