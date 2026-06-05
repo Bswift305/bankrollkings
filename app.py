@@ -9084,6 +9084,58 @@ def _load_sport_scorecard_summary(sport_key):
     }
 
 
+def _detect_series_mapping_alerts():
+    """Owner-facing alert: playoff matchups missing from SERIES_CONFIG.
+
+    A definite GAP is a playoff RESULT for an unmapped team pair — that series
+    will render 0-0 on the dashboard (exactly what happened with the Finals).
+    In postseason mode we also surface upcoming scheduled matchups that aren't
+    mapped yet, so a new round gets configured before its games are played.
+    """
+    alerts = []
+    try:
+        configured = {frozenset(cfg['teams']) for cfg in SERIES_CONFIG.values()}
+    except Exception:
+        return alerts
+    seen = set()
+    try:
+        results = load_playoff_results()
+        if results is not None and not results.empty and {'Away', 'Home'}.issubset(results.columns):
+            for _, row in results.iterrows():
+                away = normalize_team_for_filter(row.get('Away'))
+                home = normalize_team_for_filter(row.get('Home'))
+                if not away or not home:
+                    continue
+                pair = frozenset({away, home})
+                if pair not in configured and pair not in seen:
+                    seen.add(pair)
+                    alerts.append({
+                        'severity': 'fail',
+                        'message': f"{' vs '.join(sorted(pair))} has playoff results but no SERIES_CONFIG entry — that series will show 0-0.",
+                    })
+    except Exception:
+        pass
+    try:
+        if postseason_only_enabled():
+            schedule = load_schedule()
+            if schedule is not None and not schedule.empty and {'Away', 'Home'}.issubset(schedule.columns):
+                for _, row in schedule.iterrows():
+                    away = normalize_team_for_filter(row.get('Away'))
+                    home = normalize_team_for_filter(row.get('Home'))
+                    if not away or not home:
+                        continue
+                    pair = frozenset({away, home})
+                    if pair not in configured and pair not in seen:
+                        seen.add(pair)
+                        alerts.append({
+                            'severity': 'warn',
+                            'message': f"Upcoming {' vs '.join(sorted(pair))} is not in SERIES_CONFIG — add it before tip-off.",
+                        })
+    except Exception:
+        pass
+    return alerts
+
+
 def build_ops_status_strip():
     cache_key = 'ops_status_strip'
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
@@ -9188,10 +9240,18 @@ def build_ops_status_strip():
         if parts:
             scorecard_decision = parts[0].replace('Prelaunch decision:', '').strip() or 'Unknown'
 
+    series_alerts = _detect_series_mapping_alerts()
+
     overall = 'good'
     if any(item['status'] in {'stale', 'missing'} for item in items):
         overall = 'stale'
     elif any(item['status'] == 'watch' for item in items):
+        overall = 'watch'
+    # A playoff series with no config is an attention-level problem (wrong score
+    # shown to users); an unmapped upcoming matchup is at least a watch.
+    if any(a['severity'] == 'fail' for a in series_alerts):
+        overall = 'stale'
+    elif series_alerts and overall == 'good':
         overall = 'watch'
 
     sport_scorecards = [
@@ -9212,6 +9272,7 @@ def build_ops_status_strip():
         'sport_scorecards': sport_scorecards,
         'scorecard_decision': scorecard_decision,
         'scorecard_note': scorecard_note or 'No scorecard note available yet.',
+        'series_alerts': series_alerts,
     }
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
