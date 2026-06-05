@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260605-mascot-college">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260605-flip-mascot-bg">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -33,9 +33,6 @@
        TOP BAR — identical on every page
   ═══════════════════════════════════════ -->
   <header class="bk-topbar">
-    <a class="bk-logo bk-brand-logo" href="{{ url_for('dashboard') }}" title="Bankroll Kings">
-      <img src="/static/brand-latest-logo-thumb.webp" alt="Bankroll Kings">
-    </a>
     <a class="bk-site-name" href="{{ url_for('dashboard') }}">BANKROLL KINGS</a>
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker">
@@ -199,10 +196,6 @@
       </a>
     </div>
 
-    <div class="bk-sidebar-mascot">
-      <img src="/static/king-bankroll.webp" alt="King Bankroll" loading="lazy">
-      <span>King Bankroll</span>
-    </div>
   </aside>
 
   <!-- ═══════════════════════════════════════

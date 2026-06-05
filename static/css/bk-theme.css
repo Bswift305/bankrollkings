@@ -1533,6 +1533,58 @@ body::after {
   margin-top: auto;
 }
 
+/* Flip cards (situational split examples) */
+.bk-flip-hint {
+  color: var(--text3);
+  font-size: 11px;
+  margin: 0 0 10px;
+}
+
+.bk-flip {
+  perspective: 1000px;
+  min-height: 172px;
+  cursor: pointer;
+  outline: none;
+}
+
+.bk-flip-inner {
+  position: relative;
+  width: 100%;
+  min-height: 172px;
+  transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.bk-flip:hover .bk-flip-inner,
+.bk-flip:focus-visible .bk-flip-inner,
+.bk-flip.is-flipped .bk-flip-inner {
+  transform: rotateY(180deg);
+}
+
+.bk-flip-face {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.bk-flip-back {
+  transform: rotateY(180deg);
+  border-color: rgba(215, 167, 79, 0.35);
+  background: rgba(215, 167, 79, 0.07);
+}
+
+.bk-flip-cue {
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bk-primary2);
+  opacity: 0.7;
+}
+
 .bk-phase2-lists {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2543,27 +2595,20 @@ body::after {
   background: rgba(145,168,184,0.045) !important;
 }
 
-.bk-sidebar-mascot {
-  padding: 16px 12px 20px;
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-}
-
-.bk-sidebar-mascot img {
-  width: 116px;
-  max-width: 78%;
-  height: auto;
-  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.5));
-}
-
-.bk-sidebar-mascot span {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--bk-gold2);
-  opacity: 0.85;
+/* King Bankroll as an ambient background watermark on the sidebar — present
+   on every authenticated page without looking like a placed thumbnail. */
+.bk-sidebar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 230px;
+  height: 280px;
+  background: url('/static/king-bankroll.webp') center bottom / contain no-repeat;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: -1;
 }
 
 .bk-compact-list {

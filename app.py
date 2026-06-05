@@ -31898,31 +31898,37 @@ def tendencies():
             'label': 'Home / Away',
             'status': 'Design ready',
             'detail': 'Conditional hit rate by venue so a player can show reliable home overs without hiding road weakness.',
+            'example': 'A guard clears his points line in 74% of home games but only 56% on the road — the venue split says buy the home over and pass on the road.',
         },
         {
             'label': 'Rest Profile',
             'status': 'Design ready',
             'detail': 'Back-to-back, one-day rest, and two-plus-days rest splits from dated game logs.',
+            'example': 'A forward hits his rebounds over 70% on 2+ days rest but just 47% on the back end of a back-to-back — rest, not form, is the real signal.',
         },
         {
             'label': 'Favorite / Underdog',
             'status': 'Needs line join',
             'detail': 'Prop hit rate when the team is favored, short dog, or long dog after game-line history is joined.',
+            'example': 'A running back\'s rush-yard over hits 63% when his team is favored (game script = carries) but drops to 41% as an underdog chasing points.',
         },
         {
             'label': 'Game Total Band',
             'status': 'Needs line join',
             'detail': 'High-total versus low-total environments for points, assists, rebounds, strikeouts, and yardage markets.',
+            'example': 'In games with a 230+ total, a wing\'s PRA over hits ~9% more often than in sub-215 grind-it-out environments.',
         },
         {
             'label': 'Opponent Type',
             'status': 'Model scaffold',
             'detail': 'Opponent defense and pace buckets so the condition is about matchup shape, not just the team name.',
+            'example': 'vs bottom-10 pace-up defenses a center\'s points over hits 62%; vs top-10 slow defenses it falls to 44% — same player, different matchup shape.',
         },
         {
             'label': 'Officiating Context',
             'status': 'Live feed seeded',
             'detail': 'Official, umpire, and crew profiles become a support or caution layer once assignments are confirmed.',
+            'example': 'A high-whistle ref crew averages 4 more fouls per game — free-throw and team-total overs lean up when that crew is assigned.',
         },
     ]
     officiating_status = _load_derivative_officiating_status(sport_filter=sport_filter)

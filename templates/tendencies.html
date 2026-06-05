@@ -69,13 +69,25 @@
       <h2>Situational splits worth building</h2>
     </div>
   </div>
+  <p class="bk-flip-hint">Tap a card to flip it for a plain-English example.</p>
   <div class="bk-phase2-grid">
     {% for split in situational_splits %}
-    <article class="bk-phase2-card">
-      <span class="bk-phase2-label">{{ split.status }}</span>
-      <strong>{{ split.label }}</strong>
-      <small>{{ split.detail }}</small>
-    </article>
+    <div class="bk-flip" tabindex="0" role="button" aria-label="{{ split.label }} — flip for example">
+      <div class="bk-flip-inner">
+        <article class="bk-flip-face bk-flip-front bk-phase2-card">
+          <span class="bk-phase2-label">{{ split.status }}</span>
+          <strong>{{ split.label }}</strong>
+          <small>{{ split.detail }}</small>
+          <span class="bk-flip-cue">Example →</span>
+        </article>
+        <article class="bk-flip-face bk-flip-back bk-phase2-card">
+          <span class="bk-phase2-label gold">Example</span>
+          <strong>{{ split.label }}</strong>
+          <small>{{ split.example }}</small>
+          <span class="bk-flip-cue">← Back</span>
+        </article>
+      </div>
+    </div>
     {% endfor %}
   </div>
 </section>
@@ -122,3 +134,14 @@
   </div>
 </section>
 {% endblock main %}
+
+{% block extra_js %}
+<script>
+  document.querySelectorAll('.bk-flip').forEach(function (card) {
+    card.addEventListener('click', function () { this.classList.toggle('is-flipped'); });
+    card.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.classList.toggle('is-flipped'); }
+    });
+  });
+</script>
+{% endblock %}
