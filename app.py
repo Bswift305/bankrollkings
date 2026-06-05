@@ -17511,6 +17511,27 @@ def get_free_sport_locked_features(sport_key):
     return FREE_SPORT_LOCKED_FEATURES.get(sport_key, FREE_SPORT_LOCKED_FEATURES['nba'])
 
 
+def get_dashboard_locked_features(sport_key):
+    """Plan-aware subset for the dashboard upgrade strip.
+
+    Owners/admins and full-access plans see nothing (they already have it).
+    Everyone else sees only the tiers ABOVE their current plan, so we never
+    show an upgrade prompt for something the user already owns.
+    """
+    user = get_current_user()
+    if not user:
+        # Logged-out visitors on a free surface: show the full ladder.
+        return get_free_sport_locked_features(sport_key)
+    if is_owner_user(user):
+        return []
+    current_rank = get_plan_rank(normalize_user_plan(user))
+    items = get_free_sport_locked_features(sport_key)
+    return [
+        item for item in items
+        if get_plan_rank(str(item.get('plan', '')).strip().lower()) > current_rank
+    ]
+
+
 def _props_file_for_free_sport(sport_key):
     sport_key = normalize_sport_access_key(sport_key)
     filenames = {
@@ -25154,6 +25175,7 @@ def inject_globals():
             'method_guides': METHOD_GUIDES,
             'get_sport_model_profile': get_sport_model_profile,
             'get_free_sport_locked_features': get_free_sport_locked_features,
+            'get_dashboard_locked_features': get_dashboard_locked_features,
             'postseason_only': postseason_only_enabled(),
             **get_focus_mode_labels(postseason_only_enabled()),
         }
@@ -25321,6 +25343,7 @@ def inject_globals():
         'get_method_guide': get_method_guide,
         'get_sport_model_profile': get_sport_model_profile,
         'get_free_sport_locked_features': get_free_sport_locked_features,
+        'get_dashboard_locked_features': get_dashboard_locked_features,
         'sport_home_href': sport_home_href,
         'show_nba_subnav': False,
         'postseason_only': postseason_only,

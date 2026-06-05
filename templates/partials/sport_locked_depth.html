@@ -1,22 +1,24 @@
-{% set locked_items = get_free_sport_locked_features(sport_key) if get_free_sport_locked_features is defined else [] %}
+{% set locked_items = get_dashboard_locked_features(sport_key) if get_dashboard_locked_features is defined else [] %}
 {% if locked_items %}
-<div class="card mb-24 panel-glow sport-depth-gate">
-    <div class="card-header panel-header-gloss">
-        <div>
-            <div class="card-title">{{ sport_label|default(sport_key|upper) }} Depth Map</div>
-            <div class="cell-meta" style="margin-top:4px;">The dashboard shows the lane. Higher tiers unlock the deeper decision layers behind it.</div>
-        </div>
-        <span class="badge badge-accent">Plan-aware</span>
-    </div>
-    <div class="grid-3 p-16" style="gap:12px;">
-        {% for item in locked_items[:3] %}
-        <div class="parlay-surface-soft" style="padding:12px;">
-            <div class="page-kicker" style="margin-bottom:6px;">{{ item.plan }}</div>
-            <div style="font-size:16px; font-weight:800; color:var(--text-bright);">{{ item.title }}</div>
-            <div style="font-size:12px; color:var(--text-muted); line-height:1.55; margin-top:6px;">{{ item.description }}</div>
-            <a href="{{ url_for('pricing', required=item.plan|lower, next=item.href) }}" class="btn btn-secondary btn-sm" style="margin-top:10px;">Upgrade</a>
-        </div>
-        {% endfor %}
-    </div>
+<style>
+.bk-depth-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:8px 14px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.07);border-radius:10px;background:linear-gradient(135deg,rgba(110,162,255,0.06),rgba(132,215,210,0.04));}
+.bk-depth-strip-label{font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--bk-gold2,#ffd16d);opacity:.85;white-space:nowrap;}
+.bk-depth-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 auto;min-width:0;}
+.bk-depth-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);color:var(--text2,#c2cfd5);font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;transition:border-color .15s ease,color .15s ease;}
+.bk-depth-chip:hover{border-color:rgba(132,215,210,0.34);color:#fff;}
+.bk-depth-chip .sdc-plan{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--bk-gold2,#ffd16d);}
+.bk-depth-see{font-size:11px;font-weight:700;color:var(--bk-primary2,#9df4ec);text-decoration:none;white-space:nowrap;}
+.bk-depth-see:hover{text-decoration:underline;}
+</style>
+<div class="bk-depth-strip">
+  <span class="bk-depth-strip-label">Unlock more</span>
+  <div class="bk-depth-chips">
+    {% for item in locked_items[:4] %}
+    <a href="{{ url_for('pricing', required=item.plan|lower, next=item.href) }}" class="bk-depth-chip" title="{{ item.description }}">
+      <span class="sdc-plan">{{ item.plan }}</span>{{ item.title }}
+    </a>
+    {% endfor %}
+  </div>
+  <a href="{{ url_for('pricing') }}" class="bk-depth-see">See plans &rsaquo;</a>
 </div>
 {% endif %}
