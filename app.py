@@ -4276,7 +4276,7 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
     direction_filter = str(direction_filter or 'all').strip().lower() or 'all'
     search_query = str(search_query or '').strip().lower()
 
-    today = pd.Timestamp.now().normalize()
+    today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
     if date_filter in {'today', 'tomorrow'} and 'Game' in props_df.columns:
         target_day = today if date_filter == 'today' else tomorrow
@@ -5106,7 +5106,7 @@ def build_wnba_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fi
             .to_dict()
         )
     rows = []
-    today = pd.Timestamp.now().normalize()
+    today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
     stat_filter = str(stat_filter or '').strip().upper()
     direction_filter = str(direction_filter or 'all').strip().lower()
@@ -5472,7 +5472,7 @@ def get_football_stat_family(stat):
 def build_football_live_games(odds_df, schedule_df, date_filter='all'):
     lookup = build_live_game_lookup(odds_df, schedule_df)
     rows = []
-    today = pd.Timestamp.now().normalize()
+    today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
     for key, market in lookup.items():
         slug = market.get('slug')
@@ -7897,7 +7897,7 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
 
     odds_lookup = build_live_game_lookup(odds_df, schedule_df)
     rows = []
-    today = pd.Timestamp.now().normalize()
+    today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
     stat_filter = str(stat_filter or '').strip().lower()
     direction_filter = str(direction_filter or 'all').strip().lower()
@@ -16508,7 +16508,7 @@ def get_current_playoff_focus_label():
     return round_label, short_map.get(max_order, 'Playoffs'), description_map.get(max_order, 'Current playoff slate is active.')
 
 def get_focus_mode_labels(postseason_only):
-    today = datetime.now().date()
+    today = sports_today_date()
     playoff_bracket_lock = datetime(2026, 4, 18).date()
     if postseason_only:
         if today < playoff_bracket_lock:
@@ -17046,7 +17046,7 @@ def resolve_series_config(series_id, schedule=None):
 
 def build_active_series(schedule):
     active = []
-    today = pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
+    today = sports_today_ts()
     known_matchups = set()
 
     for series_id, config in SERIES_CONFIG.items():
@@ -20755,11 +20755,31 @@ def build_matchup_decision_cards(matchup_props):
     }
 
 
+def sports_today_ts():
+    """'Today' for US sports schedules, as a normalized pd.Timestamp in US/Eastern.
+
+    The server runs in UTC, which rolls over to the next calendar day at 8pm ET.
+    US sports schedules are dated in Eastern time, so using server-local (UTC) 'today'
+    hides same-night games once it passes midnight UTC. Always anchor 'today' to ET.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        now_et = datetime.now(ZoneInfo('America/New_York'))
+    except Exception:
+        now_et = datetime.now()
+    return pd.Timestamp(now_et.strftime('%Y-%m-%d'))
+
+
+def sports_today_date():
+    """'Today' for US sports schedules, as a date object in US/Eastern."""
+    return sports_today_ts().date()
+
+
 def get_upcoming_games(schedule, days=7, allowed_teams=None):
     if schedule.empty or 'Date' not in schedule.columns:
         return {'today': [], 'tomorrow': [], 'upcoming': [], 'all_teams': set()}
     
-    today = pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
+    today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
     upcoming_start = today + pd.Timedelta(days=2)
     upcoming_end = today + pd.Timedelta(days=max(days - 1, 2))
@@ -23312,7 +23332,7 @@ def calculate_situational_factors(player_logs, player_name, team, opponent, game
         dates = pd.to_datetime(player_logs_sorted['Date'], errors='coerce').dropna()
         if len(dates) >= 2:
             last_game = dates.iloc[0]
-            today = pd.Timestamp.now().normalize()
+            today = sports_today_ts()
             days_since = (today - last_game).days
             if days_since <= 1:
                 factors['is_b2b'] = True
@@ -29449,8 +29469,9 @@ def render_nba_props_page(filter_type=None):
     if use_default_snapshot:
         snapshot_key = 'nba_floor_props_postseason_today_current' if filter_type == 'floor' else 'nba_props_postseason_today_current'
         snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
-        if snapshot:
-            board = snapshot.get('payload') or {}
+        snapshot_payload = (snapshot or {}).get('payload') or {}
+        if snapshot_payload.get('props'):
+            board = snapshot_payload
         else:
             board = build_live_props_board(
                 filter_type=filter_type,
@@ -29637,8 +29658,9 @@ def render_nba_market_edge_page():
     )
     if use_default_snapshot:
         snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
-        if snapshot:
-            board = snapshot.get('payload') or {}
+        snapshot_payload = (snapshot or {}).get('payload') or {}
+        if snapshot_payload.get('picks'):
+            board = snapshot_payload
         else:
             board = build_market_edge_board(
                 postseason_only=postseason_only,
