@@ -397,10 +397,11 @@ SPORT_PASS_ACCESS = {
 
 ALL_SPORT_PLAN_KEYS = {'pro', 'sharp', 'elite'}
 
-# Paid access is granted only for verified-paid ('active') or manually-comped ('comp')
-# accounts. 'selected'/'trial' intentionally do NOT grant access: merely choosing a plan
-# (pre-payment) must not unlock paid tiers. Owners/admins bypass via normalize_user_plan.
-ACTIVE_PLAN_STATUSES = {'active', 'comp'}
+# Paid access is granted only for 'active' accounts (verified-paid via Stripe, or manually
+# set active to comp a tester). 'selected'/'trial' intentionally do NOT grant access:
+# merely choosing a plan (pre-payment) must not unlock paid tiers. Owners/admins bypass
+# via normalize_user_plan.
+ACTIVE_PLAN_STATUSES = {'active'}
 OWNER_EMAILS = {
     'decaturjones019@gmail.com',
 }
