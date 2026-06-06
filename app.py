@@ -32135,6 +32135,20 @@ def nfl_formula_lab():
     )
 
 
+def _read_csv_safe(path):
+    """Read a CSV, returning an empty DataFrame if it's missing, empty, or unparseable.
+
+    Freshly generated tracking files can be empty (zero rows / no header) before enough
+    resolved data exists; raw pd.read_csv raises EmptyDataError on those and 500s the page.
+    """
+    try:
+        if not path.exists():
+            return pd.DataFrame()
+        return pd.read_csv(path, low_memory=False)
+    except Exception:
+        return pd.DataFrame()
+
+
 def _load_calibration_lab_context():
     summary_path = DATA_DIR / 'tracking' / 'CrossSport_Calibration_Summary.csv'
     notes_path = DATA_DIR / 'tracking' / 'CrossSport_Calibration_Notes.txt'
@@ -32143,10 +32157,10 @@ def _load_calibration_lab_context():
     promotion_notes_path = DATA_DIR / 'tracking' / 'Promotion_Signal_Notes.txt'
     driver_path = DATA_DIR / 'tracking' / 'Sport_Driver_Calibration.csv'
     driver_notes_path = DATA_DIR / 'tracking' / 'Sport_Driver_Calibration_Notes.txt'
-    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
-    profiles = pd.read_csv(profile_path, low_memory=False) if profile_path.exists() else pd.DataFrame()
-    promotions = pd.read_csv(promotion_path, low_memory=False) if promotion_path.exists() else pd.DataFrame()
-    drivers = pd.read_csv(driver_path, low_memory=False) if driver_path.exists() else pd.DataFrame()
+    summary = _read_csv_safe(summary_path)
+    profiles = _read_csv_safe(profile_path)
+    promotions = _read_csv_safe(promotion_path)
+    drivers = _read_csv_safe(driver_path)
 
     sports = []
     if not summary.empty:
