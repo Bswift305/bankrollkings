@@ -17622,9 +17622,13 @@ FREE_SPORT_LOCKED_FEATURES = {
     'mlb': [
         {'plan': 'Pro', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
         {'plan': 'Pro', 'title': 'Pitcher and batter fits', 'description': 'Pitcher strikeout tendencies, opposing lineup fit, and hitter props that match the environment.', 'href': '/sports/mlb/props'},
+        {'plan': 'Pro', 'title': 'Player and matchup pages', 'description': 'Hitter and pitcher pages with splits, recent form, opponent history, and the parlay builder.', 'href': '/sports/mlb'},
         {'plan': 'Sharp', 'title': 'MLB market edge', 'description': 'Book splits, one-sided markets, and line range warnings for daily baseball pricing.', 'href': '/sports/mlb/market-edge'},
         {'plan': 'Sharp', 'title': 'Floor and trend filters', 'description': 'Sort baseball props into safer floor plays and trend-backed reads.', 'href': '/sports/mlb/floor'},
+        {'plan': 'Sharp', 'title': 'Statcast signals', 'description': 'Spin rate, exit velocity, barrel rate, xBA, pitch mix, and CSW behind each baseball prop.', 'href': '/sports/mlb/trends'},
         {'plan': 'Elite', 'title': 'Launch lab', 'description': 'The baseball launch lab ties slate intelligence, confidence governance, and calibration into the daily board.', 'href': '/elite/mlb-lab'},
+        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, prop type, and tier across every MLB ticket you track.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends MLB legs with your other sports.', 'href': '/elite'},
     ],
     'nfl': [
         {'plan': 'Pro', 'title': 'Weekly game board', 'description': 'Spread, total, implied-team-total, weather, and matchup links for every game.', 'href': '/sports/nfl'},
