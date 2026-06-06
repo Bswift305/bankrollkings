@@ -2382,6 +2382,57 @@ body::after {
   text-transform: uppercase !important;
 }
 
+/* Board filter / sort / pagination toolbars (props + sport dashboards) */
+.board-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.board-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.board-filter-field label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bk-gold2, var(--text-muted));
+}
+.board-filter-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg3, #11151f) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f8b96' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 10px center;
+  border: 1px solid var(--border);
+  color: var(--text-bright, #e7eef2);
+  border-radius: 8px;
+  padding: 8px 30px 8px 11px;
+  font-size: 13px;
+  min-width: 150px;
+  cursor: pointer;
+}
+.board-filter-field select:hover { border-color: var(--border2, var(--border)); }
+.board-filter-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pagination-meta { font-size: 12px; color: var(--text-muted); }
+.pagination-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 .bk-compat-content .signup-shell,
 .bk-compat-content .pricing-hero {
   display: grid !important;
