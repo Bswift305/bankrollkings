@@ -26904,8 +26904,6 @@ def mlb_dashboard():
 @app.route('/sports/mlb/props')
 def mlb_props_page():
     date_filter = request.args.get('date', 'today').strip().lower() or 'today'
-    if date_filter == 'all':
-        date_filter = 'today'
     stat_filter = request.args.get('stat', '').strip()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('player', request.args.get('search', '')).strip()
