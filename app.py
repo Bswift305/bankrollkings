@@ -10812,7 +10812,7 @@ def summarize_featured_candidate_archive(archive_df, gamelog_map=None):
 
     latest_qc_run = {}
     if QC_RUN_LOG_PATH.exists():
-        qc_runs = pd.read_csv(QC_RUN_LOG_PATH)
+        qc_runs = _read_csv_safe(QC_RUN_LOG_PATH)
         if not qc_runs.empty and 'Scope' in qc_runs.columns:
             nba_qc = qc_runs[qc_runs['Scope'].astype(str) == 'nba_contradictions'].copy()
             if not nba_qc.empty:
@@ -32053,8 +32053,8 @@ def _load_nfl_formula_lab_context():
     notes_path = DATA_DIR / 'tracking' / 'Calibration_Notes_NFL_2025.txt'
     sim_path = DATA_DIR / 'tracking' / 'NFL_Simulation_Results.csv'
 
-    scored = pd.read_csv(scored_path, low_memory=False) if scored_path.exists() else pd.DataFrame()
-    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
+    scored = _read_csv_safe(scored_path)
+    summary = _read_csv_safe(summary_path)
 
     resolved = scored[scored.get('OutcomeState', pd.Series(dtype=str)).isin(['Hit', 'Miss'])].copy() if not scored.empty else pd.DataFrame()
     hit_rate = float(resolved['OutcomeState'].eq('Hit').mean()) if not resolved.empty else None
@@ -32243,8 +32243,8 @@ def _load_mlb_formula_lab_context():
     scored_path = DATA_DIR / 'tracking' / 'MLB_AllPropResults_Scored.csv'
     summary_path = DATA_DIR / 'tracking' / 'MLB_Formula_Calibration_Summary.csv'
     notes_path = DATA_DIR / 'tracking' / 'Calibration_Notes_MLB_2026.txt'
-    scored = pd.read_csv(scored_path, low_memory=False) if scored_path.exists() else pd.DataFrame()
-    summary = pd.read_csv(summary_path, low_memory=False) if summary_path.exists() else pd.DataFrame()
+    scored = _read_csv_safe(scored_path)
+    summary = _read_csv_safe(summary_path)
     resolved = scored[scored.get('OutcomeState', pd.Series(dtype=str)).isin(['Hit', 'Miss'])].copy() if not scored.empty else pd.DataFrame()
     hit_rate = float(resolved['OutcomeState'].eq('Hit').mean()) if not resolved.empty else None
 
