@@ -242,8 +242,11 @@
   }
   .free-lock-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 280px));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+  }
+  @media (max-width: 760px) {
+    .free-lock-grid { grid-template-columns: 1fr; }
   }
   .free-lock-group { margin-bottom: 14px; }
   .free-lock-card {
