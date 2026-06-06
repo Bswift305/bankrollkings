@@ -36,19 +36,63 @@ def _resolved_count(path: Path) -> tuple[int, int]:
     return resolved, pending
 
 
-def _archive_readiness_status() -> tuple[str, str]:
+def _active_sports() -> set:
+    """Sports that currently have live data.
+
+    Off-season sports (no props loaded) are treated as N/A by the launch gate
+    instead of hard FAILs, so an in-season launch (NBA/MLB/WNBA) can certify GO.
+    Each off-season check reactivates automatically when that sport's props return.
+    """
+    mapping = {
+        "NBA": "NBA_Props.csv",
+        "WNBA": "WNBA_Props.csv",
+        "MLB": "MLB_Props.csv",
+        "NFL": "NFL_Props.csv",
+        "NCAAF": "NCAAF_Props.csv",
+    }
+    active = set()
+    for sport, fname in mapping.items():
+        path = BASE_DIR / "data" / "props" / fname
+        try:
+            if path.exists() and not pd.read_csv(path).empty:
+                active.add(sport)
+        except Exception:
+            pass
+    return active
+
+
+def _route_sport(path: str):
+    """Map a route path to its sport, or None for general/cross-sport routes."""
+    p = str(path or "").lower()
+    for seg, sport in (
+        ("/ncaaf", "NCAAF"), ("/nfl", "NFL"), ("/wnba", "WNBA"), ("/mlb", "MLB"),
+        ("/ncaamb", "NCAAMB"), ("/ncaawb", "NCAAWB"), ("/nba", "NBA"),
+    ):
+        if seg in p:
+            return sport
+    return None
+
+
+def _archive_readiness_status(active: set) -> tuple[str, str]:
     required_paths = [
         BASE_DIR / "refresh_featured_results.py",
         BASE_DIR / "refresh_nfl_featured_results.py",
         BASE_DIR / "refresh_wnba_featured_results.py",
         BASE_DIR / "refresh_ncaaf_featured_results.py",
-        BASE_DIR / "data" / "tracking" / "NBA_FeaturedResults.csv",
-        BASE_DIR / "data" / "tracking" / "NFL_FeaturedResults.csv",
     ]
+    featured_results = {
+        "NBA": BASE_DIR / "data" / "tracking" / "NBA_FeaturedResults.csv",
+        "NFL": BASE_DIR / "data" / "tracking" / "NFL_FeaturedResults.csv",
+        "WNBA": BASE_DIR / "data" / "tracking" / "WNBA_FeaturedResults.csv",
+        "NCAAF": BASE_DIR / "data" / "tracking" / "NCAAF_FeaturedResults.csv",
+    }
+    for sport, path in featured_results.items():
+        if sport in active:
+            required_paths.append(path)
     missing = [path.name for path in required_paths if not path.exists()]
     if missing:
         return "FAIL", f"Missing archive/result artifacts: {', '.join(missing)}"
-    return "PASS", "Core featured snapshot and results artifacts exist for active sports."
+    return "PASS", "Featured snapshot and results artifacts exist for all in-season sports."
 
 
 def _calibration_status() -> tuple[str, str]:
@@ -101,11 +145,17 @@ def build_scorecard() -> dict:
     cfb_report = run_cfb_readiness()
 
     sections: list[dict] = []
+    active = _active_sports()
 
+    offseason_route_fails = [
+        f for f in route_report.get("failures", [])
+        if _route_sport(f.get("path", "")) is not None and _route_sport(f.get("path", "")) not in active
+    ]
+    inseason_route_fail_count = max(route_report["failure_count"] - len(offseason_route_fails), 0)
     sections.append({
         "Section": "Platform Reliability",
-        "Status": "PASS" if route_report["failure_count"] == 0 else "FAIL",
-        "Reason": f"Fast route smoke failures: {route_report['failure_count']}.",
+        "Status": "PASS" if inseason_route_fail_count == 0 else "FAIL",
+        "Reason": f"Fast route smoke failures (in-season): {inseason_route_fail_count}; off-season skipped: {len(offseason_route_fails)}.",
     })
 
     sections.append({
@@ -143,7 +193,7 @@ def build_scorecard() -> dict:
         "Reason": integrity_reason,
     })
 
-    archive_status, archive_reason = _archive_readiness_status()
+    archive_status, archive_reason = _archive_readiness_status(active)
     sections.append({
         "Section": "Archive And Replay Readiness",
         "Status": archive_status,
@@ -176,14 +226,19 @@ def build_scorecard() -> dict:
         "Reason": pricing_reason,
     })
 
+    wnba_fail = wnba_report["failure_count"] if "WNBA" in active else 0
+    wnba_warn = wnba_report["warning_count"] if "WNBA" in active else 0
+    cfb_fail = cfb_report["failure_count"] if "NCAAF" in active else 0
+    cfb_warn = cfb_report["warning_count"] if "NCAAF" in active else 0
     sport_status = "PASS"
     sport_reason = (
-        f"WNBA warnings={wnba_report['warning_count']}, failures={wnba_report['failure_count']}; "
-        f"CFB warnings={cfb_report['warning_count']}, failures={cfb_report['failure_count']}."
+        f"WNBA warnings={wnba_warn}, failures={wnba_fail}; "
+        f"CFB warnings={cfb_warn}, failures={cfb_fail}"
+        + ("" if "NCAAF" in active else " (CFB off-season: N/A)")
     )
-    if wnba_report["failure_count"] > 0 or cfb_report["failure_count"] > 0:
+    if wnba_fail > 0 or cfb_fail > 0:
         sport_status = "FAIL"
-    elif wnba_report["warning_count"] > 0 or cfb_report["warning_count"] > 0:
+    elif wnba_warn > 0 or cfb_warn > 0:
         sport_status = "WATCH"
     sections.append({
         "Section": "Sport-Specific Launch Questions",
