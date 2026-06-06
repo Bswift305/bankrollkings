@@ -20756,22 +20756,16 @@ def build_matchup_decision_cards(matchup_props):
 
 
 def sports_today_ts():
-    """'Today' for US sports schedules, as a normalized pd.Timestamp in US/Eastern.
+    """'Today' for schedule/game-date buckets, as a normalized pd.Timestamp.
 
-    The server runs in UTC, which rolls over to the next calendar day at 8pm ET.
-    US sports schedules are dated in Eastern time, so using server-local (UTC) 'today'
-    hides same-night games once it passes midnight UTC. Always anchor 'today' to ET.
+    Schedule rows are dated in the server's timezone (UTC), so anchor 'today' to
+    server-local time to stay consistent with how games are dated in the schedule.
     """
-    try:
-        from zoneinfo import ZoneInfo
-        now_et = datetime.now(ZoneInfo('America/New_York'))
-    except Exception:
-        now_et = datetime.now()
-    return pd.Timestamp(now_et.strftime('%Y-%m-%d'))
+    return pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
 
 
 def sports_today_date():
-    """'Today' for US sports schedules, as a date object in US/Eastern."""
+    """'Today' for schedule/game-date buckets, as a date object."""
     return sports_today_ts().date()
 
 
@@ -23723,7 +23717,7 @@ def build_live_prop_runtime_context(postseason_only=False):
 def build_live_prop_request_context(postseason_only=False, include_ticket=False):
     date_filter = request.args.get('date')
     if not date_filter:
-        date_filter = 'today' if postseason_only else 'all'
+        date_filter = 'all'
     sample_mode = request.args.get('sample', 'current' if postseason_only else 'full').strip().lower()
     if sample_mode not in {'current', 'full'}:
         sample_mode = 'current' if postseason_only else 'full'
@@ -28773,7 +28767,7 @@ def build_live_props_board(filter_type=None, postseason_only=False, date_filter=
     team_game_lookup = runtime['team_game_lookup']
 
     if not date_filter:
-        date_filter = 'today' if postseason_only else 'all'
+        date_filter = 'all'
     if sample_mode not in {'current', 'full'}:
         sample_mode = 'current' if postseason_only else 'full'
     min_sample_games = 2 if postseason_only else 5
@@ -28899,7 +28893,7 @@ def build_market_edge_board(postseason_only=False, date_filter=None, direction_f
     team_game_lookup = runtime['team_game_lookup']
 
     if not date_filter:
-        date_filter = 'today' if postseason_only else 'all'
+        date_filter = 'all'
     if sample_mode not in {'current', 'full'}:
         sample_mode = 'current' if postseason_only else 'full'
     min_sample_games = 2 if postseason_only else 5
