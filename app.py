@@ -30655,9 +30655,17 @@ def stripe_webhook():
     payload = request.get_data()
     signature = request.headers.get('Stripe-Signature', '')
     try:
-        event = stripe.Webhook.construct_event(payload, signature, secret)
+        stripe.Webhook.construct_event(payload, signature, secret)
     except Exception:
         return ('invalid signature', 400)
+
+    # Signature verified. Parse the raw payload as a plain dict — the stripe SDK's
+    # Event/StripeObject does not expose .get() consistently across versions.
+    import json as _json
+    try:
+        event = _json.loads(payload.decode('utf-8') if isinstance(payload, (bytes, bytearray)) else payload)
+    except Exception:
+        return ('', 200)
 
     event_type = str(event.get('type', '') or '')
     obj = (event.get('data', {}) or {}).get('object', {}) or {}
