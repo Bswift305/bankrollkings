@@ -14,7 +14,7 @@ from services.qc_tracking import append_qc_run_log
 
 
 ROUTES = (
-    ("/sports/wnba", ("Market Edge", "Floor Plays", "Trends")),
+    ("/sports/wnba", ("Command Center", "Market", "Props")),
     ("/sports/wnba/market-edge", ("Market Edge", "WNBA market spots")),
     ("/sports/wnba/floor", ("Floor Plays", "steady WNBA floor candidates")),
     ("/sports/wnba/trends", ("Trends", "trend-backed WNBA candidates")),
