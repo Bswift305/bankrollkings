@@ -93,8 +93,8 @@
 
     .compact-prop-list {
         display: grid;
-        gap: 8px;
-        padding: 10px;
+        gap: 5px;
+        padding: 8px;
     }
     .compact-prop-card {
         border: 1px solid rgba(127,238,228,.13);
@@ -107,9 +107,9 @@
     .compact-prop-main {
         display: grid;
         grid-template-columns: minmax(190px, 1.15fr) 120px 90px minmax(165px, .9fr) minmax(180px, 1fr) 82px;
-        gap: 12px;
+        gap: 10px;
         align-items: center;
-        padding: 11px 12px;
+        padding: 6px 12px;
     }
     .compact-player-line a {
         color: var(--bk-primary2);
@@ -121,7 +121,8 @@
     .compact-read-grid small {
         display: block;
         color: var(--text-muted);
-        line-height: 1.35;
+        font-size: 10.5px;
+        line-height: 1.25;
     }
     .compact-prop-title {
         display: flex;
@@ -131,7 +132,7 @@
     }
     .compact-prop-title strong {
         color: var(--text-bright);
-        font-size: 16px;
+        font-size: 14px;
     }
     .compact-play-pill {
         display: inline-flex;
@@ -628,8 +629,7 @@
                         <span class="compact-ou-sep">/</span>
                         <span class="compact-ou-rate {% if under_good %}hot{% else %}cold{% endif %} {% if not over_is_best %}best-side{% endif %}">U:{{ under_pct }}%</span>
                     </div>
-                    <div class="compact-ou-note">{% if over_is_best %}Best side: Over{% else %}Best side: Under{% endif %}</div>
-                    <small>{% if over_is_best %}Over has the higher hit rate{% else %}Under has the higher hit rate{% endif %} | avg {{ prop.avg }}</small>
+                    <small>Best: {% if over_is_best %}Over{% else %}Under{% endif %} &middot; avg {{ prop.avg }}</small>
                 </div>
 
                 <div class="compact-cell">
