@@ -938,6 +938,17 @@ def user_has_sport_access(user, sport_key):
 
 
 def get_sport_key_for_access_path(path):
+    # Cross-sport tools (injuries, calibration-lab, tendencies, derivatives) carry their
+    # sport in a ?sport= query param; honor that first so single-sport pass access maps
+    # to the right sport instead of defaulting to NBA.
+    try:
+        sport_param = request.args.get('sport')
+    except RuntimeError:
+        sport_param = None
+    if sport_param:
+        param_key = normalize_sport_access_key(sport_param)
+        if param_key in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
+            return param_key
     clean_path = str(path or '').strip().lower().split('?', 1)[0]
     if clean_path.startswith('/sports/'):
         parts = [part for part in clean_path.split('/') if part]
@@ -8850,7 +8861,7 @@ def enforce_access_gate():
     sport_access_key = get_sport_key_for_access_path(request.path)
     gate_required_plan = (
         get_sport_pass_plan_for_sport(sport_access_key)
-        if sport_access_key and required_plan == 'pro'
+        if sport_access_key and required_plan in ('pro', 'sharp')
         else required_plan
     )
 
@@ -8868,7 +8879,7 @@ def enforce_access_gate():
         return None
 
     current_plan = normalize_user_plan(current_user)
-    if sport_access_key and required_plan == 'pro' and user_has_sport_access(current_user, sport_access_key):
+    if sport_access_key and required_plan in ('pro', 'sharp') and user_has_sport_access(current_user, sport_access_key):
         return None
     if get_plan_rank(current_plan) >= get_plan_rank(required_plan):
         return None
