@@ -8820,6 +8820,21 @@ def logout_user():
     session.pop('display_name', None)
 
 
+def _resolve_post_auth_target(user, raw_next=''):
+    """Where to send a user after sign-in / sign-up.
+
+    Free (non-paying) users land on the free surface (/free) instead of the Pro-gated
+    dashboard. A specific `next` (e.g. a destination saved by an access gate) is honored;
+    the generic /dashboard default is replaced with the plan-appropriate landing. Pass a
+    get_current_user()-shaped dict so normalize_user_plan reads the plan correctly.
+    """
+    raw_next = str(raw_next or '').strip()
+    if raw_next and raw_next not in {'/dashboard', '/dashboard?postseason=1', '/dashboard?postseason=0'}:
+        return raw_next
+    paid = bool(user) and (is_owner_user(user) or get_plan_rank(normalize_user_plan(user)) >= get_plan_rank('pro'))
+    return '/dashboard?postseason=1' if paid else '/free'
+
+
 @app.before_request
 def enforce_access_gate():
     endpoint = str(request.endpoint or '').strip()
@@ -25492,8 +25507,9 @@ def inject_globals():
 # =============================================================================
 @app.route('/')
 def frontpage():
-    if get_current_user():
-        return redirect(url_for('dashboard'))
+    current_user = get_current_user()
+    if current_user:
+        return redirect(_resolve_post_auth_target(current_user, ''))
     postseason_only = postseason_only_enabled()
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
@@ -30224,7 +30240,8 @@ def derivatives_lab():
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     postseason_only = postseason_only_enabled()
-    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/dashboard'
+    raw_next = request.args.get('next', '').strip() or request.form.get('next', '').strip()
+    next_url = raw_next or '/dashboard'
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url_encoded = quote(next_url, safe='')
     tiers = get_pricing_tiers()
@@ -30269,7 +30286,7 @@ def signup():
             }
             save_user(user)
             login_user(user)
-            return redirect(next_url)
+            return redirect(_resolve_post_auth_target(get_current_user(), raw_next))
 
     return render_template(
         'signup.html',
@@ -30288,7 +30305,8 @@ def signup():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     postseason_only = postseason_only_enabled()
-    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/dashboard'
+    raw_next = request.args.get('next', '').strip() or request.form.get('next', '').strip()
+    next_url = raw_next or '/dashboard'
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url_encoded = quote(next_url, safe='')
     error = ''
@@ -30304,7 +30322,7 @@ def login():
                 error = 'Invalid email or password.'
             else:
                 login_user(user)
-                return redirect(next_url)
+                return redirect(_resolve_post_auth_target(get_current_user(), raw_next))
 
     return render_template('login.html', postseason_only=postseason_only, next_url=next_url, next_url_encoded=next_url_encoded, error=error, pricing_tiers=tiers, gate_notice=gate_notice)
 
