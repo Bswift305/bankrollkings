@@ -17608,16 +17608,24 @@ FREE_SPORT_LOCKED_FEATURES = {
     'nba': [
         {'plan': 'Pro', 'title': 'Full props by game', 'description': 'Every row, filter, sort, player link, and matchup link for tonight instead of the teaser rows.', 'href': '/sports/nba/props'},
         {'plan': 'Pro', 'title': 'Player + team pages', 'description': 'Stat trajectory, hit rates, role notes, team splits, and position-defense context from each game row.', 'href': '/sports/nba'},
+        {'plan': 'Pro', 'title': 'Matchup analysis & parlay builder', 'description': 'Full matchup breakdowns, game environment, and the parlay builder with CorrelationIQ grading.', 'href': '/sports/nba'},
         {'plan': 'Sharp', 'title': 'Market edge signals', 'description': 'Line movement, book disagreement, best-book context, and price-path notes on key names.', 'href': '/sports/nba/market-edge'},
         {'plan': 'Sharp', 'title': 'Floor play builder', 'description': 'Lower-volatility parlay legs with floor reads, risk notes, and correlation checks.', 'href': '/parlay?sport=nba&sample=current'},
+        {'plan': 'Sharp', 'title': 'Tracking + officiating', 'description': 'Defensive matchups, contested shots, drives, touch data, and referee tendency profiles.', 'href': '/sports/nba/trends'},
         {'plan': 'Elite', 'title': 'Deep matchup builder', 'description': 'Game-by-game matchup construction for usage, position leaks, and high-conviction card building.', 'href': '/elite/matchup-builder'},
+        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NBA ticket you track.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends NBA legs with your other sports.', 'href': '/elite'},
     ],
     'wnba': [
         {'plan': 'Pro', 'title': 'Full WNBA board', 'description': 'Every available prop with market-depth labels and current-slate context.', 'href': '/sports/wnba'},
         {'plan': 'Pro', 'title': 'Reliability depth', 'description': 'Player reliability ratings and sample-size warnings stay visible because thinner markets need more proof.', 'href': '/sports/wnba/trends'},
+        {'plan': 'Pro', 'title': 'Player + team pages', 'description': 'WNBA player and team pages with splits, recent form, matchup history, and the parlay builder.', 'href': '/sports/wnba'},
         {'plan': 'Sharp', 'title': 'Thin-market flags', 'description': 'Book-count, one-sided market, and stale-price warnings before a row is treated as playable.', 'href': '/sports/wnba/market-edge'},
         {'plan': 'Sharp', 'title': 'Floor play shortlist', 'description': 'Parlay-friendly floor reads that avoid forcing fragile overs in thin markets.', 'href': '/sports/wnba/floor'},
+        {'plan': 'Sharp', 'title': 'Trend-backed reads', 'description': 'Streak, role, and trend confirmation tuned to hold up in thinner WNBA markets.', 'href': '/sports/wnba/trends'},
         {'plan': 'Elite', 'title': 'Cross-sport ticket context', 'description': 'Use WNBA legs inside broader EV, bankroll, and correlation workflows.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every WNBA ticket you track.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'Leak finder & action queue', 'description': 'Sharp report cards, leak finder, and a daily action queue built from your results.', 'href': '/elite'},
     ],
     'mlb': [
         {'plan': 'Pro', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
@@ -17633,9 +17641,13 @@ FREE_SPORT_LOCKED_FEATURES = {
     'nfl': [
         {'plan': 'Pro', 'title': 'Weekly game board', 'description': 'Spread, total, implied-team-total, weather, and matchup links for every game.', 'href': '/sports/nfl'},
         {'plan': 'Pro', 'title': 'Team tendency pages', 'description': 'Weekly prep built around team behavior, scheme, and opponent fit rather than daily props.', 'href': '/sports/nfl/trends'},
+        {'plan': 'Pro', 'title': 'Player prop boards', 'description': 'Full weekly player prop boards with matchup context, player pages, and the parlay builder.', 'href': '/sports/nfl/props'},
         {'plan': 'Sharp', 'title': 'Spread and total leans', 'description': 'Best game-line reads and totals context before digging into player props.', 'href': '/sports/nfl/game-lines'},
         {'plan': 'Sharp', 'title': 'Game-script prop angles', 'description': 'Favorite/underdog scripts, target share, rushing volume, and injury role impact by matchup.', 'href': '/sports/nfl/props'},
+        {'plan': 'Sharp', 'title': 'NextGen Stats', 'description': 'Air yards share, separation, RYOE, CPOE, and route participation behind each prop.', 'href': '/sports/nfl/trends'},
         {'plan': 'Elite', 'title': 'Weekly builder cockpit', 'description': 'A deeper game-script builder for weekly prep, tickets, and cross-sport portfolio context.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'NFL formula lab', 'description': 'The NFL formula lab plus cross-sport parlay EV and correlation analysis.', 'href': '/elite'},
+        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NFL ticket you track.', 'href': '/elite'},
     ],
 }
 
