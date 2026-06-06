@@ -26317,7 +26317,44 @@ def nfl_trends_page():
 
 @app.route('/sports/nfl/props')
 def nfl_props_page():
-    return _render_football_method_page('nfl', 'props')
+    date_filter = request.args.get('date', 'all').strip().lower() or 'all'
+    stat_filter = request.args.get('stat', '').strip().upper()
+    direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
+    search_query = request.args.get('player', request.args.get('search', '')).strip()
+    sort_by = request.args.get('sort_by', 'confidence').strip().lower() or 'confidence'
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
+    odds_df = load_nfl_game_market_odds()
+    schedule_df = load_nfl_schedule()
+    props_df, refresh_meta = load_nfl_live_props_feed(require_fresh=True)
+    rows = build_football_live_prop_board(
+        props_df,
+        odds_df,
+        schedule_df,
+        method_key='props',
+        date_filter=date_filter,
+        stat_filter=stat_filter,
+        direction_filter=direction_filter,
+        search_query=search_query,
+        sport_key='nfl',
+    )
+    rows = attach_nfl_quant_insights_to_rows(rows, default_direction='OVER')
+    return render_props_screener_page(
+        sport_key='nfl',
+        sport_label='NFL',
+        rows=rows,
+        refresh_meta=refresh_meta,
+        date_filter=date_filter,
+        direction_filter=direction_filter,
+        stat_query=stat_filter,
+        player_query=search_query,
+        postseason_only=False,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        props_base_path='/sports/nfl/props',
+        props_floor_path='',
+        props_tracking_label='Next Gen + Game Script',
+        props_tracking_note='NGS, matchup script, market price, spread, and total context support each football prop row.',
+    )
 
 
 @app.route('/sports/ncaaf/game-lines')
@@ -26337,7 +26374,43 @@ def ncaaf_trends_page():
 
 @app.route('/sports/ncaaf/props')
 def ncaaf_props_page():
-    return _render_football_method_page('ncaaf', 'props')
+    date_filter = request.args.get('date', 'all').strip().lower() or 'all'
+    stat_filter = request.args.get('stat', '').strip().upper()
+    direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
+    search_query = request.args.get('player', request.args.get('search', '')).strip()
+    sort_by = request.args.get('sort_by', 'confidence').strip().lower() or 'confidence'
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
+    odds_df = load_ncaaf_game_market_odds()
+    schedule_df = load_ncaaf_schedule()
+    props_df, refresh_meta = load_ncaaf_live_props_feed(require_fresh=True)
+    rows = build_football_live_prop_board(
+        props_df,
+        odds_df,
+        schedule_df,
+        method_key='props',
+        date_filter=date_filter,
+        stat_filter=stat_filter,
+        direction_filter=direction_filter,
+        search_query=search_query,
+        sport_key='ncaaf',
+    )
+    return render_props_screener_page(
+        sport_key='ncaaf',
+        sport_label='CFB',
+        rows=rows,
+        refresh_meta=refresh_meta,
+        date_filter=date_filter,
+        direction_filter=direction_filter,
+        stat_query=stat_filter,
+        player_query=search_query,
+        postseason_only=False,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        props_base_path='/sports/ncaaf/props',
+        props_floor_path='',
+        props_tracking_label='Game Script + Market',
+        props_tracking_note='College football props are support only: spread, total, matchup script, and roster context need to agree first.',
+    )
 
 
 @app.route('/sports/nfl/matchup/<path:sheet_name>')
@@ -26466,7 +26539,48 @@ def wnba_page():
 
 @app.route('/sports/wnba/props')
 def wnba_props_page():
-    return redirect(f"/sports/wnba?{urlencode(request.args.to_dict(flat=True) or {'postseason': 1 if postseason_only_enabled() else 0})}", code=302)
+    date_filter = request.args.get('date', 'today').strip().lower() or 'today'
+    stat_filter = request.args.get('stat', '').strip().upper()
+    direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
+    search_query = request.args.get('player', request.args.get('search', '')).strip()
+    sort_by = request.args.get('sort_by', 'confidence').strip().lower() or 'confidence'
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
+    props_df, refresh_meta = load_wnba_live_props_feed(require_fresh=True)
+    odds_df = load_wnba_game_market_odds()
+    schedule_df = load_wnba_schedule()
+    gamelogs_df = load_wnba_gamelogs()
+    rows = build_wnba_prop_board(
+        props_df,
+        odds_df,
+        schedule_df,
+        gamelogs=gamelogs_df,
+        date_filter=date_filter,
+        stat_filter=stat_filter,
+        direction_filter=direction_filter,
+        search_query=search_query,
+        featured_top_n=0,
+    )
+    rows = attach_team_strength_priors_to_rows(
+        enrich_rows_with_game_environment(annotate_mlb_rows_with_reliability(rows), sport='WNBA', odds_df=odds_df),
+        sport='WNBA',
+    )
+    return render_props_screener_page(
+        sport_key='wnba',
+        sport_label='WNBA',
+        rows=rows,
+        refresh_meta=refresh_meta,
+        date_filter=date_filter,
+        direction_filter=direction_filter,
+        stat_query=stat_filter,
+        player_query=search_query,
+        postseason_only=False,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        props_base_path='/sports/wnba/props',
+        props_floor_path='/sports/wnba/floor',
+        props_tracking_label='Market + Game Env',
+        props_tracking_note='Book depth, game environment, injuries, and reliability labels feed each WNBA prop row.',
+    )
 
 
 @app.route('/sports/nba/matchup-lens')
@@ -26789,7 +26903,51 @@ def mlb_dashboard():
 
 @app.route('/sports/mlb/props')
 def mlb_props_page():
-    return _render_mlb_method_page('props')
+    date_filter = request.args.get('date', 'today').strip().lower() or 'today'
+    if date_filter == 'all':
+        date_filter = 'today'
+    stat_filter = request.args.get('stat', '').strip()
+    direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
+    search_query = request.args.get('player', request.args.get('search', '')).strip()
+    sort_by = request.args.get('sort_by', 'confidence').strip().lower() or 'confidence'
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
+    props_df, refresh_meta = load_mlb_live_props_feed(require_fresh=True)
+    odds_df = load_mlb_game_market_odds()
+    schedule_df = load_mlb_schedule()
+    gamelogs_df = load_mlb_gamelogs()
+    rows = build_mlb_prop_board(
+        props_df,
+        odds_df,
+        schedule_df,
+        gamelogs=gamelogs_df,
+        date_filter=date_filter,
+        stat_filter=stat_filter,
+        direction_filter=direction_filter,
+        search_query=search_query,
+        max_groups=250,
+        fast_mode=True,
+    )
+    rows = attach_team_strength_priors_to_rows(
+        enrich_rows_with_game_environment(annotate_mlb_rows_with_reliability(rows), sport='MLB', odds_df=odds_df),
+        sport='MLB',
+    )
+    return render_props_screener_page(
+        sport_key='mlb',
+        sport_label='MLB',
+        rows=rows,
+        refresh_meta=refresh_meta,
+        date_filter=date_filter,
+        direction_filter=direction_filter,
+        stat_query=stat_filter,
+        player_query=search_query,
+        postseason_only=False,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        props_base_path='/sports/mlb/props',
+        props_floor_path='/sports/mlb/floor',
+        props_tracking_label='Statcast + Run Env',
+        props_tracking_note='Statcast, pitcher and batter fit, umpire, park, weather, and market context feed each MLB prop row.',
+    )
 
 
 @app.route('/sports/mlb/matchup/<matchup_slug>')
@@ -29442,6 +29600,248 @@ def build_derivative_markets_context(sport_filter=''):
     }
 
 
+def _prop_first(row, *keys, default=''):
+    for key in keys:
+        if isinstance(row, dict) and key in row:
+            value = row.get(key)
+        else:
+            value = ''
+        if value is None:
+            continue
+        if isinstance(value, float) and pd.isna(value):
+            continue
+        text = str(value).strip() if not isinstance(value, (int, float, list, tuple, dict)) else value
+        if text != '':
+            return value
+    return default
+
+
+def _prop_float_value(value, default=None):
+    try:
+        if value is None or value == '':
+            return default
+        if isinstance(value, str) and value.strip().lower() in {'nan', 'none'}:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _prop_list_value(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(r'[|,;]', value) if part.strip()]
+    return [str(value)]
+
+
+def normalize_prop_screener_row(row, sport='NBA'):
+    sport_key = str(sport or 'NBA').strip().upper()
+    normalized = dict(row or {})
+    confidence = _prop_float_value(_prop_first(row, 'confidence', 'market_confidence', 'method_score', 'fit_score', 'score', 'Score'), 50)
+    over_rate = _prop_float_value(_prop_first(row, 'over_rate', 'weighted_over_rate', 'market_over_rate', 'over_pct', 'OverRate'), 50)
+    under_rate = _prop_float_value(_prop_first(row, 'under_rate', 'weighted_under_rate', 'market_under_rate', 'under_pct', 'UnderRate'), None)
+    if under_rate is None and over_rate is not None:
+        under_rate = max(0, min(100, 100 - float(over_rate)))
+    direction = str(_prop_first(row, 'direction', 'side', 'Direction', default='OVER') or 'OVER').strip().upper()
+    situations = (
+        _prop_list_value(row.get('situations'))
+        or _prop_list_value(row.get('method_tags'))
+        or _prop_list_value(row.get('guardrail_tags'))
+        or _prop_list_value(row.get('tags'))
+    )
+    market_view = row.get('market_view') if isinstance(row.get('market_view'), dict) else {}
+    if not market_view:
+        market_view = {'label': _prop_first(row, 'market_view_label', 'market_label', 'environment', 'game_environment_label', default='Market read')}
+    normalized.update({
+        'player': _prop_first(row, 'player', 'Player', 'name', default='Unknown Player'),
+        'team': _prop_first(row, 'team', 'Team', default=''),
+        'stat': str(_prop_first(row, 'stat', 'Stat', 'market', default='')).strip().upper(),
+        'line': _prop_first(row, 'line', 'Line', 'current_line', 'CurrentLine', default='-'),
+        'avg': _prop_first(row, 'avg', 'average', 'projection', 'projected_mean', 'season_avg', default='-'),
+        'direction': direction if direction in {'OVER', 'UNDER'} else 'OVER',
+        'confidence': max(0, min(99, confidence or 0)),
+        'over_rate': round(float(over_rate or 0), 1),
+        'under_rate': round(float(under_rate or 0), 1),
+        'weighted_over_rate': round(float(over_rate or 0), 1),
+        'weighted_under_rate': round(float(under_rate or 0), 1),
+        'play_verdict': str(_prop_first(row, 'play_verdict', 'verdict', default='PLAY') or 'PLAY').strip().upper(),
+        'ev_pct': _prop_float_value(_prop_first(row, 'ev_pct', 'edge_pct', 'EdgePct'), None),
+        'market_price': _prop_float_value(_prop_first(row, 'market_price', 'price', 'Price', 'CurrentPrice'), None),
+        'current_line': _prop_first(row, 'current_line', 'CurrentLine', 'line', 'Line', default=None),
+        'book': _prop_first(row, 'book', 'Book', default=''),
+        'game_environment_label': _prop_first(row, 'game_environment_label', 'environment_label', 'environment', default=''),
+        'game_total': _prop_float_value(_prop_first(row, 'game_total', 'total', 'Total'), None),
+        'team_spread': _prop_float_value(_prop_first(row, 'team_spread', 'spread', 'Spread'), None),
+        'market_view': market_view,
+        'situations': situations[:6],
+        'public_trend_note': _prop_first(row, 'public_trend_note', 'trend_note', default=''),
+        'injury_context_note': _prop_first(row, 'injury_context_note', 'injury_note', default=''),
+        'core_model_read': _prop_first(row, 'core_model_read', 'method_note', 'market_note', 'ngs_note', 'statcast_note', default=''),
+        'rank_explanation': _prop_first(row, 'rank_explanation', 'context_note', 'environment_note', default=''),
+        'play_verdict_note': _prop_first(row, 'play_verdict_note', 'verdict_note', default=''),
+        'fair_price': _prop_float_value(_prop_first(row, 'fair_price', 'FairPrice'), None),
+        'edge_pct': _prop_float_value(_prop_first(row, 'edge_pct', 'EdgePct'), None),
+        'model_prob': _prop_float_value(_prop_first(row, 'model_prob', 'market_prob', 'MarketProb'), None),
+        'best_book': _prop_first(row, 'best_book', 'Book', 'book', default=''),
+        'book_count': int(_prop_float_value(_prop_first(row, 'book_count', 'BookCount'), 0) or 0),
+        'featured_risk_note': _prop_first(row, 'featured_risk_note', 'risk_note', default=''),
+        'matchup': _prop_first(row, 'matchup', 'game', 'Game', default=''),
+        'has_injury_flag': bool(row.get('has_injury_flag')),
+        'sport': sport_key,
+    })
+    return normalized
+
+
+def sort_generic_prop_rows(rows, sort_by='confidence', sort_dir='desc'):
+    sort_by = str(sort_by or 'confidence').strip().lower()
+    reverse = str(sort_dir or 'desc').strip().lower() != 'asc'
+
+    def key(row):
+        if sort_by in {'confidence', 'score'}:
+            return _prop_float_value(row.get('confidence'), 0) or 0
+        if sort_by == 'line':
+            return _prop_float_value(row.get('line'), 0) or 0
+        if sort_by == 'avg':
+            return _prop_float_value(row.get('avg'), 0) or 0
+        return str(row.get(sort_by) or '').lower()
+
+    return sorted(rows, key=key, reverse=reverse)
+
+
+def render_props_screener_page(
+    *,
+    sport_key,
+    sport_label,
+    rows,
+    refresh_meta,
+    date_filter='today',
+    direction_filter='all',
+    stat_query='',
+    player_query='',
+    team_query='',
+    postseason_only=False,
+    sample_mode='current',
+    sort_by='confidence',
+    sort_dir='desc',
+    filter_type=None,
+    props_base_path='',
+    props_floor_path='',
+    props_tracking_label='Market + Game Env',
+    props_tracking_note='Market, matchup, and game environment context feed the board and are shown directly in the rows.',
+):
+    normalized_rows = [
+        normalize_prop_screener_row(row, sport=sport_label)
+        for row in (rows or [])
+    ]
+    normalized_rows = sort_generic_prop_rows(normalized_rows, sort_by=sort_by, sort_dir=sort_dir)
+    try:
+        page = int(request.args.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get('page_size', 15))
+    except (TypeError, ValueError):
+        page_size = 15
+    allowed_page_sizes = (10, 15, 25, 50)
+    if page_size not in allowed_page_sizes:
+        page_size = 15
+    total_props = len(normalized_rows)
+    page_count = max(1, (total_props + page_size - 1) // page_size)
+    page = max(1, min(page, page_count))
+    page_start = (page - 1) * page_size
+    page_end = min(page_start + page_size, total_props)
+    visible_props = normalized_rows[page_start:page_end]
+    props_base_path = props_base_path or f"/sports/{sport_key}/props"
+
+    def page_url(target_page, target_page_size=None):
+        params = {
+            'date': date_filter,
+            'direction': direction_filter,
+            'postseason': 1 if postseason_only else 0,
+            'sample': sample_mode,
+            'page': target_page,
+            'page_size': target_page_size if target_page_size is not None else page_size,
+            'sort_by': sort_by,
+            'sort_dir': sort_dir,
+            'team': team_query or None,
+            'player': player_query or None,
+            'stat': stat_query or None,
+        }
+        clean = {key: value for key, value in params.items() if value is not None and value != ''}
+        return f"{props_base_path}?{urlencode(clean)}"
+
+    pagination = {
+        'page': page,
+        'page_size': page_size,
+        'page_count': page_count,
+        'total': total_props,
+        'start': page_start + 1 if total_props else 0,
+        'end': page_end,
+        'has_prev': page > 1,
+        'has_next': page < page_count,
+        'prev_url': page_url(page - 1) if page > 1 else '',
+        'next_url': page_url(page + 1) if page < page_count else '',
+        'first_url': page_url(1),
+        'last_url': page_url(page_count),
+        'page_size_urls': {size: page_url(1, size) for size in allowed_page_sizes},
+        'allowed_page_sizes': allowed_page_sizes,
+    }
+    refresh_meta = dict(refresh_meta or {})
+    refresh_meta.setdefault('row_count', total_props)
+    refresh_meta.setdefault('book_count', len(refresh_meta.get('books') or []))
+    refresh_meta.setdefault('books', [])
+    refresh_meta.setdefault('last_updated', 'Unknown')
+    refresh_meta.setdefault('has_live_props', bool(total_props))
+    refresh_meta.setdefault('warning', f'No live {sport_label} props matched this filter.')
+    stat_options = sorted({str(row.get('stat') or '').strip() for row in normalized_rows if str(row.get('stat') or '').strip()})
+    query_suffix_bits = {}
+    if team_query:
+        query_suffix_bits['team'] = team_query
+    if player_query:
+        query_suffix_bits['player'] = player_query
+    if stat_query:
+        query_suffix_bits['stat'] = stat_query
+    query_suffix_bits['sample'] = sample_mode
+    query_suffix = f"&{urlencode(query_suffix_bits)}" if query_suffix_bits else ""
+    return render_template(
+        'props.html',
+        props=visible_props,
+        filter_type=filter_type,
+        date_filter=date_filter,
+        direction_filter=direction_filter,
+        stat_options=stat_options,
+        upcoming={},
+        postseason_only=postseason_only,
+        team_query=team_query,
+        player_query=player_query,
+        stat_query=stat_query,
+        query_suffix=query_suffix,
+        sample_mode=sample_mode,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        base_params={},
+        build_sort_link=build_sort_link,
+        refresh_meta=refresh_meta,
+        model_debug=False,
+        pagination=pagination,
+        board_intelligence=build_board_intelligence_summary(normalized_rows),
+        props_sport_key=sport_key,
+        props_sport_label=sport_label,
+        props_base_path=props_base_path,
+        props_all_path=props_base_path,
+        props_floor_path=props_floor_path,
+        props_locks_path='',
+        props_show_sample_controls=False,
+        props_tracking_label=props_tracking_label,
+        props_tracking_note=props_tracking_note,
+    )
+
+
 def render_nba_props_page(filter_type=None):
     postseason_only = postseason_only_enabled()
     request_context = build_live_prop_request_context(postseason_only=postseason_only)
@@ -29540,7 +29940,7 @@ def render_nba_props_page(filter_type=None):
         'player': player_query or None,
         'stat': stat_query or None,
     }
-    page_path = '/props' + (f'/{filter_type}' if filter_type else '')
+    page_path = '/sports/nba/props' + (f'/{filter_type}' if filter_type else '')
     def build_props_page_url(target_page, target_page_size=None):
         params = {
             'date': date_filter,
@@ -29600,7 +30000,15 @@ def render_nba_props_page(filter_type=None):
         upcoming=upcoming, postseason_only=postseason_only, team_query=team_query, player_query=player_query,
         stat_query=stat_query, query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
         base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug,
-        pagination=pagination, board_intelligence=build_board_intelligence_summary(all_props))
+        pagination=pagination, board_intelligence=build_board_intelligence_summary(all_props),
+        props_sport_key='nba',
+        props_sport_label='NBA',
+        props_base_path='/sports/nba/props',
+        props_all_path='/sports/nba/props',
+        props_floor_path='/sports/nba/props/floor',
+        props_locks_path='/sports/nba/props/locks',
+        props_tracking_label='Next Gen + Game Env',
+        props_tracking_note='Touches, drives, speed, TS%, plus spread and total context now feed the board and are shown directly in the rows.')
 
 
 @app.route('/sports/nba/props')

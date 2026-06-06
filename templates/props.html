@@ -1,7 +1,17 @@
 {% set active_page = 'props' %}
-{% set active_sport = 'nba' %}
+{% set props_sport_key = props_sport_key|default('nba') %}
+{% set props_sport_label = props_sport_label|default('NBA') %}
+{% set props_base_path = props_base_path|default('/sports/nba/props') %}
+{% set props_all_path = props_all_path|default(props_base_path) %}
+{% set props_floor_path = props_floor_path|default(props_base_path ~ '/floor') %}
+{% set props_locks_path = props_locks_path|default(props_base_path ~ '/locks') %}
+{% set props_show_sample_controls = props_show_sample_controls|default(props_sport_key == 'nba') %}
+{% set props_tracking_label = props_tracking_label|default('Next Gen + Game Env') %}
+{% set props_tracking_note = props_tracking_note|default('Tracking, market, spread, and total context feed the board and are shown directly in the rows.') %}
+{% set props_sample_note = props_sample_note|default('Use current-team logs for traded players, or widen back out to full-season form.') %}
+{% set active_sport = props_sport_key %}
 {% extends "bk_base.html" %}
-{% block title %}{% if filter_type == 'floor' %}Floor Plays - Bankroll Kings{% else %}Props Screener - Bankroll Kings{% endif %}{% endblock %}
+{% block title %}{% if filter_type == 'floor' %}{{ props_sport_label }} Floor Plays - Bankroll Kings{% else %}{{ props_sport_label }} Props Screener - Bankroll Kings{% endif %}{% endblock %}
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
 
@@ -311,14 +321,14 @@
         <div class="page-subtitle">Your safer anchor method for lower-volatility builds, stable roles, and stat targets that fit each player instead of forcing every prop through the same lens.</div>
     </div>
     <div class="hero-actions">
-        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
-        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+        <a href="{{ props_floor_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="{{ props_floor_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
     </div>
 </div>
 {% else %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
     <div>
-        <h1 style="margin-bottom: 6px;">Props <span class="accent">Screener</span></h1>
+        <h1 style="margin-bottom: 6px;">{{ props_sport_label }} <span class="accent">Props Screener</span></h1>
         {% if model_debug %}
         <div class="badge badge-accent" style="margin-bottom: 8px;">Debug Mode Active</div>
         {% endif %}
@@ -329,24 +339,26 @@
         </div>
     </div>
     <div style="display: flex; gap: 8px;">
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=1{{ query_suffix }}" class="btn {% if postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ focus_mode_label }}</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason=0{{ query_suffix }}" class="btn {% if not postseason_only %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ regular_mode_label }}</a>
     </div>
 </div>
 {% endif %}
 
+{% if props_show_sample_controls %}
 <div class="card mb-24">
     <div class="p-16" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
         <div>
             <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 700; margin-bottom: 6px;">ANALYSIS SAMPLE</div>
-            <div style="font-size: 13px; color: var(--text-muted);">Use current-team logs for traded players, or widen back out to full-season form.</div>
+            <div style="font-size: 13px; color: var(--text-muted);">{{ props_sample_note }}</div>
         </div>
         <div style="display: flex; gap: 8px;">
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
-            <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
+            <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=current{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'current' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Current Team Sample</a>
+            <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}&sample=full{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if sample_mode == 'full' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Full Season Sample</a>
         </div>
     </div>
 </div>
+{% endif %}
 
 {% if filter_type == 'floor' %}
 <div class="floor-method-panel">
@@ -427,9 +439,9 @@
             <div style="font-size: 11px; color: var(--text-muted);">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
         </div>
         <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
-            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">NEXT GEN + GAME ENV</div>
+            <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">{{ props_tracking_label|upper }}</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Touches, drives, speed, TS%, plus spread and total context now feed the board and are shown directly in the rows.</div>
+            <div style="font-size: 11px; color: var(--text-muted);">{{ props_tracking_note }}</div>
         </div>
     </div>
 </div>
@@ -476,7 +488,7 @@
         <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
         <div>
             <div style="font-size: 12px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">LIVE FEED WARNING</div>
-            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live NBA props are loaded right now.</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live {{ props_sport_label }} props are loaded right now.</div>
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">{{ refresh_meta.warning }}</div>
         </div>
     </div>
@@ -487,21 +499,25 @@
 <div class="card mb-24">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-bottom:1px solid var(--border);">
         <span class="control-label">When</span>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date=today&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'today' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Today</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date=tomorrow&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'tomorrow' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Tomorrow</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date=all&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if date_filter == 'all' or not date_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
 
         <span class="control-label" style="margin-left:8px;">Play</span>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'all' or not direction_filter %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=over&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'over' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Overs</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction=under&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if direction_filter == 'under' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unders</a>
 
         <span class="control-label" style="margin-left:8px;">Board</span>
-        <a href="/props?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Props</a>
-        <a href="/props/locks?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Locks</a>
-        <a href="/props/floor?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
+        <a href="{{ props_all_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Props</a>
+        {% if props_sport_key == 'nba' %}
+        <a href="{{ props_locks_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Locks</a>
+        {% endif %}
+        {% if props_floor_path %}
+        <a href="{{ props_floor_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
+        {% endif %}
     </div>
-    <form id="nba-props-filter-form" class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
+    <form id="nba-props-filter-form" class="board-filter-form" method="get" action="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}">
         <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
         <input type="hidden" name="sample" value="{{ sample_mode }}">
         <input type="hidden" name="date" value="{{ date_filter }}">
@@ -520,7 +536,7 @@
         </div>
         <div class="board-filter-actions">
             <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-            <a href="/props?date=today&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}{% if model_debug %}&model_debug=1{% endif %}" class="btn btn-secondary btn-sm">Reset</a>
+            <a href="{{ props_all_path }}?date=today&direction=all&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}{% if model_debug %}&model_debug=1{% endif %}" class="btn btn-secondary btn-sm">Reset</a>
         </div>
     </form>
 </div>
@@ -537,7 +553,7 @@
         </div>
         <span class="badge badge-accent">{{ pagination.total }} Props</span>
     </div>
-    <form class="board-filter-form" method="get" action="/props{% if filter_type %}/{{ filter_type }}{% endif %}">
+    <form class="board-filter-form" method="get" action="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}">
         <input type="hidden" name="date" value="{{ date_filter }}">
         <input type="hidden" name="direction" value="{{ direction_filter }}">
         <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
@@ -591,7 +607,7 @@
         {% if team_query %}<span class="badge badge-accent">Team {{ team_query }}</span>{% endif %}
         {% if player_query %}<span class="badge badge-accent">Player {{ player_query }}</span>{% endif %}
         {% if stat_query %}<span class="badge badge-accent">Stat {{ stat_query }}</span>{% endif %}
-        <a href="/props{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left: auto;">Clear Filters</a>
+        <a href="{{ props_base_path }}{% if filter_type %}/{{ filter_type }}{% endif %}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left: auto;">Clear Filters</a>
     </div>
     {% endif %}
     
@@ -681,13 +697,14 @@
 </div>
 </div>
 <script>
+const propsBasePath = '{{ props_base_path }}';
 document.getElementById('nba-props-filter-form')?.addEventListener('submit', function(event) {
     event.preventDefault();
     const form = event.currentTarget;
     const params = new URLSearchParams(new FormData(form));
     const boardType = params.get('board_type') || '';
     params.delete('board_type');
-    const path = boardType ? `/props/${encodeURIComponent(boardType)}` : '/props';
+    const path = boardType ? `${propsBasePath}/${encodeURIComponent(boardType)}` : propsBasePath;
     const query = params.toString();
     window.location.href = query ? `${path}?${query}` : path;
 });
