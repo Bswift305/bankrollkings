@@ -78,7 +78,10 @@ def main() -> int:
         ]
         if not ok:
             failed = True
-            break
+            # Continue-on-error: each step is independent. A failure in one step
+            # (e.g. an off-season sport whose history file is missing) must not
+            # abort the rest of the pipeline and starve in-season sports of
+            # simulations, priors, calibration, streak heat, and drift alerts.
 
     lines += [f"Finished: {datetime.now().isoformat(timespec='seconds')}"]
     log_path.write_text("\n".join(lines), encoding="utf-8")
