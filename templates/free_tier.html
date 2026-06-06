@@ -284,6 +284,32 @@
     font-size: 12px;
     font-weight: 900;
   }
+  .free-lock-group { margin-bottom: 18px; }
+  .free-lock-group:last-child { margin-bottom: 0; }
+  .free-lock-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .free-lock-group-head .free-lock-tier {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(241,193,91,.30);
+    border-radius: 999px;
+    padding: 4px 11px;
+    color: var(--bk-gold);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .free-lock-group-head a {
+    color: var(--bk-primary2);
+    font-size: 12px;
+    font-weight: 900;
+  }
   .free-builder-chip {
     border: 1px solid rgba(127,238,228,.22);
     border-radius: 999px;
@@ -591,16 +617,25 @@
     </div>
     <span class="free-lock">Depth gated by tier</span>
   </div>
-  <div class="free-lock-grid">
-    {% for item in active_preview.locked_features %}
-    <div class="free-lock-card">
-      <span>{{ item.plan }}</span>
-      <strong>{{ item.title }}</strong>
-      <small>{{ item.description }}</small>
-      <a href="{{ url_for('pricing', required=item.plan|lower, next=item.href) }}">Upgrade for {{ item.plan }}</a>
+  {% for tier in ['Pro', 'Sharp', 'Elite'] %}
+  {% set tier_items = active_preview.locked_features | selectattr('plan', 'equalto', tier) | list %}
+  {% if tier_items %}
+  <div class="free-lock-group">
+    <div class="free-lock-group-head">
+      <span class="free-lock-tier">{{ tier }}</span>
+      <a href="{{ url_for('pricing', required=tier|lower) }}">Upgrade for {{ tier }}</a>
     </div>
-    {% endfor %}
+    <div class="free-lock-grid">
+      {% for item in tier_items %}
+      <div class="free-lock-card">
+        <strong>{{ item.title }}</strong>
+        <small>{{ item.description }}</small>
+      </div>
+      {% endfor %}
+    </div>
   </div>
+  {% endif %}
+  {% endfor %}
 </section>
 {% else %}
 <section class="bk-content free-hero">
