@@ -623,7 +623,7 @@
                 <th>Avg</th>
                 <th>Play</th>
                 <th>O/U %</th>
-                <th>EV</th>
+                <th>Edge</th>
                 <th>Market &amp; Env</th>
                 <th>Signals</th>
                 <th>Conf</th>
@@ -656,7 +656,13 @@
                     <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">Best: {{ 'Over' if over_is_best else 'Under' }} &middot; avg {{ prop.avg }}</div>
                 </td>
                 <td style="white-space:nowrap;">
-                    {% if prop.ev_pct is not none %}<strong style="color: {% if prop.ev_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.ev_pct }}%</strong>{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}
+                    {% if prop.ev_pct is not none %}
+                    <strong style="color: {% if prop.ev_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.ev_pct }}%</strong> <span style="font-size:10px; color:var(--text-muted);">EV</span>
+                    {% elif prop.lean_strength %}
+                    <strong style="color: var(--accent);">{{ prop.lean_strength }}</strong>{% if prop.market_prob is not none %} <span style="font-size:10px; color:var(--text-muted);">{{ prop.market_prob }}% book</span>{% endif %}
+                    {% elif prop.edge_pct is not none %}
+                    <strong style="color: {% if prop.edge_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.edge_pct }}%</strong> <span style="font-size:10px; color:var(--text-muted);">Edge</span>
+                    {% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}
                     <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">{% if prop.market_price %}{{ prop.current_line if prop.current_line is not none else prop.line }} @ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}{{ prop.book or 'Manual' }}{% endif %}</div>
                 </td>
                 <td style="font-size:11px; line-height:1.4;">
