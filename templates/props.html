@@ -596,103 +596,81 @@
     {% endif %}
     
     {% if props %}
-    <div class="compact-prop-list">
-        {% for prop in props %}
-        {% set over_pct = prop.weighted_over_rate if postseason_only and prop.weighted_over_rate is defined else prop.over_rate %}
-        {% set under_pct = prop.weighted_under_rate if postseason_only and prop.weighted_under_rate is defined else prop.under_rate %}
-        <article class="compact-prop-card {% if prop.plays_today %}today{% elif prop.plays_tomorrow %}tomorrow{% endif %}">
-            <div class="compact-prop-main">
-                <div class="compact-player-line">
+    <div class="table-shell">
+    <table class="data-table props-data-table">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Team</th>
+                <th>Stat</th>
+                <th>Line</th>
+                <th>Avg</th>
+                <th>Play</th>
+                <th>O/U %</th>
+                <th>EV</th>
+                <th>Market &amp; Env</th>
+                <th>Signals</th>
+                <th>Conf</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for prop in props %}
+            {% set over_pct = prop.weighted_over_rate if postseason_only and prop.weighted_over_rate is defined else prop.over_rate %}
+            {% set under_pct = prop.weighted_under_rate if postseason_only and prop.weighted_under_rate is defined else prop.under_rate %}
+            {% set over_is_best = over_pct >= under_pct %}
+            <tr>
+                <td>
                     <a href="/player/{{ prop.player|urlencode }}?sample={{ sample_mode }}">{{ prop.player }}</a>
-                    <small>{{ team_mark(prop.team, size='xs') }}{% if prop.matchup %} | {{ prop.matchup }}{% endif %}</small>
-                    {% if prop.has_injury_flag %}<small style="color: var(--bk-gold2);">{{ prop.injury_short_label or prop.injury_status }} | {{ prop.injury_reason }}</small>{% endif %}
-                </div>
-
-                <div class="compact-prop-title">
-                    <span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span>
-                    <strong>{{ prop.line }}</strong>
-                    {% if prop.play_verdict == 'PASS' %}
-                    <span class="compact-play-pill pass">Pass</span>
-                    {% elif prop.play_verdict == 'CONFLICTED' %}
-                    <span class="compact-play-pill conflicted">Lean {{ prop.direction|title }}</span>
-                    {% else %}
-                    <span class="compact-play-pill">{{ prop.direction|title }}</span>
-                    {% endif %}
-                </div>
-
-                <div class="compact-cell">
-                    {% set over_is_best = over_pct >= under_pct %}
-                    {% set over_good = over_pct >= 50 %}
-                    {% set under_good = under_pct >= 50 %}
-                    <div class="compact-ou-line">
-                        <span class="compact-ou-rate {% if over_good %}hot{% else %}cold{% endif %} {% if over_is_best %}best-side{% endif %}">O:{{ over_pct }}%</span>
-                        <span class="compact-ou-sep">/</span>
-                        <span class="compact-ou-rate {% if under_good %}hot{% else %}cold{% endif %} {% if not over_is_best %}best-side{% endif %}">U:{{ under_pct }}%</span>
-                    </div>
-                    <small>Best: {% if over_is_best %}Over{% else %}Under{% endif %} &middot; avg {{ prop.avg }}</small>
-                </div>
-
-                <div class="compact-cell">
-                    <b>{% if prop.ev_pct is not none %}EV {{ prop.ev_pct }}%{% else %}Market{% endif %}</b>
-                    <small>{% if prop.market_price %}{{ prop.current_line if prop.current_line is not none else prop.line }} @ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}{{ prop.book or 'Manual' }}{% endif %}</small>
-                    <small>{{ prop.market_view.label }}</small>
-                </div>
-
-                <div class="compact-cell">
-                    <b>{% if prop.game_environment_label %}{{ prop.game_environment_label }}{% elif prop.game_total is not none %}O/U {{ prop.game_total }}{% else %}Game Env{% endif %}</b>
-                    <small>{% if prop.game_total is not none %}Total {{ prop.game_total }}{% endif %}{% if prop.team_spread is not none %} | Spread {{ '+' if prop.team_spread > 0 }}{{ prop.team_spread }}{% endif %}</small>
-                    <div class="compact-market-read">{% if prop.game_environment_summary %}{{ prop.game_environment_summary }}{% elif prop.market_view.note %}{{ prop.market_view.note }}{% else %}{{ prop.rank_explanation or 'Open the read for model context.' }}{% endif %}</div>
-                </div>
-
-                <div class="compact-confidence">{{ prop.confidence|round|int }}%</div>
-            </div>
-
-            <details class="compact-read-more">
-                <summary>Read more</summary>
-                <div class="compact-read-grid">
-                    <div class="compact-read-box">
-                        <span>Projection</span>
-                        <small>{% if prop.projected_minutes is not none %}{{ prop.projected_minutes }} MIN{% else %}Minutes not loaded{% endif %}</small>
-                        <small>{% if prop.usage_pct is not none %}{{ prop.usage_pct }} USG{% endif %}{% if prop.ts_pct is not none %} | {{ prop.ts_pct }} TS{% endif %}</small>
-                        <small>{% if prop.touches is not none %}{{ prop.touches }} touches{% endif %}{% if prop.drives is not none %} | {{ prop.drives }} drives{% endif %}</small>
-                    </div>
-                    <div class="compact-read-box">
-                        <span>Fair Price</span>
-                        <small>{% if prop.fair_price %}Fair {{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% else %}No fair price{% endif %}</small>
-                        <small>{% if prop.edge_pct is not none %}Edge {{ prop.edge_pct }}%{% endif %}{% if prop.model_prob is not none %} | Model {{ prop.model_prob }}%{% endif %}</small>
-                        {% if prop.formula_badge %}<small>{{ prop.formula_badge }} | {{ prop.formula_detail }}</small>{% endif %}
-                        {% if prop.calibrated_sim_hit_probability is not none %}<small>Sim {{ prop.calibrated_sim_hit_probability }}% | {{ prop.simulation_authority|replace('_', ' ')|title }}</small>{% endif %}
-                    </div>
-                    <div class="compact-read-box">
-                        <span>Market</span>
-                        <small>{{ prop.book or 'Manual' }}{% if prop.book_count and prop.book_count > 1 %} | {{ prop.book_count }} books{% endif %}</small>
-                        <small>{% if prop.open_line is not none or prop.current_line is not none %}Open {{ prop.open_line if prop.open_line is not none else '-' }} to {{ prop.current_line if prop.current_line is not none else '-' }}{% endif %}</small>
-                        <small>{{ prop.market_view.note }}</small>
-                        {% if prop.best_book %}<small>Best book: {{ prop.best_book }}</small>{% endif %}
-                    </div>
-                    <div class="compact-read-box">
-                        <span>Pressure</span>
-                        <div class="compact-chip-row">
-                            {% for sit in prop.situations[:8] %}<span class="compact-chip">{{ sit }}</span>{% endfor %}
-                            {% if prop.current_run_side == 'over' and prop.current_streak >= 1 %}<span class="compact-chip">O{{ prop.current_streak }}</span>{% endif %}
-                            {% if prop.current_run_side == 'under' and prop.current_streak >= 1 %}<span class="compact-chip">U{{ prop.current_streak }}</span>{% endif %}
+                    {% if prop.has_injury_flag %}<div style="margin-top:4px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}
+                    {% if prop.matchup %}<div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">{{ prop.matchup }}</div>{% endif %}
+                </td>
+                <td>{{ team_mark(prop.team, size='xs') }}</td>
+                <td><span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span></td>
+                <td><strong>{{ prop.line }}</strong></td>
+                <td>{{ prop.avg }}</td>
+                <td>
+                    {% if prop.play_verdict == 'PASS' %}<span class="play-pill-gloss under">Pass</span>
+                    {% elif prop.play_verdict == 'CONFLICTED' %}<span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">Lean {{ prop.direction|title }}</span>
+                    {% else %}<span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>{% endif %}
+                </td>
+                <td style="white-space:nowrap;">
+                    <span style="color: {{ ou_rate_color(over_pct) }};">O:{{ over_pct }}%</span>
+                    <span style="color: var(--text-muted);">/</span>
+                    <span style="color: {{ ou_rate_color(under_pct) }};">U:{{ under_pct }}%</span>
+                    <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">Best: {{ 'Over' if over_is_best else 'Under' }} &middot; avg {{ prop.avg }}</div>
+                </td>
+                <td style="white-space:nowrap;">
+                    {% if prop.ev_pct is not none %}<strong style="color: {% if prop.ev_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.ev_pct }}%</strong>{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}
+                    <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">{% if prop.market_price %}{{ prop.current_line if prop.current_line is not none else prop.line }} @ {{ '+' if prop.market_price > 0 }}{{ prop.market_price }}{% else %}{{ prop.book or 'Manual' }}{% endif %}</div>
+                </td>
+                <td style="font-size:11px; line-height:1.4;">
+                    <div style="color: var(--text-bright);">{% if prop.game_environment_label %}{{ prop.game_environment_label }}{% elif prop.game_total is not none %}O/U {{ prop.game_total }}{% else %}{{ prop.market_view.label }}{% endif %}</div>
+                    <div style="color: var(--text-muted); margin-top:3px;">{% if prop.game_total is not none %}Total {{ prop.game_total }}{% endif %}{% if prop.team_spread is not none %} &middot; Sprd {{ '+' if prop.team_spread > 0 }}{{ prop.team_spread }}{% endif %}</div>
+                </td>
+                <td style="font-size:11px; line-height:1.4;">
+                    {% for sit in prop.situations[:3] %}<span style="background: var(--bg-elevated); color: var(--accent); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; display:inline-block; margin-bottom:3px;">{{ sit }}</span>{% endfor %}
+                    {% if prop.public_trend_note %}<div style="color: var(--text-bright); margin-top:4px;">{{ prop.public_trend_note }}</div>{% endif %}
+                    {% if prop.injury_context_note %}<div style="color: var(--accent-copper); margin-top:4px;">{{ prop.injury_context_note }}</div>{% endif %}
+                    {% if prop.core_model_read or prop.rank_explanation or prop.play_verdict_note %}
+                    <details class="model-read">
+                        <summary>Model Read</summary>
+                        <div class="model-read-body">
+                            {% if prop.play_verdict_note %}<div>{{ prop.play_verdict_note }}</div>{% endif %}
+                            {% if prop.rank_explanation %}<div>{{ prop.rank_explanation }}</div>{% endif %}
+                            {% if prop.core_model_read %}<div>{{ prop.core_model_read }}</div>{% endif %}
+                            {% if prop.projected_minutes is not none %}<div>{{ prop.projected_minutes }} MIN{% if prop.usage_pct is not none %} &middot; {{ prop.usage_pct }} USG{% endif %}{% if prop.ts_pct is not none %} &middot; {{ prop.ts_pct }} TS{% endif %}</div>{% endif %}
+                            {% if prop.fair_price %}<div>Fair {{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% if prop.edge_pct is not none %} &middot; Edge {{ prop.edge_pct }}%{% endif %}{% if prop.model_prob is not none %} &middot; Model {{ prop.model_prob }}%{% endif %}</div>{% endif %}
+                            {% if prop.best_book %}<div>Best book: {{ prop.best_book }}{% if prop.book_count and prop.book_count > 1 %} &middot; {{ prop.book_count }} books{% endif %}</div>{% endif %}
+                            {% if prop.featured_risk_note %}<div><strong>Risk:</strong> {{ prop.featured_risk_note }}</div>{% endif %}
                         </div>
-                        {% if prop.public_trend_note %}<small>{{ prop.public_trend_note }}</small>{% endif %}
-                        {% if prop.injury_context_note %}<small>{{ prop.injury_context_note }}</small>{% endif %}
-                    </div>
-                </div>
-                {% if prop.rank_explanation or prop.core_model_read or prop.play_verdict_note %}
-                <div class="compact-read-box" style="margin-top:10px;">
-                    <span>Model Read</span>
-                    {% if prop.play_verdict_note %}<small>{{ prop.play_verdict_note }}</small>{% endif %}
-                    {% if prop.rank_explanation %}<small>{{ prop.rank_explanation }}</small>{% endif %}
-                    {% if prop.core_model_read %}<small>{{ prop.core_model_read }}</small>{% endif %}
-                    {% if prop.featured_risk_note %}<small><strong>Risk:</strong> {{ prop.featured_risk_note }}</small>{% endif %}
-                </div>
-                {% endif %}
-            </details>
-        </article>
-        {% endfor %}
+                    </details>
+                    {% endif %}
+                </td>
+                <td><span class="{% if prop.confidence >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ prop.confidence|round|int }}%</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
     </div>
     {% else %}
     <div class="empty-state">
