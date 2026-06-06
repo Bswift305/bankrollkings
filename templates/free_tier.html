@@ -455,7 +455,7 @@
         <em>{{ loop.index }}</em>
         <div>
           <strong>{{ row.player }}</strong>
-          <small>{{ active_preview.sport }} Â· {{ row.stat }} {{ row.direction }} {{ row.line }}{% if row.matchup %} Â· {{ row.matchup }}{% endif %}</small>
+          <small>{{ active_preview.sport }} · {{ row.stat }} {{ row.direction }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</small>
         </div>
         <span class="free-builder-chip">{{ row.implied }}%</span>
       </div>
@@ -505,7 +505,7 @@
     </div>
     <div class="free-command-card">
       <span>Market</span>
-      <strong>{% if sample %}{{ sample.price }} Â· {{ sample.implied }}% implied{% else %}Book disagreement{% endif %}</strong>
+      <strong>{% if sample %}{{ sample.price }} · {{ sample.implied }}% implied{% else %}Book disagreement{% endif %}</strong>
       <small>Market preview explains whether the current number still supports the read, or whether the book already moved away.</small>
       <a href="{{ url_for('method_hub', method_key='market-edge') }}">Preview market</a>
     </div>
@@ -575,7 +575,7 @@
     <div class="free-side-card">
       <span>Season Prep</span>
       <strong>No live prop slate yet</strong>
-      <small>This sportâ€™s free sample will use historical formula/backfill reads until the season starts.</small>
+      <small>This sport's free sample will use historical formula/backfill reads until the season starts.</small>
     </div>
     {% endif %}
   </div>
@@ -583,7 +583,7 @@
   <aside class="free-side-list">
     <div class="free-side-card">
       <span>Today</span>
-      <strong>{{ active_preview.today_games }} games Â· {{ active_preview.props_rows }} props</strong>
+      <strong>{{ active_preview.today_games }} games · {{ active_preview.props_rows }} props</strong>
       <small>{{ active_preview.status }}</small>
     </div>
     <div class="free-side-card">
@@ -598,7 +598,7 @@
     </div>
     <div class="free-side-card">
       <span>Drivers</span>
-      <strong>{{ active_preview.drivers|join(' Â· ') }}</strong>
+      <strong>{{ active_preview.drivers|join(' · ') }}</strong>
       <small>These are the main factors this sport leans on inside the paid engine.</small>
     </div>
     <div class="free-side-card">
@@ -666,9 +666,9 @@
         <span>{{ sport.sample_rows|length }} free rows</span>
       </div>
       {% if sport.best_prop %}
-      <small>Sample: {{ sport.best_prop.player }} Â· {{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}</small>
+      <small>Sample: {{ sport.best_prop.player }} · {{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}</small>
       {% else %}
-      <small>Season-prep sample: {{ sport.drivers|join(' Â· ') }}</small>
+      <small>Season-prep sample: {{ sport.drivers|join(' · ') }}</small>
       {% endif %}
     </a>
     {% endfor %}
