@@ -397,7 +397,10 @@ SPORT_PASS_ACCESS = {
 
 ALL_SPORT_PLAN_KEYS = {'pro', 'sharp', 'elite'}
 
-ACTIVE_PLAN_STATUSES = {'active', 'selected', 'trial'}
+# Paid access is granted only for verified-paid ('active') or manually-comped ('comp')
+# accounts. 'selected'/'trial' intentionally do NOT grant access: merely choosing a plan
+# (pre-payment) must not unlock paid tiers. Owners/admins bypass via normalize_user_plan.
+ACTIVE_PLAN_STATUSES = {'active', 'comp'}
 OWNER_EMAILS = {
     'decaturjones019@gmail.com',
 }
@@ -420,6 +423,7 @@ PUBLIC_ENDPOINTS = {
     'checkout_start',
     'checkout_success',
     'billing_portal',
+    'stripe_webhook',
 }
 
 FREE_ENDPOINTS = {
@@ -707,6 +711,31 @@ def get_stripe_billing_portal_url():
 
 def get_stripe_billing_portal_config_id():
     return str(os.environ.get('STRIPE_BILLING_PORTAL_CONFIG_ID', '') or '').strip()
+
+
+def _stripe_secret_key():
+    return str(os.environ.get('STRIPE_SECRET_KEY', '') or '').strip()
+
+
+def _stripe_webhook_secret():
+    return str(os.environ.get('STRIPE_WEBHOOK_SECRET', '') or '').strip()
+
+
+def get_stripe_client():
+    """Return a configured `stripe` module, or None if the secret key or library is absent.
+
+    When this returns None the app runs in demo mode (no live charge verification). When it
+    returns a client, paid access is granted only after server-side payment verification.
+    """
+    key = _stripe_secret_key()
+    if not key:
+        return None
+    try:
+        import stripe
+    except Exception:
+        return None
+    stripe.api_key = key
+    return stripe
 
 
 def classify_stripe_url(url):
@@ -8628,7 +8657,7 @@ def load_saved_parlays():
 
 def load_users():
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
-    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt']
+    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId']
     if not path.exists():
         return pd.DataFrame(columns=default_columns)
 
@@ -8709,6 +8738,32 @@ def find_user_by_email(email):
         return None
     email = str(email or '').strip().lower()
     matches = users[users['Email'].str.lower() == email]
+    if matches.empty:
+        return None
+    return matches.iloc[0].to_dict()
+
+
+def find_user_by_id(user_id):
+    users = load_users()
+    if users.empty:
+        return None
+    user_id = str(user_id or '').strip()
+    if not user_id:
+        return None
+    matches = users[users['UserId'].astype(str).str.strip() == user_id]
+    if matches.empty:
+        return None
+    return matches.iloc[0].to_dict()
+
+
+def find_user_by_stripe_customer(customer_id):
+    users = load_users()
+    if users.empty or 'StripeCustomerId' not in users.columns:
+        return None
+    customer_id = str(customer_id or '').strip()
+    if not customer_id:
+        return None
+    matches = users[users['StripeCustomerId'].astype(str).str.strip() == customer_id]
     if matches.empty:
         return None
     return matches.iloc[0].to_dict()
@@ -8898,7 +8953,7 @@ def replace_candidate_archive(df):
             DATAFRAME_CACHE.pop(cache_key, None)
 
 
-def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None):
+def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None, stripe_customer_id=None):
     users = load_users()
     if users.empty:
         return None
@@ -8924,6 +8979,10 @@ def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, 
         users.at[idx, 'Role'] = str(role or '').strip().lower()
     if is_admin is not None:
         users.at[idx, 'IsAdmin'] = '1' if bool(is_admin) else ''
+    if stripe_customer_id is not None and str(stripe_customer_id).strip():
+        if 'StripeCustomerId' not in users.columns:
+            users['StripeCustomerId'] = ''
+        users.at[idx, 'StripeCustomerId'] = str(stripe_customer_id).strip()
     users.at[idx, 'PlanSelectedAt'] = datetime.now().strftime('%Y-%m-%d %I:%M %p')
 
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
@@ -30414,6 +30473,14 @@ def checkout_start():
 
     stripe_url = get_stripe_checkout_url(plan, billing)
     if stripe_url:
+        ref_params = {
+            'client_reference_id': str(current_user.get('user_id', '') or '').strip(),
+            'prefilled_email': str(current_user.get('email', '') or '').strip(),
+        }
+        ref_params = {key: value for key, value in ref_params.items() if value}
+        if ref_params:
+            separator = '&' if '?' in stripe_url else '?'
+            stripe_url = f"{stripe_url}{separator}{urlencode(ref_params)}"
         return redirect(stripe_url)
 
     return redirect(url_for('checkout_success', plan=plan, billing=billing, mode='demo', next=next_url))
@@ -30453,20 +30520,129 @@ def checkout_success():
     if billing not in {'monthly', 'annual'}:
         billing = current_user.get('billing_cycle', 'monthly')
 
-    updated_user = update_user_membership(
-        user_id=current_user.get('user_id', ''),
-        email=current_user.get('email', ''),
-        plan=plan,
-        billing_cycle=billing,
-        plan_status='active',
-    )
+    mode = str(request.args.get('mode', '') or '').strip().lower()
+    session_id = str(request.args.get('session_id', '') or '').strip()
+    stripe = get_stripe_client()
+
+    updated_user = None
+    payment_state = 'processing'
+
+    if mode == 'demo':
+        # Explicit demo mode (no Stripe checkout URLs configured): no live charge to verify.
+        updated_user = update_user_membership(
+            user_id=current_user.get('user_id', ''),
+            email=current_user.get('email', ''),
+            plan=plan, billing_cycle=billing, plan_status='active',
+        )
+        payment_state = 'success'
+    elif stripe is not None and session_id:
+        # Live path: only grant access if Stripe confirms this session was actually paid.
+        try:
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            paid = str(checkout_session.get('payment_status', '') or '').strip().lower() in {'paid', 'no_payment_required'}
+            ref = str(checkout_session.get('client_reference_id', '') or '').strip()
+            owns_session = (not ref) or ref == str(current_user.get('user_id', '') or '').strip()
+            if paid and owns_session:
+                updated_user = update_user_membership(
+                    user_id=current_user.get('user_id', ''),
+                    email=current_user.get('email', ''),
+                    plan=plan, billing_cycle=billing, plan_status='active',
+                    stripe_customer_id=str(checkout_session.get('customer', '') or '').strip(),
+                )
+                payment_state = 'success'
+        except Exception:
+            payment_state = 'processing'
+    # If unverified, access is NOT granted here; the Stripe webhook finalizes it
+    # server-to-server once payment is confirmed (usually within seconds).
     if updated_user:
         login_user(updated_user)
 
     destination = next_url
     separator = '&' if '?' in destination else '?'
-    destination = f"{destination}{separator}checkout=success"
+    destination = f"{destination}{separator}checkout={payment_state}"
     return redirect(destination)
+
+
+def _provision_membership_from_session(session):
+    """Activate a user's selected plan after Stripe confirms the checkout was paid.
+
+    The plan was recorded at /checkout (status pending_checkout); here we only flip it to
+    'active' once Stripe says the session is paid, and store the Stripe customer id so we
+    can downgrade later on cancellation/non-payment.
+    """
+    try:
+        if str(session.get('payment_status', '') or '').strip().lower() not in {'paid', 'no_payment_required'}:
+            return
+        ref = str(session.get('client_reference_id', '') or '').strip()
+        details = session.get('customer_details') or {}
+        email = str(details.get('email', '') or session.get('customer_email', '') or '').strip().lower()
+        customer_id = str(session.get('customer', '') or '').strip()
+        user = find_user_by_id(ref) if ref else None
+        if user is None and email:
+            user = find_user_by_email(email)
+        if user is None:
+            return
+        update_user_membership(
+            user_id=str(user.get('UserId', '') or ''),
+            email=str(user.get('Email', '') or ''),
+            plan_status='active',
+            stripe_customer_id=customer_id or None,
+        )
+    except Exception:
+        pass
+
+
+def _set_membership_status_for_customer(customer_id, status, reset_plan=False):
+    """Apply a subscription-lifecycle status (e.g. cancelled/past_due/active) to the user
+    linked to a Stripe customer. Statuses outside ACTIVE_PLAN_STATUSES revoke paid access."""
+    try:
+        user = find_user_by_stripe_customer(customer_id)
+        if user is None:
+            return
+        kwargs = dict(
+            user_id=str(user.get('UserId', '') or ''),
+            email=str(user.get('Email', '') or ''),
+            plan_status=str(status or 'cancelled'),
+        )
+        if reset_plan:
+            kwargs['plan'] = 'free'
+        update_user_membership(**kwargs)
+    except Exception:
+        pass
+
+
+@app.route('/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    stripe = get_stripe_client()
+    secret = _stripe_webhook_secret()
+    if stripe is None or not secret:
+        return ('stripe not configured', 503)
+    payload = request.get_data()
+    signature = request.headers.get('Stripe-Signature', '')
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, secret)
+    except Exception:
+        return ('invalid signature', 400)
+
+    event_type = str(event.get('type', '') or '')
+    obj = (event.get('data', {}) or {}).get('object', {}) or {}
+
+    if event_type == 'checkout.session.completed':
+        _provision_membership_from_session(obj)
+    elif event_type == 'customer.subscription.deleted':
+        _set_membership_status_for_customer(str(obj.get('customer', '') or ''), 'cancelled', reset_plan=True)
+    elif event_type == 'invoice.payment_failed':
+        _set_membership_status_for_customer(str(obj.get('customer', '') or ''), 'past_due')
+    elif event_type == 'customer.subscription.updated':
+        sub_status = str(obj.get('status', '') or '').strip().lower()
+        if sub_status in {'active', 'trialing'}:
+            _set_membership_status_for_customer(str(obj.get('customer', '') or ''), 'active')
+        elif sub_status in {'canceled', 'unpaid', 'incomplete_expired'}:
+            _set_membership_status_for_customer(str(obj.get('customer', '') or ''), 'cancelled', reset_plan=True)
+        elif sub_status == 'past_due':
+            _set_membership_status_for_customer(str(obj.get('customer', '') or ''), 'past_due')
+
+    return ('', 200)
 
 
 @app.route('/billing')
