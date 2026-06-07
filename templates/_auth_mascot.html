@@ -1,0 +1,21 @@
+{# Big, faded mascot watermark for the auth pages (login + signup). Sits above
+   the site background pattern but behind the form content. #}
+<div class="bk-auth-mascot" aria-hidden="true"></div>
+<style>
+  .bk-auth-mascot {
+    position: fixed;
+    right: -2vw;
+    bottom: 0;
+    width: min(70vw, 900px);
+    height: 100vh;
+    background: url('/static/king-bankroll.webp') right bottom / contain no-repeat;
+    opacity: 0.18;
+    pointer-events: none;
+    z-index: 2;
+  }
+  /* Keep the form content above the watermark. */
+  .bk-public-main { position: relative; z-index: 5; }
+  @media (max-width: 760px) {
+    .bk-auth-mascot { opacity: 0.10; width: 100vw; right: 0; }
+  }
+</style>

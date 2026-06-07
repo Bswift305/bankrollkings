@@ -4,6 +4,7 @@
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
 {% block content %}
+{% include "_auth_mascot.html" %}
 <section class="signup-shell">
     <div class="signup-copy">
         <div class="page-kicker">Account Setup</div>
@@ -106,9 +107,8 @@
 .signup-copy {
     min-height: 520px;
     padding: 28px;
-    background:
-        linear-gradient(90deg, rgba(4,10,14,0.96) 0%, rgba(5,17,24,0.90) 52%, rgba(0,0,0,0.28) 100%),
-        url('/static/king-bankroll.webp') right bottom / auto 104% no-repeat;
+    /* Mascot moved to the shared faded watermark (_auth_mascot.html). */
+    background: linear-gradient(135deg, rgba(13,28,39,0.96), rgba(7,15,22,0.98));
 }
 .signup-copy h1 {
     max-width: 560px;
@@ -252,9 +252,7 @@
     }
     .signup-copy {
         min-height: 0;
-        background:
-            linear-gradient(180deg, rgba(4,10,14,0.82), rgba(4,10,14,0.98)),
-            url('/static/king-bankroll.webp') center top / cover no-repeat;
+        background: linear-gradient(180deg, rgba(4,10,14,0.82), rgba(4,10,14,0.98));
     }
     .signup-copy h1 {
         font-size: 30px;
