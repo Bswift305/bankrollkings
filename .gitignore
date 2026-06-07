@@ -10,6 +10,11 @@
 id_ed25519
 id_rsa
 
+# Stripe / API secret-bearing files — never commit (e.g. sk_live_*.txt)
+sk_live_*
+sk_test_*
+*secret*.txt
+
 # Python
 __pycache__/
 *.py[cod]
