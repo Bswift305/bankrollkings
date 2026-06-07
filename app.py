@@ -80,6 +80,28 @@ if not app.config['SECRET_KEY']:
     raise ValueError('SECRET_KEY environment variable not set')
 app.secret_key = app.config['SECRET_KEY']
 
+
+def _env_flag(name, default):
+    """Parse a boolean-ish environment variable, falling back to `default`."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# Session / auth cookie hardening. Production is served over HTTPS, so the
+# session and Flask-Login "remember me" cookies are marked Secure + HttpOnly and
+# SameSite=Lax (Lax still rides the top-level GET redirect back from Stripe
+# Checkout, so it does not break the payment flow, while blocking cross-site
+# POST CSRF and JS cookie theft). For local HTTP development set
+# SESSION_COOKIE_SECURE=0 (and REMEMBER_COOKIE_SECURE=0) in your .env.
+app.config['SESSION_COOKIE_SECURE'] = _env_flag('SESSION_COOKIE_SECURE', True)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['REMEMBER_COOKIE_SECURE'] = _env_flag('REMEMBER_COOKIE_SECURE', True)
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+
 app.template_folder = str(TEMPLATES_DIR)
 app.static_folder = str(STATIC_DIR)
 JINJA_CACHE_DIR = DATA_DIR / 'cache' / 'jinja'
