@@ -2302,6 +2302,48 @@ def build_live_score_ticker(limit=12):
     return out
 
 
+def prop_live_badge(prop):
+    """Template helper: live-score dict for a prop row's game (from its 'AWAY @
+    HOME' matchup string), or {} if no live/final game today. Fails soft so a
+    parse miss simply shows no badge."""
+    try:
+        matchup = str((prop or {}).get('matchup') or '').strip()
+        if '@' not in matchup:
+            return {}
+        away, _, home = matchup.partition('@')
+        away, home = away.strip(), home.strip()
+        if not away or not home:
+            return {}
+        away_full = TEAM_ABBR_TO_NAME.get(away.upper()) or MLB_TEAM_ABBR_TO_NAME.get(away.upper()) or away
+        home_full = TEAM_ABBR_TO_NAME.get(home.upper()) or MLB_TEAM_ABBR_TO_NAME.get(home.upper()) or home
+        sport = (prop or {}).get('sport') or (prop or {}).get('sport_key') or None
+        return live_score_for(sport, away_full, home_full)
+    except Exception:
+        return {}
+
+
+def build_live_counts():
+    """{'nba': 2, 'mlb': 6, ...} -> live games per sport today, for sidebar badges."""
+    try:
+        df = load_live_scores()
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    try:
+        today = sports_today_ts().strftime('%Y-%m-%d')
+        df = df[df['Date'].astype(str).str.strip() == today]
+    except Exception:
+        pass
+    live = df[df['Status'].astype(str).str.lower() == 'live']
+    if live.empty:
+        return {}
+    counts = {}
+    for key, n in live.groupby(live['Sport'].astype(str).str.lower()).size().items():
+        counts[str(key)] = int(n)
+    return counts
+
+
 def load_nfl_current_roster():
     path = DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'
     if path.exists():
@@ -17760,6 +17802,7 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
                     'best_prop': best_prop,
                     'href': matchup_href,
                     'slug': matchup_slug,
+                    'live_score': live_score_for(config['key'], away, home),
                 })
         if not game_names and not props.empty and 'Game' in props.columns:
             game_names = props['Game'].dropna().astype(str).str.strip()
@@ -25835,6 +25878,8 @@ def inject_globals():
         'top_nav_items': top_nav_items,
         'top_nav_by_key': top_nav_by_key,
         'live_score_ticker': build_live_score_ticker(),
+        'live_counts': build_live_counts(),
+        'prop_live_badge': prop_live_badge,
         **formula_status,
         'sports_nav_items': sports_nav_items,
         'show_ops_strip': show_ops_strip,

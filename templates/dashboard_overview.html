@@ -310,6 +310,9 @@
         <span>
           <strong>{{ matchup.matchup }}</strong>
           <small>{{ matchup.time }}</small>
+          {% if matchup.live_score and matchup.live_score.label %}
+          <span class="bk-live-badge {% if matchup.live_score.status == 'live' %}is-live{% endif %}" style="margin-left:8px; padding:2px 8px; font-size:10px;">{% if matchup.live_score.status == 'live' %}<span class="bk-live-dot"></span>{% endif %}{{ matchup.live_score.label }}</span>
+          {% endif %}
         </span>
         {% if matchup.best_prop %}
         <em>{{ matchup.best_prop.player }} · {{ matchup.best_prop.stat }} {{ matchup.best_prop.direction }} {{ matchup.best_prop.line }}</em>

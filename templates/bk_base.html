@@ -130,6 +130,7 @@
         <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('nba') }}" alt=""></span>
         <span class="si-name">NBA</span>
         <span class="si-count">{{ nba_count | default(0) }}</span>
+        {% if live_counts and live_counts.get('nba') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('nba') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('nfl') }}"
          class="bk-sidebar-item {% if active_sport == 'nfl' %}active{% endif %}">
@@ -142,12 +143,14 @@
         <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('wnba') }}" alt=""></span>
         <span class="si-name">WNBA</span>
         <span class="si-count">{{ wnba_count | default(0) }}</span>
+        {% if live_counts and live_counts.get('wnba') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('wnba') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('mlb') }}"
          class="bk-sidebar-item {% if active_sport == 'mlb' %}active{% endif %}">
         <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('mlb') }}" alt=""></span>
         <span class="si-name">MLB</span>
         <span class="si-count">{{ mlb_count | default(0) }}</span>
+        {% if live_counts and live_counts.get('mlb') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('mlb') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('ncaaf') }}"
          class="bk-sidebar-item {% if active_sport in ['ncaaf', 'cfb'] %}active{% endif %}">

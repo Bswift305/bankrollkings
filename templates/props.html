@@ -429,6 +429,8 @@
                     <a href="/player/{{ prop.player|urlencode }}?sample={{ sample_mode }}">{{ prop.player }}</a>
                     {% if prop.has_injury_flag %}<div style="margin-top:4px;"><span class="badge badge-injury" title="{{ prop.injury_reason }}">&#10010; {{ prop.injury_short_label or prop.injury_status }}</span></div>{% endif %}
                     {% if prop.matchup %}<div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">{{ prop.matchup }}</div>{% endif %}
+                    {% set _ls = prop_live_badge(prop) if prop_live_badge else {} %}
+                    {% if _ls and _ls.label %}<div style="margin-top:3px;"><span class="bk-live-badge {% if _ls.status == 'live' %}is-live{% endif %}" style="padding:1px 7px; font-size:9px;">{% if _ls.status == 'live' %}<span class="bk-live-dot"></span>{% endif %}{{ _ls.label }}</span></div>{% endif %}
                 </td>
                 <td>{{ team_mark(prop.team, size='xs') }}</td>
                 <td><span class="badge">{{ glossary_hint(prop.stat, 'core-stats', show_icon=False, variant='quiet') }}</span></td>
