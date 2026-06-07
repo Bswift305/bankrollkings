@@ -518,6 +518,7 @@ COMP_ELITE_EMAILS = {
     'mribet504@gmail.com',
     'dalecopper@comcast.net',
     'yazmeenheaven@gmail.com',
+    'cspurlock65@att.net',
 }
 
 # Absolute base URL used to build links inside transactional email (password
