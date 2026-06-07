@@ -360,6 +360,21 @@ body::after {
   animation: bkPulse 2s ease-in-out infinite;
 }
 
+/* Hit/Miss streak chips (Elite Top Hot Hands, etc.). H = hit, M = miss. */
+.bk-streak-chips { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.bk-streak-chips i {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  width: 15px;
+  height: 15px;
+  line-height: 15px;
+  text-align: center;
+  border-radius: 4px;
+}
+.bk-streak-chips i.hit { background: rgba(127,213,165,0.18); color: #7fd5a5; }
+.bk-streak-chips i.miss { background: rgba(255,138,138,0.16); color: #ff8a8a; }
+
 @keyframes bkTickerScroll {
   from { transform: translateX(0); }
   to { transform: translateX(-100%); }

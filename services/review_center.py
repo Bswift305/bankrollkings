@@ -1606,8 +1606,15 @@ def build_streak_heat_chart(
         heat_score = calculate_heat_score(current_hit_streak, hit_rate, total)
         last_10 = ['H' if outcome == 'Hit' else 'M' for outcome in outcomes[-10:]]
         last_5 = ['H' if outcome == 'Hit' else 'M' for outcome in outcomes[-5:]]
+        team = ''
+        if 'Team' in group.columns:
+            team_vals = group['Team'].dropna().astype(str).str.strip()
+            team_vals = team_vals[team_vals != '']
+            if not team_vals.empty:
+                team = team_vals.iloc[-1].upper()
         rows.append({
             'player': player,
+            'team': team,
             'sport': sport,
             'stat': stat,
             'direction': direction,

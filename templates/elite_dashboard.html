@@ -106,7 +106,7 @@
     <div class="card-header panel-header-gloss">
         <div>
             <div class="card-title">Top Hot Hands</div>
-            <div class="cell-meta" style="margin-top:4px;">Cross-sport streak heat from unique resolved outcomes.</div>
+            <div class="cell-meta" style="margin-top:4px;">Cross-sport streak heat from unique resolved outcomes. Last 10 results read oldest&nbsp;&rarr;&nbsp;newest: <i class="hit" style="font-style:normal;font-weight:800;color:#7fd5a5;">H</i>&nbsp;=&nbsp;hit, <i class="miss" style="font-style:normal;font-weight:800;color:#ff8a8a;">M</i>&nbsp;=&nbsp;miss.</div>
         </div>
         <a href="/candidate-review" class="btn btn-secondary btn-sm">Open Full Heat Chart</a>
     </div>
@@ -125,7 +125,13 @@
             <tbody>
                 {% for row in streak_heat %}
                 <tr>
-                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.last_10_label }}</div></td>
+                    <td>
+                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {% if row.team %}<div class="cell-meta" style="display:flex; align-items:center; gap:5px; margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
+                        <div class="bk-streak-chips" style="margin-top:4px;">
+                            {% for r in (row.last_10 or []) %}<i class="{{ 'hit' if r in ['H','Hit'] else 'miss' }}">{{ 'H' if r in ['H','Hit'] else 'M' }}</i>{% endfor %}
+                        </div>
+                    </td>
                     <td><span class="badge">{{ row.sport }}</span> {{ row.stat }} {{ row.direction }}</td>
                     <td>{{ row.current_streak }} hits</td>
                     <td>{{ row.total_resolved }} | {{ row.hit_rate }}%</td>
