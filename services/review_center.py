@@ -1514,6 +1514,23 @@ def build_streak_heat_chart(
             artifact = pd.DataFrame()
         if not artifact.empty:
             rows = artifact.where(pd.notna(artifact), None).to_dict('records')[:int(limit or 50)]
+            # CSV round-trip turns list columns into strings like "['H', 'H', 'H']".
+            # Restore them to real lists so the H/M chips render the actual outcomes
+            # (oldest -> newest) instead of iterating the string's characters.
+            import ast as _ast
+            for row in rows:
+                for col in ('last_10', 'last_5'):
+                    val = row.get(col)
+                    if isinstance(val, str):
+                        label = str(row.get('last_10_label') or '') if col == 'last_10' else ''
+                        if label:
+                            row[col] = [ch for ch in label]
+                        else:
+                            try:
+                                parsed = _ast.literal_eval(val)
+                                row[col] = parsed if isinstance(parsed, list) else []
+                            except Exception:
+                                row[col] = []
             _REVIEW_RUNTIME_CACHE[cache_key] = [dict(row) for row in rows]
             return rows
     df = resolved_df if resolved_df is not None else load_all_prop_results_for_review()
