@@ -2192,6 +2192,10 @@ def load_live_scores(sport=None):
             if col not in df.columns:
                 df[col] = ''
             df[col] = df[col].fillna('').astype(str).str.strip()
+        # CSV round-trip turns integer scores into "0.0"/"1.0"; render them clean.
+        for sc in ('AwayScore', 'HomeScore'):
+            nums = pd.to_numeric(df[sc], errors='coerce')
+            df[sc] = nums.apply(lambda v: '' if pd.isna(v) else str(int(v)))
         df = df[(df['Away'] != '') & (df['Home'] != '')].copy()
         return df[LIVE_SCORES_COLUMNS].reset_index(drop=True)
 
