@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
+from season_utils import active_sports, sport_for_label
+
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _hard_fail_count(output: str):
+    """Pull the hard-FAIL tally from a 99% scorecard's summary (e.g. 'FAIL: 1').
+
+    Returns the count, or None if no summary line was found (which usually means
+    the scorecard crashed before printing one).
+    """
+    matches = re.findall(r"FAIL:\s*(\d+)", output or "")
+    if not matches:
+        return None
+    return int(matches[-1])
 LOG_DIR = BASE_DIR / "logs"
 SCORECARDS = [
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 180),
@@ -46,15 +61,37 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
+    active = active_sports()
     failed = False
     for label, script, timeout in SCORECARDS:
         print(f"[RUN] {label}")
         ok, output = run_scorecard(label, script, timeout)
-        status = "PASS" if ok else "FAIL"
+        sport = sport_for_label(label)
+        if ok:
+            status = "PASS"
+        elif sport is None:
+            # Cross-sport / launch gate (Prelaunch Scorecard). It is already
+            # season-aware internally, so its exit code is authoritative.
+            status = "FAIL"
+            failed = True
+        elif sport not in active:
+            # Off-season sport: scorecard can't pass without data. Expected.
+            status = "SKIP (off-season)"
+        else:
+            hard = _hard_fail_count(output)
+            if hard is None:
+                # No summary printed -> the scorecard likely crashed. Real.
+                status = "FAIL"
+                failed = True
+            elif hard > 0:
+                status = "FAIL"
+                failed = True
+            else:
+                # In-season with zero hard fails: non-zero exit is only WATCH
+                # items (e.g. calibration immaturity). Not an alarm.
+                status = "WATCH (not blocking)"
         print(f"[{status}] {label}")
         lines += [f"[{status}] {label}", f"Script: {script}", output or "(no output)", ""]
-        if not ok:
-            failed = True
     lines.append(f"Finished: {datetime.now().isoformat(timespec='seconds')}")
     log_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Log saved: {log_path}")

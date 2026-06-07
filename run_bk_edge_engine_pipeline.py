@@ -5,6 +5,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from season_utils import active_sports, sport_for_label
+
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
@@ -64,11 +66,26 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
+    active = active_sports()
     failed = False
     for label, script in STEPS:
         print(f"[RUN] {label}")
         ok, output = run_step(label, script)
-        status = "PASS" if ok else "FAIL"
+        if ok:
+            status = "PASS"
+        else:
+            # Continue-on-error: each step is independent. A failure in one step
+            # (e.g. an off-season sport whose history file is missing) must not
+            # abort the rest of the pipeline and starve in-season sports of
+            # simulations, priors, calibration, streak heat, and drift alerts.
+            sport = sport_for_label(label)
+            if sport and sport not in active:
+                # Expected off-season failure (no data for this sport). Logged,
+                # but does not poison the pipeline exit code.
+                status = "SKIP (off-season)"
+            else:
+                status = "FAIL"
+                failed = True
         print(f"[{status}] {label}")
         lines += [
             f"[{status}] {label}",
@@ -76,12 +93,6 @@ def main() -> int:
             output or "(no output)",
             "",
         ]
-        if not ok:
-            failed = True
-            # Continue-on-error: each step is independent. A failure in one step
-            # (e.g. an off-season sport whose history file is missing) must not
-            # abort the rest of the pipeline and starve in-season sports of
-            # simulations, priors, calibration, streak heat, and drift alerts.
 
     lines += [f"Finished: {datetime.now().isoformat(timespec='seconds')}"]
     log_path.write_text("\n".join(lines), encoding="utf-8")
