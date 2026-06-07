@@ -48,6 +48,11 @@ def _on_alarm(signum, frame):
     raise _RouteTimeout()
 
 
+# Never sweep these: /logout would clear the (forged) session mid-sweep and make
+# every alphabetically-later gated route return 401.
+SWEEP_SKIP = {"/logout"}
+
+
 def _paramless_get_paths():
     seen, paths = set(), []
     for rule in app.url_map.iter_rules():
@@ -56,7 +61,7 @@ def _paramless_get_paths():
         if "GET" not in (rule.methods or set()):
             continue
         path = str(rule.rule)
-        if path.startswith("/static") or path in seen:
+        if path.startswith("/static") or path in seen or path in SWEEP_SKIP:
             continue
         seen.add(path)
         paths.append(path)
