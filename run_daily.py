@@ -95,6 +95,10 @@ def main() -> int:
     steps: list[tuple[str, list[str], int]] = []
     if not args.skip_refresh:
         steps.extend(_active_refresh_steps(sports))
+        # Grade props against the now-fresh gamelogs (Pending -> Hit/Miss). Must run after
+        # the sport refreshes and before the Edge Engine, which builds streak-heat and
+        # calibration from resolved results.
+        steps.append(("All prop results grading", _python("refresh_all_prop_results.py"), 1200))
     if not args.skip_edge:
         steps.append(("Edge Engine pipeline", _python("run_bk_edge_engine_pipeline.py"), 1800))
     if not args.skip_scorecards:
