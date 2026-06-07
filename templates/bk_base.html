@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260607-tickets">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260607-livescores">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -39,6 +39,9 @@
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker">
       <div class="bk-header-ticker-track">
+        {% for ls in live_score_ticker | default([]) %}
+        <span class="bk-ticker-live">{{ ls }}</span>
+        {% endfor %}
         <span>LIVE: MLB {{ mlb_count | default(0) }} props</span>
         <span>WNBA {{ wnba_count | default(0) }} props</span>
         <span>NBA {{ nba_count | default(0) }} props</span>

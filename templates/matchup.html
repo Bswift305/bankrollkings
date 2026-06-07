@@ -25,6 +25,11 @@
         <div class="page-kicker" style="color: {% if series_type == 'playoff' %}var(--accent-copper){% else %}#ddb25f{% endif %};">{{ series_label }}</div>
         {% endif %}
         <h1>{{ matchup_mark(away, home, '@', 'lg') }}</h1>
+        {% if live_score and live_score.label %}
+        <div class="bk-live-badge {% if live_score.status == 'live' %}is-live{% endif %}" style="margin-top:8px;">
+            {% if live_score.status == 'live' %}<span class="bk-live-dot"></span>{% endif %}{{ live_score.label }}
+        </div>
+        {% endif %}
         {% if model_debug %}
         <div class="badge badge-accent" style="margin: 8px 0 0;">Debug Mode Active</div>
         {% endif %}

@@ -2171,6 +2171,124 @@ def load_nfl_props():
     return pd.DataFrame()
 
 
+# Live scores (populated by refresh_live_scores.py via its own systemd timer).
+LIVE_SCORES_PATH = DATA_DIR / 'live_scores' / 'Live_Scores.csv'
+LIVE_SCORES_COLUMNS = [
+    'Sport', 'GameId', 'Date', 'Away', 'Home', 'AwayScore', 'HomeScore',
+    'Status', 'Period', 'Clock', 'StartTime', 'LastUpdated', 'Source',
+]
+LIVE_SCORES_SPORT_ALIASES = {'CFB': 'NCAAF'}
+
+
+def load_live_scores(sport=None):
+    """Current live/recent scores with a short TTL so the running web tier picks
+    up new scores within ~25s WITHOUT a restart. `sport` may be an access key
+    ('nba') or prefix ('NBA'); omit for all sports."""
+    def _build():
+        df = _read_csv_safe(LIVE_SCORES_PATH)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=LIVE_SCORES_COLUMNS)
+        for col in LIVE_SCORES_COLUMNS:
+            if col not in df.columns:
+                df[col] = ''
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        df = df[(df['Away'] != '') & (df['Home'] != '')].copy()
+        return df[LIVE_SCORES_COLUMNS].reset_index(drop=True)
+
+    df = _get_ttl_cached_value(
+        'live_scores::all', 25, _build, version=_get_path_mtime_token(LIVE_SCORES_PATH)
+    )
+    if df is None or df.empty:
+        return pd.DataFrame(columns=LIVE_SCORES_COLUMNS)
+    if sport:
+        prefix = str(sport).strip().upper()
+        prefix = LIVE_SCORES_SPORT_ALIASES.get(prefix, prefix)
+        df = df[df['Sport'].astype(str).str.upper() == prefix]
+    return df.copy()
+
+
+def live_score_for(sport, away, home):
+    """Compact live-score dict for a scheduled game (full team names), or {} if
+    there's no live/final game for that pairing today. Single formatting point
+    reused by every UI surface. Only surfaces live/final (never pre-game)."""
+    try:
+        df = load_live_scores(sport)
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+    a = str(away or '').strip().lower()
+    h = str(home or '').strip().lower()
+    if not a or not h:
+        return {}
+    try:
+        today = sports_today_ts().strftime('%Y-%m-%d')
+        df = df[df['Date'].astype(str).str.strip() == today]
+    except Exception:
+        pass
+    if df.empty:
+        return {}
+    aw_col = df['Away'].astype(str).str.lower()
+    hm_col = df['Home'].astype(str).str.lower()
+    match = df[(aw_col == a) & (hm_col == h)]
+    if match.empty:
+        match = df[(aw_col == h) & (hm_col == a)]  # defensive: orientation flip
+    if match.empty:
+        return {}
+    row = match.iloc[-1]
+    status = str(row.get('Status', '')).strip().lower()
+    if status not in ('live', 'final'):
+        return {}
+    away_score = str(row.get('AwayScore', '')).strip()
+    home_score = str(row.get('HomeScore', '')).strip()
+    prefix = 'LIVE' if status == 'live' else 'Final'
+    label = f"{prefix} {away_score}-{home_score}" if (away_score or home_score) else prefix
+    return {
+        'away_score': away_score,
+        'home_score': home_score,
+        'status': status,
+        'label': label,
+    }
+
+
+def _short_team_name(name):
+    n = str(name or '').strip()
+    if not n:
+        return ''
+    abbr = TEAM_NAME_TO_ABBR.get(n) or MLB_TEAM_NAME_TO_ABBR.get(n)
+    if abbr:
+        return abbr
+    return n.split()[-1] if ' ' in n else n
+
+
+def build_live_score_ticker(limit=12):
+    """Short 'NBA BOS 84-NYK 79 LIVE' strings for the header ticker (live games
+    only, today). Empty when nothing is live. TTL-cached upstream, so cheap."""
+    try:
+        df = load_live_scores()
+    except Exception:
+        return []
+    if df is None or df.empty:
+        return []
+    try:
+        today = sports_today_ts().strftime('%Y-%m-%d')
+        df = df[df['Date'].astype(str).str.strip() == today]
+    except Exception:
+        pass
+    if df.empty:
+        return []
+    live = df[df['Status'].astype(str).str.lower() == 'live']
+    out = []
+    for _, r in live.head(limit).iterrows():
+        away = _short_team_name(r.get('Away', ''))
+        home = _short_team_name(r.get('Home', ''))
+        aw = str(r.get('AwayScore', '')).strip()
+        hm = str(r.get('HomeScore', '')).strip()
+        sport = str(r.get('Sport', '')).strip()
+        out.append(f"{sport} {away} {aw}-{home} {hm} LIVE".strip())
+    return out
+
+
 def load_nfl_current_roster():
     path = DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'
     if path.exists():
@@ -25703,6 +25821,7 @@ def inject_globals():
         'active_page': active_page_key,
         'top_nav_items': top_nav_items,
         'top_nav_by_key': top_nav_by_key,
+        'live_score_ticker': build_live_score_ticker(),
         **formula_status,
         'sports_nav_items': sports_nav_items,
         'show_ops_strip': show_ops_strip,
@@ -28927,6 +29046,9 @@ def matchup(matchup):
         return "Invalid matchup format. Use: AWAY-HOME (e.g., HOU-DET)", 400
     
     away, home = parts[0].upper(), parts[1].upper()
+    away_full_name = TEAM_ABBR_TO_NAME.get(away) or MLB_TEAM_ABBR_TO_NAME.get(away) or away
+    home_full_name = TEAM_ABBR_TO_NAME.get(home) or MLB_TEAM_ABBR_TO_NAME.get(home) or home
+    live_score = live_score_for(None, away_full_name, home_full_name)
     model_debug = request.args.get('model_debug', '').strip() == '1'
     postseason_only = postseason_only_enabled()
     series_label, series_type = get_series_label(away, home)
@@ -28945,7 +29067,7 @@ def matchup(matchup):
     return_impacts = load_return_impacts()
     
     if gamelogs.empty:
-        return render_template('matchup.html', away=away, home=home, 
+        return render_template('matchup.html', away=away, home=home, live_score=live_score, 
             away_players=[], home_players=[], h2h_games=[], matchup_props=[],
             away_record={'wins':0,'losses':0,'win_pct':0,'home_wins':0,'home_losses':0,'away_wins':0,'away_losses':0,'last_5_wins':0,'home_ppg':0,'away_ppg':0}, 
             home_record={'wins':0,'losses':0,'win_pct':0,'home_wins':0,'home_losses':0,'away_wins':0,'away_losses':0,'last_5_wins':0,'home_ppg':0,'away_ppg':0}, 
@@ -29158,7 +29280,7 @@ def matchup(matchup):
     series_context_teaching_note = build_series_context_teaching_note(series_score, series_label=series_label, series_type=series_type)
     regular_season_h2h = build_regular_season_head_to_head_summary(gamelogs, away, home)
 
-    return render_template('matchup.html', away=away, home=home, away_players=away_players, home_players=home_players,
+    return render_template('matchup.html', away=away, home=home, live_score=live_score, away_players=away_players, home_players=home_players,
         h2h_games=h2h_games, h2h_away_wins=h2h_away_wins, h2h_home_wins=h2h_home_wins, h2h_avg_total=h2h_avg_total,
         matchup_props=matchup_props, away_record=away_record, home_record=home_record, feast_players=feast_players,
         series_label=series_label, series_type=series_type, series_id=series_id,
