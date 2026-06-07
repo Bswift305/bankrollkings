@@ -28,6 +28,10 @@ from app import app
 # Status codes that mean "route is alive" (not broken). 5xx = real breakage.
 ALIVE = {200, 301, 302, 303, 304, 308, 401, 403}
 ROUTE_TIMEOUT = int(os.environ.get("SMOKE_ROUTE_TIMEOUT", "20") or "20")
+# When set, the route sweep runs as this logged-in user (forged in-process via
+# the session) so gated member pages actually render their templates instead of
+# returning the 401 access gate. Use an owner email for full coverage.
+AS_EMAIL = os.environ.get("SMOKE_AS_EMAIL", "").strip()
 
 # Set by the alarm handler so a timeout that Flask catches mid-view (and turns
 # into a 500) is still recognized as a timeout, not a real server error.
@@ -156,11 +160,15 @@ def _sweep_routes(client):
 
 
 def run():
-    client = app.test_client()
-    csrf_ok = _check_csrf(client)
+    csrf_ok = _check_csrf(app.test_client())
+    sweep_client = app.test_client()
+    if AS_EMAIL:
+        with sweep_client.session_transaction() as sess:
+            sess["user_email"] = AS_EMAIL.lower()
+        print(f"\n(sweep authenticated as {AS_EMAIL})", flush=True)
     sweep_ok = True
     if os.environ.get("SMOKE_SKIP_SWEEP", "").strip() not in ("1", "true", "yes"):
-        sweep_ok = _sweep_routes(client)
+        sweep_ok = _sweep_routes(sweep_client)
     ok = csrf_ok and sweep_ok
     print("\n=== SMOKE: " + ("PASS" if ok else "FAIL") + " ===", flush=True)
     return 0 if ok else 1
