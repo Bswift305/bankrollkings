@@ -24472,7 +24472,7 @@ def build_trend_board(gamelogs, current_team_map, props_df=None, player_snapshot
     return rows
 
 
-def build_trend_opportunity_history(gamelogs, current_team_map, team_filter=None, sample_mode='current', stat_filter='all', thresholds=(3, 5)):
+def _build_trend_opportunity_history_legacy(gamelogs, current_team_map, team_filter=None, sample_mode='current', stat_filter='all', thresholds=(3, 5)):
     if gamelogs.empty or 'Player' not in gamelogs.columns:
         return []
 
@@ -24497,33 +24497,63 @@ def build_trend_opportunity_history(gamelogs, current_team_map, team_filter=None
             player_logs['Date'] = pd.to_datetime(player_logs['Date'], errors='coerce')
             player_logs = player_logs.sort_values('Date', ascending=True)
 
+        min_threshold = min(thresholds)
         for stat in stat_pool:
             if stat not in player_logs.columns:
                 continue
-            valid = player_logs[player_logs[stat].notna()].copy()
+            valid = player_logs[player_logs[stat].notna()]
             if len(valid) < 11:
                 continue
 
-            for idx in range(10, len(valid)):
-                history = valid.iloc[:idx].copy()
-                current_game = valid.iloc[idx]
-                history_avg = pd.to_numeric(history[stat], errors='coerce').mean()
-                if pd.isna(history_avg) or history_avg < MIN_AVG_FOR_PROPS.get(stat, 1):
+            # Vectorized replacement for the per-idx calculate_streak_profile walk.
+            # player_logs is already sorted Date-ascending, so valid is too. We only
+            # need the trailing-streak label from the profile, which is the run of
+            # consecutive games (counting back from the most recent) on one side of
+            # floor_line -- exactly calculate_streak / calculate_under_streak.
+            vals = pd.to_numeric(valid[stat], errors='coerce').to_numpy(dtype=float)
+            n = vals.shape[0]
+            valid_mask = ~np.isnan(vals)
+            # Running history stats over vals[:idx] (NaN-skipping, matching pd.mean()).
+            csum = np.concatenate(([0.0], np.nancumsum(vals)))
+            ccnt = np.concatenate(([0], np.cumsum(valid_mask)))
+            dates = list(valid['Date']) if 'Date' in valid.columns else [None] * n
+            opps = list(valid['Opp']) if 'Opp' in valid.columns else [''] * n
+            min_avg = MIN_AVG_FOR_PROPS.get(stat, 1)
+            mult = FLOOR_MULTIPLIERS.get(stat, 0.75)
+
+            for idx in range(10, n):
+                cnt = int(ccnt[idx])
+                if cnt == 0:
+                    continue
+                history_avg = csum[idx] / cnt
+                if history_avg < min_avg:
                     continue
 
-                floor_line = round(float(history_avg) * FLOOR_MULTIPLIERS.get(stat, 0.75) * 2) / 2
+                floor_line = round(float(history_avg) * mult * 2) / 2
                 if floor_line < 0.5:
                     floor_line = 0.5
 
-                history_profile = calculate_streak_profile(history, stat, floor_line, min_streak=3)
-                current_label = history_profile.get('current_label', 'Flat')
-                if not (current_label.startswith('Over ') or current_label.startswith('Under ')):
+                last = vals[idx - 1]
+                if np.isnan(last):
+                    continue
+                # Trailing streak: count back from the most recent game while it
+                # stays on the same side of floor_line (a NaN or a flip ends it).
+                if last >= floor_line:
+                    streak_side = 'over'
+                    k = idx - 1
+                    while k >= 0 and (not np.isnan(vals[k])) and vals[k] >= floor_line:
+                        k -= 1
+                else:
+                    streak_side = 'under'
+                    k = idx - 1
+                    while k >= 0 and (not np.isnan(vals[k])) and vals[k] < floor_line:
+                        k -= 1
+                streak_len = (idx - 1) - k
+                if streak_len < min_threshold:
                     continue
 
-                streak_side = 'over' if current_label.startswith('Over ') else 'under'
-                streak_len = int(current_label.split(' ')[1])
-                current_value = current_game.get(stat)
-                if pd.isna(current_value):
+                current_value = vals[idx]
+                if np.isnan(current_value):
                     continue
                 continued = bool(current_value >= floor_line) if streak_side == 'over' else bool(current_value < floor_line)
 
@@ -24541,8 +24571,113 @@ def build_trend_opportunity_history(gamelogs, current_team_map, team_filter=None
                         'history_avg': round(float(history_avg), 1),
                         'value': round(float(current_value), 1),
                         'continued': continued,
-                        'date': current_game.get('Date'),
-                        'opp': current_game.get('Opp', ''),
+                        'date': dates[idx],
+                        'opp': opps[idx],
+                        'sample_mode': sample_mode,
+                    })
+
+    return rows
+
+
+def build_trend_opportunity_history(gamelogs, current_team_map, team_filter=None, sample_mode='current', stat_filter='all', thresholds=(3, 5)):
+    """Expanding-window trailing-streak scan behind /trend-board.
+
+    Functionally equivalent to _build_trend_opportunity_history_legacy (validated
+    row-for-row), but replaces per-window DataFrame.copy()/sort_values()/iterrows()
+    with numpy arrays. The caller only needs each window's *current* streak, and
+    the backward scan stops at the first opposite-side game, so this is ~O(total
+    games) instead of O(games^2) with pandas overhead — cold render drops from
+    ~34s to a couple of seconds.
+    """
+    if gamelogs.empty or 'Player' not in gamelogs.columns:
+        return []
+
+    rows = []
+    stat_pool = [stat_filter] if stat_filter in STAT_COLUMNS else STAT_COLUMNS
+
+    for player_name in sorted(gamelogs['Player'].dropna().unique()):
+        full_logs = gamelogs[gamelogs['Player'] == player_name]
+        if full_logs.empty:
+            continue
+        current_team = current_team_map.get(player_name, full_logs.iloc[0]['Team'] if 'Team' in full_logs.columns else 'UNK')
+        if team_filter and not team_in_filter(current_team, team_filter):
+            continue
+
+        player_logs = full_logs
+        if sample_mode == 'current' and 'Team' in full_logs.columns:
+            current_logs = full_logs[full_logs['Team'] == current_team]
+            if not current_logs.empty:
+                player_logs = current_logs
+
+        if 'Date' in player_logs.columns:
+            player_logs = player_logs.assign(Date=pd.to_datetime(player_logs['Date'], errors='coerce')).sort_values('Date', ascending=True)
+
+        has_date = 'Date' in player_logs.columns
+        has_opp = 'Opp' in player_logs.columns
+
+        for stat in stat_pool:
+            if stat not in player_logs.columns:
+                continue
+            valid = player_logs[player_logs[stat].notna()]
+            if len(valid) < 11:
+                continue
+            vals = pd.to_numeric(valid[stat], errors='coerce').to_numpy(dtype='float64')
+            if np.isnan(vals).any():  # mirror the legacy notna filter
+                keep = ~np.isnan(vals)
+                valid = valid.loc[keep]
+                vals = vals[keep]
+            n = len(vals)
+            if n < 11:
+                continue
+            dates = valid['Date'].tolist() if has_date else None
+            opps = valid['Opp'].tolist() if has_opp else None
+            csum = np.cumsum(vals)
+            mult = FLOOR_MULTIPLIERS.get(stat, 0.75)
+            min_avg = MIN_AVG_FOR_PROPS.get(stat, 1)
+
+            for idx in range(10, n):
+                history_avg = csum[idx - 1] / idx  # == mean(vals[:idx])
+                if history_avg < min_avg:
+                    continue
+                floor_line = round(float(history_avg) * mult * 2) / 2
+                if floor_line < 0.5:
+                    floor_line = 0.5
+
+                over = bool(vals[idx - 1] >= floor_line)
+                cnt = 0
+                j = idx - 1
+                if over:
+                    while j >= 0 and vals[j] >= floor_line:
+                        cnt += 1
+                        j -= 1
+                else:
+                    while j >= 0 and vals[j] < floor_line:
+                        cnt += 1
+                        j -= 1
+
+                if cnt < thresholds[0]:  # shorter than the smallest threshold -> no rows
+                    continue
+
+                streak_side = 'over' if over else 'under'
+                current_value = vals[idx]
+                continued = bool(current_value >= floor_line) if over else bool(current_value < floor_line)
+
+                for threshold in thresholds:
+                    if cnt < threshold:
+                        continue
+                    rows.append({
+                        'player': player_name,
+                        'team': current_team,
+                        'stat': stat,
+                        'threshold': int(threshold),
+                        'side': streak_side,
+                        'streak_len_before': int(cnt),
+                        'line': round(float(floor_line), 1),
+                        'history_avg': round(float(history_avg), 1),
+                        'value': round(float(current_value), 1),
+                        'continued': continued,
+                        'date': (dates[idx] if dates is not None else None),
+                        'opp': (opps[idx] if opps is not None else ''),
                         'sample_mode': sample_mode,
                     })
 
