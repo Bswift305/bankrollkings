@@ -25410,14 +25410,17 @@ def attach_formula_insights_to_rows(rows, *, sport='NBA'):
 def inject_globals():
     current_user = get_current_user()
     active_page_key = str(request.endpoint or '').strip()
+    # NOTE: only list endpoints whose templates extend the LIGHT public_base.html
+    # here. 'info' and 'glossary' extend the full member shell (bk_base.html),
+    # which needs the nav-rail context (top_nav_by_key etc.); keeping them in this
+    # lightweight set made them render with an undefined nav and 500. They fall
+    # through to the full context below instead (None-safe for logged-out users).
     public_shell_endpoints = {
         'frontpage',
         'global_feature_preview',
         'pricing',
         'login',
         'signup',
-        'info',
-        'glossary',
         'legal_page',
     }
     # Logged-out visitors hitting a gated member endpoint are short-circuited by
