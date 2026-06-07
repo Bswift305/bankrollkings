@@ -24,6 +24,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
     ]
     if "mlb" in sports:
         steps.append(("MLB daily refresh", _python("refresh_mlb_daily.py"), 900))
+        # Snapshot MLB featured-candidate results vs gamelogs. The 99 scorecard's
+        # Archive & Replay check requires MLB_FeaturedResults.csv; without this
+        # step it is never produced (mirrors the WNBA featured-results step).
+        steps.append(("MLB featured results", _python("refresh_mlb_featured_results.py"), 600))
     if "nba" in sports:
         steps.append(("NBA daily refresh", _python("refresh_nba_daily.py"), 900))
     if "wnba" in sports:
