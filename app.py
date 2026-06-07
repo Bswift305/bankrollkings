@@ -13413,6 +13413,13 @@ def grade_elite_line_move_alerts(alerts=None):
         'NFL': load_nfl_gamelogs(),
         'NCAAF': load_ncaaf_gamelogs(),
     }
+    # Ensure result columns are plain object dtype so we can write mixed
+    # str/float values into them. Some pandas builds default to arrow-backed
+    # string columns, which raise TypeError on a float assignment and would
+    # crash grading once games resolve.
+    for _col in ('OutcomeState', 'ActualValue', 'GameDate', 'ResolvedAt'):
+        if _col in df.columns:
+            df[_col] = df[_col].astype(object)
     updated = False
     for idx, row in df.iterrows():
         state = str(row.get('OutcomeState') or '').strip()
