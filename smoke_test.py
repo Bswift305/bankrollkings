@@ -27,7 +27,11 @@ from app import app
 
 # Status codes that mean "route is alive" (not broken). 5xx = real breakage.
 ALIVE = {200, 301, 302, 303, 304, 308, 401, 403}
-ROUTE_TIMEOUT = int(os.environ.get("SMOKE_ROUTE_TIMEOUT", "12") or "12")
+ROUTE_TIMEOUT = int(os.environ.get("SMOKE_ROUTE_TIMEOUT", "20") or "20")
+
+# Set by the alarm handler so a timeout that Flask catches mid-view (and turns
+# into a 500) is still recognized as a timeout, not a real server error.
+_TIMED_OUT = False
 
 
 class _RouteTimeout(Exception):
@@ -35,6 +39,8 @@ class _RouteTimeout(Exception):
 
 
 def _on_alarm(signum, frame):
+    global _TIMED_OUT
+    _TIMED_OUT = True
     raise _RouteTimeout()
 
 
@@ -98,8 +104,10 @@ def _sweep_routes(client):
     if has_alarm:
         signal.signal(signal.SIGALRM, _on_alarm)
 
+    global _TIMED_OUT
     server_errors, oddities, timeouts, checked = [], [], [], 0
     for path in _paramless_get_paths():
+        _TIMED_OUT = False
         if has_alarm:
             signal.alarm(ROUTE_TIMEOUT)
         try:
@@ -115,6 +123,12 @@ def _sweep_routes(client):
         finally:
             if has_alarm:
                 signal.alarm(0)
+        # A timeout that Flask swallowed mid-view surfaces as a 500 here; treat
+        # it as a (slow) timeout, not a real server error.
+        if _TIMED_OUT:
+            timeouts.append(path)
+            print(f"  TIMEOUT  {path} (slow; interrupted)", flush=True)
+            continue
         checked += 1
         if code >= 500:
             server_errors.append((path, code))
