@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Local-only attic: stray exports/docs/logs/archives moved out of the repo root
+# to keep production code uncluttered. Never deployed; safe to delete locally.
+/_attic/
+
 # SSH / private keys — never commit
 *.pem
 *.key
