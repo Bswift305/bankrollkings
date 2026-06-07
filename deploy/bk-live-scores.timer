@@ -1,0 +1,14 @@
+[Unit]
+Description=Bankroll Kings - Live Scores poll (every ~60s; script self-gates to game windows)
+
+[Timer]
+# Re-fire ~60s after each run finishes (within the 30-90s target). The script
+# itself no-ops cheaply when no sport has a live/imminent game, so this can run
+# year-round without burning API credits off-hours.
+OnBootSec=120
+OnUnitActiveSec=60
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

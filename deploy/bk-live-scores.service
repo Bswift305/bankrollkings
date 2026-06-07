@@ -1,0 +1,14 @@
+[Unit]
+Description=Bankroll Kings - Live Scores poller (The Odds API /scores)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/opt/bankrollkings/venv/bin/python refresh_live_scores.py
+# No web reload needed: load_live_scores() is TTL-cached (~25s) and re-reads the
+# CSV automatically, so the running site reflects new scores without a restart.
+# Game-day/window gating in the script makes off-hours runs a cheap no-op.
+TimeoutStartSec=120
