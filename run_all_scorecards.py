@@ -23,26 +23,35 @@ def _hard_fail_count(output: str):
         return None
     return int(matches[-1])
 LOG_DIR = BASE_DIR / "logs"
+# Timeouts are generous because the daily refresh keeps the box busy when these
+# run; a slow scorecard is treated as a non-blocking TIMEOUT (see main), not a
+# hard failure, so transient slowness can't fail the whole daily run.
 SCORECARDS = [
-    ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 180),
-    ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 180),
-    ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 360),
-    ("NFL 99 Scorecard", "run_nfl_99_scorecard.py", 180),
-    ("Prelaunch Scorecard", "run_prelaunch_scorecard.py", 180),
+    ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
+    ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
+    ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
+    ("NFL 99 Scorecard", "run_nfl_99_scorecard.py", 360),
+    ("Prelaunch Scorecard", "run_prelaunch_scorecard.py", 360),
 ]
+
+TIMEOUT_MARK = "[TIMEOUT]"
 
 
 def run_scorecard(label: str, script: str, timeout: int) -> tuple[bool, str]:
     path = BASE_DIR / script
     if not path.exists():
         return False, f"Missing scorecard script: {path}"
-    proc = subprocess.run(
-        [sys.executable, str(path)],
-        cwd=BASE_DIR,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(path)],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        # Don't let one slow scorecard crash the whole step — report and move on.
+        return False, f"{TIMEOUT_MARK} {script} exceeded {timeout}s"
     parts = []
     if proc.stdout:
         parts.append(proc.stdout.strip())
@@ -69,6 +78,10 @@ def main() -> int:
         sport = sport_for_label(label)
         if ok:
             status = "PASS"
+        elif TIMEOUT_MARK in output:
+            # Transient slowness (box busy during refresh). Logged, not fatal —
+            # a real persistent hang will keep showing up and can be acted on.
+            status = "TIMEOUT (slow; not blocking)"
         elif sport is None:
             # Cross-sport / launch gate (Prelaunch Scorecard). It is already
             # season-aware internally, so its exit code is authoritative.

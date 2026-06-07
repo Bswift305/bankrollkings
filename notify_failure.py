@@ -35,6 +35,28 @@ MAX_FAIL_LINES = 15
 MAX_TAIL_LINES = 20
 
 
+def _load_env_file():
+    """Load KEY=VALUE pairs from .env into os.environ (without overriding values
+    already set). Makes the notifier self-sufficient for SMTP config instead of
+    relying on systemd's EnvironmentFile, which can mis-handle CRLF line endings.
+    """
+    path = BASE_DIR / ".env"
+    if not path.exists():
+        return
+    try:
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'").strip()
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception as exc:
+        print(f"[notify] could not read .env: {exc}")
+
+
 def _latest_daily_log() -> Path | None:
     logs = sorted(LOG_DIR.glob("daily_operator_*.log"))
     return logs[-1] if logs else None
@@ -155,6 +177,7 @@ def _send_email(message: str) -> bool:
 
 
 def main() -> int:
+    _load_env_file()
     test = "--test" in sys.argv[1:]
     message = _build_message(test)
     print(message)
