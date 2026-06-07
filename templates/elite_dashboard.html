@@ -366,7 +366,7 @@
         </div>
     </div>
     <div class="p-16">
-        <div class="grid-5" style="gap:10px; margin-bottom:14px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:10px; margin-bottom:14px;">
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div class="page-kicker" style="margin-bottom:6px;">Hit Rate</div>
                 <div style="font-size:22px; font-weight:800; color:var(--accent);">{% if alert_history.hit_rate is not none %}{{ alert_history.hit_rate }}%{% else %}-{% endif %}</div>
@@ -476,11 +476,11 @@
     <div class="card-header panel-header-gloss">
         <div>
             <div class="card-title">Cross-Sport Parlay EV Builder</div>
-            <div class="cell-meta" style="margin-top:4px;">Suggested from current MLB/WNBA reliability, market price, and correlation rules.</div>
+            <div class="cell-meta" style="margin-top:4px;">Suggested from current cross-sport reliability, market price, and correlation rules.</div>
         </div>
         <span class="badge badge-accent">Correlation {{ parlay_ev.correlation_label }}{% if parlay_ev.correlation_iq.score is not none %} / {{ parlay_ev.correlation_iq.score }}{% endif %}</span>
     </div>
-    <div class="grid-5 p-16" style="gap:12px;">
+    <div class="p-16" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px,1fr)); gap:12px;">
         <div class="parlay-surface-soft" style="padding:12px;">
             <div class="page-kicker" style="margin-bottom:6px;">True Probability</div>
             <div style="font-size:26px; font-weight:800; color:var(--accent);">{% if parlay_ev.true_prob is not none %}{{ parlay_ev.true_prob }}%{% else %}-{% endif %}</div>
@@ -568,10 +568,9 @@
         <div>
             <div class="control-label">Sport</div>
             <select name="sport" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">
-                <option>MLB</option>
-                <option>WNBA</option>
-                <option>NBA</option>
-                <option>NFL</option>
+                {% for sp in ['NBA', 'WNBA', 'MLB', 'NFL', 'NCAAF'] %}
+                <option value="{{ sp }}" {% if (focus_sport|default('')|upper) == sp %}selected{% endif %}>{{ sp }}</option>
+                {% endfor %}
             </select>
         </div>
         <div><div class="control-label">Player</div><input name="player" required style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
@@ -614,6 +613,7 @@
                     <th>Player</th>
                     <th>Sport</th>
                     <th>Prop</th>
+                    <th>EV%</th>
                     <th>Reliability</th>
                     <th>True %</th>
                     <th>Implied</th>
@@ -623,16 +623,17 @@
             <tbody>
                 {% for leg in candidate_pool %}
                 <tr>
-                    <td><strong>{{ leg.player }}</strong><div class="cell-meta">{{ leg.matchup }}</div></td>
+                    <td><strong>{{ leg.player }}</strong>{% if leg.team %}<div class="cell-meta" style="display:flex;align-items:center;gap:5px;margin-top:2px;">{{ team_mark(leg.team, size='xs') }}<span>{{ leg.team }}</span></div>{% endif %}<div class="cell-meta">{{ leg.matchup }}</div></td>
                     <td>{{ leg.sport }}</td>
                     <td>{{ leg.direction }} {{ leg.stat }} {{ leg.line }}</td>
+                    <td>{% if leg.edge_pct is not none %}<strong class="bk-ev {% if leg.edge_pct >= 0 %}bk-ev-pos{% else %}bk-ev-neg{% endif %}">{{ '+' if leg.edge_pct >= 0 else '' }}{{ leg.edge_pct }}%</strong>{% else %}<span class="cell-meta">no price</span>{% endif %}</td>
                     <td><span class="badge {% if leg.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ leg.reliability }}</span></td>
                     <td>{{ leg.true_prob }}%</td>
                     <td>{% if leg.implied_prob is not none %}{{ leg.implied_prob }}%{% else %}-{% endif %}</td>
                     <td>{{ leg.score }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="7" class="cell-meta">No MLB/WNBA elite candidates passed the current filter.</td></tr>
+                <tr><td colspan="8" class="cell-meta">No elite candidates passed the current filter.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -375,6 +375,20 @@ body::after {
 .bk-streak-chips i.hit { background: rgba(127,213,165,0.18); color: #7fd5a5; }
 .bk-streak-chips i.miss { background: rgba(255,138,138,0.16); color: #ff8a8a; }
 
+/* Prominent EV% cell (Elite candidate pool, etc.). */
+.bk-ev { font-size: 14px; font-weight: 900; letter-spacing: .3px; }
+.bk-ev-pos { color: #7fd5a5; }
+.bk-ev-neg { color: #ff8a8a; }
+
+/* Keep compact-board table headers visible while scrolling their data. */
+.compact-board thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #0b1620;
+  box-shadow: 0 1px 0 rgba(132,215,210,0.18);
+}
+
 @keyframes bkTickerScroll {
   from { transform: translateX(0); }
   to { transform: translateX(-100%); }

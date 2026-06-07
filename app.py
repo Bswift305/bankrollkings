@@ -12940,7 +12940,11 @@ def _elite_candidate_from_prop(prop, sport):
     true_prob = float(true_prob) / 100.0 if pd.notna(true_prob) else 0.55
     true_prob = max(0.35, min(true_prob, 0.92))
     decimal_odds = _american_decimal_odds(price)
-    implied_prob = (1.0 / decimal_odds) if decimal_odds else None
+    if decimal_odds is None or pd.isna(decimal_odds) or not decimal_odds:
+        decimal_odds = None
+        implied_prob = None
+    else:
+        implied_prob = 1.0 / decimal_odds
     edge = (true_prob - implied_prob) if implied_prob is not None else None
     reliability = str(prop.get('historical_reliability') or prop.get('floor_reliability') or '').strip().upper()
     score = true_prob * 100
@@ -12950,7 +12954,7 @@ def _elite_candidate_from_prop(prop, sport):
         score += 5
     elif reliability == 'AVOID':
         score -= 20
-    if edge is not None:
+    if edge is not None and not pd.isna(edge):
         score += edge * 100
     price_num = pd.to_numeric(price, errors='coerce')
     return {
