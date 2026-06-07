@@ -13008,7 +13008,7 @@ def build_elite_cross_sport_candidates(limit=60):
             if 'OutcomeState' in working.columns:
                 working = working[working['OutcomeState'].eq('Pending')].copy()
             if 'Sport' in working.columns:
-                working = working[working['Sport'].isin(['WNBA', 'MLB'])].copy()
+                working = working[working['Sport'].isin(['NBA', 'WNBA', 'MLB', 'NFL', 'NCAAF'])].copy()
             if 'FloorReliability' in working.columns:
                 working = working[working['FloorReliability'].isin(['ANCHOR', 'WATCH', 'DEVELOPING', 'SMALL SAMPLE'])].copy()
             if 'Method' in working.columns:
@@ -13063,7 +13063,14 @@ def build_elite_parlay_ev(candidates, target_legs=4):
 
     selected = []
     used_keys = set()
-    for preferred_sport in ['WNBA', 'MLB']:
+    # Seed one leg per distinct sport present (so an NBA-only or any single-sport
+    # pool still builds a parlay instead of waiting on a hardcoded sport list).
+    preferred_sports = []
+    for item in candidates:
+        sp = item.get('sport')
+        if sp and sp not in preferred_sports:
+            preferred_sports.append(sp)
+    for preferred_sport in preferred_sports:
         for item in candidates:
             if item['sport'] != preferred_sport:
                 continue
@@ -14369,25 +14376,44 @@ def build_elite_learning_modules():
     ]
 
 
-def build_elite_dashboard_context(current_user):
+def build_elite_dashboard_context(current_user, focus_sport=''):
     user_tickets = format_saved_parlays_for_view(
         filter_saved_parlays_for_user(load_saved_parlays(), current_user),
         live_props=[],
         limit=None,
     )
     review = summarize_bet_review(user_tickets)
-    candidates = build_elite_cross_sport_candidates()
+    all_candidates = build_elite_cross_sport_candidates()
+    # Sport-scope the whole cockpit when opened from a specific sport (e.g. NBA)
+    # so it stays consistent with that sport, instead of the cross-sport
+    # (MLB-heavy) default. No focus_sport -> full cross-sport view.
+    sport_prefix = {
+        'nba': 'NBA', 'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL',
+        'ncaaf': 'NCAAF', 'ncaamb': 'NCAAMB', 'ncaawb': 'NCAAWB',
+    }.get(str(focus_sport or '').strip().lower(), str(focus_sport or '').strip().upper())
+    candidates = (
+        [c for c in all_candidates if str(c.get('sport', '')).strip().upper() == sport_prefix]
+        if sport_prefix else all_candidates
+    )
+
+    # Line-move alert persistence/grading must stay cross-sport (global side
+    # effect), so always run it on the full candidate set.
+    full_sharp_money = build_elite_sharp_money_scanner(all_candidates)
+    alert_history_df = persist_elite_line_move_alerts(full_sharp_money)
+    alert_history_df = grade_elite_line_move_alerts(alert_history_df)
+    alert_history = build_elite_alert_history_summary(alert_history_df)
+
+    # Displayed sections follow the (possibly sport-scoped) candidate set.
     parlay_ev = build_elite_parlay_ev(candidates, target_legs=4)
     actions = build_elite_action_queue(review, parlay_ev, candidates)
     timing_watch = build_elite_market_timing_watch(candidates)
-    sharp_money = build_elite_sharp_money_scanner(candidates)
-    alert_history_df = persist_elite_line_move_alerts(sharp_money)
-    alert_history_df = grade_elite_line_move_alerts(alert_history_df)
-    alert_history = build_elite_alert_history_summary(alert_history_df)
+    sharp_money = build_elite_sharp_money_scanner(candidates) if sport_prefix else full_sharp_money
     best_books = build_elite_best_book_board(candidates)
     weekly_report = build_elite_weekly_report(review, candidates, parlay_ev)
-    mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8)
-    streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=5))
+    mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8) if sport_prefix in ('', 'MLB') else {'summary': {'rows': 0, 'note': ''}, 'rows': []}
+    streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=60 if sport_prefix else 5))
+    if sport_prefix:
+        streak_heat = [r for r in streak_heat if str(r.get('sport', '')).strip().upper() == sport_prefix][:5]
     weekly = {'tickets': 0, 'staked': 0.0, 'profit': 0.0, 'roi_pct': None}
     cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
     for ticket in user_tickets:
@@ -31633,14 +31659,14 @@ def elite_dashboard():
     # should stay on the selected sport instead of flipping to a hardcoded MLB.
     focus_sport = normalize_sport_access_key(request.args.get('sport', '').strip())
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
-    snapshot_key = f"elite_dashboard_v2_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    snapshot_key = f"elite_dashboard_v2_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     if snapshot:
         context = snapshot.get('payload') or {}
     else:
-        context = build_elite_dashboard_context(current_user)
+        context = build_elite_dashboard_context(current_user, focus_sport)
         try:
-            write_runtime_snapshot(snapshot_key, context, meta={'view': 'elite_dashboard'})
+            write_runtime_snapshot(snapshot_key, context, meta={'view': 'elite_dashboard', 'sport': focus_sport})
         except Exception:
             pass
     return render_template(
