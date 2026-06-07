@@ -90,6 +90,12 @@ def _build_message(test: bool) -> str:
 
 
 def _send_webhook(url: str, message: str) -> bool:
+    if not (url.startswith("http://") or url.startswith("https://")):
+        print(
+            f"[notify] ALERT_WEBHOOK_URL is not a valid URL ({url!r}). "
+            "Replace the placeholder in .env with your real Slack/Discord webhook URL."
+        )
+        return False
     low = url.lower()
     if "discord" in low:
         payload = {"content": message[:1900]}  # Discord 2000-char content cap
@@ -99,11 +105,11 @@ def _send_webhook(url: str, message: str) -> bool:
         # Unknown provider: send both common keys; receivers ignore extras.
         payload = {"text": message, "content": message[:1900]}
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
     ctx = ssl.create_default_context()
     try:
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+        )
         with urllib.request.urlopen(req, timeout=20, context=ctx) as resp:
             ok = 200 <= resp.status < 300
             print(f"[notify] webhook status={resp.status}")
