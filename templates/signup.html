@@ -39,12 +39,6 @@
             {% if error %}
             <div class="signup-notice error">{{ error }}</div>
             {% endif %}
-            {% if next_url %}
-            <div class="signup-notice">
-                <strong>Return destination</strong>
-                <span>After account creation, you will be sent back to {{ next_url }}.</span>
-            </div>
-            {% endif %}
 
             <label for="signupName">Display Name</label>
             <input id="signupName" name="display_name" type="text" autocomplete="name" required>
@@ -53,7 +47,11 @@
             <input id="signupEmail" name="email" type="email" autocomplete="email" required>
 
             <label for="signupPassword">Password</label>
-            <input id="signupPassword" name="password" type="password" autocomplete="new-password" minlength="6" required>
+            <div class="pw-wrap">
+                <input id="signupPassword" name="password" type="password" autocomplete="new-password" minlength="6" required>
+                <button type="button" class="pw-toggle" data-pw-target="signupPassword" aria-label="Show password">Show</button>
+            </div>
+            <div class="field-hint">Use at least 6 characters.</div>
 
             <label for="signupPlan">Selected Plan</label>
             <select id="signupPlan" name="plan">
@@ -67,6 +65,19 @@
                 <strong>{{ selected_tier.name }} · {{ selected_tier.monthly_label }}</strong>
                 <p>{{ selected_tier.summary }}</p>
             </div>
+
+            <div class="consent-group">
+                <label class="consent-row">
+                    <input type="checkbox" name="agree_terms" value="1" required>
+                    <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+                </label>
+                <label class="consent-row">
+                    <input type="checkbox" name="agree_age" value="1" required>
+                    <span>I am 21 or older and have reviewed <a href="/responsible-gambling" target="_blank" rel="noopener">Responsible Gambling</a>.</span>
+                </label>
+            </div>
+
+            <div class="secure-note">🔒 Secure, encrypted connection — we never sell or share your information.</div>
 
             <div class="signup-actions">
                 <button type="submit" class="btn btn-primary">Create Account</button>
@@ -186,6 +197,54 @@
     gap: 9px;
     align-items: center;
     margin-top: 4px;
+}
+.pw-wrap { position: relative; display: flex; align-items: center; }
+.pw-wrap input { padding-right: 64px; }
+.pw-toggle {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: 0;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 4px 6px;
+}
+.field-hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: -4px;
+}
+.consent-group { display: grid; gap: 8px; margin-top: 6px; }
+.consent-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    line-height: 1.45;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    cursor: pointer;
+}
+.consent-row input[type="checkbox"] {
+    width: 16px;
+    min-height: 16px;
+    height: 16px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.consent-row a { color: var(--accent); text-decoration: underline; }
+.secure-note {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    margin-top: 2px;
 }
 @media (max-width: 900px) {
     .signup-shell {

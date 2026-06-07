@@ -62,4 +62,14 @@
     document.querySelectorAll('form').forEach(ensureField);
   }
 })();
+// Show/hide password toggles: any <button data-pw-target="inputId">.
+document.addEventListener('click', function (e) {
+  var btn = e.target && e.target.closest ? e.target.closest('[data-pw-target]') : null;
+  if (!btn) return;
+  var input = document.getElementById(btn.getAttribute('data-pw-target'));
+  if (!input) return;
+  var reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  btn.textContent = reveal ? 'Hide' : 'Show';
+});
 </script>

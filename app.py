@@ -519,6 +519,49 @@ COMP_ELITE_EMAILS = {
     'dalecopper@comcast.net',
 }
 
+# Absolute base URL used to build links inside transactional email (password
+# reset). Override with SITE_BASE_URL in .env if the domain changes.
+SITE_BASE_URL = (os.environ.get('SITE_BASE_URL', '') or 'https://bankrollkings.com').strip().rstrip('/')
+
+
+def send_account_email(to_email, subject, body):
+    """Best-effort transactional email via the configured SMTP (.env SMTP_*).
+
+    Reuses the same SMTP settings as the ops alerter. Returns True on success,
+    False otherwise; never raises (callers must not break on mail failure).
+    """
+    to_email = str(to_email or '').strip()
+    host = os.environ.get('SMTP_HOST', '').strip()
+    if not to_email or not host:
+        print('[email] cannot send (missing SMTP_HOST or recipient):', to_email)
+        return False
+    import smtplib
+    import ssl as _ssl
+    from email.message import EmailMessage
+
+    port = int(os.environ.get('SMTP_PORT', '587') or '587')
+    user = os.environ.get('SMTP_USER', '').strip()
+    password = os.environ.get('SMTP_PASSWORD', '').strip()
+    sender = os.environ.get('SMTP_FROM', '').strip() or user or 'no-reply@bankrollkings.com'
+    use_tls = str(os.environ.get('SMTP_USE_TLS', '1')).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = sender
+    msg['To'] = to_email
+    msg.set_content(body)
+    try:
+        with smtplib.SMTP(host, port, timeout=30) as server:
+            if use_tls:
+                server.starttls(context=_ssl.create_default_context())
+            if user and password:
+                server.login(user, password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        print('[email] send failed:', exc)
+        return False
+
 PUBLIC_ENDPOINTS = {
     'static',
     'manifest_webmanifest',
@@ -528,6 +571,8 @@ PUBLIC_ENDPOINTS = {
     'pricing',
     'login',
     'signup',
+    'password_reset',
+    'password_reset_confirm',
     'logout',
     'info',
     'glossary',
@@ -8782,7 +8827,7 @@ def load_saved_parlays():
 
 def load_users():
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
-    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId']
+    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId', 'ResetTokenHash', 'ResetTokenExpiry', 'AcceptedTermsAt']
     if not path.exists():
         return pd.DataFrame(columns=default_columns)
 
@@ -30435,12 +30480,19 @@ def signup():
         if selected_billing not in {'monthly', 'annual'}:
             selected_billing = 'monthly'
 
+        agree_terms = bool(request.form.get('agree_terms'))
+        agree_age = bool(request.form.get('agree_age'))
+
         if not display_name:
             error = 'Display name is required.'
         elif not email or '@' not in email:
             error = 'Enter a valid email address.'
         elif len(password) < 6:
             error = 'Password must be at least 6 characters.'
+        elif not agree_terms:
+            error = 'Please agree to the Terms of Service and Privacy Policy to continue.'
+        elif not agree_age:
+            error = 'Please confirm you are 21 or older to continue.'
         elif find_user_by_email(email):
             error = 'That email is already registered. Please sign in.'
         else:
@@ -30457,6 +30509,7 @@ def signup():
                 'PlanStatus': 'active' if is_comp else 'selected',
                 'CreatedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
                 'PlanSelectedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
+                'AcceptedTermsAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
             }
             save_user(user)
             login_user(user)
@@ -30504,48 +30557,108 @@ def login():
 @app.route('/password-reset', methods=['GET', 'POST'])
 def password_reset():
     postseason_only = postseason_only_enabled()
-    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/account'
+    next_url = request.args.get('next', '').strip() or request.form.get('next', '').strip() or '/dashboard'
     next_url_encoded = quote(next_url, safe='')
-    host = str(request.host or '').split(':', 1)[0].strip().lower()
-    local_only = host in {'127.0.0.1', 'localhost', '::1'}
     error = ''
     message = ''
 
     if request.method == 'POST':
         email = str(request.form.get('email', '')).strip().lower()
+        if not email or '@' not in email:
+            error = 'Enter a valid email address.'
+        elif _login_rate_limited(email):
+            error = 'Too many requests. Please wait a minute and try again.'
+        else:
+            user = find_user_by_email(email)
+            if user:
+                token = secrets.token_urlsafe(32)
+                token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+                expiry_ts = (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+                updated = dict(user)
+                updated['ResetTokenHash'] = token_hash
+                updated['ResetTokenExpiry'] = str(expiry_ts)
+                save_user(updated)
+                reset_link = (
+                    f"{SITE_BASE_URL}/password-reset/confirm"
+                    f"?uid={quote(str(user.get('UserId', '')), safe='')}&token={quote(token, safe='')}"
+                )
+                body = (
+                    f"Hi {user.get('DisplayName') or 'there'},\n\n"
+                    "We received a request to reset your Bankroll Kings password. "
+                    "Use the link below to choose a new one — it expires in 1 hour:\n\n"
+                    f"{reset_link}\n\n"
+                    "If you didn't request this, you can ignore this email; your password will not change.\n\n"
+                    "— Bankroll Kings"
+                )
+                send_account_email(email, 'Reset your Bankroll Kings password', body)
+            # Identical response whether or not the account exists (no enumeration).
+            message = 'If an account exists for that email, a password reset link is on its way. Check your inbox (and your spam folder).'
+
+    return render_template(
+        'password_reset.html',
+        postseason_only=postseason_only,
+        mode='request',
+        next_url=next_url,
+        next_url_encoded=next_url_encoded,
+        error=error,
+        message=message,
+    )
+
+
+def _password_reset_token_valid(user, token):
+    if not user or not token:
+        return False
+    token_hash = str(user.get('ResetTokenHash', '') or '').strip()
+    expiry_raw = str(user.get('ResetTokenExpiry', '') or '').strip()
+    if not token_hash or not expiry_raw:
+        return False
+    try:
+        expiry_ts = float(expiry_raw)
+    except (TypeError, ValueError):
+        return False
+    if datetime.now(timezone.utc).timestamp() > expiry_ts:
+        return False
+    candidate = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    return secrets.compare_digest(token_hash, candidate)
+
+
+@app.route('/password-reset/confirm', methods=['GET', 'POST'])
+def password_reset_confirm():
+    postseason_only = postseason_only_enabled()
+    uid = str(request.values.get('uid', '') or '').strip()
+    token = str(request.values.get('token', '') or '').strip()
+    user = find_user_by_id(uid) if uid else None
+    valid = _password_reset_token_valid(user, token)
+    error = ''
+    message = ''
+
+    if request.method == 'POST':
         new_password = str(request.form.get('new_password', '')).strip()
         confirm_password = str(request.form.get('confirm_password', '')).strip()
-        user = find_user_by_email(email)
-
-        if not local_only:
-            error = 'Password recovery is only available on the local development site.'
-        elif email not in OWNER_EMAILS:
-            error = 'Local password recovery is only enabled for the owner account.'
-        elif not user:
-            error = 'No local owner account was found for that email.'
+        if not valid:
+            error = 'This reset link is invalid or has expired. Please request a new one.'
         elif len(new_password) < 6:
             error = 'New password must be at least 6 characters.'
         elif new_password != confirm_password:
             error = 'New password and confirmation must match.'
         else:
-            updated_user = dict(user)
-            updated_user['PasswordHash'] = generate_password_hash(new_password)
-            updated_user['Plan'] = updated_user.get('Plan') or 'sharp'
-            updated_user['PlanStatus'] = updated_user.get('PlanStatus') or 'active'
-            updated_user['Role'] = updated_user.get('Role') or 'owner'
-            updated_user['IsAdmin'] = updated_user.get('IsAdmin') or '1'
-            save_user(updated_user)
-            login_user(updated_user)
-            return redirect(next_url)
+            updated = dict(user)
+            updated['PasswordHash'] = generate_password_hash(new_password)
+            updated['ResetTokenHash'] = ''       # consume the one-time token
+            updated['ResetTokenExpiry'] = ''
+            save_user(updated)
+            login_user(updated)
+            return redirect(_resolve_post_auth_target(get_current_user(), ''))
 
     return render_template(
         'password_reset.html',
         postseason_only=postseason_only,
-        next_url=next_url,
-        next_url_encoded=next_url_encoded,
+        mode='confirm',
+        uid=uid,
+        token=token,
+        valid=valid,
         error=error,
         message=message,
-        local_only=local_only,
     )
 
 
