@@ -292,6 +292,69 @@
 </div><!-- /.bk-app -->
 
 <!-- ═══════════════════════════════════════
+     IN-PAGE TICKET BUILDER — persists via localStorage, available on every page
+═══════════════════════════════════════ -->
+<style>
+  .bk-ticket-fab { position: fixed; right: 18px; bottom: 18px; z-index: 1200; display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px; border-radius: 999px; cursor: pointer; border: 1px solid rgba(255,209,109,0.5); background: linear-gradient(135deg, rgba(245,200,96,0.95), rgba(157,244,236,0.9)); color: #07100e; font-weight: 900; font-size: 13px; letter-spacing: .04em; box-shadow: 0 10px 28px rgba(0,0,0,.35); }
+  .bk-ticket-fab .bk-ticket-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #07100e; color: #f5c860; font-size: 12px; font-weight: 900; }
+  .bk-ticket { position: fixed; top: 0; right: 0; height: 100vh; width: min(360px, 92vw); z-index: 1300; transform: translateX(105%); transition: transform .22s ease; display: flex; flex-direction: column; background: rgba(10,14,18,0.98); border-left: 1px solid rgba(255,255,255,.12); box-shadow: -16px 0 40px rgba(0,0,0,.45); }
+  .bk-ticket.open { transform: translateX(0); }
+  .bk-ticket-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,.10); font-family: var(--font-display, sans-serif); letter-spacing: .08em; font-weight: 800; color: var(--text-bright, #e7eef2); }
+  .bk-ticket-head .bk-ticket-count { background: rgba(255,255,255,.08); color: var(--accent-copper,#f1c15b); border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+  .bk-ticket-head button { margin-left: auto; background: none; border: none; color: var(--text-muted,#93a4ab); font-size: 20px; line-height: 1; cursor: pointer; }
+  .bk-ticket-body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .bk-ticket-empty { color: var(--text-muted,#93a4ab); font-size: 13px; line-height: 1.55; text-align: center; margin-top: 26px; padding: 0 12px; }
+  .bk-ticket-leg { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(255,255,255,.025); }
+  .bk-ticket-leg strong { display: block; color: var(--text-bright,#e7eef2); font-size: 13px; }
+  .bk-ticket-leg small { display: block; color: var(--text-muted,#93a4ab); font-size: 11px; margin-top: 2px; }
+  .bk-ticket-leg button { margin-left: auto; background: none; border: none; color: #ff8a8a; font-size: 14px; cursor: pointer; }
+  .bk-ticket-foot { padding: 14px; border-top: 1px solid rgba(255,255,255,.10); display: flex; gap: 8px; }
+  .bk-ticket-foot a, .bk-ticket-foot button { flex: 1; text-align: center; padding: 10px; border-radius: 9px; font-weight: 800; font-size: 13px; cursor: pointer; text-decoration: none; border: none; }
+  .bk-ticket-foot .bk-ticket-clear { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12); color: var(--text-muted,#93a4ab); }
+  .bk-ticket-foot .bk-ticket-build { background: linear-gradient(135deg, rgba(245,200,96,0.95), rgba(157,244,236,0.9)); color: #07100e; }
+</style>
+<button id="bk-ticket-fab" class="bk-ticket-fab" type="button" onclick="bkTicket.open()" title="Open your ticket builder">Ticket <span class="bk-ticket-count">0</span></button>
+<aside id="bk-ticket" class="bk-ticket" aria-label="Ticket builder">
+  <div class="bk-ticket-head"><span>TICKET BUILDER</span><span class="bk-ticket-count">0</span><button type="button" onclick="bkTicket.close()" aria-label="Close">&times;</button></div>
+  <div id="bk-ticket-legs" class="bk-ticket-body"></div>
+  <div class="bk-ticket-foot">
+    <button type="button" class="bk-ticket-clear" onclick="bkTicket.clear()">Clear</button>
+    <a id="bk-ticket-build" class="bk-ticket-build" href="/parlay?source=ticket">Open in Parlay Builder</a>
+  </div>
+</aside>
+<script>
+(function(){
+  var KEY = 'bk_ticket_legs';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  var bkTicket = {
+    get: function(){ try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(e){ return []; } },
+    save: function(legs){ try { localStorage.setItem(KEY, JSON.stringify(legs)); } catch(e){} this.render(); },
+    add: function(leg){ if(!leg || !leg.player) return; var legs = this.get(); var k = function(l){ return [l.player,l.sport,l.stat,l.direction].join('|').toLowerCase(); }; if(!legs.some(function(l){ return k(l) === k(leg); })) legs.push(leg); this.save(legs); this.open(); },
+    remove: function(i){ var legs = this.get(); legs.splice(i,1); this.save(legs); },
+    clear: function(){ this.save([]); },
+    open: function(){ var el = document.getElementById('bk-ticket'); if(el) el.classList.add('open'); },
+    close: function(){ var el = document.getElementById('bk-ticket'); if(el) el.classList.remove('open'); },
+    render: function(){
+      var legs = this.get();
+      Array.prototype.forEach.call(document.querySelectorAll('.bk-ticket-count'), function(e){ e.textContent = legs.length; });
+      var body = document.getElementById('bk-ticket-legs'); if(!body) return;
+      if(!legs.length){ body.innerHTML = '<div class="bk-ticket-empty">No legs yet.<br>Tap “Add” on any play to start a ticket — it stays here as you move around the site.</div>'; return; }
+      body.innerHTML = legs.map(function(l,i){ return '<div class="bk-ticket-leg"><div><strong>'+esc(l.player)+'</strong><small>'+esc(l.sport)+' · '+esc(l.stat)+' '+esc(l.direction)+(l.line?(' '+esc(l.line)):'')+'</small></div><button type="button" title="Remove" onclick="bkTicket.remove('+i+')">✕</button></div>'; }).join('');
+    }
+  };
+  window.bkTicket = bkTicket;
+  document.addEventListener('click', function(e){
+    var add = e.target.closest ? e.target.closest('[data-bk-add]') : null;
+    if(!add) return;
+    e.preventDefault();
+    bkTicket.add({ player: add.getAttribute('data-player')||'', sport: add.getAttribute('data-sport')||'', stat: add.getAttribute('data-stat')||'', direction: add.getAttribute('data-direction')||'', line: add.getAttribute('data-line')||'' });
+  });
+  if(document.readyState !== 'loading') bkTicket.render();
+  else document.addEventListener('DOMContentLoaded', function(){ bkTicket.render(); });
+})();
+</script>
+
+<!-- ═══════════════════════════════════════
      BASE JAVASCRIPT — runs on every page
 ═══════════════════════════════════════ -->
 <script>

@@ -64,7 +64,7 @@
       <p>This does not replace QC. It flags where momentum, hit rate, and sample size line up so you can decide whether the hot hand is real enough to feed a parlay build.</p>
     </div>
     {% if top_row %}
-    <a class="bk-open-btn" title="Send the #1 streak into the Parlay Builder" href="{{ url_for('parlay') }}?player={{ top_row.player|urlencode }}&sport={{ top_row.sport }}&stat={{ top_row.stat }}&direction={{ top_row.direction|lower }}&sample=current&source=heat_map">Add Top to Parlay</a>
+    <a class="bk-open-btn" data-bk-add data-player="{{ top_row.player }}" data-sport="{{ top_row.sport }}" data-stat="{{ top_row.stat }}" data-direction="{{ top_row.direction }}" title="Add the #1 streak to your ticket" href="{{ url_for('parlay') }}?player={{ top_row.player|urlencode }}&sport={{ top_row.sport }}&stat={{ top_row.stat }}&direction={{ top_row.direction|lower }}&sample=current&source=heat_map">Add Top to Ticket</a>
     {% endif %}
   </div>
 
@@ -102,7 +102,7 @@
           <strong>{{ row.heat_score }}</strong>
           <small>Heat</small>
         </span>
-        <a class="bk-heat-add" title="Add {{ row.player }} {{ row.stat }} {{ row.direction }} to the Parlay Builder" href="{{ url_for('parlay') }}?player={{ row.player|urlencode }}&sport={{ row.sport }}&stat={{ row.stat }}&direction={{ row.direction|lower }}&sample=current&source=heat_map">Add</a>
+        <a class="bk-heat-add" data-bk-add data-player="{{ row.player }}" data-sport="{{ row.sport }}" data-stat="{{ row.stat }}" data-direction="{{ row.direction }}" title="Add {{ row.player }} {{ row.stat }} {{ row.direction }} to your ticket" href="{{ url_for('parlay') }}?player={{ row.player|urlencode }}&sport={{ row.sport }}&stat={{ row.stat }}&direction={{ row.direction|lower }}&sample=current&source=heat_map">Add</a>
       </div>
       <details class="bk-heat-details">
         <summary>Read more</summary>
