@@ -32888,6 +32888,7 @@ def prewarm_caches():
         ('injuries', load_injuries),
         ('nba_props', load_props),
         ('mlb_props', load_mlb_props),
+        ('wnba_props', load_wnba_props),
     ]
     warmed = []
     for name, loader in warmers:
