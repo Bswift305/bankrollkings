@@ -31551,6 +31551,10 @@ def bet_review_model_export():
 @app.route('/elite')
 def elite_dashboard():
     current_user = get_current_user()
+    # Keep the Elite cockpit in the sport context the user arrived from (the nav
+    # Elite link passes ?sport=). The cockpit data is cross-sport, but the shell
+    # should stay on the selected sport instead of flipping to a hardcoded MLB.
+    focus_sport = normalize_sport_access_key(request.args.get('sport', '').strip())
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
     snapshot_key = f"elite_dashboard_v2_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
@@ -31566,6 +31570,7 @@ def elite_dashboard():
         'elite_dashboard.html',
         current_user=current_user,
         postseason_only=postseason_only_enabled(),
+        focus_sport=focus_sport,
         **context,
     )
 

@@ -1,5 +1,5 @@
 {% set active_page = 'elite' %}
-{% set active_sport = 'mlb' %}
+{% set active_sport = focus_sport | default('') %}
 {% extends "bk_base.html" %}
 {% block title %}Elite Cockpit - Bankroll Kings{% endblock %}
 {% block app_class %}no-slip{% endblock %}
@@ -14,12 +14,16 @@
     </div>
     <img src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="elite-hero-mascot-img">
     <div class="hero-actions">
-        <a href="/elite/matchup-builder" class="btn btn-primary btn-sm">Matchup Builder</a>
-        <a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>
+        <a href="/elite/matchup-builder{% if active_sport %}?sport={{ active_sport }}{% endif %}" class="btn btn-primary btn-sm">Matchup Builder</a>
+        {% if active_sport in ['', 'mlb'] %}<a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>{% endif %}
         <a href="/elite/learn" class="btn btn-secondary btn-sm">Sharp University</a>
         <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Full Bet Review</a>
+        {% if active_sport %}
+        <a href="/sports/{{ active_sport }}" class="btn btn-secondary btn-sm">{{ active_sport|upper }} Board</a>
+        {% else %}
         <a href="/sports/mlb" class="btn btn-secondary btn-sm">MLB Board</a>
         <a href="/sports/wnba" class="btn btn-secondary btn-sm">WNBA Board</a>
+        {% endif %}
     </div>
 </div>
 
@@ -135,6 +139,7 @@
 </div>
 {% endif %}
 
+{% if active_sport in ['', 'mlb'] %}
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
         <div>
@@ -178,6 +183,7 @@
         </table>
     </div>
 </div>
+{% endif %}
 
 <div class="grid-2 mb-24" style="gap:14px;">
     <div class="card">
