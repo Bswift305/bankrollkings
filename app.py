@@ -2344,6 +2344,37 @@ def build_live_counts():
     return counts
 
 
+def _streak_player_team_map():
+    """player(lower) -> most-recent team abbr, from gamelogs across sports. Used to
+    backfill the team on streak-heat rows (the graded results leave Team blank)."""
+    def _build():
+        mapping = {}
+        for loader in (load_mlb_gamelogs, load_gamelogs, load_wnba_gamelogs, load_nfl_gamelogs):
+            try:
+                df = loader()
+            except Exception:
+                continue
+            if df is None or df.empty or 'Player' not in df.columns or 'Team' not in df.columns:
+                continue
+            sub = df[['Player', 'Team']].dropna()
+            for player, team in zip(sub['Player'].astype(str).str.strip(), sub['Team'].astype(str).str.strip()):
+                if player and team:
+                    mapping[player.lower()] = team.upper()  # later rows win = most recent
+        return mapping
+    return _get_ttl_cached_value('streak_player_team_map', 600, _build)
+
+
+def attach_streak_heat_teams(rows):
+    """Fill in row['team'] from gamelogs when the streak-heat data didn't carry it."""
+    if not rows:
+        return rows
+    tmap = _streak_player_team_map()
+    for row in rows:
+        if not str(row.get('team') or '').strip():
+            row['team'] = tmap.get(str(row.get('player') or '').strip().lower(), '')
+    return rows
+
+
 def load_nfl_current_roster():
     path = DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'
     if path.exists():
@@ -14355,7 +14386,7 @@ def build_elite_dashboard_context(current_user):
     best_books = build_elite_best_book_board(candidates)
     weekly_report = build_elite_weekly_report(review, candidates, parlay_ev)
     mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8)
-    streak_heat = build_streak_heat_chart_service(limit=5)
+    streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=5))
     weekly = {'tickets': 0, 'staked': 0.0, 'profit': 0.0, 'roi_pct': None}
     cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
     for ticket in user_tickets:
@@ -18617,7 +18648,7 @@ def build_phase2_dashboard_context():
                 'charts': {'by_sport': [], 'by_stat': [], 'by_grade': [], 'by_day': []},
             }
         try:
-            streak_heat = build_streak_heat_chart_service(limit=5)
+            streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=5))
         except Exception:
             streak_heat = []
         try:
