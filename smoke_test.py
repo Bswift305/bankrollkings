@@ -59,8 +59,13 @@ def _check_csrf(client):
 
     page = client.get("/login").get_data(as_text=True)
     m = re.search(r'name="csrf-token" content="([^"]+)"', page)
+    meta_present = bool(m)
     token = m.group(1) if m else ""
-    print(f"csrf-token meta on /login: {'yes' if token else 'MISSING'}", flush=True)
+    if not token:  # fall back to the hidden form field
+        m2 = re.search(r'name="csrf_token"\s+value="([^"]+)"', page)
+        token = m2.group(1) if m2 else ""
+    print(f"csrf-token meta on /login: {'yes' if meta_present else 'MISSING'}", flush=True)
+    print(f"csrf token available on /login: {'yes' if token else 'NO'}", flush=True)
     ok = ok and bool(token)
 
     if token:

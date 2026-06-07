@@ -6,72 +6,9 @@
   <meta name="theme-color" content="#0b1418">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Bankroll Kings">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="description" content="{% block meta_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, WNBA, and football.{% endblock %}">
 
-  <!-- CSRF: auto-attach the session token to same-origin mutating requests
-       (fetch + XHR) and to any POST form, so AJAX and dynamic forms are
-       covered centrally. Server-rendered forms also carry a hidden field as a
-       no-JS fallback. Runs early so it patches fetch/XHR before any caller. -->
-  <script>
-  (function () {
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    var token = meta ? meta.getAttribute('content') : '';
-    if (!token) return;
-    var MUT = /^(POST|PUT|PATCH|DELETE)$/i;
-    function sameOrigin(url) {
-      if (!url) return true;
-      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return true; // relative URL
-      return url.indexOf(window.location.origin) === 0;
-    }
-    // fetch
-    if (window.fetch) {
-      var _fetch = window.fetch;
-      window.fetch = function (input, init) {
-        init = init || {};
-        var method = init.method || (input && typeof input === 'object' && input.method) || 'GET';
-        var url = (typeof input === 'string') ? input : (input && input.url) || '';
-        if (MUT.test(method) && sameOrigin(url)) {
-          var headers = new Headers(init.headers || (input && typeof input === 'object' && input.headers) || {});
-          if (!headers.has('X-CSRFToken')) headers.set('X-CSRFToken', token);
-          init.headers = headers;
-        }
-        return _fetch.call(this, input, init);
-      };
-    }
-    // XMLHttpRequest
-    var _open = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function (method, url) {
-      this.__csrfNeed = MUT.test(method || '') && sameOrigin(url || '');
-      return _open.apply(this, arguments);
-    };
-    var _send = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function (body) {
-      if (this.__csrfNeed) { try { this.setRequestHeader('X-CSRFToken', token); } catch (e) {} }
-      return _send.apply(this, arguments);
-    };
-    // Forms: ensure every same-origin POST form carries a hidden csrf_token,
-    // covering dynamically-created forms not rendered with the field.
-    function ensureField(f) {
-      if (!f || f.tagName !== 'FORM') return;
-      if ((f.getAttribute('method') || 'get').toUpperCase() !== 'POST') return;
-      var action = f.getAttribute('action') || '';
-      if (!sameOrigin(action)) return;
-      if (f.querySelector('input[name="csrf_token"]')) return;
-      var inp = document.createElement('input');
-      inp.type = 'hidden'; inp.name = 'csrf_token'; inp.value = token;
-      f.appendChild(inp);
-    }
-    document.addEventListener('submit', function (e) { ensureField(e.target); }, true);
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function () {
-        document.querySelectorAll('form').forEach(ensureField);
-      });
-    } else {
-      document.querySelectorAll('form').forEach(ensureField);
-    }
-  })();
-  </script>
+  {% include "_csrf_head.html" %}
   <title>{% block title %}Bankroll Kings{% endblock %} — Betting Intel</title>
 
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
