@@ -24475,9 +24475,9 @@ def build_trend_board(gamelogs, current_team_map, props_df=None, player_snapshot
 def build_trend_opportunity_history(gamelogs, current_team_map, team_filter=None, sample_mode='current', stat_filter='all', thresholds=(3, 5)):
     """Expanding-window trailing-streak scan behind /trend-board.
 
-    Functionally equivalent to _build_trend_opportunity_history_legacy (validated
-    row-for-row), but replaces per-window DataFrame.copy()/sort_values()/iterrows()
-    with numpy arrays. The caller only needs each window's *current* streak, and
+    Replaces a former per-window DataFrame.copy()/sort_values()/iterrows() walk
+    (via calculate_streak_profile) with numpy arrays — validated row-for-row
+    identical to that version. The caller only needs each window's *current* streak, and
     the backward scan stops at the first opposite-side game, so this is ~O(total
     games) instead of O(games^2) with pandas overhead — cold render drops from
     ~34s to a couple of seconds.
