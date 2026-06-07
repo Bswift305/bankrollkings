@@ -13010,7 +13010,9 @@ def build_elite_cross_sport_candidates(limit=60):
             if 'Sport' in working.columns:
                 working = working[working['Sport'].isin(['NBA', 'WNBA', 'MLB', 'NFL', 'NCAAF'])].copy()
             if 'FloorReliability' in working.columns:
-                working = working[working['FloorReliability'].isin(['ANCHOR', 'WATCH', 'DEVELOPING', 'SMALL SAMPLE'])].copy()
+                # Allow blank reliability through (NBA floor rows don't carry it);
+                # _elite_candidate_from_prop defaults those to DEVELOPING.
+                working = working[working['FloorReliability'].isin(['ANCHOR', 'WATCH', 'DEVELOPING', 'SMALL SAMPLE', ''])].copy()
             if 'Method' in working.columns:
                 working = working[working['Method'].str.upper().isin(['FLOOR PLAYS', 'MARKET EDGE', 'TRENDS'])].copy()
             if 'Confidence' in working.columns:
@@ -13020,7 +13022,7 @@ def build_elite_cross_sport_candidates(limit=60):
                 (c['sport'], c['player'].upper(), c['stat'].upper(), c['direction'], str(c['line']))
                 for c in candidates
             }
-            for _, row in working.head(100).iterrows():
+            for _, row in working.groupby('Sport', group_keys=False).head(45).iterrows():
                 payload = {
                     'player': row.get('Player'),
                     'team': row.get('Team'),
@@ -14383,7 +14385,7 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
         limit=None,
     )
     review = summarize_bet_review(user_tickets)
-    all_candidates = build_elite_cross_sport_candidates()
+    all_candidates = build_elite_cross_sport_candidates(limit=200)
     # Sport-scope the whole cockpit when opened from a specific sport (e.g. NBA)
     # so it stays consistent with that sport, instead of the cross-sport
     # (MLB-heavy) default. No focus_sport -> full cross-sport view.
