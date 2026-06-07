@@ -193,19 +193,23 @@ body::after {
    ------------------------------------------------------------ */
 .bk-app {
   display: grid;
-  grid-template-columns: 240px 1fr 280px;
+  /* Legacy in-grid bet slip retired in favour of the floating Ticket drawer.
+     Default layout is now 2-col (sidebar + main); the slip column is gone. */
+  grid-template-columns: 240px 1fr;
   grid-template-rows: 52px 1fr;
   height: 100vh;
   position: relative;
   z-index: 2;
 }
 
-/* Page with no bet slip (e.g. Heat Map, History, Settings) */
+/* no-slip retained for backwards compat; identical to the new default. */
 .bk-app.no-slip {
   grid-template-columns: 240px 1fr;
 }
 
-.bk-app.no-slip .bk-slip {
+/* The old static bet slip is fully retired — never render it. The floating
+   Ticket drawer (#bk-ticket, a fixed overlay) replaces it everywhere. */
+.bk-slip {
   display: none !important;
 }
 

@@ -1568,5 +1568,88 @@ if (handoffContext && handoffContext.status === 'matched' && handoffContext.leg)
     });
     updateParlay();
 }
+
+/* -------------------------------------------------------------------------
+   Ticket Drawer -> Parlay Builder sync.
+   When the builder is opened from the floating Ticket drawer
+   (/parlay?source=ticket), pull every leg the user has stacked in the drawer
+   (localStorage `bk_ticket_legs`, exposed via window.bkTicket) and build the
+   parlay from them. Legs that match a row on today's live board are selected
+   with full pricing; legs not on the board are still added so the user sees
+   their full ticket (priced as data becomes available).
+   ------------------------------------------------------------------------- */
+(function syncTicketDrawerIntoBuilder() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('source') !== 'ticket') return;
+
+        let legs = [];
+        if (window.bkTicket && typeof window.bkTicket.get === 'function') {
+            legs = window.bkTicket.get() || [];
+        } else {
+            legs = JSON.parse(localStorage.getItem('bk_ticket_legs') || '[]');
+        }
+        if (!Array.isArray(legs) || !legs.length) return;
+
+        const norm = (v) => String(v == null ? '' : v).trim().toLowerCase();
+        const checkboxes = Array.from(document.querySelectorAll('.prop-checkbox'));
+        let matched = 0, unmatched = 0;
+
+        legs.forEach((leg) => {
+            const lp = norm(leg.player), ls = norm(leg.stat), ld = norm(leg.direction), ll = norm(leg.line);
+            // Prefer an exact board row (player + stat + direction, line if the
+            // drawer captured one) so we inherit full confidence/EV/market data.
+            let cb = checkboxes.find(c =>
+                norm(c.dataset.player) === lp &&
+                norm(c.dataset.stat) === ls &&
+                norm(c.dataset.direction) === ld &&
+                (!ll || norm(c.dataset.line) === ll)
+            );
+            if (!cb && ll) {
+                // Fall back to ignoring the line if a stored line blocked the match.
+                cb = checkboxes.find(c =>
+                    norm(c.dataset.player) === lp &&
+                    norm(c.dataset.stat) === ls &&
+                    norm(c.dataset.direction) === ld
+                );
+            }
+
+            if (cb) {
+                cb.checked = true;
+                addPropToSelection(propFromCheckbox(cb));
+                const row = cb.closest('tr');
+                if (row) {
+                    row.style.outline = '2px solid rgba(132,215,210,0.65)';
+                    row.style.boxShadow = 'inset 4px 0 0 rgba(132,215,210,0.8)';
+                }
+                matched++;
+            } else {
+                // Not on today's board — add a thin leg so the ticket is complete.
+                addPropToSelection({
+                    sport: leg.sport || 'NBA',
+                    player: leg.player || '',
+                    team: leg.team || '',
+                    stat: leg.stat || '',
+                    line: leg.line != null ? String(leg.line) : '',
+                    direction: leg.direction || '',
+                    confidence: parseFloat(leg.confidence || 0),
+                    marketPrice: leg.market_price ? parseFloat(leg.market_price) : null,
+                    modelProb: leg.model_prob ? parseFloat(leg.model_prob) : parseFloat(leg.confidence || 0),
+                    evPct: leg.ev_pct ? parseFloat(leg.ev_pct) : null,
+                    matchup: leg.matchup || '',
+                    tier: leg.tier || ''
+                });
+                unmatched++;
+            }
+        });
+
+        if (matched || unmatched) {
+            updateParlay();
+            console.info('[parlay] Ticket drawer synced: ' + matched + ' priced from board, ' + unmatched + ' added without a live board line.');
+        }
+    } catch (err) {
+        console.warn('[parlay] Ticket drawer sync failed:', err);
+    }
+})();
 </script>
 {% endblock %}
