@@ -2239,10 +2239,18 @@ def live_score_for(sport, away, home):
         match = df[(aw_col == h) & (hm_col == a)]  # defensive: orientation flip
     if match.empty:
         return {}
-    row = match.iloc[-1]
-    status = str(row.get('Status', '')).strip().lower()
-    if status not in ('live', 'final'):
+    # A matchup can have multiple rows today (doubleheaders, or a pre row beside a
+    # live one). Prefer an in-progress game, then a final; never surface 'pre'.
+    statuses = match['Status'].astype(str).str.lower()
+    live_rows = match[statuses == 'live']
+    final_rows = match[statuses == 'final']
+    if not live_rows.empty:
+        row = live_rows.iloc[-1]
+    elif not final_rows.empty:
+        row = final_rows.iloc[-1]
+    else:
         return {}
+    status = str(row.get('Status', '')).strip().lower()
     away_score = str(row.get('AwayScore', '')).strip()
     home_score = str(row.get('HomeScore', '')).strip()
     prefix = 'LIVE' if status == 'live' else 'Final'
