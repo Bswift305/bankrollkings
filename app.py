@@ -127,26 +127,62 @@ def service_worker():
     return response
 
 
-def _login_rate_key(email=''):
+def _login_client_ip():
     forwarded = str(request.headers.get('X-Forwarded-For', '') or '').split(',', 1)[0].strip()
-    remote = forwarded or str(request.remote_addr or 'unknown')
-    email_key = str(email or '').strip().lower()
-    return f"{remote}|{email_key}"
+    return forwarded or str(request.remote_addr or 'unknown')
 
 
-def _login_rate_limited(email='', limit=10, window_seconds=60):
-    now = datetime.now(timezone.utc).timestamp()
-    key = _login_rate_key(email)
+def _login_rate_key(email=''):
+    return f"{_login_client_ip()}|{str(email or '').strip().lower()}"
+
+
+def _prune_login_attempt_cache(now, window_seconds):
+    # Bound memory: an attacker rotating emails/IPs would otherwise grow the
+    # cache without limit. Only prune when it gets large, dropping keys whose
+    # attempts have all aged out of the window.
+    if len(LOGIN_ATTEMPT_CACHE) <= 2000:
+        return
+    stale = [
+        key for key, stamps in list(LOGIN_ATTEMPT_CACHE.items())
+        if not any(now - float(s or 0) <= window_seconds for s in (stamps or []))
+    ]
+    for key in stale:
+        LOGIN_ATTEMPT_CACHE.pop(key, None)
+
+
+def _attempts_over_limit(key, now, limit, window_seconds):
     attempts = [
         stamp for stamp in LOGIN_ATTEMPT_CACHE.get(key, [])
         if now - float(stamp or 0) <= window_seconds
     ]
     if len(attempts) >= limit:
-        LOGIN_ATTEMPT_CACHE[key] = attempts
+        LOGIN_ATTEMPT_CACHE[key] = attempts  # keep the pruned window; don't extend it
         return True
     attempts.append(now)
     LOGIN_ATTEMPT_CACHE[key] = attempts
     return False
+
+
+def _login_rate_limited(email='', limit=10, window_seconds=60, ip_limit=30):
+    """Throttle login attempts to blunt brute-force and credential stuffing.
+
+    Two independent windows are enforced over `window_seconds`:
+      - per (IP + email): caps brute-forcing a single account (`limit`).
+      - per IP across all emails: caps credential stuffing that rotates the
+        email to dodge the per-account cap (`ip_limit`).
+
+    Returns True if either window is exceeded. NOTE: the cache is per-process,
+    so under gunicorn the effective ceiling scales with the worker count; this
+    is a deterrent, not a hard global guarantee (a shared store such as Redis
+    would be required for that).
+    """
+    now = datetime.now(timezone.utc).timestamp()
+    _prune_login_attempt_cache(now, window_seconds)
+    email_key = _login_rate_key(email)
+    ip_key = f"ip|{_login_client_ip()}"
+    limited_email = _attempts_over_limit(email_key, now, limit, window_seconds)
+    limited_ip = _attempts_over_limit(ip_key, now, ip_limit, window_seconds)
+    return limited_email or limited_ip
 
 
 @app.route('/favicon.ico')
