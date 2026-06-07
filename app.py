@@ -4,7 +4,7 @@ Bankroll Kings - Sports Analytics Platform
 NBA prop betting analysis with Sharp Factors + Over/Under System
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response, session, send_from_directory
+from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response, session, send_from_directory, abort
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from collections import Counter
@@ -20,6 +20,7 @@ import hashlib
 import os
 import pickle
 import re
+import secrets
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -101,6 +102,52 @@ app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE'
 app.config['REMEMBER_COOKIE_SECURE'] = _env_flag('REMEMBER_COOKIE_SECURE', True)
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True
 app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+
+
+# =============================================================================
+# CSRF PROTECTION (manual, dependency-free synchronizer-token pattern)
+# =============================================================================
+# A per-session token is required on every state-changing request (POST/PUT/
+# PATCH/DELETE), supplied either as a `csrf_token` form field or an
+# `X-CSRFToken` / `X-CSRF-Token` header. SameSite=Lax already blocks most
+# cross-site POSTs; this closes the same-site-injection / older-browser gap.
+# The Stripe webhook is machine-to-machine (signature-verified) and is exempt.
+CSRF_EXEMPT_ENDPOINTS = {'stripe_webhook'}
+CSRF_SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
+
+
+def _get_csrf_token():
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+
+@app.context_processor
+def _inject_csrf_token():
+    # Exposes csrf_token() to every template (used in <meta> and hidden inputs).
+    return {'csrf_token': _get_csrf_token}
+
+
+@app.before_request
+def _csrf_protect():
+    if request.method in CSRF_SAFE_METHODS:
+        return
+    if request.endpoint is None:
+        return  # unmatched route -> let normal 404 handling run
+    if request.endpoint in CSRF_EXEMPT_ENDPOINTS:
+        return
+    sent = (
+        request.form.get('csrf_token')
+        or request.headers.get('X-CSRFToken')
+        or request.headers.get('X-CSRF-Token')
+        or ''
+    )
+    expected = session.get('_csrf_token', '')
+    if not expected or not sent or not secrets.compare_digest(str(sent), str(expected)):
+        abort(400, description='CSRF token missing or invalid. Refresh the page and try again.')
+
 
 app.template_folder = str(TEMPLATES_DIR)
 app.static_folder = str(STATIC_DIR)

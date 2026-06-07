@@ -30,6 +30,7 @@
             <div class="card-title">Start Your Personal Record</div>
         </div>
         <form method="post" class="signup-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="next" value="{{ next_url }}">
             <input type="hidden" name="billing_cycle" value="{{ selected_billing }}">
             {% if gate_notice %}

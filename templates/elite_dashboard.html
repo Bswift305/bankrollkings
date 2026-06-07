@@ -536,6 +536,7 @@
             </table>
         </div>
         <form method="post" action="/elite/parlay/save" style="margin-top:12px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary btn-sm">Save Elite Card To Tracker</button>
             <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Open Personal Tracker</a>
         </form>
@@ -551,6 +552,7 @@
         <span class="badge">Manual Tracker</span>
     </div>
     <form method="post" action="/elite/bet-log" class="p-16" style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; align-items:end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
             <div class="control-label">Sport</div>
             <select name="sport" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">

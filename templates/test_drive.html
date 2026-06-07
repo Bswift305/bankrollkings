@@ -140,6 +140,7 @@
                 <div class="card-title">Leave Feedback</div>
             </div>
             <form method="post" action="/feedback/save" class="p-20" style="display: flex; flex-direction: column; gap: 14px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="grid-2" style="gap: 12px;">
                     <div>
                         <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Tester Name</label>
