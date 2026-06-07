@@ -511,6 +511,14 @@ OWNER_EMAILS = {
     'decaturjones019@gmail.com',
 }
 
+# Comped testers: these emails are auto-granted an active Elite subscription the
+# moment they sign up (no checkout). Lowercase only — signup lowercases the email
+# before matching.
+COMP_ELITE_EMAILS = {
+    'mribet504@gmail.com',
+    'dalecopper@comcast.net',
+}
+
 PUBLIC_ENDPOINTS = {
     'static',
     'manifest_webmanifest',
@@ -30436,14 +30444,17 @@ def signup():
         elif find_user_by_email(email):
             error = 'That email is already registered. Please sign in.'
         else:
+            is_comp = email in COMP_ELITE_EMAILS
             user = {
                 'UserId': uuid4().hex,
                 'DisplayName': display_name,
                 'Email': email,
                 'PasswordHash': generate_password_hash(password),
-                'Plan': selected_plan,
+                # Comped testers land on an active Elite subscription immediately;
+                # everyone else keeps their selected plan in the pre-checkout state.
+                'Plan': 'elite' if is_comp else selected_plan,
                 'BillingCycle': selected_billing,
-                'PlanStatus': 'selected',
+                'PlanStatus': 'active' if is_comp else 'selected',
                 'CreatedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
                 'PlanSelectedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
             }
