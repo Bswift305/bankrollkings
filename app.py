@@ -2370,7 +2370,8 @@ def attach_streak_heat_teams(rows):
         return rows
     tmap = _streak_player_team_map()
     for row in rows:
-        if not str(row.get('team') or '').strip():
+        cur = str(row.get('team') or '').strip()
+        if cur.lower() in ('', 'nan', 'none', 'null'):
             row['team'] = tmap.get(str(row.get('player') or '').strip().lower(), '')
     return rows
 
