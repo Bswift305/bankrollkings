@@ -145,7 +145,6 @@
 </div>
 {% endif %}
 
-{% if active_sport in ['', 'mlb'] %}
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
         <div>
@@ -189,7 +188,6 @@
         </table>
     </div>
 </div>
-{% endif %}
 
 <div class="grid-2 mb-24" style="gap:14px;">
     <div class="card">
@@ -327,6 +325,7 @@
                 <tr>
                     <td>
                         <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {% if row.team %}<div class="cell-meta" style="display:flex;align-items:center;gap:5px;margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
                         <div class="cell-meta">{{ row.sport }} · {{ row.stat }}{% if row.game %} · {{ row.game }}{% endif %}</div>
                     </td>
                     <td>{{ row.book or '-' }}</td>
@@ -451,6 +450,7 @@
                 <tr>
                     <td>
                         <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {% if row.team %}<div class="cell-meta" style="display:flex;align-items:center;gap:5px;margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
                         <div class="cell-meta">{{ row.sport }} · {{ row.direction }} {{ row.stat }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</div>
                     </td>
                     <td>

@@ -14385,37 +14385,33 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
         limit=None,
     )
     review = summarize_bet_review(user_tickets)
-    all_candidates = build_elite_cross_sport_candidates(limit=200)
-    # Sport-scope the whole cockpit when opened from a specific sport (e.g. NBA)
-    # so it stays consistent with that sport, instead of the cross-sport
-    # (MLB-heavy) default. No focus_sport -> full cross-sport view.
+    # Cross-sport cockpit: candidate pool, parlay EV, sharp money, timing, best
+    # books and alert history are all cross-sport (ranked by model edge/EV across
+    # sports). Team is backfilled from gamelogs so prop tables can show team+logo.
+    candidates = attach_streak_heat_teams(build_elite_cross_sport_candidates(limit=200))
+    # Only "Top Hot Hands" (the top window) is scoped to the sport the user
+    # arrived from; everything else stays cross-sport.
     sport_prefix = {
         'nba': 'NBA', 'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL',
         'ncaaf': 'NCAAF', 'ncaamb': 'NCAAMB', 'ncaawb': 'NCAAWB',
     }.get(str(focus_sport or '').strip().lower(), str(focus_sport or '').strip().upper())
-    candidates = (
-        [c for c in all_candidates if str(c.get('sport', '')).strip().upper() == sport_prefix]
-        if sport_prefix else all_candidates
-    )
 
-    # Line-move alert persistence/grading must stay cross-sport (global side
-    # effect), so always run it on the full candidate set.
-    full_sharp_money = build_elite_sharp_money_scanner(all_candidates)
-    alert_history_df = persist_elite_line_move_alerts(full_sharp_money)
-    alert_history_df = grade_elite_line_move_alerts(alert_history_df)
-    alert_history = build_elite_alert_history_summary(alert_history_df)
-
-    # Displayed sections follow the (possibly sport-scoped) candidate set.
     parlay_ev = build_elite_parlay_ev(candidates, target_legs=4)
     actions = build_elite_action_queue(review, parlay_ev, candidates)
     timing_watch = build_elite_market_timing_watch(candidates)
-    sharp_money = build_elite_sharp_money_scanner(candidates) if sport_prefix else full_sharp_money
+    sharp_money = build_elite_sharp_money_scanner(candidates)
+    alert_history_df = persist_elite_line_move_alerts(sharp_money)
+    alert_history_df = grade_elite_line_move_alerts(alert_history_df)
+    alert_history = build_elite_alert_history_summary(alert_history_df)
     best_books = build_elite_best_book_board(candidates)
     weekly_report = build_elite_weekly_report(review, candidates, parlay_ev)
-    mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8) if sport_prefix in ('', 'MLB') else {'summary': {'rows': 0, 'note': ''}, 'rows': []}
-    streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=60 if sport_prefix else 5))
+    mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8)
+    streak_heat = attach_streak_heat_teams(build_streak_heat_chart_service(limit=60))
     if sport_prefix:
-        streak_heat = [r for r in streak_heat if str(r.get('sport', '')).strip().upper() == sport_prefix][:5]
+        scoped = [r for r in streak_heat if str(r.get('sport', '')).strip().upper() == sport_prefix][:5]
+        streak_heat = scoped if scoped else streak_heat[:5]
+    else:
+        streak_heat = streak_heat[:5]
     weekly = {'tickets': 0, 'staked': 0.0, 'profit': 0.0, 'roi_pct': None}
     cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
     for ticket in user_tickets:
