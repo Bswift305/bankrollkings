@@ -239,6 +239,28 @@ def favicon():
     return response
 
 
+@app.route('/healthz')
+def healthz():
+    """Lightweight, unauthenticated health check for uptime monitors and the
+    resource watchdog. Returns 200 when the web app can serve requests.
+
+    Intentionally cheap: it does NOT load dataframes or render templates, so an
+    external monitor hitting it every minute adds no real load and a slow/heavy
+    page can't mask a basic 'is the app alive' signal.
+    """
+    info = {
+        'status': 'ok',
+        'time': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    try:
+        info['data_present'] = (DATA_DIR / 'tracking' / 'NBA_Users.csv').exists()
+    except Exception:
+        info['data_present'] = None
+    resp = jsonify(info)
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp, 200
+
+
 @app.after_request
 def apply_security_headers(response):
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')

@@ -1,0 +1,14 @@
+[Unit]
+Description=Bankroll Kings - resource + app health watchdog (early warning)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/opt/bankrollkings/venv/bin/python monitor_health.py
+# Checks memory/load/disk + local /healthz, alerts via the same channels as
+# notify_failure.py (.env: ALERT_WEBHOOK_URL and/or SMTP_* + ALERT_EMAIL_TO).
+# Always exits 0; a per-condition cooldown prevents alert spam.
+TimeoutStartSec=60

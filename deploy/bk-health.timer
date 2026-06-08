@@ -1,0 +1,11 @@
+[Unit]
+Description=Bankroll Kings - run the health watchdog every 5 minutes
+
+[Timer]
+OnBootSec=180
+OnUnitActiveSec=300
+AccuracySec=30s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
