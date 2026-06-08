@@ -183,10 +183,46 @@ def _login_rate_key(email=''):
     return f"{_login_client_ip()}|{str(email or '').strip().lower()}"
 
 
+LOGIN_DB_PATH = BASE_DIR / 'logs' / 'login_attempts.sqlite'
+_LOGIN_DB_READY = {'ok': False}
+
+
+def _login_db():
+    """Open the shared SQLite attempt store (one connection per call; cheap).
+
+    SQLite with WAL gives a single, cross-process counter shared by ALL gunicorn
+    workers, so the rate-limit ceiling is global rather than per-worker. Returns
+    None if the store can't be opened, so callers fail open (never lock users out
+    because of a storage hiccup).
+    """
+    try:
+        import sqlite3
+        LOGIN_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(LOGIN_DB_PATH), timeout=2.0, isolation_level=None)
+        conn.execute('PRAGMA journal_mode=WAL;')
+        conn.execute('PRAGMA busy_timeout=2000;')
+        if not _LOGIN_DB_READY['ok']:
+            conn.execute('CREATE TABLE IF NOT EXISTS attempts (k TEXT NOT NULL, ts REAL NOT NULL);')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_attempts_k_ts ON attempts (k, ts);')
+            _LOGIN_DB_READY['ok'] = True
+        return conn
+    except Exception:
+        return None
+
+
+def _attempts_over_limit_db(conn, key, now, limit, window_seconds):
+    cutoff = now - window_seconds
+    row = conn.execute('SELECT COUNT(*) FROM attempts WHERE k=? AND ts>=?;', (key, cutoff)).fetchone()
+    count = int(row[0]) if row else 0
+    if count >= limit:
+        return True
+    conn.execute('INSERT INTO attempts (k, ts) VALUES (?, ?);', (key, now))
+    return False
+
+
 def _prune_login_attempt_cache(now, window_seconds):
-    # Bound memory: an attacker rotating emails/IPs would otherwise grow the
-    # cache without limit. Only prune when it gets large, dropping keys whose
-    # attempts have all aged out of the window.
+    # In-memory fallback only: bound memory by dropping keys whose attempts have
+    # all aged out of the window once the cache gets large.
     if len(LOGIN_ATTEMPT_CACHE) <= 2000:
         return
     stale = [
@@ -198,6 +234,7 @@ def _prune_login_attempt_cache(now, window_seconds):
 
 
 def _attempts_over_limit(key, now, limit, window_seconds):
+    # In-memory fallback (per-process) used only if the SQLite store is down.
     attempts = [
         stamp for stamp in LOGIN_ATTEMPT_CACHE.get(key, [])
         if now - float(stamp or 0) <= window_seconds
@@ -218,15 +255,32 @@ def _login_rate_limited(email='', limit=10, window_seconds=60, ip_limit=30):
       - per IP across all emails: caps credential stuffing that rotates the
         email to dodge the per-account cap (`ip_limit`).
 
-    Returns True if either window is exceeded. NOTE: the cache is per-process,
-    so under gunicorn the effective ceiling scales with the worker count; this
-    is a deterrent, not a hard global guarantee (a shared store such as Redis
-    would be required for that).
+    Backed by a shared SQLite store so the cap is GLOBAL across all gunicorn
+    workers (not per-process). If the store is unavailable it falls back to the
+    per-process in-memory cache (fail-open: better to under-throttle than to
+    lock everyone out on a storage error).
     """
     now = datetime.now(timezone.utc).timestamp()
-    _prune_login_attempt_cache(now, window_seconds)
     email_key = _login_rate_key(email)
     ip_key = f"ip|{_login_client_ip()}"
+
+    conn = _login_db()
+    if conn is not None:
+        try:
+            # Opportunistically prune rows well past any window (cheap, indexed).
+            conn.execute('DELETE FROM attempts WHERE ts < ?;', (now - max(window_seconds * 5, 3600),))
+            limited_email = _attempts_over_limit_db(conn, email_key, now, limit, window_seconds)
+            limited_ip = _attempts_over_limit_db(conn, ip_key, now, ip_limit, window_seconds)
+            return limited_email or limited_ip
+        except Exception:
+            pass  # fall through to in-memory fallback
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    _prune_login_attempt_cache(now, window_seconds)
     limited_email = _attempts_over_limit(email_key, now, limit, window_seconds)
     limited_ip = _attempts_over_limit(ip_key, now, ip_limit, window_seconds)
     return limited_email or limited_ip
