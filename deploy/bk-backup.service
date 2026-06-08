@@ -1,0 +1,15 @@
+[Unit]
+Description=Bankroll Kings - daily backup of critical data (data/tracking)
+After=network-online.target
+OnFailure=bk-daily-alert.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/opt/bankrollkings/venv/bin/python backup_data.py
+# Writes a rotated tarball to /home/ubuntu/bk-backups (OS root volume, i.e. a
+# DIFFERENT volume than the /opt data volume). Exits non-zero on real failure,
+# so OnFailure surfaces it. The health watchdog also flags a stale backup.
+TimeoutStartSec=120

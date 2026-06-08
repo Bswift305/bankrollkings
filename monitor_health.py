@@ -44,6 +44,8 @@ LOAD_PER_CPU_MAX = float(os.environ.get("HEALTH_LOAD_PER_CPU", "4"))      # aler
 HEALTHZ_URL = os.environ.get("HEALTH_LOCAL_URL", "http://127.0.0.1:8000/healthz")
 COOLDOWN_SEC = int(os.environ.get("HEALTH_COOLDOWN_SEC", "1800"))         # min seconds between repeat alerts per condition
 DISK_PATHS = ["/", "/opt/bankrollkings"]
+BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", str(Path.home() / "bk-backups")))
+BACKUP_MAX_AGE_HOURS = float(os.environ.get("HEALTH_BACKUP_MAX_AGE_HOURS", "36"))
 
 
 def _now_utc() -> str:
@@ -90,6 +92,18 @@ def _check() -> list[tuple[str, str]]:
                 problems.append((f"disk:{path}", f"Disk {path} {pct}% full (threshold {DISK_MAX_PCT}%)"))
         except Exception:
             pass
+
+    # Backup freshness: catch a silently-failing daily backup.
+    try:
+        backups = sorted(BACKUP_DIR.glob("bk-tracking-*.tar.gz"))
+        if not backups:
+            problems.append(("backup", f"No data backups found in {BACKUP_DIR}"))
+        else:
+            age_h = (time.time() - backups[-1].stat().st_mtime) / 3600.0
+            if age_h > BACKUP_MAX_AGE_HOURS:
+                problems.append(("backup", f"Latest data backup is {age_h:.0f}h old (threshold {BACKUP_MAX_AGE_HOURS:.0f}h): {backups[-1].name}"))
+    except Exception:
+        pass
 
     # Local app responsiveness (gunicorn behind nginx). This catches the app
     # being wedged even when the box itself is fine.

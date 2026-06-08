@@ -1,0 +1,10 @@
+[Unit]
+Description=Bankroll Kings - run the data backup daily (12:30 UTC, before the daily refresh)
+
+[Timer]
+OnCalendar=*-*-* 12:30:00
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
