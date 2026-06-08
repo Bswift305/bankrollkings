@@ -566,6 +566,7 @@
     <div style="padding:10px 16px 0; color:var(--text-muted); font-size:12px; line-height:1.5;">
         Log a bet you actually placed so it's saved to <strong>your</strong> personal record. The greyed-out text in each box is just an example — type your own bet over it. Required: Player, Stat, Side, Line.
         <br><span style="opacity:0.75;">Example shown: <em>Aaron Judge · Total Bases · OVER 1.5 · -120 · $25 to win $45.83 on DraftKings</em>.</span>
+        <br><span style="color:var(--accent); opacity:0.95;">Leave Result on <strong>Pending</strong> — it settles itself (Win/Loss/Push) automatically once the game is played.</span>
     </div>
     <form method="post" action="/elite/bet-log" class="p-16" style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; align-items:end;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -587,11 +588,11 @@
             </select>
         </div>
         <div><div class="control-label">Line</div><input name="line" required placeholder="1.5" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
-        <div><div class="control-label">Price</div><input name="price" placeholder="-120" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
-        <div><div class="control-label">Matchup</div><input name="matchup" placeholder="Yankees @ Red Sox" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
-        <div><div class="control-label">Book</div><input name="book" placeholder="DraftKings" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
-        <div><div class="control-label">Stake</div><input name="stake" type="number" step="0.01" placeholder="25.00" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
-        <div><div class="control-label">Payout</div><input name="payout" type="number" step="0.01" placeholder="45.83" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Price <span style="opacity:0.5; font-weight:400;">(optional)</span></div><input name="price" placeholder="-120" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Matchup <span style="opacity:0.5; font-weight:400;">(optional)</span></div><input name="matchup" placeholder="Yankees @ Red Sox" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Book <span style="opacity:0.5; font-weight:400;">(optional)</span></div><input name="book" placeholder="DraftKings" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Stake <span style="opacity:0.5; font-weight:400;">(optional)</span></div><input name="stake" type="number" step="0.01" placeholder="25.00" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
+        <div><div class="control-label">Payout <span style="opacity:0.5; font-weight:400;">(optional)</span></div><input name="payout" type="number" step="0.01" placeholder="45.83" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;"></div>
         <div>
             <div class="control-label">Result</div>
             <select name="result" style="width:100%; background:rgba(13,28,39,0.9); border:1px solid rgba(166,233,229,0.18); color:var(--text-bright); border-radius:8px; padding:9px;">

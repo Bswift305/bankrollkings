@@ -13456,6 +13456,65 @@ def grade_elite_line_move_alerts(alerts=None):
     return df
 
 
+def grade_manual_bet_logs():
+    """Auto-settle pending manual Quick Bet Log tickets against gamelogs.
+
+    Mirrors the alert grader: only touches tickets the user logged manually
+    (Mode == 'Elite Manual Bet Log') whose Result is still Pending. Resolves
+    each leg via the verified resolve_saved_leg_outcome grader and writes back
+    Win/Loss/Push. Bets whose game hasn't been played yet stay Pending. Never
+    overrides a result the user set by hand. Returns the number graded.
+    """
+    df = load_saved_parlays()
+    if df.empty:
+        return 0
+    mode = df['Mode'].fillna('').astype(str).str.strip()
+    result = df['Result'].fillna('').astype(str).str.strip().str.lower()
+    pending_mask = mode.eq('Elite Manual Bet Log') & result.isin(['', 'pending'])
+    if not pending_mask.any():
+        return 0
+
+    regular_logs = load_gamelogs()
+    playoff_logs = load_playoff_gamelogs()
+    sport_logs = {
+        'WNBA': load_wnba_gamelogs(),
+        'MLB': load_mlb_gamelogs(),
+        'NFL': load_nfl_gamelogs(),
+        'NCAAF': load_ncaaf_gamelogs(),
+    }
+    graded = 0
+    for idx in df.index[pending_mask]:
+        row = df.loc[idx]
+        try:
+            picks = json.loads(row.get('PicksJson') or '[]')
+        except Exception:
+            picks = []
+        if not picks:
+            continue
+        saved_at = row.get('SavedAt') or ''
+        states = []
+        for pick in picks:
+            outcome = resolve_saved_leg_outcome(
+                pick, saved_at, regular_logs, playoff_logs, sport_logs=sport_logs,
+            )
+            states.append(str(outcome.get('state') or 'pending'))
+        if any(s == 'pending' for s in states):
+            continue  # at least one leg not played yet -> leave Pending
+        if any(s == 'loss' for s in states):
+            final = 'Loss'
+        elif all(s == 'push' for s in states):
+            final = 'Push'
+        else:
+            final = 'Win'  # all wins (or wins + pushes)
+        df.at[idx, 'Result'] = final
+        df.at[idx, 'ResultUpdatedAt'] = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+        graded += 1
+
+    if graded:
+        replace_saved_parlays(df)
+    return graded
+
+
 def build_elite_alert_history_summary(alerts=None):
     df = load_elite_line_move_alerts() if alerts is None else alerts.copy()
     if df.empty:
@@ -14414,6 +14473,12 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
     alert_history_df = persist_elite_line_move_alerts(sharp_money)
     alert_history_df = grade_elite_line_move_alerts(alert_history_df)
     alert_history = build_elite_alert_history_summary(alert_history_df)
+    # Auto-settle the user's manually-logged bets against gamelogs (cheap here:
+    # the gamelogs were just loaded by the alert grader above).
+    try:
+        grade_manual_bet_logs()
+    except Exception:
+        pass
     best_books = build_elite_best_book_board(candidates)
     weekly_report = build_elite_weekly_report(review, candidates, parlay_ev)
     mlb_power_suppression = build_mlb_hr_suppression_engine(limit=8)
