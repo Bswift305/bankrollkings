@@ -616,17 +616,30 @@ def send_account_email(to_email, subject, body):
     import smtplib
     import ssl as _ssl
     from email.message import EmailMessage
+    from email.utils import formataddr, formatdate, make_msgid
 
     port = int(os.environ.get('SMTP_PORT', '587') or '587')
     user = os.environ.get('SMTP_USER', '').strip()
     password = os.environ.get('SMTP_PASSWORD', '').strip()
     sender = os.environ.get('SMTP_FROM', '').strip() or user or 'no-reply@bankrollkings.com'
+    from_name = os.environ.get('SMTP_FROM_NAME', '').strip() or 'Bankroll Kings'
+    reply_to = os.environ.get('SMTP_REPLY_TO', '').strip()
     use_tls = str(os.environ.get('SMTP_USE_TLS', '1')).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    # Derive the sender domain for a domain-aligned Message-ID (helps DKIM/DMARC
+    # alignment and inbox placement).
+    sender_domain = sender.split('@', 1)[1] if '@' in sender else 'bankrollkings.com'
 
     msg = EmailMessage()
     msg['Subject'] = subject
-    msg['From'] = sender
+    msg['From'] = formataddr((from_name, sender))
     msg['To'] = to_email
+    if reply_to:
+        msg['Reply-To'] = reply_to
+    # Explicit Date + Message-ID: some SMTP relays don't add these, and their
+    # absence is a common spam signal.
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain=sender_domain)
     msg.set_content(body)
     try:
         with smtplib.SMTP(host, port, timeout=30) as server:
