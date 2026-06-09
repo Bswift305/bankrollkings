@@ -2148,6 +2148,17 @@ body::after {
   filter: drop-shadow(0 8px 16px rgba(0,0,0,0.34));
 }
 
+/* College logos (CFB / Men's + Women's CBB) read small in the default mark,
+   so give the college sport pages a larger header logo. */
+.bk-app.sport-ncaaf .bk-compat-content .command-center-hero-mark,
+.bk-app.sport-cfb .bk-compat-content .command-center-hero-mark,
+.bk-app.sport-ncaamb .bk-compat-content .command-center-hero-mark,
+.bk-app.sport-ncaawb .bk-compat-content .command-center-hero-mark {
+  width: 104px;
+  height: 104px;
+  padding: 6px;
+}
+
 .bk-app[class*="sport-"] .bk-compat-content .command-center-actions .btn-primary {
   background: linear-gradient(135deg, var(--sport-accent-2), var(--sport-accent)) !important;
   border-color: color-mix(in srgb, var(--sport-accent) 72%, transparent) !important;
