@@ -15287,7 +15287,7 @@ def sidebar_icon_url(key):
         'props': 'game-lines.svg', 'game-lines': 'game-lines.svg',
         'injuries': 'injuries.svg',
     }
-    return '/static/logos/leagues/' + icons.get(key, 'review.svg')
+    return '/static/logos/leagues/' + icons.get(key, 'review.svg') + '?v=badge'
 
 
 app.jinja_env.globals['sidebar_icon_url'] = sidebar_icon_url
