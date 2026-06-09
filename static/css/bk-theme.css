@@ -2154,9 +2154,9 @@ body::after {
 .bk-app.sport-cfb .bk-compat-content .command-center-hero-mark,
 .bk-app.sport-ncaamb .bk-compat-content .command-center-hero-mark,
 .bk-app.sport-ncaawb .bk-compat-content .command-center-hero-mark {
-  width: 104px;
-  height: 104px;
-  padding: 6px;
+  width: 118px;
+  height: 118px;
+  padding: 4px;
 }
 
 .bk-app[class*="sport-"] .bk-compat-content .command-center-actions .btn-primary {
