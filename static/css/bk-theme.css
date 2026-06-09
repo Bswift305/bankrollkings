@@ -2198,6 +2198,70 @@ body::after {
   background: color-mix(in srgb, var(--sport-accent-2) 14%, transparent) !important;
 }
 
+/* "Command Center Map" workflow — was unstyled (stacked steps, floating numbers,
+   chips running together as plain text). Lay the 4 steps out as a responsive
+   card grid with numbered badges and real chip pills. */
+.sport-flow-panel .sport-flow-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.sport-flow-panel .sport-flow-head h2 { margin: 5px 0 7px; }
+.sport-flow-panel .sport-flow-head p {
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 780px;
+  line-height: 1.5;
+}
+.sport-flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 20px;
+}
+.sport-flow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 16px 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+}
+.sport-flow-number {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--sport-accent-2, #84d7d2), var(--sport-accent, #6ea8a4));
+  color: #06141a;
+  font-weight: 800;
+  font-size: 13px;
+  box-shadow: 0 0 14px var(--sport-glow, rgba(132,215,210,0.35));
+}
+.sport-flow-step .page-kicker { margin: 2px 0 0; }
+.sport-flow-step strong { font-size: 14px; color: var(--text-bright); line-height: 1.3; }
+.sport-flow-step p { font-size: 12.5px; line-height: 1.5; color: var(--text-muted); margin: 0; }
+.micro-cluster { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.micro-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text2, #b9c7c4);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+@media (max-width: 1024px) { .sport-flow-track { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .sport-flow-track { grid-template-columns: 1fr; } }
+
 .bk-app[class*="sport-"] .bk-topbar,
 .bk-app[class*="sport-"] .bk-sidebar,
 .bk-app[class*="sport-"] .bk-rail,
