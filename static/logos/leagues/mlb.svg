@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Baseball">
-  <circle cx="32" cy="32" r="25" fill="#e8eaf0" stroke="#7dd8cf" stroke-width="2"/>
-  <path d="M19 13c9 10 9 28 0 38M45 13c-9 10-9 28 0 38" fill="none" stroke="#ff4f6a" stroke-width="3" stroke-linecap="round"/>
-  <path d="M18 20l5 3M17 29l6 1M18 38l5-2M46 20l-5 3M47 29l-6 1M46 38l-5-2" stroke="#ff4f6a" stroke-width="2" stroke-linecap="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Baseball"><defs><linearGradient id="g" x1="2" y1="2" x2="22" y2="22"><stop stop-color="#7dd8cf"/><stop offset="1" stop-color="#9b8cff"/></linearGradient></defs><g fill="none" stroke="url(#g)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M7 4C4 8 4 16 7 20M17 4C20 8 20 16 17 20"/></g></svg>
