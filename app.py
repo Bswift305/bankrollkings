@@ -15265,6 +15265,34 @@ def sport_logo_url(sport_key):
     return ''
 
 
+def sidebar_icon_url(key):
+    """Clean SVG line-icon for the left sidebar / nav rail. Kept separate from
+    sport_logo_url (the detailed PNG league logos still used on boards, matchup
+    headers, etc.) so the narrow sidebar reads clearly at small size without
+    changing the richer logos everywhere else."""
+    key = str(key or '').strip().lower()
+    icons = {
+        'home': 'home.svg',
+        'nba': 'nba.svg', 'basketball_nba': 'nba.svg',
+        'wnba': 'wnba.svg', 'basketball_wnba': 'wnba.svg',
+        'mlb': 'mlb.svg', 'baseball_mlb': 'mlb.svg',
+        'nfl': 'nfl.svg', 'americanfootball_nfl': 'nfl.svg',
+        'ncaaf': 'ncaaf.svg', 'cfb': 'ncaaf.svg',
+        'ncaamb': 'ncaamb.svg',
+        'ncaawb': 'ncaawb.svg',
+        'settings': 'settings.svg',
+        'account': 'account.svg',
+        'glossary': 'glossary.svg',
+        'review': 'review.svg',
+        'props': 'game-lines.svg', 'game-lines': 'game-lines.svg',
+        'injuries': 'injuries.svg',
+    }
+    return '/static/logos/leagues/' + icons.get(key, 'review.svg')
+
+
+app.jinja_env.globals['sidebar_icon_url'] = sidebar_icon_url
+
+
 NFL_HISTORICAL_TEAM_ALIASES = {
     'ARI': 'Cardinals',
     'ATL': 'Falcons',

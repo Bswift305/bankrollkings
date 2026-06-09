@@ -7,7 +7,7 @@
 <div class="bk-sidebar-section">
   <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
   <a class="bk-sidebar-item active" href="{{ url_for('dashboard') }}" title="Home">
-    <span class="si-icon"><img src="/static/logos/leagues/home.png" alt=""></span><span class="si-name">Home</span>
+    <span class="si-icon"><img src="{{ sidebar_icon_url('home') }}" alt=""></span><span class="si-name">Home</span>
   </a>
 </div>
 
@@ -15,7 +15,7 @@
   <div class="bk-sidebar-heading">Sport / League</div>
   {% for sport in sport_snapshots %}
   <a href="{{ sport.href }}" class="bk-sidebar-item">
-    <span class="si-icon"><img src="{{ sport_logo_url(sport.key) }}" alt=""></span>
+    <span class="si-icon"><img src="{{ sidebar_icon_url(sport.key) }}" alt=""></span>
     <span class="si-name">{{ sport.sport }}</span>
     <span class="si-count">{{ sport.props_rows }}</span>
   </a>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Glossary">
+  <g fill="none" stroke="#7dd8cf" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 18C26 14 17 13 11 15V49c6-2 15-1 21 3 6-4 15-5 21-3V15c-6-2-15-1-21 3Z"/>
+    <path d="M32 18V52"/>
+  </g>
+</svg>

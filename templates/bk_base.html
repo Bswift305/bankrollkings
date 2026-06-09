@@ -86,7 +86,7 @@
   ═══════════════════════════════════════ -->
   <aside class="bk-rail">
     <a href="{{ url_for('dashboard') }}" class="bk-rail-icon {% if active_page == 'home' %}active{% endif %}" title="Home: all-sport member landing page">
-      <img src="/static/logos/leagues/home.png" loading="lazy" alt="Home"><span class="tip"><strong>Home</strong><small>All-sport member landing page</small></span>
+      <img src="/static/logos/leagues/home.svg" loading="lazy" alt="Home"><span class="tip"><strong>Home</strong><small>All-sport member landing page</small></span>
     </a>
     <a href="{{ top_nav_by_key.get('props', {}).get('href', url_for('method_hub', method_key='props')) }}" class="bk-rail-icon {% if active_page == 'props' %}active{% endif %}" title="Props: choose a sport, then open that sport's board">
       <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Props"><span class="tip"><strong>Props</strong><small>Choose a sport, then open that sport's board</small></span>
@@ -109,7 +109,7 @@
     </a>
     <div class="bk-rail-divider"></div>
     <a href="{{ url_for('settings') }}" class="bk-rail-icon {% if active_page == 'settings' %}active{% endif %}" title="Settings: account and platform preferences">
-      <img src="/static/logos/leagues/settings.png" loading="lazy" alt="Settings"><span class="tip"><strong>Settings</strong><small>Account and platform controls</small></span>
+      <img src="/static/logos/leagues/settings.svg" loading="lazy" alt="Settings"><span class="tip"><strong>Settings</strong><small>Account and platform controls</small></span>
     </a>
   </aside>
 
@@ -123,7 +123,7 @@
       <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
       <a href="{{ url_for('dashboard') }}"
          class="bk-sidebar-item {% if active_page == 'home' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="/static/logos/leagues/home.png" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('home') }}" alt=""></span>
         <span class="si-name">Home</span>
       </a>
     </div>
@@ -132,46 +132,46 @@
       <div class="bk-sidebar-heading">Sport / League</div>
       <a href="{{ sport_home_href('nba') }}"
          class="bk-sidebar-item {% if active_sport == 'nba' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('nba') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nba') }}" alt=""></span>
         <span class="si-name">NBA</span>
         <span class="si-count">{{ nba_count | default(0) }}</span>
         {% if live_counts and live_counts.get('nba') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('nba') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('nfl') }}"
          class="bk-sidebar-item {% if active_sport == 'nfl' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('nfl') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span>
         <span class="si-name">NFL</span>
         <span class="si-count">{{ nfl_count | default(0) }}</span>
       </a>
       <a href="{{ sport_home_href('wnba') }}"
          class="bk-sidebar-item {% if active_sport == 'wnba' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('wnba') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('wnba') }}" alt=""></span>
         <span class="si-name">WNBA</span>
         <span class="si-count">{{ wnba_count | default(0) }}</span>
         {% if live_counts and live_counts.get('wnba') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('wnba') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('mlb') }}"
          class="bk-sidebar-item {% if active_sport == 'mlb' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('mlb') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('mlb') }}" alt=""></span>
         <span class="si-name">MLB</span>
         <span class="si-count">{{ mlb_count | default(0) }}</span>
         {% if live_counts and live_counts.get('mlb') %}<span class="bk-live-badge is-live" style="margin-left:6px; padding:1px 6px; font-size:9px;"><span class="bk-live-dot"></span>{{ live_counts.get('mlb') }} live</span>{% endif %}
       </a>
       <a href="{{ sport_home_href('ncaaf') }}"
          class="bk-sidebar-item {% if active_sport in ['ncaaf', 'cfb'] %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaaf') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaaf') }}" alt=""></span>
         <span class="si-name">CFB</span>
         <span class="si-count">{{ cfb_count | default(0) }}</span>
       </a>
       <a href="{{ sport_home_href('ncaamb') }}"
          class="bk-sidebar-item {% if active_sport == 'ncaamb' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaamb') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaamb') }}" alt=""></span>
         <span class="si-name">Men CBB</span>
         <span class="si-count">{{ ncaamb_count | default(0) }}</span>
       </a>
       <a href="{{ sport_home_href('ncaawb') }}"
          class="bk-sidebar-item {% if active_sport == 'ncaawb' %}active{% endif %}">
-        <span class="si-icon"><img loading="lazy" src="{{ sport_logo_url('ncaawb') }}" alt=""></span>
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaawb') }}" alt=""></span>
         <span class="si-name">Women CBB</span>
         <span class="si-count">{{ ncaawb_count | default(0) }}</span>
       </a>
@@ -194,17 +194,17 @@
       <div class="bk-sidebar-heading">Tools</div>
       <a href="{{ url_for('settings') }}"
          class="bk-sidebar-item {% if active_page == 'settings' %}active{% endif %}">
-        <span class="si-icon"><img src="/static/logos/leagues/settings.png" loading="lazy" alt=""></span>
+        <span class="si-icon"><img src="{{ sidebar_icon_url('settings') }}" loading="lazy" alt=""></span>
         <span class="si-name">Settings</span>
       </a>
       <a href="{{ url_for('account') }}"
          class="bk-sidebar-item">
-        <span class="si-icon"><img src="/static/logos/leagues/review.svg" loading="lazy" alt=""></span>
+        <span class="si-icon"><img src="{{ sidebar_icon_url('account') }}" loading="lazy" alt=""></span>
         <span class="si-name">Account</span>
       </a>
       <a href="{{ url_for('glossary') }}"
          class="bk-sidebar-item">
-        <span class="si-icon"><img src="/static/logos/leagues/glossary.png" loading="lazy" alt=""></span>
+        <span class="si-icon"><img src="{{ sidebar_icon_url('glossary') }}" loading="lazy" alt=""></span>
         <span class="si-name">Glossary</span>
       </a>
     </div>
