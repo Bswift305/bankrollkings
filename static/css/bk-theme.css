@@ -285,8 +285,19 @@ body::after {
   display: flex;
   align-items: center;
   overflow: hidden;
+  cursor: pointer; /* signals the strip is interactive (hover pauses it) */
   border-right: 1px solid rgba(215,167,79,0.16);
   mask-image: linear-gradient(90deg, transparent 0, #000 34px, #000 calc(100% - 34px), transparent 100%);
+}
+
+/* Discoverability cue that scrolls past telling users hover pauses the ticker. */
+.bk-header-ticker-track span.bk-ticker-hint {
+  color: var(--bk-gold2);
+  font-weight: 700;
+  opacity: 0.85;
+}
+.bk-header-ticker-track span.bk-ticker-hint::before {
+  display: none; /* no leading dot for the hint */
 }
 
 .bk-header-ticker-track {
@@ -295,7 +306,7 @@ body::after {
   gap: 28px;
   min-width: max-content;
   padding-left: 100%;
-  animation: bkTickerScroll 34s linear infinite;
+  animation: bkTickerScroll 50s linear infinite;
 }
 
 .bk-header-ticker:hover .bk-header-ticker-track {

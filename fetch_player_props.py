@@ -21,6 +21,7 @@ from urllib.request import urlopen
 
 import pandas as pd
 from services.env_loader import load_local_env
+from services.timeutils import to_eastern_datetime_str
 
 
 BASE_DIR = Path(__file__).parent.resolve()
@@ -204,12 +205,9 @@ def fetch_events(api_key: str, sport: str, days: int) -> list[dict]:
 
 
 def to_iso_local(value: str | None) -> str:
-    if not value:
-        return ""
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
-    except ValueError:
-        return str(value)
+    # Convert the API's UTC commence time to a fixed Eastern display string.
+    # See services.timeutils for why a bare .astimezone() is unsafe here.
+    return to_eastern_datetime_str(value)
 
 
 def build_game_label(event: dict) -> str:

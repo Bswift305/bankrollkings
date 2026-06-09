@@ -33,6 +33,7 @@ from urllib.request import urlopen
 
 import pandas as pd
 from services.env_loader import load_local_env
+from services.timeutils import to_eastern_date_str
 
 BASE_DIR = Path(__file__).parent.resolve()
 load_local_env(BASE_DIR)
@@ -43,6 +44,29 @@ COLUMNS = [
     "Status", "Period", "Clock", "StartTime", "LastUpdated", "Source",
 ]
 SOURCE = "the-odds-api"
+
+# Cost control: the web app stamps this heartbeat while a signed-in user is on
+# the site (every authenticated render + each /api/live-ticker poll). We only
+# call the paid scores API when that heartbeat is fresh, so an idle site (nobody
+# signed in / watching) spends nothing. --force bypasses this for manual runs.
+HEARTBEAT_PATH = BASE_DIR / "data" / "live_scores" / "active_user_heartbeat.txt"
+ACTIVITY_WINDOW_SECONDS = 120
+# A 'live' row older than this is a finished game that never got finalized
+# (the poller was idle while nobody was on the site). When a user returns we
+# do one catch-up poll to fetch its real final and clear the lingering LIVE.
+STALE_LIVE_SECONDS = 1800  # 30 minutes (matches the web tier's display guard)
+
+
+def recent_user_activity(window_seconds: int = ACTIVITY_WINDOW_SECONDS) -> bool:
+    """True if a signed-in web user was active within the window."""
+    try:
+        ts = float(HEARTBEAT_PATH.read_text(encoding="utf-8").strip())
+    except Exception:
+        try:
+            ts = HEARTBEAT_PATH.stat().st_mtime
+        except Exception:
+            return False
+    return (datetime.now().timestamp() - ts) <= window_seconds
 
 # sport_key -> short prefix used across the app (NBA_Schedule.csv, Sport column, etc.)
 SPORTS = {
@@ -123,6 +147,24 @@ def sport_has_live_window(prefix: str, now: datetime) -> bool:
     return True
 
 
+def sport_has_stale_live(prefix: str) -> bool:
+    """True if this sport has a 'live' row that has gone stale -- a game that
+    ended (typically while nobody was on the site) but was never finalized. We
+    re-poll once to fetch the real final and clear the lingering LIVE; once the
+    rows flip to 'final' (or drop out of the API's recent window) this returns
+    False again, so the catch-up is self-limiting -- not a repeating poll."""
+    df = _read_csv_safe(OUTPUT_PATH)
+    if df.empty or "Sport" not in df.columns:
+        return False
+    rows = df[(df["Sport"].astype(str) == prefix)
+              & (df.get("Status", "").astype(str).str.lower() == "live")]
+    if rows.empty:
+        return False
+    updated = pd.to_datetime(rows.get("LastUpdated", ""), errors="coerce", utc=True)
+    age = (pd.Timestamp.now(tz="UTC") - updated).dt.total_seconds()
+    return bool((age.isna() | (age > STALE_LIVE_SECONDS)).any())
+
+
 def fetch_scores(sport_key: str, api_key: str) -> tuple[list, dict]:
     """Return (events, response_headers). Raises on transport/HTTP error."""
     url = (
@@ -136,10 +178,9 @@ def fetch_scores(sport_key: str, api_key: str) -> tuple[list, dict]:
 
 
 def _iso_to_date(value: str) -> str:
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d")
-    except (ValueError, TypeError):
-        return ""
+    # Derive the game's calendar date in fixed Eastern time, not the process's
+    # ambient zone. See services.timeutils for why a bare .astimezone() is unsafe.
+    return to_eastern_date_str(value)
 
 
 def _score_for(scores, team_name):
@@ -189,11 +230,24 @@ def main() -> int:
     args = parser.parse_args()
 
     now = datetime.now()
+
+    # Cost gate: only poll the paid API while a signed-in user is on the site.
+    if not args.force and not recent_user_activity():
+        print(f"[live-scores] no signed-in user active {now:%Y-%m-%d %H:%M} -- skipping API poll.")
+        return 0
+
     sport_keys = [args.sport] if args.sport else list(SPORTS.keys())
     sport_keys = [s for s in sport_keys if s in SPORTS]
 
-    # Decide which sports to actually poll (quota hygiene).
-    to_poll = [s for s in sport_keys if args.force or sport_has_live_window(SPORTS[s], now)]
+    # Decide which sports to actually poll (quota hygiene). Poll a sport with an
+    # open game window, OR one carrying a stale 'live' row that needs a one-time
+    # catch-up to finalize (e.g. a game that ended while nobody was on the site).
+    to_poll = [
+        s for s in sport_keys
+        if args.force
+        or sport_has_live_window(SPORTS[s], now)
+        or sport_has_stale_live(SPORTS[s])
+    ]
     if not to_poll:
         print(f"[live-scores] no live windows {now:%Y-%m-%d %H:%M} -- no API calls.")
         return 0

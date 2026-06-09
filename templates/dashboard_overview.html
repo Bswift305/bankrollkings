@@ -7,7 +7,7 @@
 <div class="bk-sidebar-section">
   <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
   <a class="bk-sidebar-item active" href="{{ url_for('dashboard') }}" title="Home">
-    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span><span class="si-name">Home</span>
+    <span class="si-icon"><img src="/static/logos/leagues/home.png" alt=""></span><span class="si-name">Home</span>
   </a>
 </div>
 
@@ -29,9 +29,12 @@
 {% set total_props = live_sports|sum(attribute='props_rows') %}
 
 <div class="bk-page-header">
-  <div>
-    <div class="bk-page-title">HOME</div>
-    <div class="bk-page-sub">All-sport member landing page: NBA, WNBA, MLB, and season-prep windows from the current refresh</div>
+  <div style="display:flex; align-items:center; gap:14px;">
+    <img src="/static/logos/leagues/home.png" alt="" style="width:48px; height:48px; flex:0 0 auto; object-fit:contain;">
+    <div>
+      <div class="bk-page-title">HOME</div>
+      <div class="bk-page-sub">All-sport member landing page: NBA, WNBA, MLB, and season-prep windows from the current refresh</div>
+    </div>
   </div>
   <div class="bk-stat-pills">
     <div class="bk-stat-pill primary"><span class="sp-label">Live Sports</span><span class="sp-val">{{ live_sports|length }}</span></div>

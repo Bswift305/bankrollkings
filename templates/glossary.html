@@ -6,10 +6,13 @@
 
 {% block content %}
 <div class="page-hero">
-    <div>
-        <div class="page-kicker">Tools</div>
-        <h1>Board <span class="accent">Glossary</span></h1>
-        <div class="page-subtitle">A quick reference for the stat abbreviations, model labels, tracking metrics, and workflow language used across Bankroll Kings.</div>
+    <div style="display:flex; align-items:center; gap:16px;">
+        <img src="/static/logos/leagues/glossary.png" alt="" style="width:56px; height:56px; flex:0 0 auto; object-fit:contain;">
+        <div>
+            <div class="page-kicker">Tools</div>
+            <h1>Board <span class="accent">Glossary</span></h1>
+            <div class="page-subtitle">A quick reference for the stat abbreviations, model labels, tracking metrics, and workflow language used across Bankroll Kings.</div>
+        </div>
     </div>
     <div class="hero-actions">
         <a href="/info?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">How It Works</a>

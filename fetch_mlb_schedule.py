@@ -9,6 +9,8 @@ from urllib.request import urlopen
 
 import pandas as pd
 
+from services.timeutils import to_eastern_datetime_str
+
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_PATH = BASE_DIR / "data" / "schedules" / "MLB_Schedule.csv"
@@ -43,10 +45,9 @@ def fetch_schedule(start_date: str, end_date: str) -> list[dict]:
             game_dt = str(game.get("gameDate") or "")
             local_dt = ""
             if game_dt:
-                try:
-                    local_dt = datetime.fromisoformat(game_dt.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
-                except Exception:
-                    local_dt = ""
+                # Fixed Eastern display, not the process's ambient zone.
+                # See services.timeutils for why a bare .astimezone() is unsafe.
+                local_dt = to_eastern_datetime_str(game_dt)
             date_text, time_text = ("", "")
             if local_dt:
                 parts = local_dt.split(" ", 1)

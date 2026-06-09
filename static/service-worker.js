@@ -1,4 +1,4 @@
-const BK_CACHE = 'bankroll-kings-shell-v1';
+const BK_CACHE = 'bankroll-kings-shell-v4';
 const SHELL_ASSETS = [
   '/static/css/bk-theme.css',
   '/static/brand-latest-logo-thumb.webp',
@@ -6,7 +6,10 @@ const SHELL_ASSETS = [
   '/static/logos/leagues/nba.svg',
   '/static/logos/leagues/mlb.svg',
   '/static/logos/leagues/nfl.svg',
-  '/static/logos/leagues/wnba.svg'
+  '/static/logos/leagues/wnba.svg',
+  '/static/logos/leagues/home.png',
+  '/static/logos/leagues/settings.png',
+  '/static/logos/leagues/glossary.png'
 ];
 
 self.addEventListener('install', event => {
@@ -38,16 +41,24 @@ self.addEventListener('fetch', event => {
 
   if (!isShellAsset) return;
 
+  // Stale-while-revalidate: serve the cached copy instantly for speed, but
+  // always revalidate against the network in the background and refresh the
+  // cache. The revalidation uses cache: 'no-cache' so it sends a conditional
+  // request to the server (304 when unchanged, 200 with new bytes when the
+  // file changed) INSTEAD of being pinned by the 12h HTTP max-age. Net effect:
+  // a same-filename asset swap (e.g. a league logo) is picked up automatically
+  // on the next load -- no cache-version bump or ?v= query needed.
   event.respondWith(
-    caches.match(request).then(cached => {
-      const fresh = fetch(request).then(response => {
-        if (response && response.ok) {
-          const copy = response.clone();
-          caches.open(BK_CACHE).then(cache => cache.put(request, copy));
-        }
-        return response;
-      }).catch(() => cached);
-      return cached || fresh;
-    })
+    caches.open(BK_CACHE).then(cache =>
+      cache.match(request).then(cached => {
+        const network = fetch(request, { cache: 'no-cache' }).then(response => {
+          if (response && response.ok) {
+            cache.put(request, response.clone());
+          }
+          return response;
+        }).catch(() => cached);
+        return cached || network;
+      })
+    )
   );
 });

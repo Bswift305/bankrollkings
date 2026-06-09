@@ -2263,11 +2263,40 @@ def load_nfl_props():
 
 # Live scores (populated by refresh_live_scores.py via its own systemd timer).
 LIVE_SCORES_PATH = DATA_DIR / 'live_scores' / 'Live_Scores.csv'
+
+# Heartbeat the live-scores poller reads so the paid scores API is only polled
+# while a signed-in user is actually using the site (cost control). Stamped on
+# every authenticated render and on each /api/live-ticker ping.
+ACTIVE_USER_HEARTBEAT_PATH = DATA_DIR / 'live_scores' / 'active_user_heartbeat.txt'
+_LAST_ACTIVITY_WRITE = 0.0
+
+
+def record_active_user():
+    """Stamp the signed-in-user activity heartbeat (throttled to one write per
+    ~20s to avoid disk/OneDrive churn). Fails soft -- a missed stamp just means
+    the poller may skip a cycle, never an error in the request path."""
+    global _LAST_ACTIVITY_WRITE
+    now = datetime.now().timestamp()
+    if now - _LAST_ACTIVITY_WRITE < 20:
+        return
+    _LAST_ACTIVITY_WRITE = now
+    try:
+        ACTIVE_USER_HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ACTIVE_USER_HEARTBEAT_PATH.write_text(str(int(now)), encoding='utf-8')
+    except Exception:
+        pass
 LIVE_SCORES_COLUMNS = [
     'Sport', 'GameId', 'Date', 'Away', 'Home', 'AwayScore', 'HomeScore',
     'Status', 'Period', 'Clock', 'StartTime', 'LastUpdated', 'Source',
 ]
 LIVE_SCORES_SPORT_ALIASES = {'CFB': 'NCAAF'}
+# A 'live' row whose data is older than this is treated as no-longer-live. The
+# scores poller only runs while a signed-in user is on the site, so a finished
+# game can stay frozen as 'live' (last-known mid-game score) once everyone
+# leaves. A genuinely in-progress game updates every minute, so anything this
+# stale has ended -- and since the frozen score is not a trustworthy final, we
+# drop the row (no badge) rather than mislabel it.
+LIVE_SCORE_STALE_SECONDS = 1800  # 30 minutes
 
 
 def load_live_scores(sport=None):
@@ -2287,6 +2316,21 @@ def load_live_scores(sport=None):
             nums = pd.to_numeric(df[sc], errors='coerce')
             df[sc] = nums.apply(lambda v: '' if pd.isna(v) else str(int(v)))
         df = df[(df['Away'] != '') & (df['Home'] != '')].copy()
+        # A 'live' row that has gone stale is a finished game the poller never
+        # got to finalize (it was idle while nobody was on the site). Show it as
+        # a clean 'Final' rather than a lingering LIVE -- but clear the frozen
+        # mid-game score, which is unreliable (e.g. a game that froze at 0-0).
+        # The catch-up poll backfills the real final score within ~a minute of a
+        # user returning, replacing this placeholder with 'Final <real score>'.
+        if not df.empty:
+            status_l = df['Status'].astype(str).str.lower()
+            updated = pd.to_datetime(df['LastUpdated'], errors='coerce', utc=True)
+            age_s = (pd.Timestamp.now(tz='UTC') - updated).dt.total_seconds()
+            stale_live = (status_l == 'live') & (age_s.isna() | (age_s > LIVE_SCORE_STALE_SECONDS))
+            if stale_live.any():
+                df.loc[stale_live, 'Status'] = 'final'
+                df.loc[stale_live, 'AwayScore'] = ''
+                df.loc[stale_live, 'HomeScore'] = ''
         return df[LIVE_SCORES_COLUMNS].reset_index(drop=True)
 
     df = _get_ttl_cached_value(
@@ -15198,10 +15242,10 @@ def sport_logo_url(sport_key):
         'americanfootball_nfl': '/static/logos/leagues/official/nfl.png',
         # College uses the official NCAA/CFP marks as an interim until custom
         # college logos are dropped into static/logos/leagues/official/.
-        'ncaaf': '/static/logos/leagues/official/ncaaf.png',
-        'cfb': '/static/logos/leagues/official/ncaaf.png',
-        'ncaamb': '/static/logos/leagues/official/ncaamb.png',
-        'ncaawb': '/static/logos/leagues/official/ncaawb.png',
+        'ncaaf': '/static/logos/leagues/official/ncaaf.png?v=20260608b',
+        'cfb': '/static/logos/leagues/official/ncaaf.png?v=20260608b',
+        'ncaamb': '/static/logos/leagues/official/ncaamb.png?v=20260608b',
+        'ncaawb': '/static/logos/leagues/official/ncaawb.png?v=20260608b',
         'cbb': '/static/logos/leagues/official/cbb.png',
         'review': '/static/logos/leagues/review.svg',
         'missed': '/static/logos/leagues/review.svg',
@@ -17690,11 +17734,18 @@ def build_active_series(schedule):
 
     for series_id, config in SERIES_CONFIG.items():
         known_matchups.add(frozenset({normalize_team_for_filter(config['teams'][0]), normalize_team_for_filter(config['teams'][1])}))
+        completed_count = 0
+        completed_dates = set()
         if config.get('type') == 'playoff':
             series_score = build_head_to_head_summary(pd.DataFrame(), config['teams'][0], config['teams'][1])
             if max(int(series_score.get('team_a_wins', 0) or 0), int(series_score.get('team_b_wins', 0) or 0)) >= 4:
                 continue
-        games = annotate_series_games(get_series_schedule_games(schedule, config['teams']))
+            completed_count, completed_dates = _series_progress_from_summary(series_score)
+        games = annotate_series_games(
+            get_series_schedule_games(schedule, config['teams']),
+            completed_count=completed_count,
+            completed_dates=completed_dates,
+        )
         upcoming_games = []
         for game in games:
             game_date = pd.to_datetime(game.get('Date', ''), errors='coerce')
@@ -17906,6 +17957,10 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
         DATA_DIR / 'props' / 'NBA_Props.csv',
         DATA_DIR / 'props' / 'WNBA_Props.csv',
         DATA_DIR / 'props' / 'MLB_Props.csv',
+        # Include live scores so the per-game LIVE/Final badge on the home cards
+        # refreshes when a game updates or ends -- without this the snapshot was
+        # pinned to schedule/props mtimes and kept showing a stale 'LIVE' score.
+        LIVE_SCORES_PATH,
     )
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
@@ -19161,19 +19216,49 @@ def explain_profile_stack(weight_profile, volatility_flag, market_gate):
 
     return f"{profile_note} {volatility_note} {market_note}".strip()
 
-def annotate_series_games(series_games):
-    annotated = []
+def _series_progress_from_summary(series_score):
+    """Return (completed_game_count, {completed_dates}) from a head-to-head summary.
+
+    Used to label upcoming series games with their true game number (e.g. the
+    first unplayed game of a 2-0 series is Game 3, not Game 1) and to drop any
+    already-played game that still lingers in the schedule/odds feed.
+    """
+    games = (series_score or {}).get('games', []) or []
+    completed_dates = set()
+    for played in games:
+        parsed = pd.to_datetime(played.get('date', ''), errors='coerce')
+        if pd.notna(parsed):
+            completed_dates.add(parsed.strftime('%Y-%m-%d'))
+    return len(games), completed_dates
+
+
+def annotate_series_games(series_games, completed_count=0, completed_dates=None):
+    completed_dates = set(completed_dates or [])
+
+    def _date_value(game):
+        return pd.to_datetime(game.get('Date', ''), errors='coerce')
+
+    # Skip games already resolved in the series results so the schedule shows
+    # only the remaining games and the completed-count offset below does not
+    # double-count a game that is still present in the odds/schedule feed.
+    pending_games = []
+    for game in series_games:
+        parsed = _date_value(game)
+        date_str = parsed.strftime('%Y-%m-%d') if pd.notna(parsed) else str(game.get('Date', '')).strip()
+        if date_str and date_str in completed_dates:
+            continue
+        pending_games.append(game)
+
     sorted_games = sorted(
-        series_games,
+        pending_games,
         key=lambda game: (
-            pd.to_datetime(game.get('Date', ''), errors='coerce')
-            if pd.notna(pd.to_datetime(game.get('Date', ''), errors='coerce'))
-            else pd.Timestamp.max,
+            _date_value(game) if pd.notna(_date_value(game)) else pd.Timestamp.max,
             game.get('Time', 'TBD')
         )
     )
 
-    for index, game in enumerate(sorted_games, start=1):
+    annotated = []
+    for offset, game in enumerate(sorted_games, start=1):
         bucket = game.get('bucket', '')
         if bucket == 'today':
             badge = 'TODAY'
@@ -19184,7 +19269,7 @@ def annotate_series_games(series_games):
 
         annotated.append({
             **game,
-            'game_number': index,
+            'game_number': completed_count + offset,
             'site_team': game.get('Home', ''),
             'badge_label': badge
         })
@@ -25886,6 +25971,8 @@ def attach_formula_insights_to_rows(rows, *, sport='NBA'):
 @app.context_processor
 def inject_globals():
     current_user = get_current_user()
+    if current_user:
+        record_active_user()
     active_page_key = str(request.endpoint or '').strip()
     # NOTE: only list endpoints whose templates extend the LIGHT public_base.html
     # here. 'info' and 'glossary' extend the full member shell (bk_base.html),
@@ -27876,6 +27963,24 @@ def method_hub(method_key):
     return render_template('method_hub.html', postseason_only=postseason_only, **context)
 
 
+@app.route('/api/live-ticker')
+def api_live_ticker():
+    """Live-score ticker payload for signed-in users, polled by the header JS.
+
+    Each authenticated hit also stamps the activity heartbeat, so the paid
+    scores API is only polled while a signed-in user has the site open. Returns
+    401 (and stamps nothing) for logged-out callers."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'authenticated': False, 'ticker': [], 'counts': {}}), 401
+    record_active_user()
+    return jsonify({
+        'authenticated': True,
+        'ticker': build_live_score_ticker(),
+        'counts': build_live_counts(),
+    })
+
+
 @app.route('/glossary')
 def glossary():
     return render_template('glossary.html', glossary_sections=GLOSSARY_SECTIONS)
@@ -29128,13 +29233,19 @@ def series_page(series_id):
         for bucket_name in ['today', 'tomorrow', 'upcoming']
         for game in upcoming.get(bucket_name, [])
     }
-    series_games = annotate_series_games([
-        {
-            **game,
-            'bucket': bucket_lookup.get((game['Away'], game['Home'], game['Date']), 'upcoming')
-        }
-        for game in schedule_games
-    ])
+    series_progress = build_head_to_head_summary(pd.DataFrame(), team_a, team_b)
+    series_completed_count, series_completed_dates = _series_progress_from_summary(series_progress)
+    series_games = annotate_series_games(
+        [
+            {
+                **game,
+                'bucket': bucket_lookup.get((game['Away'], game['Home'], game['Date']), 'upcoming')
+            }
+            for game in schedule_games
+        ],
+        completed_count=series_completed_count,
+        completed_dates=series_completed_dates,
+    )
     next_series_game = series_games[0] if series_games else {}
 
     series_score = build_head_to_head_summary(gamelogs, team_a, team_b, allow_regular_fallback=not postseason_only)
