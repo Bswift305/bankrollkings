@@ -15266,28 +15266,30 @@ def sport_logo_url(sport_key):
 
 
 def sidebar_icon_url(key):
-    """Clean SVG line-icon for the left sidebar / nav rail. Kept separate from
-    sport_logo_url (the detailed PNG league logos still used on boards, matchup
-    headers, etc.) so the narrow sidebar reads clearly at small size without
-    changing the richer logos everywhere else."""
+    """Premium nav badge icons (transparent circular PNGs in static/logos/nav)
+    for the left sidebar. Kept separate from sport_logo_url (the detailed PNG
+    league logos still used on boards/matchup headers) so the sidebar carries
+    the branded badge set without changing the logos everywhere else."""
     key = str(key or '').strip().lower()
-    icons = {
-        'home': 'home.svg',
-        'nba': 'nba.svg', 'basketball_nba': 'nba.svg',
-        'wnba': 'wnba.svg', 'basketball_wnba': 'wnba.svg',
-        'mlb': 'mlb.svg', 'baseball_mlb': 'mlb.svg',
-        'nfl': 'nfl.svg', 'americanfootball_nfl': 'nfl.svg',
-        'ncaaf': 'cfb.svg', 'cfb': 'cfb.svg',
-        'ncaamb': 'men_hoops.svg',
-        'ncaawb': 'women_hoops.svg',
-        'settings': 'settings.svg',
-        'account': 'account.svg',
-        'glossary': 'glossary.svg',
-        'review': 'review.svg',
-        'props': 'game-lines.svg', 'game-lines': 'game-lines.svg',
-        'injuries': 'injuries.svg',
+    nav = {
+        'home': 'home',
+        'nba': 'nba', 'basketball_nba': 'nba',
+        'wnba': 'wnba', 'basketball_wnba': 'wnba',
+        'mlb': 'mlb', 'baseball_mlb': 'mlb',
+        'nfl': 'nfl', 'americanfootball_nfl': 'nfl',
+        'ncaaf': 'cfb', 'cfb': 'cfb',
+        'ncaamb': 'men-hoops',
+        'ncaawb': 'women-hoops',
+        'settings': 'settings',
+        'account': 'account',
+        'glossary': 'glossary',
     }
-    return '/static/logos/leagues/' + icons.get(key, 'review.svg') + '?v=badge'
+    if key in nav:
+        return '/static/logos/nav/' + nav[key] + '.png?v=premium'
+    # Keys not in the badge set keep the existing line SVGs.
+    fallback = {'review': 'review.svg', 'props': 'game-lines.svg',
+                'game-lines': 'game-lines.svg', 'injuries': 'injuries.svg'}
+    return '/static/logos/leagues/' + fallback.get(key, 'review.svg')
 
 
 app.jinja_env.globals['sidebar_icon_url'] = sidebar_icon_url
