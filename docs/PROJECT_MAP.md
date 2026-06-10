@@ -183,4 +183,21 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 - College hoops (ncaamb/ncaawb): real live data. The Command Center hub and the themed
   pre-season shells for Props/Market/Trends/Parlay are all built (see §4); what remains is
   wiring actual college data/boards when the season tips off.
+- **NFL Fantasy build plan (for season approach — agreed 2026-06-10).** Build order:
+  1. Scoring formats: add PPR / Half-PPR / Standard to `FANTASY_SCORING_SYSTEMS` (season-long
+     NFL equivalent of the DK/FD/Yahoo switcher; same pattern, football weights).
+  2. Football FP formula in `_build_fantasy_projection_rows` once `NFL_GameLogs.csv` has
+     passing/rushing/receiving columns — the NFL hub's rankings light up automatically.
+  3. **Preseason mode** (key structural difference per industry research): can't recency-weight
+     a season that hasn't started, so at launch baseline = LAST season's logs adjusted by macro
+     Vegas signals we already pull (team win totals / game totals from the odds feed). The
+     existing exponential recency weighting then converges to the mid-season model naturally
+     as current-season games accumulate. Injury + matchup layers already work unchanged.
+  4. Calibration benchmark: compare weekly output vs FantasyPros consensus; publish accuracy,
+     surface disagreements as edge content ("our sim likes X 15% over consensus, here's why").
+  Positioning notes: our differentiators vs ESPN/Yahoo/Sleeper = distributions not point
+  estimates (Proj/Ceiling/Floor/Boom%), and market-informed projections (live odds context).
+  Our reactive/upside profile ≈ Sleeper, not ESPN's regress-to-mean.
+- Fantasy SOON columns (Salary / Value / Own%) need a DFS slate provider decision
+  (SportsDataIO / FantasyData are the clean paid options) — USER decision, then wiring.
 - Premium icons are PNG (raster, from generated art) — not vectorizable to SVG without a redraw.
