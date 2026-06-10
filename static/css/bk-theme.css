@@ -2397,7 +2397,13 @@ body::after {
 .bk-compat-content .pricing-card,
 .bk-compat-content .pricing-plan,
 .bk-compat-content .plan-card {
+  /* clip (not hidden): hidden makes every card a scroll container, which
+     traps position:sticky table headers — they'd stick to the card instead
+     of the page scroll and never freeze. clip paints identically (including
+     border-radius corners) without the scroll-container semantics.
+     The hidden line stays first as the fallback for old browsers. */
   overflow: hidden !important;
+  overflow: clip !important;
 }
 
 .bk-compat-content .card-header,
@@ -2746,6 +2752,23 @@ body::after {
   box-shadow: 0 0 0 2px rgba(38,182,166,0.14) !important;
 }
 
+/* Every dropdown gets a visible caret. The theming above paints selects with
+   a flat background (and appearance:none elsewhere strips the native arrow),
+   which left dropdowns looking like plain text boxes. Paint a gold chevron
+   back on ALL selects; !important so it beats the shorthand background rules
+   and inline template styles. (Multi-selects keep their list look.) */
+.bk-app select:not([multiple]),
+.bk-compat-content select:not([multiple]) {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffd16d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>")
+    no-repeat right 10px center / 12px 12px,
+    var(--bg4) !important;
+  padding-right: 30px !important;
+  cursor: pointer !important;
+}
+
 .bk-compat-content label {
   color: var(--text2) !important;
   font-size: 11px !important;
@@ -2796,6 +2819,20 @@ body::after {
   font-weight: 800 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
+}
+
+/* Frozen table headers EVERYWHERE: the header row stays visible while the
+   table data scrolls (works both inside .table-scroll wrappers and against
+   the main page scroll — see the overflow:clip note on the card rule).
+   The background must be opaque or the stuck header shows rows through it:
+   stack the usual header tint over the card base color. */
+.bk-compat-content table thead th,
+.bk-compat-content .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: linear-gradient(rgba(49,70,90,0.54), rgba(49,70,90,0.54)), #0a0d0f !important;
+  box-shadow: 0 1px 0 var(--border);
 }
 
 .bk-compat-content table td,

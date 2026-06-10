@@ -1,4 +1,4 @@
-const BK_CACHE = 'bankroll-kings-shell-v4';
+const BK_CACHE = 'bankroll-kings-shell-v5';
 const SHELL_ASSETS = [
   '/static/css/bk-theme.css',
   '/static/brand-latest-logo-thumb.webp',
