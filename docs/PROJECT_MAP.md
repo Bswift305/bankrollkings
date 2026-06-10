@@ -96,8 +96,13 @@ cache for those with `?v=...` and/or a service-worker version bump.
   combined clamp at ±15%. Disk-TTL cached per scoring style, versioned on the gamelog file,
   all five injury-context files, AND NBA_Odds.csv. NFL returns [] until season logs + a football FP formula exist. (This is separate
   from the props sim `simulate_active_sport_props.py`, which predicts prop-line hit
-  probabilities, not fantasy production.) Lineups persist to `data/tracking/Fantasy_Lineups.csv`
-  (per-user, 8 slots, 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).
+  probabilities, not fantasy production.) Rankings carry roster Position (filter chips G/F/C;
+  combos like G-F match on contains) plus a "Show PBP + Tracking" toggle: USG%/TS%/AST%
+  (play-by-play derived; source stores fractions, ×100 for display) and TCH/DRV/SPD/MILES
+  (optical player tracking) from NBA_PlayerAdvanced/PlayerTracking/Rosters CSVs (all three in
+  the cache version token). Lineups persist to `data/tracking/Fantasy_Lineups.csv` (per-user,
+  league roster size 1–30 slots with starter-vs-bench roles — ProjectedTotal counts starters
+  only; 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).
   NO salaries, NO contests (deliberate — money-league legal risk; see memory).
 
 **Known nav behavior (NOT crashes — current product state):**

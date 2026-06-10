@@ -71,22 +71,31 @@
                 <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life (big minutes lift points, rebounds, and assists together). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good night vs a bad night, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; DraftKings (incl. double-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. The sims also react to tonight's situation: the live injury report (teammate out boosts a player's simulated games, a star returning suppresses them &mdash; the &plusmn;% chip next to a name, hover for the reason) and the matchup (when a player's team is on the odds board, <strong style="color: var(--text-bright);">Opp</strong> shows the opponent and whether that defense gives up more or less fantasy production than average &mdash; Soft / Neutral / Tough, shifting the sims a few %). All shifts combined are capped at &plusmn;15% so situation noise can't swamp real form. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
             </div>
             {% if projection_rows %}
+            <style>#fantasy-rankings-table.adv-hidden .col-adv { display: none; }</style>
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
-                <input type="search" id="fantasy-search" placeholder="Search player or team..." style="width: 280px; max-width: 100%;">
+                <input type="search" id="fantasy-search" placeholder="Search player or team..." style="width: 240px; max-width: 100%;">
+                <label style="font-size:11px; color:var(--text-muted);">Pos</label>
+                <span id="fantasy-pos-filter" style="display:flex; gap:6px;">
+                    {% for pos_key, pos_label in [('', 'All'), ('G', 'Guards'), ('F', 'Forwards'), ('C', 'Centers')] %}
+                    <button type="button" class="btn btn-sm {% if pos_key == '' %}btn-primary{% else %}btn-secondary{% endif %} fantasy-pos-btn" data-pos="{{ pos_key }}">{{ pos_label }}</button>
+                    {% endfor %}
+                </span>
                 <label style="font-size:11px; color:var(--text-muted);">Scoring</label>
-                <select id="fantasy-scoring" style="width: 160px;">
+                <select id="fantasy-scoring" style="width: 150px;">
                     {% for key, label in scoring_options %}
                     <option value="{{ key }}" {% if key == scoring %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="fantasy-adv-toggle" title="Show usage / true shooting / assist rate (play-by-play) plus touches, drives, speed, and miles (optical player tracking)">Show PBP + Tracking</button>
             </div>
             <div class="table-scroll" style="max-height: 60vh;">
-                <table class="data-table" id="fantasy-rankings-table">
+                <table class="data-table adv-hidden" id="fantasy-rankings-table">
                     <thead>
                         <tr>
                             <th data-sort="rank">#</th>
                             <th data-sort="player">Player</th>
                             <th data-sort="team">Team</th>
+                            <th data-sort="pos">Pos</th>
                             <th data-sort="games">GP</th>
                             <th data-sort="minutes">Min (L10)</th>
                             <th data-sort="sim_proj" title="Mean of 2,000 simulated games, recency-weighted">Proj</th>
@@ -96,6 +105,13 @@
                             <th data-sort="sim_floor" title="10th percentile of simulated games">Floor</th>
                             <th data-sort="boom_pct" title="Share of simulated games 20%+ above projection">Boom%</th>
                             <th data-sort="trend">Trend</th>
+                            <th class="col-adv" data-sort="usg_pct" title="Usage rate — share of team possessions the player finishes (play-by-play derived)">USG%</th>
+                            <th class="col-adv" data-sort="ts_pct" title="True shooting % — efficiency incl. 2s, 3s, and free throws (play-by-play derived)">TS%</th>
+                            <th class="col-adv" data-sort="ast_pct" title="Assist rate (play-by-play derived)">AST%</th>
+                            <th class="col-adv" data-sort="touches" title="Touches per game (optical player tracking)">TCH</th>
+                            <th class="col-adv" data-sort="drives" title="Drives per game (optical player tracking)">DRV</th>
+                            <th class="col-adv" data-sort="avg_speed" title="Average speed, mph (optical player tracking)">SPD</th>
+                            <th class="col-adv" data-sort="dist_miles" title="Miles covered per game (optical player tracking)">MILES</th>
                             <th title="DFS salary — lands with the slate data feed">Salary <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th title="Fantasy points per $1K of salary — lands with the slate data feed">Value <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th title="Projected contest ownership — lands with the slate data feed">Own% <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
@@ -109,10 +125,14 @@
                             data-rank="{{ row.rank }}" data-games="{{ row.games }}" data-minutes="{{ row.minutes or 0 }}"
                             data-sim_proj="{{ row.sim_proj }}" data-fp_avg="{{ row.fp_avg }}" data-fp_l5="{{ row.fp_l5 }}"
                             data-sim_ceiling="{{ row.sim_ceiling }}" data-sim_floor="{{ row.sim_floor }}"
-                            data-boom_pct="{{ row.boom_pct }}" data-trend="{{ row.trend }}">
+                            data-boom_pct="{{ row.boom_pct }}" data-trend="{{ row.trend }}" data-pos="{{ row.pos }}"
+                            data-usg_pct="{{ row.usg_pct or 0 }}" data-ts_pct="{{ row.ts_pct or 0 }}" data-ast_pct="{{ row.ast_pct or 0 }}"
+                            data-touches="{{ row.touches or 0 }}" data-drives="{{ row.drives or 0 }}"
+                            data-avg_speed="{{ row.avg_speed or 0 }}" data-dist_miles="{{ row.dist_miles or 0 }}">
                             <td>{{ row.rank }}</td>
                             <td><a href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>{% if row.context_shift %} <span class="badge" title="{{ row.context_note }}" style="font-size:9px; padding:1px 5px; color: {% if row.context_shift > 0 %}var(--accent){% else %}#ff8a8a{% endif %};">{{ '%+0.0f'|format(row.context_shift) }}%</span>{% endif %}</td>
                             <td>{{ row.team }}</td>
+                            <td>{{ row.pos or '-' }}</td>
                             <td>{{ row.games }}</td>
                             <td>{{ row.minutes if row.minutes is not none else '-' }}</td>
                             <td><strong style="color: var(--text-bright);">{{ row.sim_proj }}</strong></td>
@@ -122,6 +142,13 @@
                             <td style="color: var(--text-muted);">{{ row.sim_floor }}</td>
                             <td>{{ row.boom_pct }}%</td>
                             <td style="color: {% if row.trend > 0 %}var(--accent){% elif row.trend < 0 %}#ff8a8a{% else %}var(--text-muted){% endif %};">{{ '%+0.1f'|format(row.trend) }}</td>
+                            <td class="col-adv">{{ row.usg_pct if row.usg_pct is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.ts_pct if row.ts_pct is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.ast_pct if row.ast_pct is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.touches if row.touches is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.drives if row.drives is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.avg_speed if row.avg_speed is not none else '-' }}</td>
+                            <td class="col-adv">{{ row.dist_miles if row.dist_miles is not none else '-' }}</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
@@ -146,18 +173,26 @@
     <div class="card mb-24">
         <div class="card-header">
             <div class="card-title">Lineup Builder</div>
-            <span class="badge badge-accent"><span id="fantasy-slot-count">0</span>/8 Slots</span>
+            <span class="badge badge-accent"><span id="fantasy-slot-count">0</span>/<span id="fantasy-slot-max">15</span> Slots</span>
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                Add up to 8 players from the Rankings tab. The projected total uses each player's simulation projection (mean of 2,000 simulated games, recency-weighted). No salary cap yet &mdash; salary data lands with the contest-style slates later.
+                Set your league's roster size (up to 30), add players from the Rankings tab, and mark who starts. New players land as <strong style="color: var(--text-bright);">Starters</strong> &mdash; use the toggle to move them to the <strong style="color: var(--text-bright);">Bench</strong>. The projected total counts starters only (your scoring lineup); each player's number is their simulation projection.
             </div>
-            <div id="fantasy-slots" class="grid-2" style="gap: 10px; margin-bottom: 14px;"></div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom: 14px;">
+                <label style="font-size:11px; color:var(--text-muted);">League roster size</label>
+                <input type="number" id="fantasy-slot-limit" min="1" max="30" value="15" style="width: 80px;">
+            </div>
+            <div class="page-kicker" style="margin-bottom:6px;">Starters (<span id="fantasy-starter-count">0</span>)</div>
+            <div id="fantasy-starters" class="grid-2" style="gap: 10px; margin-bottom: 14px;"></div>
+            <div class="page-kicker" style="margin-bottom:6px;">Bench (<span id="fantasy-bench-count">0</span>)</div>
+            <div id="fantasy-bench" class="grid-2" style="gap: 10px; margin-bottom: 14px;"></div>
             <div id="fantasy-empty-builder" class="parlay-surface-soft" style="padding: 16px; font-size: 13px; color: var(--text-muted);">
                 No players added yet. Open <strong style="color: var(--text-bright);">Rankings &amp; Projections</strong> and hit Add on the players you want.
             </div>
             <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top: 14px;">
-                <div style="font-size: 14px;">Projected Total: <strong id="fantasy-proj-total" style="color: var(--accent); font-size: 18px;">0.0</strong> FP</div>
+                <div style="font-size: 14px;">Starters Total: <strong id="fantasy-proj-total" style="color: var(--accent); font-size: 18px;">0.0</strong> FP</div>
+                <div style="font-size: 12px; color: var(--text-muted);">Bench: <span id="fantasy-bench-total">0.0</span> FP</div>
                 <input type="text" id="fantasy-lineup-label" placeholder="Lineup name (optional)" style="width: 220px;">
                 <button type="button" class="btn btn-primary btn-sm" id="fantasy-save-lineup">Save Lineup</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="fantasy-clear-lineup">Clear</button>
@@ -186,13 +221,25 @@
                         </div>
                         <span class="badge badge-accent">{{ '%.1f'|format(lineup.projected_total) }} FP</span>
                     </div>
+                    {% set bench_players = lineup.players | selectattr('role', 'equalto', 'bench') | list %}
+                    {% set starter_players = lineup.players | rejectattr('role', 'equalto', 'bench') | list %}
                     <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
-                        {% for p in lineup.players %}
+                        <div class="page-kicker" style="font-size:9px; margin: 2px 0;">Starters ({{ starter_players|length }})</div>
+                        {% for p in starter_players %}
                         <div style="display:flex; justify-content:space-between; font-size:12px;">
                             <span style="color: var(--text-bright);">{{ p.player }} <span style="color: var(--text-muted);">{{ p.team }}</span></span>
                             <span style="color: var(--text-muted);">{{ p.fp }}</span>
                         </div>
                         {% endfor %}
+                        {% if bench_players %}
+                        <div class="page-kicker" style="font-size:9px; margin: 6px 0 2px;">Bench ({{ bench_players|length }})</div>
+                        {% for p in bench_players %}
+                        <div style="display:flex; justify-content:space-between; font-size:12px; opacity: 0.7;">
+                            <span style="color: var(--text-bright);">{{ p.player }} <span style="color: var(--text-muted);">{{ p.team }}</span></span>
+                            <span style="color: var(--text-muted);">{{ p.fp }}</span>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
                     </div>
                     <button type="button" class="btn btn-secondary btn-sm fantasy-delete-lineup" data-lineup-id="{{ lineup.lineup_id }}">Delete</button>
                 </div>
@@ -273,16 +320,37 @@
         });
     }
 
-    // ── Rankings: search + sort ──
+    // ── Rankings: search + position filter (combined) + PBP/tracking toggle ──
     var table = document.getElementById('fantasy-rankings-table');
     var search = document.getElementById('fantasy-search');
-    if (search && table) {
-        search.addEventListener('input', function () {
-            var q = search.value.trim().toLowerCase();
-            table.querySelectorAll('tbody tr').forEach(function (tr) {
-                var hay = (tr.dataset.player + ' ' + tr.dataset.team).toLowerCase();
-                tr.style.display = !q || hay.indexOf(q) !== -1 ? '' : 'none';
+    var posFilter = '';
+    function applyFilters() {
+        if (!table) return;
+        var q = search ? search.value.trim().toLowerCase() : '';
+        table.querySelectorAll('tbody tr').forEach(function (tr) {
+            var hay = (tr.dataset.player + ' ' + tr.dataset.team).toLowerCase();
+            var matchesText = !q || hay.indexOf(q) !== -1;
+            // Roster positions are G/F/C and combos like G-F — match on contains.
+            var matchesPos = !posFilter || (tr.dataset.pos || '').indexOf(posFilter) !== -1;
+            tr.style.display = matchesText && matchesPos ? '' : 'none';
+        });
+    }
+    if (search) search.addEventListener('input', applyFilters);
+    document.querySelectorAll('.fantasy-pos-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            posFilter = btn.dataset.pos || '';
+            document.querySelectorAll('.fantasy-pos-btn').forEach(function (b) {
+                b.classList.toggle('btn-primary', b === btn);
+                b.classList.toggle('btn-secondary', b !== btn);
             });
+            applyFilters();
+        });
+    });
+    var advToggle = document.getElementById('fantasy-adv-toggle');
+    if (advToggle && table) {
+        advToggle.addEventListener('click', function () {
+            var hidden = table.classList.toggle('adv-hidden');
+            advToggle.textContent = hidden ? 'Show PBP + Tracking' : 'Hide PBP + Tracking';
         });
     }
     if (table) {
@@ -306,33 +374,61 @@
         });
     }
 
-    // ── Lineup builder ──
+    // ── Lineup builder (starters vs bench, league-size slots up to 30) ──
     var picks = [];
+    function slotLimit() {
+        var input = document.getElementById('fantasy-slot-limit');
+        var n = parseInt(input && input.value, 10);
+        if (isNaN(n)) n = 15;
+        return Math.max(1, Math.min(30, n));
+    }
+    function pickCard(p, i) {
+        var div = document.createElement('div');
+        div.className = 'parlay-surface-soft';
+        div.style.cssText = 'padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;' +
+            (p.role === 'bench' ? ' opacity:0.75;' : '');
+        div.innerHTML = '<span style="color:var(--text-bright); font-weight:700;">' + p.player +
+            ' <span style="color:var(--text-muted); font-weight:400;">' + p.team + '</span></span>' +
+            '<span style="display:flex; align-items:center; gap:8px;"><span style="color:var(--accent);">' + p.fp.toFixed(1) + '</span>' +
+            '<button type="button" class="btn btn-secondary btn-sm" data-act="role">' + (p.role === 'bench' ? 'Start' : 'Bench') + '</button>' +
+            '<button type="button" class="btn btn-secondary btn-sm" data-act="remove">Remove</button></span>';
+        div.querySelector('[data-act="role"]').addEventListener('click', function () {
+            p.role = p.role === 'bench' ? 'starter' : 'bench';
+            renderSlots();
+        });
+        div.querySelector('[data-act="remove"]').addEventListener('click', function () {
+            picks.splice(i, 1);
+            renderSlots();
+        });
+        return div;
+    }
     function renderSlots() {
-        var wrap = document.getElementById('fantasy-slots');
+        var startersWrap = document.getElementById('fantasy-starters');
+        var benchWrap = document.getElementById('fantasy-bench');
         var empty = document.getElementById('fantasy-empty-builder');
-        wrap.innerHTML = '';
+        startersWrap.innerHTML = '';
+        benchWrap.innerHTML = '';
+        var startersTotal = 0, benchTotal = 0, starterCount = 0, benchCount = 0;
         picks.forEach(function (p, i) {
-            var div = document.createElement('div');
-            div.className = 'parlay-surface-soft';
-            div.style.cssText = 'padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;';
-            div.innerHTML = '<span style="color:var(--text-bright); font-weight:700;">' + p.player +
-                ' <span style="color:var(--text-muted); font-weight:400;">' + p.team + '</span></span>' +
-                '<span style="display:flex; align-items:center; gap:10px;"><span style="color:var(--accent);">' + p.fp.toFixed(1) + '</span>' +
-                '<button type="button" class="btn btn-secondary btn-sm" data-i="' + i + '">Remove</button></span>';
-            div.querySelector('button').addEventListener('click', function () { picks.splice(i, 1); renderSlots(); });
-            wrap.appendChild(div);
+            var card = pickCard(p, i);
+            if (p.role === 'bench') { benchWrap.appendChild(card); benchTotal += p.fp; benchCount++; }
+            else { startersWrap.appendChild(card); startersTotal += p.fp; starterCount++; }
         });
         empty.style.display = picks.length ? 'none' : '';
         document.getElementById('fantasy-slot-count').textContent = picks.length;
-        document.getElementById('fantasy-proj-total').textContent = picks.reduce(function (s, p) { return s + p.fp; }, 0).toFixed(1);
+        document.getElementById('fantasy-slot-max').textContent = slotLimit();
+        document.getElementById('fantasy-starter-count').textContent = starterCount;
+        document.getElementById('fantasy-bench-count').textContent = benchCount;
+        document.getElementById('fantasy-proj-total').textContent = startersTotal.toFixed(1);
+        document.getElementById('fantasy-bench-total').textContent = benchTotal.toFixed(1);
     }
+    document.getElementById('fantasy-slot-limit').addEventListener('input', renderSlots);
     document.querySelectorAll('.fantasy-add-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var tr = btn.closest('tr');
-            if (picks.length >= 8) { alert('Lineup is full (8 players). Remove someone first.'); return; }
+            if (picks.length >= slotLimit()) { alert('Roster is full (' + slotLimit() + ' slots). Remove someone or raise the league roster size.'); return; }
             if (picks.some(function (p) { return p.player === tr.dataset.player; })) return;
-            picks.push({ player: tr.dataset.player, team: tr.dataset.team, fp: parseFloat(tr.dataset.fp) || 0 });
+            picks.push({ player: tr.dataset.player, team: tr.dataset.team, fp: parseFloat(tr.dataset.fp) || 0, role: 'starter' });
             renderSlots();
             showTab('builder');
         });

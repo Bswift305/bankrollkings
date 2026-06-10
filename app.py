@@ -28606,6 +28606,29 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     boost_map, return_map = _build_fantasy_context_maps(sport_key)
     upcoming_opponents = _load_fantasy_upcoming_opponents(sport_key)
 
+    # Position (roster) + advanced (play-by-play derived) + tracking (optical
+    # player tracking — the layer more granular than play-by-play) lookups.
+    def _player_column_map(path, columns):
+        try:
+            frame = _load_cached_csv(path)
+        except Exception:
+            return {}
+        if frame is None or frame.empty or 'Player' not in frame.columns:
+            return {}
+        keep = [col for col in columns if col in frame.columns]
+        return {
+            str(row['Player']).strip(): {col: row.get(col) for col in keep}
+            for _, row in frame.iterrows()
+        }
+
+    position_map = _player_column_map(DATA_DIR / 'rosters' / 'NBA_Rosters.csv', ['Position'])
+    advanced_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv', ['USG_PCT', 'TS_PCT', 'AST_PCT'])
+    tracking_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv', ['TOUCHES', 'DRIVES', 'AVG_SPEED', 'DIST_MILES'])
+
+    def _stat_round(mapping, player_name, column, digits=1, scale=1):
+        value = _safe_float((mapping.get(player_name) or {}).get(column))
+        return round(value * scale, digits) if value is not None else None
+
     # Opponent defense factors: how much FP players produce against each team
     # relative to their own season average (>1 = generous defense, <1 = stingy).
     # Computed from the same logs, so it needs no extra feed.
@@ -28677,12 +28700,22 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         boom_pct = float((draws >= sim_proj * 1.2).mean() * 100.0)
         bust_pct = float((draws <= sim_proj * 0.8).mean() * 100.0)
 
+        player_name = str(player).strip()
         rows.append({
             'context_shift': round(context_shift, 1),
             'context_note': ' · '.join(context_notes),
             'opp': opp_abbr,
             'matchup_shift': round(matchup_shift, 1),
             'matchup_label': matchup_label,
+            'pos': str((position_map.get(player_name) or {}).get('Position') or '').strip().upper(),
+            # Source stores rate stats as fractions (0.30 = 30%) — display as %.
+            'usg_pct': _stat_round(advanced_map, player_name, 'USG_PCT', scale=100),
+            'ts_pct': _stat_round(advanced_map, player_name, 'TS_PCT', scale=100),
+            'ast_pct': _stat_round(advanced_map, player_name, 'AST_PCT', scale=100),
+            'touches': _stat_round(tracking_map, player_name, 'TOUCHES'),
+            'drives': _stat_round(tracking_map, player_name, 'DRIVES'),
+            'avg_speed': _stat_round(tracking_map, player_name, 'AVG_SPEED'),
+            'dist_miles': _stat_round(tracking_map, player_name, 'DIST_MILES'),
             'player': str(player),
             'team': str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or ''),
             'games': games,
@@ -28719,6 +28752,9 @@ def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv',
         DATA_DIR / 'injuries' / 'Teammate_Boosts.csv',
         DATA_DIR / 'odds' / 'NBA_Odds.csv',
+        DATA_DIR / 'rosters' / 'NBA_Rosters.csv',
+        DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv',
+        DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv',
     )
     return _get_disk_ttl_cached_value(
         f'fantasy_projections_{sport_key}_{scoring}_sim',
@@ -28825,7 +28861,7 @@ def save_fantasy_lineup():
         return jsonify({'ok': False, 'error': 'Unknown fantasy sport.'}), 400
     raw_players = payload.get('players') or []
     players = []
-    for pick in raw_players[:12]:
+    for pick in raw_players[:30]:
         name = str(pick.get('player', '')).strip()
         if not name:
             continue
@@ -28833,6 +28869,7 @@ def save_fantasy_lineup():
             'player': name,
             'team': str(pick.get('team', '')).strip().upper(),
             'fp': round(_safe_float(pick.get('fp')) or 0.0, 1),
+            'role': 'bench' if str(pick.get('role', '')).strip().lower() == 'bench' else 'starter',
         })
     if not players:
         return jsonify({'ok': False, 'error': 'Add at least one player first.'}), 400
@@ -28841,6 +28878,7 @@ def save_fantasy_lineup():
         return jsonify({'ok': False, 'error': 'Lineup limit reached (50). Delete an old lineup first.'}), 400
     saved_at = datetime.now().strftime('%Y-%m-%d %I:%M %p')
     label = str(payload.get('label', '')).strip()[:80] or f"{sport_key.upper()} Lineup | {saved_at}"
+    starters = [p for p in players if p['role'] == 'starter']
     row = {
         'LineupId': datetime.now().strftime('%Y%m%d%H%M%S%f'),
         'UserId': current_user.get('user_id', ''),
@@ -28848,7 +28886,8 @@ def save_fantasy_lineup():
         'Sport': sport_key,
         'SavedAt': saved_at,
         'Label': label,
-        'ProjectedTotal': round(sum(p['fp'] for p in players), 1),
+        # Projected total counts the scoring lineup (starters); bench rides along.
+        'ProjectedTotal': round(sum(p['fp'] for p in (starters or players)), 1),
         'PlayersJson': json.dumps(players),
     }
     existing_df = load_fantasy_lineups()
