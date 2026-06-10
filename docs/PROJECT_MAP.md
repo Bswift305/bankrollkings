@@ -75,8 +75,16 @@ cache for those with `?v=...` and/or a service-worker version bump.
   `build_live_prop_runtime_context` only loads NBA data. Clicking it anywhere → NBA.
 - **Props** with no sport → cross-sport "pick a sport" hub (`/tools/props` = `method_hub('props')`)
   or `/home/props` preview. By design ("Props is now a cross-sport entry point").
-- **College hoops (ncaamb/ncaawb)** → `under_construction.html` "expansion board." Boards/props/
-  parlay for college hoops are NOT built (code is marked "not fully live yet" throughout).
+- **College hoops (ncaamb/ncaawb)** Command Center → `under_construction.html` "expansion board."
+  Boards/parlay for college hoops are NOT built ("not fully live yet"). **EXCEPTION:** the
+  **Props** link now has real themed pages: `/sports/ncaamb/props` + `/sports/ncaawb/props`
+  (`ncaamb_props_page` / `ncaawb_props_page` → `_render_college_hoops_props` →
+  `render_props_screener_page` with `_college_hoops_example_props` dummy rows). These render the
+  basketball board in the correct CBB color scheme with example plays + a "live board opens when
+  the season tips off" banner. Gated like every other sport (Pro / sport pass / owner). Use
+  `postseason_only=False` + `focus_mode_label`/`regular_mode_label` overrides so they don't
+  inherit the league-wide "NBA Finals" postseason labels. Market/Trends for college still fall
+  through to `/tools/market-edge` / `/tools/trends`.
 
 ---
 
