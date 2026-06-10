@@ -1298,8 +1298,8 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/props',
         'nfl': '/sports/nfl/props',
         'ncaaf': '/sports/ncaaf/props',
-        'ncaamb': '/sports/ncaamb',
-        'ncaawb': '/sports/ncaawb',
+        # ncaamb/ncaawb have no props board yet (pre-season) -> fall through to the
+        # cross-sport hub instead of self-linking to the Command Center (looked broken).
     }.get(sport_key, '/tools/props')
 
     sport_market = {
@@ -1308,8 +1308,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/market-edge',
         'nfl': '/sports/nfl/game-lines',
         'ncaaf': '/sports/ncaaf/game-lines',
-        'ncaamb': '/sports/ncaamb',
-        'ncaawb': '/sports/ncaawb',
+        # ncaamb/ncaawb pre-season -> cross-sport hub (don't self-link to Command Center).
     }.get(sport_key, '/tools/market-edge')
 
     sport_trends = {
@@ -1318,8 +1317,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/trends',
         'nfl': '/sports/nfl/trends',
         'ncaaf': '/sports/ncaaf/trends',
-        'ncaamb': '/sports/ncaamb',
-        'ncaawb': '/sports/ncaawb',
+        # ncaamb/ncaawb pre-season -> cross-sport hub (don't self-link to Command Center).
     }.get(sport_key, '/tools/trends')
 
     query_sport = sport_label if sport_label else ''
