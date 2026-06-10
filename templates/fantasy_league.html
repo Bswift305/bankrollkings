@@ -66,10 +66,18 @@
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                Fantasy points use DraftKings-style scoring (PTS, REB &times;1.25, AST &times;1.5, STL/BLK &times;2, 3PM &times;0.5, TOV &minus;0.5, double-double bonuses) computed from every logged game. <strong style="color: var(--text-bright);">Avg</strong> is the season baseline, <strong style="color: var(--text-bright);">L5</strong> is recent form, <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the best and worst logged games, and <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg.
+                Fantasy points are computed from every logged game under the scoring style you pick &mdash; DraftKings (incl. double-double / triple-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong> is the season baseline, <strong style="color: var(--text-bright);">L5</strong> is recent form, <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the best and worst logged games, and <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> show what's coming: salaries, value (FP per $1K), and projected ownership land when the slate data feed is wired in.
             </div>
             {% if projection_rows %}
-            <input type="search" id="fantasy-search" placeholder="Search player or team..." style="margin-bottom: 12px; width: 280px; max-width: 100%;">
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
+                <input type="search" id="fantasy-search" placeholder="Search player or team..." style="width: 280px; max-width: 100%;">
+                <label style="font-size:11px; color:var(--text-muted);">Scoring</label>
+                <select id="fantasy-scoring" style="width: 160px;">
+                    {% for key, label in scoring_options %}
+                    <option value="{{ key }}" {% if key == scoring %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="table-scroll" style="max-height: 60vh;">
                 <table class="data-table" id="fantasy-rankings-table">
                     <thead>
@@ -84,6 +92,10 @@
                             <th data-sort="fp_ceiling">Ceiling</th>
                             <th data-sort="fp_floor">Floor</th>
                             <th data-sort="trend">Trend</th>
+                            <th title="DFS salary — lands with the slate data feed">Salary <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
+                            <th title="Fantasy points per $1K of salary — lands with the slate data feed">Value <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
+                            <th title="Projected contest ownership — lands with the slate data feed">Own% <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
+                            <th title="Tonight's opponent + matchup difficulty — lands with the season schedule">Opp <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th></th>
                         </tr>
                     </thead>
@@ -103,6 +115,10 @@
                             <td style="color: var(--accent);">{{ row.fp_ceiling }}</td>
                             <td style="color: var(--text-muted);">{{ row.fp_floor }}</td>
                             <td style="color: {% if row.trend > 0 %}var(--accent){% elif row.trend < 0 %}#ff8a8a{% else %}var(--text-muted){% endif %};">{{ '%+0.1f'|format(row.trend) }}</td>
+                            <td style="color: var(--text-muted);">&mdash;</td>
+                            <td style="color: var(--text-muted);">&mdash;</td>
+                            <td style="color: var(--text-muted);">&mdash;</td>
+                            <td style="color: var(--text-muted);">&mdash;</td>
                             <td><button type="button" class="btn btn-secondary btn-sm fantasy-add-btn">Add</button></td>
                         </tr>
                         {% endfor %}
@@ -239,6 +255,16 @@
     document.querySelectorAll('.fantasy-tab-btn, .fantasy-tab-link').forEach(function (el) {
         el.addEventListener('click', function (e) { e.preventDefault(); showTab(el.dataset.tab); });
     });
+
+    // ── Scoring-style switcher (server-rendered, reload with param) ──
+    var scoringSelect = document.getElementById('fantasy-scoring');
+    if (scoringSelect) {
+        scoringSelect.addEventListener('change', function () {
+            var url = new URL(window.location.href);
+            url.searchParams.set('scoring', scoringSelect.value);
+            window.location.href = url.toString();
+        });
+    }
 
     // ── Rankings: search + sort ──
     var table = document.getElementById('fantasy-rankings-table');

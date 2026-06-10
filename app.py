@@ -28490,22 +28490,34 @@ FANTASY_LAUNCH_PAGES = {
 }
 
 
-FANTASY_DK_NBA_WEIGHTS = {'PTS': 1.0, '3PM': 0.5, 'REB': 1.25, 'AST': 1.5, 'STL': 2.0, 'BLK': 2.0, 'TOV': -0.5}
+# NBA fantasy scoring systems. Weights are per-stat multipliers on gamelog
+# columns; dd_bonus adds DraftKings double-double (+1.5) / triple-double (+3).
+# FanDuel and Yahoo NBA use the same weights — both listed so users recognize
+# their site by name.
+FANTASY_SCORING_SYSTEMS = {
+    'dk': {'label': 'DraftKings', 'weights': {'PTS': 1.0, '3PM': 0.5, 'REB': 1.25, 'AST': 1.5, 'STL': 2.0, 'BLK': 2.0, 'TOV': -0.5}, 'dd_bonus': True},
+    'fd': {'label': 'FanDuel', 'weights': {'PTS': 1.0, 'REB': 1.2, 'AST': 1.5, 'STL': 3.0, 'BLK': 3.0, 'TOV': -1.0}, 'dd_bonus': False},
+    'yahoo': {'label': 'Yahoo', 'weights': {'PTS': 1.0, 'REB': 1.2, 'AST': 1.5, 'STL': 3.0, 'BLK': 3.0, 'TOV': -1.0}, 'dd_bonus': False},
+}
+FANTASY_DEFAULT_SCORING = 'dk'
 
 
-def _fantasy_points_nba(frame):
-    """DraftKings-style NBA fantasy points per gamelog row, incl. DD/TD bonuses."""
+def _fantasy_points_nba(frame, scoring=FANTASY_DEFAULT_SCORING):
+    """NBA fantasy points per gamelog row under the chosen scoring system."""
+    system = FANTASY_SCORING_SYSTEMS.get(scoring, FANTASY_SCORING_SYSTEMS[FANTASY_DEFAULT_SCORING])
     fp = pd.Series(0.0, index=frame.index)
-    for col, weight in FANTASY_DK_NBA_WEIGHTS.items():
+    for col, weight in system['weights'].items():
         fp = fp + pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) * weight
-    doubles = sum(
-        (pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) >= 10).astype(int)
-        for col in ('PTS', 'REB', 'AST', 'STL', 'BLK')
-    )
-    return fp + (doubles >= 2) * 1.5 + (doubles >= 3) * 3.0
+    if system['dd_bonus']:
+        doubles = sum(
+            (pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) >= 10).astype(int)
+            for col in ('PTS', 'REB', 'AST', 'STL', 'BLK')
+        )
+        fp = fp + (doubles >= 2) * 1.5 + (doubles >= 3) * 3.0
+    return fp
 
 
-def _build_fantasy_projection_rows(sport_key):
+def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     if sport_key == 'nba':
         logs = load_gamelogs()
     elif sport_key == 'nfl':
@@ -28518,7 +28530,7 @@ def _build_fantasy_projection_rows(sport_key):
     if logs is None or logs.empty or 'Player' not in logs.columns:
         return []
     working = logs.copy()
-    working['FP'] = _fantasy_points_nba(working)
+    working['FP'] = _fantasy_points_nba(working, scoring=scoring)
     working['DateParsed'] = pd.to_datetime(working.get('Date'), errors='coerce')
     working = working.sort_values('DateParsed')
     team_map = build_current_team_map(working)
@@ -28548,15 +28560,17 @@ def _build_fantasy_projection_rows(sport_key):
     return rows
 
 
-def get_fantasy_projection_rows(sport_key):
+def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     paths = {'nba': DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv', 'nfl': DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv'}
     path = paths.get(sport_key)
     if path is None:
         return []
+    if scoring not in FANTASY_SCORING_SYSTEMS:
+        scoring = FANTASY_DEFAULT_SCORING
     return _get_disk_ttl_cached_value(
-        f'fantasy_projections_{sport_key}',
+        f'fantasy_projections_{sport_key}_{scoring}',
         6 * 3600,
-        lambda: _build_fantasy_projection_rows(sport_key),
+        lambda: _build_fantasy_projection_rows(sport_key, scoring=scoring),
         version=_build_file_token(path),
     )
 
@@ -28630,7 +28644,10 @@ def fantasy_league(league):
     current_user = get_current_user()
     if not current_user:
         return redirect(url_for('login', next=build_requested_path()))
-    projection_rows = get_fantasy_projection_rows(league_key)
+    scoring = str(request.args.get('scoring', FANTASY_DEFAULT_SCORING)).strip().lower()
+    if scoring not in FANTASY_SCORING_SYSTEMS:
+        scoring = FANTASY_DEFAULT_SCORING
+    projection_rows = get_fantasy_projection_rows(league_key, scoring=scoring)
     return render_template(
         'fantasy_league.html',
         page=config,
@@ -28639,6 +28656,8 @@ def fantasy_league(league):
         projection_total=len(projection_rows),
         my_lineups=list_fantasy_lineups_for_user(current_user, sport_key=league_key),
         current_user=current_user,
+        scoring=scoring,
+        scoring_options=[(key, system['label']) for key, system in FANTASY_SCORING_SYSTEMS.items()],
     )
 
 
