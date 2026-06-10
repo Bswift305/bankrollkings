@@ -71,20 +71,32 @@ cache for those with `?v=...` and/or a service-worker version bump.
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
 
 **Known nav behavior (NOT crashes — current product state):**
-- **Parlay Builder is NBA-only.** `/parlay` hard-defaults `sport='nba'` and
-  `build_live_prop_runtime_context` only loads NBA data. Clicking it anywhere → NBA.
+- **Parlay Builder is NBA-only for live data.** `/parlay` defaults `sport='nba'` and
+  `build_live_prop_runtime_context` only loads NBA data — so for nba/wnba/mlb/nfl/ncaaf the
+  board shows NBA props. EXCEPTION: `sport=ncaamb|ncaawb` short-circuits to a blank CBB-themed
+  parlay shell (no NBA fallthrough). Wiring real per-sport data into the parlay runtime is still
+  open.
 - **Props** with no sport → cross-sport "pick a sport" hub (`/tools/props` = `method_hub('props')`)
   or `/home/props` preview. By design ("Props is now a cross-sport entry point").
 - **College hoops (ncaamb/ncaawb)** Command Center → `under_construction.html` "expansion board."
-  Boards/parlay for college hoops are NOT built ("not fully live yet"). **EXCEPTION:** the
-  **Props** link now has real themed pages: `/sports/ncaamb/props` + `/sports/ncaawb/props`
-  (`ncaamb_props_page` / `ncaawb_props_page` → `_render_college_hoops_props` →
-  `render_props_screener_page` with `_college_hoops_example_props` dummy rows). These render the
-  basketball board in the correct CBB color scheme with example plays + a "live board opens when
-  the season tips off" banner. Gated like every other sport (Pro / sport pass / owner). Use
-  `postseason_only=False` + `focus_mode_label`/`regular_mode_label` overrides so they don't
-  inherit the league-wide "NBA Finals" postseason labels. Market/Trends for college still fall
-  through to `/tools/market-edge` / `/tools/trends`.
+  **The four main board surfaces now have real CBB-themed pre-season pages** (men cyan / women
+  magenta), gated like every other sport (Pro / sport pass / owner). All share
+  `_college_hoops_access_gate` and override `focus_mode_label`/`regular_mode_label` →
+  `Top 25 Focus` / `Full Board` (with `postseason_only=False`) so they don't inherit the
+  league-wide "NBA Finals" labels:
+  - **Props** `/sports/{ncaamb,ncaawb}/props` → `_render_college_hoops_props` →
+    `render_props_screener_page` with `_college_hoops_example_props` **example** rows.
+  - **Market** `/sports/{ncaamb,ncaawb}/market-edge` → `_render_college_hoops_market` →
+    `smart_picks_v2.html` (blank board, `market_sport_key` themes it).
+  - **Trends** `/sports/{ncaamb,ncaawb}/trends` → `_render_college_hoops_trends` →
+    `trend_board.html` (blank board, `trend_sport_key` themes it).
+  - **Parlay** `/parlay?sport=ncaamb|ncaawb` → `parlay()` **short-circuits to**
+    `_render_college_hoops_parlay` (blank `parlay_formula.html`) BEFORE the NBA runtime loads —
+    so college Parlay no longer falls through to the NBA board.
+  Real college boards/data are still NOT built — these are themed shells (example/blank "live
+  board opens when the season tips off"). `smart_picks_v2.html` + `trend_board.html` had
+  `active_sport` hardcoded to `nba`; now dynamic via `market_sport_key`/`trend_sport_key`
+  (default `nba`, so NBA pages are unchanged).
 
 ---
 
