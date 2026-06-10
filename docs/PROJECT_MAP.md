@@ -71,11 +71,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
 
 **Known nav behavior (NOT crashes — current product state):**
-- **Parlay Builder is NBA-only for live data.** `/parlay` defaults `sport='nba'` and
-  `build_live_prop_runtime_context` only loads NBA data — so for nba/wnba/mlb/nfl/ncaaf the
-  board shows NBA props. EXCEPTION: `sport=ncaamb|ncaawb` short-circuits to a blank CBB-themed
-  parlay shell (no NBA fallthrough). Wiring real per-sport data into the parlay runtime is still
-  open.
+- **Parlay Builder is sport-aware.** `/parlay?sport=wnba|mlb|nfl|ncaaf` →
+  `_render_sport_parlay`: loads that sport's own live prop board (same feed + builder as its
+  props page via `_load_sport_parlay_board`), normalizes rows (sport/confidence/market_view +
+  `setdefault(None)` for every key parlay_formula.html tests with `is not none` — Jinja
+  Undefined passes that test then crashes on compare), and runs the SAME floor-parlay strategy
+  pipeline as NBA (`attach_floor_reliability_to_props` degrades to SMALL SAMPLE for sports
+  without floor history). NBA path (`build_live_prop_runtime_context`) is untouched.
+  `sport=ncaamb|ncaawb` still short-circuits to the CBB-themed pre-season parlay shell.
+  Football defaults to `date=all` (weekly slates); WNBA/MLB default `date=today`.
 - **Props** with no sport → cross-sport "pick a sport" hub (`/tools/props` = `method_hub('props')`)
   or `/home/props` preview. By design ("Props is now a cross-sport entry point").
 - **College hoops (ncaamb/ncaawb)** Command Center → `college_hoops_command_center.html`
@@ -145,8 +149,9 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 
 ## 8. Open items / not-built-yet
 
-- Parlay Builder: make it sport-aware (currently NBA-only) — needs each sport's data wired into
-  the parlay runtime engine.
+- Parlay Builder polish: builder is sport-aware now (see §4), but the saved-ticket log
+  (`NBA_Parlay_Log.csv`) has no Sport column (sport lives only inside PicksJson), and floor
+  reliability history only exists for NBA — other sports rank on confidence/build score alone.
 - College hoops (ncaamb/ncaawb): real live data. The Command Center hub and the themed
   pre-season shells for Props/Market/Trends/Parlay are all built (see §4); what remains is
   wiring actual college data/boards when the season tips off.

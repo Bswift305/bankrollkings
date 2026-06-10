@@ -28265,10 +28265,10 @@ METHOD_HUB_CONFIG = {
         'summary': 'Parlay should not behave like an NBA-only shortcut. Use this hub to enter the sport you want to build around.',
         'cards': [
             {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Parlay', 'href': '/parlay?sample=current', 'status': 'live', 'note': 'Current live parlay builder is strongest on NBA right now.'},
-            {'sport': 'WNBA', 'label': 'WNBA Parlay', 'href': '/sports/wnba', 'status': 'watch', 'note': 'WNBA can be researched today, but a dedicated parlay builder is still being layered in.'},
-            {'sport': 'MLB', 'label': 'MLB Parlay', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB boards are live, but the baseball-specific parlay layer is still thinner than NBA.'},
-            {'sport': 'NFL', 'label': 'NFL Parlay', 'href': '/sports/nfl', 'status': 'watch', 'note': 'Use the NFL board first while the dedicated football parlay workflow catches up.'},
-            {'sport': 'CFB', 'label': 'CFB Parlay', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'Use the CFB board first while the college-football parlay workflow catches up.'},
+            {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Parlay', 'href': '/parlay?sport=wnba&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the live WNBA prop board with the same tier and strategy engine.'},
+            {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Parlay', 'href': '/parlay?sport=mlb&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the daily MLB prop board with the same tier and strategy engine.'},
+            {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Parlay', 'href': '/parlay?sport=nfl&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the weekly NFL prop board; fills with the live football slate in season.'},
+            {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Parlay', 'href': '/parlay?sport=ncaaf&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the CFB prop board; fills with the live college slate in season.'},
             {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/parlay?sport=ncaamb', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops parlay builder in the CBB theme.'},
             {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/parlay?sport=ncaawb', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops parlay builder in the CBB theme.'},
         ],
@@ -31757,6 +31757,168 @@ def logout():
     return redirect(f"/?postseason={postseason_value}")
 
 
+PARLAY_SPORT_BOARD_LABELS = {'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL', 'ncaaf': 'CFB'}
+PARLAY_SPORT_FOCUS_LABELS = {'wnba': 'Playoff Focus', 'mlb': 'Postseason Focus', 'nfl': 'Playoff Focus', 'ncaaf': 'Postseason Focus'}
+
+
+def _load_sport_parlay_board(sport_key, date_filter, direction_filter, stat_query, player_query):
+    """Load live prop rows for a non-NBA sport using the same feed + board-builder
+    pipeline as that sport's props page. Returns (rows, refresh_meta)."""
+    if sport_key == 'wnba':
+        props_df, refresh_meta = load_wnba_live_props_feed(require_fresh=True)
+        odds_df = load_wnba_game_market_odds()
+        rows = build_wnba_prop_board(
+            props_df, odds_df, load_wnba_schedule(), gamelogs=load_wnba_gamelogs(),
+            date_filter=date_filter, stat_filter=stat_query, direction_filter=direction_filter,
+            search_query=player_query, featured_top_n=0,
+        )
+        rows = attach_team_strength_priors_to_rows(
+            enrich_rows_with_game_environment(annotate_mlb_rows_with_reliability(rows), sport='WNBA', odds_df=odds_df),
+            sport='WNBA',
+        )
+        return rows, refresh_meta
+    if sport_key == 'mlb':
+        props_df, refresh_meta = load_mlb_live_props_feed(require_fresh=True)
+        odds_df = load_mlb_game_market_odds()
+        rows = build_mlb_prop_board(
+            props_df, odds_df, load_mlb_schedule(), gamelogs=load_mlb_gamelogs(),
+            date_filter=date_filter, stat_filter=stat_query, direction_filter=direction_filter,
+            search_query=player_query, max_groups=250, fast_mode=True,
+        )
+        rows = attach_team_strength_priors_to_rows(
+            enrich_rows_with_game_environment(annotate_mlb_rows_with_reliability(rows), sport='MLB', odds_df=odds_df),
+            sport='MLB',
+        )
+        return rows, refresh_meta
+    if sport_key == 'nfl':
+        odds_df = load_nfl_game_market_odds()
+        schedule_df = load_nfl_schedule()
+        props_df, refresh_meta = load_nfl_live_props_feed(require_fresh=True)
+    else:
+        odds_df = load_ncaaf_game_market_odds()
+        schedule_df = load_ncaaf_schedule()
+        props_df, refresh_meta = load_ncaaf_live_props_feed(require_fresh=True)
+    rows = build_football_live_prop_board(
+        props_df, odds_df, schedule_df, method_key='props',
+        date_filter=date_filter, stat_filter=stat_query, direction_filter=direction_filter,
+        search_query=player_query, sport_key=sport_key,
+    )
+    if sport_key == 'nfl':
+        rows = attach_nfl_quant_insights_to_rows(rows, default_direction='OVER')
+    return rows, refresh_meta
+
+
+def _render_sport_parlay(sport_key, current_user, postseason_only):
+    """Sport-aware parlay board for WNBA / MLB / NFL / CFB: feeds the sport's own
+    live prop rows through the same floor-parlay strategy pipeline as the NBA
+    builder (reliability, tiers, ranked plan, handoff, saved tickets)."""
+    sport_label = PARLAY_SPORT_BOARD_LABELS[sport_key]
+    request_context = build_live_prop_request_context(postseason_only=postseason_only, include_ticket=True)
+    # Football slates are weekly, so default to the full slate; daily sports default to today.
+    date_filter = request.args.get('date', '').strip().lower() or ('all' if sport_key in ('nfl', 'ncaaf') else 'today')
+    direction_filter = request_context['direction_filter']
+    sort_by = request_context['sort_by']
+    sort_dir = request_context['sort_dir']
+    team_query = request_context['team_query']
+    player_query = request_context['player_query']
+    stat_query = request.args.get('stat', '').strip()
+    if sport_key != 'mlb':  # MLB stat labels are mixed-case; the rest match uppercase
+        stat_query = stat_query.upper()
+    sample_mode = request_context['sample_mode']
+    selected_ticket_id = request_context['selected_ticket_id']
+    model_debug = request_context['model_debug']
+
+    rows, refresh_meta = _load_sport_parlay_board(sport_key, date_filter, direction_filter, stat_query, player_query)
+
+    available = []
+    for row in rows:
+        prop = dict(row)
+        prop['sport'] = sport_label
+        confidence = prop.get('confidence')
+        if confidence in (None, ''):
+            confidence = prop.get('market_confidence')
+        if confidence in (None, ''):
+            confidence = prop.get('method_score')
+        try:
+            prop['confidence'] = float(confidence or 0)
+        except (TypeError, ValueError):
+            prop['confidence'] = 0.0
+        prop['team'] = str(prop.get('team') or '').strip()
+        if not prop.get('matchup'):
+            prop['matchup'] = str(prop.get('game') or '').strip()
+        # parlay_formula.html tests these with `is not none`, so the keys must
+        # exist (Jinja Undefined passes `is not none`, then blows up on compare).
+        for key in ('market_price', 'model_prob', 'ev_pct', 'projected_minutes',
+                    'usage_pct', 'ts_pct', 'touches', 'drives', 'avg_speed',
+                    'implied_prob', 'current_line', 'draftkings_line', 'vegas_line',
+                    'line_low', 'line_high', 'game_total', 'team_spread'):
+            prop.setdefault(key, None)
+        if not isinstance(prop.get('market_view'), dict):
+            prop['market_view'] = {
+                'tone': 'soft',
+                'label': str(prop.get('play_verdict') or prop.get('lean_strength') or '').strip(),
+                'note': str(prop.get('market_note') or prop.get('book_comparison_note') or '').strip(),
+            }
+        available.append(prop)
+
+    available = sorted(available, key=lambda x: x['confidence'], reverse=True)[:200]
+    if team_query:
+        available = [p for p in available if str(p.get('team', '')).upper() == team_query]
+
+    available = attach_floor_reliability_to_props(available, sport=sport_label)
+    strategy = build_floor_parlay_plan(available)
+    strategy_lookup = {
+        (item['player'], item['stat'], item['line'], item['direction']): item
+        for item in strategy['ranked']
+    }
+    for prop in available:
+        strategy_item = strategy_lookup.get((prop['player'], prop['stat'], prop['line'], prop['direction']))
+        if strategy_item:
+            prop['tier'] = strategy_item['tier']
+            prop['strategy_score'] = strategy_item['strategy_score']
+        else:
+            prop['tier'] = 'Tier 3'
+            prop['strategy_score'] = score_floor_parlay_candidate(prop)
+        prop['rank_driver_chips'] = build_rank_driver_chips(prop)
+
+    available = sort_prop_rows(available, sort_by, sort_dir)
+    handoff_context = build_parlay_handoff_context(available)
+
+    query_params = {}
+    if team_query:
+        query_params['team'] = team_query
+    if player_query:
+        query_params['player'] = player_query
+    if stat_query:
+        query_params['stat'] = stat_query
+    query_params['sample'] = sample_mode
+    if model_debug:
+        query_params['model_debug'] = 1
+    query_suffix = f"&{urlencode(query_params)}" if query_params else ""
+    saved_parlays = format_saved_parlays_for_view(
+        filter_saved_parlays_for_user(load_saved_parlays(), current_user),
+        live_props=available
+    )
+    slate_scope_label = (
+        'Today Slate' if date_filter == 'today'
+        else 'Tomorrow Slate' if date_filter == 'tomorrow'
+        else 'Full Slate'
+    )
+
+    return render_template('parlay_formula.html', props=available,
+        rules={'max_per_player': 1, 'max_per_game': 2, 'min_games': 3, 'target_legs': '4-6 main / 8-10 flyer'},
+        strategy=strategy,
+        stat_options=STAT_COLUMNS, date_filter=date_filter, direction_filter=direction_filter, upcoming={},
+        postseason_only=False, team_query=team_query, player_query=player_query, stat_query=stat_query,
+        query_suffix=query_suffix, sample_mode=sample_mode, saved_parlays=saved_parlays,
+        slate_scope_label=slate_scope_label, refresh_meta=refresh_meta, selected_ticket_id=selected_ticket_id,
+        current_user=current_user, sort_by=sort_by, sort_dir=sort_dir, model_debug=model_debug,
+        handoff_context=handoff_context, parlay_sport_key=sport_key,
+        live_feed_sport_label=sport_label,
+        focus_mode_label=PARLAY_SPORT_FOCUS_LABELS.get(sport_key, 'Playoff Focus'),
+        regular_mode_label='Full Board')
+
+
 @app.route('/parlay')
 def parlay():
     current_user = get_current_user()
@@ -31770,6 +31932,9 @@ def parlay():
         return _render_college_hoops_parlay('ncaamb', "Men's College Hoops")
     if parlay_sport_key == 'ncaawb':
         return _render_college_hoops_parlay('ncaawb', "Women's College Hoops")
+    # Every other non-NBA sport builds from its own live prop board.
+    if parlay_sport_key in PARLAY_SPORT_BOARD_LABELS:
+        return _render_sport_parlay(parlay_sport_key, current_user=current_user, postseason_only=postseason_only)
     request_context = build_live_prop_request_context(postseason_only=postseason_only, include_ticket=True)
     runtime = build_live_prop_runtime_context(postseason_only=postseason_only)
     gamelogs = runtime['gamelogs']
