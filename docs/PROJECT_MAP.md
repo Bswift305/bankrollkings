@@ -142,5 +142,6 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 
 - Parlay Builder: make it sport-aware (currently NBA-only) — needs each sport's data wired into
   the parlay runtime engine.
-- College hoops (ncaamb/ncaawb): real boards/props/parlay (currently under-construction pages).
+- College hoops (ncaamb/ncaawb): real boards/data. Themed pre-season shells for Props/Market/
+  Trends/Parlay are live (see §4); the Command Center itself and actual live data are still open.
 - Premium icons are PNG (raster, from generated art) — not vectorizable to SVG without a redraw.
