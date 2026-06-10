@@ -20,36 +20,333 @@
         </div>
     </div>
     <div class="hero-actions command-center-actions">
-        <a href="{{ page.board_href }}" class="btn btn-primary btn-sm">Open {{ page.board_label }}</a>
+        <a href="#rankings" class="btn btn-primary btn-sm fantasy-tab-link" data-tab="rankings">View Rankings</a>
+        <a href="#builder" class="btn btn-sm fantasy-tab-link" data-tab="builder">Build Lineup</a>
     </div>
 </div>
 
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">What The Fantasy Hub Will Do</div>
-        <span class="badge badge-accent">In The Lab</span>
+<div class="card mb-24">
+    <div class="p-16" style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% for tab_key, tab_label in [('overview', 'Overview'), ('rankings', 'Rankings & Projections'), ('builder', 'Lineup Builder'), ('lineups', 'My Lineups'), ('bankroll', 'Bankroll')] %}
+        <button type="button" class="btn btn-sm fantasy-tab-btn {% if tab_key == 'overview' %}btn-primary{% else %}btn-secondary{% endif %}" data-tab="{{ tab_key }}">{{ tab_label }}</button>
+        {% endfor %}
     </div>
-    <div class="p-24">
-        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
-            The same player models that grade props can grade fantasy decisions. The {{ page.title }} hub turns those reads into lineup help: who to start, who to target, and where your league can be beaten.
+</div>
+
+<!-- ═══ OVERVIEW ═══ -->
+<div class="fantasy-tab" id="fantasy-tab-overview">
+    <div class="card mb-24 panel-glow">
+        <div class="card-header panel-header-gloss">
+            <div class="card-title">What The Fantasy Hub Does</div>
+            <span class="badge badge-accent">MVP Live</span>
         </div>
-        <div class="grid-2" style="gap: 16px;">
-            {% for item in page.modules %}
-            <div class="parlay-surface-soft" style="padding: 16px;">
-                <div class="page-kicker" style="margin-bottom: 6px;">{{ item.kicker }}</div>
-                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ item.title }}</div>
-                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ item.note }}</div>
+        <div class="p-24">
+            <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+                The same player models that grade props now grade fantasy decisions. Rankings and projections below are computed from real game logs ({{ projection_total }} ranked players); the lineup builder and bankroll guide turn them into decisions.
             </div>
-            {% endfor %}
+            <div class="grid-2" style="gap: 16px;">
+                {% for item in page.modules %}
+                <div class="parlay-surface-soft" style="padding: 16px;">
+                    <div class="page-kicker" style="margin-bottom: 6px;">{{ item.kicker }}</div>
+                    <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ item.title }}</div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ item.note }}</div>
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 </div>
 
-<div class="legend-panel">
-    <div class="legend-row">
-        <span class="control-label">Status</span>
-        <span class="status-pill playoff-hit">In The Lab</span>
-        <span style="font-size: 12px; color: var(--text-muted);">Fantasy is the next product area on the build board. The research engine behind it is live today on the {{ page.board_label }}.</span>
+<!-- ═══ RANKINGS & PROJECTIONS ═══ -->
+<div class="fantasy-tab" id="fantasy-tab-rankings" style="display:none;">
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">Player Rankings &amp; Projections</div>
+            <span class="badge badge-accent">{{ projection_total }} Players</span>
+        </div>
+        <div class="p-16">
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
+                Fantasy points use DraftKings-style scoring (PTS, REB &times;1.25, AST &times;1.5, STL/BLK &times;2, 3PM &times;0.5, TOV &minus;0.5, double-double bonuses) computed from every logged game. <strong style="color: var(--text-bright);">Avg</strong> is the season baseline, <strong style="color: var(--text-bright);">L5</strong> is recent form, <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the best and worst logged games, and <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg.
+            </div>
+            {% if projection_rows %}
+            <input type="search" id="fantasy-search" placeholder="Search player or team..." style="margin-bottom: 12px; width: 280px; max-width: 100%;">
+            <div class="table-scroll" style="max-height: 60vh;">
+                <table class="data-table" id="fantasy-rankings-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="rank">#</th>
+                            <th data-sort="player">Player</th>
+                            <th data-sort="team">Team</th>
+                            <th data-sort="games">GP</th>
+                            <th data-sort="minutes">Min (L10)</th>
+                            <th data-sort="fp_avg">FP Avg</th>
+                            <th data-sort="fp_l5">FP L5</th>
+                            <th data-sort="fp_ceiling">Ceiling</th>
+                            <th data-sort="fp_floor">Floor</th>
+                            <th data-sort="trend">Trend</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in projection_rows %}
+                        <tr data-player="{{ row.player }}" data-team="{{ row.team }}" data-fp="{{ row.fp_avg }}"
+                            data-rank="{{ row.rank }}" data-games="{{ row.games }}" data-minutes="{{ row.minutes or 0 }}"
+                            data-fp_avg="{{ row.fp_avg }}" data-fp_l5="{{ row.fp_l5 }}" data-fp_ceiling="{{ row.fp_ceiling }}"
+                            data-fp_floor="{{ row.fp_floor }}" data-trend="{{ row.trend }}">
+                            <td>{{ row.rank }}</td>
+                            <td><a href="/player/{{ row.player|urlencode }}">{{ row.player }}</a></td>
+                            <td>{{ row.team }}</td>
+                            <td>{{ row.games }}</td>
+                            <td>{{ row.minutes if row.minutes is not none else '-' }}</td>
+                            <td><strong style="color: var(--text-bright);">{{ row.fp_avg }}</strong></td>
+                            <td>{{ row.fp_l5 }}</td>
+                            <td style="color: var(--accent);">{{ row.fp_ceiling }}</td>
+                            <td style="color: var(--text-muted);">{{ row.fp_floor }}</td>
+                            <td style="color: {% if row.trend > 0 %}var(--accent){% elif row.trend < 0 %}#ff8a8a{% else %}var(--text-muted){% endif %};">{{ '%+0.1f'|format(row.trend) }}</td>
+                            <td><button type="button" class="btn btn-secondary btn-sm fantasy-add-btn">Add</button></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="parlay-surface-soft" style="padding: 20px; font-size: 13px; color: var(--text-muted);">
+                {{ page.title }} rankings open automatically once the season's game logs start flowing. The NBA hub is live now if you want to see the format.
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
+
+<!-- ═══ LINEUP BUILDER ═══ -->
+<div class="fantasy-tab" id="fantasy-tab-builder" style="display:none;">
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">Lineup Builder</div>
+            <span class="badge badge-accent"><span id="fantasy-slot-count">0</span>/8 Slots</span>
+        </div>
+        <div class="p-16">
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
+                Add up to 8 players from the Rankings tab. The projected total uses each player's season FP average. No salary cap yet &mdash; salary data lands with the contest-style slates later.
+            </div>
+            <div id="fantasy-slots" class="grid-2" style="gap: 10px; margin-bottom: 14px;"></div>
+            <div id="fantasy-empty-builder" class="parlay-surface-soft" style="padding: 16px; font-size: 13px; color: var(--text-muted);">
+                No players added yet. Open <strong style="color: var(--text-bright);">Rankings &amp; Projections</strong> and hit Add on the players you want.
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top: 14px;">
+                <div style="font-size: 14px;">Projected Total: <strong id="fantasy-proj-total" style="color: var(--accent); font-size: 18px;">0.0</strong> FP</div>
+                <input type="text" id="fantasy-lineup-label" placeholder="Lineup name (optional)" style="width: 220px;">
+                <button type="button" class="btn btn-primary btn-sm" id="fantasy-save-lineup">Save Lineup</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fantasy-clear-lineup">Clear</button>
+                <span id="fantasy-save-msg" style="font-size: 12px; color: var(--text-muted);"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ MY LINEUPS ═══ -->
+<div class="fantasy-tab" id="fantasy-tab-lineups" style="display:none;">
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">My Lineups</div>
+            <span class="badge badge-accent">{{ my_lineups|length }} Saved</span>
+        </div>
+        <div class="p-16">
+            {% if my_lineups %}
+            <div class="grid-2" style="gap: 14px;">
+                {% for lineup in my_lineups %}
+                <div class="parlay-surface-soft" style="padding: 14px;" id="lineup-card-{{ lineup.lineup_id }}">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
+                        <div>
+                            <div style="font-size: 15px; font-weight: 700; color: var(--text-bright);">{{ lineup.label }}</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">{{ lineup.sport }} &bull; {{ lineup.saved_at }} &bull; {{ lineup.players|length }} players</div>
+                        </div>
+                        <span class="badge badge-accent">{{ '%.1f'|format(lineup.projected_total) }} FP</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
+                        {% for p in lineup.players %}
+                        <div style="display:flex; justify-content:space-between; font-size:12px;">
+                            <span style="color: var(--text-bright);">{{ p.player }} <span style="color: var(--text-muted);">{{ p.team }}</span></span>
+                            <span style="color: var(--text-muted);">{{ p.fp }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm fantasy-delete-lineup" data-lineup-id="{{ lineup.lineup_id }}">Delete</button>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="parlay-surface-soft" style="padding: 20px; font-size: 13px; color: var(--text-muted);">
+                No saved lineups yet. Build one in the <strong style="color: var(--text-bright);">Lineup Builder</strong> tab and it will show up here.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ═══ BANKROLL ═══ -->
+<div class="fantasy-tab" id="fantasy-tab-bankroll" style="display:none;">
+    <div class="card mb-24">
+        <div class="card-header">
+            <div class="card-title">Fantasy Bankroll Guide</div>
+            <span class="badge badge-accent">Discipline First</span>
+        </div>
+        <div class="p-16">
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 14px;">
+                Same bankroll philosophy as the betting side: decide the risk level first, then let the math size your entries. These are guideline percentages, not guarantees.
+            </div>
+            <div class="grid-2" style="gap: 16px;">
+                <div class="parlay-surface-soft" style="padding: 16px;">
+                    <div class="page-kicker" style="margin-bottom: 10px;">Entry Calculator</div>
+                    <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Fantasy bankroll ($)</label>
+                    <input type="number" id="fantasy-bankroll" min="0" step="10" value="200" style="width: 160px; margin-bottom: 10px;">
+                    <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Risk level</label>
+                    <select id="fantasy-risk" style="width: 200px; margin-bottom: 12px;">
+                        <option value="conservative">Conservative (2% / day)</option>
+                        <option value="balanced" selected>Balanced (5% / day)</option>
+                        <option value="aggressive">Aggressive (10% / day)</option>
+                    </select>
+                    <div id="fantasy-bankroll-result" style="font-size: 13px; color: var(--text-bright); line-height: 1.7;"></div>
+                </div>
+                <div class="parlay-surface-soft" style="padding: 16px;">
+                    <div class="page-kicker" style="margin-bottom: 10px;">Allocation Rules</div>
+                    <div style="font-size: 12px; color: var(--text-muted); line-height: 1.7;">
+                        &bull; Daily exposure is your cap across ALL entries that day, not per entry.<br>
+                        &bull; Put most of the daily budget in lower-variance formats; treat top-heavy tournaments as the small slice.<br>
+                        &bull; A losing week never raises the percentage. Re-size from the new bankroll, never chase.<br>
+                        &bull; Track every entry. The bet-review habit from the betting side applies here unchanged.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var sportKey = {{ sport_key|tojson }};
+
+    // ── Tabs ──
+    function showTab(key) {
+        document.querySelectorAll('.fantasy-tab').forEach(function (el) {
+            el.style.display = el.id === 'fantasy-tab-' + key ? '' : 'none';
+        });
+        document.querySelectorAll('.fantasy-tab-btn').forEach(function (btn) {
+            btn.classList.toggle('btn-primary', btn.dataset.tab === key);
+            btn.classList.toggle('btn-secondary', btn.dataset.tab !== key);
+        });
+    }
+    document.querySelectorAll('.fantasy-tab-btn, .fantasy-tab-link').forEach(function (el) {
+        el.addEventListener('click', function (e) { e.preventDefault(); showTab(el.dataset.tab); });
+    });
+
+    // ── Rankings: search + sort ──
+    var table = document.getElementById('fantasy-rankings-table');
+    var search = document.getElementById('fantasy-search');
+    if (search && table) {
+        search.addEventListener('input', function () {
+            var q = search.value.trim().toLowerCase();
+            table.querySelectorAll('tbody tr').forEach(function (tr) {
+                var hay = (tr.dataset.player + ' ' + tr.dataset.team).toLowerCase();
+                tr.style.display = !q || hay.indexOf(q) !== -1 ? '' : 'none';
+            });
+        });
+    }
+    if (table) {
+        var sortState = {};
+        table.querySelectorAll('thead th[data-sort]').forEach(function (th) {
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', function () {
+                var key = th.dataset.sort;
+                var dir = sortState[key] === 'asc' ? 'desc' : 'asc';
+                sortState = {}; sortState[key] = dir;
+                var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+                rows.sort(function (a, b) {
+                    var av = a.dataset[key], bv = b.dataset[key];
+                    var an = parseFloat(av), bn = parseFloat(bv);
+                    var cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av).localeCompare(String(bv));
+                    return dir === 'asc' ? cmp : -cmp;
+                });
+                var body = table.querySelector('tbody');
+                rows.forEach(function (r) { body.appendChild(r); });
+            });
+        });
+    }
+
+    // ── Lineup builder ──
+    var picks = [];
+    function renderSlots() {
+        var wrap = document.getElementById('fantasy-slots');
+        var empty = document.getElementById('fantasy-empty-builder');
+        wrap.innerHTML = '';
+        picks.forEach(function (p, i) {
+            var div = document.createElement('div');
+            div.className = 'parlay-surface-soft';
+            div.style.cssText = 'padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;';
+            div.innerHTML = '<span style="color:var(--text-bright); font-weight:700;">' + p.player +
+                ' <span style="color:var(--text-muted); font-weight:400;">' + p.team + '</span></span>' +
+                '<span style="display:flex; align-items:center; gap:10px;"><span style="color:var(--accent);">' + p.fp.toFixed(1) + '</span>' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-i="' + i + '">Remove</button></span>';
+            div.querySelector('button').addEventListener('click', function () { picks.splice(i, 1); renderSlots(); });
+            wrap.appendChild(div);
+        });
+        empty.style.display = picks.length ? 'none' : '';
+        document.getElementById('fantasy-slot-count').textContent = picks.length;
+        document.getElementById('fantasy-proj-total').textContent = picks.reduce(function (s, p) { return s + p.fp; }, 0).toFixed(1);
+    }
+    document.querySelectorAll('.fantasy-add-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (picks.length >= 8) { alert('Lineup is full (8 players). Remove someone first.'); return; }
+            if (picks.some(function (p) { return p.player === tr.dataset.player; })) return;
+            picks.push({ player: tr.dataset.player, team: tr.dataset.team, fp: parseFloat(tr.dataset.fp) || 0 });
+            renderSlots();
+            showTab('builder');
+        });
+    });
+    document.getElementById('fantasy-clear-lineup').addEventListener('click', function () { picks = []; renderSlots(); });
+    document.getElementById('fantasy-save-lineup').addEventListener('click', function () {
+        var msg = document.getElementById('fantasy-save-msg');
+        if (!picks.length) { msg.textContent = 'Add at least one player first.'; return; }
+        msg.textContent = 'Saving...';
+        fetch('/fantasy/lineups/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sport: sportKey, label: document.getElementById('fantasy-lineup-label').value, players: picks })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            msg.textContent = data.ok ? data.message + ' Reloading...' : (data.error || 'Save failed.');
+            if (data.ok) { setTimeout(function () { window.location.reload(); }, 800); }
+        }).catch(function () { msg.textContent = 'Save failed - try again.'; });
+    });
+
+    // ── Delete saved lineups ──
+    document.querySelectorAll('.fantasy-delete-lineup').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            fetch('/fantasy/lineups/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lineup_id: btn.dataset.lineupId })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data.ok) { var card = document.getElementById('lineup-card-' + btn.dataset.lineupId); if (card) card.remove(); }
+            });
+        });
+    });
+
+    // ── Bankroll calculator ──
+    var RISK = { conservative: 0.02, balanced: 0.05, aggressive: 0.10 };
+    function renderBankroll() {
+        var bk = parseFloat(document.getElementById('fantasy-bankroll').value) || 0;
+        var pct = RISK[document.getElementById('fantasy-risk').value] || 0.05;
+        var daily = bk * pct;
+        document.getElementById('fantasy-bankroll-result').innerHTML =
+            'Daily exposure cap: <strong style="color:var(--accent);">$' + daily.toFixed(2) + '</strong><br>' +
+            'Core (low-variance): <strong>$' + (daily * 0.7).toFixed(2) + '</strong> &bull; ' +
+            'Upside (tournaments): <strong>$' + (daily * 0.3).toFixed(2) + '</strong><br>' +
+            '<span style="color:var(--text-muted); font-size:11px;">Weekly cap &asymp; $' + (daily * 5).toFixed(2) + ' &mdash; stop for the week if you hit it.</span>';
+    }
+    document.getElementById('fantasy-bankroll').addEventListener('input', renderBankroll);
+    document.getElementById('fantasy-risk').addEventListener('change', renderBankroll);
+    renderBankroll();
+})();
+</script>
 {% endblock %}

@@ -73,10 +73,16 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Icon rail** (`.bk-rail`): narrow strip, hardcoded `/static/logos/leagues/*.svg`.
 - **Sport pages:** `/sports/nba|nfl|ncaaf|wnba|mlb` have explicit routes; everything else
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
-- **Fantasy (pre-launch):** sidebar "Fantasy / League" section (bk_base.html + the Home
+- **Fantasy (MVP live):** sidebar "Fantasy / League" section (bk_base.html + the Home
   override in dashboard_overview.html) → `/fantasy/nfl|nba` → `fantasy_league.html`
-  (login-required teaser hub; `FANTASY_LAUNCH_PAGES` config in app.py; endpoint is in
-  PUBLIC_ENDPOINTS and does its own login redirect). No real fantasy product yet.
+  (login-required tabbed hub; `FANTASY_LAUNCH_PAGES` config; endpoints in PUBLIC_ENDPOINTS
+  do their own auth). Tabs: Overview / Rankings & Projections / Lineup Builder / My Lineups /
+  Bankroll. NBA rankings are REAL: `get_fantasy_projection_rows` computes DK-style FP
+  (incl. DD/TD bonuses) per player from `NBA_GameLogs.csv` (disk-TTL cached, versioned on the
+  gamelog file). NFL returns [] until season logs + a football FP formula exist
+  (`_build_fantasy_projection_rows`). Lineups persist to `data/tracking/Fantasy_Lineups.csv`
+  (per-user, 8 slots, 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).
+  NO salaries, NO contests (deliberate — money-league legal risk; see memory).
 
 **Known nav behavior (NOT crashes — current product state):**
 - **Parlay Builder is sport-aware.** `/parlay?sport=wnba|mlb|nfl|ncaaf` →

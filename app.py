@@ -676,6 +676,8 @@ PUBLIC_ENDPOINTS = {
     'test_drive',
     'sport_under_construction',
     'fantasy_league',
+    'save_fantasy_lineup',
+    'delete_fantasy_lineup',
     'save_feedback',
     'checkout_start',
     'checkout_success',
@@ -28488,6 +28490,137 @@ FANTASY_LAUNCH_PAGES = {
 }
 
 
+FANTASY_DK_NBA_WEIGHTS = {'PTS': 1.0, '3PM': 0.5, 'REB': 1.25, 'AST': 1.5, 'STL': 2.0, 'BLK': 2.0, 'TOV': -0.5}
+
+
+def _fantasy_points_nba(frame):
+    """DraftKings-style NBA fantasy points per gamelog row, incl. DD/TD bonuses."""
+    fp = pd.Series(0.0, index=frame.index)
+    for col, weight in FANTASY_DK_NBA_WEIGHTS.items():
+        fp = fp + pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) * weight
+    doubles = sum(
+        (pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) >= 10).astype(int)
+        for col in ('PTS', 'REB', 'AST', 'STL', 'BLK')
+    )
+    return fp + (doubles >= 2) * 1.5 + (doubles >= 3) * 3.0
+
+
+def _build_fantasy_projection_rows(sport_key):
+    if sport_key == 'nba':
+        logs = load_gamelogs()
+    elif sport_key == 'nfl':
+        # Football fantasy scoring needs the passing/rushing/receiving feed —
+        # rankings open automatically once NFL_GameLogs.csv has season data
+        # AND a football FP formula is added here.
+        return []
+    else:
+        return []
+    if logs is None or logs.empty or 'Player' not in logs.columns:
+        return []
+    working = logs.copy()
+    working['FP'] = _fantasy_points_nba(working)
+    working['DateParsed'] = pd.to_datetime(working.get('Date'), errors='coerce')
+    working = working.sort_values('DateParsed')
+    team_map = build_current_team_map(working)
+    rows = []
+    for player, group in working.groupby('Player'):
+        games = int(len(group))
+        if games < 5:
+            continue
+        fp = group['FP']
+        l5_avg = float(fp.tail(5).mean())
+        avg = float(fp.mean())
+        minutes = pd.to_numeric(group.get('MIN'), errors='coerce').dropna()
+        rows.append({
+            'player': str(player),
+            'team': str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or ''),
+            'games': games,
+            'fp_avg': round(avg, 1),
+            'fp_l5': round(l5_avg, 1),
+            'fp_ceiling': round(float(fp.max()), 1),
+            'fp_floor': round(float(fp.min()), 1),
+            'minutes': round(float(minutes.tail(10).mean()), 1) if not minutes.empty else None,
+            'trend': round(l5_avg - avg, 1),
+        })
+    rows.sort(key=lambda r: r['fp_avg'], reverse=True)
+    for rank, row in enumerate(rows, start=1):
+        row['rank'] = rank
+    return rows
+
+
+def get_fantasy_projection_rows(sport_key):
+    paths = {'nba': DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv', 'nfl': DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv'}
+    path = paths.get(sport_key)
+    if path is None:
+        return []
+    return _get_disk_ttl_cached_value(
+        f'fantasy_projections_{sport_key}',
+        6 * 3600,
+        lambda: _build_fantasy_projection_rows(sport_key),
+        version=_build_file_token(path),
+    )
+
+
+FANTASY_LINEUP_COLUMNS = ['LineupId', 'UserId', 'UserEmail', 'Sport', 'SavedAt', 'Label', 'ProjectedTotal', 'PlayersJson']
+FANTASY_LINEUPS_PATH_NAME = 'Fantasy_Lineups.csv'
+
+
+def load_fantasy_lineups():
+    path = DATA_DIR / 'tracking' / FANTASY_LINEUPS_PATH_NAME
+    if not path.exists():
+        return pd.DataFrame(columns=FANTASY_LINEUP_COLUMNS)
+    df = _load_cached_csv(path, default=pd.DataFrame(columns=FANTASY_LINEUP_COLUMNS))
+    if df.empty:
+        return pd.DataFrame(columns=FANTASY_LINEUP_COLUMNS)
+    for column in FANTASY_LINEUP_COLUMNS:
+        if column not in df.columns:
+            df[column] = ''
+    for column in ['LineupId', 'UserId', 'UserEmail', 'Sport', 'SavedAt', 'Label', 'PlayersJson']:
+        df[column] = df[column].fillna('').astype(str)
+    return df[FANTASY_LINEUP_COLUMNS]
+
+
+def _write_fantasy_lineups(df):
+    path = DATA_DIR / 'tracking' / FANTASY_LINEUPS_PATH_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+    resolved = str(path.resolve())
+    for cache_key in list(DATAFRAME_CACHE.keys()):
+        if cache_key[0] == resolved:
+            DATAFRAME_CACHE.pop(cache_key, None)
+
+
+def list_fantasy_lineups_for_user(user, sport_key=None):
+    df = load_fantasy_lineups()
+    if df.empty or not user:
+        return []
+    user_id = str(user.get('user_id', '')).strip()
+    user_email = str(user.get('email', '')).strip().lower()
+    mask = pd.Series(False, index=df.index)
+    if user_id:
+        mask = mask | (df['UserId'].astype(str) == user_id)
+    if user_email:
+        mask = mask | (df['UserEmail'].str.lower() == user_email)
+    mine = df[mask]
+    if sport_key:
+        mine = mine[mine['Sport'].str.lower() == str(sport_key).lower()]
+    lineups = []
+    for _, row in mine.sort_values('SavedAt', ascending=False).iterrows():
+        try:
+            players = json.loads(row.get('PlayersJson') or '[]')
+        except Exception:
+            players = []
+        lineups.append({
+            'lineup_id': str(row.get('LineupId', '')),
+            'sport': str(row.get('Sport', '')).upper(),
+            'saved_at': str(row.get('SavedAt', '')),
+            'label': str(row.get('Label', '')).strip() or 'Saved Lineup',
+            'projected_total': _safe_float(row.get('ProjectedTotal')) or 0.0,
+            'players': players,
+        })
+    return lineups
+
+
 @app.route('/fantasy/<league>')
 def fantasy_league(league):
     league_key = str(league or '').strip().lower()
@@ -28497,7 +28630,82 @@ def fantasy_league(league):
     current_user = get_current_user()
     if not current_user:
         return redirect(url_for('login', next=build_requested_path()))
-    return render_template('fantasy_league.html', page=config, sport_key=league_key)
+    projection_rows = get_fantasy_projection_rows(league_key)
+    return render_template(
+        'fantasy_league.html',
+        page=config,
+        sport_key=league_key,
+        projection_rows=projection_rows[:200],
+        projection_total=len(projection_rows),
+        my_lineups=list_fantasy_lineups_for_user(current_user, sport_key=league_key),
+        current_user=current_user,
+    )
+
+
+@app.route('/fantasy/lineups/save', methods=['POST'])
+def save_fantasy_lineup():
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'ok': False, 'error': 'Sign in to save lineups.'}), 401
+    payload = request.get_json(silent=True) or {}
+    sport_key = str(payload.get('sport', '')).strip().lower()
+    if sport_key not in FANTASY_LAUNCH_PAGES:
+        return jsonify({'ok': False, 'error': 'Unknown fantasy sport.'}), 400
+    raw_players = payload.get('players') or []
+    players = []
+    for pick in raw_players[:12]:
+        name = str(pick.get('player', '')).strip()
+        if not name:
+            continue
+        players.append({
+            'player': name,
+            'team': str(pick.get('team', '')).strip().upper(),
+            'fp': round(_safe_float(pick.get('fp')) or 0.0, 1),
+        })
+    if not players:
+        return jsonify({'ok': False, 'error': 'Add at least one player first.'}), 400
+    existing = list_fantasy_lineups_for_user(current_user)
+    if len(existing) >= 50:
+        return jsonify({'ok': False, 'error': 'Lineup limit reached (50). Delete an old lineup first.'}), 400
+    saved_at = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+    label = str(payload.get('label', '')).strip()[:80] or f"{sport_key.upper()} Lineup | {saved_at}"
+    row = {
+        'LineupId': datetime.now().strftime('%Y%m%d%H%M%S%f'),
+        'UserId': current_user.get('user_id', ''),
+        'UserEmail': current_user.get('email', ''),
+        'Sport': sport_key,
+        'SavedAt': saved_at,
+        'Label': label,
+        'ProjectedTotal': round(sum(p['fp'] for p in players), 1),
+        'PlayersJson': json.dumps(players),
+    }
+    existing_df = load_fantasy_lineups()
+    updated = pd.concat([existing_df, pd.DataFrame([row])], ignore_index=True) if not existing_df.empty else pd.DataFrame([row])
+    _write_fantasy_lineups(updated)
+    return jsonify({'ok': True, 'message': f'Saved {len(players)}-player lineup.', 'lineup_id': row['LineupId']})
+
+
+@app.route('/fantasy/lineups/delete', methods=['POST'])
+def delete_fantasy_lineup():
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'ok': False, 'error': 'Sign in to manage lineups.'}), 401
+    payload = request.get_json(silent=True) or {}
+    lineup_id = str(payload.get('lineup_id', '')).strip()
+    if not lineup_id:
+        return jsonify({'ok': False, 'error': 'Missing lineup id.'}), 400
+    df = load_fantasy_lineups()
+    if df.empty:
+        return jsonify({'ok': False, 'error': 'Lineup not found.'}), 404
+    user_id = str(current_user.get('user_id', '')).strip()
+    user_email = str(current_user.get('email', '')).strip().lower()
+    owned = (df['LineupId'] == lineup_id) & (
+        (df['UserId'].astype(str) == user_id) | (df['UserEmail'].str.lower() == user_email)
+    )
+    if not owned.any():
+        return jsonify({'ok': False, 'error': 'Lineup not found.'}), 404
+    _write_fantasy_lineups(df[~owned])
+    return jsonify({'ok': True, 'message': 'Lineup deleted.'})
 
 
 @app.route('/sports/<league>')
