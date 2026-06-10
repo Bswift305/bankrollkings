@@ -36,8 +36,11 @@ sudo systemctl restart bankrollkings        # NOT reload
 ```
 
 **LESSON (cost us hours):** gunicorn runs with `preload_app=True`, so `systemctl reload`
-(a HUP) reloads **templates + static only** — it does **NOT** re-import `app.py`. Any
-**Python code change requires `restart`.** Templates/CSS/JS/static assets reload fine.
+(a HUP) does **NOT** reliably pick up `app.py` **or** template changes — new workers fork
+from the master, inheriting its loaded code and its cached Jinja templates (auto_reload is
+off in prod). **Use `restart` for any `app.py` OR template change.** Only true static assets
+(CSS / JS / SVG / PNG, served from disk) are fresh without a restart — bust the *browser*
+cache for those with `?v=...` and/or a service-worker version bump.
 
 `sudo -n` works on the server (NOPASSWD), so deploys are scriptable from here over SSH.
 
