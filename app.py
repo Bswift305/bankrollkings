@@ -1298,8 +1298,8 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/props',
         'nfl': '/sports/nfl/props',
         'ncaaf': '/sports/ncaaf/props',
-        # ncaamb/ncaawb have no props board yet (pre-season) -> fall through to the
-        # cross-sport hub instead of self-linking to the Command Center (looked broken).
+        'ncaamb': '/sports/ncaamb/props',
+        'ncaawb': '/sports/ncaawb/props',
     }.get(sport_key, '/tools/props')
 
     sport_market = {
@@ -28239,8 +28239,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Props', 'href': '/sports/mlb/props', 'status': 'live', 'note': 'MLB prop board centered on the daily baseball slate.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Props', 'href': '/sports/nfl/props', 'status': 'live', 'note': 'Weekly football prop board built from the NFL workbook flow.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Props', 'href': '/sports/ncaaf/props', 'status': 'live', 'note': 'College football props with the current CFB board rules.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Props', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops props are not fully live yet, so use the expansion board as the current entry point.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Props', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops props are not fully live yet, so use the expansion board as the current entry point.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Props', 'href': '/sports/ncaamb/props', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops prop board with example plays in the CBB theme.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Props', 'href': '/sports/ncaawb/props', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops prop board with example plays in the CBB theme.'},
         ],
     },
     'market-edge': {
@@ -28430,6 +28430,76 @@ def sport_under_construction(league):
         football_methods=football_methods,
         sport_key=league_key,
     )
+
+
+def _college_hoops_example_props(sport_key):
+    """Placeholder example rows so the pre-season college-hoops props board renders
+    with the real layout + sport color theme. Clearly example data; the live board
+    opens when the season tips off."""
+    men = sport_key == 'ncaamb'
+    teams = ['DUKE', 'UNC', 'KAN', 'UCLA', 'GONZ', 'BAY'] if men else ['UCONN', 'SC', 'STAN', 'IOWA', 'LSU', 'TEX']
+    examples = [
+        ('Example Guard', 'PTS', 17.5, 19.2, 'OVER', 71, 63),
+        ('Example Wing', 'REB', 6.5, 7.4, 'OVER', 66, 60),
+        ('Example Forward', 'PTS', 14.5, 13.1, 'UNDER', 64, 58),
+        ('Example Guard 2', 'AST', 4.5, 5.3, 'OVER', 69, 61),
+        ('Example Center', 'REB', 8.5, 9.0, 'OVER', 62, 57),
+        ('Example Wing 2', '3PM', 2.5, 2.1, 'UNDER', 60, 55),
+    ]
+    rows = []
+    for i, (player, stat, line, avg, direction, conf, over) in enumerate(examples):
+        t1 = teams[i % len(teams)]
+        t2 = teams[(i + 1) % len(teams)]
+        rows.append({
+            'player': player, 'team': t1, 'stat': stat, 'line': line, 'avg': avg,
+            'direction': direction, 'confidence': conf,
+            'over_rate': over if direction == 'OVER' else 100 - over,
+            'matchup': f'{t1} @ {t2}', 'book': 'Example', 'game_total': 142.5,
+            'core_model_read': 'Example row — the live board opens when the season tips off.',
+            'situations': ['Pre-season example'],
+        })
+    return rows
+
+
+def _render_college_hoops_props(sport_key, sport_label, filter_type=None):
+    current_user = get_current_user()
+    if not current_user:
+        return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=None)
+    if not is_owner_user(current_user):
+        current_plan = normalize_user_plan(current_user)
+        if not (get_plan_rank(current_plan) >= get_plan_rank('pro') or user_has_sport_access(current_user, sport_key)):
+            return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=current_user)
+    refresh_meta = {
+        'status': 'preview', 'is_stale': False, 'has_live_props': False,
+        'last_updated': 'Pre-season preview', 'books': [],
+        'warning': f'{sport_label} props are an example layout — the live board opens when the season tips off.',
+    }
+    return render_props_screener_page(
+        sport_key=sport_key,
+        sport_label=sport_label,
+        rows=_college_hoops_example_props(sport_key),
+        refresh_meta=refresh_meta,
+        postseason_only=False,  # college pre-season: no NBA-postseason labels/toggle
+        filter_type=filter_type,
+        props_base_path=f'/sports/{sport_key}/props',
+        props_tracking_label='Pre-Season Preview',
+        props_tracking_note=f'{sport_label} board — example layout. Live props open when the season tips off.',
+        focus_mode_label='Top 25 Focus',
+        regular_mode_label='Full Board',
+    )
+
+
+@app.route('/sports/ncaamb/props')
+@app.route('/sports/ncaamb/props/<filter_type>')
+def ncaamb_props_page(filter_type=None):
+    return _render_college_hoops_props('ncaamb', "Men's College Hoops", filter_type)
+
+
+@app.route('/sports/ncaawb/props')
+@app.route('/sports/ncaawb/props/<filter_type>')
+def ncaawb_props_page(filter_type=None):
+    return _render_college_hoops_props('ncaawb', "Women's College Hoops", filter_type)
+
 
 @app.route('/test-drive')
 def test_drive():
@@ -30566,6 +30636,8 @@ def render_props_screener_page(
     props_floor_path='',
     props_tracking_label='Market + Game Env',
     props_tracking_note='Market, matchup, and game environment context feed the board and are shown directly in the rows.',
+    focus_mode_label=None,
+    regular_mode_label=None,
 ):
     normalized_rows = [
         normalize_prop_screener_row(row, sport=sport_label)
@@ -30641,8 +30713,18 @@ def render_props_screener_page(
         query_suffix_bits['stat'] = stat_query
     query_suffix_bits['sample'] = sample_mode
     query_suffix = f"&{urlencode(query_suffix_bits)}" if query_suffix_bits else ""
+    # Optional per-page overrides for the focus/regular toggle labels. When set,
+    # these win over the globally-injected labels (inject_globals derives them from
+    # the league-wide postseason state, e.g. "NBA Finals", which is wrong on other
+    # sports' boards like the college pre-season example pages).
+    label_overrides = {}
+    if focus_mode_label is not None:
+        label_overrides['focus_mode_label'] = focus_mode_label
+    if regular_mode_label is not None:
+        label_overrides['regular_mode_label'] = regular_mode_label
     return render_template(
         'props.html',
+        **label_overrides,
         props=visible_props,
         filter_type=filter_type,
         date_filter=date_filter,
