@@ -934,7 +934,7 @@
                             {% endif %}
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0 4px;">
-                            <div style="font-size: 10px; color: var(--accent-copper);">$ {{ '%.2f'|format(ticket.stake) }} stake • {{ ticket.sample_mode|upper }}</div>
+                            <div style="font-size: 10px; color: var(--accent-copper);">{{ ticket.sport|default('NBA') }} • $ {{ '%.2f'|format(ticket.stake) }} stake • {{ ticket.sample_mode|upper }}</div>
                             <span class="badge {% if ticket.result == 'Win' %}badge-accent{% endif %}" style="background: {% if ticket.result == 'Win' %}rgba(132,215,210,0.24){% elif ticket.result == 'Loss' %}rgba(184,115,51,0.24){% elif ticket.result == 'Push' %}rgba(110,162,255,0.22){% else %}rgba(255,255,255,0.08){% endif %}; color: {% if ticket.result == 'Pending' %}var(--text-muted){% else %}var(--text-bright){% endif %}; border-color: rgba(255,255,255,0.08);">{{ ticket.result }}</span>
                         </div>
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:8px;">

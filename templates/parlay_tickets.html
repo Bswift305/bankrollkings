@@ -155,7 +155,7 @@
       <div class="ticket-card-head">
         <div>
           <div class="ticket-title">{{ ticket.label }}</div>
-          <div class="ticket-meta">{{ ticket.saved_at }} | {{ ticket.leg_count }} legs | {{ ticket.avg_confidence|round(1) }}% avg</div>
+          <div class="ticket-meta">{{ ticket.sport|default('NBA') }} | {{ ticket.saved_at }} | {{ ticket.leg_count }} legs | {{ ticket.avg_confidence|round(1) }}% avg</div>
         </div>
         <span class="badge {% if ticket.display_result in ['Win', 'Clean So Far', 'Alive'] %}badge-accent{% elif ticket.display_result == 'Loss' %}badge-warning{% endif %}">
           {{ ticket.display_result }}

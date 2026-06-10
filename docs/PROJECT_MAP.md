@@ -149,9 +149,11 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 
 ## 8. Open items / not-built-yet
 
-- Parlay Builder polish: builder is sport-aware now (see §4), but the saved-ticket log
-  (`NBA_Parlay_Log.csv`) has no Sport column (sport lives only inside PicksJson), and floor
-  reliability history only exists for NBA — other sports rank on confidence/build score alone.
+- Parlay floor-reliability for football: the pipeline is fully multi-sport
+  (`build_floor_play_index.py` merges all five sports' AllPropResults; buckets group by Sport;
+  saved tickets carry a `Sport` column — legacy rows default NBA), but NFL/CFB have no logged
+  floor-play history yet, so their tiers rank on confidence/build score until football season
+  generates resolved floor plays. Nothing to build — it fills in automatically.
 - College hoops (ncaamb/ncaawb): real live data. The Command Center hub and the themed
   pre-season shells for Props/Market/Trends/Parlay are all built (see §4); what remains is
   wiring actual college data/boards when the season tips off.

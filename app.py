@@ -9142,7 +9142,7 @@ def build_nfl_method_view(board, method_key):
 def load_saved_parlays():
     path = DATA_DIR / 'tracking' / 'NBA_Parlay_Log.csv'
     default_columns = [
-        'TicketId', 'UserId', 'UserEmail', 'SavedAt', 'Label', 'Mode', 'DateFilter', 'DirectionFilter', 'SampleMode',
+        'TicketId', 'UserId', 'UserEmail', 'SavedAt', 'Label', 'Sport', 'Mode', 'DateFilter', 'DirectionFilter', 'SampleMode',
         'LegCount', 'Tier1Count', 'AvgConfidence', 'Bankroll', 'RiskPct',
         'SlateBudget', 'PostseasonOnly', 'Result', 'ResultUpdatedAt', 'Stake', 'Payout',
         'ModelVersion', 'ConfidenceScale', 'PicksJson'
@@ -9158,8 +9158,12 @@ def load_saved_parlays():
         if column not in df.columns:
             df[column] = ''
 
-    for column in ['TicketId', 'UserId', 'UserEmail', 'Label', 'Mode', 'DateFilter', 'DirectionFilter', 'SampleMode', 'Result', 'ResultUpdatedAt', 'ModelVersion', 'ConfidenceScale', 'PicksJson']:
+    for column in ['TicketId', 'UserId', 'UserEmail', 'Label', 'Sport', 'Mode', 'DateFilter', 'DirectionFilter', 'SampleMode', 'Result', 'ResultUpdatedAt', 'ModelVersion', 'ConfidenceScale', 'PicksJson']:
         df[column] = df[column].fillna('').astype(str)
+
+    # Tickets predating the Sport column are NBA (the builder was NBA-only then).
+    df['Sport'] = df['Sport'].str.strip().str.upper()
+    df.loc[df['Sport'] == '', 'Sport'] = 'NBA'
 
     return df[default_columns]
 
@@ -11855,6 +11859,7 @@ def format_saved_parlays_for_view(df, live_props=None, limit=12):
             'ticket_id': str(row.get('TicketId', '')),
             'saved_at': str(row.get('SavedAt', '')),
             'label': str(row.get('Label', 'Saved Ticket')).strip() or 'Saved Ticket',
+            'sport': str(row.get('Sport', '') or '').strip().upper() or 'NBA',
             'mode': str(row.get('Mode', '')).strip(),
             'date_filter': str(row.get('DateFilter', 'all')).strip(),
             'direction_filter': str(row.get('DirectionFilter', 'all')).strip(),
@@ -32122,6 +32127,9 @@ def save_parlay():
     avg_confidence = round(sum(pick['confidence'] for pick in valid_picks) / len(valid_picks), 1)
     tier1_count = sum(1 for pick in valid_picks if pick.get('tier') == 'Tier 1')
     label = str(payload.get('label', '')).strip() or f"{payload.get('mode', 'Parlay')} | {saved_at}"
+    pick_sports = {str(pick.get('sport') or '').strip().upper() for pick in valid_picks}
+    pick_sports.discard('')
+    ticket_sport = pick_sports.pop() if len(pick_sports) == 1 else ('MIXED' if pick_sports else 'NBA')
 
     ticket = {
         'TicketId': datetime.now().strftime('%Y%m%d%H%M%S%f'),
@@ -32129,6 +32137,7 @@ def save_parlay():
         'UserEmail': current_user.get('email', ''),
         'SavedAt': saved_at,
         'Label': label,
+        'Sport': ticket_sport,
         'Mode': str(payload.get('mode', 'Parlay Builder')).strip(),
         'DateFilter': str(payload.get('date_filter', 'all')).strip(),
         'DirectionFilter': str(payload.get('direction_filter', 'all')).strip(),
