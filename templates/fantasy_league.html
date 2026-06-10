@@ -66,7 +66,7 @@
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life (big minutes lift points, rebounds, and assists together). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good night vs a bad night, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; DraftKings (incl. double-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. The sims also react to the live injury report: a teammate ruled out boosts a player's simulated games, a star returning suppresses them &mdash; the small &plusmn;% chip next to a name shows the applied shift (hover for the reason; capped at &plusmn;15% so injury noise can't swamp real form). Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
+                <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life (big minutes lift points, rebounds, and assists together). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good night vs a bad night, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; DraftKings (incl. double-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. The sims also react to tonight's situation: the live injury report (teammate out boosts a player's simulated games, a star returning suppresses them &mdash; the &plusmn;% chip next to a name, hover for the reason) and the matchup (when a player's team is on the odds board, <strong style="color: var(--text-bright);">Opp</strong> shows the opponent and whether that defense gives up more or less fantasy production than average &mdash; Soft / Neutral / Tough, shifting the sims a few %). All shifts combined are capped at &plusmn;15% so situation noise can't swamp real form. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
             </div>
             {% if projection_rows %}
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
@@ -97,13 +97,13 @@
                             <th title="DFS salary — lands with the slate data feed">Salary <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th title="Fantasy points per $1K of salary — lands with the slate data feed">Value <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th title="Projected contest ownership — lands with the slate data feed">Own% <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
-                            <th title="Tonight's opponent + matchup difficulty — lands with the season schedule">Opp <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
+                            <th data-sort="opp" title="Tonight's opponent (from the odds board) + how generous that defense is to fantasy production">Opp</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for row in projection_rows %}
-                        <tr data-player="{{ row.player }}" data-team="{{ row.team }}" data-fp="{{ row.sim_proj }}"
+                        <tr data-player="{{ row.player }}" data-team="{{ row.team }}" data-fp="{{ row.sim_proj }}" data-opp="{{ row.opp }}"
                             data-rank="{{ row.rank }}" data-games="{{ row.games }}" data-minutes="{{ row.minutes or 0 }}"
                             data-sim_proj="{{ row.sim_proj }}" data-fp_avg="{{ row.fp_avg }}" data-fp_l5="{{ row.fp_l5 }}"
                             data-sim_ceiling="{{ row.sim_ceiling }}" data-sim_floor="{{ row.sim_floor }}"
@@ -123,7 +123,7 @@
                             <td style="color: var(--text-muted);">&mdash;</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
-                            <td style="color: var(--text-muted);">&mdash;</td>
+                            <td>{% if row.opp %}<span title="Matchup shift {{ '%+0.1f'|format(row.matchup_shift) }}% applied to the sims">{{ row.opp }} <span style="font-size:10px; color: {% if row.matchup_label == 'Soft' %}var(--accent){% elif row.matchup_label == 'Tough' %}#ff8a8a{% else %}var(--text-muted){% endif %};">{{ row.matchup_label }}</span></span>{% else %}<span style="color: var(--text-muted);">&mdash;</span>{% endif %}</td>
                             <td><button type="button" class="btn btn-secondary btn-sm fantasy-add-btn">Add</button></td>
                         </tr>
                         {% endfor %}

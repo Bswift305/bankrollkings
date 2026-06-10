@@ -85,9 +85,12 @@ cache for those with `?v=...` and/or a service-worker version bump.
   share of sims ±20% vs proj. **Live injury context** (`_build_fantasy_context_maps`): the
   same boost/return-impact data as the NBA prop board shifts each player's draws (teammate
   out → up, star returning → down), with raw Boost_Pct heavily dampened (×0.05,
-  sample-weighted, per-signal caps) and a total ±15% clamp — shown as a ±% chip by the
-  player name. Disk-TTL cached per scoring style, versioned on the gamelog file AND all
-  five injury-context files. NFL returns [] until season logs + a football FP formula exist. (This is separate
+  sample-weighted, per-signal caps) — shown as a ±% chip by the player name. **Matchup
+  layer**: opponent defense factors computed from the same logs (FP vs that team relative
+  to each player's own average, ≥100 rows), applied (×0.5, ±6% cap) when the player's team
+  is on the NBA odds board; the Opp column shows `OPP Soft/Neutral/Tough` live. All shifts
+  combined clamp at ±15%. Disk-TTL cached per scoring style, versioned on the gamelog file,
+  all five injury-context files, AND NBA_Odds.csv. NFL returns [] until season logs + a football FP formula exist. (This is separate
   from the props sim `simulate_active_sport_props.py`, which predicts prop-line hit
   probabilities, not fantasy production.) Lineups persist to `data/tracking/Fantasy_Lineups.csv`
   (per-user, 8 slots, 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).

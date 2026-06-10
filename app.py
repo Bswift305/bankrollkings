@@ -28502,6 +28502,28 @@ FANTASY_SCORING_SYSTEMS = {
 FANTASY_DEFAULT_SCORING = 'dk'
 FANTASY_SIM_DRAWS = 2000
 FANTASY_CONTEXT_SHIFT_CAP = 15.0  # max +/- % the live context layer may move a sim
+FANTASY_MATCHUP_SHIFT_CAP = 6.0   # max +/- % the opponent-defense layer may move a sim
+
+
+def _load_fantasy_upcoming_opponents(sport_key):
+    """{team_abbr: opponent_abbr} for teams with a game on the current odds
+    board — lets the sim apply tonight's matchup and fill the Opp column."""
+    if sport_key != 'nba':
+        return {}
+    path = DATA_DIR / 'odds' / 'NBA_Odds.csv'
+    if not path.exists():
+        return {}
+    odds = _load_cached_csv(path)
+    if odds is None or odds.empty:
+        return {}
+    opponents = {}
+    for _, row in odds.iterrows():
+        away = TEAM_NAME_TO_ABBR.get(str(row.get('AwayFull') or row.get('Away') or '').strip())
+        home = TEAM_NAME_TO_ABBR.get(str(row.get('HomeFull') or row.get('Home') or '').strip())
+        if away and home:
+            opponents[away] = home
+            opponents[home] = away
+    return opponents
 
 
 def _build_fantasy_context_maps(sport_key):
@@ -28584,6 +28606,23 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     # Deterministic seed so ranks are stable between cache rebuilds.
     rng = np.random.default_rng(7)
     boost_map, return_map = _build_fantasy_context_maps(sport_key)
+    upcoming_opponents = _load_fantasy_upcoming_opponents(sport_key)
+
+    # Opponent defense factors: how much FP players produce against each team
+    # relative to their own season average (>1 = generous defense, <1 = stingy).
+    # Computed from the same logs, so it needs no extra feed.
+    defense_factors = {}
+    if 'Opp' in working.columns:
+        player_mean_fp = working.groupby('Player')['FP'].transform('mean')
+        relative = working['FP'] / player_mean_fp.replace(0, np.nan)
+        rel_frame = pd.DataFrame({
+            'Opp': working['Opp'].astype(str).str.strip().str.upper(),
+            'Rel': relative,
+        }).dropna()
+        for opp, grp in rel_frame.groupby('Opp'):
+            if len(grp) >= 100:
+                defense_factors[opp] = float(grp['Rel'].mean())
+
     rows = []
     for player, group in working.groupby('Player'):
         games = int(len(group))
@@ -28618,8 +28657,22 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
             context_shift -= suppression['pct']
             context_notes.append(f"-{suppression['pct']:.0f}% if {suppression['returning']} returns")
         context_shift = max(-FANTASY_CONTEXT_SHIFT_CAP, min(FANTASY_CONTEXT_SHIFT_CAP, context_shift))
-        if context_shift:
-            draws = draws * (1.0 + context_shift / 100.0)
+
+        # Matchup layer: if the player's team has a game on the odds board,
+        # shift for how generous tonight's opponent is to fantasy production.
+        team_abbr = str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or '').strip().upper()
+        opp_abbr = upcoming_opponents.get(team_abbr, '')
+        matchup_shift = 0.0
+        matchup_label = ''
+        if opp_abbr:
+            factor = defense_factors.get(opp_abbr)
+            if factor:
+                matchup_shift = max(-FANTASY_MATCHUP_SHIFT_CAP, min(FANTASY_MATCHUP_SHIFT_CAP, (factor - 1.0) * 100.0 * 0.5))
+            matchup_label = 'Soft' if matchup_shift >= 1.0 else 'Tough' if matchup_shift <= -1.0 else 'Neutral'
+
+        total_shift = max(-FANTASY_CONTEXT_SHIFT_CAP, min(FANTASY_CONTEXT_SHIFT_CAP, context_shift + matchup_shift))
+        if total_shift:
+            draws = draws * (1.0 + total_shift / 100.0)
 
         sim_proj = float(draws.mean())
         sim_p10, sim_p90 = (float(v) for v in np.percentile(draws, [10, 90]))
@@ -28629,6 +28682,9 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         rows.append({
             'context_shift': round(context_shift, 1),
             'context_note': ' · '.join(context_notes),
+            'opp': opp_abbr,
+            'matchup_shift': round(matchup_shift, 1),
+            'matchup_label': matchup_label,
             'player': str(player),
             'team': str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or ''),
             'games': games,
@@ -28664,6 +28720,7 @@ def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
         DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv',
         DATA_DIR / 'injuries' / 'Teammate_Boosts.csv',
+        DATA_DIR / 'odds' / 'NBA_Odds.csv',
     )
     return _get_disk_ttl_cached_value(
         f'fantasy_projections_{sport_key}_{scoring}_sim',
