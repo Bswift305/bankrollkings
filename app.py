@@ -675,6 +675,7 @@ PUBLIC_ENDPOINTS = {
     'glossary',
     'test_drive',
     'sport_under_construction',
+    'fantasy_league',
     'save_feedback',
     'checkout_start',
     'checkout_success',
@@ -28457,6 +28458,46 @@ GLOSSARY_SECTIONS = [
         ]
     },
 ]
+
+
+FANTASY_LAUNCH_PAGES = {
+    'nfl': {
+        'title': 'NFL Fantasy',
+        'kicker': 'Fantasy Football',
+        'summary': 'Season-long fantasy football help built on the same player models that grade NFL props: weekly start/sit reads, waiver targets, and matchup context for your league.',
+        'board_href': '/sports/nfl', 'board_label': 'NFL Board',
+        'modules': [
+            {'kicker': 'Lineups', 'title': 'Start / Sit Reads', 'note': 'Weekly lineup calls scored by the prop engine: role, matchup script, market expectations, and recent form behind every recommendation.'},
+            {'kicker': 'Waivers', 'title': 'Waiver-Wire Targets', 'note': 'Usage and role-change flags surfaced before box scores make them obvious, so you can claim breakouts a week early.'},
+            {'kicker': 'Trades', 'title': 'Trade Analyzer', 'note': 'Rest-of-season player value from the model side, so you can judge offers on projected production instead of name value.'},
+            {'kicker': 'League Hub', 'title': 'Leagues & Matchups', 'note': 'Track your leagues, weekly matchups, and head-to-head edges in one place beside the betting boards.'},
+        ],
+    },
+    'nba': {
+        'title': 'NBA Fantasy',
+        'kicker': 'Fantasy Hoops',
+        'summary': 'Fantasy hoops help from the deepest model on the site: nightly lineup reads, streaming targets, and category context from the same engine that powers the NBA prop board.',
+        'board_href': '/sports/nba', 'board_label': 'NBA Board',
+        'modules': [
+            {'kicker': 'Lineups', 'title': 'Nightly Start Reads', 'note': 'Minutes, role stability, and matchup reads applied to fantasy lineups — the same signals the prop board trusts.'},
+            {'kicker': 'Streaming', 'title': 'Stream & Pickup Targets', 'note': 'Schedule-density and role-change flags that surface streamers before they hit the consensus pickup lists.'},
+            {'kicker': 'Categories', 'title': 'Category Edges', 'note': 'Per-category production profiles so roto and H2H managers can target exactly the stats their build needs.'},
+            {'kicker': 'League Hub', 'title': 'Leagues & Matchups', 'note': 'Track your leagues, weekly matchups, and head-to-head edges in one place beside the betting boards.'},
+        ],
+    },
+}
+
+
+@app.route('/fantasy/<league>')
+def fantasy_league(league):
+    league_key = str(league or '').strip().lower()
+    config = FANTASY_LAUNCH_PAGES.get(league_key)
+    if not config:
+        return render_error_page(404, 'Fantasy page not found', 'That fantasy hub is not available yet.')
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    return render_template('fantasy_league.html', page=config, sport_key=league_key)
 
 
 @app.route('/sports/<league>')

@@ -177,6 +177,20 @@
       </a>
     </div>
 
+    <div class="bk-sidebar-section">
+      <div class="bk-sidebar-heading">Fantasy / League</div>
+      <a href="/fantasy/nfl"
+         class="bk-sidebar-item {% if active_page == 'fantasy' and active_sport == 'nfl' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span>
+        <span class="si-name">NFL</span>
+      </a>
+      <a href="/fantasy/nba"
+         class="bk-sidebar-item {% if active_page == 'fantasy' and active_sport == 'nba' %}active{% endif %}">
+        <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nba') }}" alt=""></span>
+        <span class="si-name">NBA</span>
+      </a>
+    </div>
+
     <div class="bk-sidebar-footer" id="injuries">
       {% if injuries %}
       <div class="bk-injury-alert">

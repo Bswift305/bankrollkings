@@ -1,0 +1,55 @@
+{% set active_page = 'fantasy' %}
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
+{% block title %}{{ page.title }} - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        {% if sport_logo_url(sport_key) %}
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url(sport_key) }}" alt="{{ page.title }} logo">
+        </div>
+        {% endif %}
+        <div>
+            <div class="page-kicker">{{ page.kicker }}</div>
+            <h1>{{ page.title.split(' ')[0] }} <span class="accent">Fantasy</span></h1>
+            <div class="page-subtitle">{{ page.summary }}</div>
+        </div>
+    </div>
+    <div class="hero-actions command-center-actions">
+        <a href="{{ page.board_href }}" class="btn btn-primary btn-sm">Open {{ page.board_label }}</a>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">What The Fantasy Hub Will Do</div>
+        <span class="badge badge-accent">In The Lab</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            The same player models that grade props can grade fantasy decisions. The {{ page.title }} hub turns those reads into lineup help: who to start, who to target, and where your league can be beaten.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for item in page.modules %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">{{ item.kicker }}</div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ item.title }}</div>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ item.note }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="legend-panel">
+    <div class="legend-row">
+        <span class="control-label">Status</span>
+        <span class="status-pill playoff-hit">In The Lab</span>
+        <span style="font-size: 12px; color: var(--text-muted);">Fantasy is the next product area on the build board. The research engine behind it is live today on the {{ page.board_label }}.</span>
+    </div>
+</div>
+{% endblock %}

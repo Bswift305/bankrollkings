@@ -73,6 +73,10 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Icon rail** (`.bk-rail`): narrow strip, hardcoded `/static/logos/leagues/*.svg`.
 - **Sport pages:** `/sports/nba|nfl|ncaaf|wnba|mlb` have explicit routes; everything else
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
+- **Fantasy (pre-launch):** sidebar "Fantasy / League" section (bk_base.html + the Home
+  override in dashboard_overview.html) → `/fantasy/nfl|nba` → `fantasy_league.html`
+  (login-required teaser hub; `FANTASY_LAUNCH_PAGES` config in app.py; endpoint is in
+  PUBLIC_ENDPOINTS and does its own login redirect). No real fantasy product yet.
 
 **Known nav behavior (NOT crashes — current product state):**
 - **Parlay Builder is sport-aware.** `/parlay?sport=wnba|mlb|nfl|ncaaf` →
