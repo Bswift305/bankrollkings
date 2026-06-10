@@ -66,7 +66,7 @@
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                Fantasy points are computed from every logged game under the scoring style you pick &mdash; DraftKings (incl. double-double / triple-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong> is the season baseline, <strong style="color: var(--text-bright);">L5</strong> is recent form, <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the best and worst logged games, and <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> show what's coming: salaries, value (FP per $1K), and projected ownership land when the slate data feed is wired in.
+                <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life (big minutes lift points, rebounds, and assists together). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good night vs a bad night, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; DraftKings (incl. double-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
             </div>
             {% if projection_rows %}
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
@@ -87,10 +87,12 @@
                             <th data-sort="team">Team</th>
                             <th data-sort="games">GP</th>
                             <th data-sort="minutes">Min (L10)</th>
-                            <th data-sort="fp_avg">FP Avg</th>
-                            <th data-sort="fp_l5">FP L5</th>
-                            <th data-sort="fp_ceiling">Ceiling</th>
-                            <th data-sort="fp_floor">Floor</th>
+                            <th data-sort="sim_proj" title="Mean of 2,000 simulated games, recency-weighted">Proj</th>
+                            <th data-sort="fp_avg">Avg</th>
+                            <th data-sort="fp_l5">L5</th>
+                            <th data-sort="sim_ceiling" title="90th percentile of simulated games">Ceiling</th>
+                            <th data-sort="sim_floor" title="10th percentile of simulated games">Floor</th>
+                            <th data-sort="boom_pct" title="Share of simulated games 20%+ above projection">Boom%</th>
                             <th data-sort="trend">Trend</th>
                             <th title="DFS salary — lands with the slate data feed">Salary <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
                             <th title="Fantasy points per $1K of salary — lands with the slate data feed">Value <span class="badge" style="font-size:8px; padding:0 4px;">SOON</span></th>
@@ -101,19 +103,22 @@
                     </thead>
                     <tbody>
                         {% for row in projection_rows %}
-                        <tr data-player="{{ row.player }}" data-team="{{ row.team }}" data-fp="{{ row.fp_avg }}"
+                        <tr data-player="{{ row.player }}" data-team="{{ row.team }}" data-fp="{{ row.sim_proj }}"
                             data-rank="{{ row.rank }}" data-games="{{ row.games }}" data-minutes="{{ row.minutes or 0 }}"
-                            data-fp_avg="{{ row.fp_avg }}" data-fp_l5="{{ row.fp_l5 }}" data-fp_ceiling="{{ row.fp_ceiling }}"
-                            data-fp_floor="{{ row.fp_floor }}" data-trend="{{ row.trend }}">
+                            data-sim_proj="{{ row.sim_proj }}" data-fp_avg="{{ row.fp_avg }}" data-fp_l5="{{ row.fp_l5 }}"
+                            data-sim_ceiling="{{ row.sim_ceiling }}" data-sim_floor="{{ row.sim_floor }}"
+                            data-boom_pct="{{ row.boom_pct }}" data-trend="{{ row.trend }}">
                             <td>{{ row.rank }}</td>
                             <td><a href="/player/{{ row.player|urlencode }}">{{ row.player }}</a></td>
                             <td>{{ row.team }}</td>
                             <td>{{ row.games }}</td>
                             <td>{{ row.minutes if row.minutes is not none else '-' }}</td>
-                            <td><strong style="color: var(--text-bright);">{{ row.fp_avg }}</strong></td>
+                            <td><strong style="color: var(--text-bright);">{{ row.sim_proj }}</strong></td>
+                            <td>{{ row.fp_avg }}</td>
                             <td>{{ row.fp_l5 }}</td>
-                            <td style="color: var(--accent);">{{ row.fp_ceiling }}</td>
-                            <td style="color: var(--text-muted);">{{ row.fp_floor }}</td>
+                            <td style="color: var(--accent);">{{ row.sim_ceiling }}</td>
+                            <td style="color: var(--text-muted);">{{ row.sim_floor }}</td>
+                            <td>{{ row.boom_pct }}%</td>
                             <td style="color: {% if row.trend > 0 %}var(--accent){% elif row.trend < 0 %}#ff8a8a{% else %}var(--text-muted){% endif %};">{{ '%+0.1f'|format(row.trend) }}</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
                             <td style="color: var(--text-muted);">&mdash;</td>
@@ -143,7 +148,7 @@
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                Add up to 8 players from the Rankings tab. The projected total uses each player's season FP average. No salary cap yet &mdash; salary data lands with the contest-style slates later.
+                Add up to 8 players from the Rankings tab. The projected total uses each player's simulation projection (mean of 2,000 simulated games, recency-weighted). No salary cap yet &mdash; salary data lands with the contest-style slates later.
             </div>
             <div id="fantasy-slots" class="grid-2" style="gap: 10px; margin-bottom: 14px;"></div>
             <div id="fantasy-empty-builder" class="parlay-surface-soft" style="padding: 16px; font-size: 13px; color: var(--text-muted);">

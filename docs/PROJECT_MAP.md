@@ -77,10 +77,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
   override in dashboard_overview.html) → `/fantasy/nfl|nba` → `fantasy_league.html`
   (login-required tabbed hub; `FANTASY_LAUNCH_PAGES` config; endpoints in PUBLIC_ENDPOINTS
   do their own auth). Tabs: Overview / Rankings & Projections / Lineup Builder / My Lineups /
-  Bankroll. NBA rankings are REAL: `get_fantasy_projection_rows` computes DK-style FP
-  (incl. DD/TD bonuses) per player from `NBA_GameLogs.csv` (disk-TTL cached, versioned on the
-  gamelog file). NFL returns [] until season logs + a football FP formula exist
-  (`_build_fantasy_projection_rows`). Lineups persist to `data/tracking/Fantasy_Lineups.csv`
+  Bankroll. NBA rankings are REAL and SIMULATION-DRIVEN: `get_fantasy_projection_rows`
+  computes FP per logged game (DK incl. DD/TD bonuses / FanDuel / Yahoo via
+  `FANTASY_SCORING_SYSTEMS`, `?scoring=` param), then Monte-Carlos 2,000 games per player by
+  resampling whole real games recency-weighted (preserves stat correlation; seeded rng so
+  ranks are stable). Proj = sim mean (ranking key), Ceiling/Floor = p90/p10, Boom/Bust% =
+  share of sims ±20% vs proj. Disk-TTL cached per scoring style, versioned on the gamelog
+  file. NFL returns [] until season logs + a football FP formula exist. (This is separate
+  from the props sim `simulate_active_sport_props.py`, which predicts prop-line hit
+  probabilities, not fantasy production.) Lineups persist to `data/tracking/Fantasy_Lineups.csv`
   (per-user, 8 slots, 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).
   NO salaries, NO contests (deliberate — money-league legal risk; see memory).
 

@@ -28500,6 +28500,7 @@ FANTASY_SCORING_SYSTEMS = {
     'yahoo': {'label': 'Yahoo', 'weights': {'PTS': 1.0, 'REB': 1.2, 'AST': 1.5, 'STL': 3.0, 'BLK': 3.0, 'TOV': -1.0}, 'dd_bonus': False},
 }
 FANTASY_DEFAULT_SCORING = 'dk'
+FANTASY_SIM_DRAWS = 2000
 
 
 def _fantasy_points_nba(frame, scoring=FANTASY_DEFAULT_SCORING):
@@ -28534,6 +28535,8 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     working['DateParsed'] = pd.to_datetime(working.get('Date'), errors='coerce')
     working = working.sort_values('DateParsed')
     team_map = build_current_team_map(working)
+    # Deterministic seed so ranks are stable between cache rebuilds.
+    rng = np.random.default_rng(7)
     rows = []
     for player, group in working.groupby('Player'):
         games = int(len(group))
@@ -28543,18 +28546,35 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         l5_avg = float(fp.tail(5).mean())
         avg = float(fp.mean())
         minutes = pd.to_numeric(group.get('MIN'), errors='coerce').dropna()
+
+        # Monte Carlo: simulate FANTASY_SIM_DRAWS games by resampling the
+        # player's real logged games, weighted toward recent form. Drawing
+        # whole games (not per-stat) keeps stat correlation intact — a big
+        # minutes night lifts PTS/REB/AST together, exactly like real life.
+        fp_values = fp.to_numpy(dtype=float)
+        recency = np.exp(np.linspace(-1.1, 0.0, len(fp_values)))
+        recency = recency / recency.sum()
+        draws = rng.choice(fp_values, size=FANTASY_SIM_DRAWS, replace=True, p=recency)
+        sim_proj = float(draws.mean())
+        sim_p10, sim_p90 = (float(v) for v in np.percentile(draws, [10, 90]))
+        boom_pct = float((draws >= sim_proj * 1.2).mean() * 100.0)
+        bust_pct = float((draws <= sim_proj * 0.8).mean() * 100.0)
+
         rows.append({
             'player': str(player),
             'team': str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or ''),
             'games': games,
+            'sim_proj': round(sim_proj, 1),
             'fp_avg': round(avg, 1),
             'fp_l5': round(l5_avg, 1),
-            'fp_ceiling': round(float(fp.max()), 1),
-            'fp_floor': round(float(fp.min()), 1),
+            'sim_ceiling': round(sim_p90, 1),
+            'sim_floor': round(sim_p10, 1),
+            'boom_pct': round(boom_pct, 1),
+            'bust_pct': round(bust_pct, 1),
             'minutes': round(float(minutes.tail(10).mean()), 1) if not minutes.empty else None,
             'trend': round(l5_avg - avg, 1),
         })
-    rows.sort(key=lambda r: r['fp_avg'], reverse=True)
+    rows.sort(key=lambda r: r['sim_proj'], reverse=True)
     for rank, row in enumerate(rows, start=1):
         row['rank'] = rank
     return rows
@@ -28568,7 +28588,7 @@ def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     if scoring not in FANTASY_SCORING_SYSTEMS:
         scoring = FANTASY_DEFAULT_SCORING
     return _get_disk_ttl_cached_value(
-        f'fantasy_projections_{sport_key}_{scoring}',
+        f'fantasy_projections_{sport_key}_{scoring}_sim',
         6 * 3600,
         lambda: _build_fantasy_projection_rows(sport_key, scoring=scoring),
         version=_build_file_token(path),
