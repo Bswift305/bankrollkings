@@ -21,6 +21,7 @@ import os
 import pickle
 import re
 import secrets
+import threading
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -157,6 +158,11 @@ app.jinja_env.bytecode_cache = FileSystemBytecodeCache(str(JINJA_CACHE_DIR), '%s
 DATAFRAME_CACHE = {}
 RUNTIME_TTL_CACHE = {}
 LOGIN_ATTEMPT_CACHE = {}
+# Per-cache-key build locks so a cold/expired cache entry is rebuilt by ONE
+# thread while concurrent requests wait for (or are served a stale copy of)
+# the result, instead of every request running the expensive builder at once.
+TTL_CACHE_BUILD_LOCKS = {}
+TTL_CACHE_BUILD_LOCKS_GUARD = threading.Lock()
 
 
 @app.route('/manifest.webmanifest')
@@ -770,38 +776,83 @@ def _build_file_token(*paths):
     return tuple(_get_path_mtime_token(path) for path in paths)
 
 
-def _get_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
-    now = datetime.now().timestamp()
+def _get_ttl_cache_build_lock(cache_key):
+    with TTL_CACHE_BUILD_LOCKS_GUARD:
+        lock = TTL_CACHE_BUILD_LOCKS.get(cache_key)
+        if lock is None:
+            lock = TTL_CACHE_BUILD_LOCKS[cache_key] = threading.RLock()
+        return lock
+
+
+def _check_runtime_ttl_cache(cache_key, version, now):
     cached = RUNTIME_TTL_CACHE.get(cache_key)
     if cached:
         expires_at = float(cached.get('expires_at', 0) or 0)
         cached_version = cached.get('version')
         if now < expires_at and cached_version == version:
-            return cached.get('value')
-    value = builder()
-    RUNTIME_TTL_CACHE[cache_key] = {
-        'expires_at': now + max(int(ttl_seconds or 0), 1),
-        'version': version,
-        'value': value,
-    }
-    return value
+            return True, cached.get('value')
+    return False, None
+
+
+def _get_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
+    hit, value = _check_runtime_ttl_cache(cache_key, version, datetime.now().timestamp())
+    if hit:
+        return value
+    with _get_ttl_cache_build_lock(cache_key):
+        # Double-check: another thread may have built while we waited.
+        hit, value = _check_runtime_ttl_cache(cache_key, version, datetime.now().timestamp())
+        if hit:
+            return value
+        value = builder()
+        RUNTIME_TTL_CACHE[cache_key] = {
+            'expires_at': datetime.now().timestamp() + max(int(ttl_seconds or 0), 1),
+            'version': version,
+            'value': value,
+        }
+        return value
+
+
+def _disk_ttl_cache_path(cache_key):
+    safe_key = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(cache_key or '').strip())
+    return DATA_DIR / 'cache' / f'{safe_key}.pkl'
+
+
+def _load_disk_ttl_document(cache_key):
+    cache_path = _disk_ttl_cache_path(cache_key)
+    if not cache_path.exists():
+        return None
+    try:
+        with cache_path.open('rb') as handle:
+            return pickle.load(handle)
+    except Exception:
+        return None
 
 
 def _get_disk_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
-    now = datetime.now().timestamp()
-    cached = RUNTIME_TTL_CACHE.get(cache_key)
-    if cached:
-        expires_at = float(cached.get('expires_at', 0) or 0)
-        cached_version = cached.get('version')
-        if now < expires_at and cached_version == version:
-            return cached.get('value')
+    hit, value = _check_runtime_ttl_cache(cache_key, version, datetime.now().timestamp())
+    if hit:
+        return value
 
-    safe_key = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(cache_key or '').strip())
-    cache_path = DATA_DIR / 'cache' / f'{safe_key}.pkl'
-    if cache_path.exists():
-        try:
-            with cache_path.open('rb') as handle:
-                document = pickle.load(handle)
+    lock = _get_ttl_cache_build_lock(cache_key)
+    if not lock.acquire(blocking=False):
+        # Another thread is already rebuilding this key. Serve a stale
+        # version-matching value (memory first, then disk) instead of piling
+        # up behind the build; block only when there is nothing to serve.
+        stale = RUNTIME_TTL_CACHE.get(cache_key)
+        if stale and stale.get('version') == version:
+            return stale.get('value')
+        document = _load_disk_ttl_document(cache_key)
+        if document and document.get('version') == version:
+            return document.get('value')
+        lock.acquire()
+    try:
+        now = datetime.now().timestamp()
+        hit, value = _check_runtime_ttl_cache(cache_key, version, now)
+        if hit:
+            return value
+
+        document = _load_disk_ttl_document(cache_key)
+        if document:
             expires_at = float(document.get('expires_at', 0) or 0)
             cached_version = document.get('version')
             if now < expires_at and cached_version == version:
@@ -812,23 +863,24 @@ def _get_disk_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
                     'value': value,
                 }
                 return value
+
+        value = builder()
+        payload = {
+            'expires_at': datetime.now().timestamp() + max(int(ttl_seconds or 0), 1),
+            'version': version,
+            'value': value,
+        }
+        RUNTIME_TTL_CACHE[cache_key] = payload
+        try:
+            cache_path = _disk_ttl_cache_path(cache_key)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with cache_path.open('wb') as handle:
+                pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception:
             pass
-
-    value = builder()
-    payload = {
-        'expires_at': now + max(int(ttl_seconds or 0), 1),
-        'version': version,
-        'value': value,
-    }
-    RUNTIME_TTL_CACHE[cache_key] = payload
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with cache_path.open('wb') as handle:
-            pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception:
-        pass
-    return value
+        return value
+    finally:
+        lock.release()
 
 
 def _read_disk_ttl_cached_value(cache_key, version=None):
@@ -28381,6 +28433,7 @@ GLOSSARY_SECTIONS = [
         'id': 'model-language',
         'title': 'Model + Teaching Language',
         'items': [
+            {'term': 'Team Prior', 'meaning': 'Pre-game team strength score on a 0-100 scale (50 is neutral), blended from market win odds, how often that team\'s player props have hit, and team ratings.', 'why': 'Shows whether props on that team start with a friendlier or tougher backdrop before any player-level read. It is context, not a pick.'},
             {'term': 'CLV', 'meaning': 'Closing line value.', 'why': 'It shows whether your number beat the market by the time the market settled.'},
             {'term': 'Market Gate', 'meaning': "The model's market-safety label.", 'why': 'CLEAR means the market is not blocking the play, SPLIT MARKET means books disagree, and HOLD means the market moved hard against the read.'},
             {'term': 'Weight Profile', 'meaning': 'How the model divided its attention across sample, role, matchup, streak, and market context.', 'why': 'A late-series playoff prop should not be weighted the same way as a random regular-season prop.'},

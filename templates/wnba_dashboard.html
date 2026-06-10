@@ -85,6 +85,7 @@
     <div class="p-16 grid-2" style="gap: 16px;">
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 8px;">Strongest Team Environments</div>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">Pre-game team strength on a 0&ndash;100 scale (50 is neutral), blended from market win odds, how often this team's player props have actually hit, and team ratings. A high score means props on that team start with a friendlier backdrop &mdash; context, not a pick by itself.</div>
             {% for row in board_intelligence.top_priors %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
                 <span style="color:var(--text-bright); font-weight:800;">{{ row.team_prior_team or row.team }}</span>
@@ -97,6 +98,7 @@
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 8px;">Top Simulation Reads</div>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">How often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support beside Confidence and Tier, not on their own.</div>
             {% for row in board_intelligence.top_sims %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
                 <span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>
