@@ -4,6 +4,8 @@
 {% block title %}{{ page.title }} - Bankroll Kings{% endblock %}
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
+{# Fantasy stands alone — no betting workflow toolbar (Props/Market/Trends/Parlay) up top #}
+{% block workflow_toolbar %}{% endblock workflow_toolbar %}
 
 {% block content %}
 <div class="page-hero command-center-hero">
@@ -42,7 +44,7 @@
         </div>
         <div class="p-24">
             <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
-                The same player models that grade props now grade fantasy decisions. Rankings and projections below are computed from real game logs ({{ projection_total }} ranked players); the lineup builder and bankroll guide turn them into decisions.
+                Rankings and projections below are computed from real game logs ({{ projection_total }} ranked players) by our player simulation engine; the lineup builder and bankroll guide turn them into decisions.
             </div>
             <div class="grid-2" style="gap: 16px;">
                 {% for item in page.modules %}

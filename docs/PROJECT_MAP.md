@@ -77,7 +77,11 @@ cache for those with `?v=...` and/or a service-worker version bump.
   override in dashboard_overview.html) → `/fantasy/nfl|nba` → `fantasy_league.html`
   (login-required tabbed hub; `FANTASY_LAUNCH_PAGES` config; endpoints in PUBLIC_ENDPOINTS
   do their own auth). Tabs: Overview / Rankings & Projections / Lineup Builder / My Lineups /
-  Bankroll. NBA rankings are REAL and SIMULATION-DRIVEN: `get_fantasy_projection_rows`
+  Bankroll. **Deliberately DISCONNECTED from the betting pages (user direction 2026-06-10):**
+  fantasy templates blank the `workflow_toolbar` block (no Props/Market/Trends/Parlay command
+  strip up top), page copy carries no prop-board references, and the betting Sport/League
+  sidebar items don't highlight on fantasy pages (`active_page != 'fantasy'` guard on
+  nba/nfl items) — keep it that way when adding fantasy features. NBA rankings are REAL and SIMULATION-DRIVEN: `get_fantasy_projection_rows`
   computes FP per logged game (DK incl. DD/TD bonuses / FanDuel / Yahoo via
   `FANTASY_SCORING_SYSTEMS`, `?scoring=` param), then Monte-Carlos 2,000 games per player by
   resampling whole real games recency-weighted (preserves stat correlation; seeded rng so
