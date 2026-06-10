@@ -78,8 +78,13 @@ cache for those with `?v=...` and/or a service-worker version bump.
   open.
 - **Props** with no sport → cross-sport "pick a sport" hub (`/tools/props` = `method_hub('props')`)
   or `/home/props` preview. By design ("Props is now a cross-sport entry point").
-- **College hoops (ncaamb/ncaawb)** Command Center → `under_construction.html` "expansion board."
-  **The four main board surfaces now have real CBB-themed pre-season pages** (men cyan / women
+- **College hoops (ncaamb/ncaawb)** Command Center → `college_hoops_command_center.html`
+  (rendered by a branch in `sport_under_construction`; that catch-all + `under_construction.html`
+  now only matter for hypothetical future leagues). The command center is a real themed hub:
+  hero, workflow lens, a **Board Surfaces grid linking the four themed pages below**, season
+  modules, and model focus. METHOD_HUB_CONFIG college cards also link the themed boards now
+  (no more "use the expansion board" copy).
+  **The four main board surfaces have real CBB-themed pre-season pages** (men cyan / women
   magenta), gated like every other sport (Pro / sport pass / owner). All share
   `_college_hoops_access_gate` and override `focus_mode_label`/`regular_mode_label` →
   `Top 25 Focus` / `Full Board` (with `postseason_only=False`) so they don't inherit the
@@ -142,6 +147,7 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 
 - Parlay Builder: make it sport-aware (currently NBA-only) — needs each sport's data wired into
   the parlay runtime engine.
-- College hoops (ncaamb/ncaawb): real boards/data. Themed pre-season shells for Props/Market/
-  Trends/Parlay are live (see §4); the Command Center itself and actual live data are still open.
+- College hoops (ncaamb/ncaawb): real live data. The Command Center hub and the themed
+  pre-season shells for Props/Market/Trends/Parlay are all built (see §4); what remains is
+  wiring actual college data/boards when the season tips off.
 - Premium icons are PNG (raster, from generated art) — not vectorizable to SVG without a redraw.

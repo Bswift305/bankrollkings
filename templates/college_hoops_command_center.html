@@ -1,0 +1,110 @@
+{% set active_page = 'command_center' %}
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
+{% block title %}{{ page.title }} Command Center{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero command-center-hero">
+    <div class="command-center-hero-copy">
+        {% if sport_logo_url(sport_key) %}
+        <div class="command-center-hero-mark">
+            <img src="{{ sport_logo_url(sport_key) }}" alt="{{ page.title }} logo">
+        </div>
+        {% endif %}
+        <div>
+            <div class="page-kicker">{{ page.title }} Command Center</div>
+            <h1>{{ page.title }} <span class="accent">Command Center</span></h1>
+            <div class="page-subtitle">{{ page.summary }}</div>
+        </div>
+    </div>
+    <div class="hero-actions command-center-actions">
+        <a href="/sports/{{ sport_key }}/props" class="btn btn-primary btn-sm">Open Props Preview</a>
+        <a href="{{ url_for('free_sport_preview', sport_key=sport_key) }}" class="btn btn-sm">Open Preview Board</a>
+    </div>
+</div>
+
+{% include "partials/sport_dashboard_lens.html" %}
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Board Surfaces</div>
+        <span class="badge badge-accent">Pre-Season Preview</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+            Every {{ page.title }} board surface is open now in the {{ page.title }} theme so the workflow is ready before tip-off. Boards fill with live plays once the season starts.
+        </div>
+        <div class="grid-2" style="gap: 16px;">
+            {% for surface in board_surfaces %}
+            <a href="{{ surface.href }}" class="parlay-surface-soft" style="padding: 16px; display: block; text-decoration: none;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div class="page-kicker" style="margin-bottom: 0;">{{ surface.kicker }}</div>
+                    <span class="badge">{{ surface.status }}</span>
+                </div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ surface.title }}</div>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ surface.note }}</div>
+                <div style="margin-top: 10px; font-size: 12px; color: var(--sport-accent); font-weight: 600;">Open the board &rarr;</div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">On The Season Board</div>
+        <span class="badge badge-accent">Pre-Season</span>
+    </div>
+    <div class="p-24">
+        <div class="grid-2" style="gap: 16px;">
+            {% for item in page.highlights %}
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Season Module</div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ item }}</div>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">Goes live with the board once the {{ page.title }} season tips off.</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% if sport_profile %}
+<div class="card mb-24 panel-glow">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">Model Focus</div>
+        <span class="badge badge-accent">{{ sport_profile.label }}</span>
+    </div>
+    <div class="p-24">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">{{ sport_profile.summary }}</div>
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Primary Markets</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.primary_markets %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 16px;">
+                <div class="page-kicker" style="margin-bottom: 8px;">Core Drivers</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for item in sport_profile.core_drivers %}
+                    <span class="badge">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="legend-panel">
+    <div class="legend-row">
+        <span class="control-label">Status</span>
+        <span class="status-pill playoff-hit">Pre-Season</span>
+        <span style="font-size: 12px; color: var(--text-muted);">The model and workflow are ready now. The full live board opens once the {{ page.title }} season tips off.</span>
+    </div>
+</div>
+{% endblock %}

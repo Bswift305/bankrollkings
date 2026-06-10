@@ -28255,8 +28255,8 @@ METHOD_HUB_CONFIG = {
             {'sport': 'MLB', 'label': 'MLB Market Edge', 'href': '/sports/mlb/market-edge', 'status': 'live', 'note': 'MLB market-edge board for daily baseball pricing and book splits.'},
             {'sport': 'NFL', 'label': 'NFL Market Edge', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL still leans more on the full football board than a separate market-edge page.'},
             {'sport': 'CFB', 'label': 'CFB Market Edge', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB still leans more on the full football board than a separate market-edge page.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Market Edge', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops still uses the expansion board while market-edge workflow is being built out.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Market Edge', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops still uses the expansion board while market-edge workflow is being built out.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Market Edge', 'href': '/sports/ncaamb/market-edge', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops market-edge board in the CBB theme.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Market Edge', 'href': '/sports/ncaawb/market-edge', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops market-edge board in the CBB theme.'},
         ],
     },
     'parlay': {
@@ -28269,8 +28269,8 @@ METHOD_HUB_CONFIG = {
             {'sport': 'MLB', 'label': 'MLB Parlay', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB boards are live, but the baseball-specific parlay layer is still thinner than NBA.'},
             {'sport': 'NFL', 'label': 'NFL Parlay', 'href': '/sports/nfl', 'status': 'watch', 'note': 'Use the NFL board first while the dedicated football parlay workflow catches up.'},
             {'sport': 'CFB', 'label': 'CFB Parlay', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'Use the CFB board first while the college-football parlay workflow catches up.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops should be researched from the expansion board until a dedicated parlay flow exists.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops should be researched from the expansion board until a dedicated parlay flow exists.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/parlay?sport=ncaamb', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops parlay builder in the CBB theme.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/parlay?sport=ncaawb', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops parlay builder in the CBB theme.'},
         ],
     },
     'injuries': {
@@ -28283,8 +28283,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Injury Context', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB injury badges and feed health are live, but the main baseball board is still the best place to start.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Injury Context', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL injury data is loaded, but the sport still leans on the full football board instead of a dedicated injury page.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Injury Context', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB injury support is thinner, so use the main college-football board first.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Injury Context', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops injury context is still light, so the expansion board is the current entry point.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Injury Context', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops injury context is still light, so the expansion board is the current entry point.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Injury Context', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops injury context is still light, so the command center is the current entry point.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Injury Context', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops injury context is still light, so the command center is the current entry point.'},
         ],
     },
     'trends': {
@@ -28297,8 +28297,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Streak Patterns', 'href': '/sports/mlb/trends', 'status': 'live', 'note': 'MLB streak patterns are live and tied to the current baseball board.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Streak Patterns', 'href': '/sports/nfl/trends', 'status': 'live', 'note': 'NFL streak patterns are organized inside the current football method board.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Streak Patterns', 'href': '/sports/ncaaf/trends', 'status': 'live', 'note': 'CFB streak patterns are available through the current college-football method board.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Streak Patterns', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops streak workflow is still emerging, so use the expansion board first.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Streak Patterns', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops streak workflow is still emerging, so use the expansion board first.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Streak Patterns', 'href': '/sports/ncaamb/trends', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops trend board in the CBB theme.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Streak Patterns', 'href': '/sports/ncaawb/trends', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops trend board in the CBB theme.'},
         ],
     },
 }
@@ -28423,6 +28423,39 @@ def sport_under_construction(league):
     workbook_preview = load_nfl_floor_play_preview() if league_key == 'nfl' else None
     sport_profile = get_sport_model_profile(league_key)
     football_methods = get_football_method_modules(league_key) if league_key in {'nfl', 'ncaaf'} else []
+    if league_key in ('ncaamb', 'ncaawb'):
+        # Real college-hoops command center: links every themed pre-season board
+        # surface (props / market / trends / parlay) instead of the generic shell.
+        board_surfaces = [
+            {
+                'kicker': 'Player Props', 'title': 'Props Board', 'status': 'Example Plays',
+                'href': f'/sports/{league_key}/props',
+                'note': 'The real props screener layout with example plays in the college theme, so the read order is set before the live slate arrives.',
+            },
+            {
+                'kicker': 'Market Reads', 'title': 'Market Edge', 'status': 'Preview',
+                'href': f'/sports/{league_key}/market-edge',
+                'note': 'Line movement, book splits, and price-path workflow in the college theme. Fills with live market reads when the season tips off.',
+            },
+            {
+                'kicker': 'Form + Consistency', 'title': 'Streak Patterns', 'status': 'Preview',
+                'href': f'/sports/{league_key}/trends',
+                'note': 'The trend board ready for hot-hand and consistency reads once college game logs start flowing.',
+            },
+            {
+                'kicker': 'Ticket Building', 'title': 'Parlay Builder', 'status': 'Preview',
+                'href': f'/parlay?sport={league_key}',
+                'note': 'The parlay workflow in the college theme — anchor, round robin, and flyer structure ready for the live board.',
+            },
+        ]
+        return render_template(
+            'college_hoops_command_center.html',
+            page=config,
+            postseason_only=postseason_only,
+            sport_profile=sport_profile,
+            sport_key=league_key,
+            board_surfaces=board_surfaces,
+        )
     return render_template(
         'under_construction.html',
         page=config,
