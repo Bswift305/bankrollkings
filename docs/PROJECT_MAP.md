@@ -54,6 +54,10 @@ cache for those with `?v=...` and/or a service-worker version bump.
    builder reads a file NOT in its version token, it serves stale. (Bug we fixed:
    `build_cross_sport_dashboard_snapshots` didn't version on `Live_Scores.csv`, so live badges
    froze. Always include every input file in the version token.)
+   **Stampede-protected (2026-06-10):** cold/expired keys are rebuilt under a per-key build
+   lock; concurrent requests get the stale memory/disk value (or wait if there's none) instead
+   of every thread running the expensive builder at once. (Before this, a cold dashboard build
+   could freeze the whole process for minutes — N threads all parsing gamelog CSVs.)
 3. **Service worker** (`static/service-worker.js`) — caches `/static/css/`, `/static/logos/`,
    brand assets. Self-updating now (bumps `BK_CACHE` shell-vN, `controllerchange` auto-reload).
    Bump the version on shell-asset changes.
