@@ -1,5 +1,5 @@
 {% set active_page = 'props' %}
-{% set active_sport = 'nba' %}
+{% set active_sport = market_sport_key|default('nba') %}
 {% extends "bk_base.html" %}
 {% block title %}Market Edge - Bankroll Kings{% endblock %}
 {% block app_class %}no-slip{% endblock %}
@@ -544,7 +544,7 @@
         <div style="font-size: 18px; line-height: 1; color: var(--warning);">!</div>
         <div>
             <div class="page-kicker" style="margin-bottom: 6px;">Live Feed Warning</div>
-            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live NBA props are loaded right now.</div>
+            <div style="font-size: 14px; color: var(--text-bright); font-weight: 700; margin-bottom: 4px;">No live {{ live_feed_sport_label|default('NBA') }} props are loaded right now.</div>
             <div class="mini-note" style="font-size: 12px; line-height: 1.6;">{{ refresh_meta.warning }}</div>
         </div>
     </div>

@@ -1,5 +1,5 @@
 {% set active_page = 'heat_map' %}
-{% set active_sport = 'nba' %}
+{% set active_sport = trend_sport_key|default('nba') %}
 {% extends "bk_base.html" %}
 {% block title %}Streak Patterns - Bankroll Kings{% endblock %}
 {% block app_class %}no-slip{% endblock %}

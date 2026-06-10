@@ -1308,7 +1308,8 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/market-edge',
         'nfl': '/sports/nfl/game-lines',
         'ncaaf': '/sports/ncaaf/game-lines',
-        # ncaamb/ncaawb pre-season -> cross-sport hub (don't self-link to Command Center).
+        'ncaamb': '/sports/ncaamb/market-edge',
+        'ncaawb': '/sports/ncaawb/market-edge',
     }.get(sport_key, '/tools/market-edge')
 
     sport_trends = {
@@ -1317,7 +1318,8 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         'mlb': '/sports/mlb/trends',
         'nfl': '/sports/nfl/trends',
         'ncaaf': '/sports/ncaaf/trends',
-        # ncaamb/ncaawb pre-season -> cross-sport hub (don't self-link to Command Center).
+        'ncaamb': '/sports/ncaamb/trends',
+        'ncaawb': '/sports/ncaawb/trends',
     }.get(sport_key, '/tools/trends')
 
     query_sport = sport_label if sport_label else ''
@@ -28501,6 +28503,118 @@ def ncaawb_props_page(filter_type=None):
     return _render_college_hoops_props('ncaawb', "Women's College Hoops", filter_type)
 
 
+def _college_hoops_access_gate(sport_key):
+    """Shared access gate for the college-hoops pre-season preview boards
+    (props / market / trends / parlay). Returns a gate response to return early,
+    or None when the current user may view the board (owner, Pro, or sport pass)."""
+    current_user = get_current_user()
+    if not current_user:
+        return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=None)
+    if not is_owner_user(current_user):
+        current_plan = normalize_user_plan(current_user)
+        if not (get_plan_rank(current_plan) >= get_plan_rank('pro') or user_has_sport_access(current_user, sport_key)):
+            return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=current_user)
+    return None
+
+
+def _render_college_hoops_market(sport_key, sport_label):
+    gate = _college_hoops_access_gate(sport_key)
+    if gate is not None:
+        return gate
+    refresh_meta = {
+        'status': 'preview', 'is_stale': False, 'has_live_props': False,
+        'last_updated': 'Pre-season preview', 'books': [],
+        'warning': f'{sport_label} Market Edge is an example layout — the live board opens when the season tips off.',
+    }
+    base_params = {
+        'date': 'today', 'direction': 'all', 'postseason': 0, 'sample': 'current',
+        'model_debug': None, 'team': None, 'player': None, 'stat': None,
+    }
+    return render_template(
+        'smart_picks_v2.html',
+        picks=[],
+        stat_options=STAT_COLUMNS,
+        date_filter='today', direction_filter='all', upcoming={},
+        postseason_only=False,  # college pre-season: no NBA-postseason labels/toggle
+        team_query='', player_query='', stat_query='',
+        query_suffix='', sample_mode='current',
+        sort_by='confidence', sort_dir='desc',
+        base_params=base_params, build_sort_link=build_sort_link,
+        refresh_meta=refresh_meta, model_debug=False,
+        market_sport_key=sport_key, live_feed_sport_label=sport_label,
+        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
+    )
+
+
+def _render_college_hoops_trends(sport_key, sport_label):
+    gate = _college_hoops_access_gate(sport_key)
+    if gate is not None:
+        return gate
+    blank_slot = {'rate': None, 'hits': 0, 'chances': 0, 'best_stat': None, 'best_stat_rate': None}
+    trend_meta = {
+        'gamelog_rows': 0, 'row_count': 0, 'sample_mode': 'current',
+        'scope_label': 'Pre-Season Preview', 'props_rows': 0,
+        'opportunity_summary': {'3': dict(blank_slot), '5': dict(blank_slot)},
+    }
+    base_params = {'postseason': 0, 'stat': 'all', 'team': '', 'sample': 'current'}
+    return render_template(
+        'trend_board.html',
+        rows=[],
+        postseason_only=False,
+        stat_filter='ALL', team_query='', teams=[],
+        sample_mode='current', sort_by='consistency_index', sort_dir='asc',
+        base_params=base_params, stat_options=STAT_COLUMNS, trend_meta=trend_meta,
+        trend_sport_key=sport_key,
+        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
+    )
+
+
+def _render_college_hoops_parlay(sport_key, sport_label):
+    gate = _college_hoops_access_gate(sport_key)
+    if gate is not None:
+        return gate
+    current_user = get_current_user()
+    refresh_meta = {
+        'status': 'preview', 'is_stale': False, 'has_live_props': False,
+        'last_updated': 'Pre-season preview', 'books': [],
+        'warning': f'{sport_label} Parlay Builder is an example layout — the live board opens when the season tips off.',
+    }
+    return render_template(
+        'parlay_formula.html',
+        props=[],
+        rules={'max_per_player': 1, 'max_per_game': 2, 'min_games': 3, 'target_legs': '4-6 main / 8-10 flyer'},
+        strategy=build_floor_parlay_plan([]),
+        stat_options=STAT_COLUMNS, date_filter='today', direction_filter='all', upcoming={},
+        postseason_only=False, team_query='', player_query='', stat_query='',
+        query_suffix='', sample_mode='current', saved_parlays=[],
+        slate_scope_label='Pre-Season Preview', refresh_meta=refresh_meta, selected_ticket_id=None,
+        current_user=current_user, sort_by='confidence', sort_dir='desc', model_debug=False,
+        handoff_context=build_parlay_handoff_context([]), parlay_sport_key=sport_key,
+        live_feed_sport_label=sport_label,
+        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
+    )
+
+
+@app.route('/sports/ncaamb/market-edge')
+def ncaamb_market_edge_page():
+    return _render_college_hoops_market('ncaamb', "Men's College Hoops")
+
+
+@app.route('/sports/ncaawb/market-edge')
+def ncaawb_market_edge_page():
+    return _render_college_hoops_market('ncaawb', "Women's College Hoops")
+
+
+@app.route('/sports/ncaamb/trends')
+def ncaamb_trends_page():
+    return _render_college_hoops_trends('ncaamb', "Men's College Hoops")
+
+
+@app.route('/sports/ncaawb/trends')
+def ncaawb_trends_page():
+    return _render_college_hoops_trends('ncaawb', "Women's College Hoops")
+
+
 @app.route('/test-drive')
 def test_drive():
     current_user = get_current_user()
@@ -31617,6 +31731,12 @@ def parlay():
     parlay_sport_key = normalize_sport_access_key(request.args.get('sport', 'nba') or 'nba')
     if parlay_sport_key not in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
         parlay_sport_key = 'nba'
+    # College hoops is pre-season: render a CBB-themed blank parlay board instead of
+    # falling through to the NBA runtime (which would load NBA props on a college page).
+    if parlay_sport_key == 'ncaamb':
+        return _render_college_hoops_parlay('ncaamb', "Men's College Hoops")
+    if parlay_sport_key == 'ncaawb':
+        return _render_college_hoops_parlay('ncaawb', "Women's College Hoops")
     request_context = build_live_prop_request_context(postseason_only=postseason_only, include_ticket=True)
     runtime = build_live_prop_runtime_context(postseason_only=postseason_only)
     gamelogs = runtime['gamelogs']
