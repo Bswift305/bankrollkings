@@ -82,8 +82,12 @@ cache for those with `?v=...` and/or a service-worker version bump.
   `FANTASY_SCORING_SYSTEMS`, `?scoring=` param), then Monte-Carlos 2,000 games per player by
   resampling whole real games recency-weighted (preserves stat correlation; seeded rng so
   ranks are stable). Proj = sim mean (ranking key), Ceiling/Floor = p90/p10, Boom/Bust% =
-  share of sims ±20% vs proj. Disk-TTL cached per scoring style, versioned on the gamelog
-  file. NFL returns [] until season logs + a football FP formula exist. (This is separate
+  share of sims ±20% vs proj. **Live injury context** (`_build_fantasy_context_maps`): the
+  same boost/return-impact data as the NBA prop board shifts each player's draws (teammate
+  out → up, star returning → down), with raw Boost_Pct heavily dampened (×0.05,
+  sample-weighted, per-signal caps) and a total ±15% clamp — shown as a ±% chip by the
+  player name. Disk-TTL cached per scoring style, versioned on the gamelog file AND all
+  five injury-context files. NFL returns [] until season logs + a football FP formula exist. (This is separate
   from the props sim `simulate_active_sport_props.py`, which predicts prop-line hit
   probabilities, not fantasy production.) Lineups persist to `data/tracking/Fantasy_Lineups.csv`
   (per-user, 8 slots, 50-lineup cap, owner-checked delete; POST endpoints CSRF-protected).

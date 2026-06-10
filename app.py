@@ -28501,6 +28501,52 @@ FANTASY_SCORING_SYSTEMS = {
 }
 FANTASY_DEFAULT_SCORING = 'dk'
 FANTASY_SIM_DRAWS = 2000
+FANTASY_CONTEXT_SHIFT_CAP = 15.0  # max +/- % the live context layer may move a sim
+
+
+def _build_fantasy_context_maps(sport_key):
+    """Live injury context for the fantasy sim, reusing the same boost /
+    return-impact data the NBA prop board trusts. Raw Boost_Pct is wildly
+    inflated for small-sample bench players (800%+), so it gets the same
+    dampening treatment as _estimate_return_impact_pct: scaled hard, weighted
+    by sample size, and capped."""
+    boost_map = {}
+    return_map = {}
+    if sport_key != 'nba':
+        return boost_map, return_map
+    try:
+        boosts = load_active_boosts()
+    except Exception:
+        boosts = pd.DataFrame()
+    if boosts is not None and not boosts.empty and {'Beneficiary', 'Boost_Pct'}.issubset(boosts.columns):
+        for _, brow in boosts.iterrows():
+            name = str(brow.get('Beneficiary') or '').strip()
+            if not name:
+                continue
+            raw = _safe_float(brow.get('Boost_Pct')) or 0.0
+            games_without = _safe_float(brow.get('Games_Without')) or 0.0
+            sample_mult = max(0.55, min(1.0, games_without / 8.0)) if games_without else 0.55
+            signal = min(20.0, max(raw, 0.0) * 0.05) * sample_mult
+            key = name.lower()
+            if signal >= 1.0 and signal > boost_map.get(key, {}).get('pct', 0.0):
+                boost_map[key] = {'pct': round(signal, 1), 'out': str(brow.get('Key_Player_Out') or '').strip()}
+    try:
+        returns = load_return_impacts()
+    except Exception:
+        returns = pd.DataFrame()
+    if returns is not None and not returns.empty and 'Beneficiary' in returns.columns:
+        for _, rrow in returns.iterrows():
+            name = str(rrow.get('Beneficiary') or '').strip()
+            if not name:
+                continue
+            impact = _safe_float(rrow.get('Return_Impact_Pct'))
+            if impact is None:
+                impact = _estimate_return_impact_pct(rrow)
+            signal = min(12.0, max(float(impact or 0.0), 0.0) * 0.6)
+            key = name.lower()
+            if signal >= 1.0 and signal > return_map.get(key, {}).get('pct', 0.0):
+                return_map[key] = {'pct': round(signal, 1), 'returning': str(rrow.get('Key_Player_Out') or '').strip()}
+    return boost_map, return_map
 
 
 def _fantasy_points_nba(frame, scoring=FANTASY_DEFAULT_SCORING):
@@ -28537,6 +28583,7 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     team_map = build_current_team_map(working)
     # Deterministic seed so ranks are stable between cache rebuilds.
     rng = np.random.default_rng(7)
+    boost_map, return_map = _build_fantasy_context_maps(sport_key)
     rows = []
     for player, group in working.groupby('Player'):
         games = int(len(group))
@@ -28555,12 +28602,33 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         recency = np.exp(np.linspace(-1.1, 0.0, len(fp_values)))
         recency = recency / recency.sum()
         draws = rng.choice(fp_values, size=FANTASY_SIM_DRAWS, replace=True, p=recency)
+
+        # Live context layer: shift the simulated games for tonight's
+        # situation (teammate out -> boost; star returning -> suppression),
+        # capped so injury noise can't swamp the form signal.
+        player_key = str(player).strip().lower()
+        context_shift = 0.0
+        context_notes = []
+        boost = boost_map.get(player_key)
+        if boost:
+            context_shift += boost['pct']
+            context_notes.append(f"+{boost['pct']:.0f}% with {boost['out']} out")
+        suppression = return_map.get(player_key)
+        if suppression:
+            context_shift -= suppression['pct']
+            context_notes.append(f"-{suppression['pct']:.0f}% if {suppression['returning']} returns")
+        context_shift = max(-FANTASY_CONTEXT_SHIFT_CAP, min(FANTASY_CONTEXT_SHIFT_CAP, context_shift))
+        if context_shift:
+            draws = draws * (1.0 + context_shift / 100.0)
+
         sim_proj = float(draws.mean())
         sim_p10, sim_p90 = (float(v) for v in np.percentile(draws, [10, 90]))
         boom_pct = float((draws >= sim_proj * 1.2).mean() * 100.0)
         bust_pct = float((draws <= sim_proj * 0.8).mean() * 100.0)
 
         rows.append({
+            'context_shift': round(context_shift, 1),
+            'context_note': ' · '.join(context_notes),
             'player': str(player),
             'team': str(team_map.get(player) or (group['Team'].iloc[-1] if 'Team' in group.columns else '') or ''),
             'games': games,
@@ -28587,11 +28655,21 @@ def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         return []
     if scoring not in FANTASY_SCORING_SYSTEMS:
         scoring = FANTASY_DEFAULT_SCORING
+    # Version on EVERY input: gamelogs AND the injury-context files, so a
+    # fresh injury report invalidates cached sims (see PROJECT_MAP §3).
+    version = _build_file_token(
+        path,
+        DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
+        DATA_DIR / 'injuries' / 'NBA_Injuries_Manual.csv',
+        DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
+        DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv',
+        DATA_DIR / 'injuries' / 'Teammate_Boosts.csv',
+    )
     return _get_disk_ttl_cached_value(
         f'fantasy_projections_{sport_key}_{scoring}_sim',
         6 * 3600,
         lambda: _build_fantasy_projection_rows(sport_key, scoring=scoring),
-        version=_build_file_token(path),
+        version=version,
     )
 
 
