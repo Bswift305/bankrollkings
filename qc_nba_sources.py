@@ -16,6 +16,7 @@ from app import (
     get_upcoming_games,
     normalize_team_for_filter,
 )
+from season_utils import active_sports
 from services.qc_tracking import append_qc_run_log
 
 
@@ -44,8 +45,16 @@ def run_source_audit() -> dict:
     failures: list[str] = []
     warnings: list[str] = []
 
+    # Season awareness: when NBA is off-season (no live props loaded — the same
+    # signal the rest of the pipeline uses via active_sports() / the 99% scorecards),
+    # an unavailable props feed is EXPECTED, not a refresh failure. Reactivates
+    # automatically when props return at the next season's tip-off.
+    nba_active = "NBA" in active_sports()
+
     if not props_refresh_meta.get("has_live_props"):
-        failures.append("Live props feed is unavailable during source audit.")
+        if nba_active:
+            failures.append("Live props feed is unavailable during source audit.")
+        # else: NBA off-season — vacuous audit, the loops below are all no-ops.
     elif props_refresh_meta.get("is_stale"):
         failures.append(
             f"Live props feed is stale at {props_refresh_meta.get('age_hours')}h old during source audit."
@@ -164,7 +173,9 @@ def run_source_audit() -> dict:
         "failure_count": len(failures),
         "scored_prop_count": len(scored_props),
         "notes": (
-            f"Props status: {props_refresh_meta.get('status')} | "
+            f"Props status: {props_refresh_meta.get('status')}"
+            + ("" if nba_active else " (NBA off-season: live props N/A)")
+            + " | "
             f"Audited {len(matchup_audits)} playoff matchups, "
             f"{len(player_audits)} player playoff samples, "
             f"{player_failures} player sample failures."
