@@ -124,7 +124,7 @@ cache for those with `?v=...` and/or a service-worker version bump.
   modules, and model focus. METHOD_HUB_CONFIG college cards also link the themed boards now
   (no more "use the expansion board" copy).
   **The four main board surfaces have real CBB-themed pre-season pages** (men cyan / women
-  magenta), gated like every other sport (Pro / sport pass / owner). All share
+  magenta), gated like every other sport (All Access / owner). All share
   `_college_hoops_access_gate` and override `focus_mode_label`/`regular_mode_label` →
   `Top 25 Focus` / `Full Board` (with `postseason_only=False`) so they don't inherit the
   league-wide "NBA Finals" labels:
@@ -210,3 +210,31 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 - Fantasy SOON columns (Salary / Value / Own%) need a DFS slate provider decision
   (SportsDataIO / FantasyData are the clean paid options) — USER decision, then wiring.
 - Premium icons are PNG (raster, from generated art) — not vectorizable to SVG without a redraw.
+
+## Membership & pricing (single-plan era, 2026-06-12)
+
+**One paid plan: `all_access` — $19.99/mo, monthly only. No tiers.** `free` is the
+unpaid account state (preview surfaces). The old multi-tier system (pro/sharp/elite +
+six sport passes) is GONE; `LEGACY_PAID_PLAN_KEYS` in app.py maps any old plan key still
+on a user row or in an old link to `all_access` (`normalize_plan_key`/`normalize_user_plan`).
+Gating is now binary: `get_required_plan_for_endpoint` returns `free` or `all_access`;
+PRO_ENDPOINTS/SHARP_ENDPOINTS sets both just mean "paid". Owners/admins bypass as before;
+comp list renamed `COMP_ALL_ACCESS_EMAILS`.
+
+**Founders promo:** first **100 paying subscribers** get **$10/mo for their first 12
+months** (then standard $19.99). Flow: `/checkout/start` reserves a slot
+(`FounderOffer=1` while `founder_slots_remaining()>0`) → activation (webhook/success/demo)
+converts it to `IsFounder=1` + `FounderActivatedAt` inside `update_user_membership` (the
+single chokepoint); cancel/abandon releases the reservation. Slots are never recycled
+(founders keep theirs even if they later cancel). Pricing/signup pages show live
+remaining-slot counts. `FOUNDER_PROMO` constant holds slots/price/duration.
+
+**Stripe env (old STRIPE_PRO_*/passes keys are dead):**
+- `STRIPE_ALL_ACCESS_MONTHLY_URL` — payment link for the $19.99/mo price.
+- `STRIPE_ALL_ACCESS_FOUNDER_MONTHLY_URL` — payment link for the SAME price with a
+  $9.99-off ×12-months coupon attached; set `max_redemptions=100` on the coupon in Stripe
+  as the hard backstop against concurrent-checkout overshoot.
+Neither set → demo checkout (auto-activates, founder logic still works). Users CSV gained
+`IsFounder`/`FounderOffer`/`FounderActivatedAt` columns (flag columns are normalized from
+pandas' `'1.0'` float round-trip in `load_users`). QC: `qc_membership_regression.py`
+(checkout/founder flow) and `qc_plan_access_matrix.py` (free vs all_access vs legacy keys).

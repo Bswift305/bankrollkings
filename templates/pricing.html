@@ -7,19 +7,33 @@
 <section class="pricing-hero">
     <div>
         <div class="page-kicker">Membership</div>
-        <h1>Choose the workflow you actually need.</h1>
-        <p>Start free, unlock the daily boards with Pro, move into calibration with Sharp, or use Elite as the all-sports lab for market timing, player reliability, and cross-sport ticket building.</p>
+        <h1>One plan. The whole platform. $19.99/month.</h1>
+        <p>No tiers, no levels, no upsells. Every sport, every board, every lab — the same full arsenal for everyone. We're not here to gouge you like the institutions do; we're here to help you bust the casino's ass.</p>
     </div>
     <div class="pricing-hero-actions">
         {% if current_user %}
         <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary">Back to Dashboard</a>
         <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Manage Billing</a>
         {% else %}
-        <a href="/signup?plan=free{% if next_url_encoded %}&next={{ next_url_encoded }}{% endif %}" class="btn btn-primary">Create Free Account</a>
+        <a href="/signup?plan=all_access{% if next_url_encoded %}&next={{ next_url_encoded }}{% endif %}" class="btn btn-primary">Get All Access</a>
         <a href="/login{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Sign In</a>
         {% endif %}
     </div>
 </section>
+
+{% if founder_slots_remaining > 0 %}
+<section class="founder-banner mb-24">
+    <div>
+        <div class="page-kicker">Founding Member Deal</div>
+        <h2>First 100 subscribers: $10/month for your entire first year.</h2>
+        <p>Lock in the founders rate now — {{ founder_slots_remaining }} of {{ founder_promo.slots }} spots left. After your first 12 months you roll to the standard $19.99/mo. Your founders slot is yours for good.</p>
+    </div>
+    <div class="founder-banner-price">
+        <div class="founder-price-now">$10<span>/mo</span></div>
+        <div class="founder-price-note">year one, then $19.99/mo</div>
+    </div>
+</section>
+{% endif %}
 
 {% if gate_notice or request.args.get('checkout') == 'cancelled' or (checkout_config and checkout_config.mode == 'partial') %}
 <section class="card mb-24">
@@ -31,7 +45,7 @@
         <div class="parlay-surface-soft pricing-notice">
             <div class="detail-kicker">Checkout Update</div>
             <strong>Checkout was cancelled.</strong>
-            <p>No membership change was finalized. You can choose a plan again whenever you're ready.</p>
+            <p>No membership change was finalized. You can join again whenever you're ready.</p>
         </div>
         {% endif %}
         {% if checkout_config and checkout_config.mode == 'partial' %}
@@ -49,64 +63,17 @@
 <section class="current-plan-card mb-24">
     <div>
         <div class="page-kicker">Current Membership</div>
-        <h2>{{ current_user.plan|default('free')|upper }} Plan</h2>
-        <p>{{ current_user.email }} · {{ current_user.plan_status|default('selected')|replace('_',' ')|title }} · {{ current_user.billing_cycle|default('monthly')|title }}</p>
+        <h2>{{ membership_label|default(current_user.plan|default('free')|replace('_',' ')|title) }}</h2>
+        <p>{{ current_user.email }} · {{ current_user.plan_status|default('selected')|replace('_',' ')|title }}</p>
     </div>
     <a href="/billing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary btn-sm">Manage Billing</a>
 </section>
 {% endif %}
 
-<section class="pricing-section">
-    <div class="pricing-section-copy">
-        <div class="page-kicker">Single-Sport Access</div>
-        <h2>Pay for the league you actually use.</h2>
-        <p>NBA, WNBA, MLB, and NFL passes unlock that sport’s dashboard, board, player pages, and core workflow without forcing an all-sports subscription.</p>
-    </div>
-    <div class="pricing-grid pricing-grid-sport">
-        {% for tier in sport_pricing_cards %}
-        <article class="pricing-card is-sport-pass">
-            <div class="pricing-card-content">
-                <div class="pricing-card-top">
-                    <div>
-                        <div class="pricing-plan">{{ tier.name }}</div>
-                        <div class="pricing-best">{{ tier.best_for }}</div>
-                    </div>
-                    <span class="badge badge-outline">{{ tier.badge }}</span>
-                </div>
-                <div class="pricing-price">{{ tier.monthly_label }}</div>
-                <div class="pricing-annual">{{ tier.annual_label }} annual option</div>
-                <p class="pricing-summary">{{ tier.summary }}</p>
-                <div class="pricing-features">
-                    {% for feature in tier.features %}
-                    <div>{{ feature }}</div>
-                    {% endfor %}
-                </div>
-                <div class="pricing-actions">
-                    {% if tier.is_current %}
-                    <span class="btn btn-secondary">{{ tier.current_status_label }}</span>
-                    {% else %}
-                    <a href="{{ tier.monthly_cta.href }}" class="btn btn-primary">{{ tier.monthly_cta.label }}</a>
-                    {% endif %}
-                    {% if not tier.is_current %}
-                    <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Annual</a>
-                    {% endif %}
-                </div>
-            </div>
-        </article>
-        {% endfor %}
-    </div>
-</section>
-
-<section class="pricing-section">
-    <div class="pricing-section-copy">
-        <div class="page-kicker">All-Sports Platform</div>
-        <h2>Upgrade when you want the full operating system.</h2>
-        <p>Pro, Sharp, and Elite keep every active sport open and add deeper review, calibration, market timing, and cross-sport workflows.</p>
-    </div>
-    <div class="pricing-grid">
-    {% for tier in platform_pricing_cards %}
-    <article class="pricing-card {% if tier.key == 'pro' %}is-recommended{% endif %} {% if tier.key == 'elite' %}is-elite{% endif %}">
-        {% if tier.key == 'elite' %}
+<section class="pricing-grid">
+    {% for tier in pricing_cards %}
+    <article class="pricing-card {% if tier.key == 'all_access' %}is-recommended is-elite{% endif %}">
+        {% if tier.key == 'all_access' %}
         <img loading="lazy" src="/static/king-bankroll.webp" alt="Bankroll Kings mascot" class="pricing-elite-mascot">
         {% endif %}
         <div class="pricing-card-content">
@@ -115,10 +82,14 @@
                     <div class="pricing-plan">{{ tier.name }}</div>
                     <div class="pricing-best">{{ tier.best_for }}</div>
                 </div>
-                <span class="badge {% if tier.key == 'pro' %}badge-accent{% else %}badge-outline{% endif %}">{{ tier.badge }}</span>
+                <span class="badge {% if tier.key == 'all_access' %}badge-accent{% else %}badge-outline{% endif %}">{{ tier.badge }}</span>
             </div>
             <div class="pricing-price">{{ tier.monthly_label }}</div>
-            <div class="pricing-annual">{{ tier.annual_label }} annual option</div>
+            {% if tier.key == 'all_access' and founder_slots_remaining > 0 %}
+            <div class="pricing-annual">First 100 subscribers: {{ founder_promo.monthly_label }} for year one — {{ founder_slots_remaining }} spots left</div>
+            {% elif tier.key == 'free' %}
+            <div class="pricing-annual">No card required</div>
+            {% endif %}
             <p class="pricing-summary">{{ tier.summary }}</p>
             <div class="pricing-features">
                 {% for feature in tier.features %}
@@ -127,46 +98,39 @@
             </div>
             <div class="pricing-actions">
                 {% if tier.is_current %}
-                <span class="btn btn-secondary">{{ tier.current_status_label }}</span>
+                <span class="btn btn-secondary">Current Plan{% if tier.current_status_label and tier.key != 'free' %} · {{ tier.current_status_label }}{% endif %}</span>
                 {% else %}
-                <a href="{{ tier.monthly_cta.href }}" class="btn {% if tier.key in ['pro', 'elite'] %}btn-primary{% else %}btn-secondary{% endif %}">{{ tier.monthly_cta.label }}</a>
-                {% endif %}
-                {% if not tier.is_current and tier.key != 'free' %}
-                <a href="{{ tier.annual_cta.href }}" class="btn btn-secondary btn-sm">Annual</a>
+                <a href="{{ tier.monthly_cta.href }}" class="btn {% if tier.key == 'all_access' %}btn-primary{% else %}btn-secondary{% endif %}">{{ tier.monthly_cta.label }}</a>
                 {% endif %}
             </div>
         </div>
     </article>
     {% endfor %}
-    </div>
 </section>
 
 <section class="card mb-24">
     <div class="card-header">
-        <div class="card-title">Which Plan Should Testers Use?</div>
+        <div class="card-title">Why One Price?</div>
     </div>
     <div class="p-16">
         <div class="pricing-chooser-grid">
             <div class="pricing-chooser">
-                <div class="feature-kicker">Free</div>
-                <strong>Account and saved tickets</strong>
-                <p>Use this when someone only needs to get in, look around, and test account creation.</p>
+                <div class="feature-kicker">No Tiers</div>
+                <strong>Everyone gets the full arsenal</strong>
+                <p>NextGen Stats, Statcast, tracking data, market edge, every lab. The stuff other sites lock behind $100+ "elite" tiers is just included.</p>
             </div>
             <div class="pricing-chooser">
-                <div class="feature-kicker">Pro</div>
-                <strong>Daily board testing</strong>
-                <p>Best for friends checking the normal user experience across NBA, MLB, WNBA, and football boards.</p>
+                <div class="feature-kicker">Player First</div>
+                <strong>Built to beat the book</strong>
+                <p>We make money when you stay subscribed because the tools work — not by squeezing you up a pricing ladder.</p>
             </div>
+            {% if founder_slots_remaining > 0 %}
             <div class="pricing-chooser">
-                <div class="feature-kicker">Sharp</div>
-                <strong>Calibration and review</strong>
-                <p>Use this for people reviewing archived candidates, hit/miss tracking, and model tuning.</p>
+                <div class="feature-kicker">Founders</div>
+                <strong>Early believers get rewarded</strong>
+                <p>The first {{ founder_promo.slots }} subscribers lock in {{ founder_promo.monthly_label }} for their entire first year. That slot is grandfathered — it stays yours.</p>
             </div>
-            <div class="pricing-chooser">
-                <div class="feature-kicker">Elite</div>
-                <strong>All-sports lab</strong>
-                <p>Use this for the full cockpit: MLB lab, personal tracker, market timing, and cross-sport parlay EV.</p>
-            </div>
+            {% endif %}
         </div>
     </div>
 </section>
@@ -201,38 +165,53 @@
     flex-wrap: wrap;
     gap: 9px;
 }
-.pricing-grid {
+.founder-banner {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
-}
-.pricing-section {
-    display: grid;
-    gap: 14px;
-    margin-bottom: 24px;
-}
-.pricing-section-copy {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 18px;
-    padding: 0 4px;
+    align-items: center;
+    padding: 20px 22px;
+    border-radius: 16px;
+    border: 1px solid rgba(201,143,65,0.45);
+    background:
+        radial-gradient(circle at top right, rgba(201,143,65,0.16), transparent 46%),
+        linear-gradient(135deg, rgba(20,26,16,0.97), rgba(9,14,10,0.98));
 }
-.pricing-section-copy h2 {
-    margin: 0;
+.founder-banner h2 {
+    margin: 0 0 6px;
     color: var(--text-bright);
     font-size: 22px;
 }
-.pricing-section-copy p {
-    max-width: 680px;
+.founder-banner p {
     margin: 0;
     color: var(--text-muted);
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.55;
 }
-.pricing-grid-sport {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+.founder-banner-price {
+    text-align: right;
+}
+.founder-price-now {
+    color: var(--text-bright);
+    font-size: 40px;
+    font-weight: 900;
+    line-height: 1;
+}
+.founder-price-now span {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.founder-price-note {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
 }
 .pricing-card {
     position: relative;
@@ -249,12 +228,6 @@
 .pricing-card.is-elite {
     border-color: rgba(132,215,210,0.36);
     background: linear-gradient(135deg, rgba(8,18,25,0.98), rgba(10,31,39,0.92) 52%, rgba(4,8,11,0.98));
-}
-.pricing-card.is-sport-pass {
-    border-color: rgba(201,143,65,0.28);
-    background:
-        radial-gradient(circle at top right, rgba(201,143,65,0.13), transparent 38%),
-        linear-gradient(135deg, rgba(13,29,34,0.98), rgba(7,16,21,0.98));
 }
 .pricing-card-content {
     position: relative;
@@ -297,7 +270,6 @@
 }
 .pricing-summary {
     margin-top: 14px;
-    min-height: 66px;
     font-size: 13px;
     line-height: 1.55;
 }
@@ -367,8 +339,12 @@
     line-height: 1.5;
 }
 @media (max-width: 800px) {
-    .pricing-hero {
+    .pricing-hero,
+    .founder-banner {
         grid-template-columns: 1fr;
+    }
+    .founder-banner-price {
+        text-align: left;
     }
     .pricing-hero h1 {
         font-size: 28px;
@@ -376,12 +352,6 @@
     .current-plan-card {
         align-items: flex-start;
         flex-direction: column;
-    }
-    .pricing-section-copy {
-        display: block;
-    }
-    .pricing-section-copy p {
-        margin-top: 8px;
     }
 }
 </style>

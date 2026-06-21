@@ -9,7 +9,7 @@
     <div class="signup-copy">
         <div class="page-kicker">Account Setup</div>
         <h1>Create your Bankroll Kings account.</h1>
-        <p>Save tickets, keep review history, and carry your selected membership tier across the live boards.</p>
+        <p>Save tickets, keep review history, and unlock the whole platform with one membership — All Access, {{ all_access_tier.monthly_label }}. No tiers, no upsells.</p>
         <div class="signup-benefits">
             <div>
                 <strong>Saved tickets</strong>
@@ -20,9 +20,15 @@
                 <span>Compare suggested plays against what actually happened.</span>
             </div>
             <div>
-                <strong>Plan-aware access</strong>
-                <span>Land on the right board after signup or upgrade.</span>
+                <strong>One membership, everything</strong>
+                <span>Every sport, every board, every lab for {{ all_access_tier.monthly_label }}.</span>
             </div>
+            {% if founder_slots_remaining > 0 %}
+            <div class="founder-note">
+                <strong>Founding Member deal</strong>
+                <span>The first {{ founder_promo.slots }} subscribers lock in {{ founder_promo.monthly_label }} for their entire first year — {{ founder_slots_remaining }} spots left.</span>
+            </div>
+            {% endif %}
         </div>
     </div>
 
@@ -33,7 +39,9 @@
         <form method="post" class="signup-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="next" value="{{ next_url }}">
-            <input type="hidden" name="billing_cycle" value="{{ selected_billing }}">
+            {% if wants_membership %}
+            <input type="hidden" name="plan" value="all_access">
+            {% endif %}
             {% if gate_notice %}
             <div class="signup-notice">{{ gate_notice }}</div>
             {% endif %}
@@ -54,17 +62,16 @@
             </div>
             <div class="field-hint">Use at least 6 characters.</div>
 
-            <label for="signupPlan">Selected Plan</label>
-            <select id="signupPlan" name="plan">
-                {% for tier in pricing_tiers %}
-                <option value="{{ tier.key }}" {% if selected_plan == tier.key %}selected{% endif %}>{{ tier.name }} - {{ tier.monthly_label }}</option>
-                {% endfor %}
-            </select>
-
             <div class="selected-plan-panel">
-                <div class="detail-kicker">Plan Selected</div>
-                <strong>{{ selected_tier.name }} · {{ selected_tier.monthly_label }}</strong>
-                <p>{{ selected_tier.summary }}</p>
+                {% if wants_membership %}
+                <div class="detail-kicker">Next Step</div>
+                <strong>All Access · {{ all_access_tier.monthly_label }}</strong>
+                <p>After your account is created you'll go straight to secure checkout{% if founder_slots_remaining > 0 %} — founders rate {{ founder_promo.monthly_label }} for year one while spots last{% endif %}.</p>
+                {% else %}
+                <div class="detail-kicker">Free Account</div>
+                <strong>Start free · upgrade anytime</strong>
+                <p>Your account starts free. Unlock the whole platform with All Access ({{ all_access_tier.monthly_label }}) whenever you're ready{% if founder_slots_remaining > 0 %} — the first {{ founder_promo.slots }} subscribers get {{ founder_promo.monthly_label }} for year one{% endif %}.</p>
+                {% endif %}
             </div>
 
             <div class="consent-group">
@@ -136,6 +143,12 @@
     border-radius: 12px;
     border: 1px solid rgba(132,215,210,0.16);
     background: rgba(8,19,27,0.78);
+}
+.signup-benefits div.founder-note {
+    border-color: rgba(201,143,65,0.45);
+    background:
+        radial-gradient(circle at top right, rgba(201,143,65,0.14), transparent 52%),
+        rgba(8,19,27,0.82);
 }
 .signup-benefits strong,
 .selected-plan-panel strong,

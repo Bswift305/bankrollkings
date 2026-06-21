@@ -617,20 +617,18 @@
   <div class="free-panel-head">
     <div>
       <h2>What Unlocks Next</h2>
-      <small>The free preview shows the surface. Paid tiers unlock the depth behind each sport's real betting workflow.</small>
+      <small>The free preview shows the surface. One All Access membership ($19.99/mo) unlocks the depth behind every sport's real betting workflow.</small>
     </div>
-    <span class="free-lock">Depth gated by tier</span>
+    <span class="free-lock">All Access · $19.99/mo</span>
   </div>
-  {% for tier in ['Pro', 'Sharp', 'Elite'] %}
-  {% set tier_items = active_preview.locked_features | selectattr('plan', 'equalto', tier) | list %}
-  {% if tier_items %}
+  {% if active_preview.locked_features %}
   <div class="free-lock-group">
     <div class="free-lock-group-head">
-      <span class="free-lock-tier">{{ tier }}</span>
-      <a href="{{ url_for('pricing', required=tier|lower) }}">Upgrade for {{ tier }}</a>
+      <span class="free-lock-tier">All Access</span>
+      <a href="{{ url_for('pricing', required='all_access') }}">Get All Access</a>
     </div>
     <div class="free-lock-grid">
-      {% for item in tier_items %}
+      {% for item in active_preview.locked_features %}
       <div class="free-lock-card">
         <strong>{{ item.title }}</strong>
         <small>{{ item.description }}</small>
@@ -639,7 +637,6 @@
     </div>
   </div>
   {% endif %}
-  {% endfor %}
 </section>
 {% else %}
 <section class="bk-content free-hero">

@@ -11,77 +11,41 @@ from app import app, save_user, DATA_DIR
 
 USERS_PATH = DATA_DIR / "tracking" / "NBA_Users.csv"
 
+ALL_SPORT_PATHS = {
+    "/sports/nba",
+    "/sports/wnba",
+    "/sports/mlb",
+    "/sports/nfl",
+    "/sports/ncaaf",
+    "/sports/ncaamb",
+    "/sports/ncaawb",
+}
+
+# Single-plan era: free denies everything, all_access allows everything, and
+# legacy multi-tier keys still on user rows must resolve to full access.
 PLAN_MATRIX = {
     "free": {
         "allow": set(),
-        "deny": {
-            "/sports/nba",
-            "/sports/wnba",
-            "/sports/mlb",
-            "/sports/nfl",
-            "/sports/ncaaf",
-            "/sports/ncaamb",
-            "/sports/ncaawb",
-        },
+        "deny": set(ALL_SPORT_PATHS),
+    },
+    "all_access": {
+        "allow": set(ALL_SPORT_PATHS),
+        "deny": set(),
     },
     "nba_pass": {
-        "allow": {"/sports/nba"},
-        "deny": {"/sports/wnba", "/sports/mlb", "/sports/nfl", "/sports/ncaaf", "/sports/ncaamb", "/sports/ncaawb"},
-    },
-    "wnba_pass": {
-        "allow": {"/sports/wnba"},
-        "deny": {"/sports/nba", "/sports/mlb", "/sports/nfl", "/sports/ncaaf", "/sports/ncaamb", "/sports/ncaawb"},
-    },
-    "mlb_pass": {
-        "allow": {"/sports/mlb"},
-        "deny": {"/sports/nba", "/sports/wnba", "/sports/nfl", "/sports/ncaaf", "/sports/ncaamb", "/sports/ncaawb"},
-    },
-    "nfl_pass": {
-        "allow": {"/sports/nfl"},
-        "deny": {"/sports/nba", "/sports/wnba", "/sports/mlb", "/sports/ncaaf", "/sports/ncaamb", "/sports/ncaawb"},
-    },
-    "cfb_pass": {
-        "allow": {"/sports/ncaaf"},
-        "deny": {"/sports/nba", "/sports/wnba", "/sports/mlb", "/sports/nfl", "/sports/ncaamb", "/sports/ncaawb"},
-    },
-    "cbb_pass": {
-        "allow": {"/sports/ncaamb", "/sports/ncaawb"},
-        "deny": {"/sports/nba", "/sports/wnba", "/sports/mlb", "/sports/nfl", "/sports/ncaaf"},
+        "allow": set(ALL_SPORT_PATHS),
+        "deny": set(),
     },
     "pro": {
-        "allow": {
-            "/sports/nba",
-            "/sports/wnba",
-            "/sports/mlb",
-            "/sports/nfl",
-            "/sports/ncaaf",
-            "/sports/ncaamb",
-            "/sports/ncaawb",
-        },
+        "allow": set(ALL_SPORT_PATHS),
         "deny": set(),
     },
     "sharp": {
-        "allow": {
-            "/sports/nba",
-            "/sports/wnba",
-            "/sports/mlb",
-            "/sports/nfl",
-            "/sports/ncaaf",
-            "/sports/ncaamb",
-            "/sports/ncaawb",
-        },
+        "allow": set(ALL_SPORT_PATHS),
         "deny": set(),
     },
     "elite": {
-        "allow": {
-            "/sports/nba",
-            "/sports/wnba",
-            "/sports/mlb",
-            "/sports/nfl",
-            "/sports/ncaaf",
-            "/sports/ncaamb",
-            "/sports/ncaawb",
-        },
+        "allow": set(ALL_SPORT_PATHS),
         "deny": set(),
     },
 }

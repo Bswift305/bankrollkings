@@ -78,32 +78,36 @@ Templates              → render what the route passes in
 
 The access model has two layers: plan tier and sport pass.
 
-**Plan tiers** (`PLAN_RANKS` in `app.py`):
+**Plans (single-plan era, 2026-06-12)** (`PLAN_RANKS` in `app.py`):
 
 ```python
-'free':      0
-sport passes: 1   # nba_pass, wnba_pass, mlb_pass, nfl_pass, cfb_pass, cbb_pass
-'pro':        2
-'sharp':      3
-'elite':      4
+'free':       0   # unpaid account state (preview surfaces)
+'all_access': 1   # the one paid plan — $19.99/mo, everything unlocked
+# legacy keys (pro, sharp, elite, *_pass) remain in PLAN_RANKS at rank 1 and
+# normalize_plan_key() resolves them to 'all_access' — old user rows and old
+# links keep working.
 ```
 
-**Sport passes** (`SPORT_PASS_ACCESS`) grant access to a single sport without requiring Pro. A user with `nba_pass` can reach NBA surfaces but not MLB or cross-sport tools.
+There are no tiers and no sport passes anymore. `ALL_SPORT_PLAN_KEYS = {'all_access'}`.
 
-**Full-access plans:** `pro`, `sharp`, `elite` — stored in `ALL_SPORT_PLAN_KEYS`.
+**Founders promo:** the first 100 paying subscribers get $10/mo for their first year
+(`FOUNDER_PROMO`, `founder_slots_remaining()`, `FounderOffer`/`IsFounder` CSV columns —
+see docs/PROJECT_MAP.md "Membership & pricing").
 
 **Owner access:** Emails in `OWNER_EMAILS` bypass all plan checks. Currently one entry. Do not add more without intentional review.
 
 **Key functions:**
-- `normalize_user_plan(user)` — resolves a user object to a plan key string
+- `normalize_user_plan(user)` — resolves a user object to `'free'` or `'all_access'`
+- `normalize_plan_key(key)` — resolves any (legacy) plan key to `'free'`/`'all_access'`
 - `get_plan_rank(plan_key)` — returns the integer rank
-- `is_owner_or_admin(user)` — returns True for owner-email users
+- `is_owner_user(user)` — returns True for owner-email/admin users
+- `user_is_founder(user)` — True when the founders rate is locked in
 
 **Pattern for gating a route:**
 
 ```python
 current_plan = normalize_user_plan(current_user)
-if get_plan_rank(current_plan) < get_plan_rank('pro'):
+if get_plan_rank(current_plan) < get_plan_rank('all_access'):
     return redirect(url_for('pricing'))
 ```
 

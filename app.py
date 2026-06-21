@@ -383,206 +383,69 @@ PRICING_TIERS = [
         'cta': 'Create Free Account',
     },
     {
-        'key': 'pro',
-        'name': 'Pro',
-        'monthly_price': 29,
-        'annual_price': 299,
-        'monthly_label': '$29/mo',
-        'annual_label': '$299/yr',
-        'badge': 'Recommended',
-        'summary': 'Full boards across every sport. The complete prop workflow — player pages, matchup context, floor plays, and the parlay builder — all in one place.',
-        'best_for': 'Serious daily bettors',
+        'key': 'all_access',
+        'name': 'All Access',
+        'monthly_price': 19.99,
+        'annual_price': None,
+        'monthly_label': '$19.99/mo',
+        'annual_label': '',
+        'badge': 'Everything Unlocked',
+        'summary': 'One membership, the whole platform. Every sport, every board, every lab — no tiers, no upsells. Built to help you beat the book, not to gouge you.',
+        'best_for': 'Anyone serious about beating the book',
         'features': [
-            'Full prop boards across NBA, MLB, WNBA, NFL, and CFB',
-            'Player pages, team pages, and matchup analysis',
-            'Floor plays, market edge, and parlay builder',
-            'Injury impact analysis, calibration history, and bet review',
+            'Full prop boards across NBA, MLB, WNBA, NFL, CFB, and college hoops',
+            'Player pages, team pages, matchup analysis, floor plays, and the parlay builder',
+            'NFL NextGen Stats, MLB Statcast, and NBA tracking intelligence',
+            'Market edge signals, line movement, calibration history, and bet review',
+            'Personal performance tracker, cross-sport parlay EV, and every lab',
         ],
-        'cta': 'Choose Pro',
-    },
-    {
-        'key': 'nba_pass',
-        'name': 'NBA Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'NBA-only access for users who want the basketball prop workflow without paying for every league.',
-        'best_for': 'NBA-only bettors',
-        'sport_access': ['nba'],
-        'is_sport_pass': True,
-        'features': [
-            'NBA dashboard and live prop board',
-            'NBA market edge, trends, injuries, and matchup lens',
-            'NBA player pages and review context',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose NBA Pass',
-    },
-    {
-        'key': 'wnba_pass',
-        'name': 'WNBA Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'WNBA-only access for users focused on women’s hoops props, floor reads, and market movement.',
-        'best_for': 'WNBA-only bettors',
-        'sport_access': ['wnba'],
-        'is_sport_pass': True,
-        'features': [
-            'WNBA dashboard and live prop board',
-            'WNBA market edge, floor reads, trends, and matchups',
-            'WNBA player pages and review context',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose WNBA Pass',
-    },
-    {
-        'key': 'mlb_pass',
-        'name': 'MLB Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'MLB-only access for users who want the baseball slate, pitcher/hitter context, and matchup reads.',
-        'best_for': 'MLB-only bettors',
-        'sport_access': ['mlb'],
-        'is_sport_pass': True,
-        'features': [
-            'MLB dashboard and live prop board',
-            'MLB market edge, floor reads, trends, and slate intelligence',
-            'MLB player pages and review context',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose MLB Pass',
-    },
-    {
-        'key': 'nfl_pass',
-        'name': 'NFL Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'NFL-only access for users focused on football game lines, totals, props, trends, and matchups.',
-        'best_for': 'NFL-only bettors',
-        'sport_access': ['nfl'],
-        'is_sport_pass': True,
-        'features': [
-            'NFL dashboard and weekly football board',
-            'NFL game lines, totals, trends, props, and matchup context',
-            'NFL player pages and review context',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose NFL Pass',
-    },
-    {
-        'key': 'cfb_pass',
-        'name': 'CFB Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'College football-only access for users focused on game lines, totals, matchup context, trends, and selective props.',
-        'best_for': 'CFB-only bettors',
-        'sport_access': ['ncaaf'],
-        'is_sport_pass': True,
-        'features': [
-            'CFB dashboard and weekly football board',
-            'CFB game lines, totals, trends, props, and matchup context',
-            'CFB review layers as the season data matures',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose CFB Pass',
-    },
-    {
-        'key': 'cbb_pass',
-        'name': 'CBB Pass',
-        'monthly_price': 19,
-        'annual_price': 199,
-        'monthly_label': '$19/mo',
-        'annual_label': '$199/yr',
-        'badge': 'Single Sport',
-        'summary': 'College basketball access covering both men’s and women’s hoops as those boards and matchup layers continue to expand.',
-        'best_for': 'College hoops bettors',
-        'sport_access': ['ncaamb', 'ncaawb'],
-        'is_sport_pass': True,
-        'features': [
-            'Men’s and women’s college hoops access under one pass',
-            'College matchup, game-environment, and line-context workflow',
-            'Future-ready path for CBB calibration as season data matures',
-            'Upgrade path into all-sports Pro, Sharp, or Elite',
-        ],
-        'cta': 'Choose CBB Pass',
-    },
-    {
-        'key': 'sharp',
-        'name': 'Sharp',
-        'monthly_price': 79,
-        'annual_price': 799,
-        'monthly_label': '$79/mo',
-        'annual_label': '$799/yr',
-        'badge': 'Power User',
-        'summary': 'The intelligence layer. NFL NextGen Stats, MLB Statcast, NBA tracking data, and market edge signals — the data serious bettors pay hundreds for, built into one workflow.',
-        'best_for': 'High-volume bettors and small betting teams',
-        'features': [
-            'Everything in Pro',
-            'NFL NextGen Stats — air yards share, separation, RYOE, CPOE, route participation',
-            'MLB Statcast — spin rate, exit velocity, barrel rate, xBA, pitch mix, CSW rate',
-            'NBA tracking — defensive matchups, contested shots, drives, touch data',
-            'Market edge signals, line movement, officiating tendency profiles, and calibration grades',
-        ],
-        'cta': 'Choose Sharp',
-    },
-    {
-        'key': 'elite',
-        'name': 'Elite',
-        'monthly_price': 149,
-        'annual_price': 1499,
-        'monthly_label': '$149/mo',
-        'annual_label': '$1,499/yr',
-        'badge': 'Operator',
-        'summary': 'The full betting operating system. Every intelligence layer plus cross-sport parlay EV, personal performance tracking, and the complete analytical stack.',
-        'best_for': 'High-conviction bettors who treat this as a business',
-        'features': [
-            'Everything in Sharp',
-            'Personal performance tracker — ROI by sport, tier, and prop type',
-            'Cross-sport parlay EV builder with correlation analysis',
-            'Sharp report cards, leak finder, and action queue',
-            'All labs — MLB lab, NFL formula lab, calibration lab, and quant systems',
-        ],
-        'cta': 'Choose Elite',
+        'cta': 'Get All Access',
     },
 ]
 
+# Founders promo: the first FOUNDER_PROMO['slots'] paying subscribers lock in
+# $10/mo for their first 12 months, then roll to the standard $19.99. A slot is
+# reserved when checkout starts (FounderOffer=1) and consumed when the
+# subscription activates (IsFounder=1). Set max_redemptions=100 on the Stripe
+# coupon as the hard backstop against concurrent checkouts overshooting.
+FOUNDER_PROMO = {
+    # Temporarily OFF (2026-06-21): selling flat $19.99 to everyone while the
+    # founders discount is handled out-of-band. Flip back to True (and set
+    # STRIPE_ALL_ACCESS_FOUNDER_MONTHLY_URL) to re-enable the $10/yr-one promo —
+    # founder_slots_remaining() returns 0 while disabled, which hides every
+    # founders surface and keeps checkout_start on the standard link.
+    'enabled': False,
+    'slots': 100,
+    'monthly_price': 10,
+    'monthly_label': '$10/mo',
+    'duration_months': 12,
+    'name': 'Founding Member',
+    'summary': 'The first 100 subscribers are grandfathered in at $10/month for their entire first year.',
+}
+
 PLAN_RANKS = {
     'free': 0,
+    'all_access': 1,
+    # Legacy tier keys from the multi-tier era. Any user row or old link still
+    # carrying one of these resolves to all_access (normalize_user_plan), and
+    # legacy rank comparisons like get_plan_rank('pro') keep granting access.
     'nba_pass': 1,
     'wnba_pass': 1,
     'mlb_pass': 1,
     'nfl_pass': 1,
     'cfb_pass': 1,
     'cbb_pass': 1,
-    'pro': 2,
-    'sharp': 3,
-    'elite': 4,
+    'pro': 1,
+    'sharp': 1,
+    'elite': 1,
 }
 
-SPORT_PASS_ACCESS = {
-    'nba_pass': {'nba'},
-    'wnba_pass': {'wnba'},
-    'mlb_pass': {'mlb'},
-    'nfl_pass': {'nfl'},
-    'cfb_pass': {'ncaaf'},
-    'cbb_pass': {'ncaamb', 'ncaawb'},
+LEGACY_PAID_PLAN_KEYS = {
+    'pro', 'sharp', 'elite',
+    'nba_pass', 'wnba_pass', 'mlb_pass', 'nfl_pass', 'cfb_pass', 'cbb_pass',
 }
 
-ALL_SPORT_PLAN_KEYS = {'pro', 'sharp', 'elite'}
+ALL_SPORT_PLAN_KEYS = {'all_access'}
 
 # Paid access is granted only for 'active' accounts (verified-paid via Stripe, or manually
 # set active to comp a tester). 'selected'/'trial' intentionally do NOT grant access:
@@ -593,10 +456,10 @@ OWNER_EMAILS = {
     'decaturjones019@gmail.com',
 }
 
-# Comped testers: these emails are auto-granted an active Elite subscription the
-# moment they sign up (no checkout). Lowercase only — signup lowercases the email
-# before matching.
-COMP_ELITE_EMAILS = {
+# Comped testers: these emails are auto-granted an active All Access membership
+# the moment they sign up (no checkout). Lowercase only — signup lowercases the
+# email before matching.
+COMP_ALL_ACCESS_EMAILS = {
     'mribet504@gmail.com',
     'dalecopper@comcast.net',
     'yazmeenheaven@gmail.com',
@@ -1010,6 +873,13 @@ def get_stripe_checkout_url(plan_key, billing_cycle='monthly'):
     return str(os.environ.get(env_key, '') or '').strip()
 
 
+def get_founder_checkout_url():
+    """Stripe payment link for the founders rate: the $19.99/mo All Access price
+    with a $9.99-off, 12-month coupon attached (set max_redemptions=100 on the
+    coupon in Stripe as the hard backstop)."""
+    return str(os.environ.get('STRIPE_ALL_ACCESS_FOUNDER_MONTHLY_URL', '') or '').strip()
+
+
 def get_stripe_billing_portal_url():
     return str(os.environ.get('STRIPE_BILLING_PORTAL_URL', '') or '').strip()
 
@@ -1063,30 +933,36 @@ def get_checkout_configuration_report():
     configured_count = 0
     production_count = 0
     test_count = 0
-    for tier in get_pricing_tiers():
-        key = str(tier.get('key', '')).strip().lower()
-        if key == 'free':
-            continue
-        for billing_cycle in ('monthly', 'annual'):
-            url = get_stripe_checkout_url(key, billing_cycle)
-            stripe_mode = classify_stripe_url(url)
-            configured = stripe_mode != 'missing'
-            production_ready = stripe_mode in {'live', 'custom'}
-            if configured:
-                configured_count += 1
-            if production_ready:
-                production_count += 1
-            if stripe_mode == 'test':
-                test_count += 1
-            entries.append({
-                'plan': key,
-                'billing_cycle': billing_cycle,
-                'env_key': f"STRIPE_{key.upper()}_{billing_cycle.upper()}_URL",
-                'configured': configured,
-                'production_ready': production_ready,
-                'stripe_mode': stripe_mode,
-                'target': url,
-            })
+    # The founders link is only required when the founders promo is enabled.
+    # While it's off (selling flat $19.99), requiring it would peg the config at
+    # "partial" forever and fail the Prelaunch pricing gate. It re-enters the
+    # required set automatically when FOUNDER_PROMO['enabled'] flips back on.
+    checkout_targets = [
+        ('all_access', 'monthly', 'STRIPE_ALL_ACCESS_MONTHLY_URL', get_stripe_checkout_url('all_access', 'monthly')),
+    ]
+    if FOUNDER_PROMO.get('enabled', True):
+        checkout_targets.append(
+            ('all_access_founder', 'monthly', 'STRIPE_ALL_ACCESS_FOUNDER_MONTHLY_URL', get_founder_checkout_url())
+        )
+    for plan_key, billing_cycle, env_key, url in checkout_targets:
+        stripe_mode = classify_stripe_url(url)
+        configured = stripe_mode != 'missing'
+        production_ready = stripe_mode in {'live', 'custom'}
+        if configured:
+            configured_count += 1
+        if production_ready:
+            production_count += 1
+        if stripe_mode == 'test':
+            test_count += 1
+        entries.append({
+            'plan': plan_key,
+            'billing_cycle': billing_cycle,
+            'env_key': env_key,
+            'configured': configured,
+            'production_ready': production_ready,
+            'stripe_mode': stripe_mode,
+            'target': url,
+        })
     total = len(entries)
     portal_url = get_stripe_billing_portal_url()
     portal_config_id = get_stripe_billing_portal_config_id()
@@ -1128,8 +1004,7 @@ def get_checkout_configuration_report():
 
 
 def get_checkout_cta(user, tier_key, billing_cycle='monthly', next_url=''):
-    tier_key = str(tier_key or 'free').strip().lower()
-    billing_cycle = str(billing_cycle or 'monthly').strip().lower()
+    tier_key = normalize_plan_key(tier_key)
     next_url = str(next_url or '').strip()
     next_suffix = f"&next={quote(next_url, safe='')}" if next_url else ''
     if tier_key == 'free':
@@ -1141,22 +1016,20 @@ def get_checkout_cta(user, tier_key, billing_cycle='monthly', next_url=''):
             }
         return {
             'label': 'Create Free Account',
-            'href': f"/signup?plan=free&billing=monthly{next_suffix}",
+            'href': f"/signup{('?next=' + quote(next_url, safe='')) if next_url else ''}",
             'mode': 'signup',
         }
 
     if not user:
         return {
-            'label': f"Choose {get_pricing_tier(tier_key).get('name', tier_key.title())}",
-            'href': f"/signup?plan={tier_key}&billing={billing_cycle}{next_suffix}",
+            'label': 'Get All Access',
+            'href': f"/signup?plan=all_access&billing=monthly{next_suffix}",
             'mode': 'signup',
         }
 
-    href = f"/checkout/start?plan={tier_key}&billing={billing_cycle}"
-    href += next_suffix
     return {
-        'label': f"Upgrade to {get_pricing_tier(tier_key).get('name', tier_key.title())}",
-        'href': href,
+        'label': 'Get All Access',
+        'href': f"/checkout/start?plan=all_access&billing=monthly{next_suffix}",
         'mode': 'checkout',
     }
 
@@ -1165,25 +1038,36 @@ def get_plan_rank(plan_key):
     return int(PLAN_RANKS.get(str(plan_key or '').strip().lower(), 0))
 
 
+def normalize_plan_key(plan_key):
+    """Resolve any plan key (including legacy multi-tier keys) to 'free' or 'all_access'."""
+    key = str(plan_key or '').strip().lower()
+    if key in LEGACY_PAID_PLAN_KEYS:
+        return 'all_access'
+    return key if key in {'free', 'all_access'} else 'free'
+
+
 def normalize_user_plan(user):
     if not user:
         return 'free'
     email = str(user.get('email', '') or user.get('Email', '') or '').strip().lower()
     if email in OWNER_EMAILS:
-        return 'elite'
+        return 'all_access'
     role = str(user.get('role', '') or user.get('Role', '') or '').strip().lower()
     if role == 'owner':
-        return 'elite'
+        return 'all_access'
     is_admin = str(user.get('is_admin', '') or user.get('IsAdmin', '') or '').strip().lower() in {'1', '1.0', 'true', 'yes'}
     if is_admin:
-        return 'elite'
-    plan = str(user.get('plan', 'free') or 'free').strip().lower()
+        return 'all_access'
     status = str(user.get('plan_status', 'selected') or 'selected').strip().lower()
     if status not in ACTIVE_PLAN_STATUSES:
         return 'free'
-    if plan == 'sharp' and str(user.get('elite_preview', '') or user.get('ElitePreview', '')).strip().lower() in {'1', 'true', 'yes'}:
-        return 'elite'
-    return plan if plan in PLAN_RANKS else 'free'
+    return normalize_plan_key(user.get('plan', 'free'))
+
+
+def user_is_founder(user):
+    if not user:
+        return False
+    return str(user.get('is_founder', '') or user.get('IsFounder', '') or '').strip().lower() in {'1', '1.0', 'true', 'yes'}
 
 
 def current_user_membership_label(user):
@@ -1197,6 +1081,8 @@ def current_user_membership_label(user):
     if is_admin or role == 'admin':
         return 'Admin'
     plan = normalize_user_plan(user)
+    if plan == 'all_access' and user_is_founder(user):
+        return 'Founding Member'
     tier = get_pricing_tier(plan)
     return str(tier.get('name') or plan or 'Member').title()
 
@@ -1230,7 +1116,7 @@ def get_user_sport_access(user):
     plan = normalize_user_plan(user)
     if plan in ALL_SPORT_PLAN_KEYS:
         return {'all'}
-    return set(SPORT_PASS_ACCESS.get(plan, set()))
+    return set()
 
 
 def user_has_sport_access(user, sport_key):
@@ -1272,11 +1158,8 @@ def get_sport_key_for_access_path(path):
 
 
 def get_sport_pass_plan_for_sport(sport_key):
-    sport_key = normalize_sport_access_key(sport_key)
-    for plan_key, sports in SPORT_PASS_ACCESS.items():
-        if sport_key in sports:
-            return plan_key
-    return 'pro'
+    # Single-plan era: every sport is unlocked by the one All Access membership.
+    return 'all_access'
 
 
 def _count_csv_rows(path):
@@ -1426,13 +1309,11 @@ def get_required_plan_for_endpoint(endpoint):
     endpoint = str(endpoint or '').strip()
     if endpoint in FREE_ENDPOINTS:
         return 'free'
-    if endpoint in SHARP_ENDPOINTS:
-        return 'sharp'
-    if endpoint in PRO_ENDPOINTS:
-        return 'pro'
+    if endpoint in SHARP_ENDPOINTS or endpoint in PRO_ENDPOINTS:
+        return 'all_access'
     try:
         if get_sport_key_for_access_path(request.path):
-            return 'pro'
+            return 'all_access'
     except RuntimeError:
         pass
     return None
@@ -1444,17 +1325,19 @@ def build_requested_path():
 
 
 def build_access_gate_notice(mode, required_plan=''):
-    tier = get_pricing_tier(required_plan)
-    required_label = tier.get('name') or str(required_plan or '').strip().replace('_', ' ').title() or 'Pro'
+    tier = get_pricing_tier(normalize_plan_key(required_plan) if required_plan else 'all_access')
+    required_label = tier.get('name') or 'All Access'
     if mode == 'login_required':
         return f"Sign in to access this {required_label} research surface."
     if mode == 'upgrade_required':
-        return f"This page is reserved for the {required_label} tier. Upgrade your plan to continue."
+        return f"This page is part of the {required_label} membership. Join to continue."
     return ''
 
 
 def build_access_gate_context(required_plan, next_url, current_user=None):
-    required_plan = str(required_plan or 'pro').strip().lower() or 'pro'
+    required_plan = normalize_plan_key(required_plan) if required_plan else 'all_access'
+    if required_plan == 'free':
+        required_plan = 'all_access'
     current_plan = normalize_user_plan(current_user) if current_user else 'free'
     is_logged_in = bool(current_user)
     gate_mode = 'upgrade_required' if is_logged_in else 'login_required'
@@ -1474,9 +1357,9 @@ def build_access_gate_context(required_plan, next_url, current_user=None):
         'recommended_tier': tier,
         'destination_label': destination_label,
         'teaser_points': [
-            'Live boards, matchup lens, and raw data stay protected behind the real membership boundary.',
-            'Plan-aware access now preserves your destination, so testers land exactly where they meant to go after sign-in or upgrade.',
-            'Sharp-only surfaces stay deeper, while Pro keeps the daily decision stack available.',
+            'Live boards, matchup lens, and raw data stay protected behind the membership boundary.',
+            'Your destination is preserved, so you land exactly where you meant to go after sign-in or joining.',
+            'One membership unlocks every sport, every board, and every lab — no tiers.',
         ],
     }
 
@@ -9225,7 +9108,7 @@ def load_saved_parlays():
 
 def load_users():
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
-    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId', 'ResetTokenHash', 'ResetTokenExpiry', 'AcceptedTermsAt']
+    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId', 'ResetTokenHash', 'ResetTokenExpiry', 'AcceptedTermsAt', 'IsFounder', 'FounderOffer', 'FounderActivatedAt']
     if not path.exists():
         return pd.DataFrame(columns=default_columns)
 
@@ -9240,12 +9123,17 @@ def load_users():
     for column in default_columns:
         df[column] = df[column].fillna('').astype(str)
 
+    # Flag columns survive the CSV round-trip as '1.0' (pandas reads a mostly
+    # empty column as float). Normalize back to '1' so equality checks hold.
+    for column in ('IsAdmin', 'IsFounder', 'FounderOffer'):
+        df[column] = df[column].str.strip().replace({'1.0': '1'})
+
     original = df.copy()
     owner_mask = df['Email'].astype(str).str.strip().str.lower().isin(OWNER_EMAILS)
     if owner_mask.any():
         df.loc[owner_mask & (df['Role'].astype(str).str.strip() == ''), 'Role'] = 'owner'
         df.loc[owner_mask & (df['IsAdmin'].astype(str).str.strip() == ''), 'IsAdmin'] = '1'
-        df.loc[owner_mask & (df['Plan'].astype(str).str.strip() == ''), 'Plan'] = 'sharp'
+        df.loc[owner_mask & (df['Plan'].astype(str).str.strip() == ''), 'Plan'] = 'all_access'
         df.loc[owner_mask & (df['PlanStatus'].astype(str).str.strip() == ''), 'PlanStatus'] = 'active'
 
     normalized = df[default_columns].copy()
@@ -9281,7 +9169,7 @@ def save_user(user):
         if not str(normalized.get('IsAdmin', '')).strip():
             normalized['IsAdmin'] = '1'
         if not str(normalized.get('Plan', '')).strip():
-            normalized['Plan'] = 'sharp'
+            normalized['Plan'] = 'all_access'
         if not str(normalized.get('PlanStatus', '')).strip():
             normalized['PlanStatus'] = 'active'
     entry = pd.DataFrame([normalized])
@@ -9337,6 +9225,27 @@ def find_user_by_stripe_customer(customer_id):
     return matches.iloc[0].to_dict()
 
 
+def count_founder_slots_taken():
+    """Founder slots consumed: activated founders, plus offers reserved by a
+    checkout currently in flight (pending_checkout). Abandoned checkouts release
+    their reservation as soon as the status leaves pending_checkout."""
+    users = load_users()
+    if users.empty:
+        return 0
+    is_founder = users['IsFounder'].astype(str).str.strip() == '1'
+    in_flight = (
+        (users['FounderOffer'].astype(str).str.strip() == '1')
+        & (users['PlanStatus'].astype(str).str.strip().str.lower() == 'pending_checkout')
+    )
+    return int((is_founder | in_flight).sum())
+
+
+def founder_slots_remaining():
+    if not FOUNDER_PROMO.get('enabled', True):
+        return 0
+    return max(int(FOUNDER_PROMO['slots']) - count_founder_slots_taken(), 0)
+
+
 def invalidate_dataframe_cache(path):
     resolved = str(Path(path).resolve())
     for cache_key in list(DATAFRAME_CACHE.keys()):
@@ -9372,6 +9281,8 @@ def get_current_user():
         'plan_status': row.get('PlanStatus', 'active'),
         'role': row.get('Role', ''),
         'is_admin': str(row.get('IsAdmin', '')).strip().lower() in {'1', '1.0', 'true', 'yes'},
+        'is_founder': str(row.get('IsFounder', '')).strip().lower() in {'1', '1.0', 'true', 'yes'},
+        'founder_offer': str(row.get('FounderOffer', '')).strip() == '1',
     }
 
 
@@ -9398,7 +9309,7 @@ def _resolve_post_auth_target(user, raw_next=''):
     raw_next = str(raw_next or '').strip()
     if raw_next and raw_next not in {'/dashboard', '/dashboard?postseason=1', '/dashboard?postseason=0'}:
         return raw_next
-    paid = bool(user) and (is_owner_user(user) or get_plan_rank(normalize_user_plan(user)) >= get_plan_rank('pro'))
+    paid = bool(user) and (is_owner_user(user) or get_plan_rank(normalize_user_plan(user)) >= get_plan_rank('all_access'))
     return '/dashboard?postseason=1' if paid else '/free'
 
 
@@ -9414,29 +9325,21 @@ def enforce_access_gate():
 
     current_user = get_current_user()
     requested_path = build_requested_path()
-    sport_access_key = get_sport_key_for_access_path(request.path)
-    gate_required_plan = (
-        get_sport_pass_plan_for_sport(sport_access_key)
-        if sport_access_key and required_plan in ('pro', 'sharp')
-        else required_plan
-    )
 
     if not current_user:
         if request.method != 'GET':
             return jsonify({
                 'ok': False,
                 'error': 'login_required',
-                'required_plan': gate_required_plan,
-                'login_url': url_for('login', next=requested_path, gate='login_required', required=gate_required_plan),
+                'required_plan': required_plan,
+                'login_url': url_for('login', next=requested_path, gate='login_required', required=required_plan),
             }), 401
-        return render_access_gate_response(gate_required_plan, requested_path, current_user=None)
+        return render_access_gate_response(required_plan, requested_path, current_user=None)
 
     if is_owner_user(current_user):
         return None
 
     current_plan = normalize_user_plan(current_user)
-    if sport_access_key and required_plan in ('pro', 'sharp') and user_has_sport_access(current_user, sport_access_key):
-        return None
     if get_plan_rank(current_plan) >= get_plan_rank(required_plan):
         return None
 
@@ -9444,10 +9347,10 @@ def enforce_access_gate():
         return jsonify({
             'ok': False,
             'error': 'upgrade_required',
-            'required_plan': gate_required_plan,
-            'pricing_url': url_for('pricing', next=requested_path, gate='upgrade_required', required=gate_required_plan),
+            'required_plan': required_plan,
+            'pricing_url': url_for('pricing', next=requested_path, gate='upgrade_required', required=required_plan),
         }), 403
-    return render_access_gate_response(gate_required_plan, requested_path, current_user=current_user)
+    return render_access_gate_response(required_plan, requested_path, current_user=current_user)
 
 
 def filter_saved_parlays_for_user(df, user=None):
@@ -9536,7 +9439,7 @@ def replace_candidate_archive(df):
             DATAFRAME_CACHE.pop(cache_key, None)
 
 
-def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None, stripe_customer_id=None):
+def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None, stripe_customer_id=None, founder_offer=None):
     users = load_users()
     if users.empty:
         return None
@@ -9566,6 +9469,17 @@ def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, 
         if 'StripeCustomerId' not in users.columns:
             users['StripeCustomerId'] = ''
         users.at[idx, 'StripeCustomerId'] = str(stripe_customer_id).strip()
+    if founder_offer is not None:
+        users.at[idx, 'FounderOffer'] = '1' if bool(founder_offer) else ''
+    # Founder promotion chokepoint: a membership turning active while a founder
+    # offer is reserved consumes the slot permanently (IsFounder survives later
+    # cancellations — the first 100 are grandfathered, slots are not recycled).
+    if plan_status is not None and str(plan_status or '').strip().lower() == 'active':
+        if str(users.at[idx, 'FounderOffer']).strip() == '1':
+            users.at[idx, 'IsFounder'] = '1'
+            users.at[idx, 'FounderOffer'] = ''
+            if not str(users.at[idx, 'FounderActivatedAt']).strip():
+                users.at[idx, 'FounderActivatedAt'] = datetime.now().strftime('%Y-%m-%d %I:%M %p')
     users.at[idx, 'PlanSelectedAt'] = datetime.now().strftime('%Y-%m-%d %I:%M %p')
 
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
@@ -18316,48 +18230,48 @@ FREE_SPORT_PREVIEW_CONFIG = {
 
 FREE_SPORT_LOCKED_FEATURES = {
     'nba': [
-        {'plan': 'Pro', 'title': 'Full props by game', 'description': 'Every row, filter, sort, player link, and matchup link for tonight instead of the teaser rows.', 'href': '/sports/nba/props'},
-        {'plan': 'Pro', 'title': 'Player + team pages', 'description': 'Stat trajectory, hit rates, role notes, team splits, and position-defense context from each game row.', 'href': '/sports/nba'},
-        {'plan': 'Pro', 'title': 'Matchup analysis & parlay builder', 'description': 'Full matchup breakdowns, game environment, and the parlay builder with CorrelationIQ grading.', 'href': '/sports/nba'},
-        {'plan': 'Sharp', 'title': 'Market edge signals', 'description': 'Line movement, book disagreement, best-book context, and price-path notes on key names.', 'href': '/sports/nba/market-edge'},
-        {'plan': 'Sharp', 'title': 'Floor play builder', 'description': 'Lower-volatility parlay legs with floor reads, risk notes, and correlation checks.', 'href': '/parlay?sport=nba&sample=current'},
-        {'plan': 'Sharp', 'title': 'Tracking + officiating', 'description': 'Defensive matchups, contested shots, drives, touch data, and referee tendency profiles.', 'href': '/sports/nba/trends'},
-        {'plan': 'Elite', 'title': 'Deep matchup builder', 'description': 'Game-by-game matchup construction for usage, position leaks, and high-conviction card building.', 'href': '/elite/matchup-builder'},
-        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NBA ticket you track.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends NBA legs with your other sports.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Full props by game', 'description': 'Every row, filter, sort, player link, and matchup link for tonight instead of the teaser rows.', 'href': '/sports/nba/props'},
+        {'plan': 'All Access', 'title': 'Player + team pages', 'description': 'Stat trajectory, hit rates, role notes, team splits, and position-defense context from each game row.', 'href': '/sports/nba'},
+        {'plan': 'All Access', 'title': 'Matchup analysis & parlay builder', 'description': 'Full matchup breakdowns, game environment, and the parlay builder with CorrelationIQ grading.', 'href': '/sports/nba'},
+        {'plan': 'All Access', 'title': 'Market edge signals', 'description': 'Line movement, book disagreement, best-book context, and price-path notes on key names.', 'href': '/sports/nba/market-edge'},
+        {'plan': 'All Access', 'title': 'Floor play builder', 'description': 'Lower-volatility parlay legs with floor reads, risk notes, and correlation checks.', 'href': '/parlay?sport=nba&sample=current'},
+        {'plan': 'All Access', 'title': 'Tracking + officiating', 'description': 'Defensive matchups, contested shots, drives, touch data, and referee tendency profiles.', 'href': '/sports/nba/trends'},
+        {'plan': 'All Access', 'title': 'Deep matchup builder', 'description': 'Game-by-game matchup construction for usage, position leaks, and high-conviction card building.', 'href': '/elite/matchup-builder'},
+        {'plan': 'All Access', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NBA ticket you track.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends NBA legs with your other sports.', 'href': '/elite'},
     ],
     'wnba': [
-        {'plan': 'Pro', 'title': 'Full WNBA board', 'description': 'Every available prop with market-depth labels and current-slate context.', 'href': '/sports/wnba'},
-        {'plan': 'Pro', 'title': 'Reliability depth', 'description': 'Player reliability ratings and sample-size warnings stay visible because thinner markets need more proof.', 'href': '/sports/wnba/trends'},
-        {'plan': 'Pro', 'title': 'Player + team pages', 'description': 'WNBA player and team pages with splits, recent form, matchup history, and the parlay builder.', 'href': '/sports/wnba'},
-        {'plan': 'Sharp', 'title': 'Thin-market flags', 'description': 'Book-count, one-sided market, and stale-price warnings before a row is treated as playable.', 'href': '/sports/wnba/market-edge'},
-        {'plan': 'Sharp', 'title': 'Floor play shortlist', 'description': 'Parlay-friendly floor reads that avoid forcing fragile overs in thin markets.', 'href': '/sports/wnba/floor'},
-        {'plan': 'Sharp', 'title': 'Trend-backed reads', 'description': 'Streak, role, and trend confirmation tuned to hold up in thinner WNBA markets.', 'href': '/sports/wnba/trends'},
-        {'plan': 'Elite', 'title': 'Cross-sport ticket context', 'description': 'Use WNBA legs inside broader EV, bankroll, and correlation workflows.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every WNBA ticket you track.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'Leak finder & action queue', 'description': 'Sharp report cards, leak finder, and a daily action queue built from your results.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Full WNBA board', 'description': 'Every available prop with market-depth labels and current-slate context.', 'href': '/sports/wnba'},
+        {'plan': 'All Access', 'title': 'Reliability depth', 'description': 'Player reliability ratings and sample-size warnings stay visible because thinner markets need more proof.', 'href': '/sports/wnba/trends'},
+        {'plan': 'All Access', 'title': 'Player + team pages', 'description': 'WNBA player and team pages with splits, recent form, matchup history, and the parlay builder.', 'href': '/sports/wnba'},
+        {'plan': 'All Access', 'title': 'Thin-market flags', 'description': 'Book-count, one-sided market, and stale-price warnings before a row is treated as playable.', 'href': '/sports/wnba/market-edge'},
+        {'plan': 'All Access', 'title': 'Floor play shortlist', 'description': 'Parlay-friendly floor reads that avoid forcing fragile overs in thin markets.', 'href': '/sports/wnba/floor'},
+        {'plan': 'All Access', 'title': 'Trend-backed reads', 'description': 'Streak, role, and trend confirmation tuned to hold up in thinner WNBA markets.', 'href': '/sports/wnba/trends'},
+        {'plan': 'All Access', 'title': 'Cross-sport ticket context', 'description': 'Use WNBA legs inside broader EV, bankroll, and correlation workflows.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every WNBA ticket you track.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Leak finder & action queue', 'description': 'Sharp report cards, leak finder, and a daily action queue built from your results.', 'href': '/elite'},
     ],
     'mlb': [
-        {'plan': 'Pro', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
-        {'plan': 'Pro', 'title': 'Pitcher and batter fits', 'description': 'Pitcher strikeout tendencies, opposing lineup fit, and hitter props that match the environment.', 'href': '/sports/mlb/props'},
-        {'plan': 'Pro', 'title': 'Player and matchup pages', 'description': 'Hitter and pitcher pages with splits, recent form, opponent history, and the parlay builder.', 'href': '/sports/mlb'},
-        {'plan': 'Sharp', 'title': 'MLB market edge', 'description': 'Book splits, one-sided markets, and line range warnings for daily baseball pricing.', 'href': '/sports/mlb/market-edge'},
-        {'plan': 'Sharp', 'title': 'Floor and trend filters', 'description': 'Sort baseball props into safer floor plays and trend-backed reads.', 'href': '/sports/mlb/floor'},
-        {'plan': 'Sharp', 'title': 'Statcast signals', 'description': 'Spin rate, exit velocity, barrel rate, xBA, pitch mix, and CSW behind each baseball prop.', 'href': '/sports/mlb/trends'},
-        {'plan': 'Elite', 'title': 'Launch lab', 'description': 'The baseball launch lab ties slate intelligence, confidence governance, and calibration into the daily board.', 'href': '/elite/mlb-lab'},
-        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, prop type, and tier across every MLB ticket you track.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends MLB legs with your other sports.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
+        {'plan': 'All Access', 'title': 'Pitcher and batter fits', 'description': 'Pitcher strikeout tendencies, opposing lineup fit, and hitter props that match the environment.', 'href': '/sports/mlb/props'},
+        {'plan': 'All Access', 'title': 'Player and matchup pages', 'description': 'Hitter and pitcher pages with splits, recent form, opponent history, and the parlay builder.', 'href': '/sports/mlb'},
+        {'plan': 'All Access', 'title': 'MLB market edge', 'description': 'Book splits, one-sided markets, and line range warnings for daily baseball pricing.', 'href': '/sports/mlb/market-edge'},
+        {'plan': 'All Access', 'title': 'Floor and trend filters', 'description': 'Sort baseball props into safer floor plays and trend-backed reads.', 'href': '/sports/mlb/floor'},
+        {'plan': 'All Access', 'title': 'Statcast signals', 'description': 'Spin rate, exit velocity, barrel rate, xBA, pitch mix, and CSW behind each baseball prop.', 'href': '/sports/mlb/trends'},
+        {'plan': 'All Access', 'title': 'Launch lab', 'description': 'The baseball launch lab ties slate intelligence, confidence governance, and calibration into the daily board.', 'href': '/elite/mlb-lab'},
+        {'plan': 'All Access', 'title': 'Personal performance tracker', 'description': 'ROI by sport, prop type, and tier across every MLB ticket you track.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Cross-sport parlay EV', 'description': 'Correlation-aware parlay EV that blends MLB legs with your other sports.', 'href': '/elite'},
     ],
     'nfl': [
-        {'plan': 'Pro', 'title': 'Weekly game board', 'description': 'Spread, total, implied-team-total, weather, and matchup links for every game.', 'href': '/sports/nfl'},
-        {'plan': 'Pro', 'title': 'Team tendency pages', 'description': 'Weekly prep built around team behavior, scheme, and opponent fit rather than daily props.', 'href': '/sports/nfl/trends'},
-        {'plan': 'Pro', 'title': 'Player prop boards', 'description': 'Full weekly player prop boards with matchup context, player pages, and the parlay builder.', 'href': '/sports/nfl/props'},
-        {'plan': 'Sharp', 'title': 'Spread and total leans', 'description': 'Best game-line reads and totals context before digging into player props.', 'href': '/sports/nfl/game-lines'},
-        {'plan': 'Sharp', 'title': 'Game-script prop angles', 'description': 'Favorite/underdog scripts, target share, rushing volume, and injury role impact by matchup.', 'href': '/sports/nfl/props'},
-        {'plan': 'Sharp', 'title': 'NextGen Stats', 'description': 'Air yards share, separation, RYOE, CPOE, and route participation behind each prop.', 'href': '/sports/nfl/trends'},
-        {'plan': 'Elite', 'title': 'Weekly builder cockpit', 'description': 'A deeper game-script builder for weekly prep, tickets, and cross-sport portfolio context.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'NFL formula lab', 'description': 'The NFL formula lab plus cross-sport parlay EV and correlation analysis.', 'href': '/elite'},
-        {'plan': 'Elite', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NFL ticket you track.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Weekly game board', 'description': 'Spread, total, implied-team-total, weather, and matchup links for every game.', 'href': '/sports/nfl'},
+        {'plan': 'All Access', 'title': 'Team tendency pages', 'description': 'Weekly prep built around team behavior, scheme, and opponent fit rather than daily props.', 'href': '/sports/nfl/trends'},
+        {'plan': 'All Access', 'title': 'Player prop boards', 'description': 'Full weekly player prop boards with matchup context, player pages, and the parlay builder.', 'href': '/sports/nfl/props'},
+        {'plan': 'All Access', 'title': 'Spread and total leans', 'description': 'Best game-line reads and totals context before digging into player props.', 'href': '/sports/nfl/game-lines'},
+        {'plan': 'All Access', 'title': 'Game-script prop angles', 'description': 'Favorite/underdog scripts, target share, rushing volume, and injury role impact by matchup.', 'href': '/sports/nfl/props'},
+        {'plan': 'All Access', 'title': 'NextGen Stats', 'description': 'Air yards share, separation, RYOE, CPOE, and route participation behind each prop.', 'href': '/sports/nfl/trends'},
+        {'plan': 'All Access', 'title': 'Weekly builder cockpit', 'description': 'A deeper game-script builder for weekly prep, tickets, and cross-sport portfolio context.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'NFL formula lab', 'description': 'The NFL formula lab plus cross-sport parlay EV and correlation analysis.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every NFL ticket you track.', 'href': '/elite'},
     ],
 }
 
@@ -18366,10 +18280,10 @@ def get_free_sport_locked_features(sport_key):
     sport_key = normalize_sport_access_key(sport_key)
     if sport_key in {'ncaaf', 'ncaamb', 'ncaawb'}:
         return [
-            {'plan': 'Pro', 'title': 'Full game-line board', 'description': 'Tempo, efficiency, spread, total, and team-profile context once the sport is in season.', 'href': f'/sports/{sport_key}'},
-            {'plan': 'Pro', 'title': 'Team matchup context', 'description': 'College markets need team-strength and matchup reads before any prop-style workflow.', 'href': f'/sports/{sport_key}'},
-            {'plan': 'Sharp', 'title': 'Formula lab access', 'description': 'Calibration notes, line history, and formula maturity as the season data fills in.', 'href': '/calibration-lab'},
-            {'plan': 'Elite', 'title': 'Cross-sport portfolio tools', 'description': 'Use college edges inside EV, bankroll, and correlation workflows with the rest of the slate.', 'href': '/elite'},
+            {'plan': 'All Access', 'title': 'Full game-line board', 'description': 'Tempo, efficiency, spread, total, and team-profile context once the sport is in season.', 'href': f'/sports/{sport_key}'},
+            {'plan': 'All Access', 'title': 'Team matchup context', 'description': 'College markets need team-strength and matchup reads before any prop-style workflow.', 'href': f'/sports/{sport_key}'},
+            {'plan': 'All Access', 'title': 'Formula lab access', 'description': 'Calibration notes, line history, and formula maturity as the season data fills in.', 'href': '/calibration-lab'},
+            {'plan': 'All Access', 'title': 'Cross-sport portfolio tools', 'description': 'Use college edges inside EV, bankroll, and correlation workflows with the rest of the slate.', 'href': '/elite'},
         ]
     return FREE_SPORT_LOCKED_FEATURES.get(sport_key, FREE_SPORT_LOCKED_FEATURES['nba'])
 
@@ -18377,22 +18291,16 @@ def get_free_sport_locked_features(sport_key):
 def get_dashboard_locked_features(sport_key):
     """Plan-aware subset for the dashboard upgrade strip.
 
-    Owners/admins and full-access plans see nothing (they already have it).
-    Everyone else sees only the tiers ABOVE their current plan, so we never
-    show an upgrade prompt for something the user already owns.
+    Owners/admins and All Access members see nothing (they already have it);
+    everyone else sees the full list of what the membership unlocks.
     """
     user = get_current_user()
     if not user:
-        # Logged-out visitors on a free surface: show the full ladder.
+        # Logged-out visitors on a free surface: show the full list.
         return get_free_sport_locked_features(sport_key)
-    if is_owner_user(user):
+    if is_owner_user(user) or normalize_user_plan(user) == 'all_access':
         return []
-    current_rank = get_plan_rank(normalize_user_plan(user))
-    items = get_free_sport_locked_features(sport_key)
-    return [
-        item for item in items
-        if get_plan_rank(str(item.get('plan', '')).strip().lower()) > current_rank
-    ]
+    return get_free_sport_locked_features(sport_key)
 
 
 def _props_file_for_free_sport(sport_key):
@@ -20214,19 +20122,19 @@ def build_player_decision_context(
                 'label': 'Game Script',
                 'value': selected_prop.get('volatility_flag') or 'Check spread',
                 'note': selected_prop.get('volatility_note') or selected_prop.get('featured_risk_note') or 'Spread, total, and blowout risk should confirm the role.',
-                'plan': 'Pro',
+                'plan': 'All Access',
             },
             {
                 'label': 'Role/Usage',
                 'value': f"{player_context.get('current_team_games', '-')} team games",
                 'note': f"Sample: {player_context.get('sample_label', 'current')}." + (f" Injury: {injury_info.get('short_label') or injury_info.get('status')}." if injury_info else ''),
-                'plan': 'Pro',
+                'plan': 'All Access',
             },
             {
                 'label': 'Player vs Player',
-                'value': 'Sharp layer',
-                'note': 'Defender and direct matchup history belong behind the higher-value Sharp/Elite gate.',
-                'plan': 'Sharp',
+                'value': 'Member layer',
+                'note': 'Defender and direct matchup history are part of the All Access membership.',
+                'plan': 'All Access',
             },
         ],
     }
@@ -20280,8 +20188,8 @@ def build_team_decision_context(team, sport_key, team_logs, players, schedule=No
         ],
         'allows': [
             {'label': 'Position Defense', 'value': 'Matchup lens', 'note': 'Opponent position-defense rankings plug into this row as the defensive table matures.', 'plan': 'Free'},
-            {'label': 'Roster Depth', 'value': 'Pro layer', 'note': 'Usage, injuries, and teammate-out bumps are Pro team-page context.', 'plan': 'Pro'},
-            {'label': 'Team vs Player', 'value': 'Sharp layer', 'note': 'Inline player-vs-this-defense intersections belong here and on player pages.', 'plan': 'Sharp'},
+            {'label': 'Roster Depth', 'value': 'Member layer', 'note': 'Usage, injuries, and teammate-out bumps are All Access team-page context.', 'plan': 'All Access'},
+            {'label': 'Team vs Player', 'value': 'Member layer', 'note': 'Inline player-vs-this-defense intersections belong here and on player pages.', 'plan': 'All Access'},
         ],
         'tonight': [
             {
@@ -31750,25 +31658,15 @@ def signup():
     next_url = raw_next or '/dashboard'
     gate_notice = build_access_gate_notice(request.args.get('gate', '').strip(), request.args.get('required', '').strip())
     next_url_encoded = quote(next_url, safe='')
-    tiers = get_pricing_tiers()
-    selected_plan = str(request.args.get('plan', '') or request.form.get('plan', '') or 'free').strip().lower()
-    selected_billing = str(request.args.get('billing', '') or request.form.get('billing_cycle', '') or 'monthly').strip().lower()
-    if selected_plan not in {tier['key'] for tier in tiers}:
-        selected_plan = 'free'
-    if selected_billing not in {'monthly', 'annual'}:
-        selected_billing = 'monthly'
+    # ?plan=all_access (or any legacy paid key from an old link) means the user
+    # arrived wanting the membership — create the account, then go straight to checkout.
+    wants_membership = normalize_plan_key(request.args.get('plan', '') or request.form.get('plan', '')) == 'all_access'
     error = ''
 
     if request.method == 'POST':
         display_name = str(request.form.get('display_name', '')).strip()
         email = str(request.form.get('email', '')).strip().lower()
         password = str(request.form.get('password', '')).strip()
-        selected_plan = str(request.form.get('plan', selected_plan) or 'free').strip().lower()
-        selected_billing = str(request.form.get('billing_cycle', selected_billing) or 'monthly').strip().lower()
-        if selected_plan not in {tier['key'] for tier in tiers}:
-            selected_plan = 'free'
-        if selected_billing not in {'monthly', 'annual'}:
-            selected_billing = 'monthly'
 
         agree_terms = bool(request.form.get('agree_terms'))
         agree_age = bool(request.form.get('agree_age'))
@@ -31786,16 +31684,16 @@ def signup():
         elif find_user_by_email(email):
             error = 'That email is already registered. Please sign in.'
         else:
-            is_comp = email in COMP_ELITE_EMAILS
+            is_comp = email in COMP_ALL_ACCESS_EMAILS
             user = {
                 'UserId': uuid4().hex,
                 'DisplayName': display_name,
                 'Email': email,
                 'PasswordHash': generate_password_hash(password),
-                # Comped testers land on an active Elite subscription immediately;
-                # everyone else keeps their selected plan in the pre-checkout state.
-                'Plan': 'elite' if is_comp else selected_plan,
-                'BillingCycle': selected_billing,
+                # Comped testers land on an active All Access membership immediately;
+                # everyone else starts free and subscribes via checkout.
+                'Plan': 'all_access' if is_comp else 'free',
+                'BillingCycle': 'monthly',
                 'PlanStatus': 'active' if is_comp else 'selected',
                 'CreatedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
                 'PlanSelectedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
@@ -31803,6 +31701,9 @@ def signup():
             }
             save_user(user)
             login_user(user)
+            if wants_membership and not is_comp:
+                checkout_next = raw_next or '/dashboard?postseason=1'
+                return redirect(f"/checkout/start?plan=all_access&billing=monthly&next={quote(checkout_next, safe='')}")
             return redirect(_resolve_post_auth_target(get_current_user(), raw_next))
 
     return render_template(
@@ -31812,10 +31713,10 @@ def signup():
         next_url_encoded=next_url_encoded,
         error=error,
         gate_notice=gate_notice,
-        pricing_tiers=tiers,
-        selected_plan=selected_plan,
-        selected_billing=selected_billing,
-        selected_tier=get_pricing_tier(selected_plan),
+        all_access_tier=get_pricing_tier('all_access'),
+        founder_promo=dict(FOUNDER_PROMO),
+        founder_slots_remaining=founder_slots_remaining(),
+        wants_membership=wants_membership,
     )
 
 
@@ -32005,21 +31906,19 @@ def pricing():
     next_url = request.args.get('next', '').strip()
     checkout_config = get_checkout_configuration_report()
     pricing_cards = build_pricing_cards(current_user, next_url)
-    sport_pricing_cards = [card for card in pricing_cards if bool(card.get('is_sport_pass'))]
-    platform_pricing_cards = [card for card in pricing_cards if not bool(card.get('is_sport_pass'))]
     return render_template(
         'pricing.html',
         postseason_only=postseason_only,
         pricing_tiers=get_pricing_tiers(),
         pricing_cards=pricing_cards,
-        sport_pricing_cards=sport_pricing_cards,
-        platform_pricing_cards=platform_pricing_cards,
         selected_plan=selected_plan,
         current_user=current_user,
         gate_notice=gate_notice,
         next_url=next_url,
         next_url_encoded=quote(next_url, safe='') if next_url else '',
         checkout_config=checkout_config,
+        founder_promo=dict(FOUNDER_PROMO),
+        founder_slots_remaining=founder_slots_remaining(),
     )
 
 
@@ -32030,10 +31929,9 @@ def build_pricing_cards(current_user, next_url=''):
     for tier in get_pricing_tiers():
         tier_key = tier.get('key', 'free')
         tier_copy = dict(tier)
-        tier_copy['is_current'] = bool(current_user and selected_plan == tier_key)
+        tier_copy['is_current'] = bool(current_user and selected_plan == tier_key and (tier_key == 'free' or current_status == 'active'))
         tier_copy['current_status_label'] = current_status.replace('_', ' ').title() if tier_copy['is_current'] else ''
         tier_copy['monthly_cta'] = get_checkout_cta(current_user, tier_key, 'monthly', next_url=next_url)
-        tier_copy['annual_cta'] = get_checkout_cta(current_user, tier_key, 'annual', next_url=next_url)
         tier_copy['uses_demo_checkout'] = uses_demo_checkout(tier_key, 'monthly') if tier_key != 'free' else False
         cards.append(tier_copy)
     return cards
@@ -32045,29 +31943,35 @@ def checkout_start():
     if not current_user:
         next_url = request.args.get('next', '').strip() or '/pricing'
         next_suffix = f"&next={quote(next_url, safe='')}" if next_url else ''
-        requested_plan = str(request.args.get('plan', '') or '').strip().lower() or 'pro'
-        target = f"/checkout/start?plan={requested_plan}&billing={request.args.get('billing', 'monthly').strip()}{next_suffix}"
-        return redirect(url_for('login', next=target, gate='login_required', required=requested_plan))
+        target = f"/checkout/start?plan=all_access&billing=monthly{next_suffix}"
+        return redirect(url_for('login', next=target, gate='login_required', required='all_access'))
 
-    plan = str(request.args.get('plan', '') or '').strip().lower()
-    billing = str(request.args.get('billing', 'monthly') or 'monthly').strip().lower()
+    plan = normalize_plan_key(request.args.get('plan', 'all_access'))
     next_url = request.args.get('next', '').strip() or '/dashboard?postseason=1'
-    if plan not in PLAN_RANKS or plan == 'free':
+    if plan == 'free':
         return redirect(url_for('pricing', next=next_url))
-    if billing not in {'monthly', 'annual'}:
-        billing = 'monthly'
+
+    # Founders promo: reserve a slot while any remain. Live mode needs the
+    # founder payment link; demo mode (no Stripe links) honors the offer via
+    # the demo checkout. The reservation (FounderOffer) is consumed into
+    # IsFounder when the membership activates, and released if checkout is
+    # cancelled or abandoned.
+    standard_url = get_stripe_checkout_url('all_access', 'monthly')
+    founder_url = get_founder_checkout_url()
+    use_founder = founder_slots_remaining() > 0 and (bool(founder_url) or not standard_url)
 
     updated_user = update_user_membership(
         user_id=current_user.get('user_id', ''),
         email=current_user.get('email', ''),
-        plan=plan,
-        billing_cycle=billing,
+        plan='all_access',
+        billing_cycle='monthly',
         plan_status='pending_checkout',
+        founder_offer=use_founder,
     )
     if updated_user:
         login_user(updated_user)
 
-    stripe_url = get_stripe_checkout_url(plan, billing)
+    stripe_url = founder_url if (use_founder and founder_url) else standard_url
     if stripe_url:
         ref_params = {
             'client_reference_id': str(current_user.get('user_id', '') or '').strip(),
@@ -32079,7 +31983,7 @@ def checkout_start():
             stripe_url = f"{stripe_url}{separator}{urlencode(ref_params)}"
         return redirect(stripe_url)
 
-    return redirect(url_for('checkout_success', plan=plan, billing=billing, mode='demo', next=next_url))
+    return redirect(url_for('checkout_success', plan='all_access', billing='monthly', mode='demo', next=next_url))
 
 
 @app.route('/checkout/cancel')
@@ -32093,6 +31997,7 @@ def checkout_cancel():
             plan=current_user.get('plan', 'free'),
             billing_cycle=current_user.get('billing_cycle', 'monthly'),
             plan_status='selected',
+            founder_offer=False,
         )
         if updated_user:
             login_user(updated_user)
@@ -32108,13 +32013,11 @@ def checkout_success():
     if not current_user:
         return redirect(url_for('login', next=request.full_path[:-1] if request.full_path.endswith('?') else request.full_path))
 
-    plan = str(request.args.get('plan', '') or current_user.get('plan', 'free')).strip().lower()
-    billing = str(request.args.get('billing', '') or current_user.get('billing_cycle', 'monthly')).strip().lower()
+    plan = normalize_plan_key(request.args.get('plan', '') or current_user.get('plan', 'free'))
+    if plan == 'free':
+        plan = 'all_access'
+    billing = 'monthly'
     next_url = request.args.get('next', '').strip() or '/dashboard?postseason=1'
-    if plan not in PLAN_RANKS:
-        plan = current_user.get('plan', 'free')
-    if billing not in {'monthly', 'annual'}:
-        billing = current_user.get('billing_cycle', 'monthly')
 
     mode = str(request.args.get('mode', '') or '').strip().lower()
     session_id = str(request.args.get('session_id', '') or '').strip()
@@ -32257,7 +32160,7 @@ def billing_portal():
     next_url = request.args.get('next', '').strip() or '/pricing'
     plan = normalize_user_plan(current_user)
     if get_plan_rank(plan) <= get_plan_rank('free'):
-        return redirect(url_for('pricing', next=next_url, gate='upgrade_required', required='pro'))
+        return redirect(url_for('pricing', next=next_url, gate='upgrade_required', required='all_access'))
 
     billing_portal_url = get_stripe_billing_portal_url()
     if billing_portal_url:

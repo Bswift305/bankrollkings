@@ -12,7 +12,9 @@ from app import (
     find_user_by_email,
     DATA_DIR,
     get_stripe_checkout_url,
+    get_founder_checkout_url,
     get_stripe_billing_portal_url,
+    founder_slots_remaining,
 )
 
 
@@ -74,59 +76,128 @@ def run_qc() -> dict:
     failures: list[str] = []
     checks: list[str] = []
 
+    standard_url = get_stripe_checkout_url("all_access", "monthly")
+    founder_url = get_founder_checkout_url()
+    live_checkout = bool(standard_url or founder_url)
+    portal_url = get_stripe_billing_portal_url()
+
     with isolated_users_file():
         client = app.test_client()
         pricing = client.get("/pricing")
         _assert(pricing.status_code == 200, "Anonymous /pricing should return 200.", failures)
+        _assert(b"$19.99" in pricing.data, "/pricing should show the $19.99 All Access price.", failures)
         checks.append("anonymous_pricing")
 
-        anon_checkout = client.get("/checkout/start?plan=pro&billing=monthly", follow_redirects=False)
+        anon_checkout = client.get("/checkout/start?plan=all_access&billing=monthly", follow_redirects=False)
         _assert(anon_checkout.status_code in {301, 302}, "Anonymous checkout should redirect to login.", failures)
         _assert("/login" in str(anon_checkout.location or ""), "Anonymous checkout should point at login.", failures)
         checks.append("anonymous_checkout_redirect")
 
-        for plan_key in ["pro", "nba_pass", "cbb_pass"]:
+        # All entry plan keys (new key + legacy links) must land on the single
+        # all_access membership.
+        for plan_key in ["all_access", "pro", "nba_pass"]:
             client = app.test_client()
             user = _seed_user("free")
             _login(client, user)
 
+            slots_before = founder_slots_remaining()
             start = client.get(f"/checkout/start?plan={plan_key}&billing=monthly&next=/pricing", follow_redirects=False)
-            expected_checkout_url = get_stripe_checkout_url(plan_key, "monthly")
+            location = str(start.location or "")
             _assert(start.status_code in {301, 302}, f"{plan_key} checkout start should redirect.", failures)
-            _assert(
-                str(start.location or "") == expected_checkout_url,
-                f"{plan_key} checkout start should redirect to the configured Stripe URL.",
-                failures,
-            )
+            if live_checkout:
+                expect_founder = slots_before > 0 and bool(founder_url)
+                expected_base = founder_url if expect_founder else standard_url
+                _assert(
+                    location.startswith(expected_base),
+                    f"{plan_key} checkout start should redirect to the {'founder' if expect_founder else 'standard'} Stripe URL.",
+                    failures,
+                )
+            else:
+                _assert(
+                    "/checkout/success" in location and "mode=demo" in location,
+                    f"{plan_key} checkout start should fall back to the demo checkout when Stripe is not configured.",
+                    failures,
+                )
 
             updated = find_user_by_email(user["Email"])
             _assert(updated is not None, f"{plan_key} user should still exist after checkout start.", failures)
-            _assert(str((updated or {}).get("Plan", "")).strip().lower() == plan_key, f"{plan_key} checkout should update plan on the user record.", failures)
-            _assert(str((updated or {}).get("PlanStatus", "")).strip().lower() == "pending_checkout", f"{plan_key} checkout should set pending_checkout.", failures)
-            checks.append(f"{plan_key}_checkout_start")
-
-            success = client.get(f"/checkout/success?plan={plan_key}&billing=monthly&next=/pricing", follow_redirects=False)
-            _assert(success.status_code in {301, 302}, f"{plan_key} checkout success should redirect.", failures)
-            _assert("/pricing?checkout=success" in str(success.location or ""), f"{plan_key} success should return to pricing with checkout=success.", failures)
-            updated = find_user_by_email(user["Email"])
-            _assert(str((updated or {}).get("PlanStatus", "")).strip().lower() == "active", f"{plan_key} success should activate the plan.", failures)
-            checks.append(f"{plan_key}_checkout_success")
-
-            billing = client.get("/billing?next=/pricing", follow_redirects=False)
-            _assert(billing.status_code in {301, 302}, f"{plan_key} billing should redirect.", failures)
             _assert(
-                str(billing.location or "") == get_stripe_billing_portal_url(),
-                f"{plan_key} billing should redirect to the live Stripe billing portal.",
+                str((updated or {}).get("Plan", "")).strip().lower() == "all_access",
+                f"{plan_key} checkout should normalize the user's plan to all_access.",
                 failures,
             )
-            checks.append(f"{plan_key}_billing")
+            _assert(
+                str((updated or {}).get("PlanStatus", "")).strip().lower() == "pending_checkout",
+                f"{plan_key} checkout should set pending_checkout.",
+                failures,
+            )
+            if slots_before > 0:
+                _assert(
+                    str((updated or {}).get("FounderOffer", "")).strip() == "1",
+                    f"{plan_key} checkout should reserve a founder slot while slots remain.",
+                    failures,
+                )
+            checks.append(f"{plan_key}_checkout_start")
 
-            cancel = client.get("/checkout/cancel?next=/pricing", follow_redirects=False)
-            _assert(cancel.status_code in {301, 302}, f"{plan_key} cancel should redirect.", failures)
-            _assert("/pricing?checkout=cancelled" in str(cancel.location or ""), f"{plan_key} cancel should return to pricing with checkout=cancelled.", failures)
-            updated = find_user_by_email(user["Email"])
-            _assert(str((updated or {}).get("PlanStatus", "")).strip().lower() == "selected", f"{plan_key} cancel should set plan_status back to selected.", failures)
-            checks.append(f"{plan_key}_cancel")
+            if not live_checkout:
+                # Demo path: completing checkout must activate the membership and
+                # consume the reserved founder slot into IsFounder.
+                success = client.get(location, follow_redirects=False)
+                _assert(success.status_code in {301, 302}, f"{plan_key} demo checkout success should redirect.", failures)
+                _assert("checkout=success" in str(success.location or ""), f"{plan_key} demo success should signal checkout=success.", failures)
+                updated = find_user_by_email(user["Email"])
+                _assert(
+                    str((updated or {}).get("PlanStatus", "")).strip().lower() == "active",
+                    f"{plan_key} demo success should activate the membership.",
+                    failures,
+                )
+                if slots_before > 0:
+                    _assert(
+                        str((updated or {}).get("IsFounder", "")).strip() == "1",
+                        f"{plan_key} activation should convert the founder reservation into IsFounder.",
+                        failures,
+                    )
+                    _assert(
+                        str((updated or {}).get("FounderOffer", "")).strip() != "1",
+                        f"{plan_key} activation should clear the FounderOffer reservation.",
+                        failures,
+                    )
+                    _assert(
+                        founder_slots_remaining() == slots_before - 1,
+                        f"{plan_key} activation should consume exactly one founder slot.",
+                        failures,
+                    )
+                checks.append(f"{plan_key}_demo_checkout_success")
+
+                billing = client.get("/billing?next=/pricing", follow_redirects=False)
+                _assert(billing.status_code in {301, 302}, f"{plan_key} billing should redirect.", failures)
+                if portal_url:
+                    _assert(
+                        str(billing.location or "") == portal_url,
+                        f"{plan_key} billing should redirect to the Stripe billing portal.",
+                        failures,
+                    )
+                else:
+                    _assert("billing=demo" in str(billing.location or ""), f"{plan_key} billing should fall back to demo.", failures)
+                checks.append(f"{plan_key}_billing")
+            else:
+                # Live path: cancel releases the founder reservation.
+                cancel = client.get("/checkout/cancel?next=/pricing", follow_redirects=False)
+                _assert(cancel.status_code in {301, 302}, f"{plan_key} cancel should redirect.", failures)
+                _assert("checkout=cancelled" in str(cancel.location or ""), f"{plan_key} cancel should signal checkout=cancelled.", failures)
+                updated = find_user_by_email(user["Email"])
+                _assert(
+                    str((updated or {}).get("PlanStatus", "")).strip().lower() == "selected",
+                    f"{plan_key} cancel should set plan_status back to selected.",
+                    failures,
+                )
+                _assert(
+                    str((updated or {}).get("FounderOffer", "")).strip() != "1",
+                    f"{plan_key} cancel should release the founder reservation.",
+                    failures,
+                )
+                _assert(founder_slots_remaining() == slots_before, f"{plan_key} cancel should restore the founder slot count.", failures)
+                checks.append(f"{plan_key}_cancel")
 
     return {
         "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

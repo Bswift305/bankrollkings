@@ -65,8 +65,11 @@
                 <div style="font-size: 13px; color: var(--text-bright); font-weight: 700; margin-top: 6px; word-break: break-word;">{{ current_user.email }}</div>
             </div>
             <div class="parlay-surface-soft" style="padding: 12px;">
-                <div class="detail-kicker">Plan</div>
-                <div style="font-size: 16px; color: var(--accent); font-weight: 800; margin-top: 6px;">{{ current_user.plan|default('free')|upper }}</div>
+                <div class="detail-kicker">Membership</div>
+                <div style="font-size: 16px; color: var(--accent); font-weight: 800; margin-top: 6px;">{{ current_user.plan|default('free')|replace('_', ' ')|title }}</div>
+                {% if current_user.is_founder %}
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Founding Member — $10/mo locked for year one</div>
+                {% endif %}
             </div>
         </div>
     </div>
