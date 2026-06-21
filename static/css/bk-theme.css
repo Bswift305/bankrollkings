@@ -3506,11 +3506,19 @@ body::after {
      scroll context that would break sticky table headers on desktop.
    - Command toolbars: a single swipeable row instead of a tall wrap.
    ------------------------------------------------------------ */
-@media (max-width: 760px) {
+/* Tables clip below ~1020px (sidebar 240 + a <780px main can't fit the board),
+   so enable horizontal scroll through the tablet range too. This makes
+   .table-shell a scroll container, which trades away the page-scroll sticky
+   header (see the .card overflow:clip note) — an acceptable swap on small/
+   tablet screens where reachable columns matter more. Desktop (>1024px) has
+   room for the table and keeps its frozen headers. */
+@media (max-width: 1024px) {
   .table-shell {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+}
+@media (max-width: 760px) {
   .bk-command-toolbar,
   .bk-workflow-toolbar {
     flex-wrap: nowrap;

@@ -6,6 +6,9 @@
   {% include "_csrf_head.html" %}
   <meta name="description" content="{% block meta_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
   <meta name="theme-color" content="#0b1418">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bankroll Kings">
   <meta property="og:title" content="{% block og_title %}Bankroll Kings - Betting Intelligence{% endblock %}">
   <meta property="og:description" content="{% block og_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
   <meta property="og:image" content="{{ url_for('static', filename='brand-latest-logo.webp', _external=True) }}">
@@ -15,7 +18,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand-latest-logo-thumb.webp') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-mobile2">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-mobile3">
   <style>
     html,
     body {
@@ -146,6 +149,14 @@
     </footer>
   </div>
   <script>
+    // Register the PWA service worker on public entry pages too (pricing,
+    // signup, login) so the app is installable before a visitor ever reaches
+    // an authenticated page.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+      });
+    }
     const loadingBar = document.getElementById('bk-page-loading');
     function showPageLoading() {
       if (loadingBar) loadingBar.classList.add('active');
