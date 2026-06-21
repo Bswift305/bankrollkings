@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260610-sticky">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-mobilenav">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -35,6 +35,11 @@
        TOP BAR — identical on every page
   ═══════════════════════════════════════ -->
   <header class="bk-topbar">
+    <button class="bk-nav-toggle" type="button" aria-label="Open navigation menu" aria-controls="bkSidebar" aria-expanded="false" onclick="bkToggleNav()">
+      <span class="bk-nav-toggle-bar"></span>
+      <span class="bk-nav-toggle-bar"></span>
+      <span class="bk-nav-toggle-bar"></span>
+    </button>
     <a class="bk-site-name" href="{{ url_for('dashboard') }}">BANKROLL KINGS</a>
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker" title="Hover to pause">
@@ -116,7 +121,7 @@
   <!-- ═══════════════════════════════════════
        LEFT SIDEBAR — overridden per page
   ═══════════════════════════════════════ -->
-  <aside class="bk-sidebar">
+  <aside class="bk-sidebar" id="bkSidebar">
     {% block sidebar %}
     <!-- Default sidebar: sport selector + injury alert -->
     <div class="bk-sidebar-section">
@@ -223,7 +228,25 @@
       </a>
     </div>
 
+    <!-- Mobile-only: account/session links live in the topbar on desktop, but
+         that cluster is hidden on phones, so surface them here in the drawer. -->
+    <div class="bk-sidebar-section bk-sidebar-mobileonly">
+      <div class="bk-sidebar-heading">Account</div>
+      {% if current_user %}
+      <a href="{{ url_for('account') }}" class="bk-sidebar-item"><span class="si-name">Account</span></a>
+      <a href="{{ url_for('pricing') }}" class="bk-sidebar-item"><span class="si-name">Pricing</span></a>
+      <a href="{{ url_for('billing_portal') }}" class="bk-sidebar-item"><span class="si-name">Billing</span></a>
+      <a href="{{ url_for('logout') }}" class="bk-sidebar-item"><span class="si-name">Logout</span></a>
+      {% else %}
+      <a href="{{ url_for('login', next=request.path) }}" class="bk-sidebar-item"><span class="si-name">Sign In</span></a>
+      <a href="{{ url_for('signup', next=request.path) }}" class="bk-sidebar-item"><span class="si-name">Sign Up</span></a>
+      {% endif %}
+    </div>
+
   </aside>
+
+  <!-- Backdrop for the mobile nav drawer (tap to close); inert on desktop. -->
+  <div class="bk-nav-backdrop" aria-hidden="true"></div>
 
   <!-- ═══════════════════════════════════════
        MAIN CONTENT — always overridden
@@ -495,6 +518,28 @@
 })();
 </script>
 {% endif %}
+
+<!-- Mobile navigation drawer toggle -->
+<script>
+(function () {
+  window.bkToggleNav = function (force) {
+    var open = (typeof force === 'boolean') ? force : !document.body.classList.contains('bk-nav-open');
+    document.body.classList.toggle('bk-nav-open', open);
+    var btn = document.querySelector('.bk-nav-toggle');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.bk-nav-backdrop')) { window.bkToggleNav(false); return; }
+    // Tapping a link inside the drawer navigates, so close it behind them.
+    if (e.target.closest('#bkSidebar a') && document.body.classList.contains('bk-nav-open')) {
+      window.bkToggleNav(false);
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') window.bkToggleNav(false);
+  });
+})();
+</script>
 
 <!-- Page-specific scripts -->
 {% block extra_js %}{% endblock %}

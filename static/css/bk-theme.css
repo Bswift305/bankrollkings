@@ -3394,3 +3394,91 @@ body::after {
     flex-direction: column;
   }
 }
+
+/* ------------------------------------------------------------
+   MOBILE APP SHELL — sidebar collapses into an off-canvas drawer
+   Desktop keeps the 240px sidebar grid; below 760px the shell goes
+   single-column and the sidebar slides in over the content from a
+   hamburger toggle in the topbar.
+   ------------------------------------------------------------ */
+.bk-nav-toggle { display: none; }
+.bk-nav-backdrop { display: none; }
+.bk-sidebar-mobileonly { display: none; }
+
+@media (max-width: 760px) {
+  /* Shell becomes a single column; the sidebar leaves the grid (see fixed below). */
+  .bk-app,
+  .bk-app.no-slip { grid-template-columns: 1fr; }
+  .bk-main { min-width: 0; }
+
+  /* Hamburger toggle (animates to an X when open). */
+  .bk-nav-toggle {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 42px;
+    height: 52px;
+    padding: 0 11px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .bk-nav-toggle-bar {
+    display: block;
+    width: 20px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--text, #e7eef2);
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  body.bk-nav-open .bk-nav-toggle-bar:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  body.bk-nav-open .bk-nav-toggle-bar:nth-child(2) { opacity: 0; }
+  body.bk-nav-open .bk-nav-toggle-bar:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  /* Sidebar -> off-canvas drawer under the 52px topbar. */
+  .bk-sidebar {
+    position: fixed;
+    top: 52px;
+    left: 0;
+    bottom: 0;
+    width: 270px;
+    max-width: 84vw;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 1250;          /* above main, below the Ticket drawer (1300) */
+  }
+  body.bk-nav-open .bk-sidebar {
+    transform: translateX(0);
+    box-shadow: 16px 0 40px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Tap-to-close scrim behind the drawer. */
+  .bk-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 52px 0 0 0;
+    background: rgba(2, 6, 8, 0.6);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+    z-index: 1240;
+  }
+  body.bk-nav-open .bk-nav-backdrop { opacity: 1; visibility: visible; }
+
+  /* Account/session links surface inside the drawer on mobile. */
+  .bk-sidebar-mobileonly { display: block; }
+
+  /* Topbar condense: drop the scrolling ticker and the desktop account cluster
+     (those links now live in the drawer); keep brand + bankroll. */
+  .bk-header-ticker { display: none; }
+  .bk-topbar-right > .bk-account-link,
+  .bk-topbar-right .bk-date { display: none; }
+  .bk-site-name {
+    font-size: 14px;
+    padding: 0 8px;
+    border-right: none;
+  }
+}
