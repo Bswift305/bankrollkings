@@ -2594,6 +2594,20 @@ body::after {
   margin-bottom: 16px !important;
 }
 
+/* On phones these two-column heroes must stack — the minmax(280px,…) action
+   column otherwise crushes the copy to a one-word-per-line sliver. Needs the
+   same specificity + !important to beat the rule above. */
+@media (max-width: 800px) {
+  .bk-compat-content .signup-shell,
+  .bk-compat-content .pricing-hero {
+    grid-template-columns: 1fr !important;
+  }
+  .bk-compat-content .signup-copy h1,
+  .bk-compat-content .pricing-hero h1 {
+    font-size: clamp(24px, 6vw, 32px) !important;
+  }
+}
+
 .bk-compat-content .signup-copy,
 .bk-compat-content .pricing-hero > div:first-child {
   background: transparent !important;
@@ -3480,5 +3494,27 @@ body::after {
     font-size: 14px;
     padding: 0 8px;
     border-right: none;
+  }
+}
+
+/* ------------------------------------------------------------
+   MOBILE BOARD POLISH
+   - Dense data tables: make .table-shell the horizontal scroll
+     container. Without this the table overflows .table-shell and is
+     CLIPPED by the parent .card (overflow-x: clip), so columns past the
+     viewport are unreachable. Scoped to phones to avoid creating a
+     scroll context that would break sticky table headers on desktop.
+   - Command toolbars: a single swipeable row instead of a tall wrap.
+   ------------------------------------------------------------ */
+@media (max-width: 760px) {
+  .table-shell {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bk-command-toolbar,
+  .bk-workflow-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
