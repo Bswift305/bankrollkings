@@ -180,6 +180,21 @@ def service_worker():
     return response
 
 
+@app.route('/.well-known/assetlinks.json')
+def assetlinks():
+    # Android TWA Digital Asset Links: verifies bankrollkings.com owns the Play
+    # Store app so the installed app runs full-screen (no browser URL bar). The
+    # SHA-256 fingerprint must be filled in from Play Console -> App integrity ->
+    # App signing once the app exists; until then the file carries a placeholder.
+    response = send_from_directory(
+        os.path.join(str(STATIC_DIR), 'well-known'),
+        'assetlinks.json',
+        mimetype='application/json',
+    )
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
 def _login_client_ip():
     forwarded = str(request.headers.get('X-Forwarded-For', '') or '').split(',', 1)[0].strip()
     return forwarded or str(request.remote_addr or 'unknown')
@@ -526,6 +541,7 @@ PUBLIC_ENDPOINTS = {
     'static',
     'manifest_webmanifest',
     'service_worker',
+    'assetlinks',
     'frontpage',
     'global_feature_preview',
     'pricing',
