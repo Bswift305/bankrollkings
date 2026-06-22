@@ -11,12 +11,13 @@
   <meta name="apple-mobile-web-app-title" content="Bankroll Kings">
   <meta property="og:title" content="{% block og_title %}Bankroll Kings - Betting Intelligence{% endblock %}">
   <meta property="og:description" content="{% block og_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
-  <meta property="og:image" content="{{ url_for('static', filename='brand-bk-logo.png', _external=True) }}">
+  <meta property="og:image" content="{{ url_for('static', filename='brand-bk-lion.png', _external=True) }}">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{ url_for('static', filename='brand-bk-lion.png', _external=True) }}">
   <title>{% block title %}Bankroll Kings{% endblock %}</title>
-  <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='favicon.png') }}?v=brk1">
-  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=brk1">
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='favicon.png') }}?v=brk-brand2">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=brk-brand2">
   <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}">
 
@@ -33,7 +34,7 @@
     "description": "Sports betting intelligence — live prop context, game environment, market movement, and player reliability across NBA, MLB, WNBA, and football."
   }
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-navmark">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-brand-system">
   <style>
     html,
     body {
@@ -140,7 +141,7 @@
   <div class="bk-public-shell">
     <header class="bk-public-topbar">
       <a class="bk-public-brand" href="{{ url_for('frontpage') }}">
-        <img src="/static/brand-bk-mark.webp?v=2" alt="Bankroll Kings" loading="eager">
+        <img src="/static/brand-bk-mark.webp?v=brand2" alt="Bankroll Kings" loading="eager">
         <span>BANKROLL KINGS</span>
       </a>
       <nav class="bk-public-nav" aria-label="Public navigation">

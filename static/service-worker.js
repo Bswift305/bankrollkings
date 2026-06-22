@@ -1,9 +1,11 @@
-const BK_CACHE = 'bankroll-kings-shell-v6';
+const BK_CACHE = 'bankroll-kings-shell-v7';
 const SHELL_ASSETS = [
   '/static/css/bk-theme.css',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/static/brand-bk-logo.webp',
+  '/static/brand-bk-lion.webp',
+  '/static/brand-bk-mark.webp',
   '/static/logos/leagues/nba.svg',
   '/static/logos/leagues/mlb.svg',
   '/static/logos/leagues/nfl.svg',

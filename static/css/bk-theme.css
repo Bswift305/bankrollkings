@@ -254,31 +254,35 @@ body::after {
   filter: drop-shadow(0 0 10px rgba(0,220,255,0.48));
 }
 
+.bk-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 18px 0 12px;
+  border-right: 1px solid var(--border);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.bk-topbar-mark {
+  height: 44px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(0,220,255,0.18));
+}
+
 .bk-site-name {
-  padding: 0 18px 0 10px;
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 800;
   letter-spacing: 0.08em;
-  color: #ffffff;            /* solid white: the wordmark is navigation, it must read at a glance */
-  border-right: 1px solid var(--border);
-  height: 100%;
-  display: flex;
-  align-items: center;
-  text-decoration: none;
+  color: #ffffff;            /* solid white = the brand name reads instantly */
   white-space: nowrap;
 }
-/* BRK symbol icon in the logged-in topbar (the brand mark; hidden on phones
-   where the hamburger already owns the left slot). */
-.bk-topbar-mark {
-  height: 48px;
-  width: auto;
-  object-fit: contain;
-  margin-left: 14px;
-  flex-shrink: 0;
-}
 
-.bk-site-name + .bk-topbar-right {
+.bk-topbar-brand + .bk-topbar-right {
   margin-left: auto;
 }
 
@@ -3494,12 +3498,12 @@ body::after {
   .bk-header-ticker { display: none; }
   .bk-topbar-right > .bk-account-link,
   .bk-topbar-right .bk-date { display: none; }
-  .bk-topbar-mark { display: none; }
-  .bk-site-name {
-    font-size: 14px;
-    padding: 0 8px;
+  .bk-topbar-brand {
+    padding: 0 6px 0 0;
     border-right: none;
   }
+  .bk-topbar-mark { display: none; }   /* hamburger stands in for the mark on phones */
+  .bk-site-name { font-size: 15px; }
 }
 
 /* ------------------------------------------------------------
