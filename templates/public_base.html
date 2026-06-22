@@ -15,9 +15,24 @@
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <title>{% block title %}Bankroll Kings{% endblock %}</title>
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}">
+
+  <!-- Tells Google the brand + logo to associate with bankrollkings.com (shown in
+       Search / the knowledge result). The favicon links above feed the small icon
+       next to the result. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Bankroll Kings",
+    "url": "https://bankrollkings.com/",
+    "logo": "https://bankrollkings.com/static/brand-bk-logo.png",
+    "description": "Sports betting intelligence — live prop context, game environment, market movement, and player reliability across NBA, MLB, WNBA, and football."
+  }
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-navmark">
   <style>
     html,

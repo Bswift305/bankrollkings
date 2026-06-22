@@ -180,6 +180,38 @@ def service_worker():
     return response
 
 
+@app.route('/robots.txt')
+def robots_txt():
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Sitemap: https://bankrollkings.com/sitemap.xml\n"
+    )
+    response = make_response(body)
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    # Public, crawlable pages (auth-gated app pages are intentionally excluded).
+    paths = ['/', '/pricing', '/login', '/signup', '/glossary']
+    urls = ''.join(
+        f'<url><loc>https://bankrollkings.com{p}</loc><changefreq>weekly</changefreq></url>'
+        for p in paths
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f'{urls}</urlset>'
+    )
+    response = make_response(xml)
+    response.headers['Content-Type'] = 'application/xml; charset=utf-8'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
 @app.route('/.well-known/assetlinks.json')
 def assetlinks():
     # Android TWA Digital Asset Links: verifies bankrollkings.com owns the Play
@@ -542,6 +574,8 @@ PUBLIC_ENDPOINTS = {
     'manifest_webmanifest',
     'service_worker',
     'assetlinks',
+    'robots_txt',
+    'sitemap_xml',
     'frontpage',
     'global_feature_preview',
     'pricing',
