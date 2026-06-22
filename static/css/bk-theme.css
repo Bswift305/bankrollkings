@@ -196,7 +196,7 @@ body::after {
   /* Legacy in-grid bet slip retired in favour of the floating Ticket drawer.
      Default layout is now 2-col (sidebar + main); the slip column is gone. */
   grid-template-columns: 240px 1fr;
-  grid-template-rows: 52px 1fr;
+  grid-template-rows: 60px 1fr;
   height: 100vh;
   position: relative;
   z-index: 2;
@@ -271,8 +271,8 @@ body::after {
 /* BRK symbol icon in the logged-in topbar (the brand mark; hidden on phones
    where the hamburger already owns the left slot). */
 .bk-topbar-mark {
-  width: 40px;
-  height: 40px;
+  height: 48px;
+  width: auto;
   object-fit: contain;
   margin-left: 14px;
   flex-shrink: 0;
@@ -925,7 +925,7 @@ body::after {
   border: 1px solid var(--window-border, rgba(215,167,79,0.30));
   background: var(--bg);
   position: sticky;
-  top: 65px;
+  top: 73px;
   z-index: 9;
   flex-wrap: wrap;
 }
@@ -3455,10 +3455,10 @@ body::after {
   body.bk-nav-open .bk-nav-toggle-bar:nth-child(2) { opacity: 0; }
   body.bk-nav-open .bk-nav-toggle-bar:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
-  /* Sidebar -> off-canvas drawer under the 52px topbar. */
+  /* Sidebar -> off-canvas drawer under the 60px topbar. */
   .bk-sidebar {
     position: fixed;
-    top: 52px;
+    top: 60px;
     left: 0;
     bottom: 0;
     width: 270px;
@@ -3476,7 +3476,7 @@ body::after {
   .bk-nav-backdrop {
     display: block;
     position: fixed;
-    inset: 52px 0 0 0;
+    inset: 60px 0 0 0;
     background: rgba(2, 6, 8, 0.6);
     backdrop-filter: blur(2px);
     opacity: 0;
