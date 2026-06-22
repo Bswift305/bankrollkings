@@ -15309,7 +15309,7 @@ def sidebar_icon_url(key):
         'glossary': 'glossary',
     }
     if key in nav:
-        return '/static/logos/nav/' + nav[key] + '.png?v=premium'
+        return '/static/logos/nav/' + nav[key] + '.png?v=brk'
     # Keys not in the badge set keep the existing line SVGs.
     fallback = {'review': 'review.svg', 'props': 'game-lines.svg',
                 'game-lines': 'game-lines.svg', 'injuries': 'injuries.svg'}
