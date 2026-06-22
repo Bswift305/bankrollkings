@@ -1,8 +1,9 @@
-const BK_CACHE = 'bankroll-kings-shell-v5';
+const BK_CACHE = 'bankroll-kings-shell-v6';
 const SHELL_ASSETS = [
   '/static/css/bk-theme.css',
-  '/static/brand-latest-logo-thumb.webp',
-  '/static/brand-latest-logo.webp',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
+  '/static/brand-bk-logo.webp',
   '/static/logos/leagues/nba.svg',
   '/static/logos/leagues/mlb.svg',
   '/static/logos/leagues/nfl.svg',
@@ -36,7 +37,8 @@ self.addEventListener('fetch', event => {
   const isShellAsset = url.origin === self.location.origin && (
     url.pathname.startsWith('/static/css/') ||
     url.pathname.startsWith('/static/logos/') ||
-    url.pathname.includes('brand-latest-logo')
+    url.pathname.startsWith('/static/icons/') ||
+    url.pathname.includes('brand-bk')
   );
 
   if (!isShellAsset) return;

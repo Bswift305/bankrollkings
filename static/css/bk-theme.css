@@ -514,7 +514,7 @@ body::after {
 .bk-rail-legacy {
   background:
     linear-gradient(180deg, rgba(2,6,7,0.90), rgba(4,8,10,0.96)),
-    url('/static/brand-latest-rail-bg.webp') center top / 190px auto no-repeat;
+    url('/static/brand-bk-rail-bg.webp') center top / 190px auto no-repeat;
   backdrop-filter: blur(10px);
   border-right: 1px solid var(--border);
   display: flex;
@@ -608,7 +608,7 @@ body::after {
   background:
     linear-gradient(180deg, rgba(4,8,10,0.84), rgba(3,6,8,0.94) 44%, rgba(3,5,7,0.98)),
     radial-gradient(circle at 50% 12%, rgba(0,220,255,0.10), transparent 34%),
-    url('/static/brand-latest-rail-bg.webp') center top / 250px auto no-repeat;
+    url('/static/brand-bk-rail-bg.webp') center top / 250px auto no-repeat;
   backdrop-filter: blur(10px);
   border-right: 1px solid var(--border);
   overflow-y: auto;
@@ -2872,7 +2872,7 @@ body::after {
   transform: translateX(-50%);
   width: 230px;
   height: 280px;
-  background: url('/static/king-bankroll.webp') center bottom / contain no-repeat;
+  background: url('/static/brand-bk-mascot.webp') center bottom / contain no-repeat;
   opacity: 0.12;
   pointer-events: none;
   z-index: -1;

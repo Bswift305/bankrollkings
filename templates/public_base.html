@@ -11,14 +11,14 @@
   <meta name="apple-mobile-web-app-title" content="Bankroll Kings">
   <meta property="og:title" content="{% block og_title %}Bankroll Kings - Betting Intelligence{% endblock %}">
   <meta property="og:description" content="{% block og_description %}Live props, game environment, market movement, and player reliability across NBA, MLB, and WNBA.{% endblock %}">
-  <meta property="og:image" content="{{ url_for('static', filename='brand-latest-logo.webp', _external=True) }}">
+  <meta property="og:image" content="{{ url_for('static', filename='brand-bk-logo.png', _external=True) }}">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <title>{% block title %}Bankroll Kings{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-mobile3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-rebrand">
   <style>
     html,
     body {
@@ -121,7 +121,7 @@
   <div class="bk-public-shell">
     <header class="bk-public-topbar">
       <a class="bk-public-brand" href="{{ url_for('frontpage') }}">
-        <img src="/static/brand-latest-logo-thumb.webp" alt="Bankroll Kings" loading="eager">
+        <img src="/static/brand-bk-mark.webp" alt="Bankroll Kings" loading="eager">
         <span>BANKROLL KINGS</span>
       </a>
       <nav class="bk-public-nav" aria-label="Public navigation">
