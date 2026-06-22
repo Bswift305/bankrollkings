@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="manifest" href="{{ url_for('manifest_webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-rebrand">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-navtext">
   <style>
     html,
     body {
@@ -45,18 +45,18 @@
     .bk-public-brand {
       display: inline-flex;
       align-items: center;
-      gap: 12px;
-      color: var(--text);
+      gap: 9px;
+      color: #ffffff;          /* solid white text = navigation reads instantly on the dark header */
       text-decoration: none;
       font-family: var(--font-display);
-      font-size: 21px;
+      font-size: 24px;
+      font-weight: 800;
       letter-spacing: 0.08em;
     }
     .bk-public-brand img {
-      width: 42px;
-      height: 42px;
-      object-fit: cover;
-      border: 1px solid var(--window-border-soft);
+      width: 50px;             /* ~20% larger; the symbol is the brand */
+      height: 50px;
+      object-fit: contain;     /* show the full transparent BRK symbol, no crop, no border box */
     }
     .bk-public-nav {
       margin-left: auto;

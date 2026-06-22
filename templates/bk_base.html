@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260621-rebrand">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-navtext">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -40,6 +40,7 @@
       <span class="bk-nav-toggle-bar"></span>
       <span class="bk-nav-toggle-bar"></span>
     </button>
+    <img class="bk-topbar-mark" src="{{ url_for('static', filename='brand-bk-mark.webp') }}" alt="">
     <a class="bk-site-name" href="{{ url_for('dashboard') }}">BANKROLL KINGS</a>
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker" title="Hover to pause">
