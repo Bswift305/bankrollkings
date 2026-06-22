@@ -50,8 +50,12 @@ Reason:
 ## 3. Small icon / favicon / PWA icon
 
 Primary asset source:
-- `static/brand-bk-mark.png`
-- `static/brand-bk-mark.webp`
+- `static/brand-bk-favmark.png` (flat typographic "BRK" tile — dark tile, bold
+  white BRK, cyan underline accent)
+
+This is deliberately NOT the detailed crown+BRK crest (`brand-bk-mark.*`): the
+metallic crest mushes into an unreadable blob at 16px. The flat BRK tile stays
+crisp from 16px to 512px. The crest still lives in the header and marketing.
 
 Generated outputs:
 - `static/favicon.png`
@@ -104,7 +108,7 @@ Reason:
 - Do not use the full lion image as the favicon.
 - Do not use the `.com` logo variant as the main site header.
 - Do not mix unrelated icon styles back into the shell without replacing the whole icon family intentionally.
-- If the logo changes again, regenerate `favicon.png` and every file under `static/icons/` from `brand-bk-mark.png`.
+- If the logo changes again, regenerate `favicon.png` and every file under `static/icons/` from `brand-bk-favmark.png` (the flat BRK tile), NOT the detailed crest.
 
 ---
 
