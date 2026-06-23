@@ -598,6 +598,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_sign',
     'franchise_job',
     'franchise_stay',
+    'franchise_draft',
     'franchise_restart',
     'save_feedback',
     'checkout_start',
@@ -28889,7 +28890,7 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'career', 'league')
+FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'career', 'league', 'draft')
 
 
 def _franchise_view(save):
@@ -28911,6 +28912,9 @@ def _franchise_view(save):
         'expectation': save.get('expectation', {}),
         'last_outcome': save.get('last_outcome'),
         'unemployed': save.get('unemployed', False),
+        'draft_pending': save.get('draft_pending', False),
+        'draft': fk.draft_state(save),
+        'last_draft_log': save.get('last_draft_log'),
     }
 
 
@@ -28981,7 +28985,16 @@ def franchise_stay():
     if save:
         save['last_outcome'] = None
         fk.write_save(save)
+        fk.start_draft(save)   # staying put -> the offseason draft opens
     return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/draft', methods=['POST'])
+def franchise_draft():
+    _, save = _franchise_save()
+    if save:
+        fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='draft'))
 
 
 @app.route('/franchise/restart', methods=['POST'])

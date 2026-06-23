@@ -21,6 +21,7 @@
     {% for t in ['dashboard','roster','front-office','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
+    {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
   </nav>
 
   {# ===================== DASHBOARD ===================== #}
@@ -73,10 +74,14 @@
       {% endif %}
 
       {% if not unemployed and not (last_outcome and last_outcome.offers) %}
-        <form method="post" action="{{ url_for('franchise_sim') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="fk-btn fk-btn-go">▶ Sim Season {{ save.season }}</button>
-        </form>
+        {% if draft_pending %}
+          <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub', tab='draft') }}">● Rookie Draft is open — make your picks</a>
+        {% else %}
+          <form method="post" action="{{ url_for('franchise_sim') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="fk-btn fk-btn-go">▶ Sim Season {{ save.season }}</button>
+          </form>
+        {% endif %}
       {% endif %}
     </div>
   </div>
@@ -170,6 +175,49 @@
   {% endif %}
   {% endif %}
 
+  {# ===================== DRAFT ===================== #}
+  {% if tab == 'draft' %}
+  <div class="fk-card">
+    {% if draft_pending and draft %}
+      <div class="fk-card-h">Rookie Draft — Round {{ draft.round }} of {{ draft.rounds }}
+        {% if draft.on_clock %}· <span style="color:#4ad4f0">YOU'RE ON THE CLOCK (pick {{ draft.pick }})</span>{% endif %}</div>
+      {% if draft.log %}
+      <div class="fk-draftlog">Your picks:
+        {% for p in draft.log %}<span class="fk-tag">R{{ p.round }} {{ p.name }} · {{ p.pos }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      <p class="fk-muted">Grades carry your scouting error — the top of the board isn't always right.
+        Better scouting (your Drafting rating + future scout hires) tightens it.</p>
+      <table class="fk-table">
+        <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th></th></tr></thead>
+        <tbody>
+          {% for p in draft.available %}
+          <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+            <td class="fk-ovr">{{ p.grade }}</td><td>{{ p.pot_grade }}</td>
+            <td>{% if draft.on_clock %}<form method="post" action="{{ url_for('franchise_draft') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="prospect_id" value="{{ p.id }}">
+              <button class="fk-btn fk-btn-sm">Draft</button></form>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="fk-card-h">Rookie Draft</div>
+      {% if last_draft_log %}
+      <p class="fk-muted">Your most recent class — grade vs. how they actually turned out (your scouting hits & misses):</p>
+      <table class="fk-table">
+        <thead><tr><th>Round</th><th>Player</th><th>Pos</th><th>Grade</th><th>Actual OVR</th></tr></thead>
+        <tbody>{% for p in last_draft_log %}<tr><td>R{{ p.round }}</td><td>{{ p.name }}</td>
+          <td class="fk-pos">{{ p.pos }}</td><td>{{ p.grade }}</td>
+          <td class="fk-ovr {% if p.ovr < p.grade - 4 %}fk-bust{% elif p.ovr > p.grade + 2 %}fk-gem{% endif %}">{{ p.ovr }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}
+      <p class="fk-muted">No draft in progress. The rookie draft opens each offseason after you keep (or take) a job.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
   <form method="post" action="{{ url_for('franchise_restart') }}" class="fk-restart"
         onsubmit="return confirm('Start a brand-new GM career? Your current save will be erased.')">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -226,6 +274,12 @@
   .fk-champbar strong { color:#fff; }
   .fk-legend { float:right; color:#7f93a0; font-weight:600; font-size:11px; }
   .fk-clinch { color:#4ad4f0; }
+  .fk-tab-draft { color:#4ad4f0 !important; }
+  .fk-btn-link { display:block; text-align:center; text-decoration:none; margin-top:8px; }
+  .fk-draftlog { margin:4px 0 10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .fk-tag { background:rgba(74,212,240,.12); border:1px solid rgba(74,212,240,.3); color:#bdecf7; border-radius:999px; padding:2px 9px; font-size:11px; }
+  .fk-bust { color:#ff8a8a !important; }
+  .fk-gem { color:#7dffb0 !important; }
   .fk-pill { padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
   .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
   .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }

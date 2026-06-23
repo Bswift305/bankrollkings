@@ -23,6 +23,9 @@ LEAGUE_SIZE = 32
 REG_GAMES = 17
 CONF_PLAYOFF_SEEDS = 7   # per conference -> 14-team playoff (NFL-style)
 CAP_TOTAL = 240.0        # millions
+DRAFT_ROUNDS = 7
+DRAFT_CLASS = 240        # prospects (>= rounds * teams)
+ROSTER_CAP = 48          # roster size kept after the draft (cuts trim the rest)
 
 CONFERENCES = ["Apex", "Crown"]
 DIVISIONS = ["North", "South", "East", "West"]
@@ -249,6 +252,8 @@ def sim_season(save):
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
     write_save(save)
+    if outcome["status"] == "retained":
+        start_draft(save)   # offseason draft opens immediately when you keep your job
     return save, outcome
 
 
@@ -331,6 +336,131 @@ def _job_openings(save, want):
     pool = [t for t in pool if t["id"] != save["current_team_id"]]
     return [{"id": t["id"], "full": t["full"], "power": power_rating(t), "market": t["market"],
              "owner": t["owner"]["type"]} for t in pool[:3]]
+
+
+# --------------------------------------------------------------------------- #
+# Rookie draft + scouting
+# --------------------------------------------------------------------------- #
+def _gen_prospect(rng, pos):
+    true_ovr = max(50, min(90, int(rng.triangular(52, 86, 64))))
+    true_pot = min(99, true_ovr + int(rng.triangular(2, 26, 12)))
+    return {"id": f"d{rng.randint(100000, 999999)}", "name": _gen_name(rng), "pos": pos,
+            "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
+            "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"])}
+
+
+def generate_draft_class(rng):
+    weighted = []
+    for pos, cnt in ROSTER.items():
+        weighted += [pos] * (cnt + 1)
+    return [_gen_prospect(rng, rng.choice(weighted)) for _ in range(DRAFT_CLASS)]
+
+
+def _scout(rng, p, accuracy):
+    # accuracy 20..90 (GM drafting rating; staff scouts feed this later). Higher
+    # accuracy -> the displayed grade sits closer to the hidden true rating.
+    sd = max(1.0, (100 - accuracy) / 8.5)
+    p["grade"] = max(40, min(99, int(round(p["true_ovr"] + rng.gauss(0, sd)))))
+    p["pot_grade"] = max(p["grade"], min(99, int(round(p["true_pot"] + rng.gauss(0, sd)))))
+    return p
+
+
+def _make_rookie(p):
+    aav = round(max(0.7, max(0, p["true_ovr"] - 55) ** 1.6 / 26.0), 1)
+    return {"id": "p" + p["id"][1:], "name": p["name"], "pos": p["pos"], "age": p["age"],
+            "overall": p["true_ovr"], "potential": p["true_pot"], "dev": p["dev"],
+            "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
+            "morale": 75, "injury_risk": "Low"}
+
+
+def start_draft(save):
+    if save.get("draft_pending"):
+        return
+    rng = _rng(save["seed"] + save["season"] * 77 + 13)
+    cls = generate_draft_class(rng)
+    acc = save["gm"]["ratings"].get("drafting", 50)
+    for p in cls:
+        _scout(rng, p, acc)
+    order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
+    save["draft"] = {"class": cls, "order": order, "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": []}
+    save["draft_pending"] = True
+    _draft_advance(save)
+    write_save(save)
+
+
+def _draft_on_clock(draft):
+    if draft["ptr"] >= draft["rounds"] * len(draft["order"]):
+        return None
+    return draft["order"][draft["ptr"] % len(draft["order"])]
+
+
+def _draft_round_pick(draft):
+    n = len(draft["order"])
+    return draft["ptr"] // n + 1, draft["ptr"] % n + 1
+
+
+def _available(draft):
+    return sorted(draft["class"], key=lambda p: -p["grade"])
+
+
+def _ai_pick(save, draft):
+    tid = _draft_on_clock(draft)
+    team = next(t for t in save["teams"] if t["id"] == tid)
+    avail = _available(draft)
+    if avail:
+        pick = avail[0]
+        team["roster"].append(_make_rookie(pick))
+        draft["class"] = [p for p in draft["class"] if p["id"] != pick["id"]]
+    draft["ptr"] += 1
+
+
+def _draft_advance(save):
+    draft = save["draft"]
+    while True:
+        oc = _draft_on_clock(draft)
+        if oc is None:
+            _finalize_draft(save)
+            return
+        if oc == save["current_team_id"]:
+            return
+        _ai_pick(save, draft)
+
+
+def draft_make_pick(save, prospect_id):
+    draft = save.get("draft")
+    if not draft or _draft_on_clock(draft) != save["current_team_id"]:
+        return False, "Not on the clock."
+    pick = next((p for p in draft["class"] if p["id"] == prospect_id), None)
+    if not pick:
+        return False, "That prospect is already gone."
+    rnd, _ = _draft_round_pick(draft)
+    current_team(save)["roster"].append(_make_rookie(pick))
+    draft["class"] = [p for p in draft["class"] if p["id"] != pick["id"]]
+    draft["user_log"].append({"round": rnd, "name": pick["name"], "pos": pick["pos"],
+                              "grade": pick["grade"], "ovr": pick["true_ovr"]})
+    draft["ptr"] += 1
+    _draft_advance(save)
+    write_save(save)
+    return True, f"Drafted {pick['name']} ({pick['pos']})."
+
+
+def _finalize_draft(save):
+    for t in save["teams"]:
+        t["roster"].sort(key=lambda p: -p["overall"])
+        del t["roster"][ROSTER_CAP:]
+    save["draft_pending"] = False
+    save["last_draft_log"] = save.get("draft", {}).get("user_log", [])
+    save.pop("draft", None)
+
+
+def draft_state(save):
+    draft = save.get("draft")
+    if not draft:
+        return None
+    rnd, pk = _draft_round_pick(draft)
+    return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
+            "on_clock": _draft_on_clock(draft) == save["current_team_id"],
+            "available": _available(draft)[:60], "log": draft["user_log"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -418,6 +548,7 @@ def take_job(save, team_id):
     save["last_outcome"] = None
     _set_expectation(save)
     write_save(save)
+    start_draft(save)   # the offseason draft opens for your new club
     return True
 
 
@@ -439,10 +570,20 @@ if __name__ == "__main__":
     print("Expectation:", s["expectation"]["text"])
     for yr in range(5):
         s, out = sim_season(s)
-        print(f"  S{out['record']['w']+out['record']['l']:>2}: {out['record']['w']}-{out['record']['l']} "
-              f"-> {out['status'].upper()} | champ: {out['champion']}")
         if out["offers"]:
             take_job(s, out["offers"][0]["id"])
+        npicks = 0
+        while s.get("draft_pending"):
+            st = draft_state(s)
+            if st and st["on_clock"] and st["available"]:
+                draft_make_pick(s, st["available"][0]["id"])
+                npicks += 1
+            else:
+                break
+        t2 = current_team(s)
+        print(f"  {out['record']['w']:>2}-{out['record']['l']:<2} {out['status']:>8} | "
+              f"drafted {npicks} | roster {len(t2['roster'])} | champ {out['champion']}")
     print("Career seasons:", len(s["gm"]["career"]), "| titles:", s["gm"]["titles"])
+    print("Last draft log:", json.dumps(s.get("last_draft_log", []), indent=0))
     delete_save("selftest_user")
-    print("OK - 32-team engine works")
+    print("OK - 32-team engine + draft works")
