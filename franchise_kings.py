@@ -183,6 +183,48 @@ def cap_used(team):
     return round(sum(p["contract"]["aav"] for p in team["roster"]), 1)
 
 
+def _starters(team):
+    by_pos = {}
+    for p in team["roster"]:
+        by_pos.setdefault(p["pos"], []).append(p)
+    out = []
+    for pos, slots in ROSTER.items():
+        out += sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])[:slots]
+    return out
+
+
+# Dev-trait curves: when a player grows, how fast, and when he declines.
+_PEAK = {"Star": 28, "Late Bloomer": 30, "Slow": 27, "Normal": 28}
+_RATE = {"Star": 3, "Late Bloomer": 2, "Slow": 1, "Normal": 2}
+_DECLINE = {"Star": 31, "Late Bloomer": 32, "Slow": 30, "Normal": 31}
+
+
+def _develop(p, rng, bonus):
+    tr, age = p.get("dev", "Normal"), p["age"]
+    if age <= _PEAK.get(tr, 28) and p["overall"] < p["potential"]:
+        gain = rng.randint(0, _RATE.get(tr, 2)) + bonus
+        if tr == "Late Bloomer" and age >= 25:
+            gain += 1
+        p["overall"] = min(p["potential"], p["overall"] + gain)
+    if age >= _DECLINE.get(tr, 31):
+        p["overall"] = max(45, p["overall"] - rng.randint(1, 3))
+
+
+def _roll_injuries(save, rng):
+    """Season injuries for the user team's starters. Medical staff cuts them down."""
+    team = current_team(save)
+    medical = staff_bonus(save)["medical"]
+    med_factor = max(0.4, 1.0 - (medical - 50) / 180.0)   # good medical -> fewer/shorter
+    base = {"Low": 0.06, "Medium": 0.12, "High": 0.20}
+    out = []
+    for p in _starters(team):
+        chance = base.get(p.get("injury_risk", "Low"), 0.1) * med_factor + max(0, p["age"] - 29) * 0.01
+        if rng.random() < chance:
+            weeks = max(2, int(rng.randint(2, 11) * (0.7 + med_factor * 0.3)))
+            out.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"], "weeks": min(weeks, REG_GAMES)})
+    return out
+
+
 def _sim_game(rng, pa, pb):
     diff = (pa + 2.2) - pb  # home edge baked into pa
     p = 1.0 / (1.0 + math.exp(-diff / 6.0))
@@ -217,6 +259,12 @@ def sim_season(save):
         t["record"] = {"w": 0, "l": 0}
     powers = {tid: power_rating(t) for tid, t in teams.items()}
     powers[save["current_team_id"]] += staff_bonus(save)["power"]   # your coaching edge
+
+    injuries = _roll_injuries(save, rng)
+    inj_pen = round(sum((i["weeks"] / REG_GAMES) * POS_WEIGHT.get(i["pos"], 1.0) * 1.4 for i in injuries), 1)
+    powers[save["current_team_id"]] -= inj_pen   # starters missing time hurts your record
+    save["last_injuries"] = injuries
+    save["last_injury_pen"] = inj_pen
 
     for g in save["schedule"]:
         home_win = _sim_game(rng, powers[g["home"]], powers[g["away"]])
@@ -267,10 +315,7 @@ def _advance_year(save):
         bonus = dev if t["id"] == uid else 0
         for p in t["roster"]:
             p["age"] += 1
-            if p["age"] <= 26 and p["overall"] < p["potential"]:
-                p["overall"] = min(p["potential"], p["overall"] + rng.randint(0, 3) + bonus)
-            elif p["age"] >= 31:
-                p["overall"] = max(45, p["overall"] - rng.randint(0, 3))
+            _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
     save["free_agents"] = [_gen_player(rng, rng.choice(list(ROSTER)),
                                        int(rng.triangular(60, 88, 70))) for _ in range(40)]

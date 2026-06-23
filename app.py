@@ -28935,6 +28935,8 @@ def _franchise_view(save):
         'career': save['gm'].get('career', []),
         'expectation': save.get('expectation', {}),
         'last_outcome': save.get('last_outcome'),
+        'last_injuries': save.get('last_injuries', []),
+        'last_injury_pen': save.get('last_injury_pen', 0),
         'unemployed': save.get('unemployed', False),
         'draft_pending': save.get('draft_pending', False),
         'draft': fk.draft_state(save),
