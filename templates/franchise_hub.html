@@ -26,6 +26,30 @@
 
   {# ===================== DASHBOARD ===================== #}
   {% if tab == 'dashboard' %}
+  <div class="fk-card fk-gmcard">
+    <div class="fk-gmpic">
+      {% if avatar_url %}<img src="{{ avatar_url }}" alt="GM photo">
+      {% else %}<span class="fk-gmmono">{{ (gm.name.split()[0][0] + (gm.name.split()[-1][0] if gm.name.split()|length > 1 else ''))|upper }}</span>{% endif %}
+    </div>
+    <div class="fk-gmmeta">
+      <div class="fk-card-h" style="margin:0">{{ gm.name }} — GM &amp; Head Coach</div>
+      <div class="fk-gmphil">{{ gm.philosophy }} philosophy</div>
+      <details class="fk-gmupload">
+        <summary>{{ 'Change' if avatar_url else 'Add' }} your photo</summary>
+        <form method="post" action="{{ url_for('franchise_avatar') }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" required>
+          <label class="fk-tos"><input type="checkbox" name="agree" required> This is my own photo or one I have the rights to use.</label>
+          <div class="fk-gmbtns">
+            <button class="fk-btn fk-btn-sm">Upload</button>
+            {% if avatar_url %}
+            <button class="fk-btn fk-btn-sm fk-btn-ghost" formaction="{{ url_for('franchise_avatar_remove') }}">Remove</button>
+            {% endif %}
+          </div>
+        </form>
+      </details>
+    </div>
+  </div>
   <div class="fk-grid2">
     <div class="fk-card">
       <div class="fk-card-h">Front office standing</div>
@@ -492,6 +516,15 @@
   .fk-grade { font-family:var(--font-display); font-size:26px; width:40px; height:40px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:9px; }
   .fk-grade-A { background:rgba(125,255,176,.18); color:#7dffb0; } .fk-grade-B { background:rgba(74,212,240,.18); color:#9fe9ff; }
   .fk-grade-C { background:rgba(145,168,184,.18); color:#cfdae2; } .fk-grade-D { background:rgba(255,196,120,.18); color:#ffd089; } .fk-grade-F { background:rgba(255,138,138,.18); color:#ff9a9a; }
+  .fk-gmcard { display:flex; gap:14px; align-items:center; }
+  .fk-gmpic { flex:0 0 64px; width:64px; height:64px; border-radius:50%; overflow:hidden; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); display:flex; align-items:center; justify-content:center; border:2px solid rgba(74,212,240,.5); }
+  .fk-gmpic img { width:100%; height:100%; object-fit:cover; }
+  .fk-gmmono { font-family:var(--font-display,sans-serif); font-weight:800; font-size:24px; color:#05121a; }
+  .fk-gmmeta { flex:1; min-width:0; } .fk-gmphil { color:#7f93a0; font-size:12px; margin:2px 0 6px; }
+  .fk-gmupload summary { color:#4ad4f0; font-size:12px; font-weight:700; cursor:pointer; }
+  .fk-gmupload input[type=file] { display:block; margin:10px 0; color:#b7c6d0; font-size:12px; max-width:100%; }
+  .fk-tos { display:flex; gap:7px; align-items:flex-start; color:#b7c6d0; font-size:12px; line-height:1.4; }
+  .fk-gmbtns { display:flex; gap:8px; margin-top:10px; } .fk-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
   .fk-stadium-wrap { border:1px solid rgba(74,212,240,.18); border-radius:12px; overflow:hidden; margin-bottom:12px; background:#050d13; }
   .fk-stadium { display:block; width:100%; height:auto; }
   .fk-av { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-size:10px; font-weight:800; color:#05121a; font-family:var(--font-display,sans-serif); }

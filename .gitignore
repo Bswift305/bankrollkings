@@ -74,3 +74,6 @@ data/context/MLB_GameContext.csv
 Thumbs.db
 .vscode/
 .idea/
+
+# Franchise Kings user-uploaded GM photos (UGC, not source)
+static/franchise_avatars/

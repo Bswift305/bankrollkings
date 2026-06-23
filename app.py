@@ -602,6 +602,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_draft',
     'franchise_negotiate',
     'franchise_trade',
+    'franchise_avatar',
+    'franchise_avatar_remove',
     'franchise_rename',
     'franchise_upgrade',
     'franchise_ticket',
@@ -28970,6 +28972,9 @@ def _franchise_view(save):
         'stadium_svg': fk.stadium_svg(fk._business(save), team['full']),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
+        'avatar_url': (url_for('static', filename='franchise_avatars/'
+                               + re.sub(r'[^A-Za-z0-9_-]', '', str(save.get('user_id', '')))[:64] + '.jpg')
+                       + '?v=' + str(save['gm'].get('avatar_v', 0))) if save['gm'].get('avatar') else None,
     }
 
 
@@ -29078,6 +29083,58 @@ def franchise_trade():
                          str(request.form.get('get_id', '')).strip())
         target = str(request.form.get('team_id', '')).strip()
     return redirect(url_for('franchise_hub', tab='trades', team=target))
+
+
+FRANCHISE_AVATAR_DIR = os.path.join(app.static_folder, 'franchise_avatars')
+
+
+def _avatar_slug(save):
+    return re.sub(r'[^A-Za-z0-9_-]', '', str(save.get('user_id', '')))[:64]
+
+
+@app.route('/franchise/avatar', methods=['POST'])
+def franchise_avatar():
+    """Upload your OWN GM photo. Re-encoded via Pillow (strips any payload/EXIF),
+    capped in size + dimensions, gated by a rights-confirmation checkbox."""
+    _, save = _franchise_save()
+    if not save:
+        return redirect(url_for('franchise_hub'))
+    if not request.form.get('agree'):
+        return redirect(url_for('franchise_hub', tab='dashboard'))
+    f = request.files.get('photo')
+    if not f or not f.filename:
+        return redirect(url_for('franchise_hub', tab='dashboard'))
+    raw = f.read(6 * 1024 * 1024 + 1)          # cap read at 6MB (nginx allows 8MB)
+    if len(raw) > 6 * 1024 * 1024:
+        return redirect(url_for('franchise_hub', tab='dashboard'))
+    try:
+        import io
+        from PIL import Image
+        Image.open(io.BytesIO(raw)).verify()    # validate it's a real image
+        img = Image.open(io.BytesIO(raw)).convert('RGB')   # re-decode pixels only
+        img.thumbnail((256, 256))
+        os.makedirs(FRANCHISE_AVATAR_DIR, exist_ok=True)
+        img.save(os.path.join(FRANCHISE_AVATAR_DIR, _avatar_slug(save) + '.jpg'),
+                 'JPEG', quality=85, optimize=True)
+        save['gm']['avatar'] = True
+        save['gm']['avatar_v'] = int(save['gm'].get('avatar_v', 0)) + 1
+        fk.write_save(save)
+    except Exception:
+        pass
+    return redirect(url_for('franchise_hub', tab='dashboard'))
+
+
+@app.route('/franchise/avatar/remove', methods=['POST'])
+def franchise_avatar_remove():
+    _, save = _franchise_save()
+    if save:
+        try:
+            os.remove(os.path.join(FRANCHISE_AVATAR_DIR, _avatar_slug(save) + '.jpg'))
+        except OSError:
+            pass
+        save['gm']['avatar'] = False
+        fk.write_save(save)
+    return redirect(url_for('franchise_hub', tab='dashboard'))
 
 
 @app.route('/franchise/rename', methods=['POST'])
