@@ -99,6 +99,12 @@
   {% if tab == 'roster' %}
   <div class="fk-card">
     <div class="fk-card-h">Roster — auto depth chart (best players start) · Power {{ power }}</div>
+    <form method="post" action="{{ url_for('franchise_rename') }}" class="fk-renameform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="player_id" class="fk-input">{% for p in roster_order %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }}</option>{% endfor %}</select>
+      <input class="fk-input" name="new_name" maxlength="40" placeholder="New name" required>
+      <button class="fk-btn fk-btn-sm">Rename</button>
+    </form>
     <table class="fk-table">
       <thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot</th><th>Trait</th><th>Risk</th><th>AAV</th></tr></thead>
       <tbody>
@@ -235,6 +241,7 @@
   {% if tab == 'business' %}
   <div class="fk-card">
     <div class="fk-card-h">Business &amp; stadium</div>
+    <div class="fk-stadium-wrap">{{ stadium_svg|safe }}</div>
     <div class="fk-bizgrid">
       <div class="fk-bizstat"><span>Cash</span><b>${{ '%.1f'|format(business.cash) }}M</b></div>
       <div class="fk-bizstat"><span>Revenue / yr</span><b>${{ '%.1f'|format(revenue) }}M</b></div>
@@ -484,6 +491,10 @@
   .fk-grade { font-family:var(--font-display); font-size:26px; width:40px; height:40px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:9px; }
   .fk-grade-A { background:rgba(125,255,176,.18); color:#7dffb0; } .fk-grade-B { background:rgba(74,212,240,.18); color:#9fe9ff; }
   .fk-grade-C { background:rgba(145,168,184,.18); color:#cfdae2; } .fk-grade-D { background:rgba(255,196,120,.18); color:#ffd089; } .fk-grade-F { background:rgba(255,138,138,.18); color:#ff9a9a; }
+  .fk-stadium-wrap { border:1px solid rgba(74,212,240,.18); border-radius:12px; overflow:hidden; margin-bottom:12px; background:#050d13; }
+  .fk-stadium { display:block; width:100%; height:auto; }
+  .fk-renameform { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; align-items:center; }
+  .fk-renameform .fk-input { flex:1; min-width:120px; }
   .fk-bizgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
   .fk-bizstat { background:rgba(11,24,34,.7); border:1px solid rgba(74,212,240,.18); border-radius:10px; padding:10px; text-align:center; }
   .fk-bizstat span { display:block; font-size:10px; letter-spacing:.06em; color:#7f93a0; text-transform:uppercase; }

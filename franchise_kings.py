@@ -993,6 +993,73 @@ def set_ticket(save, level):
     return True
 
 
+def _xml(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def stadium_svg(business, team_full=""):
+    """A parametric SVG stadium that GROWS with the stadium level: more decks, a
+    fuller crowd (by fan happiness), light towers (L3+) and a roof canopy (L5)."""
+    lvl = int(business.get("stadium", 1))
+    happy = int(business.get("fan_happiness", 50))
+    cap = 28 + lvl * 13                              # ~thousands of seats
+    glow = max(0.28, min(1.0, happy / 100.0))        # crowd brightness
+    decks = 1 + (1 if lvl >= 2 else 0) + (1 if lvl >= 4 else 0)
+    p = ['<svg viewBox="0 0 400 210" xmlns="http://www.w3.org/2000/svg" class="fk-stadium" '
+         'preserveAspectRatio="xMidYMid meet">',
+         '<defs><linearGradient id="fksky" x1="0" y1="0" x2="0" y2="1">'
+         '<stop offset="0" stop-color="#0a1a24"/><stop offset="1" stop-color="#050d13"/></linearGradient>'
+         '<radialGradient id="fkfield" cx="0.5" cy="0.4" r="0.7">'
+         '<stop offset="0" stop-color="#1f8a4c"/><stop offset="1" stop-color="#114f28"/></radialGradient></defs>',
+         '<rect width="400" height="210" fill="url(#fksky)"/>']
+    if lvl >= 5:
+        p.append('<path d="M28 78 Q200 26 372 78" fill="none" stroke="#2a4250" stroke-width="9" opacity="0.9"/>')
+    if lvl >= 3:
+        for x in (38, 362):
+            p.append(f'<rect x="{x-2}" y="44" width="4" height="66" fill="#37505c"/>'
+                     f'<rect x="{x-13}" y="38" width="26" height="13" rx="2" fill="#16323d"/>')
+            for i in range(3):
+                p.append(f'<circle cx="{x-8+i*8}" cy="44" r="2.6" fill="#bdf0ff" opacity="{glow:.2f}"/>')
+    base_y = 168
+    for d in range(decks):
+        top = base_y - 26 - d * 24
+        bot = top + 22
+        inset = 64 - d * 15
+        p.append(f'<polygon points="{44+inset},{top} {356-inset},{top} {356-inset+9},{bot} {44+inset-9},{bot}" '
+                 f'fill="#15303b" stroke="#264e5d" stroke-width="1"/>')
+        cols = max(7, 20 - d * 3)
+        x0, x1 = 54 + inset, 346 - inset
+        for r in range(2):
+            cy = top + 6 + r * 9
+            for c in range(cols):
+                cx = x0 + (x1 - x0) * c / (cols - 1)
+                col = "#7fe8ff" if (c + r) % 3 == 0 else "#d4e6ee"
+                p.append(f'<circle cx="{cx:.0f}" cy="{cy}" r="1.4" fill="{col}" opacity="{glow:.2f}"/>')
+    p.append('<ellipse cx="200" cy="180" rx="120" ry="24" fill="url(#fkfield)"/>')
+    for i in range(1, 6):
+        lx = 122 + i * 26
+        p.append(f'<line x1="{lx}" y1="164" x2="{lx}" y2="196" stroke="#fff" stroke-width="1" opacity="0.45"/>')
+    p.append('<rect x="148" y="50" width="104" height="26" rx="4" fill="#02181f" stroke="#2a6072"/>')
+    p.append(f'<text x="200" y="62" text-anchor="middle" fill="#7fe8ff" font-family="monospace" font-size="8.5">'
+             f'{_xml((team_full or "BRK LEAGUE")[:20].upper())}</text>')
+    p.append(f'<text x="200" y="72" text-anchor="middle" fill="#cfe8f0" font-family="monospace" font-size="7">'
+             f'LVL {lvl}/5 · ~{cap}k SEATS</text>')
+    p.append('</svg>')
+    return "".join(p)
+
+
+def rename_player(save, player_id, new_name):
+    nm = str(new_name or "").strip()[:40]
+    if not nm:
+        return False
+    for pl in current_team(save)["roster"]:
+        if pl["id"] == player_id:
+            pl["name"] = nm
+            write_save(save)
+            return True
+    return False
+
+
 # --------------------------------------------------------------------------- #
 # Trades (player-for-player) + the "is this fair?" grade
 # --------------------------------------------------------------------------- #

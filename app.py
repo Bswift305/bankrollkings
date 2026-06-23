@@ -602,6 +602,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_draft',
     'franchise_negotiate',
     'franchise_trade',
+    'franchise_rename',
     'franchise_upgrade',
     'franchise_ticket',
     'franchise_hire',
@@ -28956,6 +28957,7 @@ def _franchise_view(save):
         'revenue': fk.projected_revenue(save),
         'stadium_cost': fk.stadium_cost(save),
         'facility_cost': fk.facility_cost(save),
+        'stadium_svg': fk.stadium_svg(fk._business(save), team['full']),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
     }
@@ -29066,6 +29068,15 @@ def franchise_trade():
                          str(request.form.get('get_id', '')).strip())
         target = str(request.form.get('team_id', '')).strip()
     return redirect(url_for('franchise_hub', tab='trades', team=target))
+
+
+@app.route('/franchise/rename', methods=['POST'])
+def franchise_rename():
+    _, save = _franchise_save()
+    if save:
+        fk.rename_player(save, str(request.form.get('player_id', '')).strip(),
+                         request.form.get('new_name', ''))
+    return redirect(url_for('franchise_hub', tab='roster'))
 
 
 @app.route('/franchise/upgrade', methods=['POST'])
