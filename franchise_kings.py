@@ -27,25 +27,45 @@ DRAFT_ROUNDS = 7
 DRAFT_CLASS = 240        # prospects (>= rounds * teams)
 ROSTER_CAP = 48          # roster size kept after the draft (cuts trim the rest)
 
-CONFERENCES = ["Apex", "Crown"]
-DIVISIONS = ["North", "South", "East", "West"]
+CONFERENCES = ["American", "National"]
+DIVISIONS = ["East", "North", "South", "West"]
 
-# 36 fictional cities + 36 mascots (need >=32; extras keep the league varied).
-CITIES = [
-    "Atlas", "Granite", "Harbor", "Iron City", "Summit", "Delta", "Crown Point",
-    "Bayou", "Cascade", "Verdant", "Cobalt", "Sable", "Frontier", "Monarch",
-    "Tidewater", "Vanguard", "Helix", "Sterling", "Meridian", "Onyx", "Cardinal",
-    "Redwood", "Saltlake", "Gulf City", "Highland", "Magnolia", "Copperfield",
-    "Stonebridge", "Bracton", "Lakeshore", "Northgate", "Sunridge", "Prairie",
-    "Crescent", "Ironwood", "Silvercreek",
-]
-MASCOTS = [
-    "Kings", "Titans", "Vipers", "Sentinels", "Outlaws", "Wolves", "Reign",
-    "Dreadnoughts", "Phantoms", "Apex", "Voltage", "Ironsides", "Stampede",
-    "Warhawks", "Krakens", "Comets", "Renegades", "Juggernauts", "Stags", "Aces",
-    "Maulers", "Tempest", "Grizzlies", "Sabers", "Hammers", "Rampage", "Pioneers",
-    "Vortex", "Falcons", "Bulls", "Sharks", "Cyclones", "Raptors", "Avalanche",
-    "Mustangs", "Legion",
+# 32 teams in the REAL NFL cities with FICTIONAL mascots (no real team names /
+# logos -> no licensing exposure), aligned to the real conference/division map.
+# (conference, division, city, mascot, market)  market drives the business layer.
+NFL_TEAMS = [
+    ("American", "East",  "Buffalo",       "Blizzard",     "Small"),
+    ("American", "East",  "Miami",         "Tarpons",      "Large"),
+    ("American", "East",  "New England",   "Minutemen",    "Large"),
+    ("American", "East",  "New York",      "Empire",       "Large"),
+    ("American", "North", "Baltimore",     "Privateers",   "Mid"),
+    ("American", "North", "Cincinnati",    "Crimson",      "Small"),
+    ("American", "North", "Cleveland",     "Ironworks",    "Mid"),
+    ("American", "North", "Pittsburgh",    "Forge",        "Mid"),
+    ("American", "South", "Houston",       "Wildcatters",  "Large"),
+    ("American", "South", "Indianapolis",  "Racers",       "Mid"),
+    ("American", "South", "Jacksonville",  "Surge",        "Small"),
+    ("American", "South", "Tennessee",     "Stampede",     "Mid"),
+    ("American", "West",  "Denver",        "Summit",       "Mid"),
+    ("American", "West",  "Kansas City",   "Drovers",      "Small"),
+    ("American", "West",  "Las Vegas",     "Neon",         "Mid"),
+    ("American", "West",  "Los Angeles",   "Voltage",      "Large"),
+    ("National", "East",  "Dallas",        "Wranglers",    "Large"),
+    ("National", "East",  "New York",      "Sentinels",    "Large"),
+    ("National", "East",  "Philadelphia",  "Liberty",      "Large"),
+    ("National", "East",  "Washington",    "Statesmen",    "Large"),
+    ("National", "North", "Chicago",       "Grizzlies",    "Large"),
+    ("National", "North", "Detroit",       "Motors",       "Mid"),
+    ("National", "North", "Green Bay",     "Lumberjacks",  "Small"),
+    ("National", "North", "Minnesota",     "Norse",        "Mid"),
+    ("National", "South", "Atlanta",       "Black Hawks",  "Large"),
+    ("National", "South", "Carolina",      "Cougars",      "Mid"),
+    ("National", "South", "New Orleans",   "Krewe",        "Small"),
+    ("National", "South", "Tampa Bay",     "Mariners",     "Mid"),
+    ("National", "West",  "Arizona",       "Scorpions",    "Mid"),
+    ("National", "West",  "Los Angeles",   "Lights",       "Large"),
+    ("National", "West",  "San Francisco", "Fog",          "Large"),
+    ("National", "West",  "Seattle",       "Waterbirds",   "Mid"),
 ]
 FIRST_NAMES = [
     "Marcus", "DeShawn", "Tyrell", "Cole", "Brock", "Xavier", "Jaylen", "Trey",
@@ -123,27 +143,45 @@ def _gen_roster(rng, strength):
     return roster
 
 
-def _gen_team(rng, idx, city, mascot):
+# Each team opens with a believable mix - 1-3 marquee players at impact spots -
+# so rosters feel like a real league at kickoff (the 'based on current players'
+# feel), using GENERATED names. All future rookies are fully generated.
+_STAR_POS = ["QB", "WR", "DL", "CB", "OL", "LB", "RB"]
+
+
+def _inject_stars(rng, roster):
+    pool = [p for p in roster if p["pos"] in _STAR_POS]
+    for p in rng.sample(pool, min(rng.randint(1, 3), len(pool))):
+        ov = rng.randint(86, 95)
+        p["overall"] = ov
+        p["potential"] = min(99, max(ov, p["potential"]))
+        p["age"] = rng.randint(24, 30)
+        p["contract"]["aav"] = round(max(0.7, max(0, ov - 55) ** 1.7 / 22.0), 1)
+        p["contract"]["years"] = rng.randint(2, 5)
+
+
+def _gen_team(rng, idx, entry):
+    conf, div, city, mascot, market = entry
     strength = rng.random()
+    roster = _gen_roster(rng, strength)
+    _inject_stars(rng, roster)
     return {
         "id": f"t{idx}",
         "city": city,
         "name": mascot,
         "full": f"{city} {mascot}",
-        "conference": CONFERENCES[idx // 16],
-        "division": DIVISIONS[(idx % 16) // 4],
-        "market": rng.choice(["Small", "Small", "Mid", "Mid", "Large"]),
+        "conference": conf,
+        "division": div,
+        "market": market,
         "owner": {"type": rng.choice(OWNER_TYPES)},
-        "roster": _gen_roster(rng, strength),
+        "roster": roster,
         "record": {"w": 0, "l": 0},
     }
 
 
 def new_league(seed):
     rng = _rng(seed)
-    cities = rng.sample(CITIES, LEAGUE_SIZE)
-    mascots = rng.sample(MASCOTS, LEAGUE_SIZE)
-    teams = [_gen_team(rng, i, cities[i], mascots[i]) for i in range(LEAGUE_SIZE)]
+    teams = [_gen_team(rng, i, NFL_TEAMS[i]) for i in range(LEAGUE_SIZE)]
     free_agents = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70)))
                    for _ in range(40)]
     return teams, free_agents
