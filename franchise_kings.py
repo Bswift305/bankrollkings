@@ -429,20 +429,40 @@ def _job_openings(save, want):
 # --------------------------------------------------------------------------- #
 # Staff / coaching (user-team) - feeds the sim, draft, and development
 # --------------------------------------------------------------------------- #
+# You are the GM AND the Head Coach -> no Head Coach hire. You pick your own
+# philosophy, then hire coordinators who each carry a philosophy + a scheme.
 STAFF_ROLES = [
-    ("head_coach", "Head Coach", "Lifts team performance and young-player development."),
-    ("off_coord", "Offensive Coordinator", "Sharpens the offense."),
-    ("def_coord", "Defensive Coordinator", "Sharpens the defense."),
+    ("off_coord", "Offensive Coordinator", "Runs your offense - rating + scheme + philosophy."),
+    ("def_coord", "Defensive Coordinator", "Runs your defense - rating + scheme + philosophy."),
     ("head_scout", "Head Scout", "Tightens draft scouting - fewer busts."),
-    ("head_medical", "Head of Medical", "Keeps players healthier (grows once injuries land)."),
-    ("head_analytics", "Head of Analytics", "Better projections and edge (grows with the analytics layer)."),
+    ("head_medical", "Head of Medical", "Keeps players healthier."),
+    ("head_analytics", "Head of Analytics", "Sharper value reads."),
 ]
 _STAFF_BASE = 48  # an unhired slot runs at replacement level
 
+PHILOSOPHIES = {
+    "Analytics":  {"label": "Analytics-Driven", "blurb": "Wins the margins - 4th downs, matchups, in-game math."},
+    "Old School": {"label": "Old-School",       "blurb": "Toughness, the run game, situational grit."},
+    "Balanced":   {"label": "Balanced",         "blurb": "No strong lean - steady and adaptable."},
+}
+# scheme -> the positions it leans on (roster strength there = scheme fit bonus)
+OFF_SCHEMES = {"Air Raid": ["QB", "WR"], "West Coast": ["QB", "WR", "TE"],
+               "Power Run": ["OL", "RB"], "Spread": ["QB", "WR", "RB"]}
+DEF_SCHEMES = {"4-3 Front": ["DL", "LB"], "3-4 Front": ["LB", "DL"],
+               "Cover 3 Zone": ["CB", "S"], "Blitz Heavy": ["DL", "LB", "CB"]}
+
+
+def _opposed(a, b):
+    return {a, b} == {"Analytics", "Old School"}
+
 
 def _gen_staff(rng, role):
-    return {"id": f"s{rng.randint(100000, 999999)}", "name": _gen_name(rng),
-            "role": role, "rating": int(rng.triangular(42, 86, 60))}
+    s = {"id": f"s{rng.randint(100000, 999999)}", "name": _gen_name(rng),
+         "role": role, "rating": int(rng.triangular(42, 86, 60))}
+    if role in ("off_coord", "def_coord"):
+        s["philosophy"] = rng.choice(["Analytics", "Old School", "Balanced"])
+        s["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES))
+    return s
 
 
 def generate_staff_market(rng):
@@ -453,13 +473,50 @@ def _sr(staff, role):
     return staff.get(role, {}).get("rating", _STAFF_BASE)
 
 
+def _scheme_fit(save, schemes, system):
+    sc = schemes.get(system)
+    if not sc:
+        return 0.0
+    starters = _starters(current_team(save))
+    if not starters:
+        return 0.0
+    avg_all = sum(p["overall"] for p in starters) / len(starters)
+    key = [p for p in starters if p["pos"] in sc]
+    if not key:
+        return 0.0
+    return round((sum(p["overall"] for p in key) / len(key) - avg_all) * 0.12, 2)
+
+
+def coaching_power(save):
+    """Your coaching edge: coordinator quality, + philosophy synergy/friction with
+    your HC philosophy, + how well their schemes fit your roster, + a small edge
+    for having a clear philosophy at all."""
+    s = save.get("staff", {})
+    hc = save["gm"].get("philosophy", "Balanced")
+    base = ((_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0 - 50) * 0.10
+    syn = fit = 0.0
+    for role, schemes in (("off_coord", OFF_SCHEMES), ("def_coord", DEF_SCHEMES)):
+        c = s.get(role)
+        if not c:
+            continue
+        cp = c.get("philosophy", "Balanced")
+        if cp == hc and hc != "Balanced":
+            syn += 1.2
+        elif _opposed(cp, hc):
+            syn -= 1.5
+        if c.get("system"):
+            fit += _scheme_fit(save, schemes, c["system"])
+    edge = 0.8 if hc in ("Analytics", "Old School") else 0.0
+    return round(base + syn + fit + edge, 2)
+
+
 def staff_bonus(save):
     s = save.get("staff", {})
-    coaching = (_sr(s, "head_coach") + _sr(s, "off_coord") + _sr(s, "def_coord")) / 3.0
+    coord_avg = (_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0
     return {
-        "power": round((coaching - 50) * 0.10, 2),          # +/- ~5 power
+        "power": coaching_power(save),
         "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
-        "development": 1 if _sr(s, "head_coach") >= 65 else 0,
+        "development": 1 if coord_avg >= 65 else 0,
         "medical": _sr(s, "head_medical"),
         "analytics": _sr(s, "head_analytics"),
     }
@@ -475,7 +532,12 @@ def hire_staff(save, role, candidate_id):
     if b["cash"] < cost:
         return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - cost, 1)
-    save.setdefault("staff", {})[role] = {"name": cand["name"], "rating": cand["rating"]}
+    entry = {"name": cand["name"], "rating": cand["rating"]}
+    if "philosophy" in cand:
+        entry["philosophy"] = cand["philosophy"]
+    if "system" in cand:
+        entry["system"] = cand["system"]
+    save.setdefault("staff", {})[role] = entry
     market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
     write_save(save)
     return True, f"Hired {cand['name']} ({cand['rating']} OVR) for ${cost}M."
@@ -639,8 +701,9 @@ def write_save(save):
     _save_path(save["user_id"]).write_text(json.dumps(save), encoding="utf-8")
 
 
-def create_save(user_id, gm_name, background, seed=None):
+def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
     background = background if background in BACKGROUNDS else "scout"
+    philosophy = philosophy if philosophy in PHILOSOPHIES else "Balanced"
     seed = seed if seed is not None else random.randint(1, 10 ** 9)
     teams, free_agents = new_league(seed)
     weak = sorted(teams, key=lambda t: power_rating(t))[6]  # a bottom-third rebuild
@@ -659,6 +722,7 @@ def create_save(user_id, gm_name, background, seed=None):
         "gm": {
             "name": (gm_name or "GM").strip()[:40],
             "background": background,
+            "philosophy": philosophy,
             "ratings": ratings,
             "owner_trust": 55, "fan_support": 50, "reputation": 50,
             "titles": 0, "career": [],

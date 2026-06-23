@@ -32,6 +32,21 @@
       </label>
       {% endfor %}
     </div>
+
+    <div class="fk-label" style="margin-top:18px">Head-Coach philosophy — you're the GM <em>and</em> the HC</div>
+    <div class="fk-bg-grid">
+      {% for key, ph in philosophies.items() %}
+      <label class="fk-bg">
+        <input type="radio" name="philosophy" value="{{ key }}" {% if key == 'Balanced' %}checked{% endif %}>
+        <span class="fk-bg-card">
+          <strong>{{ ph.label }}</strong>
+          <small>{{ ph.blurb }}</small>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="fk-muted" style="color:#7f93a0;font-size:12px;margin-top:8px">You'll hire coordinators who carry their own philosophy + scheme — matching yours gives synergy, clashing creates friction.</p>
+
     <button type="submit" class="fk-btn fk-btn-go">Start Career →</button>
   </form>
 </section>

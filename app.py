@@ -28986,11 +28986,13 @@ def franchise_new():
         return redirect(url_for('login', next=build_requested_path()))
     uid = str(current_user.get('user_id', '') or '')
     if request.method == 'POST':
-        fk.create_save(uid, request.form.get('gm_name', ''), request.form.get('background', 'scout'))
+        fk.create_save(uid, request.form.get('gm_name', ''), request.form.get('background', 'scout'),
+                       request.form.get('philosophy', 'Balanced'))
         return redirect(url_for('franchise_hub'))
     if fk.has_save(uid):
         return redirect(url_for('franchise_hub'))
-    return render_template('franchise_new.html', backgrounds=fk.BACKGROUNDS, current_user=current_user)
+    return render_template('franchise_new.html', backgrounds=fk.BACKGROUNDS,
+                           philosophies=fk.PHILOSOPHIES, current_user=current_user)
 
 
 @app.route('/franchise/sim', methods=['POST'])
