@@ -240,6 +240,7 @@ def sim_season(save):
     won_title = champion == user_id
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
 
+    _apply_finance(save, rec, won_title)   # season revenue -> cash, fan happiness update
     _advance_year(save)
     save["season"] += 1
     save["schedule"] = make_schedule(save["seed"], [t["id"] for t in save["teams"]])
@@ -260,7 +261,7 @@ def sim_season(save):
 
 def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
-    dev = staff_bonus(save)["development"]
+    dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)
     uid = save["current_team_id"]
     for t in save["teams"]:
         bonus = dev if t["id"] == uid else 0
@@ -386,10 +387,15 @@ def hire_staff(save, role, candidate_id):
     cand = next((c for c in market.get(role, []) if c["id"] == candidate_id), None)
     if not cand:
         return False, "That candidate is no longer available."
+    cost = staff_cost(cand["rating"])
+    b = _business(save)
+    if b["cash"] < cost:
+        return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
+    b["cash"] = round(b["cash"] - cost, 1)
     save.setdefault("staff", {})[role] = {"name": cand["name"], "rating": cand["rating"]}
     market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
     write_save(save)
-    return True, f"Hired {cand['name']} ({cand['rating']} OVR)."
+    return True, f"Hired {cand['name']} ({cand['rating']} OVR) for ${cost}M."
 
 
 def fire_staff(save, role):
@@ -578,6 +584,7 @@ def create_save(user_id, gm_name, background, seed=None):
         "last_champion": "",
         "staff": {},
         "staff_market": generate_staff_market(_rng(seed + 999)),
+        "business": {"cash": 40.0, "fan_happiness": 50, "stadium": 1, "facility": 1, "ticket": "normal"},
         "created_at": datetime.now().strftime("%Y-%m-%d"),
     }
     _set_expectation(save)
@@ -619,6 +626,86 @@ def delete_save(user_id):
     p = _save_path(user_id)
     if p.exists():
         p.unlink()
+
+
+# --------------------------------------------------------------------------- #
+# Business / stadium / budget - revenue funds staff + facility investment
+# --------------------------------------------------------------------------- #
+MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
+# ticket level -> (attendance mult, fan-happiness delta/season, price-per-seat mult)
+TICKET = {"low": (1.12, 1, 0.84), "normal": (1.0, 0, 1.0), "high": (0.9, -3, 1.18)}
+
+
+def _business(save):
+    b = save.setdefault("business", {})
+    b.setdefault("cash", 40.0)
+    b.setdefault("fan_happiness", 50)
+    b.setdefault("stadium", 1)
+    b.setdefault("facility", 1)
+    b.setdefault("ticket", "normal")
+    return b
+
+
+def projected_revenue(save):
+    b = _business(save)
+    mm = MARKET_MULT.get(current_team(save)["market"], 1.0)
+    attend = 0.55 + b["fan_happiness"] / 220.0
+    am, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
+    return round((22 + b["stadium"] * 7) * mm * attend * am * pm, 1)
+
+
+def stadium_cost(save):
+    return round(_business(save)["stadium"] * 28.0, 1)
+
+
+def facility_cost(save):
+    return round(_business(save)["facility"] * 20.0, 1)
+
+
+def staff_cost(rating):
+    return round(rating * 0.12, 1)
+
+
+def _apply_finance(save, rec, won_title):
+    b = _business(save)
+    rev = projected_revenue(save)
+    b["cash"] = round(b["cash"] + rev, 1)
+    _, hd, _ = TICKET.get(b["ticket"], TICKET["normal"])
+    b["fan_happiness"] = max(0, min(100, b["fan_happiness"] + (rec["w"] - rec["l"]) * 1.5 + (10 if won_title else 0) + hd))
+    b["last_revenue"] = rev
+
+
+def upgrade_stadium(save):
+    b = _business(save)
+    if b["stadium"] >= 5:
+        return False, "Stadium is already at the max level."
+    c = stadium_cost(save)
+    if b["cash"] < c:
+        return False, f"A stadium upgrade costs ${c}M - you have ${b['cash']}M."
+    b["cash"] = round(b["cash"] - c, 1)
+    b["stadium"] += 1
+    write_save(save)
+    return True, f"Stadium upgraded to Level {b['stadium']} (more seats, more revenue)."
+
+
+def upgrade_facility(save):
+    b = _business(save)
+    if b["facility"] >= 5:
+        return False, "Training facility is already at the max level."
+    c = facility_cost(save)
+    if b["cash"] < c:
+        return False, f"A facility upgrade costs ${c}M - you have ${b['cash']}M."
+    b["cash"] = round(b["cash"] - c, 1)
+    b["facility"] += 1
+    write_save(save)
+    return True, f"Training facility upgraded to Level {b['facility']} (faster development)."
+
+
+def set_ticket(save, level):
+    if level in TICKET:
+        _business(save)["ticket"] = level
+        write_save(save)
+    return True
 
 
 # --------------------------------------------------------------------------- #

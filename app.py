@@ -600,6 +600,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_stay',
     'franchise_draft',
     'franchise_trade',
+    'franchise_upgrade',
+    'franchise_ticket',
     'franchise_hire',
     'franchise_fire',
     'franchise_restart',
@@ -28893,7 +28895,7 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'trades', 'staff', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'trades', 'staff', 'business', 'career', 'league', 'draft')
 
 
 def _trade_view(save, team_id):
@@ -28941,6 +28943,10 @@ def _franchise_view(save):
         'staff_market': save.get('staff_market', {}),
         'staff_bonus': fk.staff_bonus(save),
         'staff_roles': fk.STAFF_ROLES,
+        'business': fk._business(save),
+        'revenue': fk.projected_revenue(save),
+        'stadium_cost': fk.stadium_cost(save),
+        'facility_cost': fk.facility_cost(save),
     }
 
 
@@ -29035,6 +29041,26 @@ def franchise_trade():
                          str(request.form.get('get_id', '')).strip())
         target = str(request.form.get('team_id', '')).strip()
     return redirect(url_for('franchise_hub', tab='trades', team=target))
+
+
+@app.route('/franchise/upgrade', methods=['POST'])
+def franchise_upgrade():
+    _, save = _franchise_save()
+    if save:
+        which = str(request.form.get('which', '')).strip()
+        if which == 'stadium':
+            fk.upgrade_stadium(save)
+        elif which == 'facility':
+            fk.upgrade_facility(save)
+    return redirect(url_for('franchise_hub', tab='business'))
+
+
+@app.route('/franchise/ticket', methods=['POST'])
+def franchise_ticket():
+    _, save = _franchise_save()
+    if save:
+        fk.set_ticket(save, str(request.form.get('level', '')).strip())
+    return redirect(url_for('franchise_hub', tab='business'))
 
 
 @app.route('/franchise/hire', methods=['POST'])
