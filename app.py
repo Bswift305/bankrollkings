@@ -24,6 +24,7 @@ import secrets
 import threading
 import franchise_kings as fk
 import franchise_league as fl
+import franchise_offseason as fo
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -604,6 +605,15 @@ PUBLIC_ENDPOINTS = {
     'franchise_trade',
     'franchise_avatar',
     'franchise_avatar_remove',
+    'franchise_offseason',
+    'franchise_offseason_pick',
+    'franchise_offseason_advance',
+    'franchise_offseason_resign',
+    'franchise_offseason_fa',
+    'franchise_offseason_draft',
+    'franchise_offseason_cut',
+    'franchise_offseason_kickoff',
+    'franchise_offseason_begin',
     'franchise_rename',
     'franchise_upgrade',
     'franchise_ticket',
@@ -28997,6 +29007,8 @@ def franchise_hub():
     save = fk.load_save(str(current_user.get('user_id', '') or ''))
     if not save:
         return redirect(url_for('franchise_new'))
+    if fo.offseason_active(save):
+        return redirect(url_for('franchise_offseason'))
     tab = str(request.args.get('tab', 'dashboard')).strip().lower()
     if tab not in FRANCHISE_TABS:
         tab = 'dashboard'
@@ -29017,9 +29029,10 @@ def franchise_new():
         return redirect(url_for('login', next=build_requested_path()))
     uid = str(current_user.get('user_id', '') or '')
     if request.method == 'POST':
-        fk.create_save(uid, request.form.get('gm_name', ''), request.form.get('background', 'scout'),
-                       request.form.get('philosophy', 'Balanced'))
-        return redirect(url_for('franchise_hub'))
+        save = fk.create_save(uid, request.form.get('gm_name', ''), request.form.get('background', 'scout'),
+                              request.form.get('philosophy', 'Balanced'))
+        fo.start_offseason(save, choose_team=True)   # begin at the offseason; pick any team
+        return redirect(url_for('franchise_offseason'))
     if fk.has_save(uid):
         return redirect(url_for('franchise_hub'))
     return render_template('franchise_new.html', backgrounds=fk.BACKGROUNDS,
@@ -29042,11 +29055,153 @@ def franchise_sign():
     return redirect(url_for('franchise_hub', tab='front-office'))
 
 
+# ---- Staged OFFSEASON process (scenario equity + 53-man build) ----
+@app.route('/franchise/offseason')
+def franchise_offseason():
+    current_user, save = _franchise_save()
+    if not save:
+        return redirect(url_for('franchise_new'))
+    if not fo.offseason_active(save):
+        return redirect(url_for('franchise_hub'))
+    stage = fo.current_stage(save)
+    ctx = dict(save=save, gm=save['gm'], stage=stage, stages=fo.stage_progress(save),
+               scenario=fo.my_scenario(save), current_user=current_user)
+    if stage == 'select':
+        board = []
+        for t in sorted(save['teams'], key=lambda t: save['scenarios'][t['id']]['finish_rank']):
+            sc = save['scenarios'][t['id']]
+            board.append({'id': t['id'], 'full': t['full'], 'tier': sc['tier'],
+                          'slot': sc['draft_slot'], 'power': fk.power_rating(t)})
+        ctx['board'] = board
+    elif stage == 'recap':
+        team = fk.current_team(save)
+        ctx.update(narrative=fo.scenario_narrative(fo.my_scenario(save)),
+                   team=team, power=fk.power_rating(team))
+    elif stage == 'workouts':
+        ctx['report'] = [_league_avatar(p) for p in fo.workouts_report(save)]
+    elif stage == 'resign':
+        exp = fo.expiring_players(save)
+        pid = str(request.args.get('p', '')).strip()
+        ctx.update(expiring=[_league_avatar(p) for p in exp], last_nego=save.get('last_nego'),
+                   nego_p=next((p for p in exp if p['id'] == pid), None) if pid else None)
+    elif stage == 'free_agency':
+        team = fk.current_team(save)
+        fa_id = str(request.args.get('fa', '')).strip()
+        ctx.update(free_agents=sorted(save.get('free_agents', []), key=lambda p: -p['overall'])[:30],
+                   last_nego=save.get('last_nego'),
+                   nego_fa=next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None,
+                   cap_used=fk.cap_used(team), cap_total=fk.CAP_TOTAL)
+    elif stage == 'draft':
+        if not save.get('draft_pending') and not save['offseason'].get('drafted'):
+            fk.start_draft(save)
+        ctx.update(draft=fk.draft_state(save), draft_pending=save.get('draft_pending', False),
+                   last_draft_log=save.get('last_draft_log'))
+    elif stage == 'cuts':
+        team = fk.current_team(save)
+        ctx.update(roster=[_league_avatar(p) for p in sorted(team['roster'], key=lambda x: -x['overall'])],
+                   camp_count=len(team['roster']), final=fo.ROSTER_FINAL)
+    elif stage == 'kickoff':
+        team = fk.current_team(save)
+        ctx.update(team=team, power=fk.power_rating(team), ready=fo.ready_to_kick(save),
+                   camp_count=fo.camp_count(save), final=fo.ROSTER_FINAL)
+    return render_template('franchise_offseason.html', **ctx)
+
+
+@app.route('/franchise/offseason/pick', methods=['POST'])
+def franchise_offseason_pick():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        fo.pick_team(save, str(request.form.get('team_id', '')).strip())
+    return redirect(url_for('franchise_offseason'))
+
+
+@app.route('/franchise/offseason/advance', methods=['POST'])
+def franchise_offseason_advance():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        fo.advance_stage(save)
+    return redirect(url_for('franchise_offseason'))
+
+
+@app.route('/franchise/offseason/resign', methods=['POST'])
+def franchise_offseason_resign():
+    _, save = _franchise_save()
+    pid = str(request.form.get('player_id', '')).strip()
+    if save and fo.offseason_active(save):
+        if request.form.get('walk'):
+            fo.let_walk(save, pid)
+            return redirect(url_for('franchise_offseason'))
+        fo.resign(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+    return redirect(url_for('franchise_offseason', p=pid))
+
+
+@app.route('/franchise/offseason/fa', methods=['POST'])
+def franchise_offseason_fa():
+    _, save = _franchise_save()
+    pid = str(request.form.get('player_id', '')).strip()
+    if save and fo.offseason_active(save):
+        fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+    return redirect(url_for('franchise_offseason', fa=pid))
+
+
+@app.route('/franchise/offseason/draft', methods=['POST'])
+def franchise_offseason_draft():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        if request.form.get('auto'):
+            guard = 0
+            while save.get('draft_pending') and guard < 400:
+                st = fk.draft_state(save)
+                if st and st.get('on_clock') and st.get('available'):
+                    fk.draft_make_pick(save, st['available'][0]['id'])
+                guard += 1
+        else:
+            fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
+        if not save.get('draft_pending'):
+            save['offseason']['drafted'] = True
+            fk.write_save(save)
+    return redirect(url_for('franchise_offseason'))
+
+
+@app.route('/franchise/offseason/cut', methods=['POST'])
+def franchise_offseason_cut():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        fo.cut_player(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_offseason'))
+
+
+@app.route('/franchise/offseason/kickoff', methods=['POST'])
+def franchise_offseason_kickoff():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        fo.finish_offseason(save)
+        if not save.get('unemployed'):
+            fk.sim_season(save)
+        save.pop('draft', None)            # cancel the legacy post-season draft
+        save['draft_pending'] = False
+        fk.write_save(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/offseason/begin', methods=['POST'])
+def franchise_offseason_begin():
+    _, save = _franchise_save()
+    if save and not fo.offseason_active(save) and not save.get('unemployed'):
+        save.pop('draft', None)
+        save['draft_pending'] = False
+        fo.start_offseason(save, choose_team=False)
+    return redirect(url_for('franchise_offseason'))
+
+
 @app.route('/franchise/job', methods=['POST'])
 def franchise_job():
     _, save = _franchise_save()
     if save:
         fk.take_job(save, str(request.form.get('team_id', '')).strip())
+        if save.get('offseason_mode'):
+            fo.start_offseason(save, choose_team=False)
+            return redirect(url_for('franchise_offseason'))
     return redirect(url_for('franchise_hub'))
 
 
@@ -29056,7 +29211,10 @@ def franchise_stay():
     if save:
         save['last_outcome'] = None
         fk.write_save(save)
-        fk.start_draft(save)   # staying put -> the offseason draft opens
+        if save.get('offseason_mode'):
+            fo.start_offseason(save, choose_team=False)
+            return redirect(url_for('franchise_offseason'))
+        fk.start_draft(save)   # legacy: staying put -> the offseason draft opens
     return redirect(url_for('franchise_hub'))
 
 

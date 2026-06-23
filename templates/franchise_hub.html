@@ -106,7 +106,12 @@
       {% endif %}
 
       {% if not unemployed and not (last_outcome and last_outcome.offers) %}
-        {% if draft_pending %}
+        {% if save.offseason_mode %}
+          <form method="post" action="{{ url_for('franchise_offseason_begin') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="fk-btn fk-btn-go">▶ Begin Offseason — build for Season {{ save.season }}</button>
+          </form>
+        {% elif draft_pending %}
           <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub', tab='draft') }}">● Rookie Draft is open — make your picks</a>
         {% else %}
           <form method="post" action="{{ url_for('franchise_sim') }}">

@@ -22,10 +22,10 @@ SAVE_DIR = BASE_DIR / "data" / "franchise"
 LEAGUE_SIZE = 32
 REG_GAMES = 17
 CONF_PLAYOFF_SEEDS = 7   # per conference -> 14-team playoff (NFL-style)
-CAP_TOTAL = 240.0        # millions
+CAP_TOTAL = 350.0        # millions (sized for 53-man rosters; expensive teams run tight)
 DRAFT_ROUNDS = 7
 DRAFT_CLASS = 240        # prospects (>= rounds * teams)
-ROSTER_CAP = 48          # roster size kept after the draft (cuts trim the rest)
+ROSTER_CAP = 53          # final active roster (the 53-man); camp trims down to it
 
 CONFERENCES = ["American", "National"]
 DIVISIONS = ["East", "North", "South", "West"]
@@ -82,6 +82,8 @@ LAST_NAMES = [
 
 # Starter slots per position (the depth chart auto-starts the best by position).
 ROSTER = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "OL": 5, "DL": 4, "LB": 3, "CB": 3, "S": 2, "K": 1}
+# Camp-roster depth per position (~54 players) so the offseason has a real cut to 53.
+ROSTER_DEPTH = {"QB": 3, "RB": 5, "WR": 7, "TE": 3, "OL": 10, "DL": 8, "LB": 6, "CB": 6, "S": 4, "K": 2}
 # Position weight for the Power Rating (football = QB-heavy, OL/DL count a lot).
 POS_WEIGHT = {"QB": 5.0, "WR": 1.5, "OL": 1.3, "DL": 1.4, "CB": 1.3, "LB": 1.1,
               "S": 1.0, "RB": 1.0, "TE": 0.9, "K": 0.4}
@@ -147,11 +149,17 @@ def _gen_player(rng, pos, base=None):
 
 
 def _gen_roster(rng, strength):
-    """strength 0..1 nudges the talent floor so weak teams feel weak."""
+    """strength 0..1 nudges the talent floor so weak teams feel weak. Builds a full
+    ~54-man camp roster: starters are strong, depth tapers off (cuttable bodies)."""
     roster = []
-    for pos, count in ROSTER.items():
-        for _ in range(count + 1):  # one backup per starter slot
-            base = int(rng.triangular(54, 90, 66 + strength * 14))
+    for pos, count in ROSTER_DEPTH.items():
+        starters = ROSTER.get(pos, 1)
+        for i in range(count):
+            if i < starters:                       # starters: real talent
+                base = int(rng.triangular(54, 90, 66 + strength * 14))
+            else:                                  # depth tapers down the chart
+                taper = 10 + (i - starters) * 4
+                base = int(rng.triangular(50, 78, max(52, 70 + strength * 10 - taper)))
             roster.append(_gen_player(rng, pos, base))
     return roster
 
@@ -710,9 +718,11 @@ def draft_make_pick(save, prospect_id):
 
 
 def _finalize_draft(save):
-    for t in save["teams"]:
-        t["roster"].sort(key=lambda p: -p["overall"])
-        del t["roster"][ROSTER_CAP:]
+    # During the staged offseason the Cuts stage trims to 53 - don't auto-cut here.
+    if not save.get("offseason"):
+        for t in save["teams"]:
+            t["roster"].sort(key=lambda p: -p["overall"])
+            del t["roster"][ROSTER_CAP:]
     save["draft_pending"] = False
     save["last_draft_log"] = save.get("draft", {}).get("user_log", [])
     save.pop("draft", None)

@@ -1,0 +1,255 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}Offseason — Franchise Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+{% macro advance(label) %}
+<form method="post" action="{{ url_for('franchise_offseason_advance') }}" class="os-adv">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="os-btn os-btn-go">{{ label }}</button>
+</form>
+{% endmacro %}
+<section class="os-wrap">
+
+  {% if stage != 'select' %}
+  <div class="os-track">
+    {% for s in stages %}
+    <div class="os-step os-{{ s.state }}"><span class="os-ico">{{ s.icon }}</span><span class="os-lbl">{{ s.title }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ---------------- SELECT: pick any of the 32 ---------------- #}
+  {% if stage == 'select' %}
+  <div class="os-hero">
+    <div class="os-kick">FRANCHISE KINGS · OFFSEASON · CHOOSE YOUR JOB</div>
+    <h1>Pick your team — and your difficulty.</h1>
+    <p>Every club enters the offseason with a different hand. Take the <strong>defending champion</strong>
+      and fight to repeat against the cap and free agency, or take a <strong>rebuild</strong> with the top
+      pick and the most cap space. All 32 can climb.</p>
+  </div>
+  <div class="os-board">
+    {% for t in board %}
+    <form method="post" action="{{ url_for('franchise_offseason_pick') }}" class="os-teamcard os-tier-{{ t.tier }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="team_id" value="{{ t.id }}">
+      <div class="os-tname">{{ t.full }}</div>
+      <div class="os-tier">{{ {'champion':'DEFENDING CHAMPION','contender':'CONTENDER','middle':'MIDDLE OF PACK','rebuild':'REBUILD'}[t.tier] }}</div>
+      <div class="os-tstats"><span>PWR {{ t.power }}</span><span>Pick #{{ t.slot }}</span></div>
+      <button class="os-pickbtn">Take this job →</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  {# ---------------- RECAP: your scenario ---------------- #}
+  {% elif stage == 'recap' %}
+  <div class="os-hero">
+    <div class="os-kick os-tier-text-{{ scenario.tier }}">{{ narrative.label|upper }}</div>
+    <h1>{{ team.full }}</h1>
+    <p class="os-head">{{ narrative.head }}</p>
+  </div>
+  <div class="os-grid">
+    <div class="os-card os-chal">
+      <div class="os-ch">⚠ Challenges this offseason</div>
+      {% for c in narrative.challenges %}<div class="os-li">{{ c }}</div>{% endfor %}
+    </div>
+    <div class="os-card os-opp">
+      <div class="os-ch">★ What you've got going for you</div>
+      {% for c in narrative.opportunities %}<div class="os-li">{{ c }}</div>{% endfor %}
+      <div class="os-facts">
+        <span>Draft slot <b>#{{ narrative.draft_slot }}</b></span>
+        <span>Cap bonus <b>+${{ '%.0f'|format(narrative.cap_bonus) }}M</b></span>
+        <span>Comp picks <b>{{ narrative.comp_picks }}</b></span>
+      </div>
+    </div>
+  </div>
+  {{ advance('Start Voluntary Workouts →') }}
+
+  {# ---------------- WORKOUTS: evaluate talent ---------------- #}
+  {% elif stage == 'workouts' %}
+  <div class="os-card">
+    <div class="os-ch">🏋 Voluntary Workouts — evaluate your talent</div>
+    <p class="os-sub">Who's rising, who's hitting the age cliff, whose deal is up. Use this to plan free agency, the draft and your cuts.</p>
+    <div class="os-tscroll"><table class="os-table">
+      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>POT</th><th>Outlook</th><th>Deal</th></tr></thead>
+      <tbody>
+      {% for p in report %}
+        <tr>
+          <td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
+          <td>{{ p.name }} <span class="os-num">#{{ p.number }}</span></td>
+          <td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td><td>{{ p.potential }}</td>
+          <td><span class="os-traj os-traj-{{ p.traj }}">{{ p.tag }}</span></td>
+          <td>{% if p.expiring %}<span class="os-exp">EXPIRING</span>{% else %}{{ p.years }}y left{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+  {{ advance('Move to Re-Signings →') }}
+
+  {# ---------------- RESIGN: your own free agents ---------------- #}
+  {% elif stage == 'resign' %}
+  <div class="os-card">
+    <div class="os-ch">✍ Re-Sign Your Own</div>
+    {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if not expiring %}
+      <p class="os-sub">No expiring contracts — your core is locked up. On to free agency.</p>
+    {% elif nego_p %}
+      <p class="os-sub"><strong>{{ nego_p.pos }} {{ nego_p.name }}</strong> ({{ nego_p.overall }} OVR) · agent {{ nego_p.agent.personality if nego_p.agent }} · wants ${{ '%.1f'|format(nego_p.demand.aav if nego_p.demand else nego_p.contract.aav) }}M/yr</p>
+      <form method="post" action="{{ url_for('franchise_offseason_resign') }}" class="os-offer">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_p.id }}">
+        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (nego_p.demand.years if nego_p.demand else 3) }}"></label>
+        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (nego_p.demand.aav if nego_p.demand else nego_p.contract.aav) }}"></label>
+        <button class="os-btn">Offer extension</button>
+      </form>
+      <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_p.id }}"><input type="hidden" name="walk" value="1">
+        <button class="os-btn os-btn-ghost">Let him walk (comp pick if eligible)</button>
+      </form>
+      <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to expiring list</a></p>
+    {% else %}
+      <p class="os-sub">{{ expiring|length }} expiring contract{{ 's' if expiring|length != 1 }}. Re-sign your core or let them walk.</p>
+      <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>OVR</th><th>Wants</th><th></th></tr></thead><tbody>
+      {% for p in expiring %}
+        <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
+          <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
+          <td><a class="os-mini" href="{{ url_for('franchise_offseason', p=p.id) }}">Negotiate</a></td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% endif %}
+  </div>
+  {{ advance('Move to Free Agency →') }}
+
+  {# ---------------- FREE AGENCY ---------------- #}
+  {% elif stage == 'free_agency' %}
+  <div class="os-card">
+    <div class="os-ch">💰 Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
+    {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if nego_fa %}
+      <p class="os-sub"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR) · agent {{ nego_fa.agent.personality if nego_fa.agent }} · asking ${{ '%.1f'|format(nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}M/yr</p>
+      <form method="post" action="{{ url_for('franchise_offseason_fa') }}" class="os-offer">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_fa.id }}">
+        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (nego_fa.demand.years if nego_fa.demand else 3) }}"></label>
+        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}"></label>
+        <button class="os-btn">Send offer</button>
+      </form>
+      <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to free agents</a></p>
+    {% else %}
+      <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
+      {% for p in free_agents %}
+        <tr><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
+          <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
+          <td><a class="os-mini" href="{{ url_for('franchise_offseason', fa=p.id) }}">Negotiate</a></td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% endif %}
+  </div>
+  {{ advance('Move to the Draft →') }}
+
+  {# ---------------- DRAFT ---------------- #}
+  {% elif stage == 'draft' %}
+  <div class="os-card">
+    <div class="os-ch">🎓 The Draft {% if draft %}<span class="os-cap">Round {{ draft.round }} · Pick {{ draft.pick }}</span>{% endif %}</div>
+    {% if draft_pending and draft %}
+      {% if draft.on_clock %}
+        <p class="os-sub">You're on the clock.</p>
+        <div class="os-tscroll"><table class="os-table"><thead><tr><th>Prospect</th><th>Pos</th><th>Grade</th><th></th></tr></thead><tbody>
+        {% for p in draft.available[:40] %}
+          <tr><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.grade }}</td>
+            <td><form method="post" action="{{ url_for('franchise_offseason_draft') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="os-mini os-mini-btn">Draft</button></form></td></tr>
+        {% endfor %}
+        </tbody></table></div>
+      {% else %}
+        <p class="os-sub">Other teams are picking…</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('franchise_offseason_draft') }}" style="margin-top:10px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="auto" value="1">
+        <button class="os-btn os-btn-ghost">Auto-pick the rest of my draft</button>
+      </form>
+    {% else %}
+      <p class="os-sub">Draft complete. Your picks:</p>
+      {% for d in (last_draft_log or []) %}<div class="os-li">R{{ d.round }}: {{ d.pos }} {{ d.name }} ({{ d.ovr }} OVR · grade {{ d.grade }})</div>{% endfor %}
+    {% endif %}
+  </div>
+  {% if not draft_pending %}{{ advance('Move to Training Camp Cuts →') }}{% endif %}
+
+  {# ---------------- CUTS to 53 ---------------- #}
+  {% elif stage == 'cuts' %}
+  <div class="os-card">
+    <div class="os-ch">✂ Training Camp — cut to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
+    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %}</p>
+    <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th></th></tr></thead><tbody>
+    {% for p in roster %}
+      <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td>{{ p.name }} <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+        <td><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  </div>
+  {{ advance('Lock my 53 →') }}
+
+  {# ---------------- KICKOFF ---------------- #}
+  {% elif stage == 'kickoff' %}
+  <div class="os-hero">
+    <div class="os-kick">READY FOR KICKOFF</div>
+    <h1>{{ team.full }} — Season {{ save.season }}</h1>
+    <p class="os-head">Power {{ power }} · {{ camp_count }}-man roster. Your offseason is done — play it out.</p>
+  </div>
+  <form method="post" action="{{ url_for('franchise_offseason_kickoff') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="os-btn os-btn-go">🏈 Kick off Season {{ save.season }}</button>
+  </form>
+  {% endif %}
+
+</section>
+
+<style>
+  .os-wrap { max-width: 920px; margin: 0 auto; padding: 8px 16px 48px; }
+  .os-track { display:flex; gap:4px; overflow-x:auto; padding:6px 0 14px; }
+  .os-step { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 10px; border-radius:9px; min-width:62px; opacity:.5; }
+  .os-step .os-ico { font-size:16px; } .os-step .os-lbl { font-size:9px; text-align:center; color:#b7c6d0; letter-spacing:.02em; }
+  .os-done { opacity:1; } .os-done .os-ico { filter:grayscale(0); } .os-done .os-lbl { color:#7dffb0; }
+  .os-current { opacity:1; background:rgba(74,212,240,.14); border:1px solid rgba(74,212,240,.4); } .os-current .os-lbl { color:#9fe9ff; font-weight:800; }
+  .os-hero { padding:10px 0 16px; }
+  .os-kick { color:#4ad4f0; font-weight:800; letter-spacing:.12em; font-size:12px; }
+  .os-tier-text-champion { color:#f5c860; } .os-tier-text-rebuild { color:#7dffb0; }
+  .os-hero h1 { font-family:var(--font-display); font-size:clamp(24px,5vw,40px); margin:7px 0; color:#fff; }
+  .os-hero p, .os-head { color:var(--text2,#b7c6d0); font-size:14px; line-height:1.6; }
+  .os-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  .os-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:18px; margin-bottom:12px; }
+  .os-chal { border-color:rgba(255,138,138,.3); } .os-opp { border-color:rgba(125,255,176,.3); }
+  .os-ch { font-family:var(--font-display); color:#fff; font-size:18px; margin-bottom:10px; }
+  .os-sub { color:#8fa3b0; font-size:13px; margin:0 0 12px; }
+  .os-li { color:var(--text2,#c2cfd8); font-size:13px; padding:5px 0 5px 16px; position:relative; border-bottom:1px solid rgba(145,168,184,.08); }
+  .os-li:before { content:'·'; position:absolute; left:4px; color:#4ad4f0; }
+  .os-facts { display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:12px; color:#8fa3b0; } .os-facts b { color:#9fe9ff; }
+  .os-cap { float:right; font-size:12px; color:#8fa3b0; font-weight:600; } .os-cap.os-over { color:#ff9a9a; } .os-cap.os-ok { color:#7dffb0; }
+  .os-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .os-teamcard { background:rgba(8,18,26,.9); border:1px solid rgba(74,212,240,.18); border-radius:12px; padding:12px; text-align:left; }
+  .os-tier-champion { border-color:rgba(245,200,96,.5); } .os-tier-rebuild { border-color:rgba(125,255,176,.45); }
+  .os-tname { color:#fff; font-weight:800; font-size:14px; } .os-tier { font-size:9px; letter-spacing:.08em; color:#8fa3b0; margin:3px 0 8px; }
+  .os-tier-champion .os-tier { color:#f5c860; } .os-tier-rebuild .os-tier { color:#7dffb0; }
+  .os-tstats { display:flex; justify-content:space-between; font-size:11px; color:#b7c6d0; margin-bottom:10px; }
+  .os-pickbtn, .os-btn { cursor:pointer; border:none; border-radius:9px; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); padding:9px 14px; font-size:13px; width:100%; }
+  .os-btn-go { padding:14px; font-size:15px; } .os-adv { margin-top:6px; }
+  .os-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
+  .os-tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .os-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+  .os-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:5px 7px; border-bottom:1px solid rgba(145,168,184,.18); }
+  .os-table td { padding:6px 7px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }
+  .fkl-av { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; font-size:9px; font-weight:800; color:#05121a; }
+  .fkl-av-skill { background:linear-gradient(135deg,#4ad4f0,#8fe9ff); } .fkl-av-oline { background:linear-gradient(135deg,#f5c860,#ffe09a); }
+  .fkl-av-front { background:linear-gradient(135deg,#ff8a8a,#ffb3a0); } .fkl-av-back { background:linear-gradient(135deg,#7dffb0,#b6ffd2); } .fkl-av-kick { background:linear-gradient(135deg,#aab8c2,#d4e0e8); }
+  .os-num { color:#7f93a0; font-size:10px; font-family:var(--font-mono,monospace); }
+  .os-traj { font-size:11px; font-weight:700; } .os-traj-rising { color:#7dffb0; } .os-traj-declining { color:#ff9a9a; } .os-traj-steady { color:#b7c6d0; }
+  .os-exp { color:#f5c860; font-size:10px; font-weight:800; }
+  .os-mini { color:#4ad4f0; text-decoration:none; font-size:12px; font-weight:700; }
+  .os-mini-btn { border:1px solid rgba(74,212,240,.5); background:rgba(74,212,240,.12); border-radius:6px; padding:4px 9px; cursor:pointer; }
+  .os-mini-cut { border:1px solid rgba(255,122,122,.45); background:rgba(255,122,122,.12); color:#ff9a9a; border-radius:6px; padding:4px 9px; cursor:pointer; font-weight:800; font-size:11px; }
+  .os-offer { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; } .os-offer label { flex:1; min-width:90px; color:#b7c6d0; font-size:12px; } .os-offer button { flex-basis:100%; }
+  .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
+  .os-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
+  .os-nego-yes strong { color:#7dffb0; } .os-nego-no strong { color:#ff9a9a; }
+  .os-link { color:#4ad4f0; text-decoration:none; font-size:13px; } .os-mini-btn { color:#9fe9ff; }
+</style>
+{% endblock %}
