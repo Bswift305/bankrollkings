@@ -599,6 +599,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_job',
     'franchise_stay',
     'franchise_draft',
+    'franchise_hire',
+    'franchise_fire',
     'franchise_restart',
     'save_feedback',
     'checkout_start',
@@ -28890,7 +28892,7 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'staff', 'career', 'league', 'draft')
 
 
 def _franchise_view(save):
@@ -28915,6 +28917,10 @@ def _franchise_view(save):
         'draft_pending': save.get('draft_pending', False),
         'draft': fk.draft_state(save),
         'last_draft_log': save.get('last_draft_log'),
+        'staff': save.get('staff', {}),
+        'staff_market': save.get('staff_market', {}),
+        'staff_bonus': fk.staff_bonus(save),
+        'staff_roles': fk.STAFF_ROLES,
     }
 
 
@@ -28995,6 +29001,23 @@ def franchise_draft():
     if save:
         fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
     return redirect(url_for('franchise_hub', tab='draft'))
+
+
+@app.route('/franchise/hire', methods=['POST'])
+def franchise_hire():
+    _, save = _franchise_save()
+    if save:
+        fk.hire_staff(save, str(request.form.get('role', '')).strip(),
+                      str(request.form.get('candidate_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='staff'))
+
+
+@app.route('/franchise/fire', methods=['POST'])
+def franchise_fire():
+    _, save = _franchise_save()
+    if save:
+        fk.fire_staff(save, str(request.form.get('role', '')).strip())
+    return redirect(url_for('franchise_hub', tab='staff'))
 
 
 @app.route('/franchise/restart', methods=['POST'])

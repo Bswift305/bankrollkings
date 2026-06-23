@@ -18,7 +18,7 @@
   </header>
 
   <nav class="fk-tabs">
-    {% for t in ['dashboard','roster','front-office','career','league'] %}
+    {% for t in ['dashboard','roster','front-office','staff','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
@@ -125,6 +125,41 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  {% endif %}
+
+  {# ===================== STAFF ===================== #}
+  {% if tab == 'staff' %}
+  <div class="fk-card">
+    <div class="fk-card-h">Staff &amp; coaching</div>
+    <div class="fk-staffbonus">
+      <span>Coaching edge <b>{{ '%+.1f'|format(staff_bonus.power) }} power</b></span>
+      <span>Scouting <b>{{ '%+.0f'|format(staff_bonus.scouting) }} acc</b></span>
+      <span>Development <b>{{ 'boosted' if staff_bonus.development else 'standard' }}</b></span>
+    </div>
+    {% for role, label, desc in staff_roles %}
+    <div class="fk-staffrow">
+      <div class="fk-staffrole"><strong>{{ label }}</strong><small>{{ desc }}</small></div>
+      {% if staff.get(role) %}
+        <div class="fk-staffhire">
+          <span class="fk-ovr">{{ staff[role].rating }}</span> {{ staff[role].name }}
+          <form method="post" action="{{ url_for('franchise_fire') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="role" value="{{ role }}">
+            <button class="fk-btn fk-btn-ghost fk-btn-sm">Fire</button></form>
+        </div>
+      {% else %}
+        <div class="fk-staffcands">
+          {% for c in staff_market.get(role, []) %}
+          <form method="post" action="{{ url_for('franchise_hire') }}" class="fk-cand">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
+            <span><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}</span>
+            <button class="fk-btn fk-btn-sm">Hire</button></form>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
   {% endif %}
 
@@ -280,6 +315,13 @@
   .fk-tag { background:rgba(74,212,240,.12); border:1px solid rgba(74,212,240,.3); color:#bdecf7; border-radius:999px; padding:2px 9px; font-size:11px; }
   .fk-bust { color:#ff8a8a !important; }
   .fk-gem { color:#7dffb0 !important; }
+  .fk-staffbonus { display:flex; flex-wrap:wrap; gap:14px; padding:10px 12px; margin-bottom:12px; border-radius:9px; background:rgba(74,212,240,.07); border:1px solid rgba(74,212,240,.2); font-size:12px; color:var(--text2,#9fb0bc); }
+  .fk-staffbonus b { color:#fff; }
+  .fk-staffrow { padding:10px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .fk-staffrole strong { color:#fff; } .fk-staffrole small { display:block; color:#7f93a0; font-size:11px; margin:2px 0 6px; }
+  .fk-staffhire { color:var(--text2,#c2cfd8); font-size:13px; display:flex; align-items:center; gap:8px; }
+  .fk-staffcands { display:flex; flex-wrap:wrap; gap:8px; }
+  .fk-cand { display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid rgba(145,168,184,.18); border-radius:9px; background:rgba(10,18,26,.6); font-size:12px; color:var(--text2,#c2cfd8); }
   .fk-pill { padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
   .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
   .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }

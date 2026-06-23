@@ -216,6 +216,7 @@ def sim_season(save):
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
     powers = {tid: power_rating(t) for tid, t in teams.items()}
+    powers[save["current_team_id"]] += staff_bonus(save)["power"]   # your coaching edge
 
     for g in save["schedule"]:
         home_win = _sim_game(rng, powers[g["home"]], powers[g["away"]])
@@ -259,11 +260,14 @@ def sim_season(save):
 
 def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
+    dev = staff_bonus(save)["development"]
+    uid = save["current_team_id"]
     for t in save["teams"]:
+        bonus = dev if t["id"] == uid else 0
         for p in t["roster"]:
             p["age"] += 1
             if p["age"] <= 26 and p["overall"] < p["potential"]:
-                p["overall"] = min(p["potential"], p["overall"] + rng.randint(0, 3))
+                p["overall"] = min(p["potential"], p["overall"] + rng.randint(0, 3) + bonus)
             elif p["age"] >= 31:
                 p["overall"] = max(45, p["overall"] - rng.randint(0, 3))
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
@@ -339,6 +343,62 @@ def _job_openings(save, want):
 
 
 # --------------------------------------------------------------------------- #
+# Staff / coaching (user-team) - feeds the sim, draft, and development
+# --------------------------------------------------------------------------- #
+STAFF_ROLES = [
+    ("head_coach", "Head Coach", "Lifts team performance and young-player development."),
+    ("off_coord", "Offensive Coordinator", "Sharpens the offense."),
+    ("def_coord", "Defensive Coordinator", "Sharpens the defense."),
+    ("head_scout", "Head Scout", "Tightens draft scouting - fewer busts."),
+    ("head_medical", "Head of Medical", "Keeps players healthier (grows once injuries land)."),
+    ("head_analytics", "Head of Analytics", "Better projections and edge (grows with the analytics layer)."),
+]
+_STAFF_BASE = 48  # an unhired slot runs at replacement level
+
+
+def _gen_staff(rng, role):
+    return {"id": f"s{rng.randint(100000, 999999)}", "name": _gen_name(rng),
+            "role": role, "rating": int(rng.triangular(42, 86, 60))}
+
+
+def generate_staff_market(rng):
+    return {role: [_gen_staff(rng, role) for _ in range(4)] for role, _, _ in STAFF_ROLES}
+
+
+def _sr(staff, role):
+    return staff.get(role, {}).get("rating", _STAFF_BASE)
+
+
+def staff_bonus(save):
+    s = save.get("staff", {})
+    coaching = (_sr(s, "head_coach") + _sr(s, "off_coord") + _sr(s, "def_coord")) / 3.0
+    return {
+        "power": round((coaching - 50) * 0.10, 2),          # +/- ~5 power
+        "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
+        "development": 1 if _sr(s, "head_coach") >= 65 else 0,
+        "medical": _sr(s, "head_medical"),
+        "analytics": _sr(s, "head_analytics"),
+    }
+
+
+def hire_staff(save, role, candidate_id):
+    market = save.setdefault("staff_market", {})
+    cand = next((c for c in market.get(role, []) if c["id"] == candidate_id), None)
+    if not cand:
+        return False, "That candidate is no longer available."
+    save.setdefault("staff", {})[role] = {"name": cand["name"], "rating": cand["rating"]}
+    market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
+    write_save(save)
+    return True, f"Hired {cand['name']} ({cand['rating']} OVR)."
+
+
+def fire_staff(save, role):
+    save.get("staff", {}).pop(role, None)
+    write_save(save)
+    return True
+
+
+# --------------------------------------------------------------------------- #
 # Rookie draft + scouting
 # --------------------------------------------------------------------------- #
 def _gen_prospect(rng, pos):
@@ -378,9 +438,10 @@ def start_draft(save):
         return
     rng = _rng(save["seed"] + save["season"] * 77 + 13)
     cls = generate_draft_class(rng)
-    acc = save["gm"]["ratings"].get("drafting", 50)
+    acc = max(20, min(92, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"]))
     for p in cls:
         _scout(rng, p, acc)
+    save["staff_market"] = generate_staff_market(rng)   # fresh candidates each offseason
     order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
     save["draft"] = {"class": cls, "order": order, "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": []}
     save["draft_pending"] = True
@@ -515,6 +576,8 @@ def create_save(user_id, gm_name, background, seed=None):
         },
         "standings_cache": [],
         "last_champion": "",
+        "staff": {},
+        "staff_market": generate_staff_market(_rng(seed + 999)),
         "created_at": datetime.now().strftime("%Y-%m-%d"),
     }
     _set_expectation(save)
