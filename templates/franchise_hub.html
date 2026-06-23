@@ -1,0 +1,220 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}Franchise Kings — {{ team.full }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+<section class="fk-wrap">
+
+  <header class="fk-top">
+    <div>
+      <div class="fk-kicker">FRANCHISE KINGS · SEASON {{ save.season }}</div>
+      <h1>{{ team.full }}</h1>
+      <div class="fk-sub">GM <strong>{{ gm.name }}</strong> ·
+        {{ gm.background|replace('_',' ')|title }} · {{ team.market }} market · Owner: {{ team.owner.type }}</div>
+    </div>
+    <div class="fk-power"><span>POWER</span><b>{{ power }}</b></div>
+  </header>
+
+  <nav class="fk-tabs">
+    {% for t in ['dashboard','roster','front-office','career','league'] %}
+    <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
+    {% endfor %}
+  </nav>
+
+  {# ===================== DASHBOARD ===================== #}
+  {% if tab == 'dashboard' %}
+  <div class="fk-grid2">
+    <div class="fk-card">
+      <div class="fk-card-h">Front office standing</div>
+      {% for label, val in [('Owner Trust', gm.owner_trust), ('Fan Support', gm.fan_support), ('Reputation', gm.reputation)] %}
+      <div class="fk-meter"><span>{{ label }}</span>
+        <div class="fk-bar"><i style="width: {{ val }}%; {% if label=='Owner Trust' and val < 30 %}background:#ff7a7a{% endif %}"></i></div>
+        <b>{{ val }}</b></div>
+      {% endfor %}
+      <div class="fk-exp">Owner mandate: <strong>{{ expectation.text }}</strong></div>
+    </div>
+
+    <div class="fk-card">
+      <div class="fk-card-h">This season</div>
+      {% if last_outcome %}
+        <div class="fk-outcome fk-outcome-{{ last_outcome.status }}">
+          <div class="fk-outcome-rec">{{ last_outcome.record.w }}–{{ last_outcome.record.l }}{% if last_outcome.won_title %} · 🏆 CHAMPIONS{% elif last_outcome.made_playoffs %} · Playoffs{% endif %}</div>
+          <p>{{ last_outcome.headline }}</p>
+          <div class="fk-champ">League champion: {{ last_outcome.champion }}</div>
+        </div>
+      {% else %}
+        <p class="fk-muted">Set your roster, then run the season. Your record vs the owner's
+          mandate decides whether you're extended, fired, or poached by a bigger club.</p>
+      {% endif %}
+
+      {% if unemployed %}
+        <div class="fk-firealert">You're out of a job. Choose your next opportunity to continue.</div>
+      {% elif last_outcome and last_outcome.offers %}
+        <div class="fk-offers-h">Clubs are calling — take a new job, or stay put:</div>
+      {% endif %}
+
+      {% if last_outcome and last_outcome.offers %}
+        <div class="fk-offers">
+          {% for o in last_outcome.offers %}
+          <form method="post" action="{{ url_for('franchise_job') }}" class="fk-offer">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="team_id" value="{{ o.id }}">
+            <div><strong>{{ o.full }}</strong><small>Power {{ o.power }} · {{ o.market }} · {{ o.owner }}</small></div>
+            <button class="fk-btn fk-btn-sm">Take Job</button>
+          </form>
+          {% endfor %}
+        </div>
+        {% if not unemployed %}
+        <form method="post" action="{{ url_for('franchise_stay') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="fk-btn fk-btn-ghost">Stay with {{ team.name }}</button></form>
+        {% endif %}
+      {% endif %}
+
+      {% if not unemployed and not (last_outcome and last_outcome.offers) %}
+        <form method="post" action="{{ url_for('franchise_sim') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="fk-btn fk-btn-go">▶ Sim Season {{ save.season }}</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===================== ROSTER ===================== #}
+  {% if tab == 'roster' %}
+  <div class="fk-card">
+    <div class="fk-card-h">Roster — auto depth chart (best players start) · Power {{ power }}</div>
+    <table class="fk-table">
+      <thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot</th><th>AAV</th><th>Morale</th></tr></thead>
+      <tbody>
+        {% for p in roster_order %}
+        <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}</td>
+          <td>${{ '%.1f'|format(p.contract.aav) }}M</td><td>{{ p.morale }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ===================== FRONT OFFICE ===================== #}
+  {% if tab == 'front-office' %}
+  <div class="fk-card">
+    <div class="fk-card-h">Salary cap</div>
+    <div class="fk-meter"><span>Cap used</span>
+      <div class="fk-bar"><i style="width: {{ (cap_used / cap_total * 100)|round }}%"></i></div>
+      <b>${{ '%.1f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</b></div>
+  </div>
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">Free agents — sign within the cap</div>
+    <table class="fk-table">
+      <thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th><th></th></tr></thead>
+      <tbody>
+        {% for p in free_agents %}
+        <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <td class="fk-ovr">{{ p.overall }}</td><td>${{ '%.1f'|format(p.contract.aav) }}M</td>
+          <td><form method="post" action="{{ url_for('franchise_sign') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-btn fk-btn-sm">Sign</button></form></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ===================== CAREER ===================== #}
+  {% if tab == 'career' %}
+  <div class="fk-card">
+    <div class="fk-card-h">{{ gm.name }} — career résumé · {{ gm.titles }} title(s) · Reputation {{ gm.reputation }}</div>
+    {% if career %}
+    <table class="fk-table">
+      <thead><tr><th>Season</th><th>Team</th><th>Record</th><th>Mandate</th><th>Outcome</th></tr></thead>
+      <tbody>
+        {% for c in career|reverse %}
+        <tr><td>{{ c.season }}</td><td>{{ c.team }}</td><td>{{ c.record }}</td>
+          <td>{{ c.expectation }}+ W</td><td><span class="fk-pill fk-pill-{{ c.outcome }}">{{ c.outcome|title }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="fk-muted">No seasons completed yet. Run your first season from the Dashboard.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {# ===================== LEAGUE ===================== #}
+  {% if tab == 'league' %}
+  <div class="fk-card">
+    <div class="fk-card-h">BRK League standings{% if save.last_champion %} · Last champion: {{ save.last_champion }}{% endif %}</div>
+    {% if standings %}
+    <table class="fk-table">
+      <thead><tr><th>#</th><th>Team</th><th>Record</th><th>Power</th></tr></thead>
+      <tbody>
+        {% for s in standings %}
+        <tr class="{% if s.id == team.id %}fk-you{% endif %}"><td>{{ loop.index }}</td><td>{{ s.full }}{% if s.id == team.id %} ◄ you{% endif %}</td>
+          <td>{{ s.w }}–{{ s.l }}</td><td>{{ s.power }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="fk-muted">Standings appear after your first simulated season.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('franchise_restart') }}" class="fk-restart"
+        onsubmit="return confirm('Start a brand-new GM career? Your current save will be erased.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="fk-btn fk-btn-ghost fk-btn-sm">Start a new career</button>
+  </form>
+</section>
+
+<style>
+  .fk-wrap { max-width: 960px; margin: 0 auto; padding: 8px 16px 40px; }
+  .fk-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding: 12px 0 6px; }
+  .fk-kicker { color:#4ad4f0; font-weight:800; letter-spacing:.14em; font-size:11px; }
+  .fk-top h1 { font-family: var(--font-display); font-size: clamp(24px,4.5vw,38px); margin:6px 0 4px; color:#fff; }
+  .fk-sub { color: var(--text2,#9fb0bc); font-size:13px; }
+  .fk-power { text-align:center; border:1px solid rgba(74,212,240,.35); border-radius:12px; padding:8px 16px; background:rgba(11,24,34,.8); }
+  .fk-power span { display:block; font-size:10px; letter-spacing:.12em; color:#4ad4f0; }
+  .fk-power b { font-size:30px; color:#fff; font-family:var(--font-display); }
+  .fk-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:14px 0; border-bottom:1px solid rgba(145,168,184,.15); }
+  .fk-tab { padding:9px 14px; color:var(--text2,#9fb0bc); text-decoration:none; font-weight:700; font-size:13px; border-bottom:2px solid transparent; }
+  .fk-tab.active { color:#fff; border-bottom-color:#4ad4f0; }
+  .fk-grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width:760px){ .fk-grid2 { grid-template-columns: 1fr; } }
+  .fk-card { background:linear-gradient(135deg, rgba(11,24,34,.96), rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.18); border-radius:14px; padding:16px; }
+  .fk-card-h { color:#fff; font-weight:800; font-size:13px; letter-spacing:.03em; margin-bottom:12px; }
+  .fk-meter { display:grid; grid-template-columns: 96px 1fr 36px; align-items:center; gap:10px; margin:7px 0; font-size:12px; color:var(--text2,#9fb0bc); }
+  .fk-bar { height:8px; background:rgba(255,255,255,.07); border-radius:6px; overflow:hidden; }
+  .fk-bar i { display:block; height:100%; background:linear-gradient(90deg,#2fb6d6,#7fe6ff); }
+  .fk-meter b { color:#fff; text-align:right; }
+  .fk-exp { margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(74,212,240,.07); border:1px solid rgba(74,212,240,.2); color:var(--text2,#b7c6d0); font-size:13px; }
+  .fk-exp strong, .fk-outcome p strong { color:#fff; }
+  .fk-muted { color:var(--text2,#9fb0bc); font-size:13px; line-height:1.55; }
+  .fk-outcome { padding:10px 12px; border-radius:10px; background:rgba(10,18,26,.7); border:1px solid rgba(145,168,184,.18); margin-bottom:10px; }
+  .fk-outcome-fired { border-color:rgba(255,122,122,.5); }
+  .fk-outcome-courted { border-color:rgba(74,212,240,.5); }
+  .fk-outcome-rec { font-family:var(--font-display); font-size:22px; color:#fff; }
+  .fk-outcome p { color:var(--text2,#b7c6d0); margin:6px 0; font-size:14px; line-height:1.5; }
+  .fk-champ { font-size:12px; color:#9fb0bc; }
+  .fk-firealert { color:#ffb3b3; background:rgba(255,122,122,.1); border:1px solid rgba(255,122,122,.4); padding:9px 12px; border-radius:9px; font-size:13px; margin:8px 0; }
+  .fk-offers-h { color:var(--text2,#b7c6d0); font-size:13px; margin:6px 0; }
+  .fk-offers { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .fk-offer { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px; border:1px solid rgba(74,212,240,.25); border-radius:10px; background:rgba(11,24,34,.7); }
+  .fk-offer small { display:block; color:#9fb0bc; font-size:11px; }
+  .fk-offer strong { color:#fff; }
+  .fk-btn { cursor:pointer; border:none; border-radius:9px; font-weight:800; font-size:13px; padding:10px 16px; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
+  .fk-btn-go { width:100%; margin-top:8px; font-size:15px; padding:13px; }
+  .fk-btn-sm { padding:7px 12px; font-size:12px; }
+  .fk-btn-ghost { background:transparent; border:1px solid rgba(145,168,184,.3); color:var(--text2,#b7c6d0); }
+  .fk-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .fk-table th { text-align:left; color:#7f93a0; font-size:11px; letter-spacing:.05em; padding:6px 8px; border-bottom:1px solid rgba(145,168,184,.15); }
+  .fk-table td { padding:7px 8px; border-bottom:1px solid rgba(145,168,184,.07); color:var(--text2,#c2cfd8); }
+  .fk-pos { color:#4ad4f0; font-weight:700; }
+  .fk-ovr { color:#fff; font-weight:700; }
+  .fk-you td { background:rgba(74,212,240,.08); color:#fff; }
+  .fk-pill { padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
+  .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }
+  .fk-pill-fired { background:rgba(255,122,122,.18); color:#ffb3b3; }
+  .fk-restart { margin-top:18px; text-align:center; }
+</style>
+{% endblock %}

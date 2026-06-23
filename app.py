@@ -22,6 +22,7 @@ import pickle
 import re
 import secrets
 import threading
+import franchise_kings as fk
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -591,6 +592,13 @@ PUBLIC_ENDPOINTS = {
     'fantasy_league',
     'save_fantasy_lineup',
     'delete_fantasy_lineup',
+    'franchise_hub',
+    'franchise_new',
+    'franchise_sim',
+    'franchise_sign',
+    'franchise_job',
+    'franchise_stay',
+    'franchise_restart',
     'save_feedback',
     'checkout_start',
     'checkout_success',
@@ -28875,6 +28883,113 @@ def delete_fantasy_lineup():
         return jsonify({'ok': False, 'error': 'Lineup not found.'}), 404
     _write_fantasy_lineups(df[~owned])
     return jsonify({'ok': True, 'message': 'Lineup deleted.'})
+
+
+# =============================================================================
+# FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
+# Free hook: login-required (own save), no paid plan needed.
+# =============================================================================
+FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'career', 'league')
+
+
+def _franchise_view(save):
+    team = fk.current_team(save)
+    by_pos = {}
+    for p in team['roster']:
+        by_pos.setdefault(p['pos'], []).append(p)
+    for pos in by_pos:
+        by_pos[pos].sort(key=lambda x: -x['overall'])
+    return {
+        'team': team,
+        'power': fk.power_rating(team),
+        'cap_used': fk.cap_used(team),
+        'cap_total': fk.CAP_TOTAL,
+        'roster_order': [p for pos in fk.ROSTER for p in by_pos.get(pos, [])],
+        'free_agents': sorted(save.get('free_agents', []), key=lambda x: -x['overall']),
+        'standings': save.get('standings_cache', []),
+        'career': save['gm'].get('career', []),
+        'expectation': save.get('expectation', {}),
+        'last_outcome': save.get('last_outcome'),
+        'unemployed': save.get('unemployed', False),
+    }
+
+
+def _franchise_save():
+    current_user = get_current_user()
+    if not current_user:
+        return None, None
+    uid = str(current_user.get('user_id', '') or '')
+    return current_user, fk.load_save(uid)
+
+
+@app.route('/franchise')
+def franchise_hub():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    save = fk.load_save(str(current_user.get('user_id', '') or ''))
+    if not save:
+        return redirect(url_for('franchise_new'))
+    tab = str(request.args.get('tab', 'dashboard')).strip().lower()
+    if tab not in FRANCHISE_TABS:
+        tab = 'dashboard'
+    return render_template('franchise_hub.html', tab=tab, save=save, gm=save['gm'],
+                           current_user=current_user, **_franchise_view(save))
+
+
+@app.route('/franchise/new', methods=['GET', 'POST'])
+def franchise_new():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    uid = str(current_user.get('user_id', '') or '')
+    if request.method == 'POST':
+        fk.create_save(uid, request.form.get('gm_name', ''), request.form.get('background', 'scout'))
+        return redirect(url_for('franchise_hub'))
+    if fk.has_save(uid):
+        return redirect(url_for('franchise_hub'))
+    return render_template('franchise_new.html', backgrounds=fk.BACKGROUNDS, current_user=current_user)
+
+
+@app.route('/franchise/sim', methods=['POST'])
+def franchise_sim():
+    _, save = _franchise_save()
+    if save and not save.get('unemployed'):
+        fk.sim_season(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/sign', methods=['POST'])
+def franchise_sign():
+    _, save = _franchise_save()
+    if save:
+        fk.sign_free_agent(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='front-office'))
+
+
+@app.route('/franchise/job', methods=['POST'])
+def franchise_job():
+    _, save = _franchise_save()
+    if save:
+        fk.take_job(save, str(request.form.get('team_id', '')).strip())
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/stay', methods=['POST'])
+def franchise_stay():
+    _, save = _franchise_save()
+    if save:
+        save['last_outcome'] = None
+        fk.write_save(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/restart', methods=['POST'])
+def franchise_restart():
+    current_user = get_current_user()
+    if current_user:
+        fk.delete_save(str(current_user.get('user_id', '') or ''))
+    return redirect(url_for('franchise_new'))
 
 
 @app.route('/sports/<league>')

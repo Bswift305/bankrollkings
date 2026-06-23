@@ -33,6 +33,13 @@
     <span class="si-name">NBA</span>
   </a>
 </div>
+<div class="bk-sidebar-section">
+  <div class="bk-sidebar-heading">Game</div>
+  <a href="/franchise" class="bk-sidebar-item {% if active_page == 'franchise' %}active{% endif %}">
+    <span class="si-icon"><img src="{{ sidebar_icon_url('nfl') }}" alt=""></span>
+    <span class="si-name">Franchise Kings</span>
+  </a>
+</div>
 {% endblock sidebar %}
 
 {% block content %}
