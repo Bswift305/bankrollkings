@@ -122,18 +122,44 @@
       <b>${{ '%.1f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</b></div>
   </div>
   <div class="fk-card" style="margin-top:12px">
-    <div class="fk-card-h">Free agents — sign within the cap</div>
-    <table class="fk-table">
-      <thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th><th></th></tr></thead>
-      <tbody>
-        {% for p in free_agents %}
-        <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
-          <td class="fk-ovr">{{ p.overall }}</td><td>${{ '%.1f'|format(p.contract.aav) }}M</td>
-          <td><form method="post" action="{{ url_for('franchise_sign') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-btn fk-btn-sm">Sign</button></form></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if last_nego and last_nego.ok %}
+      <div class="fk-trade-result fk-trade-{{ 'yes' if last_nego.status=='accepted' else 'no' }}">
+        <span class="fk-grade fk-grade-{{ 'A' if last_nego.status=='accepted' else 'C' if last_nego.status=='countered' else 'F' }}" style="width:30px;height:30px;font-size:16px">{{ last_nego.status[0]|upper }}</span>
+        <div>{{ last_nego.msg }}</div>
+      </div>
+    {% endif %}
+    {% if nego_fa %}
+      <div class="fk-card-h">Negotiate — {{ nego_fa.pos }} {{ nego_fa.name }} ({{ nego_fa.overall }} OVR)</div>
+      <p class="fk-muted">Agent <strong>{{ nego_fa.agent.name }}</strong> ({{ nego_fa.agent.personality }}) ·
+        asking <strong>${{ '%.1f'|format(nego_fa.demand.aav) }}M/yr</strong> over ~{{ nego_fa.demand.years }} yrs.</p>
+      <form method="post" action="{{ url_for('franchise_negotiate') }}" class="fk-tradeform">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="player_id" value="{{ nego_fa.id }}">
+        <div style="display:flex; gap:10px">
+          <label style="flex:1"><span class="fk-label">Years</span>
+            <input class="fk-input" type="number" name="years" min="1" max="6"
+              value="{{ (last_nego.counter.years if last_nego and last_nego.status=='countered' else nego_fa.demand.years) }}"></label>
+          <label style="flex:1"><span class="fk-label">AAV ($M/yr)</span>
+            <input class="fk-input" type="number" step="0.1" name="aav"
+              value="{{ (last_nego.counter.aav if last_nego and last_nego.status=='countered' else nego_fa.demand.aav) }}"></label>
+        </div>
+        <button class="fk-btn fk-btn-go" style="margin-top:10px">Send Offer</button>
+      </form>
+      <a class="fk-back" href="{{ url_for('franchise_hub', tab='front-office') }}">← all free agents</a>
+    {% else %}
+      <div class="fk-card-h">Free agents — negotiate with their agents</div>
+      <table class="fk-table">
+        <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
+        <tbody>
+          {% for p in free_agents %}
+          <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td class="fk-ovr">{{ p.overall }}</td>
+            <td>{{ p.agent.personality if p.agent else '—' }}</td>
+            <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
+            <td><a class="fk-btn fk-btn-sm" href="{{ url_for('franchise_hub', tab='front-office', fa=p.id) }}">Negotiate</a></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -246,6 +272,7 @@
     <div class="fk-card-h">Staff &amp; coaching</div>
     <div class="fk-staffbonus">
       <span>Coaching edge <b>{{ '%+.1f'|format(staff_bonus.power) }} power</b></span>
+      <span>Scheme fit <b>{{ '%+.1f'|format(staff_bonus.scheme) }} power</b></span>
       <span>Scouting <b>{{ '%+.0f'|format(staff_bonus.scouting) }} acc</b></span>
       <span>Development <b>{{ 'boosted' if staff_bonus.development else 'standard' }}</b></span>
     </div>

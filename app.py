@@ -599,6 +599,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_job',
     'franchise_stay',
     'franchise_draft',
+    'franchise_negotiate',
     'franchise_trade',
     'franchise_upgrade',
     'franchise_ticket',
@@ -28950,6 +28951,7 @@ def _franchise_view(save):
         'stadium_cost': fk.stadium_cost(save),
         'facility_cost': fk.facility_cost(save),
         'analytics': fk.analytics(save),
+        'last_nego': save.get('last_nego'),
     }
 
 
@@ -28975,6 +28977,9 @@ def franchise_hub():
     view = _franchise_view(save)
     if tab == 'trades':
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
+    elif tab == 'front-office':
+        fa_id = str(request.args.get('fa', '')).strip()
+        view['nego_fa'] = next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None
     return render_template('franchise_hub.html', tab=tab, save=save, gm=save['gm'],
                            current_user=current_user, **view)
 
@@ -29035,6 +29040,15 @@ def franchise_draft():
     if save:
         fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
     return redirect(url_for('franchise_hub', tab='draft'))
+
+
+@app.route('/franchise/negotiate', methods=['POST'])
+def franchise_negotiate():
+    _, save = _franchise_save()
+    pid = str(request.form.get('player_id', '')).strip()
+    if save:
+        fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+    return redirect(url_for('franchise_hub', tab='front-office', fa=pid))
 
 
 @app.route('/franchise/trade', methods=['POST'])

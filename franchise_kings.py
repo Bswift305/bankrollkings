@@ -100,6 +100,15 @@ BACKGROUNDS = {
 }
 OWNER_TYPES = ["Impatient", "Cheap", "Hands-Off", "Meddling", "Legacy", "Billionaire"]
 
+# Free-agent agents: personality sets how far over market they demand and how
+# they counter. "Loyal" gives a hometown discount when your fanbase is happy.
+AGENTS = {
+    "Reasonable": {"markup": 1.07, "counter": 0.99, "blurb": "Fair - signs at market."},
+    "Shrewd":     {"markup": 1.20, "counter": 0.97, "blurb": "Plays hardball, counters high."},
+    "Greedy":     {"markup": 1.32, "counter": 0.96, "blurb": "Money over everything."},
+    "Loyal":      {"markup": 1.04, "counter": 0.98, "blurb": "Takes a discount for a winner."},
+}
+
 
 def _rng(seed):
     return random.Random(seed)
@@ -179,12 +188,25 @@ def _gen_team(rng, idx, entry):
     }
 
 
+def _attach_agent(rng, p):
+    pers = rng.choice(list(AGENTS))
+    p["agent"] = {"name": _gen_name(rng), "personality": pers}
+    p["demand"] = {"years": rng.randint(2, 5),
+                   "aav": round(p["contract"]["aav"] * AGENTS[pers]["markup"], 1)}
+    return p
+
+
+def _gen_fa_pool(rng, n=40):
+    pool = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70))) for _ in range(n)]
+    for p in pool:
+        _attach_agent(rng, p)
+    return pool
+
+
 def new_league(seed):
     rng = _rng(seed)
     teams = [_gen_team(rng, i, NFL_TEAMS[i]) for i in range(LEAGUE_SIZE)]
-    free_agents = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70)))
-                   for _ in range(40)]
-    return teams, free_agents
+    return teams, _gen_fa_pool(rng)
 
 
 def make_schedule(seed, team_ids):
@@ -296,7 +318,8 @@ def sim_season(save):
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
     powers = {tid: power_rating(t) for tid, t in teams.items()}
-    powers[save["current_team_id"]] += staff_bonus(save)["power"]   # your coaching edge
+    _sb = staff_bonus(save)
+    powers[save["current_team_id"]] += _sb["power"] + _sb["scheme"]   # coaching + scheme fit
 
     injuries = _roll_injuries(save, rng)
     inj_pen = round(sum((i["weeks"] / REG_GAMES) * POS_WEIGHT.get(i["pos"], 1.0) * 1.4 for i in injuries), 1)
@@ -355,8 +378,7 @@ def _advance_year(save):
             p["age"] += 1
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
-    save["free_agents"] = [_gen_player(rng, rng.choice(list(ROSTER)),
-                                       int(rng.triangular(60, 88, 70))) for _ in range(40)]
+    save["free_agents"] = _gen_fa_pool(rng)
 
 
 # --------------------------------------------------------------------------- #
@@ -450,6 +472,20 @@ OFF_SCHEMES = {"Air Raid": ["QB", "WR"], "West Coast": ["QB", "WR", "TE"],
                "Power Run": ["OL", "RB"], "Spread": ["QB", "WR", "RB"]}
 DEF_SCHEMES = {"4-3 Front": ["DL", "LB"], "3-4 Front": ["LB", "DL"],
                "Cover 3 Zone": ["CB", "S"], "Blitz Heavy": ["DL", "LB", "CB"]}
+# A scheme RE-WEIGHTS which positions drive your team. Match the scheme to your
+# roster's strengths and you outplay your raw power; mismatch and you waste talent.
+OFF_SCHEME_W = {
+    "Air Raid":   {"QB": 1.55, "WR": 1.45, "TE": 0.95, "OL": 0.95, "RB": 0.65},
+    "West Coast": {"QB": 1.30, "WR": 1.20, "TE": 1.30, "OL": 1.05, "RB": 0.90},
+    "Power Run":  {"QB": 0.80, "WR": 0.80, "TE": 1.15, "OL": 1.45, "RB": 1.45},
+    "Spread":     {"QB": 1.25, "WR": 1.20, "TE": 0.95, "OL": 1.00, "RB": 1.05},
+}
+DEF_SCHEME_W = {
+    "4-3 Front":    {"DL": 1.45, "LB": 1.15, "CB": 0.95, "S": 0.95},
+    "3-4 Front":    {"DL": 1.05, "LB": 1.45, "CB": 0.95, "S": 1.00},
+    "Cover 3 Zone": {"DL": 0.90, "LB": 1.00, "CB": 1.45, "S": 1.30},
+    "Blitz Heavy":  {"DL": 1.40, "LB": 1.25, "CB": 1.15, "S": 0.85},
+}
 
 
 def _opposed(a, b):
@@ -473,29 +509,42 @@ def _sr(staff, role):
     return staff.get(role, {}).get("rating", _STAFF_BASE)
 
 
-def _scheme_fit(save, schemes, system):
-    sc = schemes.get(system)
-    if not sc:
+def scheme_effect(save):
+    """How much your OC/DC schemes amplify (or waste) your roster: re-weight every
+    position by the scheme, compare to neutral power. Loaded at the scheme's
+    positions -> bonus; mismatched roster -> penalty. This is the real lever."""
+    s = save.get("staff", {})
+    mult = {}
+    oc, dc = s.get("off_coord"), s.get("def_coord")
+    if oc and oc.get("system") in OFF_SCHEME_W:
+        mult.update(OFF_SCHEME_W[oc["system"]])
+    if dc and dc.get("system") in DEF_SCHEME_W:
+        mult.update(DEF_SCHEME_W[dc["system"]])
+    if not mult:
         return 0.0
-    starters = _starters(current_team(save))
-    if not starters:
-        return 0.0
-    avg_all = sum(p["overall"] for p in starters) / len(starters)
-    key = [p for p in starters if p["pos"] in sc]
-    if not key:
-        return 0.0
-    return round((sum(p["overall"] for p in key) / len(key) - avg_all) * 0.12, 2)
+    team = current_team(save)
+    by_pos = {}
+    for p in team["roster"]:
+        by_pos.setdefault(p["pos"], []).append(p)
+    num = den = 0.0
+    for pos, slots in ROSTER.items():
+        best = sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])[:slots]
+        if not best:
+            continue
+        w = POS_WEIGHT.get(pos, 1.0) * mult.get(pos, 1.0)
+        num += w * (sum(x["overall"] for x in best) / len(best)) * slots
+        den += w * slots
+    schemed = num / den if den else 0.0
+    return round((schemed - power_rating(team)) * 1.1, 2)
 
 
 def coaching_power(save):
-    """Your coaching edge: coordinator quality, + philosophy synergy/friction with
-    your HC philosophy, + how well their schemes fit your roster, + a small edge
-    for having a clear philosophy at all."""
+    """Coordinator quality + philosophy synergy/friction with your HC philosophy."""
     s = save.get("staff", {})
     hc = save["gm"].get("philosophy", "Balanced")
     base = ((_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0 - 50) * 0.10
-    syn = fit = 0.0
-    for role, schemes in (("off_coord", OFF_SCHEMES), ("def_coord", DEF_SCHEMES)):
+    syn = 0.0
+    for role in ("off_coord", "def_coord"):
         c = s.get(role)
         if not c:
             continue
@@ -504,10 +553,8 @@ def coaching_power(save):
             syn += 1.2
         elif _opposed(cp, hc):
             syn -= 1.5
-        if c.get("system"):
-            fit += _scheme_fit(save, schemes, c["system"])
     edge = 0.8 if hc in ("Analytics", "Old School") else 0.0
-    return round(base + syn + fit + edge, 2)
+    return round(base + syn + edge, 2)
 
 
 def staff_bonus(save):
@@ -515,6 +562,7 @@ def staff_bonus(save):
     coord_avg = (_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0
     return {
         "power": coaching_power(save),
+        "scheme": scheme_effect(save),
         "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
         "development": 1 if coord_avg >= 65 else 0,
         "medical": _sr(s, "head_medical"),
@@ -754,6 +802,52 @@ def sign_free_agent(save, player_id):
     save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
     write_save(save)
     return True, f"Signed {fa['name']} ({fa['pos']}, {fa['overall']} OVR)."
+
+
+def negotiate(save, player_id, years, aav):
+    """Make a contract offer to a free agent's agent. Returns accepted / countered
+    / rejected with the agent's response. Loyal agents discount for a happy club."""
+    team = current_team(save)
+    fa = next((p for p in save.get("free_agents", []) if p["id"] == player_id), None)
+    if not fa:
+        res = {"ok": False, "msg": "That free agent already signed elsewhere."}
+        save["last_nego"] = res
+        write_save(save)
+        return res
+    pers = fa.get("agent", {}).get("personality", "Reasonable")
+    agent_name = fa.get("agent", {}).get("name", "The agent")
+    A = AGENTS.get(pers, AGENTS["Reasonable"])
+    demand_aav = fa.get("demand", {}).get("aav", fa["contract"]["aav"])
+    try:
+        years = max(1, min(6, int(years)))
+        aav = round(float(aav), 1)
+    except (TypeError, ValueError):
+        return {"ok": False, "msg": "Enter a valid offer."}
+
+    eff = demand_aav
+    if pers == "Loyal":
+        eff = round(demand_aav * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
+
+    res = {"ok": True, "id": fa["id"], "player": fa["name"], "pos": fa["pos"], "ovr": fa["overall"],
+           "agent": fa["agent"], "demand": demand_aav, "offer": {"years": years, "aav": aav}}
+    if cap_used(team) + aav > CAP_TOTAL:
+        res.update(status="rejected", msg=f"That ${aav}M deal puts you over the cap.")
+    elif aav >= eff:
+        fa["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.5, 1)}
+        fa.pop("agent", None)
+        fa.pop("demand", None)
+        team["roster"].append(fa)
+        save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
+        res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
+    elif aav >= eff * 0.90:
+        counter = round(eff * A["counter"], 1)
+        res.update(status="countered", counter={"years": years, "aav": counter},
+                   msg=f"{agent_name}: \"{res['player']} signs {years}yr at ${counter}M - meet us there.\"")
+    else:
+        res.update(status="rejected", msg=f"{agent_name} scoffs - {res['player']} wants about ${eff}M/yr.")
+    save["last_nego"] = res
+    write_save(save)
+    return res
 
 
 def take_job(save, team_id):
