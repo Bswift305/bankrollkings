@@ -18,7 +18,7 @@
   </header>
 
   <nav class="fk-tabs">
-    {% for t in ['dashboard','roster','front-office','staff','career','league'] %}
+    {% for t in ['dashboard','roster','front-office','trades','staff','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
@@ -125,6 +125,44 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  {% endif %}
+
+  {# ===================== TRADES ===================== #}
+  {% if tab == 'trades' %}
+  <div class="fk-card">
+    <div class="fk-card-h">Trade block</div>
+    {% if last_trade and last_trade.ok %}
+      <div class="fk-trade-result fk-trade-{{ 'yes' if last_trade.accepted else 'no' }}">
+        <span class="fk-grade fk-grade-{{ last_trade.grade }}">{{ last_trade.grade }}</span>
+        <div>{{ last_trade.msg }}<small>Give {{ last_trade['give'].pos }} {{ last_trade['give'].name }} ({{ last_trade['give'].ovr }} · val {{ last_trade['give'].val }}) →
+          Get {{ last_trade['get'].pos }} {{ last_trade['get'].name }} ({{ last_trade['get'].ovr }} · val {{ last_trade['get'].val }})</small></div>
+      </div>
+    {% elif last_trade and not last_trade.ok %}<p class="fk-muted">{{ last_trade.msg }}</p>{% endif %}
+
+    {% if not trade_team %}
+      <p class="fk-muted">Pick a club to negotiate with. The fairness grade tells you if they'll bite — fair-or-light offers land, steals don't.</p>
+      <div class="fk-teamgrid">
+        {% for t in partners %}
+        <a class="fk-teamchip" href="{{ url_for('franchise_hub', tab='trades', team=t.id) }}">{{ t.full }}<span>{{ t.power }}</span></a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <a class="fk-back" href="{{ url_for('franchise_hub', tab='trades') }}">← all teams</a>
+      <form method="post" action="{{ url_for('franchise_trade') }}" class="fk-tradeform">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="team_id" value="{{ trade_team.id }}">
+        <label class="fk-label">You give</label>
+        <select name="give_id" class="fk-input" required>
+          {% for p in give_list %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}</option>{% endfor %}
+        </select>
+        <label class="fk-label" style="margin-top:10px">You get from {{ trade_team.full }}</label>
+        <select name="get_id" class="fk-input" required>
+          {% for p in get_list %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}</option>{% endfor %}
+        </select>
+        <button class="fk-btn fk-btn-go" style="margin-top:12px">Propose Trade</button>
+      </form>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -322,6 +360,19 @@
   .fk-staffhire { color:var(--text2,#c2cfd8); font-size:13px; display:flex; align-items:center; gap:8px; }
   .fk-staffcands { display:flex; flex-wrap:wrap; gap:8px; }
   .fk-cand { display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid rgba(145,168,184,.18); border-radius:9px; background:rgba(10,18,26,.6); font-size:12px; color:var(--text2,#c2cfd8); }
+  .fk-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.85); border:1px solid rgba(74,212,240,.25); border-radius:9px; color:#fff; padding:10px 11px; font-size:14px; }
+  .fk-label { display:block; color:var(--text2,#b7c6d0); font-weight:700; font-size:12px; letter-spacing:.04em; margin-bottom:5px; }
+  .fk-teamgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:8px; margin-top:8px; }
+  .fk-teamchip { display:flex; justify-content:space-between; align-items:center; padding:9px 11px; border:1px solid rgba(74,212,240,.18); border-radius:9px; background:rgba(11,24,34,.7); color:var(--text2,#c2cfd8); text-decoration:none; font-size:12px; }
+  .fk-teamchip span { color:#4ad4f0; font-weight:700; }
+  .fk-teamchip:hover { border-color:rgba(74,212,240,.5); color:#fff; }
+  .fk-back { display:inline-block; margin-bottom:10px; color:#4ad4f0; text-decoration:none; font-size:13px; }
+  .fk-trade-result { display:flex; gap:12px; align-items:center; padding:11px 13px; border-radius:10px; margin-bottom:12px; background:rgba(10,18,26,.7); border:1px solid rgba(145,168,184,.2); }
+  .fk-trade-yes { border-color:rgba(125,255,176,.4); } .fk-trade-no { border-color:rgba(255,138,138,.35); }
+  .fk-trade-result div { color:var(--text2,#c2cfd8); font-size:13px; } .fk-trade-result small { display:block; color:#7f93a0; margin-top:3px; }
+  .fk-grade { font-family:var(--font-display); font-size:26px; width:40px; height:40px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:9px; }
+  .fk-grade-A { background:rgba(125,255,176,.18); color:#7dffb0; } .fk-grade-B { background:rgba(74,212,240,.18); color:#9fe9ff; }
+  .fk-grade-C { background:rgba(145,168,184,.18); color:#cfdae2; } .fk-grade-D { background:rgba(255,196,120,.18); color:#ffd089; } .fk-grade-F { background:rgba(255,138,138,.18); color:#ff9a9a; }
   .fk-pill { padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
   .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
   .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }

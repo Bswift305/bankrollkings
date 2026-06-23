@@ -622,6 +622,68 @@ def delete_save(user_id):
 
 
 # --------------------------------------------------------------------------- #
+# Trades (player-for-player) + the "is this fair?" grade
+# --------------------------------------------------------------------------- #
+def trade_value(p):
+    """A single trade-value number: rewards overall + youth/upside, dings age and
+    contract cost. This is the Bankroll Kings 'player value' lens."""
+    ov, age, pot = p["overall"], p["age"], p["potential"]
+    base = max(1, ov - 50) ** 2 / 10.0
+    youth = max(0, 27 - age) * (max(0, pot - ov) * 0.12 + 0.8)
+    cost = p["contract"]["aav"] * 0.4
+    return round(max(0.5, base + youth - cost), 1)
+
+
+def _grade(ratio):
+    return ("A" if ratio >= 1.15 else "B" if ratio >= 1.05 else
+            "C" if ratio >= 0.95 else "D" if ratio >= 0.85 else "F")
+
+
+def propose_trade(save, give_id, get_id):
+    user = current_team(save)
+    give = next((p for p in user["roster"] if p["id"] == give_id), None)
+    target = get = None
+    for t in save["teams"]:
+        if t["id"] == save["current_team_id"]:
+            continue
+        match = next((p for p in t["roster"] if p["id"] == get_id), None)
+        if match:
+            target, get = t, match
+            break
+    if not give or not get:
+        result = {"ok": False, "msg": "Pick a player to give and a player to get."}
+        save["last_trade"] = result
+        write_save(save)
+        return result
+
+    vg, vr = trade_value(give), trade_value(get)
+    ratio = vr / vg if vg > 0 else 99.0          # value you GET vs value you GIVE
+    grade = _grade(ratio)
+    # deterministic per pairing (no save-scum); AI accepts a fair-or-better deal
+    seed = save["seed"] + sum(ord(c) for c in (give_id + get_id))
+    tol = 0.90 - _rng(seed).uniform(0, 0.06)   # accept fair-or-slightly-light offers, reject steals
+    accepts = vg >= vr * tol
+
+    result = {"ok": True, "grade": grade, "team": target["full"],
+              "give": {"name": give["name"], "pos": give["pos"], "ovr": give["overall"], "val": vg},
+              "get": {"name": get["name"], "pos": get["pos"], "ovr": get["overall"], "val": vr}}
+    if not accepts:
+        result["accepted"] = False
+        result["msg"] = f"{target['full']} said no - they value {get['name']} more than your offer."
+    elif cap_used(user) - give["contract"]["aav"] + get["contract"]["aav"] > CAP_TOTAL:
+        result["accepted"] = False
+        result["msg"] = f"{target['full']} would do it, but {get['name']}'s contract puts you over the cap."
+    else:
+        user["roster"] = [p for p in user["roster"] if p["id"] != give_id] + [get]
+        target["roster"] = [p for p in target["roster"] if p["id"] != get_id] + [give]
+        result["accepted"] = True
+        result["msg"] = f"Trade accepted! {give['name']} to {target['full']} for {get['name']}."
+    save["last_trade"] = result
+    write_save(save)
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # CLI self-test:  python franchise_kings.py
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":

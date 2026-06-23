@@ -599,6 +599,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_job',
     'franchise_stay',
     'franchise_draft',
+    'franchise_trade',
     'franchise_hire',
     'franchise_fire',
     'franchise_restart',
@@ -28892,7 +28893,26 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'staff', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'trades', 'staff', 'career', 'league', 'draft')
+
+
+def _trade_view(save, team_id):
+    uid = save['current_team_id']
+    partners = sorted(
+        [{'id': t['id'], 'full': t['full'], 'power': fk.power_rating(t)}
+         for t in save['teams'] if t['id'] != uid],
+        key=lambda x: x['full'])
+    sel = next((t for t in save['teams'] if t['id'] == team_id and t['id'] != uid), None)
+
+    def withval(roster):
+        return sorted([dict(p, tval=fk.trade_value(p)) for p in roster], key=lambda p: -p['overall'])
+    return {
+        'partners': partners,
+        'trade_team': sel,
+        'give_list': withval(fk.current_team(save)['roster']),
+        'get_list': withval(sel['roster']) if sel else [],
+        'last_trade': save.get('last_trade'),
+    }
 
 
 def _franchise_view(save):
@@ -28943,8 +28963,11 @@ def franchise_hub():
     tab = str(request.args.get('tab', 'dashboard')).strip().lower()
     if tab not in FRANCHISE_TABS:
         tab = 'dashboard'
+    view = _franchise_view(save)
+    if tab == 'trades':
+        view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     return render_template('franchise_hub.html', tab=tab, save=save, gm=save['gm'],
-                           current_user=current_user, **_franchise_view(save))
+                           current_user=current_user, **view)
 
 
 @app.route('/franchise/new', methods=['GET', 'POST'])
@@ -29001,6 +29024,17 @@ def franchise_draft():
     if save:
         fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
     return redirect(url_for('franchise_hub', tab='draft'))
+
+
+@app.route('/franchise/trade', methods=['POST'])
+def franchise_trade():
+    _, save = _franchise_save()
+    target = ''
+    if save:
+        fk.propose_trade(save, str(request.form.get('give_id', '')).strip(),
+                         str(request.form.get('get_id', '')).strip())
+        target = str(request.form.get('team_id', '')).strip()
+    return redirect(url_for('franchise_hub', tab='trades', team=target))
 
 
 @app.route('/franchise/hire', methods=['POST'])
