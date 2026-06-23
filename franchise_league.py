@@ -203,10 +203,19 @@ def advance_league(league):
         return league
     if league["status"] == "open":
         league["status"] = "active"
+    # auto-pilot any human GM who didn't lock in: one philosophy-driven move each
+    ap = []
+    for uid, m in list(league["members"].items()):
+        if not m.get("ready"):
+            note = auto_pilot_member(league, uid)
+            if note:
+                ap.append(f"{m['name']}: {note}")
+    league["autopilot_log"] = ap[:8]
     _sim_week(league)
     league["week"] += 1
     for m in league["members"].values():
         m["ready"] = False
+        m.pop("autopilot_note", None)
     if league["week"] > fk.REG_GAMES:
         league["status"] = "complete"
         league["next_deadline"] = _iso(_now() + timedelta(days=3650))
@@ -292,6 +301,49 @@ def set_ready(league, user_id, ready=True):
         m["ready"] = bool(ready)
         save_league(league)
     return league
+
+
+# --------------------------------------------------------------------------- #
+# Auto-pilot: if a GM doesn't lock in before game day, the AI makes ONE
+# philosophy-driven roster move for them so the team doesn't stagnate.
+# --------------------------------------------------------------------------- #
+def auto_pilot_member(league, user_id):
+    save = member_save(league, user_id)
+    if not save:
+        return None
+    team = fk.current_team(save)
+    phil = league["members"][user_id].get("gm", {}).get("philosophy", "Balanced")
+    best_at = {}
+    for p in team["roster"]:
+        best_at[p["pos"]] = max(best_at.get(p["pos"], 0), p["overall"])
+    # weakest starting position = lowest "best player" among required slots
+    target = min(fk.ROSTER, key=lambda pos: best_at.get(pos, 0))
+
+    def value(p):
+        ovr = p["overall"]
+        pot = p.get("potential", ovr)
+        age = p.get("age", 27)
+        if phil == "Analytics":          # upside + youth, value over cost
+            return ovr + (pot - ovr) * 0.6 - max(0, age - 26) * 0.5
+        if phil == "Old School":         # proven prime veterans
+            return ovr - abs(age - 28) * 0.3
+        return ovr + (pot - ovr) * 0.25  # Balanced
+
+    pool = [p for p in save["free_agents"] if p["pos"] == target] or save["free_agents"]
+    pool = sorted(pool, key=value, reverse=True)
+    room = fk.CAP_TOTAL - fk.cap_used(team)
+    for fa in pool:
+        demand = (fa.get("demand") or {}).get("aav", fa["contract"]["aav"])
+        if demand <= room and fa["overall"] >= best_at.get(fa["pos"], 0):
+            res = fk.negotiate(save, fa["id"], (fa.get("demand") or {}).get("years", 3), demand)
+            if res.get("status") == "accepted":
+                note = f"signed {fa['pos']} {fa['name']} ({fa['overall']} OVR)"
+                league["members"][user_id]["autopilot_note"] = note
+                sync_member(league, user_id, save)
+                return note
+    league["members"][user_id]["autopilot_note"] = "stood pat (no upgrade fit the cap)"
+    save_league(league)
+    return None
 
 
 # --------------------------------------------------------------------------- #

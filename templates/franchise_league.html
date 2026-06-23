@@ -51,8 +51,13 @@
       <div class="fkl-h">GMs ({{ league.members|length }})</div>
       {% for uid, m in league.members.items() %}
       <div class="fkl-row2"><strong>{{ m.name }}</strong>
+        {% if m.ready %}<span class="fkl-rdy">✓ locked in</span>{% elif league.status != 'complete' %}<span class="fkl-auto">auto-pilot</span>{% endif %}
         <small>{{ league.teams|selectattr('id','equalto',m.team_id)|map(attribute='full')|first }}{% if m.is_commish %} · Commish{% endif %}</small></div>
       {% endfor %}
+      {% if league.autopilot_log %}
+      <div class="fkl-h" style="margin-top:16px">🤖 Auto-pilot last game day</div>
+      {% for line in league.autopilot_log %}<div class="fkl-res">{{ line }}</div>{% endfor %}
+      {% endif %}
       {% if league.results_log %}
       <div class="fkl-h" style="margin-top:16px">Last game day · Week {{ league.results_log[0].week }}</div>
       {% for g in league.results_log[0].games[:6] %}
@@ -83,6 +88,8 @@
   .fkl-table td { padding:6px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }
   .fkl-me { background:rgba(74,212,240,.1); } .fkl-me td { color:#fff; }
   .fkl-row2 { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); } .fkl-row2 strong { color:#fff; } .fkl-row2 small { color:#7f93a0; display:block; }
+  .fkl-rdy { float:right; font-size:10px; font-weight:800; color:#7dffb0; background:rgba(125,255,176,.12); padding:2px 7px; border-radius:6px; }
+  .fkl-auto { float:right; font-size:10px; font-weight:800; color:#f5c860; background:rgba(245,200,96,.12); padding:2px 7px; border-radius:6px; }
   .fkl-res { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; } .fkl-res span { color:#7f93a0; }
   .fkl-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fkl-muted a { color:#4ad4f0; text-decoration:none; }
 </style>

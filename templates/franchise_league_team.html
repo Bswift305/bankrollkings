@@ -13,6 +13,19 @@
       moves you make stick for the next game day. Miss it and auto-pilot takes over.</p>
   </div>
 
+  <div class="fkl-card fkl-lockcard">
+    {% if mem.ready %}
+      <div class="fkl-locked">✓ <strong>Locked in</strong> for this game day ({{ deadline }}). Auto-pilot is off — your moves stand.</div>
+    {% else %}
+      <p class="fkl-muted" style="margin:0 0 10px">Make your moves, then lock in. If you don't lock in by game day,
+        auto-pilot makes one move your way ({{ mem.gm.philosophy if mem.gm else 'Balanced' }}).</p>
+      <form method="post" action="{{ url_for('franchise_league_ready', lid=league.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="fkl-btn">🔒 Lock in my week ({{ deadline }})</button>
+      </form>
+    {% endif %}
+  </div>
+
   <div class="fkl-card">
     <div class="fkl-h">Free agents — negotiate with their agents</div>
     {% if last_nego and last_nego.ok %}
@@ -76,6 +89,8 @@
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:11px 18px; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); margin-top:10px; }
   .fkl-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
   .fkl-nego-yes { border-color:rgba(125,255,176,.4); } .fkl-nego-yes strong { color:#7dffb0; } .fkl-nego-no strong { color:#ff9a9a; }
+  .fkl-lockcard { border-color:rgba(245,200,96,.35); }
+  .fkl-locked { color:#7dffb0; font-size:14px; } .fkl-locked strong { color:#aaffcf; }
   .fkl-muted { color:#7f93a0; font-size:13px; margin-top:8px; display:inline-block; } .fkl-muted a, a.fkl-muted { color:#4ad4f0; text-decoration:none; }
 </style>
 {% endblock %}

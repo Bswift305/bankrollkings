@@ -612,6 +612,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_join',
     'franchise_league_hub',
     'franchise_league_team',
+    'franchise_league_ready',
     'franchise_league_negotiate',
     'franchise_league_advance',
     'franchise_restart',
@@ -29211,8 +29212,21 @@ def franchise_league_team(lid):
                            roster_order=roster_order,
                            free_agents=sorted(league['free_agents'], key=lambda p: -p['overall']),
                            nego_fa=nego_fa, last_nego=league['members'][uid].get('last_nego'),
+                           mem=league['members'][uid], deadline=fl.deadline_label(league),
                            power=fk.power_rating(team), cap_used=fk.cap_used(team),
                            cap_total=fk.CAP_TOTAL, current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/ready', methods=['POST'])
+def franchise_league_ready(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.set_ready(league, uid, True)
+    return redirect(url_for('franchise_league_team', lid=lid))
 
 
 @app.route('/franchise/league/<lid>/negotiate', methods=['POST'])
