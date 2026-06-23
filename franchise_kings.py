@@ -85,6 +85,9 @@ ROSTER = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "OL": 5, "DL": 4, "LB": 3, "CB": 3
 # Position weight for the Power Rating (football = QB-heavy, OL/DL count a lot).
 POS_WEIGHT = {"QB": 5.0, "WR": 1.5, "OL": 1.3, "DL": 1.4, "CB": 1.3, "LB": 1.1,
               "S": 1.0, "RB": 1.0, "TE": 0.9, "K": 0.4}
+# Jersey-number ranges by position (loose NFL convention) for flavor + avatars.
+POS_NUM = {"QB": (1, 19), "RB": (20, 49), "WR": (10, 19), "TE": (80, 89), "OL": (50, 79),
+           "DL": (90, 99), "LB": (40, 59), "CB": (20, 39), "S": (20, 49), "K": (1, 9)}
 
 BACKGROUNDS = {
     "scout":        {"label": "Scout",            "blurb": "Better draft grades, weaker contracts.",
@@ -132,6 +135,7 @@ def _gen_player(rng, pos, base=None):
         "id": f"p{rng.randint(100000, 999999)}",
         "name": _gen_name(rng),
         "pos": pos,
+        "number": rng.randint(*POS_NUM.get(pos, (1, 99))),
         "age": age,
         "overall": overall,
         "potential": potential,
@@ -627,6 +631,7 @@ def _scout(rng, p, accuracy):
 def _make_rookie(p):
     aav = round(max(0.7, max(0, p["true_ovr"] - 55) ** 1.6 / 26.0), 1)
     return {"id": "p" + p["id"][1:], "name": p["name"], "pos": p["pos"], "age": p["age"],
+            "number": random.randint(*POS_NUM.get(p["pos"], (1, 99))),
             "overall": p["true_ovr"], "potential": p["true_pot"], "dev": p["dev"],
             "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
             "morale": 75, "injury_risk": "Low"}

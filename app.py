@@ -28932,12 +28932,19 @@ def _franchise_view(save):
         by_pos.setdefault(p['pos'], []).append(p)
     for pos in by_pos:
         by_pos[pos].sort(key=lambda x: -x['overall'])
+
+    def _avatar(p):
+        parts = (p.get('name') or '?').split()
+        ini = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else '')).upper()
+        grp = ('skill' if p['pos'] in ('QB', 'RB', 'WR', 'TE') else 'oline' if p['pos'] == 'OL'
+               else 'front' if p['pos'] in ('DL', 'LB') else 'back' if p['pos'] in ('CB', 'S') else 'kick')
+        return dict(p, ini=ini, grp=grp)
     return {
         'team': team,
         'power': fk.power_rating(team),
         'cap_used': fk.cap_used(team),
         'cap_total': fk.CAP_TOTAL,
-        'roster_order': [p for pos in fk.ROSTER for p in by_pos.get(pos, [])],
+        'roster_order': [_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])],
         'free_agents': sorted(save.get('free_agents', []), key=lambda x: -x['overall']),
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
