@@ -18,7 +18,7 @@
   </header>
 
   <nav class="fk-tabs">
-    {% for t in ['dashboard','roster','front-office','trades','staff','business','career','league'] %}
+    {% for t in ['dashboard','roster','front-office','trades','staff','business','analytics','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
@@ -172,6 +172,36 @@
         <button class="fk-btn fk-btn-go" style="margin-top:12px">Propose Trade</button>
       </form>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {# ===================== ANALYTICS (Value Intelligence) ===================== #}
+  {% if tab == 'analytics' %}
+  <div class="fk-card">
+    <div class="fk-card-h">Value Intelligence</div>
+    <div class="fk-bizgrid">
+      <div class="fk-bizstat"><span>Power</span><b>{{ analytics.power }}</b></div>
+      <div class="fk-bizstat"><span>Proj Wins</span><b>{{ analytics.proj_wins }}</b></div>
+      <div class="fk-bizstat"><span>Playoff Odds</span><b>{{ analytics.playoff_odds }}%</b></div>
+    </div>
+    <div class="fk-bizgrid" style="margin-top:8px">
+      <div class="fk-bizstat"><span>League Avg</span><b>{{ analytics.league_avg }}</b></div>
+      <div class="fk-bizstat"><span>Cap Used</span><b>${{ '%.0f'|format(analytics.cap_used) }}M</b></div>
+      <div class="fk-bizstat"><span>Cap Efficiency</span><b>{{ analytics.cap_eff }}</b></div>
+    </div>
+    <p class="fk-muted" style="margin-top:10px">Contract grades compare each player's production to what he's paid — A = bargain, F = overpaid. Use it to find cheap risers and contracts to move.</p>
+  </div>
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">Best contract values <span class="fk-legend">value per $</span></div>
+    <table class="fk-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>AAV</th><th>Grade</th><th>ROI</th></tr></thead>
+      <tbody>{% for r in analytics.best %}<tr><td>{{ r.name }}</td><td class="fk-pos">{{ r.pos }}</td><td class="fk-ovr">{{ r.ovr }}</td>
+        <td>${{ '%.1f'|format(r.aav) }}M</td><td><span class="fk-grade fk-grade-{{ r.grade }}" style="width:24px;height:24px;font-size:15px">{{ r.grade }}</span></td><td class="fk-gem">{{ r.roi }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">Biggest overpays <span class="fk-legend">contracts to move</span></div>
+    <table class="fk-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>AAV</th><th>Grade</th></tr></thead>
+      <tbody>{% for r in analytics.overpays %}<tr><td>{{ r.name }}</td><td class="fk-pos">{{ r.pos }}</td><td class="fk-ovr">{{ r.ovr }}</td>
+        <td>${{ '%.1f'|format(r.aav) }}M</td><td><span class="fk-grade fk-grade-{{ r.grade }}" style="width:24px;height:24px;font-size:15px">{{ r.grade }}</span></td></tr>{% endfor %}</tbody></table>
   </div>
   {% endif %}
 

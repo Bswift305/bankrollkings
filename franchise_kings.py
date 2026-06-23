@@ -674,6 +674,50 @@ def delete_save(user_id):
 
 
 # --------------------------------------------------------------------------- #
+# Value Intelligence (the Bankroll Kings analytics layer)
+# --------------------------------------------------------------------------- #
+def expected_aav(overall):
+    return round(max(0.7, max(0, overall - 55) ** 1.7 / 22.0), 1)
+
+
+def contract_grade(p):
+    """How good is this contract? Ratio = fair price / actual price. >1 = bargain."""
+    exp, act = expected_aav(p["overall"]), p["contract"]["aav"]
+    ratio = exp / act if act > 0 else 9.0
+    g = ("A" if ratio >= 1.4 else "B" if ratio >= 1.12 else
+         "C" if ratio >= 0.9 else "D" if ratio >= 0.7 else "F")
+    return g, round(ratio, 2)
+
+
+def player_roi(p):
+    return round(trade_value(p) / max(0.5, p["contract"]["aav"]), 1)
+
+
+def analytics(save):
+    team = current_team(save)
+    powers = [power_rating(t) for t in save["teams"]]
+    avg = sum(powers) / len(powers)
+    my = power_rating(team) + staff_bonus(save)["power"]
+    wp = 1.0 / (1.0 + math.exp(-(my - avg) / 6.0))
+    proj_wins = round(REG_GAMES * wp, 1)
+    playoff_odds = max(2, min(98, round((proj_wins - 9.0) / 4.0 * 45 + 50)))
+    cap = cap_used(team)
+    starter_value = round(sum(trade_value(p) for p in _starters(team)), 1)
+
+    rated = []
+    for p in team["roster"]:
+        g, ratio = contract_grade(p)
+        rated.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"],
+                      "aav": p["contract"]["aav"], "grade": g, "ratio": ratio, "roi": player_roi(p)})
+    best = sorted([r for r in rated if r["ovr"] >= 68], key=lambda r: -r["roi"])[:6]
+    overpays = sorted([r for r in rated if r["aav"] >= 3], key=lambda r: r["ratio"])[:6]
+    return {"power": round(my, 1), "league_avg": round(avg, 1), "proj_wins": proj_wins,
+            "playoff_odds": playoff_odds, "cap_used": cap, "cap_total": CAP_TOTAL,
+            "starter_value": starter_value, "cap_eff": round(starter_value / max(1.0, cap), 2),
+            "best": best, "overpays": overpays}
+
+
+# --------------------------------------------------------------------------- #
 # Business / stadium / budget - revenue funds staff + facility investment
 # --------------------------------------------------------------------------- #
 MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
