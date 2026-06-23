@@ -611,6 +611,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_create',
     'franchise_league_join',
     'franchise_league_hub',
+    'franchise_league_team',
+    'franchise_league_negotiate',
     'franchise_league_advance',
     'franchise_restart',
     'save_feedback',
@@ -29175,6 +29177,57 @@ def franchise_league_hub(lid):
                            deadline=fl.deadline_label(league),
                            power=fk.power_rating(my_team) if my_team else 0,
                            open_count=len(fl.open_team_ids(league)), current_user=current_user)
+
+
+def _league_avatar(p):
+    parts = (p.get('name') or '?').split()
+    ini = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else '')).upper()
+    grp = ('skill' if p['pos'] in ('QB', 'RB', 'WR', 'TE') else 'oline' if p['pos'] == 'OL'
+           else 'front' if p['pos'] in ('DL', 'LB') else 'back' if p['pos'] in ('CB', 'S') else 'kick')
+    return dict(p, ini=ini, grp=grp)
+
+
+@app.route('/franchise/league/<lid>/team')
+def franchise_league_team(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if not league or uid not in league.get('members', {}):
+        return redirect(url_for('franchise_league_hub', lid=lid))
+    league = fl.check_and_advance(league)
+    save = fl.member_save(league, uid)
+    team = fk.current_team(save)
+    by_pos = {}
+    for p in team['roster']:
+        by_pos.setdefault(p['pos'], []).append(p)
+    for pos in by_pos:
+        by_pos[pos].sort(key=lambda x: -x['overall'])
+    roster_order = [_league_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])]
+    fa_id = str(request.args.get('fa', '')).strip()
+    nego_fa = next((p for p in league['free_agents'] if p['id'] == fa_id), None) if fa_id else None
+    return render_template('franchise_league_team.html', league=league, team=team,
+                           roster_order=roster_order,
+                           free_agents=sorted(league['free_agents'], key=lambda p: -p['overall']),
+                           nego_fa=nego_fa, last_nego=league['members'][uid].get('last_nego'),
+                           power=fk.power_rating(team), cap_used=fk.cap_used(team),
+                           cap_total=fk.CAP_TOTAL, current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/negotiate', methods=['POST'])
+def franchise_league_negotiate(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    pid = str(request.form.get('player_id', '')).strip()
+    if league and uid in league.get('members', {}):
+        save = fl.member_save(league, uid)
+        fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+        fl.sync_member(league, uid, save)
+    return redirect(url_for('franchise_league_team', lid=lid, fa=pid))
 
 
 @app.route('/franchise/league/<lid>/advance', methods=['POST'])

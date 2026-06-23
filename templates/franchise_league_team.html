@@ -1,0 +1,81 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ team.full }} — {{ league.name }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+<section class="fkl-wrap">
+  <div class="fkl-hero">
+    <div class="fkl-kicker">{{ league.name }} · WEEK {{ league.week }} · MANAGE YOUR TEAM</div>
+    <h1>{{ team.full }}</h1>
+    <p class="fkl-dead">Power {{ power }} · Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M ·
+      moves you make stick for the next game day. Miss it and auto-pilot takes over.</p>
+  </div>
+
+  <div class="fkl-card">
+    <div class="fkl-h">Free agents — negotiate with their agents</div>
+    {% if last_nego and last_nego.ok %}
+      <div class="fkl-nego fkl-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}">
+        <strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>
+    {% endif %}
+    {% if nego_fa %}
+      <p class="fkl-muted"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR) ·
+        agent {{ nego_fa.agent.name }} ({{ nego_fa.agent.personality }}) · asking ${{ '%.1f'|format(nego_fa.demand.aav) }}M/yr</p>
+      <form method="post" action="{{ url_for('franchise_league_negotiate', lid=league.id) }}" class="fkl-offer">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="player_id" value="{{ nego_fa.id }}">
+        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6"
+          value="{{ last_nego.counter.years if last_nego and last_nego.status=='countered' else nego_fa.demand.years }}"></label>
+        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav"
+          value="{{ last_nego.counter.aav if last_nego and last_nego.status=='countered' else nego_fa.demand.aav }}"></label>
+        <button class="fkl-btn">Send Offer</button>
+      </form>
+      <a class="fkl-muted" href="{{ url_for('franchise_league_team', lid=league.id) }}">← all free agents</a>
+    {% else %}
+      <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
+        <tbody>{% for p in free_agents[:25] %}
+          <tr><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
+            <td>{{ p.agent.personality if p.agent else '—' }}</td>
+            <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
+            <td><a class="fkl-mini" href="{{ url_for('franchise_league_team', lid=league.id, fa=p.id) }}">Negotiate</a></td></tr>
+        {% endfor %}</tbody></table></div>
+    {% endif %}
+  </div>
+
+  <div class="fkl-card">
+    <div class="fkl-h">Roster · auto depth chart</div>
+    <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th></tr></thead>
+      <tbody>{% for p in roster_order %}
+        <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
+          <td>{{ p.name }} <span class="fkl-num">#{{ p.number|default('—') }}</span></td>
+          <td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+          <td>${{ '%.1f'|format(p.contract.aav) }}M</td></tr>
+      {% endfor %}</tbody></table></div>
+  </div>
+  <p class="fkl-muted"><a href="{{ url_for('franchise_league_hub', lid=league.id) }}">← back to {{ league.name }}</a></p>
+</section>
+<style>
+  .fkl-wrap { max-width: 880px; margin: 0 auto; padding: 8px 16px 40px; }
+  .fkl-hero { padding: 12px 0; } .fkl-kicker { color:#4ad4f0; font-weight:800; letter-spacing:.1em; font-size:11px; }
+  .fkl-hero h1 { font-family:var(--font-display); font-size:clamp(24px,5vw,36px); margin:6px 0; color:#fff; }
+  .fkl-dead { color:#9fe9ff; font-size:13px; }
+  .fkl-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:18px; margin-bottom:12px; }
+  .fkl-h { font-family:var(--font-display); letter-spacing:.04em; color:#fff; font-size:18px; margin-bottom:10px; }
+  .fkl-tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -4px; }
+  .fkl-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+  .fkl-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:5px 6px; border-bottom:1px solid rgba(145,168,184,.18); }
+  .fkl-table td { padding:6px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }
+  .fkl-av { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-size:10px; font-weight:800; color:#05121a; font-family:var(--font-display,sans-serif); }
+  .fkl-av-skill { background:linear-gradient(135deg,#4ad4f0,#8fe9ff); } .fkl-av-oline { background:linear-gradient(135deg,#f5c860,#ffe09a); }
+  .fkl-av-front { background:linear-gradient(135deg,#ff8a8a,#ffb3a0); } .fkl-av-back { background:linear-gradient(135deg,#7dffb0,#b6ffd2); } .fkl-av-kick { background:linear-gradient(135deg,#aab8c2,#d4e0e8); }
+  .fkl-num { color:#7f93a0; font-size:11px; font-family:var(--font-mono,monospace); }
+  .fkl-mini { color:#4ad4f0; text-decoration:none; font-size:12px; font-weight:700; }
+  .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
+  .fkl-offer { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; } .fkl-offer label { flex:1; color:#b7c6d0; font-size:12px; min-width:90px; } .fkl-offer button { flex-basis:100%; }
+  .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:11px 18px; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); margin-top:10px; }
+  .fkl-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
+  .fkl-nego-yes { border-color:rgba(125,255,176,.4); } .fkl-nego-yes strong { color:#7dffb0; } .fkl-nego-no strong { color:#ff9a9a; }
+  .fkl-muted { color:#7f93a0; font-size:13px; margin-top:8px; display:inline-block; } .fkl-muted a, a.fkl-muted { color:#4ad4f0; text-decoration:none; }
+</style>
+{% endblock %}

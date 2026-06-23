@@ -240,6 +240,52 @@ def run_due_leagues():
     return advanced
 
 
+# --------------------------------------------------------------------------- #
+# Per-team management in a league: reuse the single-player engine via an adapter
+# that points the engine at the SHARED league teams/free-agents, then syncs back.
+# --------------------------------------------------------------------------- #
+def member_save(league, user_id):
+    """A save-shaped view of one member's team, backed by the shared league lists
+    (mutations to team rosters stick; reassigned keys are synced by sync_member)."""
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return None
+    m.setdefault("gm", {"name": m.get("name", "GM"), "philosophy": "Balanced",
+                        "ratings": {k: 50 for k in ("drafting", "trading", "free_agency",
+                                                    "cap", "staff", "media", "owner")},
+                        "owner_trust": 55, "fan_support": 50, "reputation": 50,
+                        "titles": 0, "career": []})
+    m.setdefault("staff", {})
+    m.setdefault("business", {"cash": 40.0, "fan_happiness": 50, "stadium": 1,
+                              "facility": 1, "ticket": "normal"})
+    return {
+        "user_id": f"__mp_{league['id']}_{user_id}",   # engine write target (junk; deleted)
+        "teams": league["teams"],
+        "free_agents": league["free_agents"],
+        "current_team_id": m["team_id"],
+        "seed": league["seed"],
+        "season": league.get("week", 1),
+        "gm": m["gm"], "staff": m["staff"], "business": m["business"],
+        "last_nego": m.get("last_nego"), "last_trade": m.get("last_trade"),
+    }
+
+
+def sync_member(league, user_id, save):
+    """Persist the parts the engine reassigned (free agents + this member's state)
+    back into the shared league, and drop the engine's throwaway solo file."""
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return
+    league["free_agents"] = save.get("free_agents", league["free_agents"])
+    m["gm"] = save.get("gm", m.get("gm"))
+    m["staff"] = save.get("staff", {})
+    m["business"] = save.get("business", m.get("business"))
+    m["last_nego"] = save.get("last_nego")
+    m["last_trade"] = save.get("last_trade")
+    save_league(league)
+    fk.delete_save(save["user_id"])
+
+
 def set_ready(league, user_id, ready=True):
     m = league.get("members", {}).get(user_id)
     if m:

@@ -22,6 +22,7 @@
       <small>{{ mem.name }}{% if is_commish %} · Commissioner{% endif %}</small></div>
     <div class="fkl-pow">{{ power }}<span>PWR</span></div>
   </div>
+  <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}">⚙ Manage my team — roster &amp; free agency →</a>
   {% endif %}
 
   <div class="fkl-card">
@@ -74,6 +75,7 @@
   .fkl-myteam { display:flex; justify-content:space-between; align-items:center; }
   .fkl-myteam strong { color:#fff; font-family:var(--font-display); font-size:22px; display:block; } .fkl-myteam small { color:#7f93a0; }
   .fkl-pow { font-family:var(--font-display); font-size:30px; color:#4ad4f0; text-align:center; } .fkl-pow span { display:block; font-size:10px; color:#7f93a0; letter-spacing:.1em; }
+  .fkl-manage { display:block; text-align:center; text-decoration:none; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-radius:11px; padding:13px; margin-bottom:12px; }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
   .fkl-table { width:100%; border-collapse:collapse; font-size:13px; }
