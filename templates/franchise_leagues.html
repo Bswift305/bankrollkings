@@ -1,0 +1,77 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}Franchise Kings — Leagues{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+<section class="fkl-wrap">
+  <div class="fkl-hero">
+    <div class="fkl-kicker">FRANCHISE KINGS · COMMISSIONER LEAGUES</div>
+    <h1>Run a league with your crew.</h1>
+    <p>Create a league, share the code, and every GM runs a real NFL-city club. A game day
+      fires <strong>automatically</strong> on the cadence you set — miss your week and your team
+      goes on auto-pilot.</p>
+  </div>
+
+  {% if leagues %}
+  <div class="fkl-card">
+    <div class="fkl-h">Your leagues</div>
+    {% for lg in leagues %}
+    <a class="fkl-row" href="{{ url_for('franchise_league_hub', lid=lg.id) }}">
+      <div><strong>{{ lg.name }}</strong><small>Code {{ lg.id }} · Week {{ lg.week }} · {{ lg.members|length }} GMs · {{ lg.status|title }}</small></div>
+      <span class="fkl-go">Open →</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="fkl-grid">
+    <form method="post" action="{{ url_for('franchise_league_create') }}" class="fkl-card">
+      <div class="fkl-h">Create a league</div>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="fkl-lab">League name</label>
+      <input class="fkl-input" name="name" maxlength="48" placeholder="BRK League" required>
+      <label class="fkl-lab">Your GM name</label>
+      <input class="fkl-input" name="gm_name" maxlength="40" placeholder="Your name" required>
+      <label class="fkl-lab">Game-day cadence</label>
+      <select class="fkl-input" name="cadence">
+        <option value="1">Every day</option>
+        <option value="2">Every 2 days</option>
+        <option value="3" selected>Every 3 days</option>
+        <option value="7">Every week (7 days)</option>
+      </select>
+      <button class="fkl-btn">Create &amp; get code</button>
+    </form>
+
+    <form method="post" action="{{ url_for('franchise_league_join') }}" class="fkl-card">
+      <div class="fkl-h">Join a league</div>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="fkl-lab">League code</label>
+      <input class="fkl-input" name="code" maxlength="6" placeholder="ABC123" style="text-transform:uppercase" required>
+      <label class="fkl-lab">Your GM name</label>
+      <input class="fkl-input" name="gm_name" maxlength="40" placeholder="Your name" required>
+      <button class="fkl-btn fkl-btn-ghost">Join with code</button>
+    </form>
+  </div>
+  <p class="fkl-muted"><a href="{{ url_for('franchise_hub') }}">← Solo career mode</a></p>
+</section>
+<style>
+  .fkl-wrap { max-width: 880px; margin: 0 auto; padding: 8px 16px 40px; }
+  .fkl-hero { padding: 16px 0 18px; }
+  .fkl-kicker { color:#4ad4f0; font-weight:800; letter-spacing:.14em; font-size:12px; }
+  .fkl-hero h1 { font-family:var(--font-display); font-size:clamp(26px,5vw,40px); margin:8px 0; color:#fff; }
+  .fkl-hero p { color:var(--text2,#b7c6d0); font-size:14px; line-height:1.6; }
+  .fkl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  .fkl-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:18px; margin-bottom:12px; }
+  .fkl-h { font-family:var(--font-display); letter-spacing:.04em; color:#fff; font-size:18px; margin-bottom:10px; }
+  .fkl-lab { display:block; color:var(--text2,#b7c6d0); font-weight:700; font-size:12px; margin:10px 0 5px; }
+  .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:9px; color:#fff; padding:11px 12px; font-size:15px; }
+  .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:14px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
+  .fkl-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
+  .fkl-row { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(145,168,184,.12); text-decoration:none; color:var(--text2,#c2cfd8); }
+  .fkl-row strong { color:#fff; display:block; } .fkl-row small { color:#7f93a0; }
+  .fkl-go { color:#4ad4f0; font-weight:700; }
+  .fkl-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fkl-muted a { color:#4ad4f0; text-decoration:none; }
+</style>
+{% endblock %}

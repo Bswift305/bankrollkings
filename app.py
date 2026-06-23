@@ -23,6 +23,7 @@ import re
 import secrets
 import threading
 import franchise_kings as fk
+import franchise_league as fl
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -605,6 +606,11 @@ PUBLIC_ENDPOINTS = {
     'franchise_ticket',
     'franchise_hire',
     'franchise_fire',
+    'franchise_leagues',
+    'franchise_league_create',
+    'franchise_league_join',
+    'franchise_league_hub',
+    'franchise_league_advance',
     'franchise_restart',
     'save_feedback',
     'checkout_start',
@@ -29097,6 +29103,69 @@ def franchise_fire():
     if save:
         fk.fire_staff(save, str(request.form.get('role', '')).strip())
     return redirect(url_for('franchise_hub', tab='staff'))
+
+
+# ---- Multiplayer commissioner leagues (foundation) ----
+@app.route('/franchise/leagues')
+def franchise_leagues():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    uid = str(current_user.get('user_id', '') or '')
+    return render_template('franchise_leagues.html', leagues=fl.leagues_for_user(uid),
+                           current_user=current_user)
+
+
+@app.route('/franchise/leagues/create', methods=['POST'])
+def franchise_league_create():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.create_league(uid, request.form.get('name', ''),
+                              request.form.get('cadence', 3),
+                              request.form.get('gm_name', 'Commissioner'))
+    return redirect(url_for('franchise_league_hub', lid=league['id']))
+
+
+@app.route('/franchise/leagues/join', methods=['POST'])
+def franchise_league_join():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league, _ = fl.join_league(request.form.get('code', ''), uid, request.form.get('gm_name', 'GM'))
+    if league:
+        return redirect(url_for('franchise_league_hub', lid=league['id']))
+    return redirect(url_for('franchise_leagues'))
+
+
+@app.route('/franchise/league/<lid>')
+def franchise_league_hub(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if not league:
+        return render_error_page(404, 'League not found', 'That league code is not valid.')
+    league = fl.check_and_advance(league)   # lazy real-time advance on view
+    mem = fl.my_membership(league, uid)
+    my_team = fl.team_by_id(league, mem['team_id']) if mem else None
+    return render_template('franchise_league.html', league=league, mem=mem, my_team=my_team,
+                           is_commish=(league['commissioner'] == uid),
+                           deadline=fl.deadline_label(league),
+                           power=fk.power_rating(my_team) if my_team else 0,
+                           open_count=len(fl.open_team_ids(league)), current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/advance', methods=['POST'])
+def franchise_league_advance(lid):
+    current_user = get_current_user()
+    league = fl.load_league(lid)
+    if current_user and league and league['commissioner'] == str(current_user.get('user_id', '') or ''):
+        fl.advance_league(league)
+    return redirect(url_for('franchise_league_hub', lid=lid))
 
 
 @app.route('/franchise/restart', methods=['POST'])
