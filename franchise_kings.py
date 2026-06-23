@@ -1,11 +1,12 @@
-"""Franchise Kings - GM career simulator engine (v0.1, football / fictional BRK League).
+"""Franchise Kings - GM career simulator engine (football / fictional BRK League).
 
 Pure-Python, JSON-serializable game state. No Flask dependency so it can be unit
 -tested from the command line. The web layer (app.py) only calls into here and
 renders the returned dicts.
 
-Core loop: create GM -> take a job -> sign free agents -> sim season -> owner
-evaluation -> retained / extended / fired / poached -> career history.
+Solo career mode: 1 human GM + 31 AI teams in a 32-team league (2 conferences x
+4 divisions x 4). Core loop: create GM -> take a job -> build the roster -> sim
+season -> owner evaluation -> retained / extended / fired / poached -> career.
 """
 from __future__ import annotations
 
@@ -18,38 +19,49 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 SAVE_DIR = BASE_DIR / "data" / "franchise"
 
-LEAGUE_SIZE = 16
-REG_GAMES = 14
-PLAYOFF_TEAMS = 8
-CAP_TOTAL = 220.0  # millions
+LEAGUE_SIZE = 32
+REG_GAMES = 17
+CONF_PLAYOFF_SEEDS = 7   # per conference -> 14-team playoff (NFL-style)
+CAP_TOTAL = 240.0        # millions
 
-# Fictional cities + mascots (no real franchises).
+CONFERENCES = ["Apex", "Crown"]
+DIVISIONS = ["North", "South", "East", "West"]
+
+# 36 fictional cities + 36 mascots (need >=32; extras keep the league varied).
 CITIES = [
     "Atlas", "Granite", "Harbor", "Iron City", "Summit", "Delta", "Crown Point",
     "Bayou", "Cascade", "Verdant", "Cobalt", "Sable", "Frontier", "Monarch",
-    "Tidewater", "Vanguard", "Helix", "Sterling", "Meridian", "Onyx",
+    "Tidewater", "Vanguard", "Helix", "Sterling", "Meridian", "Onyx", "Cardinal",
+    "Redwood", "Saltlake", "Gulf City", "Highland", "Magnolia", "Copperfield",
+    "Stonebridge", "Bracton", "Lakeshore", "Northgate", "Sunridge", "Prairie",
+    "Crescent", "Ironwood", "Silvercreek",
 ]
 MASCOTS = [
     "Kings", "Titans", "Vipers", "Sentinels", "Outlaws", "Wolves", "Reign",
     "Dreadnoughts", "Phantoms", "Apex", "Voltage", "Ironsides", "Stampede",
     "Warhawks", "Krakens", "Comets", "Renegades", "Juggernauts", "Stags", "Aces",
+    "Maulers", "Tempest", "Grizzlies", "Sabers", "Hammers", "Rampage", "Pioneers",
+    "Vortex", "Falcons", "Bulls", "Sharks", "Cyclones", "Raptors", "Avalanche",
+    "Mustangs", "Legion",
 ]
 FIRST_NAMES = [
     "Marcus", "DeShawn", "Tyrell", "Cole", "Brock", "Xavier", "Jaylen", "Trey",
     "Dominic", "Isaiah", "Hunter", "Malik", "Cooper", "Diego", "Andre", "Kade",
     "Roman", "Silas", "Tobias", "Quinton", "Rashad", "Beau", "Khalil", "Jaxon",
+    "Emmett", "Darius", "Carter", "Nasir", "Bryce", "Gio", "Lincoln", "Zane",
 ]
 LAST_NAMES = [
     "Reed", "Locke", "Vance", "Mercer", "Hollis", "Bishop", "Cross", "Rhodes",
     "Kane", "Sloan", "Boone", "Hayes", "Dawson", "Foster", "Mata", "Okafor",
     "Vega", "Prince", "Steele", "Calloway", "Drummond", "Fontaine", "Ash", "Roy",
+    "Barlow", "Quint", "Vasquez", "Nash", "Wexler", "Pryor", "Salas", "Trent",
 ]
 
 # Starter slots per position (the depth chart auto-starts the best by position).
-ROSTER = {"QB": 1, "RB": 1, "WR": 3, "TE": 1, "OL": 3, "DL": 3, "LB": 2, "CB": 2, "S": 1, "K": 1}
-# Position weight for the Power Rating (football = QB-heavy).
-POS_WEIGHT = {"QB": 5.0, "WR": 1.6, "OL": 1.5, "DL": 1.5, "CB": 1.4, "LB": 1.2,
-              "S": 1.1, "RB": 1.1, "TE": 1.0, "K": 0.4}
+ROSTER = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "OL": 5, "DL": 4, "LB": 3, "CB": 3, "S": 2, "K": 1}
+# Position weight for the Power Rating (football = QB-heavy, OL/DL count a lot).
+POS_WEIGHT = {"QB": 5.0, "WR": 1.5, "OL": 1.3, "DL": 1.4, "CB": 1.3, "LB": 1.1,
+              "S": 1.0, "RB": 1.0, "TE": 0.9, "K": 0.4}
 
 BACKGROUNDS = {
     "scout":        {"label": "Scout",            "blurb": "Better draft grades, weaker contracts.",
@@ -79,12 +91,11 @@ def _gen_name(rng):
 
 def _gen_player(rng, pos, base=None):
     age = rng.randint(21, 34)
-    # younger players skew lower OVR but higher potential
     overall = base if base is not None else int(rng.triangular(58, 92, 74))
     overall = max(48, min(99, overall))
     pot_gap = max(0, int(rng.triangular(0, 22, 6)) - (age - 24))
     potential = max(overall, min(99, overall + pot_gap))
-    aav = round(max(0.7, (overall - 55) ** 1.7 / 22.0), 1)  # millions, steep at the top
+    aav = round(max(0.7, max(0, overall - 55) ** 1.7 / 22.0), 1)
     return {
         "id": f"p{rng.randint(100000, 999999)}",
         "name": _gen_name(rng),
@@ -103,7 +114,7 @@ def _gen_roster(rng, strength):
     """strength 0..1 nudges the talent floor so weak teams feel weak."""
     roster = []
     for pos, count in ROSTER.items():
-        for _ in range(count + 1):  # one backup per slot
+        for _ in range(count + 1):  # one backup per starter slot
             base = int(rng.triangular(54, 90, 66 + strength * 14))
             roster.append(_gen_player(rng, pos, base))
     return roster
@@ -111,15 +122,16 @@ def _gen_roster(rng, strength):
 
 def _gen_team(rng, idx, city, mascot):
     strength = rng.random()
-    roster = _gen_roster(rng, strength)
     return {
         "id": f"t{idx}",
         "city": city,
         "name": mascot,
         "full": f"{city} {mascot}",
+        "conference": CONFERENCES[idx // 16],
+        "division": DIVISIONS[(idx % 16) // 4],
         "market": rng.choice(["Small", "Small", "Mid", "Mid", "Large"]),
         "owner": {"type": rng.choice(OWNER_TYPES)},
-        "roster": roster,
+        "roster": _gen_roster(rng, strength),
         "record": {"w": 0, "l": 0},
     }
 
@@ -130,7 +142,7 @@ def new_league(seed):
     mascots = rng.sample(MASCOTS, LEAGUE_SIZE)
     teams = [_gen_team(rng, i, cities[i], mascots[i]) for i in range(LEAGUE_SIZE)]
     free_agents = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70)))
-                   for _ in range(28)]
+                   for _ in range(40)]
     return teams, free_agents
 
 
@@ -169,15 +181,33 @@ def cap_used(team):
 
 
 def _sim_game(rng, pa, pb):
-    # home edge baked into pa
-    diff = (pa + 2.2) - pb
+    diff = (pa + 2.2) - pb  # home edge baked into pa
     p = 1.0 / (1.0 + math.exp(-diff / 6.0))
     return rng.random() < p  # True => home wins
 
 
+def _run_playoffs(rng, seeds, powers):
+    """Single-elim bracket from a seeded list (best first). Top seed gets a bye
+    when the field is odd; reseed by original seed each round. Returns winner."""
+    teams = seeds[:]
+    while len(teams) > 1:
+        teams.sort(key=lambda t: seeds.index(t))
+        byes, active = [], teams[:]
+        if len(active) % 2 == 1:
+            byes, active = [active[0]], active[1:]
+        winners, i, j = [], 0, len(active) - 1
+        while i < j:
+            a, b = active[i], active[j]
+            winners.append(a if _sim_game(rng, powers[a], powers[b]) else b)
+            i += 1
+            j -= 1
+        teams = byes + winners
+    return teams[0]
+
+
 def sim_season(save):
-    """Play the schedule, produce standings, playoffs, champion, then advance the
-    league a year and evaluate the GM. Mutates and returns `save`."""
+    """Play the schedule -> conference standings -> 7-seed conference playoffs ->
+    title game. Then advance the league a year and evaluate the GM."""
     rng = _rng(save["seed"] + save["season"] * 1000)
     teams = {t["id"]: t for t in save["teams"]}
     for t in save["teams"]:
@@ -190,34 +220,29 @@ def sim_season(save):
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
 
-    standings = sorted(
-        save["teams"],
-        key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True,
-    )
-    # single-elim playoff among the top seeds
-    bracket = [t["id"] for t in standings[:PLAYOFF_TEAMS]]
-    while len(bracket) > 1:
-        nxt = []
-        for i in range(0, len(bracket), 2):
-            a, b = bracket[i], bracket[i + 1]
-            nxt.append(a if _sim_game(rng, powers[a], powers[b]) else b)
-        bracket = nxt
-    champion = bracket[0]
+    standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
 
-    user_team = teams[save["current_team_id"]]
-    rec = dict(user_team["record"])
-    made_playoffs = save["current_team_id"] in [t["id"] for t in standings[:PLAYOFF_TEAMS]]
-    won_title = champion == save["current_team_id"]
-    outcome = _evaluate_gm(save, rec, made_playoffs, won_title,
-                           champion_name=teams[champion]["full"])
+    conf_champs, playoff_ids = [], set()
+    for conf in CONFERENCES:
+        seeds = [t["id"] for t in standings if t["conference"] == conf][:CONF_PLAYOFF_SEEDS]
+        playoff_ids.update(seeds)
+        conf_champs.append(_run_playoffs(rng, seeds, powers))
+    champion = (conf_champs[0] if _sim_game(rng, powers[conf_champs[0]], powers[conf_champs[1]])
+                else conf_champs[1])
 
-    # advance world: age players, regenerate FA pool, new expectations next year
+    user_id = save["current_team_id"]
+    rec = dict(teams[user_id]["record"])
+    made_playoffs = user_id in playoff_ids
+    won_title = champion == user_id
+    outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
+
     _advance_year(save)
     save["season"] += 1
     save["schedule"] = make_schedule(save["seed"], [t["id"] for t in save["teams"]])
     save["standings_cache"] = [
-        {"id": t["id"], "full": t["full"], "w": t["record"]["w"], "l": t["record"]["l"],
-         "power": powers[t["id"]]} for t in standings
+        {"id": t["id"], "full": t["full"], "conf": t["conference"], "div": t["division"],
+         "w": t["record"]["w"], "l": t["record"]["l"], "power": powers[t["id"]],
+         "playoff": t["id"] in playoff_ids} for t in standings
     ]
     save["last_champion"] = teams[champion]["full"]
     save["last_outcome"] = outcome
@@ -238,7 +263,7 @@ def _advance_year(save):
                 p["overall"] = max(45, p["overall"] - rng.randint(0, 3))
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
     save["free_agents"] = [_gen_player(rng, rng.choice(list(ROSTER)),
-                                       int(rng.triangular(60, 88, 70))) for _ in range(28)]
+                                       int(rng.triangular(60, 88, 70))) for _ in range(40)]
 
 
 # --------------------------------------------------------------------------- #
@@ -251,20 +276,19 @@ def _league_rank(save, team_id):
 
 def _set_expectation(save):
     rank = _league_rank(save, save["current_team_id"])
-    if rank <= 4:
-        save["expectation"] = {"wins": 10, "text": "Win the title or it's a disappointment."}
-    elif rank <= 9:
-        save["expectation"] = {"wins": 8, "text": "Make the playoffs (8+ wins)."}
+    if rank <= 8:
+        save["expectation"] = {"wins": 12, "text": "Win the title - anything less disappoints."}
+    elif rank <= 20:
+        save["expectation"] = {"wins": 10, "text": "Make the playoffs (10+ wins)."}
     else:
-        save["expectation"] = {"wins": 6, "text": "Show progress - 6+ wins."}
+        save["expectation"] = {"wins": 7, "text": "Show progress - 7+ wins."}
 
 
 def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
     gm = save["gm"]
     exp = save["expectation"]["wins"]
     margin = rec["w"] - exp
-    delta = 6 if margin >= 0 else -8
-    delta += margin * 2
+    delta = 6 + margin * 2 if margin >= 0 else -8 + margin * 2
     if won_title:
         delta += 25
     elif made_playoffs:
@@ -303,7 +327,7 @@ def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
 
 def _job_openings(save, want):
     ranked = sorted(save["teams"], key=lambda t: power_rating(t))
-    pool = ranked[:6] if want == "bad" else ranked[-6:]
+    pool = ranked[:8] if want == "bad" else ranked[-8:]
     pool = [t for t in pool if t["id"] != save["current_team_id"]]
     return [{"id": t["id"], "full": t["full"], "power": power_rating(t), "market": t["market"],
              "owner": t["owner"]["type"]} for t in pool[:3]]
@@ -339,13 +363,12 @@ def create_save(user_id, gm_name, background, seed=None):
     background = background if background in BACKGROUNDS else "scout"
     seed = seed if seed is not None else random.randint(1, 10 ** 9)
     teams, free_agents = new_league(seed)
-    # the user starts with a bottom-third team (the classic rebuild)
-    weak = sorted(teams, key=lambda t: power_rating(t))[2]
+    weak = sorted(teams, key=lambda t: power_rating(t))[6]  # a bottom-third rebuild
     ratings = {k: 50 for k in ("drafting", "trading", "free_agency", "cap", "staff", "media", "owner")}
     for stat, d in BACKGROUNDS[background]["tilt"].items():
         ratings[stat] = max(20, min(90, ratings[stat] + d))
     save = {
-        "version": "0.1",
+        "version": "0.2",
         "user_id": user_id,
         "seed": seed,
         "season": 1,
@@ -390,7 +413,6 @@ def take_job(save, team_id):
     if team_id not in [t["id"] for t in save["teams"]]:
         return False
     save["current_team_id"] = team_id
-    # a fresh start resets owner trust to a wary baseline
     save["gm"]["owner_trust"] = 50
     save["unemployed"] = False
     save["last_outcome"] = None
@@ -410,20 +432,17 @@ def delete_save(user_id):
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
     s = create_save("selftest_user", "Darrel Copper", "analytics", seed=42)
-    print("GM:", s["gm"]["name"], "| background:", s["gm"]["background"], "| ratings:", s["gm"]["ratings"])
+    print(f"League: {len(s['teams'])} teams, {len(CONFERENCES)} conferences x {len(DIVISIONS)} divisions")
     t = current_team(s)
-    print(f"Team: {t['full']}  Power {power_rating(t)}  Cap {cap_used(t)}/{CAP_TOTAL}")
+    print(f"Team: {t['full']} ({t['conference']} {t['division']})  Power {power_rating(t)}  "
+          f"Roster {len(t['roster'])}  Cap {cap_used(t)}/{CAP_TOTAL}")
     print("Expectation:", s["expectation"]["text"])
-    if s["free_agents"]:
-        ok, msg = sign_free_agent(s, s["free_agents"][0]["id"])
-        print("Sign FA:", ok, msg)
-    for yr in range(4):
+    for yr in range(5):
         s, out = sim_season(s)
-        print(f"Season done -> {out['status'].upper()}: {out['headline']}")
+        print(f"  S{out['record']['w']+out['record']['l']:>2}: {out['record']['w']}-{out['record']['l']} "
+              f"-> {out['status'].upper()} | champ: {out['champion']}")
         if out["offers"]:
-            pick = out["offers"][0]
-            take_job(s, pick["id"])
-            print("   -> took job with", pick["full"])
-    print("Career:", json.dumps(s["gm"]["career"], indent=1))
+            take_job(s, out["offers"][0]["id"])
+    print("Career seasons:", len(s["gm"]["career"]), "| titles:", s["gm"]["titles"])
     delete_save("selftest_user")
-    print("OK")
+    print("OK - 32-team engine works")

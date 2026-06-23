@@ -3,7 +3,17 @@
 > A turn-based, browser-based **GM career simulator** on Bankroll Kings. The user
 > is NOT a team — they are a **General Manager building a career**. Win and bigger
 > teams poach you; lose and you get fired and rebuild your reputation elsewhere.
-> First league modeled: **football (NFL-style)**. Fictional league (see §2).
+> Football (NFL-style). Fictional league (see §2).
+
+> **SCOPE LOCKED (2026-06-22):** full feature build, not an MVP. **32 teams**
+> (2 conferences x 4 divisions x 4), **solo career mode** (1 human GM + 31 AI;
+> true human-vs-human multiplayer is a deferred architecture option — the
+> requirement is only that one person can play). All systems below are committed:
+> scouting, draft, trades, staff/coaching, stadium/business, player
+> development/injuries, and the analytics ("Value Intelligence") layer. The user
+> will not playtest until the whole set is in, so phases ship incrementally
+> (free/gated, never touching the betting product) and get played as a finished
+> product. Build order in S10.
 
 ---
 

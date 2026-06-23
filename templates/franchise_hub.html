@@ -143,20 +143,31 @@
 
   {# ===================== LEAGUE ===================== #}
   {% if tab == 'league' %}
-  <div class="fk-card">
-    <div class="fk-card-h">BRK League standings{% if save.last_champion %} · Last champion: {{ save.last_champion }}{% endif %}</div>
-    {% if standings %}
-    <table class="fk-table">
-      <thead><tr><th>#</th><th>Team</th><th>Record</th><th>Power</th></tr></thead>
-      <tbody>
-        {% for s in standings %}
-        <tr class="{% if s.id == team.id %}fk-you{% endif %}"><td>{{ loop.index }}</td><td>{{ s.full }}{% if s.id == team.id %} ◄ you{% endif %}</td>
-          <td>{{ s.w }}–{{ s.l }}</td><td>{{ s.power }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<p class="fk-muted">Standings appear after your first simulated season.</p>{% endif %}
-  </div>
+  {% if standings %}
+    {% if save.last_champion %}<div class="fk-champbar">🏆 League champion: <strong>{{ save.last_champion }}</strong></div>{% endif %}
+    {% for conf in ['Apex', 'Crown'] %}
+    <div class="fk-card" style="margin-top:12px">
+      <div class="fk-card-h">{{ conf }} Conference <span class="fk-legend">● = playoffs</span></div>
+      <table class="fk-table">
+        <thead><tr><th>#</th><th>Team</th><th>Div</th><th>Record</th><th>Power</th></tr></thead>
+        <tbody>
+          {% set ns = namespace(rank=0) %}
+          {% for s in standings if s.conf == conf %}
+          {% set ns.rank = ns.rank + 1 %}
+          <tr class="{% if s.id == team.id %}fk-you{% endif %}">
+            <td>{{ ns.rank }}{% if s.playoff %} <span class="fk-clinch">●</span>{% endif %}</td>
+            <td>{{ s.full }}{% if s.id == team.id %} ◄ you{% endif %}</td>
+            <td>{{ s.div }}</td><td>{{ s.w }}–{{ s.l }}</td><td>{{ s.power }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="fk-card"><p class="fk-muted">Standings appear after your first simulated season. The
+      BRK League is 32 teams — 2 conferences (Apex, Crown) × 4 divisions. Top 7 per conference make the playoffs.</p></div>
+  {% endif %}
   {% endif %}
 
   <form method="post" action="{{ url_for('franchise_restart') }}" class="fk-restart"
@@ -211,6 +222,10 @@
   .fk-pos { color:#4ad4f0; font-weight:700; }
   .fk-ovr { color:#fff; font-weight:700; }
   .fk-you td { background:rgba(74,212,240,.08); color:#fff; }
+  .fk-champbar { margin-top:12px; padding:9px 14px; border-radius:10px; background:rgba(74,212,240,.08); border:1px solid rgba(74,212,240,.25); color:var(--text2,#c2cfd8); font-size:13px; }
+  .fk-champbar strong { color:#fff; }
+  .fk-legend { float:right; color:#7f93a0; font-weight:600; font-size:11px; }
+  .fk-clinch { color:#4ad4f0; }
   .fk-pill { padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
   .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
   .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }
