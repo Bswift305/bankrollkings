@@ -36,6 +36,40 @@
     {% endif %}
   </div>
 
+  {% if is_commish %}
+  <div class="fkl-card fkl-commish">
+    <div class="fkl-h">⚙ Commissioner tools</div>
+    <form method="post" action="{{ url_for('franchise_league_settings', lid=league.id) }}" class="fkl-cset">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>League name<input class="fkl-input" name="name" value="{{ league.name }}" maxlength="48"></label>
+      <label>Game-day cadence<select class="fkl-input" name="cadence">
+        <option value="1" {{ 'selected' if league.cadence_days==1 }}>Every day</option>
+        <option value="2" {{ 'selected' if league.cadence_days==2 }}>Every 2 days</option>
+        <option value="3" {{ 'selected' if league.cadence_days==3 }}>Every 3 days</option>
+        <option value="7" {{ 'selected' if league.cadence_days==7 }}>Weekly (7 days)</option>
+      </select></label>
+      <button class="fkl-btn fkl-btn-sm">Save settings</button>
+    </form>
+    <form method="post" action="{{ url_for('franchise_league_pause', lid=league.id) }}" style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="fkl-btn fkl-btn-sm fkl-btn-ghost">{{ '▶ Resume clock' if league.paused else '⏸ Pause clock' }}</button>
+    </form>
+    {% set has_others = league.members|length > 1 %}
+    {% if has_others %}
+    <div class="fkl-sub">Replace an inactive GM (their team reverts to AI; slot reopens)</div>
+    {% for uid, m in league.members.items() %}
+      {% if uid != league.commissioner %}
+      <form method="post" action="{{ url_for('franchise_league_remove_gm', lid=league.id) }}" class="fkl-rmrow">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="uid" value="{{ uid }}">
+        <span>{{ m.name }} · {{ league.teams|selectattr('id','equalto',m.team_id)|map(attribute='full')|first }}{% if not m.ready %} <em>(idle)</em>{% endif %}</span>
+        <button class="fkl-rm">Remove</button>
+      </form>
+      {% endif %}
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="fkl-grid">
     <div class="fkl-card">
       <div class="fkl-h">Standings</div>
@@ -83,6 +117,14 @@
   .fkl-manage { display:block; text-align:center; text-decoration:none; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-radius:11px; padding:13px; margin-bottom:12px; }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
+  .fkl-btn-sm { padding:9px 14px; font-size:13px; } .fkl-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
+  .fkl-commish { border-color:rgba(245,200,96,.35); }
+  .fkl-cset label { display:block; color:#b7c6d0; font-size:12px; font-weight:700; margin:8px 0 4px; }
+  .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
+  .fkl-sub { color:#f5c860; font-size:12px; font-weight:700; margin:14px 0 6px; }
+  .fkl-rmrow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .fkl-rmrow span { color:var(--text2,#c2cfd8); font-size:13px; } .fkl-rmrow em { color:#ff9a9a; font-style:normal; }
+  .fkl-rm { cursor:pointer; background:rgba(255,122,122,.12); color:#ff9a9a; border:1px solid rgba(255,122,122,.4); border-radius:7px; font-size:11px; font-weight:800; padding:5px 10px; }
   .fkl-table { width:100%; border-collapse:collapse; font-size:13px; }
   .fkl-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:5px 6px; border-bottom:1px solid rgba(145,168,184,.18); }
   .fkl-table td { padding:6px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }

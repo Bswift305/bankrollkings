@@ -50,6 +50,8 @@ def time_left(league):
 
 
 def deadline_label(league):
+    if league.get("paused"):
+        return "Paused by commissioner"
     secs = time_left(league)
     if secs <= 0:
         return "Game day is processing..."
@@ -228,6 +230,8 @@ def advance_league(league):
 def check_and_advance(league):
     """Lazy auto-advance: if the deadline passed, run game day (may catch up several
     weeks if nobody loaded the league for a while). Returns the (updated) league."""
+    if league and league.get("paused"):
+        return league
     guard = 0
     while league and league["status"] != "complete" and time_left(league) <= 0 and guard < 30:
         league = advance_league(league)
@@ -243,10 +247,42 @@ def run_due_leagues():
         return advanced
     for f in list(LEAGUES_DIR.glob("*.json")):
         lg = load_league(f.stem)
-        if lg and lg["status"] != "complete" and time_left(lg) <= 0:
+        if lg and not lg.get("paused") and lg["status"] != "complete" and time_left(lg) <= 0:
             check_and_advance(lg)
             advanced += 1
     return advanced
+
+
+# --------------------------------------------------------------------------- #
+# Commissioner tools
+# --------------------------------------------------------------------------- #
+def update_settings(league, name=None, cadence_days=None):
+    if name and str(name).strip():
+        league["name"] = str(name).strip()[:48]
+    if cadence_days:
+        league["cadence_days"] = max(1, min(7, int(cadence_days)))
+    save_league(league)
+    return league
+
+
+def set_paused(league, paused):
+    league["paused"] = bool(paused)
+    if not paused:                          # resuming restarts the clock fresh
+        league["next_deadline"] = _iso(_now() + timedelta(days=league["cadence_days"]))
+    save_league(league)
+    return league
+
+
+def remove_member(league, target_uid):
+    """Drop a GM; their team reverts to AI and the slot reopens for a new human.
+    The commissioner cannot be removed."""
+    if target_uid == league.get("commissioner"):
+        return False
+    if target_uid in league.get("members", {}):
+        del league["members"][target_uid]
+        save_league(league)
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------- #

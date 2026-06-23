@@ -617,6 +617,9 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_ready',
     'franchise_league_negotiate',
     'franchise_league_advance',
+    'franchise_league_settings',
+    'franchise_league_pause',
+    'franchise_league_remove_gm',
     'franchise_restart',
     'save_feedback',
     'checkout_start',
@@ -29307,6 +29310,39 @@ def franchise_league_advance(lid):
     league = fl.load_league(lid)
     if current_user and league and league['commissioner'] == str(current_user.get('user_id', '') or ''):
         fl.advance_league(league)
+    return redirect(url_for('franchise_league_hub', lid=lid))
+
+
+def _is_commish(lid):
+    """Return the league if the current user is its commissioner, else None."""
+    current_user = get_current_user()
+    league = fl.load_league(lid)
+    if current_user and league and league['commissioner'] == str(current_user.get('user_id', '') or ''):
+        return league
+    return None
+
+
+@app.route('/franchise/league/<lid>/settings', methods=['POST'])
+def franchise_league_settings(lid):
+    league = _is_commish(lid)
+    if league:
+        fl.update_settings(league, request.form.get('name'), request.form.get('cadence'))
+    return redirect(url_for('franchise_league_hub', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/pause', methods=['POST'])
+def franchise_league_pause(lid):
+    league = _is_commish(lid)
+    if league:
+        fl.set_paused(league, not league.get('paused'))
+    return redirect(url_for('franchise_league_hub', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/remove_gm', methods=['POST'])
+def franchise_league_remove_gm(lid):
+    league = _is_commish(lid)
+    if league:
+        fl.remove_member(league, str(request.form.get('uid', '')))
     return redirect(url_for('franchise_league_hub', lid=lid))
 
 
