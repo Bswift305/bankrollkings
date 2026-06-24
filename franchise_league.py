@@ -406,7 +406,7 @@ def complete_season(league):
     league["playoffs"] = run_league_playoffs(league)
     champ = next((s for s in sc if s["id"] == league["playoffs"]["champion_id"]), sc[0])
     fk.assign_season_stats(league["teams"], {s["id"]: s["w"] for s in sc},
-                           league["seed"] + league.get("season", 1))
+                           league["seed"] + league.get("season", 1), season=league.get("season", 1))
     league["leaders"] = fk.stat_leaders(league["teams"])
     mvp = fk.stat_mvp(league["teams"]) or {}        # MVP earned by production, not rating
     best_gm = None

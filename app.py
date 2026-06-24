@@ -29329,6 +29329,7 @@ def _player_profile(teams, pid):
                         'crest': fk.team_crest_svg(t['full'], 60),
                         'colors': fk.team_colors(t['full']),
                         'stat_rows': fk.stat_table(p), 'value': fk.trade_value(p),
+                        'career': fk.career_table(p),
                         'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
     return None
 

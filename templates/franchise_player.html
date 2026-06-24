@@ -59,6 +59,19 @@
     {% endif %}
   </div>
 
+  {% if career and career.rows|length %}
+  <div class="fp-card">
+    <div class="fp-h">📈 Career</div>
+    <div class="fp-cscroll"><table class="fp-ctable">
+      <thead><tr><th>Yr</th><th>Team</th>{% for h in career.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for r in career.rows %}
+        <tr><td>S{{ r.season }}</td><td>{{ r.team }}</td>{% for v in r.vals %}<td>{{ "{:,}".format(v) if v is integer else v }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+  {% endif %}
+
   <p class="fp-muted"><a href="{{ back }}">← back</a></p>
 </section>
 <style>
@@ -82,6 +95,11 @@
   .fp-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:10px; }
   .fp-stat { background:rgba(3,8,12,.6); border:1px solid rgba(74,212,240,.18); border-radius:10px; padding:12px 8px; text-align:center; }
   .fp-stat b { display:block; font-family:var(--font-display); font-size:22px; color:#fff; } .fp-stat span { font-size:10px; color:#8fa3b0; letter-spacing:.03em; }
+  .fp-cscroll { overflow-x:auto; }
+  .fp-ctable { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
+  .fp-ctable th { text-align:left; color:#7f93a0; font-size:10px; text-transform:uppercase; padding:5px 8px; border-bottom:1px solid rgba(145,168,184,.18); }
+  .fp-ctable td { padding:5px 8px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }
+  .fp-ctable td:nth-child(2) { color:#9fe9ff; }
   .fp-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fp-muted a { color:#4ad4f0; text-decoration:none; }
 </style>
 {% endblock %}

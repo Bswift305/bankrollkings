@@ -449,7 +449,7 @@ def sim_season(save):
         teams[lose]["record"]["l"] += 1
 
     assign_season_stats(save["teams"], {tid: tm["record"]["w"] for tid, tm in teams.items()},
-                        save["seed"] + save["season"])
+                        save["seed"] + save["season"], season=save["season"])
     save["leaders"] = stat_leaders(save["teams"])
     save["season_mvp"] = stat_mvp(save["teams"])
 
@@ -1262,7 +1262,7 @@ def consultant_advice(save):
 # team's offense/defense was. Drives leaderboards, a stat-based MVP, and roster
 # stat lines - turning ratings into a living league.
 # --------------------------------------------------------------------------- #
-def assign_season_stats(teams, wins_by_id, seed):
+def assign_season_stats(teams, wins_by_id, seed, season=0):
     rng = _rng(seed * 7 + 3)
     for t in teams:
         wins = wins_by_id.get(t["id"], REG_GAMES // 2)
@@ -1330,6 +1330,15 @@ def assign_season_stats(teams, wins_by_id, seed):
             fgm = int((20 + (o - 70) * 0.5) * off)
             k["stats"] = {"g": REG_GAMES, "fgm": fgm, "fga": fgm + rng.randint(2, 6),
                           "pts": fgm * 3 + int(30 * off)}
+
+    for t in teams:                                 # archive the season into each player's career
+        tname = t.get("name", t["full"])
+        for p in t["roster"]:
+            if p.get("stats"):
+                car = p.setdefault("career", [])
+                if not car or car[-1].get("season") != season:
+                    car.append({"season": season, "team": tname, **p["stats"]})
+                    del car[:-24]
 
 
 _LEADER_CATS = [
@@ -1407,6 +1416,30 @@ def stat_table(p):
     if s.get("fgm"):
         return [("FG Made / Att", f"{s['fgm']}/{s['fga']}"), ("Points", str(s["pts"]))]
     return []
+
+
+def career_table(p):
+    """Year-by-year career rows shaped by position (or None if no history)."""
+    car = p.get("career") or []
+    if not car:
+        return None
+    if any(r.get("pass_yd") for r in car):
+        cols = [("Cmp", "pass_cmp"), ("Att", "pass_att"), ("Yds", "pass_yd"), ("TD", "pass_td"), ("INT", "int")]
+    elif any(r.get("rush_yd") for r in car):
+        cols = [("Car", "rush_car"), ("Yds", "rush_yd"), ("TD", "rush_td"), ("Rec", "rec"), ("RecYd", "rec_yd")]
+    elif any(r.get("rec") for r in car):
+        cols = [("Rec", "rec"), ("Yds", "rec_yd"), ("TD", "rec_td")]
+    elif any("sack" in r for r in car):
+        cols = [("Tkl", "tackle"), ("Sacks", "sack")]
+    elif any("def_int" in r for r in car):
+        cols = [("Tkl", "tackle"), ("INT", "def_int"), ("PD", "pd")]
+    elif any(r.get("fgm") for r in car):
+        cols = [("FGM", "fgm"), ("FGA", "fga"), ("Pts", "pts")]
+    else:
+        return None
+    rows = [{"season": r.get("season"), "team": r.get("team", ""),
+             "vals": [r.get(k, 0) for _, k in cols]} for r in car]
+    return {"headers": [c[0] for c in cols], "rows": list(reversed(rows))}
 
 
 def rename_player(save, player_id, new_name):
