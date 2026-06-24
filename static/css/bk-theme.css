@@ -273,6 +273,14 @@ body::after {
   filter: drop-shadow(0 0 14px rgba(0,220,255,0.18));
 }
 
+.bk-topbar-logo {
+  height: 38px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 0 16px rgba(0,220,255,0.20));
+}
+
 .bk-site-name {
   font-family: var(--font-display);
   font-size: 20px;
@@ -3504,6 +3512,7 @@ body::after {
   }
   .bk-topbar-mark { display: none; }   /* hamburger stands in for the mark on phones */
   .bk-site-name { font-size: 15px; }
+  .bk-topbar-logo { height: 26px; }    /* scale the lockup down to fit beside the hamburger */
 }
 
 /* ------------------------------------------------------------

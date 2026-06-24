@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 
   <!-- ONE theme file styles the entire site -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-brand-system">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260624-brk-lockup">
   <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
@@ -41,8 +41,7 @@
       <span class="bk-nav-toggle-bar"></span>
     </button>
     <a class="bk-topbar-brand" href="{{ url_for('dashboard') }}" aria-label="Bankroll Kings home">
-      <img class="bk-topbar-mark" src="{{ url_for('static', filename='brand-bk-mark.webp') }}?v=brand2" alt="">
-      <span class="bk-site-name">BANKROLL KINGS</span>
+      <img class="bk-topbar-logo" src="{{ url_for('static', filename='brand-brk-lockup-white.webp') }}?v=brk3" alt="Bankroll Kings">
     </a>
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker" title="Hover to pause">
