@@ -50,6 +50,27 @@
       </details>
     </div>
   </div>
+
+  {% if gm_grade %}
+  <div class="fk-card fk-gmcard">
+    <div class="fk-gmtop">
+      <div class="fk-gmletter fk-gmletter-{{ gm_grade.grade[0]|lower }}">{{ gm_grade.grade }}</div>
+      <div class="fk-gmwho">
+        <div class="fk-card-h" style="margin:0">GM Report Card</div>
+        <div class="fk-gmtier">{{ gm_grade.tier }}{% if gm_grade.rating %} · Rating {{ gm_grade.rating }}/100{% endif %}</div>
+      </div>
+    </div>
+    <div class="fk-gmstats">
+      <div><b>{{ gm_grade.w }}-{{ gm_grade.l }}</b><span>career record</span></div>
+      <div><b>{{ (gm_grade.winpct*100)|round }}%</b><span>win rate</span></div>
+      <div><b>{{ gm_grade.titles }}</b><span>title{{ 's' if gm_grade.titles != 1 }}</span></div>
+      <div><b>{{ gm_grade.playoffs }}</b><span>playoff trips</span></div>
+      <div><b>${{ gm_grade.money }}M</b><span>money earned</span></div>
+      <div><b>{{ gm_grade.negos }}</b><span>shrewd deals</span></div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="fk-grid2">
     <div class="fk-card">
       <div class="fk-card-h">Front office standing</div>
@@ -657,6 +678,16 @@
   .fk-exform .fk-input { width:100%; box-sizing:border-box; }
   .fk-exrow { display:flex; gap:8px; align-items:flex-end; margin-top:8px; } .fk-exrow label { flex:1; color:#b7c6d0; font-size:12px; } .fk-exrow .fk-btn { white-space:nowrap; }
   .fk-hint { color:#6b7d8a; font-size:11px; margin-top:8px; font-style:italic; }
+  .fk-gmcard { border-color:rgba(245,200,96,.45); }
+  .fk-gmtop { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+  .fk-gmletter { font-family:var(--font-display); font-size:42px; font-weight:800; line-height:1; width:64px; height:64px; display:flex; align-items:center; justify-content:center; border-radius:14px; background:rgba(245,200,96,.12); border:2px solid #f5c860; color:#f5c860; }
+  .fk-gmletter-b { color:#7dffb0; border-color:#7dffb0; background:rgba(125,255,176,.1); }
+  .fk-gmletter-c { color:#9fe9ff; border-color:#4ad4f0; background:rgba(74,212,240,.1); }
+  .fk-gmletter-d, .fk-gmletter-f { color:#ff9a9a; border-color:#ff7a7a; background:rgba(255,122,122,.1); }
+  .fk-gmtier { color:#f5c860; font-weight:800; font-size:14px; margin-top:4px; }
+  .fk-gmstats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center; }
+  .fk-gmstats > div { background:rgba(3,8,12,.5); border:1px solid rgba(145,168,184,.15); border-radius:9px; padding:9px 4px; }
+  .fk-gmstats b { display:block; font-family:var(--font-display); font-size:18px; color:#fff; } .fk-gmstats span { font-size:10px; color:#8fa3b0; }
   .fk-news { border-color:rgba(74,212,240,.4); }
   .fk-newshead { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; border-bottom:2px solid #4ad4f0; padding-bottom:6px; } .fk-newshead span { color:#7f93a0; font-size:12px; font-weight:400; }
   .fk-newsitem { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; } .fk-newsitem strong { color:#fff; } .fk-newsitem small { display:block; color:#8fa3b0; font-size:12px; margin-top:2px; }

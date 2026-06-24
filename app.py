@@ -29015,6 +29015,7 @@ def _franchise_view(save):
         'attendance': fk.attendance(save),
         'atmosphere': fk.atmosphere(save),
         'assist': save['gm'].get('assist', 'Full'),
+        'gm_grade': fk.gm_grade(save),
         'advice': fk.consultant_advice(save),
         'leaders': save.get('leaders'),
         'season_mvp': save.get('season_mvp'),

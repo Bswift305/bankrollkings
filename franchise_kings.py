@@ -558,6 +558,50 @@ def _set_expectation(save):
         save["expectation"] = {"wins": 7, "text": "Show progress - 7+ wins."}
 
 
+# --------------------------------------------------------------------------- #
+# GM grade - "Great Managers" are graded on their whole résumé: wins, titles,
+# playoff runs, money earned, and contract acumen.
+# --------------------------------------------------------------------------- #
+_GM_TIERS = [(88, "Legendary"), (74, "Elite"), (60, "Respected"),
+             (46, "Solid"), (30, "Journeyman"), (0, "On the hot seat")]
+
+
+def _rating_to_grade(r):
+    return ("A+" if r >= 90 else "A" if r >= 83 else "A-" if r >= 77 else "B+" if r >= 71 else
+            "B" if r >= 63 else "B-" if r >= 56 else "C+" if r >= 49 else "C" if r >= 41 else
+            "C-" if r >= 34 else "D" if r >= 26 else "F")
+
+
+def gm_grade(save):
+    gm = save["gm"]
+    career = gm.get("career", [])
+    seasons = len(career)
+    w, l = gm.get("career_w", 0), gm.get("career_l", 0)
+    if not (w or l) and career:                       # fallback: parse old saves
+        for c in career:
+            try:
+                cw, cl = str(c.get("record", "0-0")).split("-")
+                w += int(cw)
+                l += int(cl)
+            except (ValueError, AttributeError):
+                pass
+    games = w + l
+    winpct = round(w / games, 3) if games else 0.0
+    titles, playoffs = gm.get("titles", 0), gm.get("playoffs", 0)
+    money, negos = round(gm.get("money_earned", 0)), gm.get("nego_wins", 0)
+    if seasons == 0:
+        return {"rating": None, "grade": "—", "tier": "Unproven", "seasons": 0,
+                "w": 0, "l": 0, "winpct": 0.0, "titles": 0, "playoffs": 0,
+                "money": 0, "negos": 0}
+    rating = (winpct * 48 + titles * 9 + playoffs * 2.2 + min(18, money / 140)
+              + min(9, negos * 0.4) + gm.get("reputation", 50) * 0.08)
+    rating = int(max(1, min(99, round(rating))))
+    return {"rating": rating, "grade": _rating_to_grade(rating),
+            "tier": next(t for thr, t in _GM_TIERS if rating >= thr), "seasons": seasons,
+            "w": w, "l": l, "winpct": winpct, "titles": titles, "playoffs": playoffs,
+            "money": money, "negos": negos}
+
+
 def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
     gm = save["gm"]
     exp = save["expectation"]["wins"]
@@ -592,6 +636,10 @@ def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
 
     record["outcome"] = status
     gm.setdefault("career", []).append(record)
+    gm["career_w"] = gm.get("career_w", 0) + rec["w"]          # résumé tracking
+    gm["career_l"] = gm.get("career_l", 0) + rec["l"]
+    if made_playoffs:
+        gm["playoffs"] = gm.get("playoffs", 0) + 1
     if won_title:
         gm["titles"] = gm.get("titles", 0) + 1
     return {"status": status, "headline": headline, "record": rec,
@@ -1032,6 +1080,7 @@ def negotiate(save, player_id, years, aav):
         fa.pop("demand", None)
         team["roster"].append(fa)
         save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
+        save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= demand_aav else 1)
         res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
     elif aav >= eff * 0.90:
         counter = round(eff * A["counter"], 1)
@@ -1134,6 +1183,7 @@ def extend_player(save, player_id, years, aav):
         p.pop("agent", None)
         p.pop("holdout", None)
         p["morale"] = min(99, p.get("morale", 75) + 12)
+        save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= ask else 1)
         res.update(status="accepted", msg=f"Extension done — {p['name']} for {years}yr / ${aav}M.")
     elif aav >= ask * 0.9:
         res.update(status="countered", counter={"years": years, "aav": ask},
@@ -1298,6 +1348,7 @@ def _apply_finance(save, rec, won_title):
     _, hd, _ = TICKET.get(b["ticket"], TICKET["normal"])
     b["fan_happiness"] = max(0, min(100, b["fan_happiness"] + (rec["w"] - rec["l"]) * 1.5 + (10 if won_title else 0) + hd))
     b["last_revenue"] = rev
+    save["gm"]["money_earned"] = round(save["gm"].get("money_earned", 0) + rev, 1)   # career revenue
 
 
 def upgrade_stadium(save):
