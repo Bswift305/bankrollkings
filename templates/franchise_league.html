@@ -161,6 +161,26 @@
       {% endif %}
     </div>
   </div>
+  {% if league.playoffs %}
+  <div class="fkl-card fkl-po">
+    <div class="fkl-h">🏆 Playoffs</div>
+    <div class="fkl-sb">🏆 SUPER BOWL — {{ league.playoffs.sb.ta }} vs {{ league.playoffs.sb.tb }} → <b>{{ league.playoffs.sb.w }}</b></div>
+    <div class="fkl-pgrid">
+      {% for conf, rounds in league.playoffs.brackets.items() %}
+      <div>
+        <div class="fkl-pcon">{{ conf }} bracket</div>
+        {% for rd in rounds %}
+        <div class="fkl-prd">{{ rd.name }}</div>
+        {% for g in rd.games %}
+        <div class="fkl-pg"><span class="{{ 'fkl-pw' if g.w == g.ta }}">#{{ g.sa }} {{ g.ta }}</span><span class="fkl-pvs">v</span><span class="{{ 'fkl-pw' if g.w == g.tb }}">#{{ g.sb }} {{ g.tb }}</span></div>
+        {% endfor %}
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if league.history %}
   <div class="fkl-card fkl-dynasty">
     <div class="fkl-h">🏆 Dynasty — champions &amp; awards</div>
@@ -258,6 +278,13 @@
   .fkl-leadrow b { color:#fff; float:right; }
   .fkl-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fkl-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fkl-po { border-color:rgba(245,200,96,.5); }
+  .fkl-sb { background:rgba(245,200,96,.12); border:1px solid rgba(245,200,96,.35); border-radius:9px; padding:9px 12px; font-size:13px; color:var(--text2,#c2cfd8); margin-bottom:12px; } .fkl-sb b { color:#f5c860; }
+  .fkl-pgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .fkl-pcon { color:#9fe9ff; font-size:12px; font-weight:800; text-transform:uppercase; margin-bottom:4px; }
+  .fkl-prd { color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; margin:8px 0 3px; }
+  .fkl-pg { display:flex; align-items:center; gap:6px; font-size:12px; color:#8fa3b0; padding:2px 0; }
+  .fkl-pw { color:#fff; font-weight:700; } .fkl-pvs { color:#5f7280; font-size:10px; }
   @keyframes fkpulse { 0%,100%{ box-shadow:0 0 0 rgba(255,122,122,0); } 50%{ box-shadow:0 0 18px rgba(255,122,122,.5); } }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }

@@ -85,7 +85,7 @@ _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
                   "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
-                  "paused": False, "season": 1, "champion_name": ""}
+                  "playoffs": dict, "paused": False, "season": 1, "champion_name": ""}
 
 
 def _ensure_keys(lg):
@@ -354,15 +354,55 @@ def advance_league(league):
 # --------------------------------------------------------------------------- #
 # Season awards + multi-season dynasty
 # --------------------------------------------------------------------------- #
+def run_league_playoffs(league):
+    """NFL-style postseason: top 7 per conference, #1 bye, Wild Card -> Divisional
+    (reseeded) -> Conference Championship -> the title game. Returns a displayable
+    bracket + the champion (the team that wins it, not the best record)."""
+    rng = random.Random(league["seed"] + league.get("season", 1) * 7919 + 13)
+    teams = {t["id"]: t for t in league["teams"]}
+    powers = {tid: fk.power_rating(t) for tid, t in teams.items()}
+    sc = league.get("standings_cache") or []
+    nm = lambda tid: teams[tid]["full"]
+    game = lambda a, b: a if fk._sim_game(rng, powers[a], powers[b]) else b   # a = higher seed (home)
+
+    def matchup(a, b, so):
+        w = game(a, b)
+        return {"sa": so[a], "ta": nm(a), "sb": so[b], "tb": nm(b), "w": nm(w), "wid": w}
+
+    conf_champs, brackets = {}, {}
+    for conf in fk.CONFERENCES:
+        seeds = [s["id"] for s in sc if s.get("conf") == conf][:7]
+        if len(seeds) < 7:
+            extra = sorted([t["id"] for t in league["teams"]
+                            if t["conference"] == conf and t["id"] not in seeds], key=lambda x: -powers[x])
+            seeds = (seeds + extra)[:7]
+        so = {tid: i + 1 for i, tid in enumerate(seeds)}
+        wc = [matchup(seeds[1], seeds[6], so), matchup(seeds[2], seeds[5], so), matchup(seeds[3], seeds[4], so)]
+        adv = sorted([seeds[0]] + [g["wid"] for g in wc], key=lambda tid: so[tid])
+        dv = [matchup(adv[0], adv[3], so), matchup(adv[1], adv[2], so)]
+        fin = sorted([dv[0]["wid"], dv[1]["wid"]], key=lambda tid: so[tid])
+        cc = matchup(fin[0], fin[1], so)
+        brackets[conf] = [{"name": "Wild Card", "games": wc},
+                          {"name": "Divisional", "games": dv},
+                          {"name": conf + " Championship", "games": [cc]}]
+        conf_champs[conf] = cc["wid"]
+    a_id, n_id = conf_champs["American"], conf_champs["National"]
+    sb_w = game(a_id, n_id) if powers[a_id] >= powers[n_id] else game(n_id, a_id)
+    return {"brackets": brackets, "champion": nm(sb_w), "champion_id": sb_w,
+            "runner_up": nm(n_id if sb_w == a_id else a_id),
+            "sb": {"ta": nm(a_id), "tb": nm(n_id), "w": nm(sb_w)}}
+
+
 def complete_season(league):
-    """Wrap a season: crown the champion, hand out awards, append to the dynasty
-    history. (Champion = best regular-season record this league.)"""
+    """Wrap a season: run the playoffs, crown the champion, hand out awards, append
+    to the dynasty history. (Champion = who wins the postseason.)"""
     league["status"] = "complete"
     league["next_deadline"] = _iso(_now() + timedelta(days=3650))
     sc = league.get("standings_cache", [])
     if not sc:
         return league
-    champ = sc[0]
+    league["playoffs"] = run_league_playoffs(league)
+    champ = next((s for s in sc if s["id"] == league["playoffs"]["champion_id"]), sc[0])
     fk.assign_season_stats(league["teams"], {s["id"]: s["w"] for s in sc},
                            league["seed"] + league.get("season", 1))
     league["leaders"] = fk.stat_leaders(league["teams"])
@@ -375,6 +415,7 @@ def complete_season(league):
     league.setdefault("history", []).insert(0, {
         "season": league.get("season", 1),
         "champion": champ["full"], "record": f"{champ['w']}-{champ['l']}",
+        "runner_up": league["playoffs"]["runner_up"],
         "mvp": mvp.get("name", "—"), "mvp_pos": mvp.get("pos", ""),
         "mvp_team": mvp.get("team", ""), "mvp_ovr": mvp.get("ovr", 0),
         "mvp_line": mvp.get("line", ""), "best_gm": best_gm})
