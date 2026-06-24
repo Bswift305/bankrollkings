@@ -59,6 +59,12 @@
         <b>{{ val }}</b></div>
       {% endfor %}
       <div class="fk-exp">Owner mandate: <strong>{{ expectation.text }}</strong></div>
+      {% if owner %}
+      <div class="fk-ownermsg">
+        <div class="fk-ownerhead">{{ owner.icon }} {{ owner.type }} owner · <span>{{ owner.mood }}</span></div>
+        {% if owner_message %}<em>“{{ owner_message.text }}”</em>{% endif %}
+      </div>
+      {% endif %}
     </div>
 
     <div class="fk-card fk-consult">
@@ -612,6 +618,9 @@
   .fk-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
   .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fk-ownermsg { margin-top:10px; padding:10px 12px; border-radius:9px; background:rgba(159,150,255,.08); border:1px solid rgba(159,150,255,.3); }
+  .fk-ownerhead { color:#c7c1ff; font-weight:800; font-size:12px; } .fk-ownerhead span { color:#fff; }
+  .fk-ownermsg em { display:block; color:var(--text2,#b7c6d0); font-size:13px; margin-top:5px; }
   .fk-holdout { background:rgba(255,122,122,.12); border:1px solid rgba(255,122,122,.4); border-radius:9px; padding:9px 12px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); } .fk-holdout strong { color:#ff9a9a; }
   .fk-holdtag { font-size:9px; font-weight:800; color:#ff9a9a; background:rgba(255,122,122,.15); padding:1px 6px; border-radius:5px; }
   .fk-exform .fk-input { width:100%; box-sizing:border-box; }

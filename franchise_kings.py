@@ -508,6 +508,7 @@ def sim_season(save):
     save["last_outcome"] = outcome
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
+    owner_statement(save, outcome)         # the owner reacts
     _check_holdouts(save)                  # flag underpaid stars going into the offseason
     generate_news(save)                    # GridIron Network season recap feed
     write_save(save)
@@ -1010,6 +1011,52 @@ def negotiate(save, player_id, years, aav):
 # --------------------------------------------------------------------------- #
 # Contract extensions + holdouts
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Owner mood + statements - the owner reacts to results, and his patience (trust)
+# tells the story of your tenure: honeymoon -> pressure -> hot seat.
+# --------------------------------------------------------------------------- #
+_OWNER_MOODS = [(80, "Thrilled", "🤩"), (60, "Pleased", "🙂"), (42, "Watching closely", "🧐"),
+                (25, "Frustrated", "😤"), (0, "Out of patience", "🌋")]
+_OWNER_TIER_LINE = {
+    "title": "We're CHAMPIONS - this is everything I hoped for. ",
+    "good": "You blew past what I expected. Impressive. ",
+    "ok": "A solid, professional season. ",
+    "bad": "That is not the standard I expect around here. ",
+    "fired": "We're going in a different direction. ",
+}
+_OWNER_TYPE_LINE = {
+    "Impatient": "I want more, and I want it now.",
+    "Cheap": "Just keep an eye on what you're spending.",
+    "Hands-Off": "Keep doing your thing - I trust you.",
+    "Meddling": "Don't be surprised when I get involved.",
+    "Legacy": "This franchise's history demands greatness.",
+    "Billionaire": "Money is no object. Just win.",
+}
+
+
+def owner_state(save):
+    trust = save["gm"]["owner_trust"]
+    mood, icon = next((m, i) for thr, m, i in _OWNER_MOODS if trust >= thr)
+    return {"type": current_team(save)["owner"]["type"], "trust": trust, "mood": mood, "icon": icon}
+
+
+def _owner_tier(save, outcome):
+    if outcome.get("status") == "fired":
+        return "fired"
+    if outcome.get("won_title"):
+        return "title"
+    rec = outcome.get("record", {})
+    margin = rec.get("w", 0) - outcome.get("expectation", save["expectation"]["wins"])
+    return "good" if margin >= 3 else "ok" if margin >= -1 else "bad"
+
+
+def owner_statement(save, outcome):
+    otype = current_team(save)["owner"]["type"]
+    line = _OWNER_TIER_LINE[_owner_tier(save, outcome)] + _OWNER_TYPE_LINE.get(otype, "")
+    save["owner_message"] = {"type": otype, "text": line, "mood": owner_state(save)["mood"]}
+    return save["owner_message"]
+
+
 def _market_aav(p):
     o, age = p["overall"], p.get("age", 27)
     base = max(0.8, (max(0, o - 58) ** 1.7) / 16.0)
@@ -1507,6 +1554,9 @@ def generate_news(save):
     if out.get("headline"):
         rec = out.get("record", {})
         add("TEAM", f"{tn} finish {rec.get('w', '?')}-{rec.get('l', '?')}", out["headline"])
+    om = save.get("owner_message")
+    if om:
+        add("OWNER", f"{tn} owner speaks out", om["text"])
     for cat in (save.get("leaders") or [])[:3]:
         r = cat["rows"][0]
         v = ("%.1f" % r["val"]) if cat["key"] == "sack" else f"{r['val']:,}"

@@ -29015,6 +29015,8 @@ def _franchise_view(save):
         'all_pro': save.get('all_pro'),
         'records': save.get('records'),
         'career_records': save.get('career_records'),
+        'owner': fk.owner_state(save),
+        'owner_message': save.get('owner_message'),
         'hall_of_fame': save.get('hall_of_fame'),
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
