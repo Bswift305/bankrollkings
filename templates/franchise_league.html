@@ -157,7 +157,7 @@
       {% if league.results_log %}
       <div class="fkl-h" style="margin-top:16px">Last game day · Week {{ league.results_log[0].week }}</div>
       {% for g in league.results_log[0].games[:6] %}
-      <div class="fkl-res">{{ g.winner }} <span>def.</span> {{ g.home if g.winner == g.away else g.away }}</div>
+      <div class="fkl-res">{{ g.winner }} <span>def.</span> {{ g.home if g.winner == g.away else g.away }}{% if g.star %}<small style="display:block;color:#7f93a0;margin-left:2px">⭐ {{ g.star.pos }} {{ g.star.name }} — {{ g.star.line }}</small>{% endif %}</div>
       {% endfor %}
       {% endif %}
     </div>
@@ -209,6 +209,16 @@
         {% endfor %}
       </div>
       {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if league.potw and league.potw.name %}
+  <div class="fkl-card fkl-potw">
+    <div class="fkl-h">⭐ Player of the Week <span class="fkl-recweek">Week {{ league.potw.week }}</span></div>
+    <div class="fkl-potwrow">
+      <div><strong><a href="{{ url_for('franchise_league_player', lid=league.id, pid=league.potw.pid) }}" style="color:#fff;text-decoration:none">{{ league.potw.pos }} {{ league.potw.name }}</a></strong> <small style="color:#7f93a0">{{ league.potw.team }}</small></div>
+      <div class="fkl-potwline">{{ league.potw.line }}</div>
     </div>
   </div>
   {% endif %}
@@ -279,6 +289,10 @@
   .fkl-leadrow b { color:#fff; float:right; }
   .fkl-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fkl-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fkl-potw { border-color:rgba(245,200,96,.5); }
+  .fkl-potwrow { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .fkl-potwrow strong { font-size:15px; }
+  .fkl-potwline { color:#f5c860; font-weight:800; font-size:13px; white-space:nowrap; }
   .fkl-po { border-color:rgba(245,200,96,.5); }
   .fkl-sb { background:rgba(245,200,96,.12); border:1px solid rgba(245,200,96,.35); border-radius:9px; padding:9px 12px; font-size:13px; color:var(--text2,#c2cfd8); margin-bottom:12px; } .fkl-sb b { color:#f5c860; }
   .fkl-pgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
