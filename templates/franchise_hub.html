@@ -113,6 +113,23 @@
     </div>
     {% endif %}
 
+    {% if game_log %}
+    <div class="fk-card">
+      <div class="fk-card-h">🏈 Last season — game log</div>
+      <div class="fk-gloscroll"><table class="fk-table">
+        <tbody>
+        {% for g in game_log %}
+        <tr class="{{ 'fk-glbest' if g.best }}">
+          <td style="color:#7f93a0">Wk {{ g.week }}</td>
+          <td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
+          <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
+          <td>{% if g.star %}⭐ {{ g.star.pos }} <a href="{{ url_for('franchise_player', pid=g.star.pid) }}" style="color:#9fe9ff;text-decoration:none">{{ g.star.name }}</a> · {{ g.star.line }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody></table></div>
+    </div>
+    {% endif %}
+
     {% if all_pro %}
     <div class="fk-card fk-leaders">
       <div class="fk-card-h">🏅 All-League Team</div>
@@ -561,6 +578,9 @@
   .fk-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
   .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fk-gloscroll { overflow-x:auto; } .fk-gloscroll td { font-size:12px; white-space:nowrap; padding:5px 8px; }
+  .fk-glw { color:#7dffb0; } .fk-gll { color:#ff9a9a; }
+  .fk-glbest { background:rgba(245,200,96,.08); }
   .fk-hof { border-color:rgba(245,200,96,.5); }
   .fk-hofrow { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); } .fk-hofrow strong { color:#f5c860; } .fk-hofrow small { display:block; color:#8fa3b0; font-size:11px; }
   .fk-exp strong, .fk-outcome p strong { color:#fff; }

@@ -193,36 +193,6 @@ def my_membership(league, user_id):
 
 
 # --------------------------------------------------------------------------- #
-# Per-game box-score standouts -> a weekly Player of the Week
-# --------------------------------------------------------------------------- #
-def _game_starter(team, pos):
-    cands = [p for p in team["roster"] if p["pos"] == pos]
-    return max(cands, key=lambda p: p["overall"]) if cands else None
-
-
-def _game_line(p, won, rng):
-    o = p["overall"]
-    wb = 1.12 if won else 0.9
-    if p["pos"] == "QB":
-        att = rng.randint(24, 40)
-        comp = int(att * min(0.74, 0.55 + (o - 55) * 0.0035))
-        yd = int(comp * rng.uniform(6.6, 9.2) * wb)
-        td = max(0, int(yd / 150 * wb + rng.random()))
-        intc = rng.randint(0, 2) if rng.random() < 0.55 else 0
-        line = f"{comp}/{att}, {yd} yd, {td} TD" + (f", {intc} INT" if intc else "")
-        return line, yd * 0.04 + td * 4 - intc * 2
-    if p["pos"] == "RB":
-        car = rng.randint(10, 25)
-        yd = int(car * rng.uniform(3.2, 6.2) * (1 + (o - 65) * 0.004) * wb)
-        td = max(0, int(yd / 58 * wb + rng.random() * 0.5))
-        return f"{car} car, {yd} yd, {td} TD", yd * 0.06 + td * 6
-    car = rng.randint(3, 10)                   # WR
-    yd = int(car * rng.uniform(9, 18) * (1 + (o - 65) * 0.004) * wb)
-    td = max(0, int(yd / 70 * wb))
-    return f"{car} rec, {yd} yd, {td} TD", yd * 0.06 + td * 6 + car * 0.4
-
-
-# --------------------------------------------------------------------------- #
 # The weekly clock: sim ONE week, advance, reset, reschedule
 # --------------------------------------------------------------------------- #
 def _sim_week(league):
@@ -246,9 +216,9 @@ def _sim_week(league):
         gstars = []                           # box-score standouts for this game
         for tid in (g["home"], g["away"]):
             for pos in ("QB", "RB", "WR"):
-                sp = _game_starter(teams[tid], pos)
+                sp = fk.game_starter(teams[tid], pos)
                 if sp:
-                    line, score = _game_line(sp, tid == win, rng)
+                    line, score = fk.game_line(sp, tid == win, rng)
                     gstars.append({"name": sp["name"], "pos": pos, "team": teams[tid]["name"],
                                    "pid": sp["id"], "line": line, "score": score})
         star = max(gstars, key=lambda s: s["score"]) if gstars else None

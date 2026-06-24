@@ -442,11 +442,33 @@ def sim_season(save):
     save["last_injuries"] = injuries
     save["last_injury_pen"] = inj_pen
 
+    uid = save["current_team_id"]
+    game_log = []
     for g in save["schedule"]:
         home_win = _sim_game(rng, powers[g["home"]], powers[g["away"]])
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
+        if uid in (g["home"], g["away"]):                # build the user's box-score log
+            opp = teams[g["away"] if g["home"] == uid else g["home"]]
+            stars = []
+            for pos in ("QB", "RB", "WR"):
+                sp = game_starter(teams[uid], pos)
+                if sp:
+                    line, score = game_line(sp, win == uid, rng)
+                    stars.append({"name": sp["name"], "pos": pos, "line": line, "score": score, "pid": sp["id"]})
+            star = max(stars, key=lambda s: s["score"]) if stars else None
+            game_log.append({"week": g["week"], "opp": opp["full"], "home": g["home"] == uid,
+                             "won": win == uid,
+                             "star": {k: star[k] for k in ("name", "pos", "line", "pid")} if star else None,
+                             "_score": star["score"] if star else 0})
+    game_log.sort(key=lambda x: x["week"])
+    if game_log:
+        best = max(game_log, key=lambda x: x["_score"])
+        for gl in game_log:
+            gl["best"] = gl is best
+            gl.pop("_score", None)
+    save["game_log"] = game_log
 
     assign_season_stats(save["teams"], {tid: tm["record"]["w"] for tid, tm in teams.items()},
                         save["seed"] + save["season"], season=save["season"])
@@ -1497,6 +1519,34 @@ def process_retirements(teams, season, hof_list):
                 keep.append(p)
         t["roster"] = keep
     return retired
+
+
+def game_starter(team, pos):
+    cands = [p for p in team["roster"] if p["pos"] == pos]
+    return max(cands, key=lambda p: p["overall"]) if cands else None
+
+
+def game_line(p, won, rng):
+    """A single-game box-score line + a standout score, for a skill starter."""
+    o = p["overall"]
+    wb = 1.12 if won else 0.9
+    if p["pos"] == "QB":
+        att = rng.randint(24, 40)
+        comp = int(att * min(0.74, 0.55 + (o - 55) * 0.0035))
+        yd = int(comp * rng.uniform(6.6, 9.2) * wb)
+        td = max(0, int(yd / 150 * wb + rng.random()))
+        intc = rng.randint(0, 2) if rng.random() < 0.55 else 0
+        line = f"{comp}/{att}, {yd} yd, {td} TD" + (f", {intc} INT" if intc else "")
+        return line, yd * 0.04 + td * 4 - intc * 2
+    if p["pos"] == "RB":
+        car = rng.randint(10, 25)
+        yd = int(car * rng.uniform(3.2, 6.2) * (1 + (o - 65) * 0.004) * wb)
+        td = max(0, int(yd / 58 * wb + rng.random() * 0.5))
+        return f"{car} car, {yd} yd, {td} TD", yd * 0.06 + td * 6
+    car = rng.randint(3, 10)
+    yd = int(car * rng.uniform(9, 18) * (1 + (o - 65) * 0.004) * wb)
+    td = max(0, int(yd / 70 * wb))
+    return f"{car} rec, {yd} yd, {td} TD", yd * 0.06 + td * 6 + car * 0.4
 
 
 def stat_line(p):
