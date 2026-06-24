@@ -72,9 +72,10 @@
   {% endif %}
 
   {% if mem %}
-  <div class="fkl-card fkl-myteam">
-    <div><div class="fkl-kicker">YOUR CLUB</div><strong>{{ my_team.full }}</strong>
-      <small>{{ mem.name }}{% if is_commish %} · Commissioner{% endif %}</small></div>
+  <div class="fkl-card fkl-myteam" style="border-left:4px solid {{ team_colors(my_team.full).primary }}">
+    <div style="display:flex;align-items:center;gap:12px">{{ team_crest(my_team.full, 44)|safe }}
+      <div><div class="fkl-kicker">YOUR CLUB</div><strong>{{ my_team.full }}</strong>
+      <small>{{ mem.name }}{% if is_commish %} · Commissioner{% endif %}</small></div></div>
     <div class="fkl-pow">{{ power }}<span>PWR</span></div>
   </div>
   <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}">⚙ Manage my team — roster &amp; free agency →</a>
@@ -137,7 +138,7 @@
       <table class="fkl-table"><thead><tr><th>#</th><th>Team</th><th>W</th><th>L</th></tr></thead>
         <tbody>
           {% for t in league.standings_cache[:16] %}
-          <tr class="{% if my_team and t.id == my_team.id %}fkl-me{% endif %}"><td>{{ loop.index }}</td><td>{{ t.full }}</td><td>{{ t.w }}</td><td>{{ t.l }}</td></tr>
+          <tr class="{% if my_team and t.id == my_team.id %}fkl-me{% endif %}"><td>{{ loop.index }}</td><td>{{ team_crest(t.full, 18)|safe }} {{ t.full }}</td><td>{{ t.w }}</td><td>{{ t.l }}</td></tr>
           {% endfor %}
           {% if not league.standings_cache %}<tr><td colspan="4" class="fkl-muted">No games yet — game day hasn't fired.</td></tr>{% endif %}
         </tbody></table>

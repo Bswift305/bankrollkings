@@ -67,6 +67,50 @@ NFL_TEAMS = [
     ("National", "West",  "San Francisco", "Fog",          "Large"),
     ("National", "West",  "Seattle",       "Waterbirds",   "Mid"),
 ]
+# A (primary, secondary) colour scheme per club, in NFL_TEAMS order - each evokes
+# the real team that plays in that city (no marks used, just colours).
+TEAM_COLORS = [
+    ("#00338D", "#C60C30"), ("#008E97", "#FC4C02"), ("#002244", "#C60C30"), ("#125740", "#FFFFFF"),
+    ("#241773", "#9E7C0C"), ("#FB4F14", "#000000"), ("#311D00", "#FF3C00"), ("#101820", "#FFB612"),
+    ("#03202F", "#A71930"), ("#002C5F", "#A2AAAD"), ("#006778", "#D7A22A"), ("#0C2340", "#4B92DB"),
+    ("#FB4F14", "#002244"), ("#E31837", "#FFB81C"), ("#0A0A0A", "#A5ACAF"), ("#0080C6", "#FFC20E"),
+    ("#003594", "#869397"), ("#0B2265", "#A71930"), ("#004C54", "#A5ACAF"), ("#5A1414", "#FFB612"),
+    ("#0B162A", "#C83803"), ("#0076B6", "#B0B7BC"), ("#203731", "#FFB612"), ("#4F2683", "#FFC62F"),
+    ("#A71930", "#000000"), ("#0085CA", "#101820"), ("#101820", "#D3BC8D"), ("#D50A0A", "#34302B"),
+    ("#97233F", "#000000"), ("#003594", "#FFA300"), ("#AA0000", "#B3995D"), ("#002244", "#69BE28"),
+]
+_TEAM_META = {f"{c} {m}": {"mascot": m, "primary": pri, "secondary": sec}
+              for (cf, dv, c, m, mk), (pri, sec) in zip(NFL_TEAMS, TEAM_COLORS)}
+
+
+def team_colors(full):
+    meta = _TEAM_META.get(full)
+    if meta:
+        return {"primary": meta["primary"], "secondary": meta["secondary"]}
+    h = abs(hash(full))
+    return {"primary": f"#{h % 0xFFFFFF:06x}", "secondary": "#cfd8dc"}
+
+
+def _contrast(hexcolor):
+    h = hexcolor.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return "#0a0a0a" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#ffffff"
+
+
+def team_crest_svg(full, size=36):
+    """A simple shield crest in the club's colours with the mascot's initial."""
+    meta = _TEAM_META.get(full)
+    pri = meta["primary"] if meta else "#1b2a36"
+    sec = meta["secondary"] if meta else "#4ad4f0"
+    initial = (meta["mascot"][0] if meta else (full or "?")[:1]).upper()
+    return (f'<svg width="{size}" height="{size}" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" '
+            f'class="fk-crest" style="vertical-align:middle">'
+            f'<path d="M20 2L36 8V21C36 30 29 36 20 39C11 36 4 30 4 21V8Z" fill="{pri}" '
+            f'stroke="{sec}" stroke-width="2.5" stroke-linejoin="round"/>'
+            f'<text x="20" y="27" text-anchor="middle" font-size="19" font-weight="800" '
+            f'fill="{_contrast(pri)}" font-family="Arial,Helvetica,sans-serif">{initial}</text></svg>')
+
+
 FIRST_NAMES = [
     "Marcus", "DeShawn", "Tyrell", "Cole", "Brock", "Xavier", "Jaylen", "Trey",
     "Dominic", "Isaiah", "Hunter", "Malik", "Cooper", "Diego", "Andre", "Kade",

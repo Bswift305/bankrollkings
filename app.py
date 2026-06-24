@@ -15372,6 +15372,8 @@ def sidebar_icon_url(key):
 
 
 app.jinja_env.globals['sidebar_icon_url'] = sidebar_icon_url
+app.jinja_env.globals['team_crest'] = fk.team_crest_svg
+app.jinja_env.globals['team_colors'] = fk.team_colors
 
 
 NFL_HISTORICAL_TEAM_ALIASES = {

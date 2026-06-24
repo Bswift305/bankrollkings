@@ -32,10 +32,10 @@
   </div>
   <div class="os-board">
     {% for t in board %}
-    <form method="post" action="{{ url_for('franchise_offseason_pick') }}" class="os-teamcard os-tier-{{ t.tier }}">
+    <form method="post" action="{{ url_for('franchise_offseason_pick') }}" class="os-teamcard os-tier-{{ t.tier }}" style="border-left:4px solid {{ team_colors(t.full).primary }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="team_id" value="{{ t.id }}">
-      <div class="os-tname">{{ t.full }}</div>
+      <div class="os-tname">{{ team_crest(t.full, 22)|safe }} {{ t.full }}</div>
       <div class="os-tier">{{ {'champion':'DEFENDING CHAMPION','contender':'CONTENDER','middle':'MIDDLE OF PACK','rebuild':'REBUILD'}[t.tier] }}</div>
       <div class="os-tstats"><span>PWR {{ t.power }}</span><span>Pick #{{ t.slot }}</span></div>
       <button class="os-pickbtn">Take this job →</button>

@@ -10,7 +10,7 @@
   <header class="fk-top">
     <div>
       <div class="fk-kicker">FRANCHISE KINGS · SEASON {{ save.season }}</div>
-      <h1>{{ team.full }}</h1>
+      <h1 style="display:flex;align-items:center;gap:10px">{{ team_crest(team.full, 34)|safe }} {{ team.full }}</h1>
       <div class="fk-sub">GM <strong>{{ gm.name }}</strong> ·
         {{ gm.background|replace('_',' ')|title }} · {{ gm.philosophy|default('Balanced') }} HC · {{ team.market }} market · Owner: {{ team.owner.type }}</div>
     </div>
