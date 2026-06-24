@@ -85,7 +85,8 @@ _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
                   "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
-                  "playoffs": dict, "paused": False, "season": 1, "champion_name": ""}
+                  "playoffs": dict, "picks": list,
+                  "paused": False, "season": 1, "champion_name": ""}
 
 
 def _ensure_keys(lg):
@@ -155,6 +156,7 @@ def create_league(commissioner_id, name, cadence_days=3, gm_name="Commissioner",
         },
         "created_at": _iso(_now()),
     }
+    init_picks(league)                          # each team owns its 7 picks for the next draft
     save_league(league)
     return league
 
@@ -686,6 +688,9 @@ ROSTER_FINAL = 53              # the 53-man active roster
 
 
 def _draft_on_clock(draft):
+    seq = draft.get("sequence")
+    if seq is not None:
+        return seq[draft["ptr"]] if draft["ptr"] < len(seq) else None
     if draft["ptr"] >= draft["rounds"] * len(draft["order"]):
         return None
     return draft["order"][draft["ptr"] % len(draft["order"])]
@@ -708,10 +713,15 @@ def _draft_take(league, team_id, prospect):
     t = team_by_id(league, team_id)
     draft = league["draft"]
     rnd, _ = _draft_round_pick(draft)
+    via = ""
+    orig_seq = draft.get("orig_seq")
+    if orig_seq and draft["ptr"] < len(orig_seq) and orig_seq[draft["ptr"]] != team_id:
+        ot = team_by_id(league, orig_seq[draft["ptr"]])
+        via = ot["full"] if ot else ""
     t["roster"].append(fk._make_rookie(prospect))
     draft["class"] = [p for p in draft["class"] if p["id"] != prospect["id"]]
     draft["log"].insert(0, {"round": rnd, "team": t["full"], "name": prospect["name"],
-                            "pos": prospect["pos"], "ovr": prospect.get("true_ovr", 0)})
+                            "pos": prospect["pos"], "ovr": prospect.get("true_ovr", 0), "via": via})
     draft["log"] = draft["log"][:60]
     draft["ptr"] += 1
 
@@ -740,6 +750,7 @@ def _finish_draft(league):
     draft["active"] = False
     league.setdefault("draft_history", []).insert(
         0, {"season": league.get("season", 1), "log": draft.get("log", [])[:32]})
+    init_picks(league)                              # fresh pick inventory for next year's draft
 
 
 def start_draft(league):
@@ -752,7 +763,17 @@ def start_draft(league):
     sc = league.get("standings_cache") or []
     order = ([s["id"] for s in reversed(sc)] if sc
              else [t["id"] for t in sorted(league["teams"], key=fk.power_rating)])
+    if not league.get("picks"):
+        init_picks(league)
+    owner_of = {(p["round"], p["orig"]): p["owner"] for p in league["picks"]}
+    teams = {t["id"]: t for t in league["teams"]}
+    sequence, orig_seq = [], []                      # who picks here / whose slot it was
+    for r in range(1, LEAGUE_DRAFT_ROUNDS + 1):
+        for tid in order:
+            sequence.append(owner_of.get((r, tid), tid))
+            orig_seq.append(tid)
     league["draft"] = {"active": True, "class": cls, "order": order,
+                       "sequence": sequence, "orig_seq": orig_seq,
                        "rounds": LEAGUE_DRAFT_ROUNDS, "ptr": 0,
                        "pick_seconds": DRAFT_PICK_SECONDS,
                        "pick_deadline": _iso(_now() + timedelta(seconds=DRAFT_PICK_SECONDS)),
@@ -959,6 +980,66 @@ def player_by_id(league, pid):
     return None
 
 
+# ---- Draft picks as tradeable assets (for the UPCOMING draft) ----
+def init_picks(league):
+    league["picks"] = [{"id": f"pk{r}_{t['id']}", "round": r, "orig": t["id"], "owner": t["id"]}
+                       for t in league["teams"] for r in range(1, LEAGUE_DRAFT_ROUNDS + 1)]
+    return league["picks"]
+
+
+def pick_by_id(league, pid):
+    return next((p for p in league.get("picks", []) if p["id"] == pid), None)
+
+
+def _pick_value(rnd):
+    return max(2.0, (8 - rnd) * 4.5)             # round 1 ~31.5, round 7 ~4.5
+
+
+def team_picks(league, team_id):
+    if not league.get("picks"):
+        init_picks(league)
+        save_league(league)                     # backfill picks for older leagues
+    teams = {t["id"]: t for t in league["teams"]}
+    out = []
+    for p in league["picks"]:
+        if p["owner"] == team_id:
+            lbl = f"Round {p['round']} pick"
+            if p["orig"] != team_id:
+                lbl += f" (from {teams[p['orig']]['full']})"
+            out.append(dict(p, label=lbl))
+    return sorted(out, key=lambda x: (x["round"], x["orig"]))
+
+
+def _is_pick(aid):
+    return str(aid).startswith("pk")
+
+
+def _asset_owned_by(league, aid, team_id):
+    if _is_pick(aid):
+        p = pick_by_id(league, aid)
+        return bool(p and p["owner"] == team_id)
+    return _owned_by(league, aid, team_id)
+
+
+def _asset_value(league, aid):
+    if _is_pick(aid):
+        p = pick_by_id(league, aid)
+        return _pick_value(p["round"]) if p else 0
+    pl = player_by_id(league, aid)
+    return fk.trade_value(pl) if pl else 0
+
+
+def asset_label(league, aid):
+    if _is_pick(aid):
+        p = pick_by_id(league, aid)
+        teams = {t["id"]: t for t in league["teams"]}
+        if not p:
+            return "Pick"
+        return f"R{p['round']} pick" + (f" (from {teams[p['orig']]['full']})" if p['orig'] != p['owner'] else "")
+    pl = player_by_id(league, aid)
+    return f"{pl['pos']} {pl['name']} ({pl['overall']})" if pl else "—"
+
+
 def trade_partners(league, user_id):
     """Other human GMs (uid, name, team) you can trade with."""
     out = []
@@ -971,9 +1052,10 @@ def trade_partners(league, user_id):
 
 
 def _grade_trade(league, give_ids, get_ids):
-    """Fairness from the PROPOSER's view: value received vs value sent (A..F)."""
-    out = sum(fk.trade_value(player_by_id(league, p)) for p in give_ids if player_by_id(league, p))
-    inc = sum(fk.trade_value(player_by_id(league, p)) for p in get_ids if player_by_id(league, p))
+    """Fairness from the PROPOSER's view: value received vs value sent (A..F).
+    Players and draft picks both count."""
+    out = sum(_asset_value(league, a) for a in give_ids)
+    inc = sum(_asset_value(league, a) for a in get_ids)
     if out <= 0:
         return "C"
     ratio = inc / out
@@ -986,10 +1068,10 @@ def propose_gm_trade(league, from_uid, to_uid, give_ids, get_ids):
     if from_uid not in members or to_uid not in members or from_uid == to_uid:
         return False, "Invalid trade partner."
     from_tid, to_tid = members[from_uid]["team_id"], members[to_uid]["team_id"]
-    give = [pid for pid in give_ids if _owned_by(league, pid, from_tid)]
-    get = [pid for pid in get_ids if _owned_by(league, pid, to_tid)]
+    give = [a for a in give_ids if _asset_owned_by(league, a, from_tid)]
+    get = [a for a in get_ids if _asset_owned_by(league, a, to_tid)]
     if not give or not get:
-        return False, "Pick at least one player from each side."
+        return False, "Pick at least one asset from each side."
     trade = {"id": _new_trade_id(), "from": from_uid, "to": to_uid,
              "from_name": members[from_uid]["name"], "to_name": members[to_uid]["name"],
              "give": give, "get": get, "grade": _grade_trade(league, give, get),
@@ -1005,13 +1087,21 @@ def _apply_gm_trade(league, trade):
     tt = team_by_id(league, league["members"][trade["to"]]["team_id"])
     if not ft or not tt:
         return False
-    if not all(_owned_by(league, p, ft["id"]) for p in trade["give"]) or \
-       not all(_owned_by(league, p, tt["id"]) for p in trade["get"]):
+    if not all(_asset_owned_by(league, a, ft["id"]) for a in trade["give"]) or \
+       not all(_asset_owned_by(league, a, tt["id"]) for a in trade["get"]):
         return False
-    give = [p for p in ft["roster"] if p["id"] in trade["give"]]
-    get = [p for p in tt["roster"] if p["id"] in trade["get"]]
-    ft["roster"] = [p for p in ft["roster"] if p["id"] not in trade["give"]] + get
-    tt["roster"] = [p for p in tt["roster"] if p["id"] not in trade["get"]] + give
+
+    def move(ids, src, dst, dst_tid):
+        for a in ids:
+            if _is_pick(a):
+                pick_by_id(league, a)["owner"] = dst_tid
+            else:
+                pl = next((x for x in src["roster"] if x["id"] == a), None)
+                if pl:
+                    src["roster"] = [x for x in src["roster"] if x["id"] != a]
+                    dst["roster"].append(pl)
+    move(trade["give"], ft, tt, tt["id"])
+    move(trade["get"], tt, ft, ft["id"])
     return True
 
 

@@ -58,7 +58,7 @@
   </div>
 
   {# ---- GM-to-GM trades ---- #}
-  {% macro plist(players) %}{% for p in players %}{% if p %}<span class="fkl-tp">{{ p.pos }} {{ p.name }} <b>{{ p.overall }}</b></span>{% endif %}{% endfor %}{% endmacro %}
+  {% macro plist(items) %}{% for it in items %}<span class="fkl-tp">{{ it }}</span>{% endfor %}{% endmacro %}
 
   {% if trade_box.incoming or trade_box.review %}
   <div class="fkl-card fkl-tradealert">
@@ -102,9 +102,11 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="to" value="{{ partner.uid }}">
         <div class="fkl-tcols">
           <div><div class="fkl-tcolh">You send ({{ team.full }})</div><div class="fkl-tpick">
+            {% for pk in my_picks %}<label class="fkl-chk fkl-chkpk"><input type="checkbox" name="give" value="{{ pk.id }}"><span>🎫 {{ pk.label }}</span></label>{% endfor %}
             {% for p in roster_order %}<label class="fkl-chk"><input type="checkbox" name="give" value="{{ p.id }}"><span>{{ p.pos }} {{ p.name }} · {{ p.overall }}</span></label>{% endfor %}
           </div></div>
           <div><div class="fkl-tcolh">You get ({{ partner.team }})</div><div class="fkl-tpick">
+            {% for pk in partner_picks %}<label class="fkl-chk fkl-chkpk"><input type="checkbox" name="get" value="{{ pk.id }}"><span>🎫 {{ pk.label }}</span></label>{% endfor %}
             {% for p in partner_roster %}<label class="fkl-chk"><input type="checkbox" name="get" value="{{ p.id }}"><span>{{ p.pos }} {{ p.name }} · {{ p.overall }}</span></label>{% endfor %}
           </div></div>
         </div>
@@ -212,6 +214,7 @@
   .fkl-tpick { max-height:260px; overflow-y:auto; border:1px solid rgba(145,168,184,.15); border-radius:9px; padding:6px; }
   .fkl-chk { display:flex; align-items:center; gap:7px; padding:4px 5px; border-radius:6px; font-size:12px; color:var(--text2,#c2cfd8); cursor:pointer; }
   .fkl-chk:hover { background:rgba(74,212,240,.08); } .fkl-chk input { accent-color:#4ad4f0; }
+  .fkl-chkpk span { color:#f5c860; font-weight:700; }
   .fkl-sub2 { color:#f5c860; font-size:12px; font-weight:700; margin:14px 0 6px; }
   .fkl-trow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(145,168,184,.08); font-size:12px; color:var(--text2,#c2cfd8); } .fkl-trow form { margin:0; } .fkl-trow em { font-style:normal; color:#8fa3b0; }
   .fkl-st-accepted { color:#7dffb0; } .fkl-st-vetoed, .fkl-st-rejected { color:#ff9a9a; }

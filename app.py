@@ -29467,14 +29467,16 @@ def franchise_league_team(lid):
     partners = fl.trade_partners(league, uid)
     partner_uid = str(request.args.get('partner', '')).strip()
     partner = next((p for p in partners if p['uid'] == partner_uid), None)
-    partner_roster = []
+    partner_roster, partner_picks = [], []
+    my_picks = fl.team_picks(league, league['members'][uid]['team_id'])
     if partner:
         pt = fl.team_by_id(league, partner['team_id'])
         partner_roster = [_league_avatar(p) for p in sorted(pt['roster'], key=lambda x: -x['overall'])]
+        partner_picks = fl.team_picks(league, partner['team_id'])
 
     def _expand(tr):
-        return dict(tr, give_p=[fl.player_by_id(league, p) for p in tr['give']],
-                    get_p=[fl.player_by_id(league, p) for p in tr['get']])
+        return dict(tr, give_p=[fl.asset_label(league, a) for a in tr['give']],
+                    get_p=[fl.asset_label(league, a) for a in tr['get']])
     tb = fl.trades_for(league, uid)
     trade_box = {k: [_expand(t) for t in v] for k, v in tb.items()}
     return render_template('franchise_league_team.html', league=league, team=team,
@@ -29485,6 +29487,7 @@ def franchise_league_team(lid):
                            power=fk.power_rating(team), cap_used=fk.cap_used(team),
                            cap_total=fk.CAP_TOTAL, partners=partners, partner=partner,
                            partner_roster=partner_roster, trade_box=trade_box, my_uid=uid,
+                           my_picks=my_picks, partner_picks=partner_picks,
                            roster_final=fl.ROSTER_FINAL, fa_open=fl.fa_is_open(league),
                            is_commish=(league['commissioner'] == uid), current_user=current_user)
 

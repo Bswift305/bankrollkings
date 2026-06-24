@@ -40,7 +40,7 @@
     <div class="dr-card">
       <div class="dr-h">On the board</div>
       {% for g in draft.log[:14] %}
-      <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small></div>
+      <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small>{% if g.via %}<small style="color:#f5c860"> · via {{ g.via }}</small>{% endif %}</div>
       {% else %}
       <p class="dr-muted">No picks yet — the clock just started.</p>
       {% endfor %}
@@ -54,7 +54,7 @@
   <div class="dr-card">
     <div class="dr-h">✅ Draft complete — Season {{ league.draft_history[0].season }} rookies</div>
     {% for g in league.draft_history[0].log %}
-    <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small></div>
+    <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small>{% if g.via %}<small style="color:#f5c860"> · via {{ g.via }}</small>{% endif %}</div>
     {% endfor %}
   </div>
   {% else %}
