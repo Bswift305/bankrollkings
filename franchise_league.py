@@ -87,7 +87,7 @@ _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list
                   "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
                   "playoffs": dict, "picks": list, "potw": dict, "all_pro": list,
                   "records": dict, "career_records": dict,
-                  "hall_of_fame": list, "retirements": list,
+                  "hall_of_fame": list, "retirements": list, "news": list,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -343,6 +343,28 @@ def post_message(league, user_id, text):
     return True
 
 
+def _league_news(league, week):
+    """GridIron Network weekly headlines from this game day's events."""
+    items = []
+    rc = league.get("recaps", [])
+    if rc:
+        for line in rc[0]["lines"][:3]:
+            items.append({"tag": "RECAP", "head": line, "body": ""})
+    potw = league.get("potw")
+    if potw and potw.get("week") == week:
+        items.append({"tag": "POTW", "head": f"Player of the Week: {potw['pos']} {potw['name']}",
+                      "body": f"{potw['line']} for the {potw['team']}."})
+    for t in (league.get("trades") or []):
+        if t.get("status") == "accepted" and not t.get("_newsed"):
+            items.append({"tag": "TRADE", "head": f"Trade alert: {t['from_name']} and {t['to_name']} make a deal",
+                          "body": ""})
+            t["_newsed"] = True
+    for line in (league.get("waiver_log") or [])[:2]:
+        items.append({"tag": "WAIVER", "head": line, "body": ""})
+    if items:
+        league["news"] = ([{"week": week, **it} for it in items] + league.get("news", []))[:24]
+
+
 def advance_league(league):
     """Run one game day: sim the current week, advance the clock, reset readiness."""
     if league["status"] == "complete":
@@ -359,6 +381,7 @@ def advance_league(league):
                 ap.append(f"{m['name']}: {note}")
     league["autopilot_log"] = ap[:8]
     _sim_week(league)
+    _league_news(league, league["week"])        # GridIron Network headlines
     league["week"] += 1
     for m in league["members"].values():
         m["ready"] = False

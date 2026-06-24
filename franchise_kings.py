@@ -506,6 +506,7 @@ def sim_season(save):
     save["last_outcome"] = outcome
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
+    generate_news(save)                    # GridIron Network season recap feed
     write_save(save)
     if outcome["status"] == "retained":
         start_draft(save)   # offseason draft opens immediately when you keep your job
@@ -1400,6 +1401,58 @@ def stat_mvp(teams):
                 best, score = {"name": p["name"], "pos": p["pos"], "team": t["full"],
                                "ovr": p["overall"], "line": stat_line(p)}, v
     return best
+
+
+# --------------------------------------------------------------------------- #
+# GridIron Network - the in-game sports network. Turns franchise events into a
+# SportsDesk news feed (champions, MVP, leaders, the draft, trades, retirements,
+# records, owner buzz). Fictional - no real network/marks.
+# --------------------------------------------------------------------------- #
+NETWORK = "GridIron Network"
+
+
+def generate_news(save):
+    """A season-recap news feed from the season just played (solo)."""
+    news = []
+    team = current_team(save)
+    tn = team["full"]
+    season = max(1, save.get("season", 1) - 1)
+
+    def add(tag, head, body=""):
+        news.append({"tag": tag, "head": head, "body": body})
+
+    champ = save.get("last_champion", "")
+    out = save.get("last_outcome") or {}
+    if champ:
+        add("TITLE", f"{champ} are champions", f"{champ} close out Season {season} on top of the league.")
+    mvp = save.get("season_mvp")
+    if mvp:
+        add("MVP", f"{mvp['pos']} {mvp['name']} wins MVP", f"A monster season — {mvp['line']} for the {mvp['team']}.")
+    if out.get("headline"):
+        rec = out.get("record", {})
+        add("TEAM", f"{tn} finish {rec.get('w', '?')}-{rec.get('l', '?')}", out["headline"])
+    for cat in (save.get("leaders") or [])[:3]:
+        r = cat["rows"][0]
+        v = ("%.1f" % r["val"]) if cat["key"] == "sack" else f"{r['val']:,}"
+        add("STAT", f"{r['name']} leads the league in {cat['label']}", f"{v} for the {r['team']}.")
+    for r in (save.get("retirements") or []):
+        if r.get("hof"):
+            add("LEGEND", f"{r['pos']} {r['name']} retires — Hall of Fame bound",
+                f"{r['summary']} across {r['seasons']} seasons. A first-ballot lock.")
+    log = save.get("last_draft_log") or []
+    if log:
+        d = log[0]
+        add("DRAFT", f"{tn} take {d['pos']} {d['name']} in Round {d['round']}",
+            f"Scouted at a {d.get('grade', '?')} grade — {d.get('ovr', '?')} OVR.")
+    lt = save.get("last_trade")
+    if lt and lt.get("ok"):
+        add("TRADE", "Front office swings a trade", lt.get("summary", "A deal gets done."))
+    ap = save.get("all_pro") or []
+    if ap:
+        names = ", ".join(f"{a['pos']} {a['name']}" for a in ap[:3])
+        add("BUZZ", "All-League Team headlined by the league's elite", f"Leading the way: {names}.")
+    save["news"] = news[:14]
+    return save["news"]
 
 
 def all_pro_team(teams):

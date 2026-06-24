@@ -113,6 +113,18 @@
     </div>
     {% endif %}
 
+    {% if news %}
+    <div class="fk-card fk-news">
+      <div class="fk-newshead">📡 GridIron Network <span>· SportsDesk</span></div>
+      {% for n in news[:10] %}
+      <div class="fk-newsitem">
+        <span class="fk-ntag" style="color:{{ '#f5c860' if n.tag in ['TITLE','MVP','POTW','LEGEND','AWARD'] else '#9f96ff' if n.tag=='TRADE' else '#7dffb0' if n.tag=='DRAFT' else '#4ad4f0' }}">{{ n.tag }}</span>
+        <strong>{{ n.head }}</strong>{% if n.body %}<small>{{ n.body }}</small>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if game_log %}
     <div class="fk-card">
       <div class="fk-card-h">🏈 Last season — game log</div>
@@ -578,6 +590,10 @@
   .fk-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
   .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fk-news { border-color:rgba(74,212,240,.4); }
+  .fk-newshead { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; border-bottom:2px solid #4ad4f0; padding-bottom:6px; } .fk-newshead span { color:#7f93a0; font-size:12px; font-weight:400; }
+  .fk-newsitem { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; } .fk-newsitem strong { color:#fff; } .fk-newsitem small { display:block; color:#8fa3b0; font-size:12px; margin-top:2px; }
+  .fk-ntag { font-size:9px; font-weight:800; letter-spacing:.05em; margin-right:6px; }
   .fk-gloscroll { overflow-x:auto; } .fk-gloscroll td { font-size:12px; white-space:nowrap; padding:5px 8px; }
   .fk-glw { color:#7dffb0; } .fk-gll { color:#ff9a9a; }
   .fk-glbest { background:rgba(245,200,96,.08); }

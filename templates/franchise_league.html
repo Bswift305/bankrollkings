@@ -253,6 +253,18 @@
   </div>
   {% endif %}
 
+  {% if league.news %}
+  <div class="fkl-card fkl-news">
+    <div class="fkl-newshead">📡 GridIron Network <span>· SportsDesk</span></div>
+    {% for n in league.news[:10] %}
+    <div class="fkl-newsitem">
+      <span class="fkl-ntag" style="color:{{ '#f5c860' if n.tag in ['TITLE','MVP','POTW','LEGEND','AWARD'] else '#9f96ff' if n.tag=='TRADE' else '#7dffb0' if n.tag=='DRAFT' else '#f5a05a' if n.tag=='WAIVER' else '#4ad4f0' }}">{{ n.tag }}</span>
+      <strong>{{ n.head }}</strong>{% if n.body %}<small>{{ n.body }}</small>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if league.potw and league.potw.name %}
   <div class="fkl-card fkl-potw">
     <div class="fkl-h">⭐ Player of the Week <span class="fkl-recweek">Week {{ league.potw.week }}</span></div>
@@ -333,6 +345,11 @@
   .fkl-potwrow { display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .fkl-potwrow strong { font-size:15px; }
   .fkl-potwline { color:#f5c860; font-weight:800; font-size:13px; white-space:nowrap; }
+  .fkl-news { border-color:rgba(74,212,240,.4); }
+  .fkl-newshead { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; border-bottom:2px solid #4ad4f0; padding-bottom:6px; } .fkl-newshead span { color:#7f93a0; font-size:12px; font-weight:400; }
+  .fkl-newsitem { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
+  .fkl-newsitem strong { color:#fff; } .fkl-newsitem small { display:block; color:#8fa3b0; font-size:12px; margin-top:2px; }
+  .fkl-ntag { font-size:9px; font-weight:800; letter-spacing:.05em; margin-right:6px; }
   .fkl-hof { border-color:rgba(245,200,96,.55); }
   .fkl-hofrow { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); } .fkl-hofrow strong { color:#f5c860; } .fkl-hofrow small { display:block; color:#8fa3b0; font-size:11px; }
   .fkl-po { border-color:rgba(245,200,96,.5); }
