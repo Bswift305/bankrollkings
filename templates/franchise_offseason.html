@@ -21,6 +21,27 @@
   </div>
   {% endif %}
 
+  {% if team_needs is defined %}
+  <details class="os-card os-rostercard" open>
+    <summary class="os-rosterhead">📋 Your roster &amp; needs — Power {{ os_power }} · Cap ${{ os_cap_used }}M/${{ os_cap_total }}M (${{ os_cap_total - os_cap_used }}M free) · {{ os_roster|length }} players</summary>
+    <div class="os-needs">
+      {% for n in team_needs %}
+      <span class="os-need {{ 'os-need-red' if n.need else 'os-need-ok' }}" title="{{ n.grade }} · best {{ n.best }}">{{ n.pos }} <b>{{ n.startavg }}</b>{% if n.need %} ⚠{% endif %}</span>
+      {% endfor %}
+    </div>
+    <div class="os-needhint">Starter-average OVR per spot · ⚠ = upgrade target (under 72) · weakest first. This is what you have and what you need.</div>
+    <div class="os-tscroll os-rosterlist"><table class="os-table">
+      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Last season</th></tr></thead>
+      <tbody>
+      {% for p in os_roster %}
+      <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
+        <td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+        <td style="color:#8fa3b0">{{ p.sl }}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </details>
+  {% endif %}
+
   {# ---------------- SELECT: pick any of the 32 ---------------- #}
   {% if stage == 'select' %}
   <div class="os-hero">
@@ -233,6 +254,18 @@
   .os-pickbtn, .os-btn { cursor:pointer; border:none; border-radius:9px; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); padding:9px 14px; font-size:13px; width:100%; }
   .os-btn-go { padding:14px; font-size:15px; } .os-adv { margin-top:6px; }
   .os-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
+  .os-rostercard { border-color:rgba(74,212,240,.32); }
+  .os-rosterhead { cursor:pointer; font-family:var(--font-display); color:#fff; font-size:14px; list-style:none; }
+  .os-rosterhead::-webkit-details-marker { display:none; }
+  .os-rosterhead::before { content:'▸ '; color:#4ad4f0; }
+  details[open] .os-rosterhead::before { content:'▾ '; }
+  .os-needs { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 6px; }
+  .os-need { font-size:12px; font-weight:700; padding:4px 9px; border-radius:8px; border:1px solid; }
+  .os-need b { font-family:var(--font-display); }
+  .os-need-ok { color:#7dffb0; border-color:rgba(125,255,176,.4); background:rgba(125,255,176,.08); }
+  .os-need-red { color:#ff9a9a; border-color:rgba(255,122,122,.45); background:rgba(255,122,122,.1); }
+  .os-needhint { color:#6b7d8a; font-size:11px; font-style:italic; margin-bottom:8px; }
+  .os-rosterlist { max-height:300px; overflow-y:auto; }
   .os-tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .os-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
   .os-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:5px 7px; border-bottom:1px solid rgba(145,168,184,.18); }

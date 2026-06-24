@@ -1962,6 +1962,26 @@ def demote_player(save, pid):
     return True
 
 
+def team_needs(save):
+    """Positional snapshot - starter-average OVR per spot, graded, weakest first,
+    so you can see at a glance what you have and what you still need."""
+    team = current_team(save)
+    by_pos = {}
+    for p in team["roster"]:
+        by_pos.setdefault(p["pos"], []).append(p)
+    out = []
+    for pos, starters in ROSTER.items():
+        players = sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])
+        startavg = round(sum(p["overall"] for p in players[:starters]) / starters) if players else 0
+        grade = ("Elite" if startavg >= 86 else "Strong" if startavg >= 79 else
+                 "Solid" if startavg >= 72 else "Average" if startavg >= 64 else "NEED")
+        out.append({"pos": pos, "count": len(players), "best": players[0]["overall"] if players else 0,
+                    "startavg": int(startavg), "starters": starters, "grade": grade,
+                    "need": startavg < 72})
+    out.sort(key=lambda x: x["startavg"])      # weakest first
+    return out
+
+
 def rename_player(save, player_id, new_name):
     nm = str(new_name or "").strip()[:40]
     if not nm:

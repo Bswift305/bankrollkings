@@ -29149,6 +29149,16 @@ def franchise_offseason():
         team = fk.current_team(save)
         ctx.update(team=team, power=fk.power_rating(team), ready=fo.ready_to_kick(save),
                    camp_count=fo.camp_count(save), final=fo.ROSTER_FINAL)
+    if stage != 'select':                     # persistent roster + needs panel
+        t = fk.current_team(save)
+        ctx['team_needs'] = fk.team_needs(save)
+        ctx['os_power'] = fk.power_rating(t)
+        ctx['os_cap_used'] = round(fk.cap_used(t))
+        ctx['os_cap_total'] = round(fk.CAP_TOTAL)
+        ctx['os_roster'] = [dict(_league_avatar(p), sl=fk.stat_line(p))
+                            for pos in fk.ROSTER
+                            for p in sorted([x for x in t['roster'] if x['pos'] == pos],
+                                            key=lambda x: -x['overall'])]
     return render_template('franchise_offseason.html', **ctx)
 
 
