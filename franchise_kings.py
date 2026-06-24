@@ -1982,6 +1982,43 @@ def team_needs(save):
     return out
 
 
+def offseason_advice(save, stage):
+    """Stage-aware consultant tips for the offseason's critical decisions."""
+    team = current_team(save)
+    needs = team_needs(save)
+    weak = [n for n in needs if n["need"]][:3]
+    room = round(CAP_TOTAL - cap_used(team))
+    tips = []
+    if stage == "workouts" and weak:
+        ws = ", ".join(f"{n['pos']} {n['startavg']}" for n in weak)
+        tips.append({"icon": "🔎", "title": "Where you're thin", "u": 2,
+                     "detail": f"Going in light at {ws}. Build your free agency + draft plan around these."})
+    elif stage == "resign":
+        exp = [p for p in team["roster"] if p.get("contract", {}).get("years", 9) <= 0 and p["overall"] >= 78]
+        if exp:
+            s = max(exp, key=lambda p: p["overall"])
+            tips.append({"icon": "✍", "title": f"Re-sign {s['pos']} {s['name']} ({s['overall']})", "u": 3,
+                         "detail": "A quality starter is set to walk - lock him up before the market opens."})
+    elif stage == "free_agency" and weak:
+        ws = ", ".join(f"{n['pos']} ({n['startavg']})" for n in weak)
+        tips.append({"icon": "🎯", "title": f"Attack your biggest hole: {weak[0]['pos']}", "u": 3,
+                     "detail": f"Weakest spots: {ws}. You have ${room}M in cap room - spend it where it hurts most."})
+        fas = sorted([p for p in save.get("free_agents", []) if p["pos"] == weak[0]["pos"]],
+                     key=lambda p: -p["overall"])
+        if fas:
+            f = fas[0]
+            tips.append({"icon": "💰", "title": f"Target {f['pos']} {f['name']} ({f['overall']} OVR)", "u": 3,
+                         "detail": f"Best {weak[0]['pos']} on the market - fills your top need."})
+    elif stage == "draft":
+        ws = ", ".join(n["pos"] for n in weak) if weak else "none glaring"
+        tips.append({"icon": "🎓", "title": "Take the best player available", "u": 3,
+                     "detail": f"Your needs: {ws}. Don't reach - draft BPA and break ties toward need."})
+    elif stage == "cuts":
+        tips.append({"icon": "✂", "title": "Keep your best 53", "u": 3,
+                     "detail": "Cut camp bodies and low-value depth behind your starters - protect young upside."})
+    return tips
+
+
 def rename_player(save, player_id, new_name):
     nm = str(new_name or "").strip()[:40]
     if not nm:

@@ -29159,6 +29159,11 @@ def franchise_offseason():
                             for pos in fk.ROSTER
                             for p in sorted([x for x in t['roster'] if x['pos'] == pos],
                                             key=lambda x: -x['overall'])]
+        assist = save['gm'].get('assist', 'Full')
+        ctx['assist'] = assist
+        if assist != 'Off':                   # stage-aware GM consultant
+            tips = fk.offseason_advice(save, stage) + fk.consultant_advice(save)
+            ctx['advice'] = tips[:(5 if assist == 'Full' else 2)]
     return render_template('franchise_offseason.html', **ctx)
 
 
@@ -29463,6 +29468,8 @@ def franchise_assist():
     _, save = _franchise_save()
     if save:
         fk.set_assist(save, str(request.form.get('level', 'Full')).strip())
+    if request.form.get('back') == 'offseason':
+        return redirect(url_for('franchise_offseason'))
     return redirect(url_for('franchise_hub', tab='dashboard'))
 
 

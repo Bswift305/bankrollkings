@@ -40,6 +40,28 @@
       {% endfor %}
       </tbody></table></div>
   </details>
+
+  <div class="os-card os-consult">
+    <div class="os-consulthead">🧠 GM Consultant
+      <span class="os-assist">
+        {% for lvl in ['Off','Light','Full'] %}
+        <form method="post" action="{{ url_for('franchise_assist') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="level" value="{{ lvl }}"><input type="hidden" name="back" value="offseason">
+          <button class="os-assistbtn {{ 'on' if assist == lvl }}">{{ lvl }}</button>
+        </form>
+        {% endfor %}
+      </span>
+    </div>
+    {% if assist == 'Off' %}
+      <p class="os-needhint" style="margin:8px 0 0">Consultant off — you're running this offseason on instinct. Bragging rights await.</p>
+    {% else %}
+      {% for a in advice %}
+      <div class="os-tip"><span class="os-tipic">{{ a.icon }}</span><div><strong>{{ a.title }}</strong><small>{{ a.detail }}</small></div></div>
+      {% else %}
+      <p class="os-needhint" style="margin:8px 0 0">Nothing urgent right now — your moves look sound.</p>
+      {% endfor %}
+    {% endif %}
+  </div>
   {% endif %}
 
   {# ---------------- SELECT: pick any of the 32 ---------------- #}
@@ -266,6 +288,14 @@
   .os-need-red { color:#ff9a9a; border-color:rgba(255,122,122,.45); background:rgba(255,122,122,.1); }
   .os-needhint { color:#6b7d8a; font-size:11px; font-style:italic; margin-bottom:8px; }
   .os-rosterlist { max-height:300px; overflow-y:auto; }
+  .os-consult { border-color:rgba(159,150,255,.4); }
+  .os-consulthead { font-family:var(--font-display); color:#fff; font-size:16px; }
+  .os-assist { float:right; display:inline-flex; gap:4px; } .os-assist form { margin:0; }
+  .os-assistbtn { cursor:pointer; border:1px solid rgba(159,150,255,.4); background:transparent; color:#b9b2ff; font-size:11px; font-weight:800; padding:3px 9px; border-radius:7px; }
+  .os-assistbtn.on { background:linear-gradient(135deg,#9f96ff,#c7c1ff); color:#0a0820; border-color:#c7c1ff; }
+  .os-tip { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .os-tipic { font-size:16px; line-height:1.3; }
+  .os-tip strong { color:#fff; display:block; font-size:14px; } .os-tip small { color:#8fa3b0; font-size:12px; line-height:1.5; }
   .os-tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .os-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
   .os-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:5px 7px; border-bottom:1px solid rgba(145,168,184,.18); }
