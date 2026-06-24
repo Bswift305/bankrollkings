@@ -386,11 +386,72 @@ def complete_season(league):
     return league
 
 
+def _advance_players(league):
+    """Off-season player progression - CIRCUMSTANCES MATTER. Every player ages a
+    year and develops via his trait toward his ceiling; the worst teams' young
+    players get a development bump (catch-up) while the best teams' veterans regress
+    a touch, and a top-tier training facility (a human GM's) adds growth. So the
+    same rookie rises faster on a rebuilding/well-run club than on a stacked one."""
+    rng = random.Random(league["seed"] + league.get("season", 1) * 53 + 11)
+    sc = league.get("standings_cache") or []
+    rank = {s["id"]: i for i, s in enumerate(sc)}          # 0 = best finish
+    n = max(1, len(league["teams"]))
+    fac = {}                                               # team_id -> facility level (humans)
+    for m in league.get("members", {}).values():
+        fac[m["team_id"]] = (m.get("business") or {}).get("facility", 1)
+    for t in league["teams"]:
+        r = rank.get(t["id"], n // 2)
+        tier_bonus = 1 if r >= (2 * n) // 3 else 0          # bottom third develops faster
+        regress = r <= max(2, n // 6)                       # top teams' vets dip
+        fac_bonus = 1 if fac.get(t["id"], 1) >= 3 else 0    # L3+ facility (human GMs)
+        for p in t["roster"]:
+            p["age"] = p.get("age", 25) + 1
+            fk._develop(p, rng, tier_bonus + fac_bonus)
+            if regress and p["age"] >= 30:
+                p["overall"] = max(45, p["overall"] - 1)
+            c = p.get("contract")
+            if c and "years" in c:
+                c["years"] = max(0, c["years"] - 1)
+
+
+def _autocut_all(league):
+    """Enforce the 53-man roster: keep the best (position-weighted) 53, the rest are
+    released to free agency. Humans can cut first on their team page; this is the
+    safety net so every season kicks off with legal rosters."""
+    for t in league["teams"]:
+        if len(t["roster"]) <= ROSTER_FINAL:
+            continue
+        t["roster"].sort(key=lambda p: -(p["overall"] + fk.POS_WEIGHT.get(p["pos"], 1.0)))
+        cut = t["roster"][ROSTER_FINAL:]
+        t["roster"] = t["roster"][:ROSTER_FINAL]
+        league.setdefault("free_agents", []).extend(cut)
+
+
+def release_player(league, user_id, player_id):
+    """Direct cut to free agency (used to trim down to 53 in the offseason)."""
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return False
+    t = team_by_id(league, m["team_id"])
+    p = next((x for x in t["roster"] if x["id"] == player_id), None)
+    if not p:
+        return False
+    t["roster"] = [x for x in t["roster"] if x["id"] != player_id]
+    league.setdefault("free_agents", []).append(p)
+    save_league(league)
+    return True
+
+
 def start_next_season(league):
-    """Commissioner rolls the league into a fresh season: rosters + members carry
-    over, records/schedule/recaps reset, the clock restarts."""
+    """Commissioner rolls the league into a fresh season: players age + develop
+    (circumstances matter), rosters trim to 53, fresh FAs hit the market, then
+    records/schedule/recaps reset and the clock restarts."""
     if league.get("status") != "complete":
         return False
+    _advance_players(league)                          # age + trait development (uses last finish)
+    _autocut_all(league)                              # enforce 53-man rosters
+    rng = random.Random(league["seed"] + league.get("season", 1) * 17 + 3)
+    league["free_agents"] = (league.get("free_agents", []) + fk._gen_fa_pool(rng, 24))[-80:]
     league["season"] = league.get("season", 1) + 1
     league["week"] = 1
     league["status"] = "active"
@@ -415,8 +476,9 @@ def start_next_season(league):
 # available) by the lazy-advance/tick, so the draft never stalls. AI teams pick
 # instantly. Reuses fk's prospect class + scouting + rookie conversion.
 # --------------------------------------------------------------------------- #
-LEAGUE_DRAFT_ROUNDS = 5
+LEAGUE_DRAFT_ROUNDS = 7        # full NFL-length draft
 DRAFT_PICK_SECONDS = 90
+ROSTER_FINAL = 53              # the 53-man active roster
 
 
 def _draft_on_clock(draft):

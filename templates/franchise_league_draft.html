@@ -63,7 +63,7 @@
   {% if is_commish %}
   <form method="post" action="{{ url_for('franchise_league_draft_start', lid=league.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button class="dr-pick dr-start">🏈 Start Live Rookie Draft ({{ 5 }} rounds, worst record picks first)</button>
+    <button class="dr-pick dr-start">🏈 Start Live Rookie Draft (7 rounds, worst record picks first)</button>
   </form>
   {% endif %}
   {% endif %}
