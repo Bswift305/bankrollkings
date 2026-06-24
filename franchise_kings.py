@@ -452,6 +452,8 @@ def sim_season(save):
                         save["seed"] + save["season"], season=save["season"])
     save["leaders"] = stat_leaders(save["teams"])
     save["season_mvp"] = stat_mvp(save["teams"])
+    save["all_pro"] = all_pro_team(save["teams"])
+    update_records(save, save["teams"], save["season"])
 
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
 
@@ -1373,6 +1375,60 @@ def stat_mvp(teams):
                 best, score = {"name": p["name"], "pos": p["pos"], "team": t["full"],
                                "ovr": p["overall"], "line": stat_line(p)}, v
     return best
+
+
+def all_pro_team(teams):
+    """The statistical best at each position this season -> a 1st-team All-Pro."""
+    pool = [(p, t) for t in teams for p in t["roster"]]
+    s = lambda p: p.get("stats") or {}
+
+    def pick(pos, scorer, n=1):
+        cand = [(p, t) for p, t in pool if p["pos"] == pos and (p.get("stats") or pos == "OL")]
+        cand.sort(key=lambda x: -scorer(x[0]))
+        return [{"pos": pos, "name": p["name"], "team": t.get("name", t["full"]), "pid": p["id"],
+                 "detail": stat_line(p) or f"{p['overall']} OVR"} for p, t in cand[:n]]
+
+    out = []
+    out += pick("QB", lambda p: s(p).get("pass_yd", 0) + s(p).get("pass_td", 0) * 25 - s(p).get("int", 0) * 12)
+    out += pick("RB", lambda p: s(p).get("rush_yd", 0) + s(p).get("rush_td", 0) * 15 + s(p).get("rec_yd", 0) * 0.5)
+    out += pick("WR", lambda p: s(p).get("rec_yd", 0) + s(p).get("rec_td", 0) * 15, n=2)
+    out += pick("TE", lambda p: s(p).get("rec_yd", 0) + s(p).get("rec_td", 0) * 15)
+    out += pick("OL", lambda p: p["overall"])
+    out += pick("DL", lambda p: s(p).get("sack", 0) * 10 + s(p).get("tackle", 0))
+    out += pick("LB", lambda p: s(p).get("sack", 0) * 8 + s(p).get("tackle", 0) + s(p).get("def_int", 0) * 8)
+    out += pick("CB", lambda p: s(p).get("def_int", 0) * 12 + s(p).get("pd", 0) * 2 + s(p).get("tackle", 0))
+    out += pick("S", lambda p: s(p).get("def_int", 0) * 12 + s(p).get("tackle", 0))
+    out += pick("K", lambda p: s(p).get("pts", 0))
+    return out
+
+
+_RECORD_CATS = [("Passing Yards", "pass_yd"), ("Passing TDs", "pass_td"), ("Rushing Yards", "rush_yd"),
+                ("Rushing TDs", "rush_td"), ("Receiving Yards", "rec_yd"), ("Receptions", "rec"),
+                ("Sacks", "sack"), ("Interceptions", "def_int")]
+
+
+def update_records(store, teams, season):
+    """Update single-season + career league records from this season's stats."""
+    recs = store.setdefault("records", {})
+    crecs = store.setdefault("career_records", {})
+    for t in teams:
+        tname = t.get("name", t["full"])
+        for p in t["roster"]:
+            sd = p.get("stats") or {}
+            for label, key in _RECORD_CATS:
+                v = sd.get(key, 0)
+                if v and (key not in recs or v > recs[key]["value"]):
+                    recs[key] = {"label": label, "value": v, "holder": p["name"],
+                                 "pos": p["pos"], "team": tname, "season": season}
+            csum = {}
+            for r in p.get("career", []):
+                for _, key in _RECORD_CATS:
+                    csum[key] = csum.get(key, 0) + r.get(key, 0)
+            for label, key in _RECORD_CATS:
+                v = round(csum.get(key, 0), 1)
+                if v and (key not in crecs or v > crecs[key]["value"]):
+                    crecs[key] = {"label": label, "value": v, "holder": p["name"],
+                                  "pos": p["pos"], "team": tname}
 
 
 def stat_line(p):

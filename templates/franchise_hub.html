@@ -104,6 +104,31 @@
     </div>
     {% endif %}
 
+    {% if all_pro %}
+    <div class="fk-card fk-leaders">
+      <div class="fk-card-h">🏅 All-League Team</div>
+      <div class="fk-leadgrid">
+        {% for ap in all_pro %}
+        <div class="fk-leadrow"><span class="fk-leadn">{{ ap.pos }}</span> <a href="{{ url_for('franchise_player', pid=ap.pid) }}" style="color:#fff;text-decoration:none">{{ ap.name }}</a><small>{{ ap.team }} · {{ ap.detail }}</small></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if records %}
+    <div class="fk-card fk-leaders">
+      <div class="fk-card-h">📜 Records Book</div>
+      <div class="fk-leadgrid">
+        <div><div class="fk-leadh">Single Season</div>
+          {% for k, r in records.items() %}<div class="fk-leadrow">{{ r.label }} <b>{{ "%.1f"|format(r.value) if k == 'sack' else "{:,}".format(r.value) }}</b><small>{{ r.holder }} · S{{ r.season }}</small></div>{% endfor %}
+        </div>
+        <div><div class="fk-leadh">Career</div>
+          {% for k, r in career_records.items() %}<div class="fk-leadrow">{{ r.label }} <b>{{ "%.1f"|format(r.value) if k == 'sack' else "{:,}".format(r.value) }}</b><small>{{ r.holder }}</small></div>{% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="fk-card">
       <div class="fk-card-h">This season</div>
       {% if last_outcome %}

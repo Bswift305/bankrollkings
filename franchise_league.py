@@ -85,7 +85,8 @@ _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
                   "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
-                  "playoffs": dict, "picks": list, "potw": dict,
+                  "playoffs": dict, "picks": list, "potw": dict, "all_pro": list,
+                  "records": dict, "career_records": dict,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -454,6 +455,8 @@ def complete_season(league):
     fk.assign_season_stats(league["teams"], {s["id"]: s["w"] for s in sc},
                            league["seed"] + league.get("season", 1), season=league.get("season", 1))
     league["leaders"] = fk.stat_leaders(league["teams"])
+    league["all_pro"] = fk.all_pro_team(league["teams"])
+    fk.update_records(league, league["teams"], league.get("season", 1))
     mvp = fk.stat_mvp(league["teams"]) or {}        # MVP earned by production, not rating
     best_gm = None
     for uid, m in league.get("members", {}).items():

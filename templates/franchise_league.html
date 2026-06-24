@@ -182,6 +182,35 @@
   </div>
   {% endif %}
 
+  {% if league.all_pro %}
+  <div class="fkl-card">
+    <div class="fkl-h">🏅 All-League Team</div>
+    <div class="fkl-leadgrid">
+      {% for ap in league.all_pro %}
+      <div class="fkl-leadrow"><span class="fkl-leadn">{{ ap.pos }}</span> <a href="{{ url_for('franchise_league_player', lid=league.id, pid=ap.pid) }}" style="color:#fff;text-decoration:none">{{ ap.name }}</a> <small>{{ ap.team }} · {{ ap.detail }}</small></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if league.records %}
+  <div class="fkl-card">
+    <div class="fkl-h">📜 Records Book</div>
+    <div class="fkl-leadgrid">
+      <div class="fkl-leadcat"><div class="fkl-leadh">Single Season</div>
+        {% for k, r in league.records.items() %}
+        <div class="fkl-leadrow">{{ r.label }} <b>{{ "%.1f"|format(r.value) if k == 'sack' else "{:,}".format(r.value) }}</b><small>{{ r.holder }} · S{{ r.season }}</small></div>
+        {% endfor %}
+      </div>
+      <div class="fkl-leadcat"><div class="fkl-leadh">Career</div>
+        {% for k, r in league.career_records.items() %}
+        <div class="fkl-leadrow">{{ r.label }} <b>{{ "%.1f"|format(r.value) if k == 'sack' else "{:,}".format(r.value) }}</b><small>{{ r.holder }}</small></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if league.history %}
   <div class="fkl-card fkl-dynasty">
     <div class="fkl-h">🏆 Dynasty — champions &amp; awards</div>

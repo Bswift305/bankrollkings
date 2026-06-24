@@ -29008,6 +29008,9 @@ def _franchise_view(save):
         'advice': fk.consultant_advice(save),
         'leaders': save.get('leaders'),
         'season_mvp': save.get('season_mvp'),
+        'all_pro': save.get('all_pro'),
+        'records': save.get('records'),
+        'career_records': save.get('career_records'),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
         'avatar_url': (url_for('static', filename='franchise_avatars/'
