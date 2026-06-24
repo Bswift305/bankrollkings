@@ -56,6 +56,76 @@
     {% endif %}
   </div>
 
+  {# ---- GM-to-GM trades ---- #}
+  {% macro plist(players) %}{% for p in players %}{% if p %}<span class="fkl-tp">{{ p.pos }} {{ p.name }} <b>{{ p.overall }}</b></span>{% endif %}{% endfor %}{% endmacro %}
+
+  {% if trade_box.incoming or trade_box.review %}
+  <div class="fkl-card fkl-tradealert">
+    {% if trade_box.review %}
+    <div class="fkl-h">🧑‍⚖️ Commissioner review ({{ trade_box.review|length }})</div>
+    {% for t in trade_box.review %}
+    <div class="fkl-trade">
+      <div class="fkl-tinfo"><strong>{{ t.from_name }}</strong> gives {{ plist(t.give_p) }} <span>→</span> <strong>{{ t.to_name }}</strong> gives {{ plist(t.get_p) }}</div>
+      <div class="fkl-tact">
+        <form method="post" action="{{ url_for('franchise_league_trade_review', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="trade_id" value="{{ t.id }}"><input type="hidden" name="approve" value="1"><button class="fkl-mini fkl-ok">Approve</button></form>
+        <form method="post" action="{{ url_for('franchise_league_trade_review', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="trade_id" value="{{ t.id }}"><button class="fkl-mini fkl-no">Veto</button></form>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% for t in trade_box.incoming %}
+    <div class="fkl-h">📥 Trade offer from {{ t.from_name }} <span class="fkl-grade fkl-grade-{{ t.grade }}">grade {{ t.grade }} for them</span></div>
+    <div class="fkl-trade">
+      <div class="fkl-tinfo">You get {{ plist(t.give_p) }} <span>↔</span> You give {{ plist(t.get_p) }}</div>
+      <div class="fkl-tact">
+        <form method="post" action="{{ url_for('franchise_league_trade_respond', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="trade_id" value="{{ t.id }}"><input type="hidden" name="accept" value="1"><button class="fkl-mini fkl-ok">Accept</button></form>
+        <form method="post" action="{{ url_for('franchise_league_trade_respond', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="trade_id" value="{{ t.id }}"><button class="fkl-mini fkl-no">Reject</button></form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="fkl-card">
+    <div class="fkl-h">🔁 Propose a trade</div>
+    {% if not partners %}
+      <p class="fkl-muted" style="margin:0">No other human GMs in this league yet — invite a friend with the league code to trade.</p>
+    {% else %}
+      <div class="fkl-partners">
+        {% for p in partners %}
+        <a class="fkl-partner {{ 'on' if partner and partner.uid==p.uid }}" href="{{ url_for('franchise_league_team', lid=league.id, partner=p.uid) }}#trade">{{ p.name }}<small>{{ p.team }}</small></a>
+        {% endfor %}
+      </div>
+      {% if partner %}
+      <form method="post" action="{{ url_for('franchise_league_trade_propose', lid=league.id) }}" id="trade">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="to" value="{{ partner.uid }}">
+        <div class="fkl-tcols">
+          <div><div class="fkl-tcolh">You send ({{ team.full }})</div><div class="fkl-tpick">
+            {% for p in roster_order %}<label class="fkl-chk"><input type="checkbox" name="give" value="{{ p.id }}"><span>{{ p.pos }} {{ p.name }} · {{ p.overall }}</span></label>{% endfor %}
+          </div></div>
+          <div><div class="fkl-tcolh">You get ({{ partner.team }})</div><div class="fkl-tpick">
+            {% for p in partner_roster %}<label class="fkl-chk"><input type="checkbox" name="get" value="{{ p.id }}"><span>{{ p.pos }} {{ p.name }} · {{ p.overall }}</span></label>{% endfor %}
+          </div></div>
+        </div>
+        <button class="fkl-btn">Send offer to {{ partner.name }}</button>
+      </form>
+      {% else %}
+      <p class="fkl-muted" style="margin:8px 0 0">Pick a GM above to build an offer.</p>
+      {% endif %}
+    {% endif %}
+    {% if trade_box.outgoing %}
+    <div class="fkl-sub2">Pending offers you sent</div>
+    {% for t in trade_box.outgoing %}
+    <div class="fkl-trow"><span>To {{ t.to_name }}: {{ plist(t.give_p) }} for {{ plist(t.get_p) }} <em>({{ t.status }})</em></span>
+      <form method="post" action="{{ url_for('franchise_league_trade_cancel', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="trade_id" value="{{ t.id }}"><button class="fkl-mini fkl-no">Cancel</button></form></div>
+    {% endfor %}
+    {% endif %}
+    {% if trade_box.history %}
+    <div class="fkl-sub2">Recent</div>
+    {% for t in trade_box.history %}<div class="fkl-trow"><span>{{ t.from_name }} ↔ {{ t.to_name }} — <em class="fkl-st-{{ t.status }}">{{ t.status }}</em></span></div>{% endfor %}
+    {% endif %}
+  </div>
+
   <div class="fkl-card">
     <div class="fkl-h">Roster · auto depth chart</div>
     <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th></tr></thead>
@@ -92,5 +162,26 @@
   .fkl-lockcard { border-color:rgba(245,200,96,.35); }
   .fkl-locked { color:#7dffb0; font-size:14px; } .fkl-locked strong { color:#aaffcf; }
   .fkl-muted { color:#7f93a0; font-size:13px; margin-top:8px; display:inline-block; } .fkl-muted a, a.fkl-muted { color:#4ad4f0; text-decoration:none; }
+  .fkl-tradealert { border-color:rgba(245,200,96,.4); }
+  .fkl-trade { padding:8px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .fkl-tinfo { color:var(--text2,#c2cfd8); font-size:13px; line-height:1.7; } .fkl-tinfo span { color:#4ad4f0; font-weight:800; padding:0 4px; } .fkl-tinfo strong { color:#fff; }
+  .fkl-tp { display:inline-block; background:rgba(74,212,240,.1); border-radius:6px; padding:1px 7px; margin:2px 3px 2px 0; font-size:12px; } .fkl-tp b { color:#9fe9ff; }
+  .fkl-tact { display:flex; gap:8px; margin-top:8px; } .fkl-tact form { margin:0; }
+  .fkl-mini { cursor:pointer; border-radius:7px; font-size:12px; font-weight:800; padding:6px 14px; border:1px solid; }
+  .fkl-ok { background:rgba(125,255,176,.14); color:#7dffb0; border-color:rgba(125,255,176,.45); }
+  .fkl-no { background:rgba(255,122,122,.12); color:#ff9a9a; border-color:rgba(255,122,122,.4); }
+  .fkl-grade { float:right; font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px; background:rgba(145,168,184,.15); }
+  .fkl-grade-A, .fkl-grade-B { color:#7dffb0; background:rgba(125,255,176,.14); } .fkl-grade-D, .fkl-grade-F { color:#ff9a9a; background:rgba(255,122,122,.12); }
+  .fkl-partners { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .fkl-partner { text-decoration:none; border:1px solid rgba(74,212,240,.3); border-radius:10px; padding:8px 12px; color:#cfe8f0; font-weight:700; font-size:13px; }
+  .fkl-partner small { display:block; color:#7f93a0; font-weight:500; font-size:11px; } .fkl-partner.on { background:rgba(74,212,240,.16); border-color:#4ad4f0; color:#fff; }
+  .fkl-tcols { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  .fkl-tcolh { color:#9fe9ff; font-size:12px; font-weight:800; margin-bottom:6px; }
+  .fkl-tpick { max-height:260px; overflow-y:auto; border:1px solid rgba(145,168,184,.15); border-radius:9px; padding:6px; }
+  .fkl-chk { display:flex; align-items:center; gap:7px; padding:4px 5px; border-radius:6px; font-size:12px; color:var(--text2,#c2cfd8); cursor:pointer; }
+  .fkl-chk:hover { background:rgba(74,212,240,.08); } .fkl-chk input { accent-color:#4ad4f0; }
+  .fkl-sub2 { color:#f5c860; font-size:12px; font-weight:700; margin:14px 0 6px; }
+  .fkl-trow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(145,168,184,.08); font-size:12px; color:var(--text2,#c2cfd8); } .fkl-trow form { margin:0; } .fkl-trow em { font-style:normal; color:#8fa3b0; }
+  .fkl-st-accepted { color:#7dffb0; } .fkl-st-vetoed, .fkl-st-rejected { color:#ff9a9a; }
 </style>
 {% endblock %}

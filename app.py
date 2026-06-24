@@ -624,6 +624,10 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_join',
     'franchise_league_hub',
     'franchise_league_team',
+    'franchise_league_trade_propose',
+    'franchise_league_trade_respond',
+    'franchise_league_trade_review',
+    'franchise_league_trade_cancel',
     'franchise_league_ready',
     'franchise_league_negotiate',
     'franchise_league_advance',
@@ -29426,13 +29430,82 @@ def franchise_league_team(lid):
     roster_order = [_league_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])]
     fa_id = str(request.args.get('fa', '')).strip()
     nego_fa = next((p for p in league['free_agents'] if p['id'] == fa_id), None) if fa_id else None
+    # GM-to-GM trade context
+    partners = fl.trade_partners(league, uid)
+    partner_uid = str(request.args.get('partner', '')).strip()
+    partner = next((p for p in partners if p['uid'] == partner_uid), None)
+    partner_roster = []
+    if partner:
+        pt = fl.team_by_id(league, partner['team_id'])
+        partner_roster = [_league_avatar(p) for p in sorted(pt['roster'], key=lambda x: -x['overall'])]
+
+    def _expand(tr):
+        return dict(tr, give_p=[fl.player_by_id(league, p) for p in tr['give']],
+                    get_p=[fl.player_by_id(league, p) for p in tr['get']])
+    tb = fl.trades_for(league, uid)
+    trade_box = {k: [_expand(t) for t in v] for k, v in tb.items()}
     return render_template('franchise_league_team.html', league=league, team=team,
                            roster_order=roster_order,
                            free_agents=sorted(league['free_agents'], key=lambda p: -p['overall']),
                            nego_fa=nego_fa, last_nego=league['members'][uid].get('last_nego'),
                            mem=league['members'][uid], deadline=fl.deadline_label(league),
                            power=fk.power_rating(team), cap_used=fk.cap_used(team),
-                           cap_total=fk.CAP_TOTAL, current_user=current_user)
+                           cap_total=fk.CAP_TOTAL, partners=partners, partner=partner,
+                           partner_roster=partner_roster, trade_box=trade_box,
+                           is_commish=(league['commissioner'] == uid), current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/trade/propose', methods=['POST'])
+def franchise_league_trade_propose(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    to_uid = str(request.form.get('to', '')).strip()
+    give = request.form.getlist('give')
+    get = request.form.getlist('get')
+    if league and uid in league.get('members', {}):
+        fl.propose_gm_trade(league, uid, to_uid, give, get)
+    return redirect(url_for('franchise_league_team', lid=lid, partner=to_uid))
+
+
+@app.route('/franchise/league/<lid>/trade/respond', methods=['POST'])
+def franchise_league_trade_respond(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.respond_trade(league, str(request.form.get('trade_id', '')).strip(), uid,
+                         bool(request.form.get('accept')))
+    return redirect(url_for('franchise_league_team', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/trade/review', methods=['POST'])
+def franchise_league_trade_review(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league:
+        fl.review_trade(league, str(request.form.get('trade_id', '')).strip(), uid,
+                        bool(request.form.get('approve')))
+    return redirect(url_for('franchise_league_team', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/trade/cancel', methods=['POST'])
+def franchise_league_trade_cancel(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league:
+        fl.cancel_trade(league, str(request.form.get('trade_id', '')).strip(), uid)
+    return redirect(url_for('franchise_league_team', lid=lid))
 
 
 @app.route('/franchise/league/<lid>/ready', methods=['POST'])

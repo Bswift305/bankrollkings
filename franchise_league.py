@@ -340,6 +340,150 @@ def set_ready(league, user_id, ready=True):
 
 
 # --------------------------------------------------------------------------- #
+# GM-to-GM trades: one human GM offers players to another; the target accepts or
+# rejects; if a (third-party) commissioner runs the league the accepted deal goes
+# to commish review before it processes (veto power). Reuses fk.trade_value to
+# grade fairness for both sides.
+# --------------------------------------------------------------------------- #
+def _new_trade_id():
+    return "tr" + "".join(random.choices(string.ascii_lowercase + string.digits, k=7))
+
+
+def _owned_by(league, pid, team_id):
+    t = team_by_id(league, team_id)
+    return bool(t and any(p["id"] == pid for p in t["roster"]))
+
+
+def player_by_id(league, pid):
+    for t in league["teams"]:
+        for p in t["roster"]:
+            if p["id"] == pid:
+                return p
+    return None
+
+
+def trade_partners(league, user_id):
+    """Other human GMs (uid, name, team) you can trade with."""
+    out = []
+    for uid, m in league.get("members", {}).items():
+        if uid == user_id:
+            continue
+        t = team_by_id(league, m["team_id"])
+        out.append({"uid": uid, "name": m["name"], "team": t["full"] if t else "", "team_id": m["team_id"]})
+    return out
+
+
+def _grade_trade(league, give_ids, get_ids):
+    """Fairness from the PROPOSER's view: value received vs value sent (A..F)."""
+    out = sum(fk.trade_value(player_by_id(league, p)) for p in give_ids if player_by_id(league, p))
+    inc = sum(fk.trade_value(player_by_id(league, p)) for p in get_ids if player_by_id(league, p))
+    if out <= 0:
+        return "C"
+    ratio = inc / out
+    return ("A" if ratio >= 1.25 else "B" if ratio >= 1.05 else "C" if ratio >= 0.9
+            else "D" if ratio >= 0.75 else "F")
+
+
+def propose_gm_trade(league, from_uid, to_uid, give_ids, get_ids):
+    members = league.get("members", {})
+    if from_uid not in members or to_uid not in members or from_uid == to_uid:
+        return False, "Invalid trade partner."
+    from_tid, to_tid = members[from_uid]["team_id"], members[to_uid]["team_id"]
+    give = [pid for pid in give_ids if _owned_by(league, pid, from_tid)]
+    get = [pid for pid in get_ids if _owned_by(league, pid, to_tid)]
+    if not give or not get:
+        return False, "Pick at least one player from each side."
+    trade = {"id": _new_trade_id(), "from": from_uid, "to": to_uid,
+             "from_name": members[from_uid]["name"], "to_name": members[to_uid]["name"],
+             "give": give, "get": get, "grade": _grade_trade(league, give, get),
+             "status": "offered", "created": _iso(_now())}
+    league.setdefault("trades", []).insert(0, trade)
+    league["trades"] = league["trades"][:40]
+    save_league(league)
+    return True, "Offer sent."
+
+
+def _apply_gm_trade(league, trade):
+    ft = team_by_id(league, league["members"][trade["from"]]["team_id"])
+    tt = team_by_id(league, league["members"][trade["to"]]["team_id"])
+    if not ft or not tt:
+        return False
+    if not all(_owned_by(league, p, ft["id"]) for p in trade["give"]) or \
+       not all(_owned_by(league, p, tt["id"]) for p in trade["get"]):
+        return False
+    give = [p for p in ft["roster"] if p["id"] in trade["give"]]
+    get = [p for p in tt["roster"] if p["id"] in trade["get"]]
+    ft["roster"] = [p for p in ft["roster"] if p["id"] not in trade["give"]] + get
+    tt["roster"] = [p for p in tt["roster"] if p["id"] not in trade["get"]] + give
+    return True
+
+
+def _has_third_party_commish(league, trade):
+    c = league.get("commissioner")
+    return bool(c and c in league.get("members", {}) and c not in (trade["from"], trade["to"]))
+
+
+def respond_trade(league, trade_id, user_id, accept):
+    tr = next((t for t in league.get("trades", []) if t["id"] == trade_id), None)
+    if not tr or tr["status"] != "offered" or tr["to"] != user_id:
+        return False, "Trade not available."
+    if not accept:
+        tr["status"] = "rejected"
+        save_league(league)
+        return True, "Trade rejected."
+    if _has_third_party_commish(league, tr):
+        tr["status"] = "review"
+        save_league(league)
+        return True, "Accepted - awaiting commissioner approval."
+    if _apply_gm_trade(league, tr):
+        tr["status"] = "accepted"
+        save_league(league)
+        return True, "Trade complete!"
+    tr["status"] = "expired"
+    save_league(league)
+    return False, "Players no longer available."
+
+
+def review_trade(league, trade_id, commish_uid, approve):
+    if commish_uid != league.get("commissioner"):
+        return False, "Only the commissioner can review trades."
+    tr = next((t for t in league.get("trades", []) if t["id"] == trade_id), None)
+    if not tr or tr["status"] != "review":
+        return False, "Nothing to review."
+    if not approve:
+        tr["status"] = "vetoed"
+        save_league(league)
+        return True, "Trade vetoed."
+    if _apply_gm_trade(league, tr):
+        tr["status"] = "accepted"
+        save_league(league)
+        return True, "Trade approved."
+    tr["status"] = "expired"
+    save_league(league)
+    return False, "Players no longer available."
+
+
+def cancel_trade(league, trade_id, user_id):
+    tr = next((t for t in league.get("trades", []) if t["id"] == trade_id), None)
+    if tr and tr["status"] == "offered" and tr["from"] == user_id:
+        tr["status"] = "cancelled"
+        save_league(league)
+        return True
+    return False
+
+
+def trades_for(league, user_id):
+    trades = league.get("trades", [])
+    incoming = [t for t in trades if t["to"] == user_id and t["status"] == "offered"]
+    outgoing = [t for t in trades if t["from"] == user_id and t["status"] in ("offered", "review")]
+    review = ([t for t in trades if t["status"] == "review"]
+              if user_id == league.get("commissioner") else [])
+    history = [t for t in trades if t["status"] in ("accepted", "rejected", "vetoed", "cancelled", "expired")
+               and (t["from"] == user_id or t["to"] == user_id or user_id == league.get("commissioner"))][:8]
+    return {"incoming": incoming, "outgoing": outgoing, "review": review, "history": history}
+
+
+# --------------------------------------------------------------------------- #
 # Auto-pilot: if a GM doesn't lock in before game day, the AI makes ONE
 # philosophy-driven roster move for them so the team doesn't stagnate.
 # --------------------------------------------------------------------------- #
