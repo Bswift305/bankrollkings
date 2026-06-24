@@ -104,6 +104,15 @@
     </div>
     {% endif %}
 
+    {% if hall_of_fame %}
+    <div class="fk-card fk-hof">
+      <div class="fk-card-h">🏛️ Hall of Fame <span style="float:right;font-size:12px;color:#f5c860">{{ hall_of_fame|length }} legend{{ 's' if hall_of_fame|length != 1 }}</span></div>
+      {% for h in hall_of_fame[:12] %}
+      <div class="fk-hofrow"><strong>{{ h.pos }} {{ h.name }}</strong><small>peak {{ h.peak }} · {{ h.seasons }} seasons{% if h.all_pro %} · {{ h.all_pro }}× All-Pro{% endif %} · {{ h.summary }}</small></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if all_pro %}
     <div class="fk-card fk-leaders">
       <div class="fk-card-h">🏅 All-League Team</div>
@@ -552,6 +561,8 @@
   .fk-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
   .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
+  .fk-hof { border-color:rgba(245,200,96,.5); }
+  .fk-hofrow { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); } .fk-hofrow strong { color:#f5c860; } .fk-hofrow small { display:block; color:#8fa3b0; font-size:11px; }
   .fk-exp strong, .fk-outcome p strong { color:#fff; }
   .fk-muted { color:var(--text2,#9fb0bc); font-size:13px; line-height:1.55; }
   .fk-outcome { padding:10px 12px; border-radius:10px; background:rgba(10,18,26,.7); border:1px solid rgba(145,168,184,.18); margin-bottom:10px; }

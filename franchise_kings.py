@@ -500,6 +500,9 @@ def _advance_year(save):
             p["age"] += 1
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
+    save["retirements"] = process_retirements(save["teams"], save["season"],
+                                              save.setdefault("hall_of_fame", []))
+    save["hall_of_fame"] = save["hall_of_fame"][:40]
     save["free_agents"] = _gen_fa_pool(rng)
 
 
@@ -1385,8 +1388,11 @@ def all_pro_team(teams):
     def pick(pos, scorer, n=1):
         cand = [(p, t) for p, t in pool if p["pos"] == pos and (p.get("stats") or pos == "OL")]
         cand.sort(key=lambda x: -scorer(x[0]))
+        chosen = cand[:n]
+        for p, _t in chosen:
+            p["all_pro"] = p.get("all_pro", 0) + 1       # career accolade (feeds the HoF)
         return [{"pos": pos, "name": p["name"], "team": t.get("name", t["full"]), "pid": p["id"],
-                 "detail": stat_line(p) or f"{p['overall']} OVR"} for p, t in cand[:n]]
+                 "detail": stat_line(p) or f"{p['overall']} OVR"} for p, t in chosen]
 
     out = []
     out += pick("QB", lambda p: s(p).get("pass_yd", 0) + s(p).get("pass_td", 0) * 25 - s(p).get("int", 0) * 12)
@@ -1429,6 +1435,68 @@ def update_records(store, teams, season):
                 if v and (key not in crecs or v > crecs[key]["value"]):
                     crecs[key] = {"label": label, "value": v, "holder": p["name"],
                                   "pos": p["pos"], "team": tname}
+
+
+# --------------------------------------------------------------------------- #
+# Retirement + Hall of Fame. Aging players retire (stars last longer); the truly
+# great are inducted into the league's Hall of Fame.
+# --------------------------------------------------------------------------- #
+def _career_sums(p):
+    cs = {}
+    for r in p.get("career", []):
+        for k in ("pass_yd", "pass_td", "rush_yd", "rush_td", "rec_yd", "rec_td", "sack", "def_int"):
+            cs[k] = cs.get(k, 0) + r.get(k, 0)
+    return cs
+
+
+def _hof_summary(p):
+    cs = _career_sums(p)
+    if cs.get("pass_yd"):
+        return f"{cs['pass_yd']:,} pass yd · {cs['pass_td']} TD"
+    if cs.get("rush_yd"):
+        return f"{cs['rush_yd']:,} rush yd · {cs['rush_td']} TD"
+    if cs.get("rec_yd"):
+        return f"{cs['rec_yd']:,} rec yd · {cs['rec_td']} TD"
+    if cs.get("sack"):
+        return f"{round(cs['sack'], 1)} career sacks"
+    if cs.get("def_int"):
+        return f"{cs['def_int']} career INT"
+    return f"{len(p.get('career', []))} seasons"
+
+
+def _hof_worthy(p):
+    peak = p.get("peak_ovr", p["overall"])
+    seasons = len(p.get("career", []))
+    ap = p.get("all_pro", 0)
+    if seasons < 3:
+        return False
+    return ap >= 3 or (ap >= 1 and peak >= 88) or (peak >= 90 and seasons >= 7)
+
+
+def process_retirements(teams, season, hof_list):
+    """Age players out (stars last longer); induct the greats into the HoF.
+    Returns the list of this offseason's retirees (with an 'hof' flag)."""
+    retired = []
+    for t in teams:
+        keep = []
+        for p in t["roster"]:
+            peak = max(p.get("peak_ovr", p["overall"]), p["overall"])
+            p["peak_ovr"] = peak
+            age = p.get("age", 27)
+            retire_age = 34 + max(0, (peak - 75) // 5)        # 75->34, 90->37, 95->38
+            # retire when washed up, ancient, or clearly past prime (declined 6+ and old)
+            if p["overall"] < 50 or age >= 40 or (age >= retire_age and p["overall"] <= peak - 6):
+                entry = {"name": p["name"], "pos": p["pos"], "team": t.get("name", t["full"]),
+                         "peak": peak, "seasons": len(p.get("career", [])),
+                         "all_pro": p.get("all_pro", 0), "summary": _hof_summary(p),
+                         "retired": season, "hof": _hof_worthy(p)}
+                retired.append(entry)
+                if entry["hof"]:
+                    hof_list.insert(0, entry)
+            else:
+                keep.append(p)
+        t["roster"] = keep
+    return retired
 
 
 def stat_line(p):

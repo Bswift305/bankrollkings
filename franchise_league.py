@@ -87,6 +87,7 @@ _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list
                   "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
                   "playoffs": dict, "picks": list, "potw": dict, "all_pro": list,
                   "records": dict, "career_records": dict,
+                  "hall_of_fame": list, "retirements": list,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -666,6 +667,9 @@ def _advance_players(league):
             if c and "years" in c:
                 c["years"] = max(0, c["years"] - 1)
     risers.sort(key=lambda x: -x["gain"])
+    league["retirements"] = fk.process_retirements(            # age players out + HoF
+        league["teams"], league.get("season", 1), league.setdefault("hall_of_fame", []))
+    league["hall_of_fame"] = league["hall_of_fame"][:40]
     return risers[:10]
 
 

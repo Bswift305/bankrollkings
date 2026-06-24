@@ -29011,6 +29011,8 @@ def _franchise_view(save):
         'all_pro': save.get('all_pro'),
         'records': save.get('records'),
         'career_records': save.get('career_records'),
+        'hall_of_fame': save.get('hall_of_fame'),
+        'retirements': save.get('retirements'),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
         'avatar_url': (url_for('static', filename='franchise_avatars/'

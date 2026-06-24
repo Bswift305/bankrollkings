@@ -57,6 +57,7 @@
         <p class="os-note">Biggest risers in camp this offseason:</p>
         {% for r in os_risers[:8] %}<div class="fkl-res">{{ r.pos }} {{ r.name }} <small style="color:#7f93a0">({{ r.team }})</small> <span style="color:#7dffb0;font-weight:700">+{{ r.gain }} → {{ r.ovr }}</span></div>
         {% else %}<div class="fkl-res">Tallying development…</div>{% endfor %}
+        {% if league.retirements %}<p class="os-note" style="margin-top:10px">🪦 Retired: {{ league.retirements|length }}{% for r in league.retirements[:5] %} · {{ r.pos }} {{ r.name }}{% if r.hof %} 🏛️{% endif %}{% endfor %}</p>{% endif %}
       {% elif os_phase == 'cutdown' %}
         <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}" style="background:linear-gradient(135deg,#ff8a8a,#ffb3a0)">✂ Cut to 53 on your team page — or rosters auto-trim at the deadline →</a>
       {% endif %}
@@ -211,6 +212,16 @@
   </div>
   {% endif %}
 
+  {% if league.hall_of_fame %}
+  <div class="fkl-card fkl-hof">
+    <div class="fkl-h">🏛️ Hall of Fame <span class="fkl-recweek">{{ league.hall_of_fame|length }} legend{{ 's' if league.hall_of_fame|length != 1 }}</span></div>
+    {% for h in league.hall_of_fame[:14] %}
+    <div class="fkl-hofrow"><strong>{{ h.pos }} {{ h.name }}</strong>
+      <small>peak {{ h.peak }} · {{ h.seasons }} seasons{% if h.all_pro %} · {{ h.all_pro }}× All-Pro{% endif %} · {{ h.summary }}</small></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if league.history %}
   <div class="fkl-card fkl-dynasty">
     <div class="fkl-h">🏆 Dynasty — champions &amp; awards</div>
@@ -322,6 +333,8 @@
   .fkl-potwrow { display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .fkl-potwrow strong { font-size:15px; }
   .fkl-potwline { color:#f5c860; font-weight:800; font-size:13px; white-space:nowrap; }
+  .fkl-hof { border-color:rgba(245,200,96,.55); }
+  .fkl-hofrow { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); } .fkl-hofrow strong { color:#f5c860; } .fkl-hofrow small { display:block; color:#8fa3b0; font-size:11px; }
   .fkl-po { border-color:rgba(245,200,96,.5); }
   .fkl-sb { background:rgba(245,200,96,.12); border:1px solid rgba(245,200,96,.35); border-radius:9px; padding:9px 12px; font-size:13px; color:var(--text2,#c2cfd8); margin-bottom:12px; } .fkl-sb b { color:#f5c860; }
   .fkl-pgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
