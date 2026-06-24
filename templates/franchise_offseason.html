@@ -35,7 +35,7 @@
       <tbody>
       {% for p in os_roster %}
       <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
-        <td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+        <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
         <td style="color:#8fa3b0">{{ p.sl }}</td></tr>
       {% endfor %}
       </tbody></table></div>
@@ -121,7 +121,7 @@
       {% for p in report %}
         <tr>
           <td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
-          <td>{{ p.name }} <span class="os-num">#{{ p.number }}</span></td>
+          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="os-num">#{{ p.number }}</span></td>
           <td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td><td>{{ p.potential }}</td>
           <td><span class="os-traj os-traj-{{ p.traj }}">{{ p.tag }}</span></td>
           <td>{% if p.expiring %}<span class="os-exp">EXPIRING</span>{% else %}{{ p.years }}y left{% endif %}</td>
@@ -155,7 +155,7 @@
       <p class="os-sub">{{ expiring|length }} expiring contract{{ 's' if expiring|length != 1 }}. Re-sign your core or let them walk.</p>
       <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>OVR</th><th>Wants</th><th></th></tr></thead><tbody>
       {% for p in expiring %}
-        <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
+        <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
           <td><a class="os-mini" href="{{ url_for('franchise_offseason', p=p.id) }}">Negotiate</a></td></tr>
       {% endfor %}
@@ -181,7 +181,7 @@
     {% else %}
       <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
       {% for p in free_agents %}
-        <tr><td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
+        <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.overall }}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
           <td><a class="os-mini" href="{{ url_for('franchise_offseason', fa=p.id) }}">Negotiate</a></td></tr>
       {% endfor %}
@@ -224,7 +224,7 @@
     <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %}</p>
     <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th></th></tr></thead><tbody>
     {% for p in roster %}
-      <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td>{{ p.name }} <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+      <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
         <td><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form></td></tr>
     {% endfor %}
     </tbody></table></div>

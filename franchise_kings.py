@@ -396,7 +396,10 @@ def _roll_injuries(save, rng):
         chance = base.get(p.get("injury_risk", "Low"), 0.1) * med_factor + max(0, p["age"] - 29) * 0.01
         if rng.random() < chance:
             weeks = max(2, int(rng.randint(2, 11) * (0.7 + med_factor * 0.3)))
-            out.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"], "weeks": min(weeks, REG_GAMES)})
+            weeks = min(weeks, REG_GAMES)
+            p["inj_history"] = p.get("inj_history", 0) + 1          # career injuries (scouts care)
+            p["inj_weeks"] = p.get("inj_weeks", 0) + weeks          # career games missed
+            out.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"], "weeks": weeks})
     return out
 
 

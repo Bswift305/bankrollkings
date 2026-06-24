@@ -29358,17 +29358,56 @@ def franchise_avatar_remove():
     return redirect(url_for('franchise_hub', tab='dashboard'))
 
 
-def _player_profile(teams, pid):
+def _scout_read(p):
+    """A scout's read: durability (injury history), trajectory, and ceiling."""
+    age = p.get('age', 27)
+    ovr = p['overall']
+    pot = p.get('potential', ovr)
+    inj = p.get('inj_history', 0)
+    miss = p.get('inj_weeks', 0)
+    risk = p.get('injury_risk', 'Low')
+    if inj == 0 and risk == 'Low':
+        dur = "Iron man — no injuries, low risk"
+    elif inj == 0:
+        dur = f"Healthy so far · {risk} injury risk"
+    elif inj <= 2:
+        dur = f"{inj} career injur{'y' if inj == 1 else 'ies'}, {miss} games missed · {risk} risk"
+    else:
+        dur = f"Injury-prone — {inj} injuries, {miss} games missed · {risk} risk"
+    if age <= 24 and pot - ovr >= 5:
+        traj = "Ascending — hasn't hit his ceiling"
+    elif age >= 31:
+        traj = "Veteran — watch for age decline"
+    elif pot > ovr:
+        traj = "Still developing"
+    else:
+        traj = "In his prime"
+    ceil = f"{pot} ({'+%d upside' % (pot - ovr) if pot > ovr else 'at his ceiling'})"
+    return [("Durability", dur), ("Trajectory", traj), ("Ceiling", ceil)]
+
+
+def _player_ctx(p, team_full, is_fa=False):
+    sub = (f"Free Agent · {p['pos']} · Age {p.get('age', '?')}" if is_fa
+           else f"{p['pos']} · #{p.get('number', '—')} · {team_full}")
+    return {'p': p, 'prospect': False,
+            'colors': fk.team_colors(team_full) if team_full else {'primary': '#1b2a36', 'secondary': '#4ad4f0'},
+            'crest': fk.team_crest_svg(team_full, 60) if team_full else '',
+            'sub': sub, 'r1': p['overall'], 'r1l': 'OVR',
+            'r2': p.get('potential', p['overall']), 'r2l': 'POT',
+            'stat_rows': fk.stat_table(p), 'value': fk.trade_value(p),
+            'career': fk.career_table(p), 'scout': _scout_read(p),
+            'injuries': p.get('inj_history', 0), 'inj_weeks': p.get('inj_weeks', 0),
+            'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
+
+
+def _player_profile(teams, pid, free_agents=None):
     for t in teams:
         for p in t['roster']:
             if p['id'] == pid:
-                return {'p': p, 'prospect': False, 'colors': fk.team_colors(t['full']),
-                        'crest': fk.team_crest_svg(t['full'], 60),
-                        'sub': f"{p['pos']} · #{p.get('number', '—')} · {t['full']}",
-                        'r1': p['overall'], 'r1l': 'OVR', 'r2': p.get('potential', p['overall']), 'r2l': 'POT',
-                        'stat_rows': fk.stat_table(p), 'value': fk.trade_value(p),
-                        'career': fk.career_table(p),
-                        'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
+                return _player_ctx(p, t['full'])
+    for fa in (free_agents or []):
+        if fa['id'] == pid:
+            return _player_ctx(fa, None, is_fa=True)
     return None
 
 
@@ -29378,7 +29417,8 @@ def _prospect_profile(draft, pid):
             return {'p': pr, 'prospect': True, 'colors': {'primary': '#3a2d6b', 'secondary': '#9f96ff'},
                     'crest': '', 'sub': f"Draft Prospect · {pr['pos']} · Age {pr.get('age', '?')}",
                     'r1': pr.get('grade', 0), 'r1l': 'GRD', 'r2': pr.get('pot_grade', 0), 'r2l': 'POT',
-                    'stat_rows': [], 'value': 0, 'career': None,
+                    'stat_rows': [], 'value': 0, 'career': None, 'injuries': 0, 'inj_weeks': 0,
+                    'scout': _scout_read(dict(pr, overall=pr.get('grade', 0), potential=pr.get('pot_grade', 0))),
                     'trait_blurb': fk.PERSONALITIES.get(pr.get('personality'), {}).get('blurb', '')}
     return None
 
@@ -29388,7 +29428,7 @@ def franchise_player(pid):
     current_user, save = _franchise_save()
     if not save:
         return redirect(url_for('franchise_new'))
-    prof = _player_profile(save['teams'], pid)
+    prof = _player_profile(save['teams'], pid, save.get('free_agents'))
     if not prof:
         return redirect(url_for('franchise_hub', tab='roster'))
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
@@ -29403,7 +29443,7 @@ def franchise_league_player(lid, pid):
     league = fl.load_league(lid)
     if not league:
         return render_error_page(404, 'League not found', 'That league code is not valid.')
-    prof = _player_profile(league['teams'], pid)
+    prof = _player_profile(league['teams'], pid, league.get('free_agents'))
     if not prof:
         return redirect(url_for('franchise_league_hub', lid=lid))
     return render_template('franchise_player.html',
