@@ -28,6 +28,7 @@
 
   <div class="fkl-card">
     <div class="fkl-h">Free agents — negotiate with their agents</div>
+    {% if not fa_open %}<div class="fkl-nego" style="border-color:rgba(245,200,96,.4)">🔒 The market is closed right now — <strong>free-agent signing opens during the Free Agency window</strong> of the offseason.</div>{% endif %}
     {% if last_nego and last_nego.ok %}
       <div class="fkl-nego fkl-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}">
         <strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>

@@ -633,6 +633,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_release',
     'franchise_league_claim',
     'franchise_league_post',
+    'franchise_league_offseason_advance',
+    'franchise_league_tag',
     'franchise_league_draft',
     'franchise_league_draft_start',
     'franchise_league_draft_pick',
@@ -29414,11 +29416,21 @@ def franchise_league_hub(lid):
     league = fl.check_and_advance(league)   # lazy real-time advance on view
     mem = fl.my_membership(league, uid)
     my_team = fl.team_by_id(league, mem['team_id']) if mem else None
+    os_ctx = {}
+    if (league.get('offseason') or {}).get('active'):
+        os = league['offseason']
+        os_ctx = dict(
+            os_active=True, os_phase=fl.offseason_phase(league),
+            os_phases=fl.offseason_progress(league), os_deadline=fl.offseason_deadline_label(league),
+            os_taggable=[_league_avatar(p) for p in fl.taggable_players(league, uid)] if mem else [],
+            os_tag_used=(uid in (os.get('tags') or {})),
+            os_top_fas=sorted(league.get('free_agents', []), key=lambda p: -p['overall'])[:8],
+            os_risers=os.get('risers', []))
     return render_template('franchise_league.html', league=league, mem=mem, my_team=my_team,
                            is_commish=(league['commissioner'] == uid),
                            deadline=fl.deadline_label(league),
                            power=fk.power_rating(my_team) if my_team else 0,
-                           open_count=len(fl.open_team_ids(league)), current_user=current_user)
+                           open_count=len(fl.open_team_ids(league)), current_user=current_user, **os_ctx)
 
 
 def _league_avatar(p):
@@ -29471,7 +29483,7 @@ def franchise_league_team(lid):
                            power=fk.power_rating(team), cap_used=fk.cap_used(team),
                            cap_total=fk.CAP_TOTAL, partners=partners, partner=partner,
                            partner_roster=partner_roster, trade_box=trade_box, my_uid=uid,
-                           roster_final=fl.ROSTER_FINAL,
+                           roster_final=fl.ROSTER_FINAL, fa_open=fl.fa_is_open(league),
                            is_commish=(league['commissioner'] == uid), current_user=current_user)
 
 
@@ -29599,6 +29611,27 @@ def franchise_league_draft_pick(lid):
     return redirect(url_for('franchise_league_draft', lid=lid))
 
 
+@app.route('/franchise/league/<lid>/offseason/advance', methods=['POST'])
+def franchise_league_offseason_advance(lid):
+    current_user = get_current_user()
+    league = fl.load_league(lid)
+    if current_user and league and league['commissioner'] == str(current_user.get('user_id', '') or ''):
+        fl.advance_offseason(league)
+    return redirect(url_for('franchise_league_hub', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/tag', methods=['POST'])
+def franchise_league_tag(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.franchise_tag(league, uid, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_league_hub', lid=lid))
+
+
 @app.route('/franchise/league/<lid>/next-season', methods=['POST'])
 def franchise_league_next_season(lid):
     current_user = get_current_user()
@@ -29652,7 +29685,7 @@ def franchise_league_negotiate(lid):
     uid = str(current_user.get('user_id', '') or '')
     league = fl.load_league(lid)
     pid = str(request.form.get('player_id', '')).strip()
-    if league and uid in league.get('members', {}):
+    if league and uid in league.get('members', {}) and fl.fa_is_open(league):
         save = fl.member_save(league, uid)
         fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
         fl.sync_member(league, uid, save)

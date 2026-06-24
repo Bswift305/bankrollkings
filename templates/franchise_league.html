@@ -5,6 +5,7 @@
 {% block betslip %}{% endblock %}
 {% block workflow_toolbar %}{% endblock %}
 {% block content %}
+{% set os_active = os_active if os_active is defined else False %}
 <section class="fkl-wrap">
   <div class="fkl-hero">
     <div class="fkl-kicker">{{ league.name }} · {{ league.status|upper }}</div>
@@ -13,7 +14,7 @@
     <p class="fkl-dead">⏱ {{ deadline }} · game day every {{ league.cadence_days }} day{{ 's' if league.cadence_days != 1 }} (auto)</p>
     {% else %}
     <p class="fkl-dead">🏆 Champion: {{ league.champion_name or (league.standings_cache[0].full if league.standings_cache else '—') }}</p>
-    {% if is_commish %}
+    {% if is_commish and not os_active %}
     <form method="post" action="{{ url_for('franchise_league_next_season', lid=league.id) }}" style="margin-top:10px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="fkl-btn fkl-btn-sm" style="width:auto">▶ Start Season {{ (league.season or 1) + 1 }} (rosters carry over)</button>
@@ -21,6 +22,54 @@
     {% endif %}
     {% endif %}
   </div>
+
+  {% if os_active %}
+  {% set cur = (os_phases | selectattr('state','equalto','current') | list | first) %}
+  <div class="fkl-card fkl-osnow">
+    <div class="fkl-h">🏈 Offseason — {{ league.season or 1 }} season wrapped</div>
+    <div class="os-track">
+      {% for p in os_phases %}
+      <div class="os-step os-{{ p.state }}"><span class="os-ico">{{ p.icon }}</span><span class="os-lbl">{{ p.title }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="os-cur">
+      <div class="os-curh">{{ cur.icon }} {{ cur.title }} <span class="fkl-recweek">⏱ {{ os_deadline }}</span></div>
+      <p class="fkl-muted" style="margin:2px 0 10px">{{ cur.blurb }}</p>
+
+      {% if os_phase == 'tag' and mem %}
+        {% if os_tag_used %}<p class="os-note">✓ You've used your franchise tag this offseason.</p>
+        {% elif os_taggable %}
+          <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th>Expiring player</th><th>Pos</th><th>OVR</th><th></th></tr></thead><tbody>
+          {% for p in os_taggable %}
+            <tr><td>{{ p.name }}</td><td>{{ p.pos }}</td><td style="color:#fff">{{ p.overall }}</td>
+              <td><form method="post" action="{{ url_for('franchise_league_tag', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fkl-mini fkl-ok">Tag</button></form></td></tr>
+          {% endfor %}
+          </tbody></table></div>
+        {% else %}<p class="os-note">No expiring players to tag this year.</p>{% endif %}
+      {% elif os_phase == 'tamper' %}
+        <p class="os-note">Top free agents on the board — signing opens when free agency does:</p>
+        {% for p in os_top_fas %}<div class="fkl-res">{{ p.pos }} {{ p.name }} — {{ p.overall }} OVR</div>{% endfor %}
+      {% elif os_phase == 'free_agency' %}
+        <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}">💰 Free agency is OPEN — sign players on your team page →</a>
+      {% elif os_phase == 'draft' %}
+        <a class="fkl-draftbanner" href="{{ url_for('franchise_league_draft', lid=league.id) }}">🔴 The draft is LIVE — enter the draft room →</a>
+      {% elif os_phase == 'otas' %}
+        <p class="os-note">Biggest risers in camp this offseason:</p>
+        {% for r in os_risers[:8] %}<div class="fkl-res">{{ r.pos }} {{ r.name }} <small style="color:#7f93a0">({{ r.team }})</small> <span style="color:#7dffb0;font-weight:700">+{{ r.gain }} → {{ r.ovr }}</span></div>
+        {% else %}<div class="fkl-res">Tallying development…</div>{% endfor %}
+      {% elif os_phase == 'cutdown' %}
+        <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}" style="background:linear-gradient(135deg,#ff8a8a,#ffb3a0)">✂ Cut to 53 on your team page — or rosters auto-trim at the deadline →</a>
+      {% endif %}
+
+      {% if is_commish %}
+      <form method="post" action="{{ url_for('franchise_league_offseason_advance', lid=league.id) }}" style="margin-top:12px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="fkl-btn fkl-btn-sm fkl-btn-ghost">⏭ Advance to next window (Commissioner)</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   {% if mem %}
   <div class="fkl-card fkl-myteam">
@@ -31,9 +80,9 @@
   <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}">⚙ Manage my team — roster &amp; free agency →</a>
   {% endif %}
 
-  {% if league.draft.get('active') %}
+  {% if league.draft.get('active') and not os_active %}
   <a class="fkl-draftbanner" href="{{ url_for('franchise_league_draft', lid=league.id) }}">🔴 LIVE ROOKIE DRAFT IN PROGRESS — enter the draft room →</a>
-  {% elif league.status == 'complete' %}
+  {% elif league.status == 'complete' and not os_active %}
   <a class="fkl-manage" href="{{ url_for('franchise_league_draft', lid=league.id) }}" style="background:linear-gradient(135deg,#7dffb0,#b6ffd2)">🏈 Live Rookie Draft{{ ' (results)' if league.draft_history else '' }} →</a>
   {% endif %}
 
@@ -175,6 +224,14 @@
   .fkl-pow { font-family:var(--font-display); font-size:30px; color:#4ad4f0; text-align:center; } .fkl-pow span { display:block; font-size:10px; color:#7f93a0; letter-spacing:.1em; }
   .fkl-manage { display:block; text-align:center; text-decoration:none; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-radius:11px; padding:13px; margin-bottom:12px; }
   .fkl-draftbanner { display:block; text-align:center; text-decoration:none; font-weight:800; color:#fff; background:linear-gradient(135deg,#7a1d1d,#c23b3b); border:1px solid #ff7a7a; border-radius:11px; padding:14px; margin-bottom:12px; animation:fkpulse 1.6s ease-in-out infinite; }
+  .fkl-osnow { border-color:rgba(245,200,96,.45); }
+  .os-track { display:flex; gap:3px; overflow-x:auto; padding:4px 0 12px; }
+  .os-step { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 8px; border-radius:9px; min-width:64px; opacity:.45; }
+  .os-step .os-ico { font-size:15px; } .os-step .os-lbl { font-size:9px; text-align:center; color:#b7c6d0; }
+  .os-done { opacity:1; } .os-done .os-lbl { color:#7dffb0; }
+  .os-current { opacity:1; background:rgba(245,200,96,.14); border:1px solid rgba(245,200,96,.5); } .os-current .os-lbl { color:#f5c860; font-weight:800; }
+  .os-curh { font-family:var(--font-display); color:#fff; font-size:17px; }
+  .os-note { color:#9fe9ff; font-size:13px; margin:2px 0 8px; }
   @keyframes fkpulse { 0%,100%{ box-shadow:0 0 0 rgba(255,122,122,0); } 50%{ box-shadow:0 0 18px rgba(255,122,122,.5); } }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }

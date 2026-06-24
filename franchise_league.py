@@ -84,7 +84,7 @@ def _new_code():
 _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list,
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
-                  "draft": dict, "draft_history": list,
+                  "draft": dict, "draft_history": list, "offseason": dict,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -382,7 +382,165 @@ def complete_season(league):
         "mvp_team": mvp_team, "mvp_ovr": mvp["overall"] if mvp else 0,
         "best_gm": best_gm})
     league["champion_name"] = champ["full"]
+    begin_offseason(league)                 # roll straight into the phased offseason
+    return league
+
+
+# --------------------------------------------------------------------------- #
+# The phased, NFL-calendar OFFSEASON. After a season ends the league walks a real
+# sequence of windows, each on the real-time clock (auto-advances on its deadline,
+# or the commissioner pushes it forward): Franchise Tag -> Legal Tampering -> Free
+# Agency -> Draft -> OTAs/Minicamp (development) -> Cut-Down Day -> next kickoff.
+# --------------------------------------------------------------------------- #
+OFFSEASON_PHASES = [
+    {"key": "tag",         "title": "Franchise Tag",   "icon": "🏷",
+     "blurb": "Tag one expiring player to keep him a year at a premium salary."},
+    {"key": "tamper",      "title": "Legal Tampering", "icon": "🤝",
+     "blurb": "Scout the market - signing opens when free agency does."},
+    {"key": "free_agency", "title": "Free Agency",     "icon": "💰",
+     "blurb": "The market is open - sign free agents from your team page."},
+    {"key": "draft",       "title": "The Draft",       "icon": "🎓",
+     "blurb": "The 7-round rookie draft - worst record picks first."},
+    {"key": "otas",        "title": "OTAs & Minicamp", "icon": "📈",
+     "blurb": "Players age and develop toward their ceilings."},
+    {"key": "cutdown",     "title": "Cut-Down Day",    "icon": "✂",
+     "blurb": "Every roster trims to the 53-man limit, then the season kicks off."},
+]
+OFFSEASON_KEYS = [p["key"] for p in OFFSEASON_PHASES]
+
+
+def begin_offseason(league):
+    league["offseason"] = {"active": True, "phase": "tag", "tags": {}, "risers": [],
+                           "phase_deadline": _iso(_now() + timedelta(days=league["cadence_days"]))}
     save_league(league)
+    return league
+
+
+def offseason_phase(league):
+    return (league.get("offseason") or {}).get("phase")
+
+
+def offseason_progress(league):
+    cur = offseason_phase(league)
+    ci = OFFSEASON_KEYS.index(cur) if cur in OFFSEASON_KEYS else 0
+    return [dict(p, state=("done" if i < ci else "current" if i == ci else "todo"))
+            for i, p in enumerate(OFFSEASON_PHASES)]
+
+
+def offseason_deadline_label(league):
+    os = league.get("offseason") or {}
+    secs = (_parse(os.get("phase_deadline", _iso(_now()))) - _now()).total_seconds()
+    if secs <= 0:
+        return "advancing…"
+    d, rem = divmod(int(secs), 86400)
+    h = rem // 3600
+    return f"{d}d {h}h left in this window" if d else f"{h}h left in this window"
+
+
+def _expected_tag(p):
+    return round(max(6.0, (max(0, p["overall"] - 60) ** 1.5) / 6.0), 1)
+
+
+def taggable_players(league, user_id):
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return []
+    t = team_by_id(league, m["team_id"])
+    return sorted([p for p in t["roster"] if p.get("contract", {}).get("years", 9) <= 1],
+                  key=lambda p: -p["overall"])[:12]
+
+
+def franchise_tag(league, user_id, player_id):
+    os = league.get("offseason") or {}
+    if os.get("phase") != "tag":
+        return False, "The franchise-tag window is closed."
+    if user_id in os.get("tags", {}):
+        return False, "You've already used your tag this offseason."
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return False, "Not in this league."
+    p = next((x for x in team_by_id(league, m["team_id"])["roster"] if x["id"] == player_id), None)
+    if not p:
+        return False, "Player not found."
+    c = p.setdefault("contract", {"years": 1, "aav": 1.0, "guaranteed": 1.0})
+    c["aav"] = round(max(c.get("aav", 1.0) * 1.3, _expected_tag(p)), 1)
+    c["years"], c["guaranteed"] = 1, c["aav"]
+    p["tagged"] = True
+    os.setdefault("tags", {})[user_id] = player_id
+    save_league(league)
+    return True, f"Franchise-tagged {p['name']} (${c['aav']:.0f}M, 1 yr)."
+
+
+def fa_is_open(league):
+    """Signing is open in-season and only during the Free-Agency window of the offseason."""
+    os = league.get("offseason") or {}
+    return (not os.get("active")) or os.get("phase") == "free_agency"
+
+
+def _finalize_offseason(league):
+    rng = random.Random(league["seed"] + league.get("season", 1) * 17 + 3)
+    league["free_agents"] = (league.get("free_agents", []) + fk._gen_fa_pool(rng, 24))[-80:]
+    league.pop("offseason", None)
+    league["season"] = league.get("season", 1) + 1
+    league["week"] = 1
+    league["status"] = "active"
+    for t in league["teams"]:
+        t["record"] = {"w": 0, "l": 0}
+    league["schedule"] = fk.make_schedule(league["seed"] + league["season"],
+                                          [t["id"] for t in league["teams"]])
+    league["standings_cache"], league["results_log"], league["recaps"] = [], [], []
+    league.pop("power_rank_prev", None)
+    for m in league["members"].values():
+        m["ready"] = False
+    league["next_deadline"] = _iso(_now() + timedelta(days=league["cadence_days"]))
+    save_league(league)
+
+
+def _advance_offseason_phase(league):
+    os = league.get("offseason")
+    if not os or not os.get("active"):
+        return
+    cur = os["phase"]
+    if cur == "cutdown":
+        _autocut_all(league)
+        _finalize_offseason(league)
+        return
+    nxt = OFFSEASON_KEYS[OFFSEASON_KEYS.index(cur) + 1]
+    os["phase"] = nxt
+    os["phase_deadline"] = _iso(_now() + timedelta(days=league["cadence_days"]))
+    if nxt == "draft":
+        start_draft(league)
+    elif nxt == "otas":
+        os["risers"] = _advance_players(league)
+    save_league(league)
+
+
+def advance_offseason(league):
+    """Commissioner pushes the offseason to the next window now."""
+    if (league.get("offseason") or {}).get("active"):
+        _advance_offseason_phase(league)
+    return league
+
+
+def offseason_check(league):
+    """Auto-advance the offseason on the real-time clock (lazy view + tick). The
+    Draft window waits for the live draft to finish; the rest advance on deadline."""
+    os = league.get("offseason")
+    if not os or not os.get("active") or league.get("paused"):
+        return league
+    guard = 0
+    while os and os.get("active") and guard < 12:
+        if os["phase"] == "draft":
+            draft_check(league)
+            if (league.get("draft") or {}).get("active"):
+                break
+            _advance_offseason_phase(league)
+        elif _parse(os["phase_deadline"]) <= _now():
+            _advance_offseason_phase(league)
+        else:
+            break
+        os = league.get("offseason")
+        guard += 1
     return league
 
 
@@ -399,19 +557,27 @@ def _advance_players(league):
     fac = {}                                               # team_id -> facility level (humans)
     for m in league.get("members", {}).values():
         fac[m["team_id"]] = (m.get("business") or {}).get("facility", 1)
+    risers = []
     for t in league["teams"]:
         r = rank.get(t["id"], n // 2)
         tier_bonus = 1 if r >= (2 * n) // 3 else 0          # bottom third develops faster
         regress = r <= max(2, n // 6)                       # top teams' vets dip
         fac_bonus = 1 if fac.get(t["id"], 1) >= 3 else 0    # L3+ facility (human GMs)
         for p in t["roster"]:
+            before = p["overall"]
             p["age"] = p.get("age", 25) + 1
             fk._develop(p, rng, tier_bonus + fac_bonus)
             if regress and p["age"] >= 30:
                 p["overall"] = max(45, p["overall"] - 1)
+            gain = p["overall"] - before
+            if gain >= 2:
+                risers.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"],
+                               "gain": gain, "team": t["full"]})
             c = p.get("contract")
             if c and "years" in c:
                 c["years"] = max(0, c["years"] - 1)
+    risers.sort(key=lambda x: -x["gain"])
+    return risers[:10]
 
 
 def _autocut_all(league):
@@ -615,6 +781,8 @@ def check_and_advance(league):
     weeks if nobody loaded the league for a while). Returns the (updated) league."""
     if league and league.get("paused"):
         return league
+    if league and (league.get("offseason") or {}).get("active"):
+        return offseason_check(league)          # between seasons: walk the NFL calendar
     guard = 0
     while league and league["status"] != "complete" and time_left(league) <= 0 and guard < 30:
         league = advance_league(league)
@@ -632,7 +800,11 @@ def run_due_leagues():
         lg = load_league(f.stem)
         if not lg:
             continue
-        if (lg.get("draft") or {}).get("active"):       # keep live drafts moving
+        if (lg.get("offseason") or {}).get("active"):   # walk the offseason calendar
+            offseason_check(lg)
+            advanced += 1
+            continue
+        if (lg.get("draft") or {}).get("active"):       # legacy standalone drafts
             draft_check(lg)
         if not lg.get("paused") and lg["status"] != "complete" and time_left(lg) <= 0:
             check_and_advance(lg)
