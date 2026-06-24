@@ -1,0 +1,87 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ p.name }} — Franchise Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+<section class="fp-wrap">
+  <div class="fp-hero" style="border-left:5px solid {{ colors.primary }}">
+    <div class="fp-crest">{{ crest|safe }}</div>
+    <div class="fp-id">
+      <h1>{{ p.name }}</h1>
+      <div class="fp-sub">{{ p.pos }} · #{{ p.number|default('—') }} · {{ team_full }}{% if p.tagged %} · 🏷 Tagged{% endif %}</div>
+      {% if p.personality %}<span class="fp-pers">{{ p.personality }}</span>{% endif %}
+    </div>
+    <div class="fp-ratings">
+      <div class="fp-ovr"><b>{{ p.overall }}</b><span>OVR</span></div>
+      <div class="fp-pot"><b>{{ p.potential }}</b><span>POT</span></div>
+    </div>
+  </div>
+
+  {% if trait_blurb %}<p class="fp-blurb">“{{ trait_blurb }}”</p>{% endif %}
+
+  <div class="fp-grid">
+    <div class="fp-card">
+      <div class="fp-h">Scouting profile</div>
+      <div class="fp-rows">
+        <div><span>College</span><b>{{ p.college|default('—') }}</b></div>
+        <div><span>High School</span><b>{{ p.high_school|default('—') }}</b></div>
+        <div><span>Hometown</span><b>{{ p.hometown|default('—') }}</b></div>
+        <div><span>Age</span><b>{{ p.age }}</b></div>
+        <div><span>Dev Trait</span><b>{{ p.dev|default('Normal') }}</b></div>
+        <div><span>Injury Risk</span><b class="{{ 'fp-risk' if p.injury_risk == 'High' }}">{{ p.injury_risk|default('Low') }}</b></div>
+        {% if p.morale is defined %}<div><span>Morale</span><b>{{ p.morale }}</b></div>{% endif %}
+      </div>
+    </div>
+
+    <div class="fp-card">
+      <div class="fp-h">Contract</div>
+      <div class="fp-rows">
+        <div><span>Years left</span><b>{{ p.contract.years }}</b></div>
+        <div><span>AAV</span><b>${{ '%.1f'|format(p.contract.aav) }}M</b></div>
+        <div><span>Guaranteed</span><b>${{ '%.1f'|format(p.contract.guaranteed|default(0)) }}M</b></div>
+        <div><span>Trade value</span><b>{{ '%.0f'|format(value) }}</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fp-card">
+    <div class="fp-h">📊 Last season</div>
+    {% if stat_rows %}
+    <div class="fp-stats">
+      {% for label, val in stat_rows %}
+      <div class="fp-stat"><b>{{ val }}</b><span>{{ label }}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="fp-muted">No game stats yet — he hasn't played a season for you.</p>
+    {% endif %}
+  </div>
+
+  <p class="fp-muted"><a href="{{ back }}">← back</a></p>
+</section>
+<style>
+  .fp-wrap { max-width: 760px; margin: 0 auto; padding: 8px 16px 40px; }
+  .fp-hero { display:flex; align-items:center; gap:14px; background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:18px; margin-bottom:12px; }
+  .fp-crest { flex:0 0 auto; }
+  .fp-id { flex:1; min-width:0; }
+  .fp-id h1 { font-family:var(--font-display); font-size:clamp(22px,5vw,32px); margin:0; color:#fff; }
+  .fp-sub { color:var(--text2,#b7c6d0); font-size:13px; margin:3px 0 7px; }
+  .fp-pers { display:inline-block; background:rgba(159,150,255,.15); border:1px solid rgba(159,150,255,.45); color:#c7c1ff; font-size:11px; font-weight:800; padding:3px 10px; border-radius:8px; }
+  .fp-ratings { display:flex; gap:10px; }
+  .fp-ovr, .fp-pot { text-align:center; } .fp-ovr b { font-family:var(--font-display); font-size:30px; color:#4ad4f0; } .fp-pot b { font-family:var(--font-display); font-size:30px; color:#7dffb0; }
+  .fp-ovr span, .fp-pot span { display:block; font-size:9px; color:#7f93a0; letter-spacing:.12em; }
+  .fp-blurb { color:#9fe9ff; font-size:15px; font-style:italic; margin:0 0 14px; padding-left:6px; }
+  .fp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .fp-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .fp-h { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; }
+  .fp-rows > div { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
+  .fp-rows span { color:#8fa3b0; } .fp-rows b { color:#fff; font-weight:700; }
+  .fp-risk { color:#ff9a9a !important; }
+  .fp-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:10px; }
+  .fp-stat { background:rgba(3,8,12,.6); border:1px solid rgba(74,212,240,.18); border-radius:10px; padding:12px 8px; text-align:center; }
+  .fp-stat b { display:block; font-family:var(--font-display); font-size:22px; color:#fff; } .fp-stat span { font-size:10px; color:#8fa3b0; letter-spacing:.03em; }
+  .fp-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fp-muted a { color:#4ad4f0; text-decoration:none; }
+</style>
+{% endblock %}

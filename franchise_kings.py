@@ -1383,6 +1383,32 @@ def stat_line(p):
     return ""
 
 
+def stat_table(p):
+    """Labeled (stat, value) rows for a player's season - shaped by position."""
+    s = p.get("stats") or {}
+    if s.get("pass_att"):
+        return [("Comp / Att", f"{s['pass_cmp']}/{s['pass_att']}"), ("Pass Yards", f"{s['pass_yd']:,}"),
+                ("Pass TD", str(s["pass_td"])), ("Interceptions", str(s["int"]))]
+    if s.get("rush_car"):
+        out = [("Carries", str(s["rush_car"])), ("Rush Yards", f"{s['rush_yd']:,}"),
+               ("Rush TD", str(s["rush_td"]))]
+        if s.get("rec"):
+            out += [("Receptions", str(s["rec"])), ("Rec Yards", f"{s['rec_yd']:,}")]
+        return out
+    if s.get("rec"):
+        return [("Receptions", str(s["rec"])), ("Rec Yards", f"{s['rec_yd']:,}"), ("Rec TD", str(s["rec_td"]))]
+    if "sack" in s:
+        return [("Tackles", str(s.get("tackle", 0))), ("Sacks", str(s["sack"]))]
+    if "def_int" in s:
+        out = [("Tackles", str(s.get("tackle", 0))), ("Interceptions", str(s["def_int"]))]
+        if s.get("pd"):
+            out.append(("Passes Defended", str(s["pd"])))
+        return out
+    if s.get("fgm"):
+        return [("FG Made / Att", f"{s['fgm']}/{s['fga']}"), ("Points", str(s["pts"]))]
+    return []
+
+
 def rename_player(save, player_id, new_name):
     nm = str(new_name or "").strip()[:40]
     if not nm:
