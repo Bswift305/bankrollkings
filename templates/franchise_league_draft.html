@@ -30,7 +30,7 @@
         {% for p in available %}
           <tr>
             <td><span class="dr-av dr-av-{{ p.grp }}">{{ p.ini }}</span></td>
-            <td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td>
+            <td>{{ p.name }}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td>
             <td><span class="dr-grade">{{ p.grade }}</span></td>
             {% if my_turn %}<td><form method="post" action="{{ url_for('franchise_league_draft_pick', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="dr-pick">Draft</button></form></td>{% endif %}
           </tr>

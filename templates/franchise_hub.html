@@ -182,7 +182,7 @@
       <tbody>
         {% for p in roster_order %}
         <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
-          <td>{{ p.name }} <span class="fk-jersey">#{{ p.number|default('—') }}</span></td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <td>{{ p.name }} <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
           <td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}</td>
           <td>{{ p.dev }}</td><td class="{% if p.injury_risk=='High' %}fk-bust{% endif %}">{{ p.injury_risk }}</td>
           <td>${{ '%.1f'|format(p.contract.aav) }}M</td></tr>
@@ -456,7 +456,7 @@
         <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th></th></tr></thead>
         <tbody>
           {% for p in draft.available %}
-          <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <tr><td>{{ p.name }}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
             <td class="fk-ovr">{{ p.grade }}</td><td>{{ p.pot_grade }}</td>
             <td>{% if draft.on_clock %}<form method="post" action="{{ url_for('franchise_draft') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

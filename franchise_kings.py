@@ -159,6 +159,64 @@ AGENTS = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Player personality + background. Personalities add character (and a light
+# development nudge); colleges use real college PLACES with FICTIONAL mascots
+# (same no-licensing approach as the NFL clubs - UGA -> "Georgia Bullies"); high
+# schools + hometowns are generated.
+# --------------------------------------------------------------------------- #
+PERSONALITIES = {
+    "Field General": {"blurb": "Vocal leader - lifts the whole locker room.", "dev": 0},
+    "Film Junkie":   {"blurb": "First one in, last one out. Always studying.", "dev": 1},
+    "Gym Rat":       {"blurb": "Relentless worker - outworks everybody.", "dev": 1},
+    "Freak Athlete": {"blurb": "Jaw-dropping raw tools. Sky-high ceiling.", "dev": 1},
+    "Quiet Pro":     {"blurb": "Lets his play do the talking. Rock steady.", "dev": 0},
+    "Clutch Gene":   {"blurb": "Lives for the big moment.", "dev": 0},
+    "Underdog":      {"blurb": "Massive chip on his shoulder.", "dev": 1},
+    "Mentor":        {"blurb": "Makes the young guys around him better.", "dev": 0},
+    "Showman":       {"blurb": "Loves the spotlight and the headlines.", "dev": 0},
+    "Hothead":       {"blurb": "Plays angry - can boil over.", "dev": 0},
+    "Free Spirit":   {"blurb": "Marches to the beat of his own drum.", "dev": 0},
+    "Throwback":     {"blurb": "Old-school, tough, no-nonsense.", "dev": 0},
+}
+# Real college places, FICTIONAL mascots (no marks - same play as the NFL cities).
+COLLEGES = [
+    "Georgia Bullies", "Alabama Crimson", "Ohio Scarlet", "Texas Steers", "Oklahoma Drifters",
+    "Louisiana Bayou Cats", "Michigan Maize", "South Bend Shamrocks", "Clemson Paws",
+    "Oregon Mallards", "Florida Swamp", "Tallahassee Spears", "Southern Cal Centurions",
+    "Penn State Mountain Cats", "Wisconsin Diggers", "Tennessee Rivermen", "Auburn War Cats",
+    "Miami Storm", "Nebraska Plowmen", "College Station Cadets", "Washington Sled Dogs",
+    "Utah Beehives", "Iowa Hawks", "Oxford Magnolias", "Arkansas Tuskers",
+    "Lexington Thoroughbreds", "Missouri Mules", "Waco Grizzlies", "Fort Worth Frogs",
+    "Blacksburg Gobblers", "Pittsburgh Steel Cats", "Louisville Sluggers", "Raleigh Wolves",
+    "Chapel Hill Rams", "Durham Blue Devils", "Boston Minutemen", "Syracuse Citrus",
+    "Morgantown Climbers", "Cincinnati Queen City", "Houston Pumas", "Orlando Knights",
+    "Memphis Blues", "Boise Blue Turf", "San Diego Conquistadors", "Boulder Bison",
+    "Manhattan Wildcats", "Lawrence Jays", "East Lansing Spartans", "Champaign Plainsmen",
+]
+HOMETOWNS = [
+    ("Houston", "TX"), ("Dallas", "TX"), ("Miami", "FL"), ("Tampa", "FL"), ("Atlanta", "GA"),
+    ("Savannah", "GA"), ("Los Angeles", "CA"), ("Long Beach", "CA"), ("New Orleans", "LA"),
+    ("Baton Rouge", "LA"), ("Mobile", "AL"), ("Birmingham", "AL"), ("Cleveland", "OH"),
+    ("Columbus", "OH"), ("Detroit", "MI"), ("Chicago", "IL"), ("Philadelphia", "PA"),
+    ("Newark", "NJ"), ("Memphis", "TN"), ("Nashville", "TN"), ("Charlotte", "NC"),
+    ("Richmond", "VA"), ("St. Louis", "MO"), ("Kansas City", "MO"), ("Phoenix", "AZ"),
+    ("Las Vegas", "NV"), ("Seattle", "WA"), ("Oakland", "CA"), ("Jacksonville", "FL"),
+    ("Orlando", "FL"), ("San Diego", "CA"), ("Fresno", "CA"),
+]
+_HS_NAMES = ["Lincoln", "Washington", "Jackson", "Lakeview", "Riverside", "Oakwood",
+             "St. Augustine", "St. Thomas", "Hillcrest", "Northgate", "Pinecrest",
+             "Westfield", "Eastside", "Manvel", "DeSoto", "Central"]
+
+
+def _gen_background(rng):
+    city, st = rng.choice(HOMETOWNS)
+    hs = (f"{city} {rng.choice(['High', 'Prep', 'Central', 'Catholic', 'Memorial'])}"
+          if rng.random() < 0.5 else f"{rng.choice(_HS_NAMES)} {rng.choice(['High', 'Prep', 'Academy'])}")
+    return {"personality": rng.choice(list(PERSONALITIES)), "hometown": f"{city}, {st}",
+            "high_school": hs, "college": rng.choice(COLLEGES)}
+
+
 def _rng(seed):
     return random.Random(seed)
 
@@ -189,6 +247,7 @@ def _gen_player(rng, pos, base=None):
         "contract": {"years": rng.randint(1, 4), "aav": aav, "guaranteed": round(aav * rng.uniform(0.3, 0.8), 1)},
         "morale": rng.randint(55, 90),
         "injury_risk": rng.choice(["Low", "Low", "Medium", "High"]),
+        **_gen_background(rng),
     }
 
 
@@ -318,7 +377,7 @@ _DECLINE = {"Star": 31, "Late Bloomer": 32, "Slow": 30, "Normal": 31}
 def _develop(p, rng, bonus):
     tr, age = p.get("dev", "Normal"), p["age"]
     if age <= _PEAK.get(tr, 28) and p["overall"] < p["potential"]:
-        gain = rng.randint(0, _RATE.get(tr, 2)) + bonus
+        gain = rng.randint(0, _RATE.get(tr, 2)) + bonus + PERSONALITIES.get(p.get("personality"), {}).get("dev", 0)
         if tr == "Late Bloomer" and age >= 25:
             gain += 1
         p["overall"] = min(p["potential"], p["overall"] + gain)
@@ -666,7 +725,8 @@ def _gen_prospect(rng, pos):
     true_pot = min(99, true_ovr + int(rng.triangular(2, 26, 12)))
     return {"id": f"d{rng.randint(100000, 999999)}", "name": _gen_name(rng), "pos": pos,
             "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
-            "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"])}
+            "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"]),
+            **_gen_background(rng)}
 
 
 def generate_draft_class(rng):
@@ -691,7 +751,9 @@ def _make_rookie(p):
             "number": random.randint(*POS_NUM.get(p["pos"], (1, 99))),
             "overall": p["true_ovr"], "potential": p["true_pot"], "dev": p["dev"],
             "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
-            "morale": 75, "injury_risk": "Low"}
+            "morale": 75, "injury_risk": "Low",
+            "personality": p.get("personality"), "hometown": p.get("hometown"),
+            "high_school": p.get("high_school"), "college": p.get("college")}
 
 
 def start_draft(save):
