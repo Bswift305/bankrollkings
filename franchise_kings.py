@@ -345,6 +345,11 @@ def sim_season(save):
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
 
+    assign_season_stats(save["teams"], {tid: tm["record"]["w"] for tid, tm in teams.items()},
+                        save["seed"] + save["season"])
+    save["leaders"] = stat_leaders(save["teams"])
+    save["season_mvp"] = stat_mvp(save["teams"])
+
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
 
     conf_champs, playoff_ids = [], set()
@@ -1143,6 +1148,133 @@ def consultant_advice(save):
 
     tips.sort(key=lambda t: -t["u"])
     return tips
+
+
+# --------------------------------------------------------------------------- #
+# Player STATISTICS. The sim resolves games on power ratings, so we synthesize
+# believable season stat lines from each starter's overall + role + how good his
+# team's offense/defense was. Drives leaderboards, a stat-based MVP, and roster
+# stat lines - turning ratings into a living league.
+# --------------------------------------------------------------------------- #
+def assign_season_stats(teams, wins_by_id, seed):
+    rng = _rng(seed * 7 + 3)
+    for t in teams:
+        wins = wins_by_id.get(t["id"], REG_GAMES // 2)
+        off = 0.78 + (wins / REG_GAMES) * 0.5
+        deff = 0.85 + ((REG_GAMES - wins) / REG_GAMES) * 0.35
+        by_pos = {}
+        for p in t["roster"]:
+            p["stats"] = {}
+            by_pos.setdefault(p["pos"], []).append(p)
+        for pos in by_pos:
+            by_pos[pos].sort(key=lambda x: -x["overall"])
+
+        for i, qb in enumerate(by_pos.get("QB", [])[:2]):
+            share = 1.0 if i == 0 else 0.08
+            if i and rng.random() > 0.3:
+                continue
+            o = qb["overall"]
+            att = int((33 + (o - 70) * 0.25) * REG_GAMES * off * share)
+            if att < 20:
+                continue
+            comp = int(att * min(0.72, 0.55 + (o - 55) * 0.0035))
+            yd = int(comp * (7.2 + (o - 60) * 0.05) * off)
+            qb["stats"] = {"g": REG_GAMES, "pass_cmp": comp, "pass_att": att, "pass_yd": yd,
+                           "pass_td": max(1, int(yd / 140 * off)),
+                           "int": max(2, int(att * 0.017 * (1.25 - (o - 60) * 0.005)))}
+
+        for rb, sh in zip(by_pos.get("RB", [])[:3], (0.66, 0.24, 0.10)):
+            o = rb["overall"]
+            car = int((360 + (o - 70) * 3.5) * off * sh)
+            if car < 15:
+                continue
+            yd = int(car * (4.4 + (o - 65) * 0.03))
+            rec = int((35 + (o - 65) * 0.6) * sh * off)
+            rb["stats"] = {"g": REG_GAMES, "rush_car": car, "rush_yd": yd,
+                           "rush_td": max(0, int(yd / 108 * off)), "rec": rec,
+                           "rec_yd": int(rec * 7.6), "rec_td": max(0, int(rec * 7.6 / 200))}
+
+        catchers = sorted(by_pos.get("WR", [])[:4] + by_pos.get("TE", [])[:2],
+                          key=lambda x: -x["overall"])
+        rec_pool = int(400 * off)                       # team receptions split among WR/TE
+        for c, sh in zip(catchers, (0.27, 0.20, 0.13, 0.09, 0.14, 0.07)):
+            o = c["overall"]
+            rec = int(rec_pool * sh * (0.8 + (o - 65) * 0.007))
+            if rec < 8:
+                continue
+            yd = int(rec * (11.5 + (o - 65) * 0.12))
+            c["stats"] = {"g": REG_GAMES, "rec": rec, "rec_yd": yd, "rec_td": max(0, int(yd / 145 * off))}
+
+        for r in by_pos.get("DL", [])[:4] + by_pos.get("LB", [])[:2]:
+            o = r["overall"]
+            r["stats"] = {"g": REG_GAMES, "tackle": int((30 + (o - 60) * 1.3) * deff),
+                          "sack": round(max(0.0, 2.5 + (o - 65) * 0.34) * deff * (0.8 + rng.random() * 0.5), 1)}
+        for d in by_pos.get("LB", [])[:4] + by_pos.get("S", [])[:2]:
+            if d.get("stats"):
+                continue
+            o = d["overall"]
+            d["stats"] = {"g": REG_GAMES, "tackle": int((55 + (o - 60) * 1.4) * deff),
+                          "def_int": max(0, int((o - 68) * 0.3))}
+        for d in by_pos.get("CB", [])[:3]:
+            o = d["overall"]
+            d["stats"] = {"g": REG_GAMES, "tackle": int((40 + (o - 60) * 0.8) * deff),
+                          "def_int": max(0, int((o - 66) * 0.32)), "pd": int(6 + (o - 65) * 0.2)}
+        for k in by_pos.get("K", [])[:1]:
+            o = k["overall"]
+            fgm = int((20 + (o - 70) * 0.5) * off)
+            k["stats"] = {"g": REG_GAMES, "fgm": fgm, "fga": fgm + rng.randint(2, 6),
+                          "pts": fgm * 3 + int(30 * off)}
+
+
+_LEADER_CATS = [
+    ("Passing Yards", "pass_yd"), ("Passing TDs", "pass_td"),
+    ("Rushing Yards", "rush_yd"), ("Rushing TDs", "rush_td"),
+    ("Receiving Yards", "rec_yd"), ("Receptions", "rec"),
+    ("Sacks", "sack"), ("Interceptions", "def_int"),
+]
+
+
+def stat_leaders(teams, n=5):
+    pool = [(p, t["full"]) for t in teams for p in t["roster"] if p.get("stats")]
+    out = []
+    for label, key in _LEADER_CATS:
+        items = sorted([(p, tm) for p, tm in pool if p["stats"].get(key)],
+                       key=lambda x: -x[0]["stats"][key])[:n]
+        out.append({"label": label, "key": key,
+                    "rows": [{"name": p["name"], "pos": p["pos"], "team": tm,
+                              "val": p["stats"][key]} for p, tm in items]})
+    return [c for c in out if c["rows"]]
+
+
+def stat_mvp(teams):
+    best, score = None, -1
+    for t in teams:
+        for p in t["roster"]:
+            s = p.get("stats") or {}
+            v = (s.get("pass_yd", 0) * 0.04 + s.get("pass_td", 0) * 4 - s.get("int", 0) * 2
+                 + s.get("rush_yd", 0) * 0.05 + s.get("rush_td", 0) * 6
+                 + s.get("rec_yd", 0) * 0.05 + s.get("rec_td", 0) * 6)
+            if v > score:
+                best, score = {"name": p["name"], "pos": p["pos"], "team": t["full"],
+                               "ovr": p["overall"], "line": stat_line(p)}, v
+    return best
+
+
+def stat_line(p):
+    s = p.get("stats") or {}
+    if s.get("pass_yd"):
+        return f"{s['pass_yd']:,} yd, {s['pass_td']} TD, {s['int']} INT"
+    if s.get("rush_yd"):
+        return f"{s['rush_yd']:,} rush yd, {s['rush_td']} TD"
+    if s.get("rec_yd"):
+        return f"{s['rec']} rec, {s['rec_yd']:,} yd, {s['rec_td']} TD"
+    if s.get("sack"):
+        return f"{s['sack']} sacks, {s['tackle']} tkl"
+    if s.get("def_int") is not None and (s.get("def_int") or s.get("pd")):
+        return f"{s.get('def_int', 0)} INT, {s.get('tackle', 0)} tkl"
+    if s.get("fgm"):
+        return f"{s['fgm']}/{s['fga']} FG, {s['pts']} pts"
+    return ""
 
 
 def rename_player(save, player_id, new_name):

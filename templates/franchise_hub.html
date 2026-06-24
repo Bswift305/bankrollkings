@@ -86,6 +86,24 @@
       {% endif %}
     </div>
 
+    {% if leaders %}
+    <div class="fk-card fk-leaders">
+      <div class="fk-card-h">📊 League Leaders{% if season_mvp %} <span style="float:right;font-size:12px;color:#f5c860;font-weight:700">MVP: {{ season_mvp.pos }} {{ season_mvp.name }}</span>{% endif %}</div>
+      <div class="fk-leadgrid">
+        {% for cat in leaders %}
+        <div>
+          <div class="fk-leadh">{{ cat.label }}</div>
+          {% for r in cat.rows[:3] %}
+          <div class="fk-leadrow"><span class="fk-leadn">{{ loop.index }}</span> {{ r.pos }} {{ r.name }}
+            <b>{{ "%.1f"|format(r.val) if cat.key == 'sack' else "{:,}".format(r.val) }}</b>
+            <small>{{ r.team }}</small></div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="fk-card">
       <div class="fk-card-h">This season</div>
       {% if last_outcome %}
@@ -503,6 +521,12 @@
   .fk-tip-u3 strong { color:#ffd9a0; }
   .fk-consult-off { color:#b9b2ff; font-size:13px; margin:2px 0; } .fk-consult-off strong { color:#fff; }
   .fk-consult-hint { color:#6b7d8a; font-size:11px; margin-top:10px; font-style:italic; }
+  .fk-leaders { border-color:rgba(74,212,240,.3); }
+  .fk-leadgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+  .fk-leadh { color:#9fe9ff; font-size:12px; font-weight:800; letter-spacing:.03em; margin-bottom:6px; text-transform:uppercase; }
+  .fk-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
+  .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
+  .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
   .fk-exp strong, .fk-outcome p strong { color:#fff; }
   .fk-muted { color:var(--text2,#9fb0bc); font-size:13px; line-height:1.55; }
   .fk-outcome { padding:10px 12px; border-radius:10px; background:rgba(10,18,26,.7); border:1px solid rgba(145,168,184,.18); margin-bottom:10px; }

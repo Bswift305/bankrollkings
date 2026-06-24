@@ -168,9 +168,27 @@
     <div class="fkl-dyn">
       <div class="fkl-dyn-s">S{{ h.season }}</div>
       <div class="fkl-dyn-b"><strong>{{ h.champion }}</strong> <span class="fkl-dyn-rec">{{ h.record }}</span>
-        <small>MVP: {{ h.mvp_pos }} {{ h.mvp }} ({{ h.mvp_ovr }} OVR · {{ h.mvp_team }}){% if h.best_gm %} · Top GM: {{ h.best_gm.name }} {{ h.best_gm.w }}-{{ h.best_gm.l }}{% endif %}</small></div>
+        <small>MVP: {{ h.mvp_pos }} {{ h.mvp }}{% if h.mvp_line %} — {{ h.mvp_line }}{% endif %} ({{ h.mvp_team }}){% if h.best_gm %} · Top GM: {{ h.best_gm.name }} {{ h.best_gm.w }}-{{ h.best_gm.l }}{% endif %}</small></div>
     </div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if league.leaders %}
+  <div class="fkl-card fkl-leaders">
+    <div class="fkl-h">📊 League Leaders</div>
+    <div class="fkl-leadgrid">
+      {% for cat in league.leaders %}
+      <div class="fkl-leadcat">
+        <div class="fkl-leadh">{{ cat.label }}</div>
+        {% for r in cat.rows[:3] %}
+        <div class="fkl-leadrow"><span class="fkl-leadn">{{ loop.index }}</span> {{ r.pos }} {{ r.name }}
+          <b>{{ "%.1f"|format(r.val) if cat.key == 'sack' else "{:,}".format(r.val) }}</b>
+          <small>{{ r.team }}</small></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 
@@ -232,6 +250,14 @@
   .os-current { opacity:1; background:rgba(245,200,96,.14); border:1px solid rgba(245,200,96,.5); } .os-current .os-lbl { color:#f5c860; font-weight:800; }
   .os-curh { font-family:var(--font-display); color:#fff; font-size:17px; }
   .os-note { color:#9fe9ff; font-size:13px; margin:2px 0 8px; }
+  .fkl-leaders { border-color:rgba(74,212,240,.3); }
+  .fkl-leadgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; }
+  .fkl-leadcat { }
+  .fkl-leadh { color:#9fe9ff; font-size:12px; font-weight:800; letter-spacing:.03em; margin-bottom:6px; text-transform:uppercase; }
+  .fkl-leadrow { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; border-bottom:1px solid rgba(145,168,184,.08); }
+  .fkl-leadrow b { color:#fff; float:right; }
+  .fkl-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
+  .fkl-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
   @keyframes fkpulse { 0%,100%{ box-shadow:0 0 0 rgba(255,122,122,0); } 50%{ box-shadow:0 0 18px rgba(255,122,122,.5); } }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }

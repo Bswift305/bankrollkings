@@ -29000,6 +29000,8 @@ def _franchise_view(save):
         'stadium_svg': fk.stadium_svg(fk._business(save), team['full']),
         'assist': save['gm'].get('assist', 'Full'),
         'advice': fk.consultant_advice(save),
+        'leaders': save.get('leaders'),
+        'season_mvp': save.get('season_mvp'),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
         'avatar_url': (url_for('static', filename='franchise_avatars/'

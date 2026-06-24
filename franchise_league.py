@@ -84,7 +84,7 @@ def _new_code():
 _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list,
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
-                  "draft": dict, "draft_history": list, "offseason": dict,
+                  "draft": dict, "draft_history": list, "offseason": dict, "leaders": list,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -363,13 +363,10 @@ def complete_season(league):
     if not sc:
         return league
     champ = sc[0]
-    mvp, mvp_team = None, ""
-    for t in league["teams"]:                       # MVP = best player on a top-8 team
-        if not any(s["id"] == t["id"] for s in sc[:8]):
-            continue
-        for p in t["roster"]:
-            if mvp is None or p["overall"] > mvp["overall"]:
-                mvp, mvp_team = p, t["full"]
+    fk.assign_season_stats(league["teams"], {s["id"]: s["w"] for s in sc},
+                           league["seed"] + league.get("season", 1))
+    league["leaders"] = fk.stat_leaders(league["teams"])
+    mvp = fk.stat_mvp(league["teams"]) or {}        # MVP earned by production, not rating
     best_gm = None
     for uid, m in league.get("members", {}).items():
         row = next((s for s in sc if s["id"] == m["team_id"]), None)
@@ -378,9 +375,9 @@ def complete_season(league):
     league.setdefault("history", []).insert(0, {
         "season": league.get("season", 1),
         "champion": champ["full"], "record": f"{champ['w']}-{champ['l']}",
-        "mvp": mvp["name"] if mvp else "—", "mvp_pos": mvp["pos"] if mvp else "",
-        "mvp_team": mvp_team, "mvp_ovr": mvp["overall"] if mvp else 0,
-        "best_gm": best_gm})
+        "mvp": mvp.get("name", "—"), "mvp_pos": mvp.get("pos", ""),
+        "mvp_team": mvp.get("team", ""), "mvp_ovr": mvp.get("ovr", 0),
+        "mvp_line": mvp.get("line", ""), "best_gm": best_gm})
     league["champion_name"] = champ["full"]
     begin_offseason(league)                 # roll straight into the phased offseason
     return league
