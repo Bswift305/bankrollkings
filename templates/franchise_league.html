@@ -100,6 +100,40 @@
       {% endif %}
     </div>
   </div>
+  {% if league.recaps %}
+  {% set rc = league.recaps[0] %}
+  <div class="fkl-card fkl-recap">
+    <div class="fkl-h">📊 Power Rankings <span class="fkl-recweek">{{ rc.headline }}</span></div>
+    {% for line in rc.lines %}<div class="fkl-recline">{{ line }}</div>{% endfor %}
+    <table class="fkl-table fkl-pr"><thead><tr><th>#</th><th></th><th>Team</th><th>Rec</th></tr></thead>
+      <tbody>
+      {% for r in rc.rankings %}
+        <tr class="{% if my_team and r.id == my_team.id %}fkl-me{% endif %}">
+          <td>{{ r.rank }}</td>
+          <td>{% if r.move > 0 %}<span class="fkl-up">▲{{ r.move }}</span>{% elif r.move < 0 %}<span class="fkl-down">▼{{ -r.move }}</span>{% else %}<span class="fkl-flat">—</span>{% endif %}</td>
+          <td>{{ r.full }}</td><td>{{ r.w }}-{{ r.l }}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+  </div>
+  {% endif %}
+
+  <div class="fkl-card fkl-board" id="board">
+    <div class="fkl-h">💬 League board</div>
+    {% if mem %}
+    <form method="post" action="{{ url_for('franchise_league_post', lid=league.id) }}" class="fkl-postform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="fkl-input" name="text" maxlength="280" placeholder="Talk some trash, {{ mem.name }}…" required>
+      <button class="fkl-btn fkl-btn-sm">Post</button>
+    </form>
+    {% endif %}
+    {% for p in league.board[:25] %}
+    <div class="fkl-post"><strong>{{ p.name }}</strong><span>{{ p.text }}</span></div>
+    {% else %}
+    <p class="fkl-muted" style="margin:0">No posts yet — be the first to fire a shot.</p>
+    {% endfor %}
+  </div>
+
   <p class="fkl-muted"><a href="{{ url_for('franchise_leagues') }}">← all leagues</a></p>
 </section>
 <style>
@@ -134,5 +168,12 @@
   .fkl-auto { float:right; font-size:10px; font-weight:800; color:#f5c860; background:rgba(245,200,96,.12); padding:2px 7px; border-radius:6px; }
   .fkl-res { font-size:12px; color:var(--text2,#c2cfd8); padding:3px 0; } .fkl-res span { color:#7f93a0; }
   .fkl-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fkl-muted a { color:#4ad4f0; text-decoration:none; }
+  .fkl-recap { border-color:rgba(74,212,240,.3); }
+  .fkl-recweek { float:right; font-size:11px; color:#8fa3b0; font-weight:600; }
+  .fkl-recline { color:var(--text2,#c2cfd8); font-size:13px; padding:4px 0 4px 14px; position:relative; } .fkl-recline:before { content:'›'; position:absolute; left:2px; color:#4ad4f0; }
+  .fkl-pr { margin-top:10px; } .fkl-up { color:#7dffb0; font-weight:800; font-size:11px; } .fkl-down { color:#ff9a9a; font-weight:800; font-size:11px; } .fkl-flat { color:#5f7280; }
+  .fkl-board { border-color:rgba(245,200,96,.3); }
+  .fkl-postform { display:flex; gap:8px; margin-bottom:12px; } .fkl-postform .fkl-input { flex:1; } .fkl-postform .fkl-btn { margin-top:0; width:auto; white-space:nowrap; }
+  .fkl-post { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; } .fkl-post strong { color:#9fe9ff; margin-right:7px; } .fkl-post span { color:var(--text2,#c2cfd8); }
 </style>
 {% endblock %}

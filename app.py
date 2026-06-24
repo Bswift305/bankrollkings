@@ -628,6 +628,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_trade_respond',
     'franchise_league_trade_review',
     'franchise_league_trade_cancel',
+    'franchise_league_post',
     'franchise_league_ready',
     'franchise_league_negotiate',
     'franchise_league_advance',
@@ -29494,6 +29495,18 @@ def franchise_league_trade_review(lid):
         fl.review_trade(league, str(request.form.get('trade_id', '')).strip(), uid,
                         bool(request.form.get('approve')))
     return redirect(url_for('franchise_league_team', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/post', methods=['POST'])
+def franchise_league_post(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.post_message(league, uid, request.form.get('text', ''))
+    return redirect(url_for('franchise_league_hub', lid=lid) + '#board')
 
 
 @app.route('/franchise/league/<lid>/trade/cancel', methods=['POST'])

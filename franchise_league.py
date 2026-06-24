@@ -180,6 +180,7 @@ def _sim_week(league):
     teams = {t["id"]: t for t in league["teams"]}
     powers = {tid: fk.power_rating(t) for tid, t in teams.items()}
     results = []
+    upset = None                              # (power gap, winner, loser)
     for g in league["schedule"]:
         if g["week"] != week:
             continue
@@ -187,6 +188,9 @@ def _sim_week(league):
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win].setdefault("record", {"w": 0, "l": 0})["w"] += 1
         teams[lose].setdefault("record", {"w": 0, "l": 0})["l"] += 1
+        gap = powers[lose] - powers[win]
+        if upset is None or gap > upset[0]:
+            upset = (gap, teams[win]["full"], teams[lose]["full"])
         results.append({"home": teams[g["home"]]["full"], "away": teams[g["away"]]["full"],
                         "winner": teams[win]["full"]})
     standings = sorted(league["teams"],
@@ -197,6 +201,51 @@ def _sim_week(league):
         for t in standings]
     league["results_log"].insert(0, {"week": week, "games": results[:16]})
     league["results_log"] = league["results_log"][:8]
+    _build_recap(league, week, upset, powers)
+
+
+def _build_recap(league, week, upset, powers):
+    """Auto-generated weekly recap + power rankings (with movement vs last week)."""
+    def score(t):
+        return powers[t["id"]] + t.get("record", {}).get("w", 0) * 2.0
+    ranked = sorted(league["teams"], key=score, reverse=True)
+    prev = league.get("power_rank_prev", {})
+    rankings = []
+    for i, t in enumerate(ranked[:12]):
+        old = prev.get(t["id"])
+        rankings.append({"rank": i + 1, "id": t["id"], "full": t["full"],
+                         "w": t.get("record", {}).get("w", 0), "l": t.get("record", {}).get("l", 0),
+                         "move": (0 if old is None else old - i)})
+    league["power_rank_prev"] = {t["id"]: i for i, t in enumerate(ranked)}
+    leader = ranked[0]
+    lw, ll = leader.get("record", {}).get("w", 0), leader.get("record", {}).get("l", 0)
+    lines = [f"{leader['full']} lead the power rankings at {lw}-{ll}."]
+    if upset and upset[0] > 1:
+        lines.append(f"Upset of the week: {upset[1]} took down {upset[2]}.")
+    risers = [r for r in rankings if r["move"] > 0]
+    if risers:
+        top = max(risers, key=lambda r: r["move"])
+        lines.append(f"{top['full']} climbed {top['move']} spot{'s' if top['move'] != 1 else ''} in the rankings.")
+    league.setdefault("recaps", []).insert(0, {
+        "week": week, "headline": f"Week {week} — {leader['full']} on top",
+        "lines": lines, "rankings": rankings})
+    league["recaps"] = league["recaps"][:6]
+
+
+def post_message(league, user_id, text):
+    """A league member posts to the message board (trash talk)."""
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return False
+    text = str(text or "").strip()[:280]
+    if not text:
+        return False
+    league.setdefault("board", []).insert(0, {
+        "id": _new_trade_id(), "uid": user_id, "name": m["name"],
+        "text": text, "at": _iso(_now())})
+    league["board"] = league["board"][:60]
+    save_league(league)
+    return True
 
 
 def advance_league(league):
