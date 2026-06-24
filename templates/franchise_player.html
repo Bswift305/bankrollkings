@@ -4,18 +4,19 @@
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
 {% block workflow_toolbar %}{% endblock %}
+{% set prospect = prospect if prospect is defined else False %}
 {% block content %}
 <section class="fp-wrap">
   <div class="fp-hero" style="border-left:5px solid {{ colors.primary }}">
-    <div class="fp-crest">{{ crest|safe }}</div>
+    <div class="fp-crest">{% if prospect %}<span style="font-size:38px">🎓</span>{% else %}{{ crest|safe }}{% endif %}</div>
     <div class="fp-id">
       <h1>{{ p.name }}</h1>
-      <div class="fp-sub">{{ p.pos }} · #{{ p.number|default('—') }} · {{ team_full }}{% if p.tagged %} · 🏷 Tagged{% endif %}</div>
+      <div class="fp-sub">{{ sub }}{% if not prospect and p.tagged is defined and p.tagged %} · 🏷 Tagged{% endif %}</div>
       {% if p.personality %}<span class="fp-pers">{{ p.personality }}</span>{% endif %}
     </div>
     <div class="fp-ratings">
-      <div class="fp-ovr"><b>{{ p.overall }}</b><span>OVR</span></div>
-      <div class="fp-pot"><b>{{ p.potential }}</b><span>POT</span></div>
+      <div class="fp-ovr"><b>{{ r1 }}</b><span>{{ r1l }}</span></div>
+      <div class="fp-pot"><b>{{ r2 }}</b><span>{{ r2l }}</span></div>
     </div>
   </div>
 
@@ -30,11 +31,14 @@
         <div><span>Hometown</span><b>{{ p.hometown|default('—') }}</b></div>
         <div><span>Age</span><b>{{ p.age }}</b></div>
         <div><span>Dev Trait</span><b>{{ p.dev|default('Normal') }}</b></div>
+        {% if not prospect %}
         <div><span>Injury Risk</span><b class="{{ 'fp-risk' if p.injury_risk == 'High' }}">{{ p.injury_risk|default('Low') }}</b></div>
         {% if p.morale is defined %}<div><span>Morale</span><b>{{ p.morale }}</b></div>{% endif %}
+        {% endif %}
       </div>
     </div>
 
+    {% if not prospect %}
     <div class="fp-card">
       <div class="fp-h">Contract</div>
       <div class="fp-rows">
@@ -44,8 +48,22 @@
         <div><span>Trade value</span><b>{{ '%.0f'|format(value) }}</b></div>
       </div>
     </div>
+    {% else %}
+    <div class="fp-card">
+      <div class="fp-h">Scouting grade</div>
+      <div class="fp-rows">
+        <div><span>Overall grade</span><b>{{ r1 }}</b></div>
+        <div><span>Projected ceiling</span><b>{{ r2 }}</b></div>
+        <div><span>Status</span><b style="color:#c7c1ff">Pre-draft prospect</b></div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
+  {% if prospect %}
+  <div class="fp-card"><div class="fp-h">🎓 Draft prospect</div>
+    <p class="fp-muted">Hasn't taken a pro snap yet — grade him on draft day. His scouted numbers tighten toward his true rating as your scouting improves.</p></div>
+  {% else %}
   <div class="fp-card">
     <div class="fp-h">📊 Last season</div>
     {% if stat_rows %}
@@ -58,6 +76,7 @@
     <p class="fp-muted">No game stats yet — he hasn't played a season for you.</p>
     {% endif %}
   </div>
+  {% endif %}
 
   {% if career and career.rows|length %}
   <div class="fp-card">

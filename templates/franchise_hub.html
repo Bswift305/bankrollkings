@@ -456,7 +456,7 @@
         <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th></th></tr></thead>
         <tbody>
           {% for p in draft.available %}
-          <tr><td>{{ p.name }}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
             <td class="fk-ovr">{{ p.grade }}</td><td>{{ p.pot_grade }}</td>
             <td>{% if draft.on_clock %}<form method="post" action="{{ url_for('franchise_draft') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

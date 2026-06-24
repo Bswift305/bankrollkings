@@ -607,6 +607,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_avatar_remove',
     'franchise_player',
     'franchise_league_player',
+    'franchise_prospect',
+    'franchise_league_prospect',
     'franchise_assist',
     'franchise_offseason',
     'franchise_offseason_pick',
@@ -29325,12 +29327,24 @@ def _player_profile(teams, pid):
     for t in teams:
         for p in t['roster']:
             if p['id'] == pid:
-                return {'p': p, 'team_full': t['full'],
+                return {'p': p, 'prospect': False, 'colors': fk.team_colors(t['full']),
                         'crest': fk.team_crest_svg(t['full'], 60),
-                        'colors': fk.team_colors(t['full']),
+                        'sub': f"{p['pos']} · #{p.get('number', '—')} · {t['full']}",
+                        'r1': p['overall'], 'r1l': 'OVR', 'r2': p.get('potential', p['overall']), 'r2l': 'POT',
                         'stat_rows': fk.stat_table(p), 'value': fk.trade_value(p),
                         'career': fk.career_table(p),
                         'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
+    return None
+
+
+def _prospect_profile(draft, pid):
+    for pr in (draft or {}).get('class', []):
+        if pr['id'] == pid:
+            return {'p': pr, 'prospect': True, 'colors': {'primary': '#3a2d6b', 'secondary': '#9f96ff'},
+                    'crest': '', 'sub': f"Draft Prospect · {pr['pos']} · Age {pr.get('age', '?')}",
+                    'r1': pr.get('grade', 0), 'r1l': 'GRD', 'r2': pr.get('pot_grade', 0), 'r2l': 'POT',
+                    'stat_rows': [], 'value': 0, 'career': None,
+                    'trait_blurb': fk.PERSONALITIES.get(pr.get('personality'), {}).get('blurb', '')}
     return None
 
 
@@ -29359,6 +29373,33 @@ def franchise_league_player(lid, pid):
         return redirect(url_for('franchise_league_hub', lid=lid))
     return render_template('franchise_player.html',
                            back=url_for('franchise_league_team', lid=lid),
+                           current_user=current_user, **prof)
+
+
+@app.route('/franchise/prospect/<pid>')
+def franchise_prospect(pid):
+    current_user, save = _franchise_save()
+    if not save:
+        return redirect(url_for('franchise_new'))
+    prof = _prospect_profile(save.get('draft'), pid)
+    if not prof:
+        return redirect(url_for('franchise_hub', tab='draft'))
+    return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
+                           current_user=current_user, **prof)
+
+
+@app.route('/franchise/league/<lid>/prospect/<pid>')
+def franchise_league_prospect(lid, pid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    league = fl.load_league(lid)
+    if not league:
+        return render_error_page(404, 'League not found', 'That league code is not valid.')
+    prof = _prospect_profile(league.get('draft'), pid)
+    if not prof:
+        return redirect(url_for('franchise_league_draft', lid=lid))
+    return render_template('franchise_player.html', back=url_for('franchise_league_draft', lid=lid),
                            current_user=current_user, **prof)
 
 
