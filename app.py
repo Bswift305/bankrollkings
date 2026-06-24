@@ -606,6 +606,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_avatar',
     'franchise_avatar_remove',
     'franchise_extend',
+    'franchise_promote',
+    'franchise_demote',
     'franchise_player',
     'franchise_league_player',
     'franchise_prospect',
@@ -28988,6 +28990,8 @@ def _franchise_view(save):
                                  key=lambda p: -p['overall'])[:16],
         'holdouts': save.get('holdouts') or [],
         'roster_order': [_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])],
+        'practice_squad': [_avatar(p) for p in sorted(fk.ensure_practice_squad(save),
+                                                      key=lambda x: -x['overall'])],
         'free_agents': sorted(save.get('free_agents', []), key=lambda x: -x['overall']),
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
@@ -29414,6 +29418,22 @@ def franchise_league_prospect(lid, pid):
         return redirect(url_for('franchise_league_draft', lid=lid))
     return render_template('franchise_player.html', back=url_for('franchise_league_draft', lid=lid),
                            current_user=current_user, **prof)
+
+
+@app.route('/franchise/promote', methods=['POST'])
+def franchise_promote():
+    _, save = _franchise_save()
+    if save:
+        fk.promote_player(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='roster'))
+
+
+@app.route('/franchise/demote', methods=['POST'])
+def franchise_demote():
+    _, save = _franchise_save()
+    if save:
+        fk.demote_player(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='roster'))
 
 
 @app.route('/franchise/extend', methods=['POST'])

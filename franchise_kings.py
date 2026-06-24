@@ -527,6 +527,10 @@ def _advance_year(save):
             p["age"] += 1
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
+    for p in current_team(save).get("practice_squad", []):    # PS develops too
+        p["age"] += 1
+        _develop(p, rng, dev)
+        p.get("contract", {})["years"] = max(0, p.get("contract", {}).get("years", 2) - 1)
     save["retirements"] = process_retirements(save["teams"], save["season"],
                                               save.setdefault("hall_of_fame", []))
     save["hall_of_fame"] = save["hall_of_fame"][:40]
@@ -1796,6 +1800,56 @@ def career_table(p):
     rows = [{"season": r.get("season"), "team": r.get("team", ""),
              "vals": [r.get(k, 0) for _, k in cols]} for r in car]
     return {"headers": [c[0] for c in cols], "rows": list(reversed(rows))}
+
+
+# --------------------------------------------------------------------------- #
+# Practice squad: a developmental squad (off the 53, no cap hit) that develops and
+# can be promoted to the active roster.
+# --------------------------------------------------------------------------- #
+PS_MAX = 12
+
+
+def _gen_ps_player(rng):
+    p = _gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(55, 68, 60)))
+    p["age"] = rng.randint(21, 23)
+    p["contract"] = {"years": 2, "aav": 0.7, "guaranteed": 0.0}
+    p["practice"] = True
+    return p
+
+
+def ensure_practice_squad(save):
+    team = current_team(save)
+    if "practice_squad" not in team:
+        rng = _rng(save["seed"] + abs(hash(team["id"])) % 99999 + 71)
+        team["practice_squad"] = [_gen_ps_player(rng) for _ in range(6)]
+        write_save(save)
+    return team["practice_squad"]
+
+
+def promote_player(save, pid):
+    team = current_team(save)
+    p = next((x for x in team.get("practice_squad", []) if x["id"] == pid), None)
+    if not p:
+        return False
+    team["practice_squad"] = [x for x in team["practice_squad"] if x["id"] != pid]
+    p.pop("practice", None)
+    team["roster"].append(p)
+    write_save(save)
+    return True
+
+
+def demote_player(save, pid):
+    team = current_team(save)
+    if len(team.get("practice_squad", [])) >= PS_MAX:
+        return False
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False
+    team["roster"] = [x for x in team["roster"] if x["id"] != pid]
+    p["practice"] = True
+    team.setdefault("practice_squad", []).append(p)
+    write_save(save)
+    return True
 
 
 def rename_player(save, player_id, new_name):
