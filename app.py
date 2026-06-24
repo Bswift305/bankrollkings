@@ -605,6 +605,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_trade',
     'franchise_avatar',
     'franchise_avatar_remove',
+    'franchise_extend',
     'franchise_player',
     'franchise_league_player',
     'franchise_prospect',
@@ -28983,6 +28984,9 @@ def _franchise_view(save):
         'power': fk.power_rating(team),
         'cap_used': fk.cap_used(team),
         'cap_total': fk.CAP_TOTAL,
+        'extend_players': sorted([dict(p, market=fk._market_aav(p)) for p in team['roster']],
+                                 key=lambda p: -p['overall'])[:16],
+        'holdouts': save.get('holdouts') or [],
         'roster_order': [_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])],
         'free_agents': sorted(save.get('free_agents', []), key=lambda x: -x['overall']),
         'standings': save.get('standings_cache', []),
@@ -29408,6 +29412,15 @@ def franchise_league_prospect(lid, pid):
         return redirect(url_for('franchise_league_draft', lid=lid))
     return render_template('franchise_player.html', back=url_for('franchise_league_draft', lid=lid),
                            current_user=current_user, **prof)
+
+
+@app.route('/franchise/extend', methods=['POST'])
+def franchise_extend():
+    _, save = _franchise_save()
+    if save:
+        fk.extend_player(save, str(request.form.get('player_id', '')).strip(),
+                         request.form.get('years', 1), request.form.get('aav', 0))
+    return redirect(url_for('franchise_hub', tab='front-office'))
 
 
 @app.route('/franchise/assist', methods=['POST'])

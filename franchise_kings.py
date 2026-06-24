@@ -441,6 +441,8 @@ def sim_season(save):
     powers[save["current_team_id"]] -= inj_pen   # starters missing time hurts your record
     save["last_injuries"] = injuries
     save["last_injury_pen"] = inj_pen
+    hold_pen = round(sum(2.5 for p in current_team(save)["roster"] if p.get("holdout")), 1)
+    powers[save["current_team_id"]] -= hold_pen  # unresolved holdouts hurt the team
 
     uid = save["current_team_id"]
     game_log = []
@@ -506,6 +508,7 @@ def sim_season(save):
     save["last_outcome"] = outcome
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
+    _check_holdouts(save)                  # flag underpaid stars going into the offseason
     generate_news(save)                    # GridIron Network season recap feed
     write_save(save)
     if outcome["status"] == "retained":
@@ -1004,6 +1007,79 @@ def negotiate(save, player_id, years, aav):
     return res
 
 
+# --------------------------------------------------------------------------- #
+# Contract extensions + holdouts
+# --------------------------------------------------------------------------- #
+def _market_aav(p):
+    o, age = p["overall"], p.get("age", 27)
+    base = max(0.8, (max(0, o - 58) ** 1.7) / 16.0)
+    if age >= 31:
+        base *= 0.85
+    if age >= 34:
+        base *= 0.8
+    return round(base, 1)
+
+
+def extend_player(save, player_id, years, aav):
+    """Extend / re-sign one of YOUR players early. Resolves a holdout if he was one."""
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == player_id), None)
+    if not p:
+        save["last_nego"] = {"ok": False, "status": "rejected", "msg": "Player not found."}
+        write_save(save)
+        return save["last_nego"]
+    try:
+        years = max(1, min(6, int(years)))
+        aav = round(float(aav), 1)
+    except (TypeError, ValueError):
+        return {"ok": False, "msg": "Enter a valid offer."}
+    if "agent" not in p:
+        p["agent"] = {"name": _gen_name(_rng(abs(hash(player_id)) % 999983)),
+                      "personality": random.choice(list(AGENTS))}
+    pers = p["agent"]["personality"]
+    A = AGENTS[pers]
+    ask = round(_market_aav(p) * A["markup"], 1)
+    if pers == "Loyal":
+        ask = round(ask * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
+    res = {"ok": True, "id": p["id"], "player": p["name"], "pos": p["pos"], "ovr": p["overall"],
+           "agent": p["agent"], "demand": ask, "offer": {"years": years, "aav": aav}}
+    room = CAP_TOTAL - cap_used(team) + p["contract"].get("aav", 0)   # his old deal frees up
+    if aav > room:
+        res.update(status="rejected", msg=f"That ${aav}M deal won't fit under the cap.")
+    elif aav >= ask:
+        p["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.55, 1)}
+        p.pop("agent", None)
+        p.pop("holdout", None)
+        p["morale"] = min(99, p.get("morale", 75) + 12)
+        res.update(status="accepted", msg=f"Extension done — {p['name']} for {years}yr / ${aav}M.")
+    elif aav >= ask * 0.9:
+        res.update(status="countered", counter={"years": years, "aav": ask},
+                   msg=f"{p['agent']['name']} counters: {years}yr at ${ask}M.")
+    else:
+        res.update(status="rejected", msg=f"{p['agent']['name']} scoffs at ${aav}M - he's worth ${ask}M/yr.")
+    save["last_nego"] = res
+    write_save(save)
+    return res
+
+
+def _check_holdouts(save):
+    """Underpaid stars on expiring deals hold out (morale + a power hit until paid)."""
+    team = current_team(save)
+    flagged = []
+    for p in team["roster"]:
+        market = _market_aav(p)
+        if (p["overall"] >= 80 and p.get("contract", {}).get("years", 9) <= 1
+                and p.get("contract", {}).get("aav", 99) < market * 0.6):
+            p["holdout"] = True
+            p["morale"] = max(20, p.get("morale", 75) - 15)
+            flagged.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
+                            "ovr": p["overall"], "aav": p["contract"]["aav"], "market": market})
+        else:
+            p.pop("holdout", None)
+    save["holdouts"] = flagged
+    return flagged
+
+
 def take_job(save, team_id):
     if team_id not in [t["id"] for t in save["teams"]]:
         return False
@@ -1451,6 +1527,9 @@ def generate_news(save):
     if ap:
         names = ", ".join(f"{a['pos']} {a['name']}" for a in ap[:3])
         add("BUZZ", "All-League Team headlined by the league's elite", f"Leading the way: {names}.")
+    for h in (save.get("holdouts") or [])[:2]:
+        add("HOLDOUT", f"{h['pos']} {h['name']} is holding out",
+            f"Wants a new deal — he's at ${h['aav']}M, market is ~${h['market']}M.")
     save["news"] = news[:14]
     return save["news"]
 
