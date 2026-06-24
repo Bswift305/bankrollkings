@@ -195,18 +195,34 @@ def my_membership(league, user_id):
 # --------------------------------------------------------------------------- #
 # The weekly clock: sim ONE week, advance, reset, reschedule
 # --------------------------------------------------------------------------- #
+def _league_home_edge(team):
+    """Atmosphere: a winning team's building gets loud -> a home-field power edge."""
+    rec = team.get("record", {})
+    w, l = rec.get("w", 0), rec.get("l", 0)
+    if w + l < 3:
+        return 0.0
+    return round(max(0.0, (w / (w + l) - 0.4) * 4.0), 1)     # .40 win% = 0, 1.0 = +2.4
+
+
+def _league_st_edge(team):
+    """Special teams: your kicker / ST personnel quality is a small power factor."""
+    ks = [p["overall"] for p in team["roster"] if p["pos"] == "K"]
+    return round(((max(ks) if ks else 70) - 72) * 0.05, 2)
+
+
 def _sim_week(league):
     week = league["week"]
     rng = random.Random(league["seed"] + week * 1009)
     teams = {t["id"]: t for t in league["teams"]}
-    powers = {tid: fk.power_rating(t) for tid, t in teams.items()}
+    powers = {tid: fk.power_rating(t) + _league_st_edge(t) for tid, t in teams.items()}
     results = []
     upset = None                              # (power gap, winner, loser)
     week_stars = []
     for g in league["schedule"]:
         if g["week"] != week:
             continue
-        home_win = fk._sim_game(rng, powers[g["home"]], powers[g["away"]])
+        home_p = powers[g["home"]] + _league_home_edge(teams[g["home"]])   # home atmosphere
+        home_win = fk._sim_game(rng, home_p, powers[g["away"]])
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win].setdefault("record", {"w": 0, "l": 0})["w"] += 1
         teams[lose].setdefault("record", {"w": 0, "l": 0})["l"] += 1
@@ -361,6 +377,15 @@ def _league_news(league, week):
             t["_newsed"] = True
     for line in (league.get("waiver_log") or [])[:2]:
         items.append({"tag": "WAIVER", "head": line, "body": ""})
+    if week == TRADE_DEADLINE_WEEK - 2:
+        items.append({"tag": "RUMOR", "head": "Trade deadline buzz: contenders shopping for help",
+                      "body": "Two weeks out — the phones are starting to ring."})
+    elif week == TRADE_DEADLINE_WEEK - 1:
+        items.append({"tag": "RUMOR", "head": "Deadline week — last chance to make a move",
+                      "body": "Trading closes after this game day until free agency."})
+    elif week == TRADE_DEADLINE_WEEK:
+        items.append({"tag": "DEADLINE", "head": "The trade deadline has passed",
+                      "body": "Rosters are locked until the offseason free-agency window."})
     if items:
         league["news"] = ([{"week": week, **it} for it in items] + league.get("news", []))[:24]
 
@@ -558,6 +583,19 @@ def fa_is_open(league):
     """Signing is open in-season and only during the Free-Agency window of the offseason."""
     os = league.get("offseason") or {}
     return (not os.get("active")) or os.get("phase") == "free_agency"
+
+
+TRADE_DEADLINE_WEEK = 9
+
+
+def trades_open(league):
+    """Trades run until the in-season deadline, then reopen in the FA window."""
+    os = league.get("offseason") or {}
+    if os.get("active"):
+        return os.get("phase") == "free_agency"
+    if league.get("status") == "complete":
+        return False
+    return league.get("week", 1) <= TRADE_DEADLINE_WEEK
 
 
 def _finalize_offseason(league):
@@ -1111,6 +1149,8 @@ def _grade_trade(league, give_ids, get_ids):
 
 def propose_gm_trade(league, from_uid, to_uid, give_ids, get_ids):
     members = league.get("members", {})
+    if not trades_open(league):
+        return False, "The trade deadline has passed - trading reopens in free agency."
     if from_uid not in members or to_uid not in members or from_uid == to_uid:
         return False, "Invalid trade partner."
     from_tid, to_tid = members[from_uid]["team_id"], members[to_uid]["team_id"]

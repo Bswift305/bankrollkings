@@ -29620,6 +29620,8 @@ def franchise_league_team(lid):
                            partner_roster=partner_roster, trade_box=trade_box, my_uid=uid,
                            my_picks=my_picks, partner_picks=partner_picks,
                            roster_final=fl.ROSTER_FINAL, fa_open=fl.fa_is_open(league),
+                           home_edge=fl._league_home_edge(team), st_edge=fl._league_st_edge(team),
+                           trades_open=fl.trades_open(league), deadline_week=fl.TRADE_DEADLINE_WEEK,
                            is_commish=(league['commissioner'] == uid), current_user=current_user)
 
 

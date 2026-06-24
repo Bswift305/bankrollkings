@@ -10,6 +10,7 @@
     <div class="fkl-kicker">{{ league.name }} · WEEK {{ league.week }} · MANAGE YOUR TEAM</div>
     <h1>{{ team.full }}</h1>
     <p class="fkl-dead">Power {{ power }} · Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M ·
+      🏟 home edge +{{ home_edge }}{% if st_edge > 0 %} · ST +{{ st_edge }}{% endif %} ·
       moves you make stick for the next game day. Miss it and auto-pilot takes over.</p>
   </div>
 
@@ -88,8 +89,10 @@
   {% endif %}
 
   <div class="fkl-card">
-    <div class="fkl-h">🔁 Propose a trade</div>
-    {% if not partners %}
+    <div class="fkl-h">🔁 Propose a trade <span class="fkl-recweek">deadline: Week {{ deadline_week }}</span></div>
+    {% if not trades_open %}
+      <div class="fkl-nego" style="border-color:rgba(245,200,96,.4)">🔒 The trade deadline has passed — trading reopens in the offseason Free Agency window.</div>
+    {% elif not partners %}
       <p class="fkl-muted" style="margin:0">No other human GMs in this league yet — invite a friend with the league code to trade.</p>
     {% else %}
       <div class="fkl-partners">
