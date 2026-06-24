@@ -79,12 +79,26 @@ def _new_code():
             return code
 
 
+# Optional keys added by later features; normalized on load so older league files
+# (and the strict-undefined templates) never trip over a missing key.
+_OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list,
+                  "autopilot_log": list, "power_rank_prev": dict,
+                  "paused": False, "season": 1, "champion_name": ""}
+
+
+def _ensure_keys(lg):
+    for k, default in _OPTIONAL_KEYS.items():
+        if k not in lg:
+            lg[k] = default() if callable(default) else default
+    return lg
+
+
 def load_league(code):
     p = _path(str(code or "").upper())
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return _ensure_keys(json.loads(p.read_text(encoding="utf-8")))
     except Exception:
         return None
 
@@ -125,6 +139,7 @@ def create_league(commissioner_id, name, cadence_days=3, gm_name="Commissioner",
         "cadence_days": cadence_days,
         "seed": seed,
         "status": "open",           # open -> active -> complete
+        "season": 1,
         "week": 1,
         "next_deadline": _iso(_now() + timedelta(days=cadence_days)),
         "teams": teams,
@@ -268,12 +283,69 @@ def advance_league(league):
         m["ready"] = False
         m.pop("autopilot_note", None)
     if league["week"] > fk.REG_GAMES:
-        league["status"] = "complete"
-        league["next_deadline"] = _iso(_now() + timedelta(days=3650))
+        complete_season(league)
     else:
         league["next_deadline"] = _iso(_now() + timedelta(days=league["cadence_days"]))
     save_league(league)
     return league
+
+
+# --------------------------------------------------------------------------- #
+# Season awards + multi-season dynasty
+# --------------------------------------------------------------------------- #
+def complete_season(league):
+    """Wrap a season: crown the champion, hand out awards, append to the dynasty
+    history. (Champion = best regular-season record this league.)"""
+    league["status"] = "complete"
+    league["next_deadline"] = _iso(_now() + timedelta(days=3650))
+    sc = league.get("standings_cache", [])
+    if not sc:
+        return league
+    champ = sc[0]
+    mvp, mvp_team = None, ""
+    for t in league["teams"]:                       # MVP = best player on a top-8 team
+        if not any(s["id"] == t["id"] for s in sc[:8]):
+            continue
+        for p in t["roster"]:
+            if mvp is None or p["overall"] > mvp["overall"]:
+                mvp, mvp_team = p, t["full"]
+    best_gm = None
+    for uid, m in league.get("members", {}).items():
+        row = next((s for s in sc if s["id"] == m["team_id"]), None)
+        if row and (best_gm is None or row["w"] > best_gm["w"]):
+            best_gm = {"name": m["name"], "team": row["full"], "w": row["w"], "l": row["l"]}
+    league.setdefault("history", []).insert(0, {
+        "season": league.get("season", 1),
+        "champion": champ["full"], "record": f"{champ['w']}-{champ['l']}",
+        "mvp": mvp["name"] if mvp else "—", "mvp_pos": mvp["pos"] if mvp else "",
+        "mvp_team": mvp_team, "mvp_ovr": mvp["overall"] if mvp else 0,
+        "best_gm": best_gm})
+    league["champion_name"] = champ["full"]
+    save_league(league)
+    return league
+
+
+def start_next_season(league):
+    """Commissioner rolls the league into a fresh season: rosters + members carry
+    over, records/schedule/recaps reset, the clock restarts."""
+    if league.get("status") != "complete":
+        return False
+    league["season"] = league.get("season", 1) + 1
+    league["week"] = 1
+    league["status"] = "active"
+    for t in league["teams"]:
+        t["record"] = {"w": 0, "l": 0}
+    league["schedule"] = fk.make_schedule(league["seed"] + league["season"],
+                                          [t["id"] for t in league["teams"]])
+    league["standings_cache"] = []
+    league["results_log"] = []
+    league["recaps"] = []
+    league.pop("power_rank_prev", None)
+    for m in league["members"].values():
+        m["ready"] = False
+    league["next_deadline"] = _iso(_now() + timedelta(days=league["cadence_days"]))
+    save_league(league)
+    return True
 
 
 def check_and_advance(league):

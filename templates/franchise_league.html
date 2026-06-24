@@ -8,11 +8,17 @@
 <section class="fkl-wrap">
   <div class="fkl-hero">
     <div class="fkl-kicker">{{ league.name }} · {{ league.status|upper }}</div>
-    <h1>Week {{ league.week }}{% if league.status == 'complete' %} · Season complete{% endif %}</h1>
+    <h1>Season {{ league.season or 1 }} · {% if league.status == 'complete' %}Complete{% else %}Week {{ league.week }}{% endif %}</h1>
     {% if league.status != 'complete' %}
     <p class="fkl-dead">⏱ {{ deadline }} · game day every {{ league.cadence_days }} day{{ 's' if league.cadence_days != 1 }} (auto)</p>
     {% else %}
-    <p class="fkl-dead">🏆 Champion: {{ league.standings_cache[0].full if league.standings_cache else '—' }}</p>
+    <p class="fkl-dead">🏆 Champion: {{ league.champion_name or (league.standings_cache[0].full if league.standings_cache else '—') }}</p>
+    {% if is_commish %}
+    <form method="post" action="{{ url_for('franchise_league_next_season', lid=league.id) }}" style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="fkl-btn fkl-btn-sm" style="width:auto">▶ Start Season {{ (league.season or 1) + 1 }} (rosters carry over)</button>
+    </form>
+    {% endif %}
     {% endif %}
   </div>
 
@@ -100,6 +106,19 @@
       {% endif %}
     </div>
   </div>
+  {% if league.history %}
+  <div class="fkl-card fkl-dynasty">
+    <div class="fkl-h">🏆 Dynasty — champions &amp; awards</div>
+    {% for h in league.history %}
+    <div class="fkl-dyn">
+      <div class="fkl-dyn-s">S{{ h.season }}</div>
+      <div class="fkl-dyn-b"><strong>{{ h.champion }}</strong> <span class="fkl-dyn-rec">{{ h.record }}</span>
+        <small>MVP: {{ h.mvp_pos }} {{ h.mvp }} ({{ h.mvp_ovr }} OVR · {{ h.mvp_team }}){% if h.best_gm %} · Top GM: {{ h.best_gm.name }} {{ h.best_gm.w }}-{{ h.best_gm.l }}{% endif %}</small></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if league.recaps %}
   {% set rc = league.recaps[0] %}
   <div class="fkl-card fkl-recap">
@@ -127,7 +146,7 @@
       <button class="fkl-btn fkl-btn-sm">Post</button>
     </form>
     {% endif %}
-    {% for p in league.board[:25] %}
+    {% for p in (league.board or [])[:25] %}
     <div class="fkl-post"><strong>{{ p.name }}</strong><span>{{ p.text }}</span></div>
     {% else %}
     <p class="fkl-muted" style="margin:0">No posts yet — be the first to fire a shot.</p>
@@ -172,6 +191,11 @@
   .fkl-recweek { float:right; font-size:11px; color:#8fa3b0; font-weight:600; }
   .fkl-recline { color:var(--text2,#c2cfd8); font-size:13px; padding:4px 0 4px 14px; position:relative; } .fkl-recline:before { content:'›'; position:absolute; left:2px; color:#4ad4f0; }
   .fkl-pr { margin-top:10px; } .fkl-up { color:#7dffb0; font-weight:800; font-size:11px; } .fkl-down { color:#ff9a9a; font-weight:800; font-size:11px; } .fkl-flat { color:#5f7280; }
+  .fkl-dynasty { border-color:rgba(245,200,96,.45); }
+  .fkl-dyn { display:flex; gap:12px; align-items:center; padding:9px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .fkl-dyn-s { font-family:var(--font-display); color:#f5c860; font-size:16px; min-width:34px; }
+  .fkl-dyn-b strong { color:#fff; } .fkl-dyn-rec { color:#7dffb0; font-size:12px; font-weight:700; margin-left:4px; }
+  .fkl-dyn-b small { display:block; color:#8fa3b0; font-size:11px; margin-top:2px; }
   .fkl-board { border-color:rgba(245,200,96,.3); }
   .fkl-postform { display:flex; gap:8px; margin-bottom:12px; } .fkl-postform .fkl-input { flex:1; } .fkl-postform .fkl-btn { margin-top:0; width:auto; white-space:nowrap; }
   .fkl-post { padding:7px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; } .fkl-post strong { color:#9fe9ff; margin-right:7px; } .fkl-post span { color:var(--text2,#c2cfd8); }
