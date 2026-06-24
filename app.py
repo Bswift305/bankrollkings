@@ -628,6 +628,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_trade_respond',
     'franchise_league_trade_review',
     'franchise_league_trade_cancel',
+    'franchise_league_drop',
+    'franchise_league_claim',
     'franchise_league_post',
     'franchise_league_next_season',
     'franchise_league_ready',
@@ -29453,8 +29455,32 @@ def franchise_league_team(lid):
                            mem=league['members'][uid], deadline=fl.deadline_label(league),
                            power=fk.power_rating(team), cap_used=fk.cap_used(team),
                            cap_total=fk.CAP_TOTAL, partners=partners, partner=partner,
-                           partner_roster=partner_roster, trade_box=trade_box,
+                           partner_roster=partner_roster, trade_box=trade_box, my_uid=uid,
                            is_commish=(league['commissioner'] == uid), current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/drop', methods=['POST'])
+def franchise_league_drop(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.drop_player(league, uid, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_league_team', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/claim', methods=['POST'])
+def franchise_league_claim(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.claim_player(league, uid, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_league_team', lid=lid))
 
 
 @app.route('/franchise/league/<lid>/trade/propose', methods=['POST'])

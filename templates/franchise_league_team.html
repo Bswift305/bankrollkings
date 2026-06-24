@@ -126,14 +126,31 @@
     {% endif %}
   </div>
 
+  {% if league.waivers or league.waiver_log %}
+  <div class="fkl-card fkl-wire">
+    <div class="fkl-h">📋 Waiver wire <span class="fkl-recweek">claims resolve at game day · worst record gets priority</span></div>
+    {% for w in league.waivers %}
+    <div class="fkl-trow">
+      <span><strong style="color:#fff">{{ w.player.pos }} {{ w.player.name }}</strong> · {{ w.player.overall }} OVR · dropped by {{ w.from_team }}{% if w.claims %} · {{ w.claims|length }} claim{{ 's' if w.claims|length != 1 }}{% endif %}</span>
+      {% if my_uid in w.claims %}<span class="fkl-rdy" style="position:static">✓ claimed</span>
+      {% else %}<form method="post" action="{{ url_for('franchise_league_claim', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ w.player.id }}"><button class="fkl-mini fkl-ok">Claim</button></form>{% endif %}
+    </div>
+    {% else %}
+    <p class="fkl-muted" style="margin:0 0 6px">Wire is empty.</p>
+    {% endfor %}
+    {% if league.waiver_log %}<div class="fkl-sub2">Last game day</div>{% for line in league.waiver_log %}<div class="fkl-post"><span>{{ line }}</span></div>{% endfor %}{% endif %}
+  </div>
+  {% endif %}
+
   <div class="fkl-card">
-    <div class="fkl-h">Roster · auto depth chart</div>
-    <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th></tr></thead>
+    <div class="fkl-h">Roster · auto depth chart <span class="fkl-recweek">drop a player → waiver wire</span></div>
+    <div class="fkl-tscroll"><table class="fkl-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>AAV</th><th></th></tr></thead>
       <tbody>{% for p in roster_order %}
         <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
           <td>{{ p.name }} <span class="fkl-num">#{{ p.number|default('—') }}</span></td>
           <td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
-          <td>${{ '%.1f'|format(p.contract.aav) }}M</td></tr>
+          <td>${{ '%.1f'|format(p.contract.aav) }}M</td>
+          <td><form method="post" action="{{ url_for('franchise_league_drop', lid=league.id) }}" onsubmit="return confirm('Drop {{ p.name }} to waivers?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fkl-mini fkl-no">Drop</button></form></td></tr>
       {% endfor %}</tbody></table></div>
   </div>
   <p class="fkl-muted"><a href="{{ url_for('franchise_league_hub', lid=league.id) }}">← back to {{ league.name }}</a></p>
@@ -183,5 +200,9 @@
   .fkl-sub2 { color:#f5c860; font-size:12px; font-weight:700; margin:14px 0 6px; }
   .fkl-trow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(145,168,184,.08); font-size:12px; color:var(--text2,#c2cfd8); } .fkl-trow form { margin:0; } .fkl-trow em { font-style:normal; color:#8fa3b0; }
   .fkl-st-accepted { color:#7dffb0; } .fkl-st-vetoed, .fkl-st-rejected { color:#ff9a9a; }
+  .fkl-wire { border-color:rgba(245,200,96,.35); }
+  .fkl-recweek { float:right; font-size:10px; color:#8fa3b0; font-weight:600; }
+  .fkl-rdy { font-size:10px; font-weight:800; color:#7dffb0; background:rgba(125,255,176,.12); padding:3px 8px; border-radius:6px; }
+  .fkl-post { padding:5px 0; border-bottom:1px solid rgba(145,168,184,.08); font-size:12px; } .fkl-post span { color:var(--text2,#c2cfd8); }
 </style>
 {% endblock %}

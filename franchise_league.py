@@ -83,6 +83,7 @@ def _new_code():
 # (and the strict-undefined templates) never trip over a missing key.
 _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list,
                   "autopilot_log": list, "power_rank_prev": dict,
+                  "waivers": list, "waiver_log": list,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -219,6 +220,64 @@ def _sim_week(league):
     _build_recap(league, week, upset, powers)
 
 
+# --------------------------------------------------------------------------- #
+# Waivers: drop a player to the wire; GMs place claims; claims resolve at game day
+# in priority order (worst record gets first pick). Unclaimed players clear to FA.
+# --------------------------------------------------------------------------- #
+def _waiver_priority(league):
+    """Ordered uids - worst record (best waiver priority) first."""
+    sc = league.get("standings_cache") or []
+    rank = {s["id"]: i for i, s in enumerate(sc)}        # 0 = best record
+    members = league.get("members", {})
+    return sorted(members.keys(), key=lambda uid: -rank.get(members[uid]["team_id"], 999))
+
+
+def drop_player(league, user_id, player_id):
+    m = league.get("members", {}).get(user_id)
+    if not m:
+        return False
+    t = team_by_id(league, m["team_id"])
+    p = next((x for x in t["roster"] if x["id"] == player_id), None)
+    if not p:
+        return False
+    t["roster"] = [x for x in t["roster"] if x["id"] != player_id]
+    league.setdefault("waivers", []).append({"player": p, "from_team": t["full"], "claims": []})
+    save_league(league)
+    return True
+
+
+def claim_player(league, user_id, player_id):
+    if user_id not in league.get("members", {}):
+        return False
+    e = next((w for w in league.get("waivers", []) if w["player"]["id"] == player_id), None)
+    if not e:
+        return False
+    if user_id not in e["claims"]:
+        e["claims"].append(user_id)
+        save_league(league)
+    return True
+
+
+def _process_waivers(league):
+    wire = league.get("waivers", [])
+    if not wire:
+        return
+    priority = _waiver_priority(league)
+    log = []
+    for e in wire:
+        if e["claims"]:
+            winner = min(e["claims"], key=lambda u: priority.index(u) if u in priority else 999)
+            t = team_by_id(league, league["members"][winner]["team_id"])
+            if t:
+                t["roster"].append(e["player"])
+                log.append(f"{league['members'][winner]['name']} claimed "
+                           f"{e['player']['pos']} {e['player']['name']}")
+        else:
+            league.setdefault("free_agents", []).append(e["player"])   # clears to FA
+    league["waivers"] = []
+    league["waiver_log"] = log[:8]
+
+
 def _build_recap(league, week, upset, powers):
     """Auto-generated weekly recap + power rankings (with movement vs last week)."""
     def score(t):
@@ -269,6 +328,7 @@ def advance_league(league):
         return league
     if league["status"] == "open":
         league["status"] = "active"
+    _process_waivers(league)        # resolve pending waiver claims before the games
     # auto-pilot any human GM who didn't lock in: one philosophy-driven move each
     ap = []
     for uid, m in list(league["members"].items()):
