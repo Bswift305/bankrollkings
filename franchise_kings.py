@@ -788,7 +788,7 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
             "philosophy": philosophy,
             "ratings": ratings,
             "owner_trust": 55, "fan_support": 50, "reputation": 50,
-            "titles": 0, "career": [],
+            "titles": 0, "career": [], "assist": "Full",
         },
         "standings_cache": [],
         "last_champion": "",
@@ -1061,6 +1061,88 @@ def stadium_svg(business, team_full=""):
              f'LVL {lvl}/5 · ~{cap}k SEATS</text>')
     p.append('</svg>')
     return "".join(p)
+
+
+# --------------------------------------------------------------------------- #
+# The GM's personal consultant: reads the roster/cap/contracts and suggests the
+# highest-leverage moves. The GM can dial it Off / Light / Full - the brag is
+# winning it all with it switched OFF.
+# --------------------------------------------------------------------------- #
+ASSIST_LEVELS = {"Off": 0, "Light": 2, "Full": 5}
+
+
+def set_assist(save, level):
+    if level in ASSIST_LEVELS:
+        save["gm"]["assist"] = level
+        write_save(save)
+    return True
+
+
+def _expected_aav(overall):
+    return round(max(0.7, max(0, overall - 55) ** 1.7 / 22.0), 1)
+
+
+def consultant_advice(save):
+    """A prioritized list of suggestions (most urgent first), independent of the
+    assist level (the level just controls how many the UI reveals)."""
+    team = current_team(save)
+    tips = []
+    best_at = {}
+    for p in team["roster"]:
+        best_at[p["pos"]] = max(best_at.get(p["pos"], 0), p["overall"])
+    weak = min(ROSTER, key=lambda pos: best_at.get(pos, 0))
+    tips.append({"icon": "🎯", "title": f"Upgrade your {weak}",
+                 "detail": f"Your best {weak} is {best_at.get(weak, 0)} OVR - the softest spot in your starting lineup. Target it in free agency or the draft.",
+                 "u": 3})
+
+    expiring = [p for p in team["roster"] if p["overall"] >= 80
+                and p.get("contract", {}).get("years", 9) <= 1]
+    if expiring:
+        s = max(expiring, key=lambda p: p["overall"])
+        tips.append({"icon": "✍", "title": f"Extend {s['pos']} {s['name']}",
+                     "detail": f"An {s['overall']}-OVR starter on an expiring deal. Lock him up before he hits the market.",
+                     "u": 3})
+
+    overpaid = [p for p in team["roster"]
+                if p.get("contract", {}).get("aav", 0) > _expected_aav(p["overall"]) * 1.6
+                and p.get("contract", {}).get("aav", 0) >= 5]
+    if overpaid:
+        o = max(overpaid, key=lambda p: p["contract"]["aav"])
+        tips.append({"icon": "📉", "title": f"{o['pos']} {o['name']} is overpaid",
+                     "detail": f"${o['contract']['aav']:.0f}M for a {o['overall']} OVR. Shop him or move on to free up cap.",
+                     "u": 2})
+
+    room = round(CAP_TOTAL - cap_used(team), 1)
+    if room > 40:
+        tips.append({"icon": "💰", "title": "You're sitting on cap space",
+                     "detail": f"~${room:.0f}M free. Aggressively pursue a free agent or extend your young core now.",
+                     "u": 1})
+    elif room < 5:
+        tips.append({"icon": "⚠", "title": "Cap is nearly maxed",
+                     "detail": f"Only ~${room:.0f}M of room. Clear a contract before you add anyone.",
+                     "u": 2})
+
+    young = [p for p in team["roster"] if p.get("age", 30) <= 23
+             and p.get("potential", 0) - p["overall"] >= 8]
+    if young:
+        y = max(young, key=lambda p: p.get("potential", 0) - p["overall"])
+        tips.append({"icon": "📈", "title": f"Develop {y['pos']} {y['name']}",
+                     "detail": f"{y['overall']} OVR with {y.get('potential', 0)} upside. A better facility + snaps and he takes off.",
+                     "u": 1})
+
+    if save.get("last_injuries"):
+        i = save["last_injuries"][0]
+        tips.append({"icon": "🏥", "title": f"Cover for {i['pos']} {i['name']}",
+                     "detail": f"Out ~{i['weeks']} weeks. Make sure you've got depth behind him.",
+                     "u": 2})
+
+    if save.get("draft_pending"):
+        tips.append({"icon": "🎓", "title": "You're on the clock",
+                     "detail": "Best player available beats reaching for need - the value compounds.",
+                     "u": 3})
+
+    tips.sort(key=lambda t: -t["u"])
+    return tips
 
 
 def rename_player(save, player_id, new_name):

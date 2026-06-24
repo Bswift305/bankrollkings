@@ -61,6 +61,31 @@
       <div class="fk-exp">Owner mandate: <strong>{{ expectation.text }}</strong></div>
     </div>
 
+    <div class="fk-card fk-consult">
+      <div class="fk-card-h">🧠 GM Consultant
+        <span class="fk-assist">
+          {% for lvl in ['Off','Light','Full'] %}
+          <form method="post" action="{{ url_for('franchise_assist') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="level" value="{{ lvl }}">
+            <button class="fk-assist-btn {{ 'on' if assist == lvl }}">{{ lvl }}</button>
+          </form>
+          {% endfor %}
+        </span>
+      </div>
+      {% if assist == 'Off' %}
+        <p class="fk-consult-off">Consultant is <strong>off</strong> — you're running this franchise on instinct.
+          {% if gm.titles %}🏆 {{ gm.titles }} title{{ 's' if gm.titles != 1 }} with no help. Certified.{% else %}Win it all like this for the ultimate bragging rights.{% endif %}</p>
+      {% else %}
+        {% for a in advice[:(5 if assist == 'Full' else 2)] %}
+        <div class="fk-tip fk-tip-u{{ a.u }}"><span class="fk-tip-ic">{{ a.icon }}</span>
+          <div><strong>{{ a.title }}</strong><small>{{ a.detail }}</small></div></div>
+        {% else %}
+        <p class="fk-consult-off">Nothing pressing — your roster's in good shape, boss.</p>
+        {% endfor %}
+        <div class="fk-consult-hint">{{ 'Showing the top 2 — switch to Full for everything, or Off to go solo.' if assist == 'Light' else 'Full readout. Dial to Light or Off if you want less hand-holding.' }}</div>
+      {% endif %}
+    </div>
+
     <div class="fk-card">
       <div class="fk-card-h">This season</div>
       {% if last_outcome %}
@@ -467,6 +492,17 @@
   .fk-bar i { display:block; height:100%; background:linear-gradient(90deg,#2fb6d6,#7fe6ff); }
   .fk-meter b { color:#fff; text-align:right; }
   .fk-exp { margin-top:12px; padding:10px 12px; border-radius:9px; background:rgba(74,212,240,.07); border:1px solid rgba(74,212,240,.2); color:var(--text2,#b7c6d0); font-size:13px; }
+  .fk-consult { border-color:rgba(159,150,255,.35); }
+  .fk-assist { float:right; display:inline-flex; gap:4px; }
+  .fk-assist form { margin:0; }
+  .fk-assist-btn { cursor:pointer; border:1px solid rgba(159,150,255,.4); background:transparent; color:#b9b2ff; font-size:11px; font-weight:800; padding:3px 9px; border-radius:7px; }
+  .fk-assist-btn.on { background:linear-gradient(135deg,#9f96ff,#c7c1ff); color:#0a0820; border-color:#c7c1ff; }
+  .fk-tip { display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid rgba(145,168,184,.1); }
+  .fk-tip-ic { font-size:17px; line-height:1.2; }
+  .fk-tip strong { color:#fff; display:block; font-size:14px; } .fk-tip small { color:#8fa3b0; font-size:12px; line-height:1.5; }
+  .fk-tip-u3 strong { color:#ffd9a0; }
+  .fk-consult-off { color:#b9b2ff; font-size:13px; margin:2px 0; } .fk-consult-off strong { color:#fff; }
+  .fk-consult-hint { color:#6b7d8a; font-size:11px; margin-top:10px; font-style:italic; }
   .fk-exp strong, .fk-outcome p strong { color:#fff; }
   .fk-muted { color:var(--text2,#9fb0bc); font-size:13px; line-height:1.55; }
   .fk-outcome { padding:10px 12px; border-radius:10px; background:rgba(10,18,26,.7); border:1px solid rgba(145,168,184,.18); margin-bottom:10px; }

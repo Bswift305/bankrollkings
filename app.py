@@ -605,6 +605,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_trade',
     'franchise_avatar',
     'franchise_avatar_remove',
+    'franchise_assist',
     'franchise_offseason',
     'franchise_offseason_pick',
     'franchise_offseason_advance',
@@ -28995,6 +28996,8 @@ def _franchise_view(save):
         'stadium_cost': fk.stadium_cost(save),
         'facility_cost': fk.facility_cost(save),
         'stadium_svg': fk.stadium_svg(fk._business(save), team['full']),
+        'assist': save['gm'].get('assist', 'Full'),
+        'advice': fk.consultant_advice(save),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
         'avatar_url': (url_for('static', filename='franchise_avatars/'
@@ -29307,6 +29310,14 @@ def franchise_avatar_remove():
             pass
         save['gm']['avatar'] = False
         fk.write_save(save)
+    return redirect(url_for('franchise_hub', tab='dashboard'))
+
+
+@app.route('/franchise/assist', methods=['POST'])
+def franchise_assist():
+    _, save = _franchise_save()
+    if save:
+        fk.set_assist(save, str(request.form.get('level', 'Full')).strip())
     return redirect(url_for('franchise_hub', tab='dashboard'))
 
 
