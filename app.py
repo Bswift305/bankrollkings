@@ -29012,6 +29012,8 @@ def _franchise_view(save):
         'stadium_cost': fk.stadium_cost(save),
         'facility_cost': fk.facility_cost(save),
         'stadium_svg': fk.stadium_svg(fk._business(save), team['full']),
+        'attendance': fk.attendance(save),
+        'atmosphere': fk.atmosphere(save),
         'assist': save['gm'].get('assist', 'Full'),
         'advice': fk.consultant_advice(save),
         'leaders': save.get('leaders'),

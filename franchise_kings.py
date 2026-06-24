@@ -435,6 +435,8 @@ def sim_season(save):
     powers = {tid: power_rating(t) for tid, t in teams.items()}
     _sb = staff_bonus(save)
     powers[save["current_team_id"]] += _sb["power"] + _sb["scheme"]   # coaching + scheme fit
+    powers[save["current_team_id"]] += _sb["special_teams"]           # special-teams coaching edge
+    powers[save["current_team_id"]] += atmosphere(save)["home_edge"]  # home-field atmosphere
 
     injuries = _roll_injuries(save, rng)
     inj_pen = round(sum((i["weeks"] / REG_GAMES) * POS_WEIGHT.get(i["pos"], 1.0) * 1.4 for i in injuries), 1)
@@ -522,8 +524,9 @@ def _advance_year(save):
     dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)
     uid = save["current_team_id"]
     for t in save["teams"]:
-        bonus = dev if t["id"] == uid else 0
+        my = t["id"] == uid
         for p in t["roster"]:
+            bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
             p["age"] += 1
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
@@ -612,10 +615,18 @@ def _job_openings(save, want):
 STAFF_ROLES = [
     ("off_coord", "Offensive Coordinator", "Runs your offense - rating + scheme + philosophy."),
     ("def_coord", "Defensive Coordinator", "Runs your defense - rating + scheme + philosophy."),
+    ("st_coord", "Special Teams Coordinator", "Field position + return/coverage units - a real edge."),
+    ("qb_coach", "QB Coach", "Develops your quarterbacks faster."),
+    ("oline_coach", "O-Line Coach", "Develops your trenches (OL)."),
+    ("db_coach", "DBs Coach", "Develops your secondary (CB/S)."),
     ("head_scout", "Head Scout", "Tightens draft scouting - fewer busts."),
     ("head_medical", "Head of Medical", "Keeps players healthier."),
     ("head_analytics", "Head of Analytics", "Sharper value reads."),
 ]
+# Special-teams "scheme" -> its identity + the home-field edge it adds.
+ST_SCHEMES = {"Field Position": 1.0, "Return Game": 0.7, "Coverage Units": 0.8, "Hidden Yardage": 1.1}
+# Position coaches -> the position group they develop (+1 dev when rated 60+).
+COACH_GROUP = {"qb_coach": ["QB"], "oline_coach": ["OL"], "db_coach": ["CB", "S"]}
 _STAFF_BASE = 48  # an unhired slot runs at replacement level
 
 PHILOSOPHIES = {
@@ -654,6 +665,8 @@ def _gen_staff(rng, role):
     if role in ("off_coord", "def_coord"):
         s["philosophy"] = rng.choice(["Analytics", "Old School", "Balanced"])
         s["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES))
+    elif role == "st_coord":
+        s["system"] = rng.choice(list(ST_SCHEMES))
     return s
 
 
@@ -713,12 +726,31 @@ def coaching_power(save):
     return round(base + syn + edge, 2)
 
 
+def special_teams(save):
+    """Special Teams Coordinator -> a home-field-style power edge (rating + specialty)."""
+    stc = save.get("staff", {}).get("st_coord")
+    if not stc:
+        return 0.0
+    return round(max(-0.5, (stc.get("rating", 50) - 50) * 0.05)
+                 + ST_SCHEMES.get(stc.get("system"), 0.5), 2)
+
+
+def position_coach_dev(save, pos):
+    """+1 development for a position group when its coach is hired and rated 60+."""
+    s = save.get("staff", {})
+    for role, group in COACH_GROUP.items():
+        if pos in group and _sr(s, role) >= 60:
+            return 1
+    return 0
+
+
 def staff_bonus(save):
     s = save.get("staff", {})
     coord_avg = (_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0
     return {
         "power": coaching_power(save),
         "scheme": scheme_effect(save),
+        "special_teams": special_teams(save),
         "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
         "development": 1 if coord_avg >= 65 else 0,
         "medical": _sr(s, "head_medical"),
@@ -1200,6 +1232,32 @@ def analytics(save):
 MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
 # ticket level -> (attendance mult, fan-happiness delta/season, price-per-seat mult)
 TICKET = {"low": (1.12, 1, 0.84), "normal": (1.0, 0, 1.0), "high": (0.9, -3, 1.18)}
+STADIUM_CAP = {1: 45, 2: 58, 3: 68, 4: 76, 5: 85}     # seats (thousands) by stadium level
+
+
+def attendance(save):
+    """How full the building gets - driven by winning, happy fans, ticket price and
+    market. Winning fills seats."""
+    b = _business(save)
+    team = current_team(save)
+    cap = STADIUM_CAP.get(b["stadium"], 50)
+    last = (save.get("last_outcome") or {}).get("record", {}) or {}
+    diff = last.get("w", 8) - last.get("l", 8)
+    am, _, _ = TICKET.get(b["ticket"], TICKET["normal"])
+    market_bump = {"Small": -4, "Mid": 0, "Large": 7}.get(team["market"], 0)
+    fill = 58 + (b["fan_happiness"] - 50) * 0.55 + diff * 1.6 + market_bump + (am - 1.0) * 60
+    fill = int(max(34, min(100, round(fill))))
+    return {"fill": fill, "capacity": cap, "avg": round(cap * fill / 100.0, 1)}
+
+
+def atmosphere(save):
+    """A packed, happy house is your 12th man -> a home-field power edge in the sim."""
+    b = _business(save)
+    att = attendance(save)
+    score = int(min(100, round(att["fill"] * 0.7 + b["fan_happiness"] * 0.3)))
+    home_edge = max(0.0, round((score - 42) / 17.0, 1))    # 42->0, 100->~3.4
+    return {"score": score, "home_edge": home_edge,
+            "fill": att["fill"], "capacity": att["capacity"], "avg": att["avg"]}
 
 
 def _business(save):
@@ -1214,10 +1272,11 @@ def _business(save):
 
 def projected_revenue(save):
     b = _business(save)
+    att = attendance(save)
     mm = MARKET_MULT.get(current_team(save)["market"], 1.0)
-    attend = 0.55 + b["fan_happiness"] / 220.0
-    am, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
-    return round((22 + b["stadium"] * 7) * mm * attend * am * pm, 1)
+    _, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
+    # seats actually filled x price-per-seat x market (so winning -> fuller house -> more money)
+    return round((16 + b["stadium"] * 5) * mm * (att["fill"] / 100.0 + 0.22) * pm, 1)
 
 
 def stadium_cost(save):

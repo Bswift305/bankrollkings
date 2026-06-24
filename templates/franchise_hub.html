@@ -425,6 +425,17 @@
   <div class="fk-card">
     <div class="fk-card-h">Business &amp; stadium</div>
     <div class="fk-stadium-wrap">{{ stadium_svg|safe }}</div>
+    {% if atmosphere %}
+    <div class="fk-atmo">
+      <div class="fk-atmo-stats">
+        <div><b>{{ atmosphere.avg }}k</b><span>avg attendance</span></div>
+        <div><b>{{ atmosphere.fill }}%</b><span>of {{ atmosphere.capacity }}k full</span></div>
+        <div><b class="fk-atmo-edge">+{{ atmosphere.home_edge }}</b><span>home-field edge</span></div>
+      </div>
+      <div class="fk-atmo-meter"><span>Atmosphere</span><div class="fk-bar"><i style="width:{{ atmosphere.score }}%;background:linear-gradient(90deg,#f5a05a,#ff7a7a)"></i></div><b>{{ atmosphere.score }}/100</b></div>
+      <p class="fk-hint">Win and keep fans happy → packed, loud building → a bigger home-field edge in every game. Gouge on tickets and the seats empty out.</p>
+    </div>
+    {% endif %}
     <div class="fk-bizgrid">
       <div class="fk-bizstat"><span>Cash</span><b>${{ '%.1f'|format(business.cash) }}M</b></div>
       <div class="fk-bizstat"><span>Revenue / yr</span><b>${{ '%.1f'|format(revenue) }}M</b></div>
@@ -719,6 +730,10 @@
   .fk-tos { display:flex; gap:7px; align-items:flex-start; color:#b7c6d0; font-size:12px; line-height:1.4; }
   .fk-gmbtns { display:flex; gap:8px; margin-top:10px; } .fk-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
   .fk-stadium-wrap { border:1px solid rgba(74,212,240,.18); border-radius:12px; overflow:hidden; margin-bottom:12px; background:#050d13; }
+  .fk-atmo { margin-bottom:12px; }
+  .fk-atmo-stats { display:flex; gap:8px; text-align:center; margin-bottom:10px; } .fk-atmo-stats > div { flex:1; background:rgba(3,8,12,.5); border:1px solid rgba(74,212,240,.18); border-radius:10px; padding:10px 4px; }
+  .fk-atmo-stats b { display:block; font-family:var(--font-display); font-size:20px; color:#fff; } .fk-atmo-stats span { font-size:10px; color:#8fa3b0; } .fk-atmo-edge { color:#7dffb0 !important; }
+  .fk-atmo-meter { display:flex; align-items:center; gap:8px; font-size:12px; color:#b7c6d0; } .fk-atmo-meter .fk-bar { flex:1; } .fk-atmo-meter b { color:#fff; }
   .fk-stadium { display:block; width:100%; height:auto; }
   .fk-av { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-size:10px; font-weight:800; color:#05121a; font-family:var(--font-display,sans-serif); }
   .fk-av-skill { background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
