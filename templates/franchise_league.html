@@ -31,6 +31,12 @@
   <a class="fkl-manage" href="{{ url_for('franchise_league_team', lid=league.id) }}">⚙ Manage my team — roster &amp; free agency →</a>
   {% endif %}
 
+  {% if league.draft.get('active') %}
+  <a class="fkl-draftbanner" href="{{ url_for('franchise_league_draft', lid=league.id) }}">🔴 LIVE ROOKIE DRAFT IN PROGRESS — enter the draft room →</a>
+  {% elif league.status == 'complete' %}
+  <a class="fkl-manage" href="{{ url_for('franchise_league_draft', lid=league.id) }}" style="background:linear-gradient(135deg,#7dffb0,#b6ffd2)">🏈 Live Rookie Draft{{ ' (results)' if league.draft_history else '' }} →</a>
+  {% endif %}
+
   <div class="fkl-card">
     <div class="fkl-h">Invite code <span class="fkl-code">{{ league.id }}</span></div>
     <p class="fkl-muted">{{ open_count }} open team{{ 's' if open_count != 1 }} left — share the code; GMs join from the Leagues page.</p>
@@ -168,6 +174,8 @@
   .fkl-myteam strong { color:#fff; font-family:var(--font-display); font-size:22px; display:block; } .fkl-myteam small { color:#7f93a0; }
   .fkl-pow { font-family:var(--font-display); font-size:30px; color:#4ad4f0; text-align:center; } .fkl-pow span { display:block; font-size:10px; color:#7f93a0; letter-spacing:.1em; }
   .fkl-manage { display:block; text-align:center; text-decoration:none; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-radius:11px; padding:13px; margin-bottom:12px; }
+  .fkl-draftbanner { display:block; text-align:center; text-decoration:none; font-weight:800; color:#fff; background:linear-gradient(135deg,#7a1d1d,#c23b3b); border:1px solid #ff7a7a; border-radius:11px; padding:14px; margin-bottom:12px; animation:fkpulse 1.6s ease-in-out infinite; }
+  @keyframes fkpulse { 0%,100%{ box-shadow:0 0 0 rgba(255,122,122,0); } 50%{ box-shadow:0 0 18px rgba(255,122,122,.5); } }
   .fkl-code { color:#4ad4f0; font-family:var(--font-mono,monospace); letter-spacing:.18em; background:rgba(74,212,240,.12); padding:2px 9px; border-radius:7px; margin-left:6px; }
   .fkl-btn { cursor:pointer; border:none; border-radius:10px; font-weight:800; font-size:14px; padding:12px 18px; margin-top:12px; width:100%; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
   .fkl-btn-sm { padding:9px 14px; font-size:13px; } .fkl-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }

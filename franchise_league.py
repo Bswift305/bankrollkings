@@ -84,6 +84,7 @@ def _new_code():
 _OPTIONAL_KEYS = {"board": list, "recaps": list, "history": list, "trades": list,
                   "autopilot_log": list, "power_rank_prev": dict,
                   "waivers": list, "waiver_log": list,
+                  "draft": dict, "draft_history": list,
                   "paused": False, "season": 1, "champion_name": ""}
 
 
@@ -408,6 +409,145 @@ def start_next_season(league):
     return True
 
 
+# --------------------------------------------------------------------------- #
+# Live, on-the-clock multiplayer ROOKIE DRAFT. Order = reverse standings (worst
+# picks first). Each human pick has a clock; idle GMs are auto-picked (best
+# available) by the lazy-advance/tick, so the draft never stalls. AI teams pick
+# instantly. Reuses fk's prospect class + scouting + rookie conversion.
+# --------------------------------------------------------------------------- #
+LEAGUE_DRAFT_ROUNDS = 5
+DRAFT_PICK_SECONDS = 90
+
+
+def _draft_on_clock(draft):
+    if draft["ptr"] >= draft["rounds"] * len(draft["order"]):
+        return None
+    return draft["order"][draft["ptr"] % len(draft["order"])]
+
+
+def _draft_round_pick(draft):
+    n = len(draft["order"])
+    return draft["ptr"] // n + 1, draft["ptr"] % n + 1
+
+
+def _draft_is_human(league, team_id):
+    return any(m["team_id"] == team_id for m in league.get("members", {}).values())
+
+
+def draft_available(draft):
+    return sorted(draft["class"], key=lambda p: -p.get("grade", 0))
+
+
+def _draft_take(league, team_id, prospect):
+    t = team_by_id(league, team_id)
+    draft = league["draft"]
+    rnd, _ = _draft_round_pick(draft)
+    t["roster"].append(fk._make_rookie(prospect))
+    draft["class"] = [p for p in draft["class"] if p["id"] != prospect["id"]]
+    draft["log"].insert(0, {"round": rnd, "team": t["full"], "name": prospect["name"],
+                            "pos": prospect["pos"], "ovr": prospect.get("true_ovr", 0)})
+    draft["log"] = draft["log"][:60]
+    draft["ptr"] += 1
+
+
+def _draft_autoadvance(league):
+    """Auto-pick for AI teams until a human is on the clock (set their deadline) or
+    the draft ends."""
+    draft = league["draft"]
+    while True:
+        oc = _draft_on_clock(draft)
+        if oc is None:
+            _finish_draft(league)
+            return
+        if _draft_is_human(league, oc):
+            draft["pick_deadline"] = _iso(_now() + timedelta(seconds=draft["pick_seconds"]))
+            return
+        avail = draft_available(draft)
+        if avail:
+            _draft_take(league, oc, avail[0])
+        else:
+            draft["ptr"] += 1
+
+
+def _finish_draft(league):
+    draft = league.get("draft") or {}
+    draft["active"] = False
+    league.setdefault("draft_history", []).insert(
+        0, {"season": league.get("season", 1), "log": draft.get("log", [])[:32]})
+
+
+def start_draft(league):
+    if (league.get("draft") or {}).get("active"):
+        return False
+    rng = random.Random(league["seed"] + league.get("season", 1) * 131 + 7)
+    cls = fk.generate_draft_class(rng)
+    for p in cls:
+        fk._scout(rng, p, 70)                       # league-wide moderate scouting
+    sc = league.get("standings_cache") or []
+    order = ([s["id"] for s in reversed(sc)] if sc
+             else [t["id"] for t in sorted(league["teams"], key=fk.power_rating)])
+    league["draft"] = {"active": True, "class": cls, "order": order,
+                       "rounds": LEAGUE_DRAFT_ROUNDS, "ptr": 0,
+                       "pick_seconds": DRAFT_PICK_SECONDS,
+                       "pick_deadline": _iso(_now() + timedelta(seconds=DRAFT_PICK_SECONDS)),
+                       "log": []}
+    _draft_autoadvance(league)                      # blow through any leading AI picks
+    save_league(league)
+    return True
+
+
+def draft_pick(league, user_id, prospect_id):
+    draft = league.get("draft")
+    if not draft or not draft.get("active"):
+        return False, "No live draft is running."
+    oc = _draft_on_clock(draft)
+    m = league.get("members", {}).get(user_id)
+    if not m or m["team_id"] != oc:
+        return False, "You're not on the clock."
+    prospect = next((p for p in draft["class"] if p["id"] == prospect_id), None)
+    if not prospect:
+        return False, "That prospect is already gone."
+    _draft_take(league, oc, prospect)
+    _draft_autoadvance(league)
+    save_league(league)
+    return True, f"Drafted {prospect['name']}."
+
+
+def draft_check(league):
+    """Lazy/tick advance: auto-pick (best available) for any human GM whose clock
+    expired, then roll through AI picks. Keeps the draft moving when GMs are away."""
+    draft = league.get("draft")
+    if not draft or not draft.get("active"):
+        return league
+    changed, guard = False, 0
+    while draft.get("active") and guard < 600:
+        oc = _draft_on_clock(draft)
+        if oc is None:
+            _finish_draft(league)
+            changed = True
+            break
+        if _draft_is_human(league, oc) and _parse(draft["pick_deadline"]) > _now():
+            break                                   # human still on the clock with time
+        avail = draft_available(draft)
+        if avail:
+            _draft_take(league, oc, avail[0])
+        else:
+            draft["ptr"] += 1
+        _draft_autoadvance(league)
+        changed = True
+        guard += 1
+    if changed:
+        save_league(league)
+    return league
+
+
+def draft_seconds_left(league):
+    draft = league.get("draft") or {}
+    if not draft.get("active"):
+        return 0
+    return max(0, int((_parse(draft["pick_deadline"]) - _now()).total_seconds()))
+
+
 def check_and_advance(league):
     """Lazy auto-advance: if the deadline passed, run game day (may catch up several
     weeks if nobody loaded the league for a while). Returns the (updated) league."""
@@ -428,7 +568,11 @@ def run_due_leagues():
         return advanced
     for f in list(LEAGUES_DIR.glob("*.json")):
         lg = load_league(f.stem)
-        if lg and not lg.get("paused") and lg["status"] != "complete" and time_left(lg) <= 0:
+        if not lg:
+            continue
+        if (lg.get("draft") or {}).get("active"):       # keep live drafts moving
+            draft_check(lg)
+        if not lg.get("paused") and lg["status"] != "complete" and time_left(lg) <= 0:
             check_and_advance(lg)
             advanced += 1
     return advanced

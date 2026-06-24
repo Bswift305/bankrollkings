@@ -1,0 +1,119 @@
+{% set active_page = 'franchise' %}
+{% extends "bk_base.html" %}
+{% block title %}Live Draft — {{ league.name }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+{% block workflow_toolbar %}{% endblock %}
+{% block content %}
+<section class="dr-wrap">
+  <div class="dr-hero">
+    <div class="dr-kick">{{ league.name }} · SEASON {{ league.season or 1 }} · LIVE ROOKIE DRAFT</div>
+    <h1>Draft Room</h1>
+  </div>
+
+  {% if active %}
+  <div class="dr-clock {{ 'dr-mine' if my_turn }}">
+    <div class="dr-rp">Round {{ rnd }} · Pick {{ pk }}</div>
+    {% if my_turn %}
+      <div class="dr-onclock">🟢 You're on the clock — <strong>{{ on_clock.full }}</strong></div>
+    {% else %}
+      <div class="dr-onclock">⏳ On the clock: <strong>{{ on_clock.full }}</strong></div>
+    {% endif %}
+    <div class="dr-timer"><span id="clk">{{ seconds_left }}s</span> on the clock</div>
+  </div>
+
+  <div class="dr-grid">
+    <div class="dr-card">
+      <div class="dr-h">{% if my_turn %}Make your pick{% else %}Best available{% endif %}</div>
+      <div class="dr-tscroll"><table class="dr-table"><thead><tr><th></th><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th>{% if my_turn %}<th></th>{% endif %}</tr></thead>
+        <tbody>
+        {% for p in available %}
+          <tr>
+            <td><span class="dr-av dr-av-{{ p.grp }}">{{ p.ini }}</span></td>
+            <td>{{ p.name }}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td>
+            <td><span class="dr-grade">{{ p.grade }}</span></td>
+            {% if my_turn %}<td><form method="post" action="{{ url_for('franchise_league_draft_pick', lid=league.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="dr-pick">Draft</button></form></td>{% endif %}
+          </tr>
+        {% endfor %}
+        </tbody></table></div>
+    </div>
+    <div class="dr-card">
+      <div class="dr-h">On the board</div>
+      {% for g in draft.log[:14] %}
+      <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small></div>
+      {% else %}
+      <p class="dr-muted">No picks yet — the clock just started.</p>
+      {% endfor %}
+    </div>
+  </div>
+  {% if not my_turn %}<p class="dr-muted">This page refreshes automatically as picks come in.</p>{% endif %}
+
+  {% else %}
+  {# draft not running #}
+  {% if league.draft_history %}
+  <div class="dr-card">
+    <div class="dr-h">✅ Draft complete — Season {{ league.draft_history[0].season }} rookies</div>
+    {% for g in league.draft_history[0].log %}
+    <div class="dr-pickrow"><span class="dr-pr-r">R{{ g.round }}</span> <strong>{{ g.pos }} {{ g.name }}</strong> <small>→ {{ g.team }} ({{ g.ovr }} OVR)</small></div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="dr-card"><p class="dr-muted">No live draft has been run yet.</p></div>
+  {% endif %}
+  {% if is_commish %}
+  <form method="post" action="{{ url_for('franchise_league_draft_start', lid=league.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="dr-pick dr-start">🏈 Start Live Rookie Draft ({{ 5 }} rounds, worst record picks first)</button>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  <p class="dr-muted"><a href="{{ url_for('franchise_league_hub', lid=league.id) }}">← back to {{ league.name }}</a></p>
+</section>
+
+{% if active %}
+<script>
+  (function(){
+    var sl = {{ seconds_left }};
+    var el = document.getElementById('clk');
+    function tick(){
+      if(el) el.textContent = sl + 's';
+      if(sl <= 0){ location.reload(); return; }
+      sl--; setTimeout(tick, 1000);
+    }
+    tick();
+    {% if not my_turn %}setTimeout(function(){ location.reload(); }, 6000);{% endif %}
+  })();
+</script>
+{% endif %}
+
+<style>
+  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 8px 16px 40px; }
+  .dr-hero { padding: 10px 0; } .dr-kick { color:#4ad4f0; font-weight:800; letter-spacing:.1em; font-size:11px; }
+  .dr-hero h1 { font-family:var(--font-display); font-size:clamp(24px,5vw,38px); margin:6px 0; color:#fff; }
+  .dr-clock { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.3); border-radius:14px; padding:16px; margin-bottom:12px; text-align:center; }
+  .dr-mine { border-color:#7dffb0; background:linear-gradient(135deg,rgba(18,40,28,.96),rgba(8,18,12,.98)); }
+  .dr-rp { color:#8fa3b0; font-size:12px; font-weight:700; letter-spacing:.06em; }
+  .dr-onclock { font-family:var(--font-display); font-size:20px; color:#fff; margin:6px 0; } .dr-onclock strong { color:#9fe9ff; }
+  .dr-mine .dr-onclock strong { color:#aaffcf; }
+  .dr-timer { color:#f5c860; font-size:13px; font-weight:700; } .dr-timer span { font-family:var(--font-mono,monospace); font-size:16px; }
+  .dr-grid { display:grid; grid-template-columns:1.4fr 1fr; gap:12px; }
+  @media (max-width:680px){ .dr-grid { grid-template-columns:1fr; } }
+  .dr-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .dr-h { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; }
+  .dr-tscroll { overflow-x:auto; max-height:460px; overflow-y:auto; }
+  .dr-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+  .dr-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:5px 6px; border-bottom:1px solid rgba(145,168,184,.18); position:sticky; top:0; background:#0a1822; }
+  .dr-table td { padding:6px; border-bottom:1px solid rgba(145,168,184,.08); color:var(--text2,#c2cfd8); }
+  .dr-av { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; font-size:9px; font-weight:800; color:#05121a; }
+  .dr-av-skill { background:linear-gradient(135deg,#4ad4f0,#8fe9ff); } .dr-av-oline { background:linear-gradient(135deg,#f5c860,#ffe09a); }
+  .dr-av-front { background:linear-gradient(135deg,#ff8a8a,#ffb3a0); } .dr-av-back { background:linear-gradient(135deg,#7dffb0,#b6ffd2); } .dr-av-kick { background:linear-gradient(135deg,#aab8c2,#d4e0e8); }
+  .dr-grade { font-weight:800; color:#9fe9ff; }
+  .dr-pick { cursor:pointer; border:none; border-radius:8px; font-weight:800; font-size:12px; padding:7px 14px; color:#05121a; background:linear-gradient(135deg,#7dffb0,#b6ffd2); }
+  .dr-start { font-size:14px; padding:14px; width:100%; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
+  .dr-pickrow { padding:6px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; color:var(--text2,#c2cfd8); }
+  .dr-pickrow strong { color:#fff; } .dr-pickrow small { color:#7f93a0; }
+  .dr-pr-r { color:#4ad4f0; font-weight:800; font-size:11px; margin-right:4px; }
+  .dr-muted { color:#7f93a0; font-size:13px; margin-top:8px; } .dr-muted a { color:#4ad4f0; text-decoration:none; }
+</style>
+{% endblock %}

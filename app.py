@@ -631,6 +631,9 @@ PUBLIC_ENDPOINTS = {
     'franchise_league_drop',
     'franchise_league_claim',
     'franchise_league_post',
+    'franchise_league_draft',
+    'franchise_league_draft_start',
+    'franchise_league_draft_pick',
     'franchise_league_next_season',
     'franchise_league_ready',
     'franchise_league_negotiate',
@@ -29522,6 +29525,53 @@ def franchise_league_trade_review(lid):
         fl.review_trade(league, str(request.form.get('trade_id', '')).strip(), uid,
                         bool(request.form.get('approve')))
     return redirect(url_for('franchise_league_team', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/draft')
+def franchise_league_draft(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=build_requested_path()))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if not league:
+        return render_error_page(404, 'League not found', 'That league code is not valid.')
+    fl.draft_check(league)                     # lazy real-time advance on view
+    draft = league.get('draft') or {}
+    active = draft.get('active')
+    oc_tid = fl._draft_on_clock(draft) if active else None
+    on_clock = fl.team_by_id(league, oc_tid) if oc_tid else None
+    mem = league.get('members', {}).get(uid)
+    my_turn = bool(active and mem and oc_tid and mem['team_id'] == oc_tid)
+    rnd, pk = fl._draft_round_pick(draft) if active else (0, 0)
+    available = [_league_avatar(p) for p in fl.draft_available(draft)[:50]] if active else []
+    order_names = [fl.team_by_id(league, tid)['full'] for tid in draft.get('order', [])] if active else []
+    return render_template('franchise_league_draft.html', league=league, draft=draft,
+                           active=active, on_clock=on_clock, my_turn=my_turn, mem=mem,
+                           rnd=rnd, pk=pk, available=available, order_names=order_names,
+                           seconds_left=fl.draft_seconds_left(league),
+                           is_commish=(league['commissioner'] == uid), current_user=current_user)
+
+
+@app.route('/franchise/league/<lid>/draft/start', methods=['POST'])
+def franchise_league_draft_start(lid):
+    current_user = get_current_user()
+    league = fl.load_league(lid)
+    if current_user and league and league['commissioner'] == str(current_user.get('user_id', '') or ''):
+        fl.start_draft(league)
+    return redirect(url_for('franchise_league_draft', lid=lid))
+
+
+@app.route('/franchise/league/<lid>/draft/pick', methods=['POST'])
+def franchise_league_draft_pick(lid):
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login'))
+    uid = str(current_user.get('user_id', '') or '')
+    league = fl.load_league(lid)
+    if league and uid in league.get('members', {}):
+        fl.draft_pick(league, uid, str(request.form.get('prospect_id', '')).strip())
+    return redirect(url_for('franchise_league_draft', lid=lid))
 
 
 @app.route('/franchise/league/<lid>/next-season', methods=['POST'])
