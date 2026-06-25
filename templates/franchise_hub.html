@@ -36,6 +36,24 @@
 
   {# ===================== DASHBOARD ===================== #}
   {% if tab == 'dashboard' %}
+
+  {% if away_recap %}
+  <div class="fk-card fk-away">
+    <div class="fk-away-h">⏳ While you were away <span class="fk-away-rec">{{ away_recap.played }} game{{ 's' if away_recap.played != 1 }} played · {{ away_recap.record }}</span></div>
+    <div class="fk-away-games">
+      {% for g in away_recap.results %}
+      <span class="fk-away-g {{ 'fk-away-w' if g.won else 'fk-away-l' }}">Wk {{ g.week }} {{ 'W' if g.won else 'L' }} {{ 'vs' if g.home is not defined else '' }} {{ g.opp }}</span>
+      {% endfor %}
+    </div>
+    {% if away_recap.injuries %}<div class="fk-away-line">🏥 {% for i in away_recap.injuries %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · {{ i.weeks }}w</span>{% endfor %}</div>{% endif %}
+    {% if away_recap.incidents %}<div class="fk-away-line">🚨 {% for i in away_recap.incidents %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · {{ i.label }}</span>{% endfor %}</div>{% endif %}
+    {% if away_recap.finalized %}<div class="fk-away-line" style="color:#f5c860">🏁 The season wrapped while you were out — check your owner review.</div>{% endif %}
+    <form method="post" action="{{ url_for('franchise_recap_dismiss') }}" style="margin-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="fk-btn fk-btn-sm fk-btn-ghost">Got it</button>
+    </form>
+  </div>
+  {% endif %}
+
   <div class="fk-card fk-gmcard">
     <div class="fk-gmpic">
       {% if avatar_url %}<img src="{{ avatar_url }}" alt="GM photo">
@@ -339,6 +357,20 @@
       <div class="fk-card-h">This season</div>
       {% if inseason %}
         <div class="fk-inseason-wk">📅 Regular season — <strong>Week {{ inseason_week }} of 17</strong> · trade deadline Week {{ trade_deadline }}{% if not trades_open %} <span style="color:#ff9a9a">(passed)</span>{% endif %}</div>
+        {% if live %}
+        <div class="fk-live {{ 'fk-live-on' if live.on else 'fk-live-off' }}">
+          {% if live.on %}
+            <span class="fk-live-dot"></span>
+            <span class="fk-live-txt">LIVE · next game sims in <b id="fk-countdown" data-secs="{{ live.next_in if live.next_in is not none else 0 }}">—</b></span>
+          {% else %}
+            <span class="fk-live-txt" style="color:#8fa3b0">Live clock is off — sim weeks manually.</span>
+          {% endif %}
+          <form method="post" action="{{ url_for('franchise_live_toggle') }}" style="margin-left:auto">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="on" value="{{ '0' if live.on else '1' }}">
+            <button class="fk-livebtn">{{ 'Turn off' if live.on else 'Go live' }}</button>
+          </form>
+        </div>
+        {% endif %}
         {% if inseason_offer %}
         <div class="fk-tradeoffer">
           <div class="fk-card-h" style="font-size:15px">{{ icon('swap') }}Trade offer — {{ inseason_offer.team }} <span class="fk-grade fk-grade-{{ inseason_offer.grade }}" style="float:right">{{ inseason_offer.grade }} for you</span></div>
@@ -1139,6 +1171,22 @@
   .fk-nego-context { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
   .fk-nego-context span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Live clock + while-you-were-away */
+  .fk-live { display:flex; align-items:center; gap:9px; margin:0 0 12px; padding:9px 12px; border-radius:10px;
+    background:linear-gradient(90deg,rgba(255,59,59,.12),rgba(11,24,34,.5)); border:1px solid rgba(255,59,59,.28); }
+  .fk-live-off { background:rgba(11,24,34,.5); border-color:rgba(145,168,184,.2); }
+  .fk-live-dot { width:9px; height:9px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 8px #ff3b3b; animation:fk-pulse 1.6s ease-in-out infinite; }
+  @keyframes fk-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .fk-live-txt { font-size:13px; color:#ffd5d5; font-weight:700; } .fk-live-txt b { color:#fff; font-variant-numeric:tabular-nums; }
+  .fk-livebtn { cursor:pointer; font-size:11px; font-weight:800; color:#cdd9e2; background:rgba(3,8,12,.5); border:1px solid rgba(145,168,184,.3); border-radius:7px; padding:4px 10px; }
+  .fk-away { border-color:rgba(245,200,96,.4); background:linear-gradient(135deg,rgba(40,32,8,.6),rgba(6,12,18,.96)); }
+  .fk-away-h { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:#f5c860; font-family:var(--font-display); font-size:17px; margin-bottom:10px; }
+  .fk-away-rec { margin-left:auto; font-size:12px; font-weight:700; color:#ffe6b8; }
+  .fk-away-games { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+  .fk-away-g { font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:7px; border:1px solid; }
+  .fk-away-w { color:#7dffb0; border-color:rgba(125,255,176,.4); background:rgba(125,255,176,.08); }
+  .fk-away-l { color:#ff9a9a; border-color:rgba(255,122,122,.4); background:rgba(255,122,122,.08); }
+  .fk-away-line { margin:6px 0; font-size:12px; color:#cdd9e2; display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
   /* Owner's Office feed */
   .fk-ofc-who { float:right; font-size:11px; color:#b7c6d0; font-weight:600; }
   .fk-ofc-feed { display:flex; flex-direction:column; gap:8px; }
@@ -1246,4 +1294,22 @@
   .fk-fit-mid { color:#ffd27d; background:rgba(255,210,125,.12); }
   .fk-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
 </style>
+<script>
+(function () {
+  var el = document.getElementById('fk-countdown');
+  if (!el) return;
+  var secs = parseInt(el.getAttribute('data-secs') || '0', 10);
+  function fmt(s) {
+    if (s <= 0) return 'any moment…';
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + x + 's';
+  }
+  el.textContent = fmt(secs);
+  var t = setInterval(function () {
+    secs -= 1;
+    el.textContent = fmt(secs);
+    if (secs <= 0) { clearInterval(t); setTimeout(function () { location.reload(); }, 1500); }
+  }, 1000);
+})();
+</script>
 {% endblock %}

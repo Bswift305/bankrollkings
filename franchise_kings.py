@@ -886,6 +886,93 @@ def sim_season(save):
     return save, save.get("last_outcome")
 
 
+# --------------------------------------------------------------------------- #
+# Live franchise clock — the season runs in REAL TIME. Game-weeks sim on a
+# schedule while you're away (lazily, on your next visit), so the league keeps
+# moving and there's always something waiting. The hook: a ticking countdown to
+# the next game + a "while you were away" recap of everything you missed.
+# --------------------------------------------------------------------------- #
+LIVE_WEEK_SECONDS = 4 * 3600       # one game-week sims every 4 real hours (default)
+LIVE_CATCHUP_CAP = 8               # most weeks auto-played in a single visit
+
+
+def set_live(save, on):
+    save.setdefault("live", {})["on"] = bool(on)
+    write_save(save)
+    return on
+
+
+def _ensure_live(save, now):
+    lv = save.setdefault("live", {})
+    lv.setdefault("on", True)
+    lv.setdefault("interval", LIVE_WEEK_SECONDS)
+    if "next_week_at" not in lv:
+        lv["next_week_at"] = now + lv["interval"]
+    return lv
+
+
+def reset_live_clock(save, now):
+    """Restart the countdown (after a manual sim or kickoff)."""
+    lv = _ensure_live(save, now)
+    lv["next_week_at"] = now + lv["interval"]
+    lv["last_seen"] = now
+
+
+def live_status(save, now):
+    lv = save.get("live") or {}
+    nxt = lv.get("next_week_at")
+    on = lv.get("on", True)
+    return {"on": on, "interval": lv.get("interval", LIVE_WEEK_SECONDS),
+            "live_season": bool(save.get("inseason")),
+            "next_in": max(0, int(nxt - now)) if (on and nxt and save.get("inseason")) else None}
+
+
+def live_tick(save, now):
+    """Lazy real-time advance: auto-sim the game-weeks that came due while the GM
+    was away and bank a 'while you were away' recap. Safe to call every load."""
+    if not save.get("inseason"):
+        if save.get("live"):
+            save["live"]["last_seen"] = now
+        return None
+    lv = _ensure_live(save, now)
+    if not lv.get("on", True):
+        lv["last_seen"] = now
+        return None
+    from_week = save["inseason"]["week"]
+    results, injuries, played = [], [], 0
+    while save.get("inseason") and now >= lv["next_week_at"] and played < LIVE_CATCHUP_CAP:
+        wk = save["inseason"]["week"]
+        sim_week(save)
+        played += 1
+        lv["next_week_at"] += lv["interval"]
+        iz = save.get("inseason")
+        if iz:
+            if iz.get("log"):
+                g = iz["log"][-1]
+                results.append({"week": g["week"], "opp": g["opp"], "won": g["won"], "star": g.get("star")})
+            for inj in iz.get("injuries", []):
+                injuries.append({**inj, "week": wk})
+        else:                                     # the season finished mid-stretch
+            gl = save.get("game_log") or []
+            if gl:
+                g = gl[-1]
+                results.append({"week": g.get("week"), "opp": g.get("opp"), "won": g.get("won"), "star": g.get("star")})
+            break
+    if lv["next_week_at"] < now:                  # never bank weeks across a long absence
+        lv["next_week_at"] = now + lv["interval"]
+    lv["last_seen"] = now
+    if not played:
+        write_save(save)
+        return None
+    w = sum(1 for r in results if r.get("won"))
+    recap = {"played": played, "results": results, "injuries": injuries[:6],
+             "incidents": [i for i in (save.get("incidents") or []) if i.get("week", 0) >= from_week][:5],
+             "record": f"{w}-{len(results) - w}", "finalized": not save.get("inseason")}
+    save["away_recap"] = recap
+    write_save(save)
+    return recap
+
+
 def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
     dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)

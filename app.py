@@ -598,6 +598,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_new',
     'franchise_sim',
     'franchise_sim_week',
+    'franchise_live_toggle',
+    'franchise_recap_dismiss',
     'franchise_offer',
     'franchise_sign',
     'franchise_job',
@@ -28990,6 +28992,8 @@ def _inseason_ctx(save, team):
 
 
 def _franchise_view(save):
+    _now_ts = datetime.now(timezone.utc).timestamp()
+    fk.live_tick(save, _now_ts)                      # real-time: auto-sim weeks that came due
     team = fk.current_team(save)
     role_friction = fk.role_friction_report(save)   # tags p['role_friction'] before avatars are built
     by_pos = {}
@@ -29047,6 +29051,8 @@ def _franchise_view(save):
         'assist': save['gm'].get('assist', 'Full'),
         'gm_grade': fk.gm_grade(save),
         'advice': fk.consultant_advice(save),
+        'live': fk.live_status(save, _now_ts),
+        'away_recap': save.get('away_recap'),
         'scheme': fk.scheme_identity(save),
         'value_report': fk.roster_value_report(save),
         'role_friction': role_friction,
@@ -29135,6 +29141,30 @@ def franchise_sim_week():
     _, save = _franchise_save()
     if save and save.get('inseason'):
         fk.sim_week(save)
+        save.pop('away_recap', None)
+        if save.get('inseason'):
+            fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
+        fk.write_save(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/live', methods=['POST'])
+def franchise_live_toggle():
+    _, save = _franchise_save()
+    if save:
+        fk.set_live(save, request.form.get('on') == '1')
+        if request.form.get('on') == '1' and save.get('inseason'):
+            fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
+            fk.write_save(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/recap/dismiss', methods=['POST'])
+def franchise_recap_dismiss():
+    _, save = _franchise_save()
+    if save:
+        save.pop('away_recap', None)
+        fk.write_save(save)
     return redirect(url_for('franchise_hub'))
 
 
