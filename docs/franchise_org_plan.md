@@ -201,6 +201,8 @@ Dug into Football Manager, OOTP, fantasy apps, and game-retention/habit literatu
 | **Variable reward** | the dopamine | hidden gems, breakouts, ceiling unlocks | make them *feel* like a lottery — "did my rookie pop?", draft-day swings, scout finds. Variable (vs fixed) rewards raise session frequency ~50% |
 | **Investment** | what makes leaving costly | GM grade, developed players | a **career legacy** you've sunk hours into (see Timeline below) |
 
+**✅ SHIPPED — Dynamic Career Timeline** (Career tab): persistent story rail of hires, season verdicts, titles, hot-seat survivals, firings, MVPs, ceiling unlocks, breakouts, HoF retirements. Next retention items: alert inbox + push (the trigger), League Newsroom.
+
 **The single standout to build (research-validated + cheap for us): a Dynamic Career Timeline.**
 FM's most-loved retention feature is the *Dynamic Manager Timeline* — a scrollable story of your career with 50+ event types you can look back on. We **already generate every event it would need** — titles, owner verdicts, breakouts, ceiling unlocks (the 66→88 project you coached up), holdouts, suspensions, hot-seat survivals, trades, draft steals — we just don't thread them into one memory feed. This turns "spreadsheet franchise" into *your story*, and a story is the thing users won't abandon. **High payoff, low lift** because the data exists.
 
