@@ -29040,7 +29040,9 @@ def _franchise_view(save):
         'draft_capital': fk.draft_capital(save) if save.get('draft_pending') else None,
         'last_draft_log': save.get('last_draft_log'),
         'staff': save.get('staff', {}),
-        'staff_market': save.get('staff_market', {}),
+        'staff_market': {role: [dict(c, roster_fit=fk.coach_roster_fit(save, dict(c, role=role)))
+                                for c in cands]
+                         for role, cands in save.get('staff_market', {}).items()},
         'staff_bonus': fk.staff_bonus(save),
         'staff_roles': fk.STAFF_ROLES,
         'business': fk._business(save),

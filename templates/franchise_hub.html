@@ -846,6 +846,7 @@
           <span class="fk-ovr">{{ staff[role].rating }}</span> {{ staff[role].name }}
           {% if staff[role].system %}<span class="fk-tag">{{ staff[role].system }}</span>{% endif %}
           {% if staff[role].style %}<span class="fk-tag">{{ staff[role].style }}</span>{% endif %}
+          {% if staff[role].ideology %}<span class="fk-tag fk-tag-ideo">{{ staff[role].ideology }}{% if staff[role].versatility is defined %} · {{ 'Adaptive' if staff[role].versatility >= 65 else 'Rigid' if staff[role].versatility <= 38 else 'Balanced' }}{% endif %}</span>{% endif %}
           {% if staff[role].philosophy %}
             {% if staff[role].philosophy == gm.philosophy and gm.philosophy != 'Balanced' %}<span class="fk-tag fk-syn">▲ {{ staff[role].philosophy }}</span>
             {% elif (staff[role].philosophy == 'Analytics' and gm.philosophy == 'Old School') or (staff[role].philosophy == 'Old School' and gm.philosophy == 'Analytics') %}<span class="fk-tag fk-clash">▼ {{ staff[role].philosophy }}</span>
@@ -872,6 +873,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
             <span class="fk-candmain"><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}
+              {% if c.ideology %}<small class="fk-candideo"><b>{{ c.ideology }}</b>{% if c.versatility is defined %} · {{ 'Adaptive' if c.versatility >= 65 else 'Rigid' if c.versatility <= 38 else 'Balanced' }}{% endif %}{% if c.specialties %} · best with {{ c.specialties }}{% endif %}{% if c.roster_fit %} · <span class="fk-rfit fk-rfit-{{ 'hi' if c.roster_fit.score >= 68 else 'mid' if c.roster_fit.score >= 50 else 'lo' }}">Roster fit {{ c.roster_fit.score }}</span>{% endif %}{% if c.roster_fit and c.roster_fit.notes %} — {{ c.roster_fit.notes[0] }}{% endif %}</small>{% endif %}
               {% if c.ped %}<small class="fk-candped"><span class="fk-ped-{{ 'hi' if c.ped.rep >= 78 else 'mid' if c.ped.rep >= 58 else 'lo' }}">{{ c.ped.label }}</span> · {{ c.ped.tree }} · {{ c.ped.experience }}yr{% if c.ped.pros %} · {{ c.ped.pros }} pros{% endif %}{% if c.ped.rings %} · 🏆{{ c.ped.rings }}{% endif %}</small>{% endif %}
             </span>
             <button class="fk-btn fk-btn-sm">Hire</button></form>
@@ -1238,6 +1240,10 @@
   .fk-ped-path { flex-basis:100%; font-size:11px; color:#7f93a0; }
   .fk-candmain { display:flex; flex-direction:column; gap:2px; }
   .fk-candped { color:#8fa3b0; font-size:11px; }
+  .fk-candideo { color:#b7c6d0; font-size:11px; display:block; margin-top:1px; } .fk-candideo b { color:#c7b3ff; }
+  .fk-tag-ideo { background:rgba(159,150,255,.14); border:1px solid rgba(159,150,255,.4); color:#c7b3ff; }
+  .fk-rfit { font-weight:800; }
+  .fk-rfit-hi { color:#7dffb0; } .fk-rfit-mid { color:#ffd27d; } .fk-rfit-lo { color:#ff9a9a; }
   .fk-candped .fk-ped-hi { padding:0 6px; } .fk-candped .fk-ped-mid { padding:0 6px; } .fk-candped .fk-ped-lo { padding:0 6px; }
   /* Player development engine (conditioning) */
   .fk-devbox { margin:10px 0 14px; padding:12px 14px; border-radius:11px; border:1px solid rgba(125,255,176,.3); background:rgba(125,255,176,.05); }

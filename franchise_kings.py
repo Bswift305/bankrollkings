@@ -1240,6 +1240,37 @@ COND_STYLES = {
 }
 # Position-coach styles (flavour + a tiny development edge from a great teacher).
 COACH_STYLES = ["Technician", "Teacher", "Motivator", "Players' Coach", "Hard-Driver"]
+# Coach IDEOLOGY — the development identity. What he's built to get out of people,
+# who he's great with, and who he stalls. `vbias` nudges his versatility (Rigid ↔
+# Adaptive): a rigid coach is elite for the right roster, shaky for a mixed one.
+COACH_IDEOLOGIES = {
+    "Teacher":         {"blurb": "Patient developer — turns raw tools into real technique.",
+                        "best": "young, raw, high work ethic", "weak": "set-in-their-ways veterans", "vbias": 6},
+    "Hard-Nosed":      {"blurb": "Demands toughness and accountability; no excuses.",
+                        "best": "the trenches, discipline, low-maturity players", "weak": "fragile confidence", "vbias": -12},
+    "Player's Coach":  {"blurb": "Builds trust and loyalty — they run through a wall for him.",
+                        "best": "team-first guys, fragile confidence, locker-room risks", "weak": "players who need a firm hand", "vbias": 14},
+    "Technician":      {"blurb": "Obsessed with detail and fundamentals.",
+                        "best": "film learners, QBs, technique positions", "weak": "instinctive players who overthink", "vbias": -10},
+    "Motivator":       {"blurb": "Squeezes the absolute most out of effort and emotion.",
+                        "best": "prove-the-doubters, spotlight, streaky players", "weak": "already-driven pros who tune out hype", "vbias": 0},
+    "Innovator":       {"blurb": "Scheme creativity — finds edges other staffs miss.",
+                        "best": "versatile, high-football-IQ players", "weak": "rigid, system-dependent players", "vbias": 18},
+    "Culture Builder": {"blurb": "Sets the standard; the whole room follows.",
+                        "best": "young rosters and rebuilds, team-first", "weak": "win-now veteran rooms that want results", "vbias": 8},
+}
+COACH_TEMPERAMENTS = ["Demanding", "Calm", "Charismatic", "Old-school", "Analytical"]
+
+
+def _gen_ideology(rng, rating):
+    ideo = rng.choice(list(COACH_IDEOLOGIES))
+    info = COACH_IDEOLOGIES[ideo]
+    versatility = max(15, min(95, int(50 + info["vbias"] + rng.gauss(0, 13) + (rating - 60) * 0.18)))
+    return {"ideology": ideo, "versatility": versatility,
+            "temperament": rng.choice(COACH_TEMPERAMENTS),
+            "specialties": info["best"], "struggles_with": info["weak"]}
+
+
 # Coaching TREES — the lineages great franchises stay relevant through. A coach's
 # branch + track record is a read on him beyond his raw rating. tier 1-3 prestige;
 # spec hints what the tree produces (off / def / dev).
@@ -1420,6 +1451,7 @@ def _gen_staff(rng, role):
     elif role in COACH_GROUP:
         s["style"] = rng.choice(COACH_STYLES)
     s["ped"] = _coach_pedigree(rng, s["rating"], role)
+    s.update(_gen_ideology(rng, s["rating"]))
     return s
 
 
@@ -1572,6 +1604,23 @@ def human_development_fit(save, p):
     elif motivation == "Prove Them Wrong" and p.get("overall", 0) < 72:
         score += 6
 
+    # coach IDEOLOGY + versatility (Phase 2): an adaptive coach bends to fit more
+    # players; a rigid one is great for the right guy and risky otherwise.
+    if coach and coach.get("versatility") is not None:
+        vers = coach.get("versatility", 50)
+        score += round((vers - 50) * 0.12)
+        if vers >= 72:
+            notes.append("adaptive coach — bends to fit him")
+        elif vers <= 35 and (coach_style != pref):
+            notes.append("rigid coach — risky unless he fits the system")
+        temp = coach.get("temperament")
+        if temp == "Demanding" and p.get("confidence", 65) < 55:
+            score -= 5
+            notes.append("a demanding coach can rattle his fragile confidence")
+        elif temp == "Charismatic" and p.get("work_ethic", 65) < 58:
+            score += 5
+            notes.append("a charismatic coach pulls more effort out of him")
+
     score += round((p.get("work_ethic", 65) - 65) * 0.18)
     score += round((p.get("confidence", 65) - 65) * 0.10)
     score = max(15, min(99, int(score)))
@@ -1579,6 +1628,55 @@ def human_development_fit(save, p):
     return {"score": score, "label": label, "notes": notes[:4],
             "coach": (coach or {}).get("name", ""), "coach_style": coach_style or "",
             "motivation": motivation, "learning": learning, "coach_pref": pref}
+
+
+def coach_roster_fit(save, coach):
+    """How well a coach fits the ROSTER you already have — so you hire for who
+    you've got, not a raw OVR. Returns a 0-100 score + readable notes."""
+    team = current_team(save)
+    role = coach.get("role")
+    if role in COACH_GROUP:
+        pool = [p for p in team["roster"] if p["pos"] in COACH_GROUP[role]]
+        label = "/".join(COACH_GROUP[role])
+    elif role == "off_coord":
+        pool, label = [p for p in team["roster"] if p["pos"] in OFFENSE_POS], "offense"
+    elif role == "def_coord":
+        pool, label = [p for p in team["roster"] if p["pos"] not in OFFENSE_POS and p["pos"] != "K"], "defense"
+    elif role in ("cond_coach", "head_medical"):
+        pool, label = [p for p in team["roster"] if p.get("age", 30) <= 26], "young core"
+    else:
+        pool, label = team["roster"], "roster"
+    pool = sorted(pool, key=lambda p: -p["overall"])[:14]
+    if not pool:
+        return {"score": 50, "notes": ["No relevant players to coach yet."]}
+
+    ideo, vers = coach.get("ideology"), coach.get("versatility", 50)
+    young = sum(1 for p in pool if p.get("age", 30) <= 24)
+    fragile = sum(1 for p in pool if p.get("confidence", 65) < 55)
+    grinders = sum(1 for p in pool if p.get("work_ethic", 65) >= 80)
+    motivated = sum(1 for p in pool if p.get("motivation") in ("Prove Them Wrong", "Prove the doubters", "Spotlight"))
+    score = 50 + (vers - 50) * 0.28
+    notes = []
+    if ideo in ("Teacher", "Culture Builder") and young >= max(2, len(pool) * 0.4):
+        score += 14
+        notes.append(f"ideal for your young {label} group")
+    if ideo == "Player's Coach" and fragile >= 2:
+        score += 12
+        notes.append("your fragile-confidence guys will buy in")
+    if ideo == "Hard-Nosed" and grinders >= 2:
+        score += 8
+        notes.append("your high-effort room responds to his edge")
+    if ideo == "Hard-Nosed" and fragile >= 3:
+        score -= 13
+        notes.append("too many fragile players for his hard edge")
+    if ideo == "Motivator" and motivated >= 2:
+        score += 9
+        notes.append("he lights up your chip-on-the-shoulder personalities")
+    if vers >= 72:
+        notes.append("adaptive — fits a mixed room")
+    elif vers <= 35:
+        notes.append("rigid — elite for the right roster, risky for a mix")
+    return {"score": max(15, min(99, round(score))), "notes": notes[:3]}
 
 
 def staff_bonus(save):
@@ -1608,7 +1706,8 @@ def hire_staff(save, role, candidate_id):
         return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - cost, 1)
     entry = {"name": cand["name"], "rating": cand["rating"]}
-    for k in ("philosophy", "system", "style", "ped"):
+    for k in ("philosophy", "system", "style", "ped",
+              "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in cand:
             entry[k] = cand[k]
     save.setdefault("staff", {})[role] = entry
