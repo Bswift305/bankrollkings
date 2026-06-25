@@ -29245,7 +29245,8 @@ def franchise_offseason():
         for t in sorted(save['teams'], key=lambda t: save['scenarios'][t['id']]['finish_rank']):
             sc = save['scenarios'][t['id']]
             board.append({'id': t['id'], 'full': t['full'], 'tier': sc['tier'],
-                          'slot': sc['draft_slot'], 'power': fk.power_rating(t)})
+                          'slot': sc['draft_slot'], 'power': fk.power_rating(t),
+                          'colors': fk.team_colors(t['full']), 'offer': fk.team_job_offer(save, t)})
         ctx['board'] = board
     elif stage == 'recap':
         team = fk.current_team(save)

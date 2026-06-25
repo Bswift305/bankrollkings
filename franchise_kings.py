@@ -2473,6 +2473,57 @@ _OWNER_PROFILES = {
     "Legacy": {"name": "Arthur Bell", "title": "Family Owner", "style": "guards the franchise standard"},
     "Billionaire": {"name": "Nadia Sterling", "title": "Owner", "style": "expects premium results"},
 }
+# How each owner opens the interview — his voice, before he hands you the keys.
+_OWNER_PITCH_OPEN = {
+    "Impatient":   "I'll be blunt — I don't do patience.",
+    "Cheap":       "Money's tight here, and it's staying tight.",
+    "Hands-Off":   "I hire good people and let them work.",
+    "Meddling":    "Fair warning: I like a voice in the big calls.",
+    "Legacy":      "This franchise has a history, and I expect you to honor it.",
+    "Billionaire": "Money is no object for the right plan.",
+}
+_TIER_LABEL = {"champion": "Defending Champions", "contender": "Win-Now Contender",
+               "middle": "On the Bubble", "rebuild": "Full Rebuild"}
+_TIER_MANDATE = {
+    "champion":  "Run it back — another title, or it's a failed year.",
+    "contender": "Push us over the top. This is a ring-or-bust window.",
+    "middle":    "Break the cycle: make the playoffs and prove we're more than mediocre.",
+    "rebuild":   "Build it right — draft well, develop, and show me real progress.",
+}
+
+
+def team_job_offer(save, t):
+    """The owner's interview pitch for one club: who he is, what he's offering
+    (cap, picks), the mandate, and an honest read of the roster he's handing you."""
+    sc = (save.get("scenarios") or {}).get(t["id"], {})
+    n = len(save["teams"])
+    tier = sc.get("tier", "middle")
+    otype = t["owner"]["type"]
+    prof = _OWNER_PROFILES.get(otype, _OWNER_PROFILES["Hands-Off"])
+
+    avg = {}
+    for pos, slots in ROSTER.items():
+        best = sorted((p["overall"] for p in t["roster"] if p["pos"] == pos), reverse=True)[:slots]
+        if best:
+            avg[pos] = sum(best) / len(best)
+    ranked = sorted(avg.items(), key=lambda kv: -kv[1])
+    strengths = [p for p, _ in ranked[:2]]
+    needs = [p for p, _ in ranked[-2:][::-1]]
+    stars = [{"pos": p["pos"], "name": p["name"], "ovr": p["overall"], "id": p["id"]}
+             for p in sorted(t["roster"], key=lambda x: -x["overall"])[:3]]
+    cap_room = round(CAP_TOTAL - cap_used(t) + sc.get("cap_bonus", 0))
+    pick = sc.get("draft_slot", n // 2)
+    comp = sc.get("comp_picks", 0)
+    mandate = _TIER_MANDATE[tier]
+
+    pitch = (f"{_OWNER_PITCH_OPEN.get(otype, '')} {mandate} You'll have about ${cap_room}M in cap room "
+             f"and the #{pick} pick" + (f" plus {comp} comp pick{'s' if comp != 1 else ''}" if comp else "")
+             + f". Our strength is {strengths[0] if strengths else 'a balanced roster'}, "
+             f"but {needs[0] if needs else 'depth'} keeps me up at night.")
+    return {"owner": {**prof, "type": otype}, "tier": tier, "label": _TIER_LABEL[tier],
+            "pitch": pitch, "mandate": mandate, "power": power_rating(t), "pick": pick,
+            "comp": comp, "cap_room": cap_room, "strengths": strengths, "needs": needs,
+            "stars": stars, "age": round(sum(p["age"] for p in t["roster"]) / max(1, len(t["roster"])), 1)}
 
 
 def owner_state(save):
