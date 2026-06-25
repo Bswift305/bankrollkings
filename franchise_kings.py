@@ -886,6 +886,55 @@ def locker_room(save):
             "captains": [{"pos": c["pos"], "name": c["name"], "pid": c["id"], "per": c.get("personality")} for c in captains]}
 
 
+def alerts(save):
+    """The GM's inbox — everything needing your attention, pulled from across the
+    franchise into one feed. The 'trigger' that brings you back: a decision on your
+    desk, a trade feeler, a holdout, a player breaking out, the clock in the draft."""
+    out = []
+    iz = save.get("inseason") or {}
+
+    if save.get("draft_pending"):
+        ds = draft_state(save)
+        if ds and ds.get("on_clock"):
+            out.append({"icon": "🎓", "kind": "draft", "pri": 4, "text": "You're on the clock in the draft.", "tab": "draft"})
+
+    off = iz.get("offer")
+    if off:
+        out.append({"icon": "🔁", "kind": "trade", "pri": 4,
+                    "text": f"Trade feeler from {off.get('team', 'a rival')}: {off.get('give_pos', '')} {off.get('give', '')} on the table.",
+                    "tab": "dashboard"})
+
+    for a in (save.get("agenda") or [])[:4]:
+        out.append({"icon": a.get("icon", "📋"), "kind": "decision", "pri": 3, "text": a["title"], "tab": "command"})
+
+    for h in (save.get("holdouts") or [])[:2]:
+        out.append({"icon": "✊", "kind": "holdout", "pri": 3,
+                    "text": f"{h['pos']} {h['name']} is holding out — wants a new deal.", "tab": "front-office"})
+
+    for fi in (save.get("front_office_issues") or [])[:3]:
+        out.append({"icon": "⚠", "kind": "issue", "pri": 3,
+                    "text": fi.get("summary") or fi.get("label", "A front-office issue needs you."), "tab": "front-office"})
+
+    for inc in (save.get("incidents") or [])[:2]:
+        out.append({"icon": "🚨", "kind": "wire", "pri": 2, "text": inc["text"] + ".", "tab": "gridiron", "pid": inc.get("pid")})
+
+    for u in (save.get("ceiling_unlocks") or [])[:1]:
+        out.append({"icon": "🔓", "kind": "dev", "pri": 1,
+                    "text": f"{u['pos']} {u['name']} broke his ceiling ({u['from']}→{u['to']}).", "tab": "roster"})
+    for b in (save.get("breakouts") or [])[:1]:
+        out.append({"icon": "📈", "kind": "dev", "pri": 1, "text": f"{b['pos']} {b['name']} is breaking out.", "tab": "roster"})
+
+    if not save.get("staff", {}).get("cond_coach"):
+        out.append({"icon": "🏋", "kind": "staff", "pri": 2, "text": "No conditioning coach — your young players are stalling.", "tab": "staff"})
+
+    room = round(CAP_TOTAL - cap_used(current_team(save)), 1)
+    if room < 3:
+        out.append({"icon": "💸", "kind": "cap", "pri": 2, "text": f"Cap nearly maxed — only ${room:.0f}M of room.", "tab": "front-office"})
+
+    out.sort(key=lambda x: -x["pri"])
+    return out[:9]
+
+
 # --------------------------------------------------------------------------- #
 # Off-field life: real NFL stuff happens away from the field. Personality drives
 # who's at risk - a Hothead boils over, a Showman courts headlines. Incidents

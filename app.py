@@ -29085,6 +29085,7 @@ def _franchise_view(save):
         'live': fk.live_status(save, _now_ts),
         'away_recap': save.get('away_recap'),
         'command_center': _command_center(save) if save.get('inseason') else None,
+        'alerts': fk.alerts(save),
         'scheme': fk.scheme_identity(save),
         'value_report': fk.roster_value_report(save),
         'role_friction': role_friction,
