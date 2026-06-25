@@ -64,6 +64,23 @@
     </div>
     {% endif %}
 
+    {% if scoutrep is defined and scoutrep %}
+    <div class="fp-card fp-scout fp-scout-{{ scoutrep.tier }}">
+      <div class="fp-h">🔭 Scout's Team Fit Report</div>
+      <div class="fp-scoutrec">
+        <span class="fp-scoutlabel">{{ scoutrep.rec }}</span>
+        <span class="fp-scoutgrade">{{ scoutrep.league }} leaguewide → <b>{{ scoutrep.here }}</b> here{% if scoutrep.edge %} <em>({{ '%+d'|format(scoutrep.edge) }})</em>{% endif %}</span>
+      </div>
+      <p class="fp-scoutwhy">{{ scoutrep.reason }}</p>
+      <div class="fp-rows">
+        <div><span>Best environment</span><b style="text-align:right">{{ scoutrep.best_env }}</b></div>
+        <div><span>Development path</span><b style="text-align:right">{{ scoutrep.dev_path }}</b></div>
+        <div><span>Risk</span><b style="text-align:right;color:#ffb3b3">{{ scoutrep.risk }}</b></div>
+      </div>
+      {% if not scoutrep.confident %}<p class="fp-muted" style="margin-top:8px">⚠ Your scouting is thin — upgrade your Head Scout / Drafting for a sharper read.</p>{% endif %}
+    </div>
+    {% endif %}
+
     {% if mine %}
     <div class="fp-card" style="border-color:rgba(74,212,240,.4)">
       <div class="fp-h">✍ Extend {{ p.name }}</div>
@@ -207,5 +224,11 @@
   .fp-outlook-good { border-color:rgba(125,255,176,.4); } .fp-outlook-good .fp-h { color:#7dffb0; }
   .fp-outlook-ok { border-color:rgba(255,210,125,.4); } .fp-outlook-ok .fp-h { color:#ffd27d; }
   .fp-outlook-bad { border-color:rgba(255,122,122,.45); } .fp-outlook-bad .fp-h { color:#ff9a9a; }
+  .fp-scout-hi { border-color:rgba(125,255,176,.4); } .fp-scout-mid { border-color:rgba(245,200,96,.4); } .fp-scout-lo { border-color:rgba(255,122,122,.45); }
+  .fp-scoutrec { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  .fp-scoutlabel { font-family:var(--font-display); font-size:18px; color:#fff; }
+  .fp-scout-hi .fp-scoutlabel { color:#7dffb0; } .fp-scout-mid .fp-scoutlabel { color:#ffd27d; } .fp-scout-lo .fp-scoutlabel { color:#ff9a9a; }
+  .fp-scoutgrade { color:#b7c6d0; font-size:13px; } .fp-scoutgrade b { color:#fff; } .fp-scoutgrade em { color:#7dffb0; font-style:normal; }
+  .fp-scoutwhy { color:#cdd9e2; font-size:13px; font-style:italic; line-height:1.5; margin:0 0 8px; }
 </style>
 {% endblock %}

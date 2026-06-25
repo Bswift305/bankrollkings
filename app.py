@@ -29024,7 +29024,9 @@ def _franchise_view(save):
         'practice_squad': [_avatar(p) for p in sorted(fk.ensure_practice_squad(save),
                                                       key=lambda x: -x['overall'])],
         'free_agents': [dict(p, fit=fk.tactical_fit(save, p)['label'],
-                             fit_pct=fk.tactical_fit(save, p)['pct'])
+                             fit_pct=fk.tactical_fit(save, p)['pct'],
+                             scout=fk.scout_report(save, p)['rec'],
+                             scout_tier=fk.scout_report(save, p)['tier'])
                         for p in sorted(save.get('free_agents', []), key=lambda x: -x['overall'])],
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
@@ -29224,7 +29226,9 @@ def franchise_offseason():
         team = fk.current_team(save)
         fa_id = str(request.args.get('fa', '')).strip()
         ctx.update(free_agents=[dict(p, fit=fk.tactical_fit(save, p)['label'],
-                                     fit_pct=fk.tactical_fit(save, p)['pct'])
+                                     fit_pct=fk.tactical_fit(save, p)['pct'],
+                                     scout=fk.scout_report(save, p)['rec'],
+                                     scout_tier=fk.scout_report(save, p)['tier'])
                                 for p in sorted(save.get('free_agents', []),
                                                 key=lambda p: -p['overall'])[:30]],
                    last_nego=save.get('last_nego'),
@@ -29554,6 +29558,7 @@ def franchise_player(pid):
     prof['last_nego'] = save.get('last_nego')
     prof['fit'] = fk.tactical_fit(save, prof['p'])
     prof['human_fit'] = fk.human_development_fit(save, prof['p'])
+    prof['scoutrep'] = fk.scout_report(save, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
 
@@ -29570,6 +29575,7 @@ def franchise_league_player(lid, pid):
     if not prof:
         return redirect(url_for('franchise_league_hub', lid=lid))
     prof['human_fit'] = fk.human_development_fit(league, prof['p'])
+    prof['scoutrep'] = fk.scout_report(league, prof['p'])
     return render_template('franchise_player.html',
                            back=url_for('franchise_league_team', lid=lid),
                            current_user=current_user, **prof)
@@ -29600,6 +29606,7 @@ def franchise_prospect(pid):
         return redirect(url_for('franchise_hub', tab='draft'))
     prof['fit'] = fk.tactical_fit(save, prof['p'])
     prof['human_fit'] = fk.human_development_fit(save, prof['p'])
+    prof['scoutrep'] = fk.scout_report(save, prof['p'])
     prof['dev_outlook'] = _dev_outlook(save, prof.get('r1', 0), prof.get('r2', 0))
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
                            current_user=current_user, **prof)
@@ -29617,6 +29624,7 @@ def franchise_league_prospect(lid, pid):
     if not prof:
         return redirect(url_for('franchise_league_draft', lid=lid))
     prof['human_fit'] = fk.human_development_fit(league, prof['p'])
+    prof['scoutrep'] = fk.scout_report(league, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_league_draft', lid=lid),
                            current_user=current_user, **prof)
 

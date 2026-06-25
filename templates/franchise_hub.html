@@ -678,11 +678,12 @@
     {% else %}
       <div class="fk-card-h">Free agents — negotiate with their agents</div>
       <table class="fk-table">
-        <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
+        <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Scout</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
         <tbody>
           {% for p in free_agents %}
           <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td class="fk-ovr">{{ p.overall }}</td>
             <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+            <td>{% if p.scout %}<span class="fk-scout fk-scout-{{ p.scout_tier }}">{{ p.scout }}</span>{% endif %}</td>
             <td>{{ p.agent.personality if p.agent else '—' }}</td>
             <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
             <td><a class="fk-btn fk-btn-sm" href="{{ url_for('franchise_hub', tab='front-office', fa=p.id) }}">Negotiate</a></td></tr>
@@ -974,13 +975,14 @@
       <p class="fk-muted">Grades carry your scouting error — the top of the board isn't always right.
         Better scouting (your Drafting rating + future scout hires) tightens it.</p>
       <table class="fk-table">
-        <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th>Fit</th><th>Human</th><th></th></tr></thead>
+        <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th>Fit</th><th>Human</th><th>Scout</th><th></th></tr></thead>
         <tbody>
           {% for p in draft.available %}
           <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}{% if p.college %} · {{ p.college }}{% endif %}</small>{% elif p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
             <td class="fk-ovr">{{ p.grade }}</td><td>{{ p.pot_grade }}</td>
             <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td><span class="fk-fit fk-fit-{{ 'hi' if p.human_fit_score >= 70 else 'mid' if p.human_fit_score >= 55 else 'lo' }}">{{ p.human_fit }}</span></td>
+            <td>{% if p.scout %}<span class="fk-scout fk-scout-{{ p.scout_tier }}">{{ p.scout }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td>{% if draft.on_clock %}<form method="post" action="{{ url_for('franchise_draft') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="prospect_id" value="{{ p.id }}">
@@ -1370,6 +1372,10 @@
   .fk-fit-hi { color:#7dffb0; background:rgba(125,255,176,.13); }
   .fk-fit-mid { color:#ffd27d; background:rgba(255,210,125,.12); }
   .fk-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
+  .fk-scout { font-size:9.5px; font-weight:900; letter-spacing:.02em; padding:2px 7px; border-radius:6px; white-space:nowrap; text-transform:uppercase; }
+  .fk-scout-hi { color:#05121a; background:#7dffb0; }
+  .fk-scout-mid { color:#ffe6b8; background:rgba(245,200,96,.18); border:1px solid rgba(245,200,96,.4); }
+  .fk-scout-lo { color:#ffb3b3; background:rgba(255,122,122,.16); border:1px solid rgba(255,122,122,.4); }
 </style>
 <script>
 (function () {

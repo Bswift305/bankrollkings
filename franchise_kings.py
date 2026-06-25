@@ -1624,6 +1624,86 @@ def fire_staff(save, role):
 
 
 # --------------------------------------------------------------------------- #
+# Scout Recommendation layer — the scout stops being a grade machine. He compares
+# a player's RAW (leaguewide) value to how he projects in YOUR building (scheme +
+# human/dev fit) and returns a verdict + reason + risk. A weak head scout gives a
+# fuzzier read, so the scout hire finally pays for itself.
+# --------------------------------------------------------------------------- #
+_SCOUT_TIER = {"Must Target": "hi", "Strong Fit": "hi", "System Bet": "mid",
+               "Raw Talent Only": "mid", "Scout Disagreement": "mid", "Bad Fit Here": "lo"}
+
+
+def scout_report(save, p):
+    league_grade = int(p.get("grade", p.get("overall", 60)) or 60)
+    pot = int(p.get("pot_grade", p.get("potential", league_grade)) or league_grade)
+    tf = tactical_fit(save, p)
+    hf = human_development_fit(save, p)
+    cond = conditioning_dev(save)
+    scheme_delta = ((tf["pct"] - 62) * 0.18) if tf.get("pct") is not None else 0.0
+    human_delta = (hf["score"] - 50) * 0.14
+    gap = max(0, pot - league_grade)
+    project = gap >= 8 and league_grade <= 76
+    project_delta = (cond["unlock"] * 6 - 2) if project else 0.0
+    here = max(40, min(99, round(league_grade + scheme_delta + human_delta + project_delta)))
+    edge = here - league_grade
+    acc = max(20, min(95, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"]))
+
+    bits = []
+    if tf.get("pct") is not None and tf["label"] in ("Ideal fit", "Good fit"):
+        bits.append(f"his {tf.get('style', 'game')} fits your {tf['scheme']}")
+    if hf["score"] >= 62:
+        bits.append("your staff coaches him the way he learns")
+    if project and cond["unlock"] >= 0.6:
+        bits.append("your conditioning staff can unlock his ceiling")
+    reason = (("; ".join(bits[:2]) + ".") if bits
+              else f"A {league_grade}-grade talent, but nothing in your building lifts him beyond that.")
+
+    if tf.get("pct") is not None and tf["label"] == "Square peg":
+        risk = "Square peg in your scheme — expect less than his rating."
+    elif not scheme_identity(save)["installed"]:
+        risk = "No scheme installed yet — fit is a guess until you hire coordinators."
+    elif p.get("confidence", 65) < 55:
+        risk = "Fragile confidence — bury him on the depth chart and he stalls."
+    elif tf.get("pct") is not None and tf["pct"] >= 80:
+        risk = "Scheme-dependent — his value drops if you change your OC/DC."
+    elif project and not cond["style"]:
+        risk = "He's a project and you have no conditioning coach to grow him."
+    else:
+        risk = "Standard development risk."
+
+    if acc < 45 and abs(edge) >= 3:
+        rec = "Scout Disagreement"
+    elif edge >= 8 and here >= 75:
+        rec = "Must Target"
+    elif edge >= 4:
+        rec = "Strong Fit"
+    elif project and project_delta > 0 and edge >= 0:
+        rec = "System Bet"
+    elif edge <= -7:
+        rec = "Bad Fit Here"
+    elif league_grade >= 78 and edge < 2:
+        rec = "Raw Talent Only"
+    elif edge >= 2:
+        rec = "Strong Fit"
+    elif project and project_delta > 0:        # a project you can actually develop here
+        rec = "System Bet"
+    elif league_grade >= 70:
+        rec = "Raw Talent Only"
+    else:
+        rec = "Bad Fit Here"
+
+    age = p.get("age", 24)
+    dev_path = ("Plug-and-play starter" if gap <= 3 and league_grade >= 75 else
+                "Year-1 role, Year-2 starter push" if age <= 24 else
+                "Rotational now, upside with reps")
+    best_env = (f"a {p.get('coach_pref', 'hands-on')} coach, {(p.get('learning') or 'structured reps')}, "
+                f"and a system built around a {p.get('style', 'player like him')}")
+    return {"rec": rec, "tier": _SCOUT_TIER.get(rec, "mid"), "reason": reason, "risk": risk,
+            "here": here, "league": league_grade, "edge": edge, "best_env": best_env,
+            "dev_path": dev_path, "confident": acc >= 60}
+
+
+# --------------------------------------------------------------------------- #
 # Rookie draft + scouting
 # --------------------------------------------------------------------------- #
 def _gen_prospect(rng, pos):
@@ -1939,8 +2019,10 @@ def draft_state(save):
     for pr in _available(draft)[:60]:
         f = tactical_fit(save, pr)
         hf = human_development_fit(save, pr)
+        sr = scout_report(save, pr)
         avail.append(dict(pr, fit=f["label"], fit_pct=f["pct"],
-                          human_fit=hf["label"], human_fit_score=hf["score"]))
+                          human_fit=hf["label"], human_fit_score=hf["score"],
+                          scout=sr["rec"], scout_tier=sr["tier"]))
     on_clock = _draft_on_clock(draft) == save["current_team_id"]
     return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
             "on_clock": on_clock, "available": avail, "log": draft["user_log"],
