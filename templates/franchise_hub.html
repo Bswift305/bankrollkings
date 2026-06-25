@@ -805,6 +805,21 @@
       <span>Scouting <b>{{ '%+.0f'|format(staff_bonus.scouting) }} acc</b></span>
       <span>Development <b>{{ 'boosted' if staff_bonus.development else 'standard' }}</b></span>
     </div>
+    {% set cond = staff_bonus.conditioning %}
+    <div class="fk-devbox {{ 'fk-devbox-empty' if not cond.style }}">
+      <div class="fk-devbox-h">{{ icon('bulb') }}Player Development Engine</div>
+      {% if cond.style %}
+      <p>Your conditioning coach runs <strong>{{ cond.style }}</strong> — {{ cond.blurb }}</p>
+      <div class="fk-devstats">
+        <span>Growth <b>{{ '+%.1f'|format(cond.gain) }}/yr</b></span>
+        <span>Durability <b>+{{ cond.durability }}</b></span>
+        <span>Ceiling unlock <b class="{{ 'fk-unlock-hi' if cond.unlock >= 0.7 }}">{{ (cond.unlock * 45)|round }}%</b></span>
+      </div>
+      <p class="fk-devnote">{% if cond.unlock >= 0.7 %}Elite — he regularly pushes young players <strong>past their scouted ceiling</strong>.{% elif cond.unlock > 0 %}He can lift a young player past his ceiling — a better coach does it more often.{% endif %}</p>
+      {% else %}
+      <p>No conditioning coach hired. Your young players grow slower, get hurt more, and <strong>stay capped at their scouted ceiling</strong> — a great one is how a prospect breaks past it. Hire one below.</p>
+      {% endif %}
+    </div>
     <div class="fk-staffrow fk-hc">
       <div class="fk-staffrole"><strong>You — Head Coach</strong><small>Your philosophy. Coordinators who match give synergy; an opposite philosophy clashes.</small></div>
       <span class="fk-tag fk-tag-hc">{{ gm.philosophy }}</span>
@@ -816,6 +831,7 @@
         <div class="fk-staffhire">
           <span class="fk-ovr">{{ staff[role].rating }}</span> {{ staff[role].name }}
           {% if staff[role].system %}<span class="fk-tag">{{ staff[role].system }}</span>{% endif %}
+          {% if staff[role].style %}<span class="fk-tag">{{ staff[role].style }}</span>{% endif %}
           {% if staff[role].philosophy %}
             {% if staff[role].philosophy == gm.philosophy and gm.philosophy != 'Balanced' %}<span class="fk-tag fk-syn">▲ {{ staff[role].philosophy }}</span>
             {% elif (staff[role].philosophy == 'Analytics' and gm.philosophy == 'Old School') or (staff[role].philosophy == 'Old School' and gm.philosophy == 'Analytics') %}<span class="fk-tag fk-clash">▼ {{ staff[role].philosophy }}</span>
@@ -831,7 +847,7 @@
           <form method="post" action="{{ url_for('franchise_hire') }}" class="fk-cand">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
-            <span><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}</span>
+            <span><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}</span>
             <button class="fk-btn fk-btn-sm">Hire</button></form>
           {% endfor %}
         </div>
@@ -1177,6 +1193,15 @@
   .fk-nego-context { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
   .fk-nego-context span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Player development engine (conditioning) */
+  .fk-devbox { margin:10px 0 14px; padding:12px 14px; border-radius:11px; border:1px solid rgba(125,255,176,.3); background:rgba(125,255,176,.05); }
+  .fk-devbox-empty { border-color:rgba(255,210,125,.35); background:rgba(255,210,125,.06); }
+  .fk-devbox-h { display:flex; align-items:center; color:#fff; font-weight:800; font-size:13px; margin-bottom:6px; }
+  .fk-devbox p { color:#cdd9e2; font-size:12.5px; line-height:1.5; margin:4px 0; } .fk-devbox strong { color:#fff; }
+  .fk-devstats { display:flex; flex-wrap:wrap; gap:8px; margin:7px 0; }
+  .fk-devstats span { font-size:11.5px; color:#9fb0bc; background:rgba(3,8,12,.5); border:1px solid rgba(145,168,184,.2); border-radius:8px; padding:4px 10px; }
+  .fk-devstats b { color:#7dffb0; } .fk-unlock-hi { color:#ffd27d !important; }
+  .fk-devnote { color:#9fe9ff !important; font-size:12px !important; }
   /* Live clock + while-you-were-away */
   .fk-live { display:flex; align-items:center; gap:9px; margin:0 0 12px; padding:9px 12px; border-radius:10px;
     background:linear-gradient(90deg,rgba(255,59,59,.12),rgba(11,24,34,.5)); border:1px solid rgba(255,59,59,.28); }

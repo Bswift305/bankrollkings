@@ -1006,22 +1006,36 @@ def live_tick(save, now):
 
 def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
-    dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)
+    sb = staff_bonus(save)
+    dev = sb["development"] + (1 if _business(save)["facility"] >= 3 else 0)
+    cond = sb["conditioning"]
     uid = save["current_team_id"]
     _apply_role_friction(save)   # Loop 4: paid-but-benched players sour over the year
-    breakouts = []
+    breakouts, unlocks = [], []
     for t in save["teams"]:
         my = t["id"] == uid
         for p in t["roster"]:
             pre_pot = p["potential"]
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
+            if my and cond["gain"]:                          # conditioning coach -> faster growth
+                bonus += int(cond["gain"]) + (1 if rng.random() < (cond["gain"] - int(cond["gain"])) else 0)
             p["age"] += 1
+            # CONDITIONING UNLOCK: a strong conditioning coach pushes a young player who is
+            # bumping his ceiling PAST it - raising the hidden true_pot so he keeps climbing.
+            if my and cond["unlock"] > 0 and p.get("age", 30) <= 25:
+                cap = p.get("true_pot", p["potential"])
+                if p["overall"] >= cap - 4 and rng.random() < cond["unlock"] * 0.45:
+                    ncap = min(99, cap + rng.randint(2, 5))
+                    if ncap > cap:
+                        p["true_pot"] = ncap
+                        unlocks.append({"name": p["name"], "pos": p["pos"], "from": cap, "to": ncap})
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
             if my and p["potential"] - pre_pot >= 2:        # a hidden gem revealed himself
                 breakouts.append({"name": p["name"], "pos": p["pos"],
                                   "ovr": p["overall"], "pot": p["potential"]})
     save["breakouts"] = breakouts
+    save["ceiling_unlocks"] = unlocks
     for p in current_team(save).get("practice_squad", []):    # PS develops too
         p["age"] += 1
         _develop(p, rng, dev)
@@ -1157,6 +1171,7 @@ STAFF_ROLES = [
     ("off_coord", "Offensive Coordinator", "Runs your offense - rating + scheme + philosophy."),
     ("def_coord", "Defensive Coordinator", "Runs your defense - rating + scheme + philosophy."),
     ("st_coord", "Special Teams Coordinator", "Field position + return/coverage units - a real edge."),
+    ("cond_coach", "Conditioning Coach", "The development engine - faster growth, durability, and the man who unlocks a player's ceiling."),
     ("qb_coach", "QB Coach", "Develops your quarterbacks faster."),
     ("oline_coach", "O-Line Coach", "Develops your trenches (OL)."),
     ("db_coach", "DBs Coach", "Develops your secondary (CB/S)."),
@@ -1166,6 +1181,16 @@ STAFF_ROLES = [
 ]
 # Special-teams "scheme" -> its identity + the home-field edge it adds.
 ST_SCHEMES = {"Field Position": 1.0, "Return Game": 0.7, "Coverage Units": 0.8, "Hidden Yardage": 1.1}
+# Conditioning STYLE -> what the coach is built to deliver. dev = growth speed,
+# dur = durability/health, unlock = how hard he pushes a player PAST his ceiling.
+COND_STYLES = {
+    "Sports Science":   {"blurb": "Modern load management + recovery. Unlocks raw upside others can't.", "dev": 1.0, "dur": 0.9, "unlock": 1.35},
+    "Explosive Power":  {"blurb": "Speed and explosion gains - the fastest development.", "dev": 1.35, "dur": 0.6, "unlock": 1.0},
+    "Durability First": {"blurb": "Built to last - your guys stay on the field.", "dev": 0.7, "dur": 1.45, "unlock": 0.7},
+    "Old-School Grind": {"blurb": "Relentless, hard-nosed work. Steady growth and grit.", "dev": 1.0, "dur": 1.1, "unlock": 0.95},
+}
+# Position-coach styles (flavour + a tiny development edge from a great teacher).
+COACH_STYLES = ["Technician", "Teacher", "Motivator", "Players' Coach", "Hard-Driver"]
 # Position coaches -> the position group they develop (+1 dev when rated 60+).
 COACH_GROUP = {"qb_coach": ["QB"], "oline_coach": ["OL"], "db_coach": ["CB", "S"]}
 _STAFF_BASE = 48  # an unhired slot runs at replacement level
@@ -1278,7 +1303,28 @@ def _gen_staff(rng, role):
         s["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES))
     elif role == "st_coord":
         s["system"] = rng.choice(list(ST_SCHEMES))
+    elif role == "cond_coach":
+        s["system"] = rng.choice(list(COND_STYLES))     # his training philosophy
+    elif role in COACH_GROUP:
+        s["style"] = rng.choice(COACH_STYLES)
     return s
+
+
+def conditioning_dev(save):
+    """The Conditioning Coach is the development engine. Quality (rating) × his
+    training STYLE drives: extra growth, durability, and `unlock` — the chance he
+    pushes a young player PAST his original ceiling. He is the reason a capped
+    prospect can keep climbing."""
+    c = save.get("staff", {}).get("cond_coach")
+    if not c:
+        return {"gain": 0.0, "durability": 0, "unlock": 0.0, "style": None, "rating": 0}
+    r = c.get("rating", 50)
+    st = COND_STYLES.get(c.get("system"), COND_STYLES["Old-School Grind"])
+    q = max(0.0, (r - 48) / 52.0)                       # ~0..0.8 quality
+    return {"gain": round(q * 1.3 * st["dev"], 2),
+            "durability": round(q * 34 * st["dur"]),
+            "unlock": round(q * st["unlock"], 3),
+            "style": c.get("system"), "rating": r, "blurb": st["blurb"]}
 
 
 def generate_staff_market(rng):
@@ -1358,14 +1404,16 @@ def position_coach_dev(save, pos):
 def staff_bonus(save):
     s = save.get("staff", {})
     coord_avg = (_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0
+    cond = conditioning_dev(save)
     return {
         "power": coaching_power(save),
         "scheme": scheme_effect(save),
         "special_teams": special_teams(save),
         "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
         "development": 1 if coord_avg >= 65 else 0,
-        "medical": _sr(s, "head_medical"),
+        "medical": _sr(s, "head_medical") + cond["durability"],   # conditioning keeps them healthy
         "analytics": _sr(s, "head_analytics"),
+        "conditioning": cond,
     }
 
 
@@ -2678,6 +2726,12 @@ def consultant_advice(save):
                      "detail": "Best player available beats reaching for need - the value compounds.",
                      "u": 3})
 
+    if not save.get("staff", {}).get("cond_coach"):
+        tips.append({"icon": "🏋", "title": "Hire a Conditioning Coach",
+                     "detail": "You don't have one. He's your development engine — faster growth, fewer injuries, and "
+                               "he's the reason a young player can break PAST his scouted ceiling. Hire one on the Staff tab.",
+                     "u": 3})
+
     ident = scheme_identity(save)
     if not ident["installed"]:
         tips.append({"icon": "🧩", "title": "Install a scheme",
@@ -2874,6 +2928,9 @@ def generate_news(save):
     for b in (save.get("breakouts") or [])[:2]:
         add("BREAKOUT", f"{b['pos']} {b['name']} is breaking out",
             f"Scouts have revised his ceiling up to {b['pot']} — he's outplaying his projection.")
+    for u in (save.get("ceiling_unlocks") or [])[:2]:
+        add("RISE", f"{u['pos']} {u['name']} breaks his ceiling",
+            f"Your conditioning program pushed his ceiling from {u['from']} to {u['to']} — development you coached into him.")
     for h in (save.get("holdouts") or [])[:2]:
         add("HOLDOUT", f"{h['pos']} {h['name']} is holding out",
             f"Wants a new deal — he's at ${h['aav']}M, market is ~${h['market']}M.")
