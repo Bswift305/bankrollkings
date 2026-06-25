@@ -5,6 +5,7 @@
 {% block betslip %}{% endblock %}
 {% block workflow_toolbar %}{% endblock %}
 {% block content %}
+{% from "_fk_icons.html" import icon %}
 {% macro advance(label) %}
 <form method="post" action="{{ url_for('franchise_offseason_advance') }}" class="os-adv">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -12,6 +13,18 @@
 </form>
 {% endmacro %}
 <section class="os-wrap">
+
+  {% if hero_team is defined and hero_team %}
+  <header class="os-teamhero" style="--team:{{ colors.primary }};--team2:{{ colors.secondary }};--accent:{{ accent }}">
+    <div class="os-th-crest">{{ team_crest(hero_team.full, 46)|safe }}</div>
+    <div class="os-th-id">
+      <div class="os-th-kicker">OFFSEASON · SEASON {{ hero_season }}</div>
+      <h1>{{ hero_team.full }}</h1>
+      <div class="os-th-sub">{{ hero_team.conference }} · {{ hero_team.division }} · {{ hero_team.market }} market</div>
+    </div>
+    {% if os_power is defined %}<div class="os-th-power"><span>POWER</span><b>{{ os_power }}</b></div>{% endif %}
+  </header>
+  {% endif %}
 
   {% if stage != 'select' %}
   <div class="os-track">
@@ -23,7 +36,7 @@
 
   {% if team_needs is defined %}
   <details class="os-card os-rostercard" open>
-    <summary class="os-rosterhead">📋 Your roster &amp; needs — Power {{ os_power }} · Cap ${{ os_cap_used }}M/${{ os_cap_total }}M (${{ os_cap_total - os_cap_used }}M free) · {{ os_roster|length }} players</summary>
+    <summary class="os-rosterhead">{{ icon('users') }}Your roster &amp; needs — Power {{ os_power }} · Cap ${{ os_cap_used }}M/${{ os_cap_total }}M (${{ os_cap_total - os_cap_used }}M free) · {{ os_roster|length }} players</summary>
     <div class="os-needs">
       {% for n in team_needs %}
       <span class="os-need {{ 'os-need-red' if n.need else 'os-need-ok' }}" title="{{ n.grade }} · best {{ n.best }}">{{ n.pos }} <b>{{ n.startavg }}</b>{% if n.need %} ⚠{% endif %}</span>
@@ -61,7 +74,7 @@
   </details>
 
   <div class="os-card os-consult">
-    <div class="os-consulthead">🧠 GM Consultant
+    <div class="os-consulthead">{{ icon('bulb') }}GM Consultant
       <span class="os-assist">
         {% for lvl in ['Off','Light','Full'] %}
         <form method="post" action="{{ url_for('franchise_assist') }}" style="display:inline">
@@ -84,7 +97,7 @@
 
   {% if front_office_issues %}
   <div class="os-card os-issues">
-    <div class="os-consulthead">Inherited Problems</div>
+    <div class="os-consulthead">{{ icon('alert') }}Inherited Problems</div>
     {% for issue in front_office_issues %}
     <div class="os-issue os-issue-{{ issue.severity }}">
       <span>{{ issue.label }}</span>
@@ -128,11 +141,11 @@
   </div>
   <div class="os-grid">
     <div class="os-card os-chal">
-      <div class="os-ch">⚠ Challenges this offseason</div>
+      <div class="os-ch">{{ icon('alert') }}Challenges this offseason</div>
       {% for c in narrative.challenges %}<div class="os-li">{{ c }}</div>{% endfor %}
     </div>
     <div class="os-card os-opp">
-      <div class="os-ch">★ What you've got going for you</div>
+      <div class="os-ch">{{ icon('star') }}What you've got going for you</div>
       {% for c in narrative.opportunities %}<div class="os-li">{{ c }}</div>{% endfor %}
       <div class="os-facts">
         <span>Draft slot <b>#{{ narrative.draft_slot }}</b></span>
@@ -146,7 +159,7 @@
   {# ---------------- WORKOUTS: evaluate talent ---------------- #}
   {% elif stage == 'workouts' %}
   <div class="os-card">
-    <div class="os-ch">🏋 Voluntary Workouts — evaluate your talent</div>
+    <div class="os-ch">{{ icon('users') }}Voluntary Workouts — evaluate your talent</div>
     <p class="os-sub">Who's rising, who's hitting the age cliff, whose deal is up. Use this to plan free agency, the draft and your cuts.</p>
     <div class="os-tscroll"><table class="os-table">
       <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>POT</th><th>Outlook</th><th>Deal</th></tr></thead>
@@ -167,7 +180,7 @@
   {# ---------------- RESIGN: your own free agents ---------------- #}
   {% elif stage == 'resign' %}
   <div class="os-card">
-    <div class="os-ch">✍ Re-Sign Your Own</div>
+    <div class="os-ch">{{ icon('pen') }}Re-Sign Your Own</div>
     {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
@@ -203,7 +216,7 @@
   {# ---------------- FREE AGENCY ---------------- #}
   {% elif stage == 'free_agency' %}
   <div class="os-card">
-    <div class="os-ch">💰 Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
+    <div class="os-ch">{{ icon('swap') }}Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
     {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
@@ -233,7 +246,7 @@
   {# ---------------- DRAFT ---------------- #}
   {% elif stage == 'draft' %}
   <div class="os-card">
-    <div class="os-ch">🎓 The Draft {% if draft %}<span class="os-cap">Round {{ draft.round }} · Pick {{ draft.pick }}</span>{% endif %}</div>
+    <div class="os-ch">{{ icon('cap') }}The Draft {% if draft %}<span class="os-cap">Round {{ draft.round }} · Pick {{ draft.pick }}</span>{% endif %}</div>
     {% if draft_pending and draft %}
       {% if draft.on_clock %}
         <p class="os-sub">You're on the clock.</p>
@@ -261,7 +274,7 @@
   {# ---------------- CUTS to 53 ---------------- #}
   {% elif stage == 'cuts' %}
   <div class="os-card">
-    <div class="os-ch">✂ Training Camp — cut to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
+    <div class="os-ch">{{ icon('users') }}Training Camp — cut to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
     <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %}</p>
     <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th></th></tr></thead><tbody>
     {% for p in roster %}
@@ -289,6 +302,19 @@
 
 <style>
   .os-wrap { max-width: 920px; margin: 0 auto; padding: 8px 16px 48px; }
+  /* Team-identity band (matches the franchise hub) */
+  .os-teamhero { position:relative; overflow:hidden; display:flex; align-items:center; gap:14px; margin:10px 0 6px; padding:14px 18px; border-radius:14px;
+    border:1px solid rgba(255,255,255,.1); border-top:3px solid var(--accent,#4ad4f0);
+    background:linear-gradient(120deg, var(--team,#1b2a36) -14%, rgba(8,16,22,.93) 52%, rgba(6,12,18,.98) 100%); }
+  .os-teamhero::after { content:''; position:absolute; top:0; bottom:0; right:0; width:40%; pointer-events:none; background:repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, transparent 2px 16px); }
+  .os-th-crest { position:relative; flex:0 0 auto; filter:drop-shadow(0 3px 9px rgba(0,0,0,.5)); }
+  .os-th-id { position:relative; flex:1; min-width:0; }
+  .os-th-kicker { color:var(--accent,#4ad4f0); font-weight:800; letter-spacing:.13em; font-size:10px; text-shadow:0 1px 3px rgba(0,0,0,.5); }
+  .os-teamhero h1 { font-family:var(--font-display); color:#fff; font-size:clamp(20px,4vw,30px); margin:3px 0 3px; line-height:1.05; text-shadow:0 2px 10px rgba(0,0,0,.5); }
+  .os-th-sub { color:#cdd9e2; font-size:12px; }
+  .os-th-power { position:relative; flex:0 0 auto; text-align:center; border:1px solid rgba(255,255,255,.22); border-radius:11px; padding:7px 14px; background:rgba(3,8,12,.5); }
+  .os-th-power span { display:block; font-size:9px; letter-spacing:.12em; color:var(--accent,#4ad4f0); }
+  .os-th-power b { font-size:26px; color:#fff; font-family:var(--font-display); }
   .os-track { display:flex; gap:4px; overflow-x:auto; padding:6px 0 14px; }
   .os-step { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 10px; border-radius:9px; min-width:62px; opacity:.5; }
   .os-step .os-ico { font-size:16px; } .os-step .os-lbl { font-size:9px; text-align:center; color:#b7c6d0; letter-spacing:.02em; }

@@ -5,6 +5,7 @@
 {% block betslip %}{% endblock %}
 {% block workflow_toolbar %}{% endblock %}
 {% block content %}
+{% from "_fk_icons.html" import icon %}
 <section class="fk-wrap">
 
   <header class="fk-hero" style="--team:{{ colors.primary }};--team2:{{ colors.secondary }};--accent:{{ accent }}">
@@ -26,7 +27,7 @@
 
   <nav class="fk-tabs">
     <a href="{{ url_for('franchise_hub', tab='dashboard') }}" class="fk-tab {% if tab == 'dashboard' %}active{% endif %}">Dashboard</a>
-    <a href="{{ url_for('franchise_hub', tab='gridiron') }}" class="fk-tab fk-tab-gi {% if tab == 'gridiron' %}active{% endif %}">📺 GridIron</a>
+    <a href="{{ url_for('franchise_hub', tab='gridiron') }}" class="fk-tab fk-tab-gi {% if tab == 'gridiron' %}active{% endif %}">{{ icon('tv', 13) }}GridIron</a>
     {% for t in ['roster','front-office','trades','staff','business','analytics','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
@@ -96,7 +97,7 @@
     {% endif %}
 
     <div class="fk-card fk-ops">
-      <div class="fk-card-h">🧩 Football Operations</div>
+      <div class="fk-card-h">{{ icon('ops') }}Football Operations</div>
       {% if scheme and scheme.installed %}
       <div class="fk-scheme">
         <div><span>Offense</span><b>{{ scheme.offense or '—' }}</b>{% if scheme.off_lean %}<small>leans {{ scheme.off_lean|join(', ') }}</small>{% endif %}</div>
@@ -166,7 +167,7 @@
 
     {% if owner_feed %}
     <div class="fk-card fk-ofc">
-      <div class="fk-card-h">🏛 Owner's Office
+      <div class="fk-card-h">{{ icon('owner') }}Owner's Office
         {% if owner %}<span class="fk-ofc-who">{{ owner.name }} · {{ owner.mood }} {{ owner.icon }}</span>{% endif %}
       </div>
       <div class="fk-ofc-feed">
@@ -182,7 +183,7 @@
 
     {% if incidents %}
     <div class="fk-card fk-wire">
-      <div class="fk-card-h">🚨 Off-Field Wire</div>
+      <div class="fk-card-h">{{ icon('alert') }}Off-Field Wire</div>
       {% for i in incidents[:8] %}
       <a class="fk-wire-row fk-wire-{{ i.key }}" href="{{ url_for('franchise_player', pid=i.pid) }}">
         <span class="fk-wire-tag">{{ i.label }}</span>
@@ -194,7 +195,7 @@
     {% endif %}
 
     <div class="fk-card fk-consult">
-      <div class="fk-card-h">🧠 GM Consultant
+      <div class="fk-card-h">{{ icon('bulb') }}GM Consultant
         <span class="fk-assist">
           {% for lvl in ['Off','Light','Full'] %}
           <form method="post" action="{{ url_for('franchise_assist') }}" style="display:inline">
@@ -246,7 +247,7 @@
 
     {% if leaders %}
     <div class="fk-card fk-leaders">
-      <div class="fk-card-h">📊 League Leaders{% if season_mvp %} <span style="float:right;font-size:12px;color:#f5c860;font-weight:700">MVP: {{ season_mvp.pos }} {{ season_mvp.name }}</span>{% endif %}</div>
+      <div class="fk-card-h">{{ icon('trophy') }}League Leaders{% if season_mvp %} <span style="float:right;font-size:12px;color:#f5c860;font-weight:700">MVP: {{ season_mvp.pos }} {{ season_mvp.name }}</span>{% endif %}</div>
       <div class="fk-leadgrid">
         {% for cat in leaders %}
         <div>
@@ -264,7 +265,7 @@
 
     {% if hall_of_fame %}
     <div class="fk-card fk-hof">
-      <div class="fk-card-h">🏛️ Hall of Fame <span style="float:right;font-size:12px;color:#f5c860">{{ hall_of_fame|length }} legend{{ 's' if hall_of_fame|length != 1 }}</span></div>
+      <div class="fk-card-h">{{ icon('star') }}Hall of Fame <span style="float:right;font-size:12px;color:#f5c860">{{ hall_of_fame|length }} legend{{ 's' if hall_of_fame|length != 1 }}</span></div>
       {% for h in hall_of_fame[:12] %}
       <div class="fk-hofrow"><strong>{{ h.pos }} {{ h.name }}</strong><small>peak {{ h.peak }} · {{ h.seasons }} seasons{% if h.all_pro %} · {{ h.all_pro }}× All-Pro{% endif %} · {{ h.summary }}</small></div>
       {% endfor %}
@@ -285,7 +286,7 @@
 
     {% if game_log %}
     <div class="fk-card">
-      <div class="fk-card-h">🏈 Last season — game log</div>
+      <div class="fk-card-h">{{ icon('ball') }}Last season — game log</div>
       <div class="fk-gloscroll"><table class="fk-table">
         <tbody>
         {% for g in game_log %}
@@ -302,7 +303,7 @@
 
     {% if all_pro %}
     <div class="fk-card fk-leaders">
-      <div class="fk-card-h">🏅 All-League Team</div>
+      <div class="fk-card-h">{{ icon('star') }}All-League Team</div>
       <div class="fk-leadgrid">
         {% for ap in all_pro %}
         <div class="fk-leadrow"><span class="fk-leadn">{{ ap.pos }}</span> <a href="{{ url_for('franchise_player', pid=ap.pid) }}" style="color:#fff;text-decoration:none">{{ ap.name }}</a><small>{{ ap.team }} · {{ ap.detail }}</small></div>
@@ -313,7 +314,7 @@
 
     {% if records %}
     <div class="fk-card fk-leaders">
-      <div class="fk-card-h">📜 Records Book</div>
+      <div class="fk-card-h">{{ icon('scroll') }}Records Book</div>
       <div class="fk-leadgrid">
         <div><div class="fk-leadh">Single Season</div>
           {% for k, r in records.items() %}<div class="fk-leadrow">{{ r.label }} <b>{{ "%.1f"|format(r.value) if k == 'sack' else "{:,}".format(r.value) }}</b><small>{{ r.holder }} · S{{ r.season }}</small></div>{% endfor %}
@@ -327,7 +328,7 @@
 
     {% if inseason and star_stats %}
     <div class="fk-card fk-leaders">
-      <div class="fk-card-h">⭐ Your stars — Season {{ save.season }} so far</div>
+      <div class="fk-card-h">{{ icon('star') }}Your stars — Season {{ save.season }} so far</div>
       {% for s in star_stats %}
       <div class="fk-leadrow"><span class="fk-leadn">{{ s.pos }}</span> <a href="{{ url_for('franchise_player', pid=s.pid) }}" style="color:#fff;text-decoration:none">{{ s.name }}</a> <small>{{ s.line }}</small></div>
       {% endfor %}
@@ -340,7 +341,7 @@
         <div class="fk-inseason-wk">📅 Regular season — <strong>Week {{ inseason_week }} of 17</strong> · trade deadline Week {{ trade_deadline }}{% if not trades_open %} <span style="color:#ff9a9a">(passed)</span>{% endif %}</div>
         {% if inseason_offer %}
         <div class="fk-tradeoffer">
-          <div class="fk-card-h" style="font-size:15px">📨 Trade offer — {{ inseason_offer.team }} <span class="fk-grade fk-grade-{{ inseason_offer.grade }}" style="float:right">{{ inseason_offer.grade }} for you</span></div>
+          <div class="fk-card-h" style="font-size:15px">{{ icon('swap') }}Trade offer — {{ inseason_offer.team }} <span class="fk-grade fk-grade-{{ inseason_offer.grade }}" style="float:right">{{ inseason_offer.grade }} for you</span></div>
           <p style="margin:4px 0">You <b style="color:#7dffb0">get</b> {{ inseason_offer.give_pos }} <a href="{{ url_for('franchise_player', pid=inseason_offer.give_id) }}" style="color:#9fe9ff;text-decoration:none">{{ inseason_offer.give }}</a> ({{ inseason_offer.give_ovr }}) · you <b style="color:#ff9a9a">give</b> {{ inseason_offer.want_pos }} {{ inseason_offer.want }} ({{ inseason_offer.want_ovr }})</p>
           <div class="fk-offeract">
             <form method="post" action="{{ url_for('franchise_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accept" value="1"><button class="fk-psbtn">Accept</button></form>
@@ -453,7 +454,7 @@
         </div>
 
         <div class="fk-card">
-          <div class="fk-card-h">📊 Power Rankings</div>
+          <div class="fk-card-h">{{ icon('chart') }}Power Rankings</div>
           <div class="gi-ranks">
             {% for r in broadcast.rankings %}
             <a class="gi-rank {% if r.mine %}gi-rank-mine{% endif %}" href="{{ url_for('franchise_hub', tab='trades', team=r.id) }}">
@@ -470,7 +471,7 @@
 
         {% if broadcast.takes %}
         <div class="fk-card">
-          <div class="fk-card-h">🎙 The Desk — Hot Takes</div>
+          <div class="fk-card-h">{{ icon('mic') }}The Desk — Hot Takes</div>
           {% for t in broadcast.takes %}
           <div class="gi-take"><div class="gi-takewho">{{ t.who }}</div><p>“{{ t.take }}”</p></div>
           {% endfor %}
@@ -490,7 +491,7 @@
 
         {% if broadcast.wire %}
         <div class="fk-card">
-          <div class="fk-card-h">📰 The Wire</div>
+          <div class="fk-card-h">{{ icon('news') }}The Wire</div>
           {% for w in broadcast.wire %}
           <div class="gi-wire gi-wire-{{ w.kind }}">{% if w.pid %}<a href="{{ url_for('franchise_player', pid=w.pid) }}" class="gi-wtag">{{ w.tag }}</a>{% else %}<span class="gi-wtag">{{ w.tag }}</span>{% endif %}<p>{{ w.text }}</p></div>
           {% endfor %}
@@ -499,7 +500,7 @@
 
         {% if broadcast.leaders %}
         <div class="fk-card">
-          <div class="fk-card-h">🏆 League Leaders</div>
+          <div class="fk-card-h">{{ icon('trophy') }}League Leaders</div>
           {% for cat in broadcast.leaders %}
           <div class="gi-lead"><span>{{ cat.label }}</span><b>{{ cat.rows[0].name }}</b></div>
           {% endfor %}
@@ -539,7 +540,7 @@
   </div>
 
   <div class="fk-card" style="margin-top:12px">
-    <div class="fk-card-h">🟡 Practice Squad <span style="float:right;font-size:11px;color:#7f93a0">{{ practice_squad|length }}/12 · develops, no cap hit</span></div>
+    <div class="fk-card-h">{{ icon('users') }}Practice Squad <span style="float:right;font-size:11px;color:#7f93a0">{{ practice_squad|length }}/12 · develops, no cap hit</span></div>
     <table class="fk-table"><tbody>
       {% for p in practice_squad %}
       <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
@@ -568,7 +569,7 @@
   </div>
 
   <div class="fk-card" style="margin-top:12px">
-    <div class="fk-card-h">✍ Contract extensions</div>
+    <div class="fk-card-h">{{ icon('pen') }}Contract extensions</div>
     {% if holdouts %}
     <div class="fk-holdout">⚠ <strong>Holdout{{ 's' if holdouts|length != 1 }}:</strong>
       {% for h in holdouts %}{{ h.pos }} {{ h.name }} (${{ '%.1f'|format(h.aav) }}M, wants ~${{ '%.1f'|format(h.market) }}M){{ '; ' if not loop.last }}{% endfor %}

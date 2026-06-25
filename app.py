@@ -29209,6 +29209,10 @@ def franchise_offseason():
                    camp_count=fo.camp_count(save), final=fo.ROSTER_FINAL)
     if stage != 'select':                     # persistent roster + needs panel
         t = fk.current_team(save)
+        ctx['hero_team'] = t                  # team-identity band (matches the hub)
+        ctx['hero_season'] = save.get('season', 1)
+        ctx['colors'] = fk.team_colors(t['full'])
+        ctx['accent'] = fk.team_accent(t['full'])
         ctx['team_needs'] = fk.team_needs(save)
         ctx['front_office_issues'] = save.get('front_office_issues') or []
         ctx['scheme'] = fk.scheme_identity(save)
