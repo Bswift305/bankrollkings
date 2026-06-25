@@ -25,7 +25,9 @@
   </header>
 
   <nav class="fk-tabs">
-    {% for t in ['dashboard','roster','front-office','trades','staff','business','analytics','career','league'] %}
+    <a href="{{ url_for('franchise_hub', tab='dashboard') }}" class="fk-tab {% if tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('franchise_hub', tab='gridiron') }}" class="fk-tab fk-tab-gi {% if tab == 'gridiron' %}active{% endif %}">📺 GridIron</a>
+    {% for t in ['roster','front-office','trades','staff','business','analytics','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
@@ -424,6 +426,91 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
+
+  {# ===================== GRIDIRON NETWORK ===================== #}
+  {% if tab == 'gridiron' %}
+  {% if broadcast %}
+  <div class="gi">
+    <div class="gi-bar">
+      <div class="gi-logo"><span class="gi-dot"></span> GRIDIRON NETWORK</div>
+      <div class="gi-when">{% if broadcast.live %}<span class="gi-onair">● ON AIR</span>{% endif %} {{ broadcast.headline_week }}</div>
+    </div>
+
+    {% if broadcast.wire %}
+    <div class="gi-ticker"><div class="gi-ticker-track">
+      {% for w in broadcast.wire %}<span class="gi-tick"><b>{{ w.tag }}</b> {{ w.text }}</span>{% endfor %}
+      {% for w in broadcast.wire %}<span class="gi-tick"><b>{{ w.tag }}</b> {{ w.text }}</span>{% endfor %}
+    </div></div>
+    {% endif %}
+
+    <div class="gi-grid">
+      <div class="gi-main">
+        <div class="gi-top">
+          <span class="gi-toptag">{{ broadcast.top.tag }}</span>
+          <h2>{{ broadcast.top.head }}</h2>
+          <p>{{ broadcast.top.sub }}</p>
+        </div>
+
+        <div class="fk-card">
+          <div class="fk-card-h">📊 Power Rankings</div>
+          <div class="gi-ranks">
+            {% for r in broadcast.rankings %}
+            <a class="gi-rank {% if r.mine %}gi-rank-mine{% endif %}" href="{{ url_for('franchise_hub', tab='trades', team=r.id) }}">
+              <span class="gi-rnum">{{ r.rank }}</span>
+              <span class="gi-move gi-move-{{ 'up' if r.move > 0 else 'down' if r.move < 0 else 'flat' }}">{% if r.move > 0 %}▲{{ r.move }}{% elif r.move < 0 %}▼{{ -r.move }}{% else %}–{% endif %}</span>
+              <span class="gi-rcrest">{{ team_crest(r.full, 22)|safe }}</span>
+              <span class="gi-rteam">{{ r.full }}{% if r.mine %} <em>· you</em>{% endif %}</span>
+              <span class="gi-rrec">{{ r.w }}–{{ r.l }}</span>
+              <span class="gi-rpwr">{{ r.power }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if broadcast.takes %}
+        <div class="fk-card">
+          <div class="fk-card-h">🎙 The Desk — Hot Takes</div>
+          {% for t in broadcast.takes %}
+          <div class="gi-take"><div class="gi-takewho">{{ t.who }}</div><p>“{{ t.take }}”</p></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="gi-side">
+        <div class="fk-card gi-capsule">
+          <div class="fk-card-h">Your Club</div>
+          <div class="gi-capteam">{{ team_crest(broadcast.capsule.team, 28)|safe }} <strong>{{ broadcast.capsule.team }}</strong></div>
+          <div class="gi-caprow"><span>Record</span><b>{{ broadcast.capsule.rec }}</b></div>
+          <div class="gi-caprow"><span>Power rank</span><b>{% if broadcast.capsule.rank %}#{{ broadcast.capsule.rank }}{% else %}—{% endif %}</b></div>
+          <div class="gi-caprow"><span>Power</span><b>{{ broadcast.capsule.power }}</b></div>
+          {% if broadcast.capsule.last %}<div class="gi-caplast">Last out: {{ broadcast.capsule.last }}</div>{% endif %}
+        </div>
+
+        {% if broadcast.wire %}
+        <div class="fk-card">
+          <div class="fk-card-h">📰 The Wire</div>
+          {% for w in broadcast.wire %}
+          <div class="gi-wire gi-wire-{{ w.kind }}">{% if w.pid %}<a href="{{ url_for('franchise_player', pid=w.pid) }}" class="gi-wtag">{{ w.tag }}</a>{% else %}<span class="gi-wtag">{{ w.tag }}</span>{% endif %}<p>{{ w.text }}</p></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if broadcast.leaders %}
+        <div class="fk-card">
+          <div class="fk-card-h">🏆 League Leaders</div>
+          {% for cat in broadcast.leaders %}
+          <div class="gi-lead"><span>{{ cat.label }}</span><b>{{ cat.rows[0].name }}</b></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="fk-card"><p class="fk-muted">GridIron Network spins up once your season is underway.</p></div>
+  {% endif %}
   {% endif %}
 
   {# ===================== ROSTER ===================== #}
@@ -1031,6 +1118,57 @@
   .fk-ofc-demand { border-left-color:#ffd27d; } .fk-ofc-demand .fk-ofc-text { color:#ffe6b8; }
   .fk-ofc-concern { border-left-color:#ff9a9a; } .fk-ofc-concern .fk-ofc-text { color:#ffc9c9; }
   .fk-ofc-ultimatum { border-left-color:#ff5d5d; background:rgba(255,93,93,.08); } .fk-ofc-ultimatum .fk-ofc-text { color:#ff9a9a; font-weight:600; }
+  /* GridIron Network broadcast */
+  .fk-tab-gi.active { border-bottom-color:#ff3b3b; }
+  .gi-bar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
+    background:linear-gradient(90deg,#1a0406,#2a0a0c 50%,#0a0e14); border:1px solid rgba(255,59,59,.3);
+    border-radius:12px 12px 0 0; padding:11px 16px; }
+  .gi-logo { font-family:var(--font-display); font-weight:900; letter-spacing:.06em; color:#fff; font-size:18px; display:flex; align-items:center; gap:9px; }
+  .gi-dot { width:11px; height:11px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 10px #ff3b3b; }
+  .gi-when { color:#ffd0d0; font-size:12px; font-weight:700; letter-spacing:.08em; }
+  .gi-onair { color:#ff5a5a; font-weight:900; margin-right:6px; }
+  .gi-ticker { overflow:hidden; background:#05080c; border:1px solid rgba(255,59,59,.2); border-top:0; white-space:nowrap; }
+  .gi-ticker-track { display:inline-block; padding:7px 0; animation:gi-scroll 38s linear infinite; }
+  .gi-ticker:hover .gi-ticker-track { animation-play-state:paused; }
+  .gi-tick { color:#cdd9e2; font-size:12px; margin:0 26px; }
+  .gi-tick b { color:#ff7a7a; font-weight:800; margin-right:5px; letter-spacing:.03em; }
+  @keyframes gi-scroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+  .gi-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); gap:12px; margin-top:12px; align-items:start; }
+  @media (max-width:760px){ .gi-grid { grid-template-columns:minmax(0,1fr); } }
+  .gi-main { display:flex; flex-direction:column; gap:12px; }
+  .gi-side { display:flex; flex-direction:column; gap:12px; }
+  .gi-top { position:relative; overflow:hidden; border-radius:14px; padding:20px; border:1px solid rgba(255,59,59,.25);
+    background:linear-gradient(120deg,#250709 -10%,rgba(8,16,22,.97) 55%); }
+  .gi-toptag { display:inline-block; font-size:10px; font-weight:900; letter-spacing:.1em; color:#fff; background:#ff3b3b; border-radius:5px; padding:2px 9px; margin-bottom:9px; }
+  .gi-top h2 { font-family:var(--font-display); color:#fff; font-size:clamp(20px,3.6vw,28px); margin:0 0 7px; line-height:1.1; }
+  .gi-top p { color:#cdd9e2; font-size:14px; margin:0; line-height:1.5; }
+  .gi-ranks { display:flex; flex-direction:column; gap:3px; }
+  .gi-rank { display:grid; grid-template-columns:26px 38px 26px 1fr auto auto; align-items:center; gap:9px; text-decoration:none; padding:7px 8px; border-radius:8px; border:1px solid transparent; }
+  .gi-rank:hover { background:rgba(74,212,240,.06); border-color:rgba(74,212,240,.15); }
+  .gi-rank-mine { background:rgba(74,212,240,.1); border-color:rgba(74,212,240,.32); }
+  .gi-rnum { font-family:var(--font-display); font-size:17px; color:#fff; text-align:center; }
+  .gi-move { font-size:11px; font-weight:800; text-align:center; }
+  .gi-move-up { color:#7dffb0; } .gi-move-down { color:#ff9a9a; } .gi-move-flat { color:#5f7280; }
+  .gi-rcrest { display:flex; }
+  .gi-rteam { color:#e8f1f6; font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gi-rteam em { color:#4ad4f0; font-style:normal; font-size:11px; }
+  .gi-rrec { color:#9fb0bc; font-size:12px; font-variant-numeric:tabular-nums; }
+  .gi-rpwr { color:#fff; font-family:var(--font-display); font-size:15px; min-width:38px; text-align:right; }
+  .gi-take { border-left:3px solid #ff3b3b; background:rgba(3,8,12,.45); border-radius:0 9px 9px 0; padding:9px 12px; margin-bottom:8px; }
+  .gi-takewho { color:#ff8a8a; font-size:11px; font-weight:800; letter-spacing:.04em; margin-bottom:3px; }
+  .gi-take p { color:#dce8ef; font-size:13px; font-style:italic; line-height:1.5; margin:0; }
+  .gi-capsule .gi-capteam { display:flex; align-items:center; gap:9px; color:#fff; font-size:15px; margin-bottom:10px; }
+  .gi-caprow { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
+  .gi-caprow span { color:#8fa3b0; } .gi-caprow b { color:#fff; }
+  .gi-caplast { margin-top:9px; color:#9fb0bc; font-size:12px; font-style:italic; }
+  .gi-wire { margin-bottom:9px; }
+  .gi-wtag { display:inline-block; font-size:9px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; color:#ffb3b3; background:rgba(255,122,122,.13); border:1px solid rgba(255,122,122,.28); border-radius:999px; padding:1px 8px; text-decoration:none; }
+  a.gi-wtag:hover { background:rgba(255,122,122,.25); }
+  .gi-wire-owner .gi-wtag { color:#9fd3ff; background:rgba(74,140,212,.14); border-color:rgba(74,140,212,.3); }
+  .gi-wire-trade .gi-wtag { color:#9fe9c0; background:rgba(74,212,160,.13); border-color:rgba(74,212,160,.3); }
+  .gi-wire p { color:#cdd9e2; font-size:12.5px; line-height:1.45; margin:4px 0 0; }
+  .gi-lead { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
+  .gi-lead span { color:#8fa3b0; } .gi-lead b { color:#fff; }
   /* Off-Field Wire */
   .fk-wire-row { display:block; text-decoration:none; border-left:3px solid #ff7a7a; background:rgba(3,8,12,.5); border-radius:0 9px 9px 0; padding:8px 11px; margin-bottom:7px; }
   .fk-wire-tag { display:inline-block; font-size:9px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; color:#ffb3b3; background:rgba(255,122,122,.14); border:1px solid rgba(255,122,122,.3); border-radius:999px; padding:1px 7px; margin-bottom:3px; }

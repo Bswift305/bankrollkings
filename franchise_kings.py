@@ -741,6 +741,7 @@ def start_inseason(save):
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": 0, "l": 0} for t in save["teams"]]
     owner_season_open(save)
+    _update_power_rank(save)        # seed GridIron rankings for the new season
     write_save(save)
     return save
 
@@ -777,6 +778,7 @@ def sim_week(save):
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
+    _update_power_rank(save)        # GridIron Network week-over-week movement
     if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < 0.4:
         iz["offer"] = _maybe_ai_offer(save, rng)
     owner_weekly(save, week, rng)      # the owner reacts to the week just played
@@ -2567,6 +2569,114 @@ def generate_news(save):
             f"Wants a new deal — he's at ${h['aav']}M, market is ~${h['market']}M.")
     save["news"] = news[:14]
     return save["news"]
+
+
+# --------------------------------------------------------------------------- #
+# GridIron Network — the league's broadcast. A living news desk assembled from
+# current state: power rankings (with week-over-week movement), a top story, the
+# wire (off-field incidents + owner drama + trades), hot takes from the studio,
+# and league leaders. Runs in-season (this week) and through the offseason.
+# --------------------------------------------------------------------------- #
+_ANCHORS = ["Cris Marlowe", "Dana Fields", "Marcus Vinn", "Tory Lang", "Priya Anand", "Reggie Stone"]
+
+
+def _power_rankings(save):
+    """Order every club by a blend of record + power — early season power leads,
+    late season record takes over."""
+    def score(t):
+        return t["record"]["w"] * 1.0 + power_rating(t) / 22.0
+    ranked = sorted(save["teams"], key=score, reverse=True)
+    return [{"id": t["id"], "full": t["full"], "name": t.get("name", t["full"]),
+             "w": t["record"]["w"], "l": t["record"]["l"], "power": power_rating(t),
+             "conf": t["conference"], "div": t["division"]} for t in ranked]
+
+
+def _update_power_rank(save):
+    """Snapshot rankings so the broadcast can show week-over-week movement."""
+    ranked = _power_rankings(save)
+    save["power_rank_prev"] = save.get("power_rank", {})
+    save["power_rank"] = {r["id"]: i + 1 for i, r in enumerate(ranked)}
+
+
+def _top_story(save, ranked, team, live, week, season):
+    champ = save.get("last_champion")
+    if not live and champ:
+        return {"tag": "CHAMPIONS", "head": f"{champ} are champions",
+                "sub": f"{champ} finish Season {max(1, season - 1)} on top of the league."}
+    for m in (save.get("owner_feed") or [])[:3]:
+        if m.get("tone") == "ultimatum":
+            return {"tag": "HOT SEAT", "head": f"The heat is on in {team['city']}",
+                    "sub": m["text"]}
+    for inc in (save.get("incidents") or [])[:3]:
+        if inc["key"] in ("ped", "arrest"):
+            return {"tag": "BREAKING", "head": f"{inc['pos']} {inc['name']}: {inc['label']}",
+                    "sub": inc["text"] + "."}
+    if ranked:
+        t1 = ranked[0]
+        return {"tag": "POWER", "head": f"{t1['full']} are the team to beat",
+                "sub": f"{t1['w']}-{t1['l']} with a {t1['power']} power rating — nobody's playing better."}
+    return {"tag": "LIVE", "head": f"{NETWORK}", "sub": "Around the league."}
+
+
+def _hot_takes(save, ranked, team):
+    rng = _rng(save["seed"] + save.get("season", 1) * 13 + (save.get("inseason") or {}).get("week", 0))
+    anchors = _ANCHORS[:]
+    rng.shuffle(anchors)
+    takes = []
+    weak = next((n for n in team_needs(save) if n.get("need")), None)
+    if weak:
+        takes.append({"who": anchors[0], "take": f"Until {team['full']} fix {weak['pos']} — {weak['startavg']} OVR there — they've got a hard ceiling. That's their whole season in one number."})
+    if ranked and ranked[0]["id"] != team["id"]:
+        t1 = ranked[0]
+        takes.append({"who": anchors[1 % len(anchors)], "take": f"I'm all in on {t1['full']}. {t1['w']}-{t1['l']}, a {t1['power']} rating — that's a contender, not a fluke."})
+    inc = save.get("incidents") or []
+    if inc:
+        takes.append({"who": anchors[2 % len(anchors)], "take": f"{inc[0]['pos']} {inc[0]['name']}'s situation is the kind of distraction that quietly sinks a locker room. Watch the response."})
+    elif save.get("gm", {}).get("owner_trust", 50) < 35:
+        takes.append({"who": anchors[2 % len(anchors)], "take": f"Make no mistake — the seat is hot in {team['city']}. Ownership wants it fixed now."})
+    elif save.get("gm", {}).get("owner_trust", 50) >= 75:
+        takes.append({"who": anchors[2 % len(anchors)], "take": f"Whatever {team['full']}'s front office is doing, it's working. Ownership trusts the plan, and that buys you everything."})
+    return takes[:3]
+
+
+def broadcast(save):
+    """Assemble the GridIron Network broadcast from current league state."""
+    team = current_team(save)
+    uid = save["current_team_id"]
+    iz = save.get("inseason") or {}
+    live = bool(iz)
+    week = iz.get("week")
+    season = save.get("season", 1)
+
+    ranked = _power_rankings(save)
+    prev = save.get("power_rank_prev", {})
+    rankings = []
+    for i, r in enumerate(ranked[:10]):
+        pr = prev.get(r["id"])
+        rankings.append({**r, "rank": i + 1, "move": (pr - (i + 1)) if pr else 0,
+                         "mine": r["id"] == uid})
+    cur = {r["id"]: i + 1 for i, r in enumerate(ranked)}
+
+    wire = []
+    for inc in (save.get("incidents") or [])[:4]:
+        wire.append({"tag": inc["label"], "text": inc["text"], "kind": inc["key"], "pid": inc.get("pid")})
+    for m in (save.get("owner_feed") or [])[:3]:
+        wire.append({"tag": "OWNER", "text": m["text"], "kind": "owner"})
+    lt = save.get("last_trade")
+    if lt and lt.get("ok"):
+        wire.append({"tag": "TRADE", "text": lt["summary"], "kind": "trade"})
+
+    last = iz.get("log") or []
+    lg = last[-1] if last else None
+    capsule = {"team": team["full"], "rank": cur.get(uid), "rec": f"{team['record']['w']}-{team['record']['l']}",
+               "power": power_rating(team),
+               "last": (f"{'beat' if lg['won'] else 'fell to'} {lg['opp']}" if lg else None)}
+
+    return {"network": NETWORK, "live": live, "week": week, "season": season,
+            "headline_week": (f"WEEK {week}" if live and week else f"SEASON {season} · OFFSEASON"),
+            "top": _top_story(save, ranked, team, live, week, season),
+            "rankings": rankings, "wire": wire[:8], "capsule": capsule,
+            "takes": _hot_takes(save, ranked, team), "leaders": (save.get("leaders") or [])[:3]}
 
 
 def all_pro_team(teams):

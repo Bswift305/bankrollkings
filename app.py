@@ -28947,7 +28947,7 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'gridiron', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'league', 'draft')
 
 
 def _trade_view(save, team_id):
@@ -29063,6 +29063,7 @@ def _franchise_view(save):
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
         'news': save.get('news'),
+        'broadcast': fk.broadcast(save),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
         'avatar_url': (url_for('static', filename='franchise_avatars/'
