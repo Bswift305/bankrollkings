@@ -48,6 +48,7 @@
     {% if away_recap.injuries %}<div class="fk-away-line">🏥 {% for i in away_recap.injuries %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · {{ i.weeks }}w</span>{% endfor %}</div>{% endif %}
     {% if away_recap.incidents %}<div class="fk-away-line">🚨 {% for i in away_recap.incidents %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · {{ i.label }}</span>{% endfor %}</div>{% endif %}
     {% if away_recap.finalized %}<div class="fk-away-line" style="color:#f5c860">🏁 The season wrapped while you were out — check your owner review.</div>{% endif %}
+    {% if away_recap.paused %}<div class="fk-away-line" style="color:#ffd27d">⏸ The clock <strong>stopped here</strong> — {{ away_recap.pending.title }}. Handle it below to resume the season.</div>{% endif %}
     <form method="post" action="{{ url_for('franchise_recap_dismiss') }}" style="margin-top:8px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="fk-btn fk-btn-sm fk-btn-ghost">Got it</button>
     </form>
@@ -358,17 +359,22 @@
       {% if inseason %}
         <div class="fk-inseason-wk">📅 Regular season — <strong>Week {{ inseason_week }} of 17</strong> · trade deadline Week {{ trade_deadline }}{% if not trades_open %} <span style="color:#ff9a9a">(passed)</span>{% endif %}</div>
         {% if live %}
-        <div class="fk-live {{ 'fk-live-on' if live.on else 'fk-live-off' }}">
-          {% if live.on %}
+        <div class="fk-live {{ 'fk-live-paused' if live.paused else 'fk-live-on' if live.on else 'fk-live-off' }}">
+          {% if live.paused %}
+            <span class="fk-live-pdot">⏸</span>
+            <span class="fk-live-txt" style="color:#ffe6b8">PAUSED — {{ live.pending.title }}. The clock waits on you.</span>
+          {% elif live.on %}
             <span class="fk-live-dot"></span>
             <span class="fk-live-txt">LIVE · next game sims in <b id="fk-countdown" data-secs="{{ live.next_in if live.next_in is not none else 0 }}">—</b></span>
           {% else %}
             <span class="fk-live-txt" style="color:#8fa3b0">Live clock is off — sim weeks manually.</span>
           {% endif %}
+          {% if not live.paused %}
           <form method="post" action="{{ url_for('franchise_live_toggle') }}" style="margin-left:auto">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="on" value="{{ '0' if live.on else '1' }}">
             <button class="fk-livebtn">{{ 'Turn off' if live.on else 'Go live' }}</button>
           </form>
+          {% endif %}
         </div>
         {% endif %}
         {% if inseason_offer %}
@@ -1175,6 +1181,8 @@
   .fk-live { display:flex; align-items:center; gap:9px; margin:0 0 12px; padding:9px 12px; border-radius:10px;
     background:linear-gradient(90deg,rgba(255,59,59,.12),rgba(11,24,34,.5)); border:1px solid rgba(255,59,59,.28); }
   .fk-live-off { background:rgba(11,24,34,.5); border-color:rgba(145,168,184,.2); }
+  .fk-live-paused { background:linear-gradient(90deg,rgba(245,200,96,.14),rgba(11,24,34,.5)); border-color:rgba(245,200,96,.4); }
+  .fk-live-pdot { color:#ffd27d; font-size:14px; }
   .fk-live-dot { width:9px; height:9px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 8px #ff3b3b; animation:fk-pulse 1.6s ease-in-out infinite; }
   @keyframes fk-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
   .fk-live-txt { font-size:13px; color:#ffd5d5; font-weight:700; } .fk-live-txt b { color:#fff; font-variant-numeric:tabular-nums; }

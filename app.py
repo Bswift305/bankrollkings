@@ -29176,6 +29176,9 @@ def franchise_offer():
             fk.accept_ai_offer(save)
         else:
             fk.decline_ai_offer(save)
+        if save.get('inseason'):                 # decision handled — resume the live clock
+            fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
+            fk.write_save(save)
     return redirect(url_for('franchise_hub'))
 
 

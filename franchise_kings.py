@@ -918,13 +918,29 @@ def reset_live_clock(save, now):
     lv["last_seen"] = now
 
 
+def pending_decision(save):
+    """The decision currently awaiting the GM's sign-off. The live clock STOPS
+    here — it never auto-resolves a call that's the GM's to make. Returns a short
+    descriptor or None. (Trades are the in-season approval; the whole offseason is
+    already hands-on.)"""
+    iz = save.get("inseason") or {}
+    off = iz.get("offer")
+    if off:
+        return {"kind": "trade", "title": "A trade offer needs your call",
+                "detail": (f"{off.get('team', 'A rival')} wants {off.get('want_pos', '')} {off.get('want', '')} — "
+                           f"you'd get {off.get('give_pos', '')} {off.get('give', '')}."),
+                "grade": off.get("grade")}
+    return None
+
+
 def live_status(save, now):
     lv = save.get("live") or {}
     nxt = lv.get("next_week_at")
     on = lv.get("on", True)
+    pend = pending_decision(save) if save.get("inseason") else None
     return {"on": on, "interval": lv.get("interval", LIVE_WEEK_SECONDS),
-            "live_season": bool(save.get("inseason")),
-            "next_in": max(0, int(nxt - now)) if (on and nxt and save.get("inseason")) else None}
+            "live_season": bool(save.get("inseason")), "paused": bool(pend), "pending": pend,
+            "next_in": (max(0, int(nxt - now)) if (on and nxt and save.get("inseason") and not pend) else None)}
 
 
 def live_tick(save, now):
@@ -938,13 +954,26 @@ def live_tick(save, now):
     if not lv.get("on", True):
         lv["last_seen"] = now
         return None
+    if pending_decision(save):                     # already waiting on the GM — freeze the clock
+        lv["next_week_at"] = now + lv["interval"]   # don't bank weeks while he deliberates
+        lv["last_seen"] = now
+        write_save(save)
+        return None
     from_week = save["inseason"]["week"]
-    results, injuries, played = [], [], 0
+    results, injuries, played, paused = [], [], 0, False
     while save.get("inseason") and now >= lv["next_week_at"] and played < LIVE_CATCHUP_CAP:
         wk = save["inseason"]["week"]
         sim_week(save)
         played += 1
         lv["next_week_at"] += lv["interval"]
+        if save.get("inseason") and pending_decision(save):   # a call popped up — stop for approval
+            lv["next_week_at"] = now + lv["interval"]
+            paused = True
+            iz = save.get("inseason")
+            if iz and iz.get("log"):
+                g = iz["log"][-1]
+                results.append({"week": g["week"], "opp": g["opp"], "won": g["won"], "star": g.get("star")})
+            break
         iz = save.get("inseason")
         if iz:
             if iz.get("log"):
@@ -965,9 +994,11 @@ def live_tick(save, now):
         write_save(save)
         return None
     w = sum(1 for r in results if r.get("won"))
+    pend = pending_decision(save)
     recap = {"played": played, "results": results, "injuries": injuries[:6],
              "incidents": [i for i in (save.get("incidents") or []) if i.get("week", 0) >= from_week][:5],
-             "record": f"{w}-{len(results) - w}", "finalized": not save.get("inseason")}
+             "record": f"{w}-{len(results) - w}", "finalized": not save.get("inseason"),
+             "paused": bool(pend), "pending": pend}
     save["away_recap"] = recap
     write_save(save)
     return recap
