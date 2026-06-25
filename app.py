@@ -29071,6 +29071,7 @@ def _franchise_view(save):
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
         'news': save.get('news'),
+        'evolution_notes': save.get('evolution_notes') or [],
         'broadcast': fk.broadcast(save),
         'analytics': fk.analytics(save),
         'last_nego': save.get('last_nego'),
@@ -29552,6 +29553,7 @@ def franchise_player(pid):
         return redirect(url_for('franchise_hub', tab='roster'))
     prof['last_nego'] = save.get('last_nego')
     prof['fit'] = fk.tactical_fit(save, prof['p'])
+    prof['human_fit'] = fk.human_development_fit(save, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
 
@@ -29567,6 +29569,7 @@ def franchise_league_player(lid, pid):
     prof = _player_profile(league['teams'], pid, league.get('free_agents'))
     if not prof:
         return redirect(url_for('franchise_league_hub', lid=lid))
+    prof['human_fit'] = fk.human_development_fit(league, prof['p'])
     return render_template('franchise_player.html',
                            back=url_for('franchise_league_team', lid=lid),
                            current_user=current_user, **prof)
@@ -29596,6 +29599,7 @@ def franchise_prospect(pid):
     if not prof:
         return redirect(url_for('franchise_hub', tab='draft'))
     prof['fit'] = fk.tactical_fit(save, prof['p'])
+    prof['human_fit'] = fk.human_development_fit(save, prof['p'])
     prof['dev_outlook'] = _dev_outlook(save, prof.get('r1', 0), prof.get('r2', 0))
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
                            current_user=current_user, **prof)
@@ -29612,6 +29616,7 @@ def franchise_league_prospect(lid, pid):
     prof = _prospect_profile(league.get('draft'), pid)
     if not prof:
         return redirect(url_for('franchise_league_draft', lid=lid))
+    prof['human_fit'] = fk.human_development_fit(league, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_league_draft', lid=lid),
                            current_user=current_user, **prof)
 

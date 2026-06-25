@@ -1072,10 +1072,10 @@ def _advance_year(save):
             _develop(p, rng, bonus)   # trait-driven growth / decline
             if my and hfit and p.get("age", 30) <= 26:
                 if hfit["score"] >= 82 and p["overall"] > pre_ovr:
-                    evolution.append({"name": p["name"], "pos": p["pos"], "label": hfit["label"],
+                    evolution.append({"pid": p["id"], "name": p["name"], "pos": p["pos"], "label": hfit["label"],
                                       "note": "; ".join(hfit["notes"][:2])})
                 elif hfit["score"] <= 38:
-                    evolution.append({"name": p["name"], "pos": p["pos"], "label": "Miscast",
+                    evolution.append({"pid": p["id"], "name": p["name"], "pos": p["pos"], "label": "Miscast",
                                       "note": "; ".join(hfit["notes"][:2])})
             p["last_ovr"] = p["overall"]
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)

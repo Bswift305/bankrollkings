@@ -43,6 +43,27 @@
       </div>
     </div>
 
+    {% if human_fit is defined and human_fit %}
+    <div class="fp-card fp-human">
+      <div class="fp-h">Human development fit</div>
+      <div class="fp-fitbadge fp-fit-{{ 'good' if human_fit.score >= 70 else 'ok' if human_fit.score >= 55 else 'bad' }}">
+        <b>{{ human_fit.score }}</b><span>{{ human_fit.label }}</span>
+      </div>
+      <div class="fp-rows">
+        <div><span>Motivation</span><b>{{ p.motivation|default('—') }}</b></div>
+        <div><span>Learning style</span><b>{{ p.learning|default('—') }}</b></div>
+        <div><span>Best coach type</span><b>{{ p.coach_pref|default('—') }}</b></div>
+        <div><span>Confidence</span><b>{{ p.confidence|default(65) }}</b></div>
+        <div><span>Work ethic</span><b>{{ p.work_ethic|default(65) }}</b></div>
+      </div>
+      {% if human_fit.notes %}
+      <div class="fp-notes">
+        {% for n in human_fit.notes %}<span>{{ n }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {% if mine %}
     <div class="fp-card" style="border-color:rgba(74,212,240,.4)">
       <div class="fp-h">✍ Extend {{ p.name }}</div>
@@ -161,6 +182,14 @@
   .fp-rows > div { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
   .fp-rows span { color:#8fa3b0; } .fp-rows b { color:#fff; font-weight:700; }
   .fp-risk { color:#ff9a9a !important; }
+  .fp-human { border-color:rgba(245,200,96,.35); }
+  .fp-fitbadge { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; margin-bottom:10px; background:rgba(245,200,96,.08); border:1px solid rgba(245,200,96,.24); }
+  .fp-fitbadge b { font-family:var(--font-display); font-size:28px; color:#fff; }
+  .fp-fitbadge span { color:#f5c860; font-weight:900; font-size:13px; }
+  .fp-fit-good { background:rgba(125,255,176,.08); border-color:rgba(125,255,176,.25); } .fp-fit-good span { color:#7dffb0; }
+  .fp-fit-bad { background:rgba(255,122,122,.08); border-color:rgba(255,122,122,.28); } .fp-fit-bad span { color:#ffb3b3; }
+  .fp-notes { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .fp-notes span { border:1px solid rgba(145,168,184,.22); background:rgba(3,8,12,.45); color:#b7c6d0; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fp-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:10px; }
   .fp-stat { background:rgba(3,8,12,.6); border:1px solid rgba(74,212,240,.18); border-radius:10px; padding:12px 8px; text-align:center; }
   .fp-stat b { display:block; font-family:var(--font-display); font-size:22px; color:#fff; } .fp-stat span { font-size:10px; color:#8fa3b0; letter-spacing:.03em; }
