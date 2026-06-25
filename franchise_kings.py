@@ -129,17 +129,30 @@ def team_accent(full):
 
 
 def team_crest_svg(full, size=36):
-    """A simple shield crest in the club's colours with the mascot's initial."""
+    """A two-tone shield emblem in the club's colours: a concentric secondary
+    keyline, side-shading for depth, a top sheen, and the mascot's initial. No
+    SVG gradient ids (so any number can share a page), and a hairline outer edge
+    so even a near-black crest reads on a dark card. Reads from ~20px to the hero."""
     meta = _TEAM_META.get(full)
     pri = meta["primary"] if meta else "#1b2a36"
     sec = meta["secondary"] if meta else "#4ad4f0"
     initial = (meta["mascot"][0] if meta else (full or "?")[:1]).upper()
-    return (f'<svg width="{size}" height="{size}" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" '
-            f'class="fk-crest" style="vertical-align:middle">'
-            f'<path d="M20 2L36 8V21C36 30 29 36 20 39C11 36 4 30 4 21V8Z" fill="{pri}" '
-            f'stroke="{sec}" stroke-width="2.5" stroke-linejoin="round"/>'
-            f'<text x="20" y="27" text-anchor="middle" font-size="19" font-weight="800" '
-            f'fill="{_contrast(pri)}" font-family="Arial,Helvetica,sans-serif">{initial}</text></svg>')
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 48 48" class="fk-crest" '
+        f'xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">'
+        # outer shield + hairline edge to ground it on any background
+        f'<path d="M24 3 L43 9 V25 C43 35.5 35 42.5 24 46 C13 42.5 5 35.5 5 25 V9 Z" '
+        f'fill="{pri}" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1.4" stroke-linejoin="round"/>'
+        # right-side shade for dimensionality
+        f'<path d="M24 4 L42 9.6 V25 C42 35 34.4 41.8 24 45.2 Z" fill="#000000" opacity="0.13"/>'
+        # concentric secondary keyline (the two-tone crest frame)
+        f'<path d="M24 8 L38.5 12.6 V24.7 C38.5 32.8 31.8 38.8 24 41.4 C16.2 38.8 9.5 32.8 9.5 24.7 V12.6 Z" '
+        f'fill="none" stroke="{sec}" stroke-width="2" stroke-linejoin="round"/>'
+        # top sheen
+        f'<path d="M9.5 12.6 L24 8 L38.5 12.6 L38.5 15.4 L24 11 L9.5 15.4 Z" fill="#ffffff" opacity="0.10"/>'
+        f'<text x="24" y="33" text-anchor="middle" font-size="21" font-weight="900" '
+        f'fill="{_contrast(pri)}" font-family="Arial,Helvetica,sans-serif">{initial}</text>'
+        f'</svg>')
 
 
 FIRST_NAMES = [
