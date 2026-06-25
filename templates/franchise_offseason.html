@@ -248,6 +248,32 @@
   <div class="os-card">
     <div class="os-ch">{{ icon('cap') }}The Draft {% if draft %}<span class="os-cap">Round {{ draft.round }} · Pick {{ draft.pick }}</span>{% endif %}</div>
     {% if draft_pending and draft %}
+      {% if draft_capital %}
+      <div class="os-cap">
+        <div class="os-cap-h">{{ icon('swap') }}Your draft capital · {{ '{:,}'.format(draft_capital.total) }} pts</div>
+        <div class="os-cap-picks">
+          {% for p in draft_capital.now %}<span class="os-cap-pick"><b>R{{ p.r }}</b> #{{ p.ov }}{% if p.from %} via {{ p.from }}{% endif %} <span class="os-cap-val">{{ p.value }}</span></span>{% endfor %}
+          {% for p in draft_capital.future %}<span class="os-cap-pick os-cap-fut"><b>R{{ p.r }}</b> next yr{% if p.from %} via {{ p.from }}{% endif %} <span class="os-cap-val">{{ p.value }}</span></span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if draft.on_clock and draft.offers %}
+      <div class="os-trades">
+        <div class="os-cap-h">{{ icon('swap') }}Trade-down offers — move off #{{ draft.on_clock_ov }} and stack picks</div>
+        {% for o in draft.offers %}
+        <div class="os-trade">
+          <div class="os-trade-body"><strong>{{ o.team_name }}</strong> moves up to #{{ o.take_ov }}.
+            <div class="os-trade-get">You get {% for g in o.give %}<span class="os-tag">{{ g.label }}</span>{% endfor %}</div>
+            <div class="os-trade-val"><span class="os-vgain">+{{ o.vin - o.vout }}</span> · {{ o.vout }} → {{ o.vin }}</div>
+          </div>
+          <form method="post" action="{{ url_for('franchise_offseason_draft') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="offer_id" value="{{ o.id }}">
+            <button class="os-mini os-mini-btn">Trade down</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% if draft.on_clock %}
         <p class="os-sub">You're on the clock.</p>
         <div class="os-tscroll"><table class="os-table"><thead><tr><th>Prospect</th><th>Pos</th><th>Grade</th><th>Fit</th><th></th></tr></thead><tbody>
@@ -367,6 +393,20 @@
   .os-fit-mid { color:#ffd27d; background:rgba(255,210,125,.12); }
   .os-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
   .os-rosterlist { max-height:300px; overflow-y:auto; }
+  /* Draft capital + trade-down */
+  .os-cap { background:rgba(74,212,240,.05); border:1px solid rgba(74,212,240,.2); border-radius:10px; padding:10px 12px; margin-bottom:11px; }
+  .os-cap-h { display:flex; align-items:center; color:#fff; font-weight:800; font-size:12.5px; margin-bottom:8px; }
+  .os-cap-picks { display:flex; flex-wrap:wrap; gap:5px; }
+  .os-cap-pick { font-size:11px; color:#dce8ef; background:rgba(3,8,12,.55); border:1px solid rgba(145,168,184,.2); border-radius:7px; padding:2px 7px; }
+  .os-cap-pick b { color:#9fe9ff; } .os-cap-fut { border-style:dashed; opacity:.85; }
+  .os-cap-val { color:#7dffb0; font-weight:700; }
+  .os-trades { margin-bottom:12px; }
+  .os-trade { display:flex; align-items:center; gap:10px; background:rgba(125,255,176,.05); border:1px solid rgba(125,255,176,.25); border-left:3px solid #7dffb0; border-radius:9px; padding:9px 12px; margin-bottom:7px; }
+  .os-trade-body { flex:1; min-width:0; color:#dce8ef; font-size:12.5px; }
+  .os-trade-body strong { color:#fff; }
+  .os-trade-get { margin:4px 0 3px; display:flex; flex-wrap:wrap; gap:4px; }
+  .os-tag { font-size:10px; color:#cfe3ee; background:rgba(74,212,240,.1); border:1px solid rgba(74,212,240,.25); border-radius:6px; padding:1px 6px; }
+  .os-trade-val { font-size:11px; color:#9fb0bc; } .os-vgain { color:#7dffb0; font-weight:800; }
   .os-consult { border-color:rgba(159,150,255,.4); }
   .os-consulthead { font-family:var(--font-display); color:#fff; font-size:16px; }
   .os-assist { float:right; display:inline-flex; gap:4px; } .os-assist form { margin:0; }

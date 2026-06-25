@@ -603,6 +603,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_job',
     'franchise_stay',
     'franchise_draft',
+    'franchise_draft_trade',
     'franchise_negotiate',
     'franchise_trade',
     'franchise_avatar',
@@ -29030,6 +29031,7 @@ def _franchise_view(save):
         'unemployed': save.get('unemployed', False),
         'draft_pending': save.get('draft_pending', False),
         'draft': fk.draft_state(save),
+        'draft_capital': fk.draft_capital(save) if save.get('draft_pending') else None,
         'last_draft_log': save.get('last_draft_log'),
         'staff': save.get('staff', {}),
         'staff_market': save.get('staff_market', {}),
@@ -29198,6 +29200,7 @@ def franchise_offseason():
         if not save.get('draft_pending') and not save['offseason'].get('drafted'):
             fk.start_draft(save)
         ctx.update(draft=fk.draft_state(save), draft_pending=save.get('draft_pending', False),
+                   draft_capital=fk.draft_capital(save) if save.get('draft_pending') else None,
                    last_draft_log=save.get('last_draft_log'))
     elif stage == 'cuts':
         team = fk.current_team(save)
@@ -29276,7 +29279,9 @@ def franchise_offseason_fa():
 def franchise_offseason_draft():
     _, save = _franchise_save()
     if save and fo.offseason_active(save):
-        if request.form.get('auto'):
+        if request.form.get('offer_id') is not None:
+            fk.accept_draft_trade(save, str(request.form.get('offer_id', '')).strip())
+        elif request.form.get('auto'):
             guard = 0
             while save.get('draft_pending') and guard < 400:
                 st = fk.draft_state(save)
@@ -29351,6 +29356,14 @@ def franchise_draft():
     _, save = _franchise_save()
     if save:
         fk.draft_make_pick(save, str(request.form.get('prospect_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='draft'))
+
+
+@app.route('/franchise/draft/trade', methods=['POST'])
+def franchise_draft_trade():
+    _, save = _franchise_save()
+    if save:
+        fk.accept_draft_trade(save, str(request.form.get('offer_id', '')).strip())
     return redirect(url_for('franchise_hub', tab='draft'))
 
 

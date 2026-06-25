@@ -1321,6 +1321,35 @@ def _make_rookie(p):
             "high_school": p.get("high_school"), "college": p.get("college")}
 
 
+# --------------------------------------------------------------------------- #
+# Draft capital — the Jimmy Johnson trade-value chart (the real one NFL front
+# offices used for decades). Round 1 is the exact chart; later rounds follow its
+# halving decay. Picks are OWNABLE assets that can be traded — the "War Room"
+# play: trade DOWN off a premium pick to stockpile a bigger pile of value.
+# --------------------------------------------------------------------------- #
+_PICK_VALUE_R1 = [3000, 2600, 2200, 1800, 1700, 1600, 1500, 1400, 1350, 1300,
+                  1250, 1200, 1150, 1100, 1050, 1000, 950, 900, 875, 850,
+                  800, 780, 760, 740, 720, 700, 680, 660, 640, 620, 600, 590]
+
+
+def pick_value(overall):
+    """Jimmy Johnson chart value for an overall draft slot."""
+    if overall <= 32:
+        return _PICK_VALUE_R1[overall - 1]
+    return max(1, round(590 * 0.5 ** ((overall - 32) / 26.0)))
+
+
+def future_pick_value(rnd, n=LEAGUE_SIZE):
+    """A next-year pick, valued at a mid-round slot and discounted for the wait."""
+    mid = (rnd - 1) * n + n // 2
+    return max(1, round(pick_value(mid) * 0.72))
+
+
+def _team_abbr(save, tid):
+    t = next((x for x in save["teams"] if x["id"] == tid), None)
+    return ((t.get("name") or t["full"])[:3].upper()) if t else "?"
+
+
 def start_draft(save):
     if save.get("draft_pending"):
         return
@@ -1331,21 +1360,39 @@ def start_draft(save):
         _scout(rng, p, acc)
     save["staff_market"] = generate_staff_market(rng)   # fresh candidates each offseason
     order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
-    save["draft"] = {"class": cls, "order": order, "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": []}
+    n = len(order)
+    picks = []
+    for r in range(1, DRAFT_ROUNDS + 1):
+        for slot, tid in enumerate(order):
+            ov = (r - 1) * n + slot + 1
+            picks.append({"r": r, "pir": slot + 1, "ov": ov, "owner": tid, "orig": tid})
+    season = save.get("season", 1)
+    for sw in save.get("pick_swaps", []):          # apply trades made in earlier seasons
+        if sw.get("season") != season:
+            continue
+        for pk in picks:
+            if pk["r"] == sw["round"] and pk["orig"] == sw["orig"]:
+                pk["owner"] = sw["to"]
+                break
+    save["pick_swaps"] = [sw for sw in save.get("pick_swaps", []) if sw.get("season") != season]
+    save["draft"] = {"class": cls, "picks": picks, "order": order,
+                     "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": []}
     save["draft_pending"] = True
     _draft_advance(save)
     write_save(save)
 
 
 def _draft_on_clock(draft):
-    if draft["ptr"] >= draft["rounds"] * len(draft["order"]):
+    if draft["ptr"] >= len(draft["picks"]):
         return None
-    return draft["order"][draft["ptr"] % len(draft["order"])]
+    return draft["picks"][draft["ptr"]]["owner"]
 
 
 def _draft_round_pick(draft):
-    n = len(draft["order"])
-    return draft["ptr"] // n + 1, draft["ptr"] % n + 1
+    if draft["ptr"] >= len(draft["picks"]):
+        return draft["rounds"], len(draft.get("order", []))
+    pk = draft["picks"][draft["ptr"]]
+    return pk["r"], pk["pir"]
 
 
 def _available(draft):
@@ -1357,7 +1404,11 @@ def _ai_pick(save, draft):
     team = next(t for t in save["teams"] if t["id"] == tid)
     avail = _available(draft)
     if avail:
-        pick = avail[0]
+        best = {}                                  # best-player-available, lightly nudged by need
+        for p in team["roster"]:
+            best[p["pos"]] = max(best.get(p["pos"], 0), p["overall"])
+        need = lambda pr: max(0, 75 - best.get(pr["pos"], 60))
+        pick = max(avail[:6], key=lambda pr: pr["grade"] + need(pr) * 0.12)
         team["roster"].append(_make_rookie(pick))
         draft["class"] = [p for p in draft["class"] if p["id"] != pick["id"]]
     draft["ptr"] += 1
@@ -1371,6 +1422,7 @@ def _draft_advance(save):
             _finalize_draft(save)
             return
         if oc == save["current_team_id"]:
+            draft["offers"] = draft_trade_offers(save)   # refresh trade-down offers on the clock
             return
         _ai_pick(save, draft)
 
@@ -1388,6 +1440,7 @@ def draft_make_pick(save, prospect_id):
     draft["user_log"].append({"round": rnd, "name": pick["name"], "pos": pick["pos"],
                               "grade": pick["grade"], "ovr": pick["true_ovr"]})
     draft["ptr"] += 1
+    draft["offers"] = []
     _draft_advance(save)
     write_save(save)
     return True, f"Drafted {pick['name']} ({pick['pos']})."
@@ -1404,6 +1457,130 @@ def _finalize_draft(save):
     save.pop("draft", None)
 
 
+def draft_capital(save):
+    """Every pick the GM currently controls — remaining picks in this draft (with
+    their chart value and where they came from) plus next year's picks. The asset
+    sheet behind every trade-down decision."""
+    draft = save.get("draft")
+    uid = save["current_team_id"]
+    now = []
+    if draft:
+        for i in range(draft["ptr"], len(draft["picks"])):
+            pk = draft["picks"][i]
+            if pk["owner"] == uid:
+                now.append({"r": pk["r"], "pir": pk["pir"], "ov": pk["ov"],
+                            "value": pick_value(pk["ov"]),
+                            "from": None if pk["orig"] == uid else _team_abbr(save, pk["orig"])})
+    nxt = save.get("season", 1) + 1
+    future = []
+    away = {sw["round"] for sw in save.get("pick_swaps", [])
+            if sw.get("season") == nxt and sw["orig"] == uid and sw["to"] != uid}
+    for r in range(1, DRAFT_ROUNDS + 1):
+        if r not in away:
+            future.append({"r": r, "value": future_pick_value(r), "from": None})
+    for sw in save.get("pick_swaps", []):
+        if sw.get("season") == nxt and sw["to"] == uid and sw["orig"] != uid:
+            future.append({"r": sw["round"], "value": future_pick_value(sw["round"]),
+                           "from": _team_abbr(save, sw["orig"])})
+    future.sort(key=lambda x: (x["r"], x["from"] or ""))
+    total = sum(p["value"] for p in now) + sum(p["value"] for p in future)
+    return {"now": now, "future": future, "total": total}
+
+
+def draft_trade_offers(save):
+    """Trade-DOWN offers when the GM is on the clock: rival clubs call to move UP
+    to your slot, and they OVERPAY to do it (a later pick + extra capital, often a
+    future pick). Accept and you slide down the board with more total value — the
+    Belichick move. Returns a list of one-click offers."""
+    draft = save.get("draft")
+    if not draft:
+        return []
+    uid = save["current_team_id"]
+    ptr = draft["ptr"]
+    if ptr >= len(draft["picks"]) or draft["picks"][ptr]["owner"] != uid:
+        return []
+    my = draft["picks"][ptr]
+    my_val = pick_value(my["ov"])
+    if my_val < 150:                               # only worth shopping a real premium pick
+        return []
+    rng = _rng(save["seed"] + save["season"] * 131 + my["ov"])
+    # one base per team: the EARLIEST upcoming pick a rival would move up FROM, and
+    # only rivals close enough that a believable 2-4 asset package covers the jump.
+    earliest = {}
+    for j in range(ptr + 1, len(draft["picks"])):
+        pk = draft["picks"][j]
+        if pk["owner"] == uid:
+            continue
+        if pk["owner"] not in earliest:
+            earliest[pk["owner"]] = (j, pk)
+    bases = [(ai, jpk) for ai, jpk in earliest.items()
+             if my_val * 0.42 <= pick_value(jpk[1]["ov"]) < my_val]
+    bases.sort(key=lambda b: -pick_value(b[1][1]["ov"]))
+    rng.shuffle(bases)
+    seen, offers = set(), []
+    for ai, (bj, base) in bases:
+        if ai in seen:
+            continue
+        their_val = pick_value(base["ov"])
+        need = (my_val - their_val) * rng.uniform(1.05, 1.20)    # the move-up premium
+        give = [{"kind": "pick", "idx": bj, "label": f"Rd {base['r']} (#{base['ov']})", "value": their_val}]
+        acc = 0.0
+        extra = sorted([(j, draft["picks"][j]) for j in range(ptr + 1, len(draft["picks"]))
+                        if draft["picks"][j]["owner"] == ai and draft["picks"][j]["ov"] != base["ov"]],
+                       key=lambda jp: -pick_value(jp[1]["ov"]))
+        for j, p2 in extra[:3]:                     # at most 2 extra current-year picks
+            if acc >= need or len(give) >= 3:
+                break
+            give.append({"kind": "pick", "idx": j, "label": f"Rd {p2['r']} (#{p2['ov']})", "value": pick_value(p2["ov"])})
+            acc += pick_value(p2["ov"])
+        if acc < need:                              # one future pick to close the gap
+            fr = 2 if (need - acc) > 300 else 4
+            fv = future_pick_value(fr)
+            give.append({"kind": "future", "round": fr, "orig": ai,
+                         "label": f"{_team_abbr(save, ai)} '{str(save['season'] + 1)[-2:]} Rd {fr}", "value": fv})
+            acc += fv
+        vin = sum(g["value"] for g in give)
+        if vin <= my_val or len(give) > 4:          # must add value, in a believable package
+            continue
+        seen.add(ai)
+        offers.append({
+            "id": len(offers), "team": ai, "team_name": next(t["full"] for t in save["teams"] if t["id"] == ai),
+            "give": give, "take_ov": my["ov"], "take_label": f"Rd {my['r']} (#{my['ov']})",
+            "vin": round(vin), "vout": round(my_val),
+            "summary": (f"Trade #{my['ov']} to {_team_abbr(save, ai)} for "
+                        + " + ".join(g["label"] for g in give))})
+        if len(offers) >= 3:
+            break
+    return offers
+
+
+def accept_draft_trade(save, offer_id):
+    draft = save.get("draft")
+    if not draft:
+        return False, "No draft in progress."
+    uid = save["current_team_id"]
+    ptr = draft["ptr"]
+    if ptr >= len(draft["picks"]) or draft["picks"][ptr]["owner"] != uid:
+        return False, "You're not on the clock."
+    off = next((o for o in draft.get("offers", []) if o["id"] == int(offer_id)), None)
+    if not off:
+        return False, "That offer is no longer on the table."
+    draft["picks"][ptr]["owner"] = off["team"]      # rival moves up into your slot
+    for g in off["give"]:
+        if g["kind"] == "pick":
+            draft["picks"][g["idx"]]["owner"] = uid
+        else:
+            save.setdefault("pick_swaps", []).append(
+                {"season": save["season"] + 1, "round": g["round"], "orig": g["orig"], "to": uid})
+    draft["offers"] = []
+    save["last_trade"] = {"ok": True, "summary": off["summary"]}
+    owner_say(save, f"Traded down off #{off['take_ov']} — stacked the board with {len(off['give'])} more pick(s). That's how you build depth.",
+              tone="praise" if len(off["give"]) >= 2 else "neutral")
+    _draft_advance(save)                            # the club that moved up is now on the clock
+    write_save(save)
+    return True, off["summary"]
+
+
 def draft_state(save):
     draft = save.get("draft")
     if not draft:
@@ -1413,9 +1590,11 @@ def draft_state(save):
     for pr in _available(draft)[:60]:
         f = tactical_fit(save, pr)
         avail.append(dict(pr, fit=f["label"], fit_pct=f["pct"]))
+    on_clock = _draft_on_clock(draft) == save["current_team_id"]
     return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
-            "on_clock": _draft_on_clock(draft) == save["current_team_id"],
-            "available": avail, "log": draft["user_log"]}
+            "on_clock": on_clock, "available": avail, "log": draft["user_log"],
+            "offers": draft.get("offers", []) if on_clock else [],
+            "on_clock_ov": draft["picks"][draft["ptr"]]["ov"] if draft["ptr"] < len(draft["picks"]) else None}
 
 
 # --------------------------------------------------------------------------- #
