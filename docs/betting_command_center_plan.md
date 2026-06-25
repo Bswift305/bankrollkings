@@ -125,8 +125,12 @@ same cadence as the franchise work.
   teaching note, and notable spots to study — ranked by signal, framed honestly as
   market context (not a guaranteed winner). Reuses existing per-sport schedule + odds
   loaders and the market/environment helpers. Linked from `/game-lines`. SHIPPED
-  2026-06-25. Next: layer football EdgeScore model-vs-market into the football rows;
-  surface line-movement and (now un-tiered) sharp-money signals per game.
+  2026-06-25. Now also carries: **line-shopping** (cents-on-the-table best ML across
+  books, sign-consistent + capped), **line-movement** (opener->current spread/total,
+  auto-activates when the feed captures multi-snapshot moves), and **football
+  game-script tags** (NFL/CFB rows, populates in season). Still open: a true
+  per-upcoming-game EdgeScore (projection vs market) — needs a live projection /
+  team-strength-prior calibration, a separate larger build, not a display wiring.
 - **Prop Betting Pointers Engine** (`prop_pointers.py`) — universal + sport-specific
   pointers and a sport profile (Opportunity / Reliability / Best market / Main trap)
   on every prop page via the shared `props.html`. Teaches while the user bets.
