@@ -194,9 +194,44 @@
     </div>
     {% endif %}
 
+    {% if inseason and star_stats %}
+    <div class="fk-card fk-leaders">
+      <div class="fk-card-h">⭐ Your stars — Season {{ save.season }} so far</div>
+      {% for s in star_stats %}
+      <div class="fk-leadrow"><span class="fk-leadn">{{ s.pos }}</span> <a href="{{ url_for('franchise_player', pid=s.pid) }}" style="color:#fff;text-decoration:none">{{ s.name }}</a> <small>{{ s.line }}</small></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="fk-card">
       <div class="fk-card-h">This season</div>
-      {% if last_outcome %}
+      {% if inseason %}
+        <div class="fk-inseason-wk">📅 Regular season — <strong>Week {{ inseason_week }} of 17</strong> · trade deadline Week {{ trade_deadline }}{% if not trades_open %} <span style="color:#ff9a9a">(passed)</span>{% endif %}</div>
+        {% if inseason_offer %}
+        <div class="fk-tradeoffer">
+          <div class="fk-card-h" style="font-size:15px">📨 Trade offer — {{ inseason_offer.team }} <span class="fk-grade fk-grade-{{ inseason_offer.grade }}" style="float:right">{{ inseason_offer.grade }} for you</span></div>
+          <p style="margin:4px 0">You <b style="color:#7dffb0">get</b> {{ inseason_offer.give_pos }} <a href="{{ url_for('franchise_player', pid=inseason_offer.give_id) }}" style="color:#9fe9ff;text-decoration:none">{{ inseason_offer.give }}</a> ({{ inseason_offer.give_ovr }}) · you <b style="color:#ff9a9a">give</b> {{ inseason_offer.want_pos }} {{ inseason_offer.want }} ({{ inseason_offer.want_ovr }})</p>
+          <div class="fk-offeract">
+            <form method="post" action="{{ url_for('franchise_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accept" value="1"><button class="fk-psbtn">Accept</button></form>
+            <form method="post" action="{{ url_for('franchise_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="fk-declinebtn">Decline</button></form>
+          </div>
+        </div>
+        {% endif %}
+        {% if inseason_injuries %}
+        <div class="fk-injreport"><strong>🏥 New injuries this week:</strong>
+          <div class="fk-draftlog">{% for i in inseason_injuries %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · {{ i.weeks }}w</span>{% endfor %}</div>
+        </div>
+        {% endif %}
+        {% if inseason_log %}
+        <div class="fk-gloscroll" style="max-height:210px;overflow-y:auto;margin-top:10px"><table class="fk-table"><tbody>
+          {% for g in inseason_log %}
+          <tr><td style="color:#7f93a0">Wk {{ g.week }}</td><td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
+            <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
+            <td>{% if g.star %}⭐ {{ g.star.pos }} {{ g.star.name }} · {{ g.star.line }}{% endif %}</td></tr>
+          {% endfor %}
+        </tbody></table></div>
+        {% endif %}
+      {% elif last_outcome %}
         <div class="fk-outcome fk-outcome-{{ last_outcome.status }}">
           <div class="fk-outcome-rec">{{ last_outcome.record.w }}–{{ last_outcome.record.l }}{% if last_outcome.won_title %} · 🏆 CHAMPIONS{% elif last_outcome.made_playoffs %} · Playoffs{% endif %}</div>
           <p>{{ last_outcome.headline }}</p>
@@ -207,7 +242,7 @@
           mandate decides whether you're extended, fired, or poached by a bigger club.</p>
       {% endif %}
 
-      {% if last_injuries %}
+      {% if last_injuries and not inseason %}
       <div class="fk-injreport">
         <strong>🏥 Injury report &amp; game-day inactives ({{ last_injuries|length }})</strong> — cost you ~{{ last_injury_pen }} power.
         These players were inactive for stretches; a Head of Medical cuts that down.
@@ -239,7 +274,12 @@
       {% endif %}
 
       {% if not unemployed and not (last_outcome and last_outcome.offers) %}
-        {% if save.offseason_mode %}
+        {% if inseason %}
+          <form method="post" action="{{ url_for('franchise_sim_week') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="fk-btn fk-btn-go">▶ Sim Week {{ inseason_week }} of 17</button>
+          </form>
+        {% elif save.offseason_mode %}
           <form method="post" action="{{ url_for('franchise_offseason_begin') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="fk-btn fk-btn-go">▶ Begin Offseason — build for Season {{ save.season }}</button>
@@ -670,6 +710,10 @@
   .fk-leadrow b { color:#fff; float:right; } .fk-leadrow small { display:block; color:#7f93a0; font-size:10px; margin-left:16px; }
   .fk-leadn { color:#4ad4f0; font-weight:800; margin-right:4px; }
   .fk-psbtn { cursor:pointer; border:1px solid rgba(125,255,176,.45); background:rgba(125,255,176,.12); color:#7dffb0; font-size:11px; font-weight:800; padding:5px 11px; border-radius:7px; }
+  .fk-inseason-wk { color:#9fe9ff; font-size:14px; margin-bottom:10px; } .fk-inseason-wk strong { color:#fff; }
+  .fk-tradeoffer { background:rgba(159,150,255,.08); border:1px solid rgba(159,150,255,.4); border-radius:10px; padding:12px; margin-bottom:10px; }
+  .fk-offeract { display:flex; gap:8px; margin-top:8px; } .fk-offeract form { margin:0; }
+  .fk-declinebtn { cursor:pointer; border:1px solid rgba(255,122,122,.4); background:rgba(255,122,122,.12); color:#ff9a9a; font-size:11px; font-weight:800; padding:5px 11px; border-radius:7px; }
   .fk-ownermsg { margin-top:10px; padding:10px 12px; border-radius:9px; background:rgba(159,150,255,.08); border:1px solid rgba(159,150,255,.3); }
   .fk-ownerhead { color:#c7c1ff; font-weight:800; font-size:12px; } .fk-ownerhead span { color:#fff; }
   .fk-ownermsg em { display:block; color:var(--text2,#b7c6d0); font-size:13px; margin-top:5px; }

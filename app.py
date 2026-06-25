@@ -597,6 +597,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_hub',
     'franchise_new',
     'franchise_sim',
+    'franchise_sim_week',
+    'franchise_offer',
     'franchise_sign',
     'franchise_job',
     'franchise_stay',
@@ -28967,6 +28969,25 @@ def _trade_view(save, team_id):
     }
 
 
+def _inseason_ctx(save, team):
+    iz = save.get('inseason') or {}
+
+    def _prod(p):
+        st = p.get('stats', {})
+        return (st.get('pass_yd', 0) * 0.04 + st.get('pass_td', 0) * 4 + st.get('rush_yd', 0) * 0.06
+                + st.get('rush_td', 0) * 6 + st.get('rec_yd', 0) * 0.06 + st.get('rec_td', 0) * 6
+                + st.get('sack', 0) * 5)
+    stars = []
+    for p in sorted([x for x in team['roster'] if x.get('stats')], key=_prod, reverse=True)[:6]:
+        sl = fk.stat_line(p)
+        if sl:
+            stars.append({'name': p['name'], 'pos': p['pos'], 'pid': p['id'], 'line': sl})
+    return {'inseason': bool(iz), 'inseason_week': iz.get('week'),
+            'inseason_log': list(reversed(iz.get('log', []))), 'inseason_offer': iz.get('offer'),
+            'inseason_injuries': iz.get('injuries', []), 'star_stats': stars,
+            'trade_deadline': fk.TRADE_DEADLINE_SOLO, 'trades_open': fk.solo_trades_open(save)}
+
+
 def _franchise_view(save):
     team = fk.current_team(save)
     by_pos = {}
@@ -29017,6 +29038,7 @@ def _franchise_view(save):
         'assist': save['gm'].get('assist', 'Full'),
         'gm_grade': fk.gm_grade(save),
         'advice': fk.consultant_advice(save),
+        **_inseason_ctx(save, team),
         'leaders': save.get('leaders'),
         'season_mvp': save.get('season_mvp'),
         'all_pro': save.get('all_pro'),
@@ -29088,7 +29110,26 @@ def franchise_new():
 def franchise_sim():
     _, save = _franchise_save()
     if save and not save.get('unemployed'):
-        fk.sim_season(save)
+        fk.start_inseason(save)            # play it week by week, not all at once
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/sim-week', methods=['POST'])
+def franchise_sim_week():
+    _, save = _franchise_save()
+    if save and save.get('inseason'):
+        fk.sim_week(save)
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/offer', methods=['POST'])
+def franchise_offer():
+    _, save = _franchise_save()
+    if save and (save.get('inseason') or {}).get('offer'):
+        if request.form.get('accept'):
+            fk.accept_ai_offer(save)
+        else:
+            fk.decline_ai_offer(save)
     return redirect(url_for('franchise_hub'))
 
 
@@ -29236,10 +29277,10 @@ def franchise_offseason_kickoff():
     _, save = _franchise_save()
     if save and fo.offseason_active(save):
         fo.finish_offseason(save)
-        if not save.get('unemployed'):
-            fk.sim_season(save)
         save.pop('draft', None)            # cancel the legacy post-season draft
         save['draft_pending'] = False
+        if not save.get('unemployed'):
+            fk.start_inseason(save)         # play the season week by week
         fk.write_save(save)
     return redirect(url_for('franchise_hub'))
 
@@ -29299,7 +29340,7 @@ def franchise_negotiate():
 def franchise_trade():
     _, save = _franchise_save()
     target = ''
-    if save:
+    if save and fk.solo_trades_open(save):
         fk.propose_trade(save, str(request.form.get('give_id', '')).strip(),
                          str(request.form.get('get_id', '')).strip())
         target = str(request.form.get('team_id', '')).strip()
@@ -29389,10 +29430,11 @@ def _scout_read(p):
     return [("Durability", dur), ("Trajectory", traj), ("Ceiling", ceil)]
 
 
-def _player_ctx(p, team_full, is_fa=False):
+def _player_ctx(p, team_full, is_fa=False, mine=False):
     sub = (f"Free Agent · {p['pos']} · Age {p.get('age', '?')}" if is_fa
            else f"{p['pos']} · #{p.get('number', '—')} · {team_full}")
-    return {'p': p, 'prospect': False,
+    return {'p': p, 'prospect': False, 'mine': mine, 'market': round(fk._market_aav(p), 1),
+            'is_fa': is_fa,
             'colors': fk.team_colors(team_full) if team_full else {'primary': '#1b2a36', 'secondary': '#4ad4f0'},
             'crest': fk.team_crest_svg(team_full, 60) if team_full else '',
             'sub': sub, 'r1': p['overall'], 'r1l': 'OVR',
@@ -29403,11 +29445,11 @@ def _player_ctx(p, team_full, is_fa=False):
             'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
 
 
-def _player_profile(teams, pid, free_agents=None):
+def _player_profile(teams, pid, free_agents=None, own_id=None):
     for t in teams:
         for p in t['roster']:
             if p['id'] == pid:
-                return _player_ctx(p, t['full'])
+                return _player_ctx(p, t['full'], mine=(t['id'] == own_id))
     for fa in (free_agents or []):
         if fa['id'] == pid:
             return _player_ctx(fa, None, is_fa=True)
@@ -29431,9 +29473,10 @@ def franchise_player(pid):
     current_user, save = _franchise_save()
     if not save:
         return redirect(url_for('franchise_new'))
-    prof = _player_profile(save['teams'], pid, save.get('free_agents'))
+    prof = _player_profile(save['teams'], pid, save.get('free_agents'), own_id=save['current_team_id'])
     if not prof:
         return redirect(url_for('franchise_hub', tab='roster'))
+    prof['last_nego'] = save.get('last_nego')
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
 
@@ -29500,9 +29543,11 @@ def franchise_demote():
 @app.route('/franchise/extend', methods=['POST'])
 def franchise_extend():
     _, save = _franchise_save()
+    pid = str(request.form.get('player_id', '')).strip()
     if save:
-        fk.extend_player(save, str(request.form.get('player_id', '')).strip(),
-                         request.form.get('years', 1), request.form.get('aav', 0))
+        fk.extend_player(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+    if request.form.get('back') == 'profile':
+        return redirect(url_for('franchise_player', pid=pid))
     return redirect(url_for('franchise_hub', tab='front-office'))
 
 

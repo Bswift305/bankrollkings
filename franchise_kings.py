@@ -447,64 +447,229 @@ def _run_playoffs(rng, seeds, powers):
     return teams[0]
 
 
-def sim_season(save):
-    """Play the schedule -> conference standings -> 7-seed conference playoffs ->
-    title game. Then advance the league a year and evaluate the GM."""
-    rng = _rng(save["seed"] + save["season"] * 1000)
-    teams = {t["id"]: t for t in save["teams"]}
+TRADE_DEADLINE_SOLO = 9
+
+
+def _add_stats(p, d):
+    s = p.setdefault("stats", {})
+    for k, v in d.items():
+        s[k] = round(s.get(k, 0) + v, 1) if isinstance(v, float) else s.get(k, 0) + v
+
+
+def _game_perf(team, won, rng, out_ids=()):
+    """Generate ONE game's box-score lines for a team's contributors, add them to
+    running season totals, and return the skill/defense standouts (for game stars)."""
+    by_pos = {}
+    for p in team["roster"]:
+        if p["id"] not in out_ids:
+            by_pos.setdefault(p["pos"], []).append(p)
+    for k in by_pos:
+        by_pos[k].sort(key=lambda x: -x["overall"])
+    wb = 1.1 if won else 0.92
+    perf = []
+
+    for qb in by_pos.get("QB", [])[:1]:
+        o = qb["overall"]
+        att = rng.randint(26, 40)
+        comp = int(att * min(0.74, 0.55 + (o - 55) * 0.0035))
+        yd = int(comp * rng.uniform(6.4, 9.2) * wb)
+        td = max(0, int(yd / 150 * wb + rng.random()))
+        intc = rng.randint(0, 2) if rng.random() < 0.5 else 0
+        _add_stats(qb, {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": yd, "pass_td": td, "int": intc})
+        perf.append({"name": qb["name"], "pos": "QB", "pid": qb["id"],
+                     "line": f"{comp}/{att}, {yd} yd, {td} TD" + (f", {intc} INT" if intc else ""),
+                     "score": yd * 0.04 + td * 4 - intc * 2})
+    for i, rb in enumerate(by_pos.get("RB", [])[:2]):
+        o = rb["overall"]
+        car = int(rng.randint(8, 22) * (1.0 if i == 0 else 0.5) * (1 + (o - 65) * 0.004))
+        yd = int(car * rng.uniform(3.2, 6.2) * wb)
+        td = max(0, int(yd / 60 * wb + rng.random() * 0.5))
+        catches = int(rng.randint(1, 5) * (1.0 if i == 0 else 0.6))
+        _add_stats(rb, {"g": 1, "rush_car": car, "rush_yd": yd, "rush_td": td, "rec": catches, "rec_yd": catches * 8})
+        perf.append({"name": rb["name"], "pos": "RB", "pid": rb["id"],
+                     "line": f"{car} car, {yd} yd, {td} TD", "score": yd * 0.06 + td * 6})
+    for c in by_pos.get("WR", [])[:3] + by_pos.get("TE", [])[:1]:
+        o = c["overall"]
+        catches = rng.randint(2, 9)
+        yd = int(catches * rng.uniform(9, 17) * (1 + (o - 65) * 0.004) * wb)
+        td = max(0, int(yd / 70 * wb))
+        _add_stats(c, {"g": 1, "rec": catches, "rec_yd": yd, "rec_td": td})
+        perf.append({"name": c["name"], "pos": c["pos"], "pid": c["id"],
+                     "line": f"{catches} rec, {yd} yd, {td} TD", "score": yd * 0.06 + td * 6 + catches * 0.4})
+    for d in by_pos.get("DL", [])[:4] + by_pos.get("LB", [])[:3]:
+        o = d["overall"]
+        sk = round(max(0.0, (o - 66) * 0.02) + (rng.random() * 1.2 if rng.random() < 0.4 else 0.0), 1)
+        tk = rng.randint(1, 6)
+        _add_stats(d, {"g": 1, "sack": sk, "tackle": tk})
+        if sk >= 1.5:
+            perf.append({"name": d["name"], "pos": d["pos"], "pid": d["id"],
+                         "line": f"{sk} sacks, {tk} tkl", "score": sk * 5 + tk * 0.3})
+    for d in by_pos.get("CB", [])[:3] + by_pos.get("S", [])[:2]:
+        o = d["overall"]
+        di = 1 if rng.random() < max(0, (o - 72) * 0.02) else 0
+        _add_stats(d, {"g": 1, "tackle": rng.randint(1, 6), "def_int": di, "pd": 1 if rng.random() < 0.3 else 0})
+    for k in by_pos.get("K", [])[:1]:
+        fgm = rng.randint(0, 4) if rng.random() < 0.6 else rng.randint(0, 2)
+        _add_stats(k, {"g": 1, "fgm": fgm, "fga": fgm + (1 if rng.random() < 0.3 else 0), "pts": fgm * 3 + rng.randint(0, 4)})
+    return perf
+
+
+def _roll_week_injuries(save, week, rng):
+    team = current_team(save)
+    med = max(0.4, 1.0 - (staff_bonus(save)["medical"] - 50) / 180.0)
+    base = {"Low": 0.012, "Medium": 0.025, "High": 0.045}
+    new = []
+    for p in _starters(team):
+        if p.get("out_until", 0) >= week:
+            continue
+        ch = base.get(p.get("injury_risk", "Low"), 0.02) * med + max(0, p["age"] - 29) * 0.002
+        if rng.random() < ch:
+            dur = rng.randint(1, 6)
+            p["out_until"] = week + dur
+            p["inj_history"] = p.get("inj_history", 0) + 1
+            p["inj_weeks"] = p.get("inj_weeks", 0) + dur
+            new.append({"name": p["name"], "pos": p["pos"], "weeks": dur})
+    return new
+
+
+def _user_inseason_power(save, week, base_power):
+    sb = staff_bonus(save)
+    p = base_power + sb["power"] + sb["scheme"] + sb["special_teams"] + atmosphere(save)["home_edge"]
+    p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
+    out = [x for x in _starters(current_team(save)) if x.get("out_until", 0) >= week]
+    p -= round(sum(POS_WEIGHT.get(x["pos"], 1.0) * 1.4 for x in out), 1)
+    return round(p, 1), out
+
+
+def _maybe_ai_offer(save, rng):
+    uid = save["current_team_id"]
+    myteam = current_team(save)
+    mine = sorted([p for p in myteam["roster"] if not p.get("holdout")], key=lambda p: -trade_value(p))[:14]
+    if not mine:
+        return None
+    want = rng.choice(mine)
+    ai = rng.choice([t for t in save["teams"] if t["id"] != uid])
+    theirs = sorted(ai["roster"], key=lambda p: abs(trade_value(p) - trade_value(want)))[:6]
+    if not theirs:
+        return None
+    give = rng.choice(theirs)
+    vin, vout = trade_value(give), trade_value(want)
+    ratio = vin / vout if vout else 1
+    grade = ("A" if ratio >= 1.2 else "B" if ratio >= 1.03 else "C" if ratio >= 0.9 else "D" if ratio >= 0.78 else "F")
+    return {"team_id": ai["id"], "team": ai["full"], "grade": grade,
+            "want_id": want["id"], "want": want["name"], "want_pos": want["pos"], "want_ovr": want["overall"],
+            "give_id": give["id"], "give": give["name"], "give_pos": give["pos"], "give_ovr": give["overall"]}
+
+
+def accept_ai_offer(save):
+    iz = save.get("inseason") or {}
+    o = iz.get("offer")
+    if not o:
+        return False
+    myteam = current_team(save)
+    ai = next((t for t in save["teams"] if t["id"] == o["team_id"]), None)
+    want = next((p for p in myteam["roster"] if p["id"] == o["want_id"]), None)
+    give = next((p for p in ai["roster"] if p["id"] == o["give_id"]), None) if ai else None
+    if not (ai and want and give):
+        iz["offer"] = None
+        write_save(save)
+        return False
+    myteam["roster"] = [p for p in myteam["roster"] if p["id"] != want["id"]] + [give]
+    ai["roster"] = [p for p in ai["roster"] if p["id"] != give["id"]] + [want]
+    save["last_trade"] = {"ok": True, "summary": f"Acquired {give['pos']} {give['name']} from the {o['team']} for {want['pos']} {want['name']}."}
+    iz["offer"] = None
+    write_save(save)
+    return True
+
+
+def decline_ai_offer(save):
+    iz = save.get("inseason") or {}
+    iz["offer"] = None
+    write_save(save)
+    return True
+
+
+def start_inseason(save):
+    """Kick off a turn-based, week-by-week regular season the GM plays through."""
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
+        for p in t["roster"]:
+            p["stats"] = {}
+            p.pop("out_until", None)
+    save["season_schedule_weeks"] = REG_GAMES
+    save["schedule"] = make_schedule(save["seed"] + save["season"], [t["id"] for t in save["teams"]])
+    save["inseason"] = {"week": 1, "log": [], "offer": None, "injuries": []}
+    save["last_outcome"] = None
+    save["unemployed"] = False
+    save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
+                               "div": t["division"], "w": 0, "l": 0} for t in save["teams"]]
+    write_save(save)
+    return save
+
+
+def sim_week(save):
+    iz = save.get("inseason")
+    if not iz:
+        return save
+    week = iz["week"]
+    rng = _rng(save["seed"] + save["season"] * 1000 + week)
+    teams = {t["id"]: t for t in save["teams"]}
     powers = {tid: power_rating(t) for tid, t in teams.items()}
-    _sb = staff_bonus(save)
-    powers[save["current_team_id"]] += _sb["power"] + _sb["scheme"]   # coaching + scheme fit
-    powers[save["current_team_id"]] += _sb["special_teams"]           # special-teams coaching edge
-    powers[save["current_team_id"]] += atmosphere(save)["home_edge"]  # home-field atmosphere
-
-    injuries = _roll_injuries(save, rng)
-    inj_pen = round(sum((i["weeks"] / REG_GAMES) * POS_WEIGHT.get(i["pos"], 1.0) * 1.4 for i in injuries), 1)
-    powers[save["current_team_id"]] -= inj_pen   # starters missing time hurts your record
-    save["last_injuries"] = injuries
-    save["last_injury_pen"] = inj_pen
-    hold_pen = round(sum(2.5 for p in current_team(save)["roster"] if p.get("holdout")), 1)
-    powers[save["current_team_id"]] -= hold_pen  # unresolved holdouts hurt the team
-
     uid = save["current_team_id"]
-    game_log = []
+    iz["injuries"] = _roll_week_injuries(save, week, rng)
+    powers[uid], out = _user_inseason_power(save, week, powers[uid])
+    out_ids = {p["id"] for p in out}
     for g in save["schedule"]:
+        if g["week"] != week:
+            continue
         home_win = _sim_game(rng, powers[g["home"]], powers[g["away"]])
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
-        if uid in (g["home"], g["away"]):                # build the user's box-score log
+        ph = _game_perf(teams[g["home"]], win == g["home"], rng, out_ids if g["home"] == uid else ())
+        pa = _game_perf(teams[g["away"]], win == g["away"], rng, out_ids if g["away"] == uid else ())
+        if uid in (g["home"], g["away"]):
             opp = teams[g["away"] if g["home"] == uid else g["home"]]
-            stars = []
-            for pos in ("QB", "RB", "WR"):
-                sp = game_starter(teams[uid], pos)
-                if sp:
-                    line, score = game_line(sp, win == uid, rng)
-                    stars.append({"name": sp["name"], "pos": pos, "line": line, "score": score, "pid": sp["id"]})
-            star = max(stars, key=lambda s: s["score"]) if stars else None
-            game_log.append({"week": g["week"], "opp": opp["full"], "home": g["home"] == uid,
-                             "won": win == uid,
-                             "star": {k: star[k] for k in ("name", "pos", "line", "pid")} if star else None,
-                             "_score": star["score"] if star else 0})
-    game_log.sort(key=lambda x: x["week"])
-    if game_log:
-        best = max(game_log, key=lambda x: x["_score"])
-        for gl in game_log:
-            gl["best"] = gl is best
-            gl.pop("_score", None)
-    save["game_log"] = game_log
+            mine = ph if g["home"] == uid else pa
+            st = max(mine, key=lambda x: x["score"]) if mine else None
+            iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
+                              "star": {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None,
+                              "_score": st["score"] if st else 0})
+    standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
+    save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
+                               "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
+    if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < 0.4:
+        iz["offer"] = _maybe_ai_offer(save, rng)
+    iz["week"] = week + 1
+    if iz["week"] > REG_GAMES:
+        _finalize_season(save)
+    else:
+        write_save(save)
+    return save
 
-    assign_season_stats(save["teams"], {tid: tm["record"]["w"] for tid, tm in teams.items()},
-                        save["seed"] + save["season"], season=save["season"])
-    save["leaders"] = stat_leaders(save["teams"])
+
+def _archive_season(teams, season):
+    for t in teams:
+        tname = t.get("name", t["full"])
+        for p in t["roster"]:
+            if p.get("stats"):
+                car = p.setdefault("career", [])
+                if not car or car[-1].get("season") != season:
+                    car.append({"season": season, "team": tname, **p["stats"]})
+                    del car[:-24]
+
+
+def _finalize_season(save):
+    rng = _rng(save["seed"] + save["season"] * 1000 + 991)
+    teams = {t["id"]: t for t in save["teams"]}
+    powers = {tid: power_rating(t) for tid, t in teams.items()}
+    save["leaders"] = stat_leaders(save["teams"])          # from the season actually played
     save["season_mvp"] = stat_mvp(save["teams"])
     save["all_pro"] = all_pro_team(save["teams"])
     update_records(save, save["teams"], save["season"])
+    _archive_season(save["teams"], save["season"])
 
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
-
     conf_champs, playoff_ids = [], set()
     for conf in CONFERENCES:
         seeds = [t["id"] for t in standings if t["conference"] == conf][:CONF_PLAYOFF_SEEDS]
@@ -513,32 +678,53 @@ def sim_season(save):
     champion = (conf_champs[0] if _sim_game(rng, powers[conf_champs[0]], powers[conf_champs[1]])
                 else conf_champs[1])
 
-    user_id = save["current_team_id"]
-    rec = dict(teams[user_id]["record"])
-    made_playoffs = user_id in playoff_ids
-    won_title = champion == user_id
+    uid = save["current_team_id"]
+    rec = dict(teams[uid]["record"])
+    made_playoffs, won_title = uid in playoff_ids, champion == uid
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
+    _apply_finance(save, rec, won_title)
 
-    _apply_finance(save, rec, won_title)   # season revenue -> cash, fan happiness update
+    gl = (save.get("inseason") or {}).get("log", [])
+    if gl:
+        best = max(gl, key=lambda x: x.get("_score", 0))
+        for g in gl:
+            g["best"] = g is best
+            g.pop("_score", None)
+    save["game_log"] = gl
+
     _advance_year(save)
     save["season"] += 1
-    save["schedule"] = make_schedule(save["seed"], [t["id"] for t in save["teams"]])
+    save["schedule"] = make_schedule(save["seed"] + save["season"], [t["id"] for t in save["teams"]])
     save["standings_cache"] = [
         {"id": t["id"], "full": t["full"], "conf": t["conference"], "div": t["division"],
          "w": t["record"]["w"], "l": t["record"]["l"], "power": powers[t["id"]],
-         "playoff": t["id"] in playoff_ids} for t in standings
-    ]
+         "playoff": t["id"] in playoff_ids} for t in standings]
     save["last_champion"] = teams[champion]["full"]
     save["last_outcome"] = outcome
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
-    owner_statement(save, outcome)         # the owner reacts
-    _check_holdouts(save)                  # flag underpaid stars going into the offseason
-    generate_news(save)                    # GridIron Network season recap feed
+    owner_statement(save, outcome)
+    _check_holdouts(save)
+    generate_news(save)
+    save.pop("inseason", None)
+    for t in save["teams"]:
+        for p in t["roster"]:
+            p.pop("out_until", None)
     write_save(save)
-    if outcome["status"] == "retained":
-        start_draft(save)   # offseason draft opens immediately when you keep your job
-    return save, outcome
+    if outcome["status"] == "retained" and not save.get("offseason_mode"):
+        start_draft(save)
+    return outcome
+
+
+def sim_season(save):
+    """Play the whole season at once (kept for compatibility / sim-to-end)."""
+    if not save.get("inseason"):
+        start_inseason(save)
+    guard = 0
+    while save.get("inseason") and guard < REG_GAMES + 2:
+        sim_week(save)
+        guard += 1
+    return save, save.get("last_outcome")
 
 
 def _advance_year(save):
@@ -2080,6 +2266,14 @@ def trade_value(p):
 def _grade(ratio):
     return ("A" if ratio >= 1.15 else "B" if ratio >= 1.05 else
             "C" if ratio >= 0.95 else "D" if ratio >= 0.85 else "F")
+
+
+def solo_trades_open(save):
+    """Trades run until the in-season deadline; open the rest of the time (offseason)."""
+    iz = save.get("inseason")
+    if iz:
+        return iz.get("week", 1) <= TRADE_DEADLINE_SOLO
+    return True
 
 
 def propose_trade(save, give_id, get_id):
