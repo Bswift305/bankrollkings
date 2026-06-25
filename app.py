@@ -29006,6 +29006,8 @@ def _franchise_view(save):
         return dict(p, ini=ini, grp=grp, fit=f['label'], fit_pct=f['pct'])
     return {
         'team': team,
+        'colors': fk.team_colors(team['full']),
+        'accent': fk.team_accent(team['full']),
         'power': fk.power_rating(team),
         'cap_used': fk.cap_used(team),
         'cap_total': fk.CAP_TOTAL,

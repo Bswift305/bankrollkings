@@ -97,6 +97,37 @@ def _contrast(hexcolor):
     return "#0a0a0a" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#ffffff"
 
 
+def _luma(hexcolor):
+    h = hexcolor.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def _vivify(hexcolor, target=232):
+    """Brighten a colour while keeping its hue/saturation - scale RGB so the
+    dominant channel reaches `target`. Turns a dark crimson into a vivid red, not
+    a washed-out pink (which is what mixing toward white does)."""
+    h = hexcolor.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    m = max(r, g, b, 1)
+    f = target / m
+    r, g, b = (min(255, int(c * f)) for c in (r, g, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def team_accent(full):
+    """A guaranteed-legible team accent for dark UI: the club's secondary if it's
+    bright enough, else its primary, else a vivified primary (stays on-brand even
+    when a club's colours are black/navy)."""
+    c = team_colors(full)
+    pri, sec = c["primary"], c["secondary"]
+    if _luma(sec) >= 110:
+        return sec
+    if _luma(pri) >= 120:
+        return pri
+    return _vivify(pri)
+
+
 def team_crest_svg(full, size=36):
     """A simple shield crest in the club's colours with the mascot's initial."""
     meta = _TEAM_META.get(full)

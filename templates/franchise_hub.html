@@ -7,12 +7,19 @@
 {% block content %}
 <section class="fk-wrap">
 
-  <header class="fk-top">
-    <div>
+  <header class="fk-hero" style="--team:{{ colors.primary }};--team2:{{ colors.secondary }};--accent:{{ accent }}">
+    <div class="fk-hero-crest">{{ team_crest(team.full, 62)|safe }}</div>
+    <div class="fk-hero-id">
       <div class="fk-kicker">FRANCHISE KINGS · SEASON {{ save.season }}</div>
-      <h1 style="display:flex;align-items:center;gap:10px">{{ team_crest(team.full, 34)|safe }} {{ team.full }}</h1>
+      <h1>{{ team.full }}</h1>
       <div class="fk-sub">GM <strong>{{ gm.name }}</strong> ·
-        {{ gm.background|replace('_',' ')|title }} · {{ gm.philosophy|default('Balanced') }} HC · {{ team.market }} market · Owner: {{ team.owner.type }}</div>
+        {{ gm.background|replace('_',' ')|title }} · {{ gm.philosophy|default('Balanced') }} HC · {{ team.market }} market</div>
+      <div class="fk-hero-chips">
+        <span class="fk-hchip fk-hchip-rec">{{ team.record.w }}–{{ team.record.l }}</span>
+        <span class="fk-hchip">{{ team.conference }} · {{ team.division }}</span>
+        <span class="fk-hchip">Owner: {{ team.owner.type }}</span>
+        {% if expectation and expectation.wins %}<span class="fk-hchip">Mandate: {{ expectation.wins }} wins</span>{% endif %}
+      </div>
     </div>
     <div class="fk-power"><span>POWER</span><b>{{ power }}</b></div>
   </header>
@@ -808,13 +815,28 @@
 
 <style>
   .fk-wrap { max-width: 960px; margin: 0 auto; padding: 8px 16px 40px; }
-  .fk-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding: 12px 0 6px; }
-  .fk-kicker { color:#4ad4f0; font-weight:800; letter-spacing:.14em; font-size:11px; }
-  .fk-top h1 { font-family: var(--font-display); font-size: clamp(24px,4.5vw,38px); margin:6px 0 4px; color:#fff; }
-  .fk-sub { color: var(--text2,#9fb0bc); font-size:13px; }
-  .fk-power { text-align:center; border:1px solid rgba(74,212,240,.35); border-radius:12px; padding:8px 16px; background:rgba(11,24,34,.8); }
-  .fk-power span { display:block; font-size:10px; letter-spacing:.12em; color:#4ad4f0; }
-  .fk-power b { font-size:30px; color:#fff; font-family:var(--font-display); }
+  /* Team-identity hero band — uses each club's real colours via --team */
+  .fk-hero { position:relative; overflow:hidden; display:flex; align-items:center; gap:18px;
+    margin:10px 0 4px; padding:20px 22px; border-radius:16px;
+    border:1px solid rgba(255,255,255,.10); border-top:3px solid var(--accent,#4ad4f0);
+    background:
+      linear-gradient(120deg, var(--team,#1b2a36) -14%, rgba(8,16,22,.93) 52%, rgba(6,12,18,.98) 100%); }
+  .fk-hero::before { content:''; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(circle at 13% 18%, rgba(255,255,255,.14), transparent 42%); }
+  .fk-hero::after { content:''; position:absolute; top:0; bottom:0; right:0; width:42%; pointer-events:none;
+    background:repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, transparent 2px 16px); }
+  .fk-hero-crest { position:relative; flex:0 0 auto; filter:drop-shadow(0 3px 10px rgba(0,0,0,.55)); }
+  .fk-hero-id { position:relative; flex:1; min-width:0; }
+  .fk-kicker { color:var(--accent,#4ad4f0); font-weight:800; letter-spacing:.14em; font-size:11px; text-shadow:0 1px 3px rgba(0,0,0,.5); }
+  .fk-hero h1 { font-family: var(--font-display); font-size: clamp(24px,4.5vw,40px); margin:5px 0 4px; color:#fff; line-height:1.02; text-shadow:0 2px 12px rgba(0,0,0,.5); }
+  .fk-sub { color:#cdd9e2; font-size:13px; }
+  .fk-hero-chips { display:flex; flex-wrap:wrap; gap:7px; margin-top:11px; }
+  .fk-hchip { font-size:11px; font-weight:700; color:#e8f1f6; background:rgba(0,0,0,.34); border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:3px 11px; backdrop-filter:blur(2px); }
+  .fk-hchip-rec { color:#05121a; background:var(--accent,#4ad4f0); border-color:transparent; font-weight:900; letter-spacing:.02em; }
+  .fk-power { position:relative; text-align:center; flex:0 0 auto; border:1px solid rgba(255,255,255,.22); border-radius:12px; padding:9px 17px; background:rgba(3,8,12,.5); backdrop-filter:blur(3px); }
+  .fk-power span { display:block; font-size:10px; letter-spacing:.12em; color:var(--accent,#4ad4f0); }
+  .fk-power b { font-size:32px; color:#fff; font-family:var(--font-display); }
+  @media (max-width:620px){ .fk-hero { flex-wrap:wrap; gap:12px; padding:16px; } .fk-hero-id { flex-basis:60%; } }
   .fk-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:14px 0; border-bottom:1px solid rgba(145,168,184,.15); }
   .fk-tab { padding:9px 14px; color:var(--text2,#9fb0bc); text-decoration:none; font-weight:700; font-size:13px; border-bottom:2px solid transparent; }
   .fk-tab.active { color:#fff; border-bottom-color:#4ad4f0; }
