@@ -30654,6 +30654,49 @@ def _book_shop_for_game(mv_df, date, away_key, home_key, away_name, home_name):
             'note': f"{books} books — best {side} ML {best_str} at {book or 'a book'}, {cents}¢ better than the worst."}
 
 
+def _line_movement_for_game(mv_df, date, away_key, home_key):
+    """Consensus opener -> current move (spread & total) across books, from the
+    current line-movement feed. Returns a move dict only when something actually
+    moved (>= 0.5). Dormant while the feed holds a single snapshot; auto-lights up
+    when multi-snapshot movement is captured."""
+    if not isinstance(mv_df, pd.DataFrame) or mv_df.empty:
+        return None
+    if not {'Away', 'Home'}.issubset(mv_df.columns):
+        return None
+    sub = mv_df[mv_df['Date'].astype(str) == str(date)] if 'Date' in mv_df.columns else mv_df
+    sub = sub[sub['Away'].map(normalize_team_abbr).eq(away_key) & sub['Home'].map(normalize_team_abbr).eq(home_key)]
+    if sub.empty:
+        return None
+
+    def _med(col):
+        if col not in sub.columns:
+            return None
+        v = pd.to_numeric(sub[col], errors='coerce').dropna()
+        return float(v.median()) if not v.empty else None
+
+    so, sc = _med('OpenSpread'), _med('CurrentSpread')
+    to, tc = _med('OpenTotal'), _med('CurrentTotal')
+    spread_move = round(sc - so, 1) if so is not None and sc is not None else None
+    total_move = round(tc - to, 1) if to is not None and tc is not None else None
+    notable = (spread_move is not None and abs(spread_move) >= 0.5) or \
+              (total_move is not None and abs(total_move) >= 0.5)
+    if not notable:
+        return None
+    return {'spread_open': so, 'spread_cur': sc, 'spread_move': spread_move,
+            'total_open': to, 'total_cur': tc, 'total_move': total_move}
+
+
+def _football_script_lookup(sport_key, odds_df):
+    """Map normalized 'AWAY @ HOME' -> football game-line intelligence row (script
+    tags + teaching note) so football games on the board get the deeper read. Empty
+    (dormant) in the offseason; populates from live odds once games are scheduled."""
+    try:
+        data = build_football_game_line_intelligence(sport_key, 'game_lines', odds_df=odds_df)
+    except Exception:
+        return {}
+    return {str(r.get('matchup', '')).strip(): r for r in (data.get('rows') or []) if r.get('matchup')}
+
+
 def _cross_league_signals(spread, total, env_label, env_key):
     """Notable, *honest* spots to study — market context, not a win prediction.
     Returns (signals, priority). Higher priority floats a game up the board."""
@@ -30689,8 +30732,10 @@ def build_cross_league_game_lines(limit_per_league=10):
             sched, odds = pd.DataFrame(), pd.DataFrame()
         games = []
         if isinstance(sched, pd.DataFrame) and not sched.empty:
-            lookup = build_game_market_lookup(odds if isinstance(odds, pd.DataFrame) else pd.DataFrame())
+            odds_df = odds if isinstance(odds, pd.DataFrame) else pd.DataFrame()
+            lookup = build_game_market_lookup(odds_df)
             mv_df = _load_line_movement_current(src['key'])
+            script_lookup = _football_script_lookup(src['key'], odds_df) if src['env'] in ('NFL', 'NCAAF') else {}
             for _, g in sched.iterrows():
                 away = str(g.get('Away', '')).strip()
                 home = str(g.get('Home', '')).strip()
@@ -30711,16 +30756,29 @@ def build_cross_league_game_lines(limit_per_league=10):
                 if shop and shop['cents'] >= 8:
                     signals.append({'tag': f"Shop {shop['cents']}¢", 'tone': 'green'})
                     priority += 2
+                move = _line_movement_for_game(mv_df, date, ak, hk)
+                if move:
+                    signals.append({'tag': 'Line move', 'tone': 'gold'})
+                    priority += 2
+                read = build_game_line_teaching_note(spread, total)
+                script_tags = []
+                intel = script_lookup.get(f"{ak} @ {hk}")
+                if intel:
+                    script_tags = intel.get('script_tags') or []
+                    if intel.get('teaching_note'):
+                        read = intel['teaching_note']
+                    if script_tags:
+                        signals.append({'tag': 'Game script', 'tone': 'blue'})
                 games.append({
                     'league': src['key'], 'league_label': src['label'],
                     'away': away, 'home': home, 'date': date,
                     'time': str(g.get('Time', '') or market.get('time', '') or 'TBD'),
                     'market_summary': format_game_market_summary(market, home),
                     'env_label': env.get('label', ''),
-                    'read': build_game_line_teaching_note(spread, total),
+                    'read': read,
                     'signals': signals, 'priority': priority,
                     'book': market.get('book', ''),
-                    'shop': shop,
+                    'shop': shop, 'move': move, 'script_tags': script_tags,
                 })
         games.sort(key=lambda x: (-x['priority'], x['date'], x['time']))
         total_games += len(games)

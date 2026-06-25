@@ -32,6 +32,10 @@
   .glc-read { font-size:12px; color:var(--text-muted); line-height:1.45; }
   .glc-shop { display:flex; align-items:center; gap:6px; font-size:11.5px; color:#7dffb0; background:rgba(125,255,176,.07); border:1px solid rgba(125,255,176,.22); border-radius:8px; padding:6px 9px; margin:0 0 8px; }
   .glc-shop b { font-weight:800; }
+  .glc-move { font-size:11.5px; color:#ffd27d; margin:0 0 8px; display:flex; gap:12px; flex-wrap:wrap; }
+  .glc-move b { font-weight:800; }
+  .glc-script { font-size:11px; color:var(--text-muted); margin:0 0 8px; }
+  .glc-script .glc-stag { display:inline-block; background:rgba(159,233,255,.08); border:1px solid rgba(159,233,255,.2); color:#9fe9ff; border-radius:6px; padding:1px 7px; margin:2px 4px 0 0; }
   .glc-empty { background:var(--bg3); border:1px dashed var(--border); border-radius:10px; padding:14px 16px; color:var(--text-muted); font-size:13px; }
 </style>
 
@@ -77,6 +81,12 @@
             {% endif %}
             {% if gm.shop %}
             <div class="glc-shop">🛒 <span><b>{{ gm.shop.cents }}¢</b> on the table — best {{ gm.shop.side }} ML <b>{{ gm.shop.best }}</b> at {{ gm.shop.book }} ({{ gm.shop.books }} books)</span></div>
+            {% endif %}
+            {% if gm.move %}
+            <div class="glc-move">📈 {% if gm.move.spread_move %}<span>Spread <b>{{ '%g'|format(gm.move.spread_open) }} → {{ '%g'|format(gm.move.spread_cur) }}</b> ({{ '%+g'|format(gm.move.spread_move) }})</span>{% endif %}{% if gm.move.total_move %}<span>Total <b>{{ '%g'|format(gm.move.total_open) }} → {{ '%g'|format(gm.move.total_cur) }}</b> ({{ '%+g'|format(gm.move.total_move) }})</span>{% endif %}</div>
+            {% endif %}
+            {% if gm.script_tags %}
+            <div class="glc-script">{% for st in gm.script_tags %}<span class="glc-stag">{{ st }}</span>{% endfor %}</div>
             {% endif %}
             <div class="glc-read">{{ gm.read }}</div>
         </div>
