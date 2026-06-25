@@ -689,6 +689,7 @@ PRO_ENDPOINTS = {
     'team_season_review',
     'schedule_page',
     'game_lines_page',
+    'game_lines_command_page',
     'team',
     'raw_data',
     'player',
@@ -30581,6 +30582,91 @@ def schedule_page():
             market = market_lookup.get((date, away, home)) or market_lookup.get(('any', away, home)) or {}
             games_by_date[date].append({'Away': away, 'Home': home, 'Time': str(game.get('Time', 'TBD')), 'market': market, 'market_summary': format_game_market_summary(market, home)})
     return render_template('schedule.html', games_by_date=games_by_date, postseason_only=postseason_only)
+
+
+CROSS_LEAGUE_GAME_SOURCES = [
+    {'key': 'nfl',   'label': 'NFL',  'schedule': 'load_nfl_schedule',   'odds': 'load_nfl_game_market_odds',  'env': 'NFL'},
+    {'key': 'ncaaf', 'label': 'CFB',  'schedule': 'load_ncaaf_schedule', 'odds': 'load_ncaaf_game_market_odds', 'env': 'NCAAF'},
+    {'key': 'nba',   'label': 'NBA',  'schedule': 'load_schedule',       'odds': 'load_game_market_odds',      'env': 'NBA'},
+    {'key': 'wnba',  'label': 'WNBA', 'schedule': 'load_wnba_schedule',  'odds': 'load_wnba_game_market_odds', 'env': 'WNBA'},
+    {'key': 'mlb',   'label': 'MLB',  'schedule': 'load_mlb_schedule',   'odds': 'load_mlb_game_market_odds',  'env': 'MLB'},
+]
+
+
+def _cross_league_signals(spread, total, env_label, env_key):
+    """Notable, *honest* spots to study — market context, not a win prediction.
+    Returns (signals, priority). Higher priority floats a game up the board."""
+    signals, priority = [], 0
+    s = pd.to_numeric(pd.Series([spread]), errors='coerce').iloc[0]
+    t = pd.to_numeric(pd.Series([total]), errors='coerce').iloc[0]
+    is_football = env_key in ('NFL', 'NCAAF')
+    if pd.notna(s):
+        abss = abs(float(s))
+        if is_football and (abss in {3.0, 7.0} or abs(abss - 3.5) < 1e-9 or abs(abss - 7.5) < 1e-9):
+            signals.append({'tag': 'Key number', 'tone': 'gold'}); priority += 3
+        if abss <= (3 if is_football else 4):
+            signals.append({'tag': 'Close spread', 'tone': 'green'}); priority += 2
+        elif abss >= (8 if env_key == 'WNBA' else 9):
+            signals.append({'tag': 'Blowout risk', 'tone': 'red'}); priority += 2
+    if env_label and env_label not in ('NEUTRAL', 'NO TOTAL'):
+        tone = 'red' if env_label in ('UNDER ENV', 'PITCHER FRIENDLY') else 'blue'
+        signals.append({'tag': env_label.title(), 'tone': tone}); priority += 1
+    return signals, priority
+
+
+def build_cross_league_game_lines(limit_per_league=10):
+    """One ranked board across every league that has lines posted. Each game shows
+    the best market read (spread / total / ML), the game environment, a plain
+    teaching note, and the notable spots to study — all from existing engines."""
+    today = pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
+    leagues, total_games = [], 0
+    for src in CROSS_LEAGUE_GAME_SOURCES:
+        try:
+            sched = globals()[src['schedule']]()
+            odds = globals()[src['odds']]()
+        except Exception:
+            sched, odds = pd.DataFrame(), pd.DataFrame()
+        games = []
+        if isinstance(sched, pd.DataFrame) and not sched.empty:
+            lookup = build_game_market_lookup(odds if isinstance(odds, pd.DataFrame) else pd.DataFrame())
+            for _, g in sched.iterrows():
+                away = str(g.get('Away', '')).strip()
+                home = str(g.get('Home', '')).strip()
+                if not away or not home or away == 'nan' or home == 'nan':
+                    continue
+                date = str(g.get('Date', '')).strip()
+                gd = pd.to_datetime(date, errors='coerce')
+                if pd.notna(gd) and gd < today:
+                    continue
+                ak, hk = normalize_team_abbr(away), normalize_team_abbr(home)
+                market = lookup.get((date, ak, hk)) or lookup.get(('any', ak, hk)) or {}
+                if not market:
+                    continue
+                spread, total = market.get('spread'), market.get('total')
+                env = classify_prop_game_environment(total, spread, sport=src['env'])
+                signals, priority = _cross_league_signals(spread, total, env.get('label'), src['env'])
+                games.append({
+                    'league': src['key'], 'league_label': src['label'],
+                    'away': away, 'home': home, 'date': date,
+                    'time': str(g.get('Time', '') or market.get('time', '') or 'TBD'),
+                    'market_summary': format_game_market_summary(market, home),
+                    'env_label': env.get('label', ''),
+                    'read': build_game_line_teaching_note(spread, total),
+                    'signals': signals, 'priority': priority,
+                    'book': market.get('book', ''),
+                })
+        games.sort(key=lambda x: (-x['priority'], x['date'], x['time']))
+        total_games += len(games)
+        leagues.append({'key': src['key'], 'label': src['label'],
+                        'games': games[:limit_per_league], 'count': len(games)})
+    return {'leagues': leagues, 'total_games': total_games}
+
+
+@app.route('/game-lines/command')
+def game_lines_command_page():
+    board = build_cross_league_game_lines()
+    return render_template('game_lines_command.html',
+                           board=board, postseason_only=postseason_only_enabled())
 
 
 @app.route('/game-lines')

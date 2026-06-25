@@ -119,6 +119,14 @@ same cadence as the franchise work.
 
 ## 7. Shipped from this plan
 
+- **Game Lines Command Center** (`/game-lines/command`, `build_cross_league_game_lines`):
+  one ranked board across every league with lines posted (NFL, CFB, NBA, WNBA, MLB),
+  each game showing best market read (spread/total/ML), scoring environment, a plain
+  teaching note, and notable spots to study — ranked by signal, framed honestly as
+  market context (not a guaranteed winner). Reuses existing per-sport schedule + odds
+  loaders and the market/environment helpers. Linked from `/game-lines`. SHIPPED
+  2026-06-25. Next: layer football EdgeScore model-vs-market into the football rows;
+  surface line-movement and (now un-tiered) sharp-money signals per game.
 - **Prop Betting Pointers Engine** (`prop_pointers.py`) — universal + sport-specific
   pointers and a sport profile (Opportunity / Reliability / Best market / Main trap)
   on every prop page via the shared `props.html`. Teaches while the user bets.

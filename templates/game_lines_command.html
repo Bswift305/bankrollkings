@@ -1,0 +1,83 @@
+{% set active_page = 'game_lines' %}
+{% extends "bk_base.html" %}
+{% block title %}Game Lines Command Center - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<style>
+  .glc-hero-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .glc-summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px; }
+  .glc-stat { background:var(--bg3); border:1px solid var(--border); border-radius:10px; padding:10px 16px; }
+  .glc-stat b { font-family:'Barlow Condensed',sans-serif; font-size:22px; color:var(--accent-copper); display:block; line-height:1; }
+  .glc-stat span { font-size:11px; letter-spacing:.5px; text-transform:uppercase; color:var(--text-muted); }
+  .glc-league { margin-bottom:26px; }
+  .glc-league-h { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .glc-league-h h2 { font-family:'Barlow Condensed',sans-serif; font-size:20px; margin:0; letter-spacing:.4px; }
+  .glc-badge { font-size:11px; font-weight:800; letter-spacing:.5px; padding:3px 9px; border-radius:6px; background:rgba(250,204,21,.12); color:var(--accent-copper); border:1px solid rgba(250,204,21,.3); }
+  .glc-count { font-size:12px; color:var(--text-muted); }
+  .glc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr)); gap:12px; }
+  .glc-card { background:var(--bg3); border:1px solid var(--border); border-radius:11px; padding:13px 15px; }
+  .glc-card-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .glc-match { font-family:'Barlow Condensed',sans-serif; font-size:17px; font-weight:600; letter-spacing:.3px; }
+  .glc-time { font-size:11px; color:var(--text-muted); white-space:nowrap; }
+  .glc-mkt { font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--text); margin:7px 0 8px; }
+  .glc-mkt .glc-na { color:var(--text-muted); font-family:inherit; }
+  .glc-sigs { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+  .glc-sig { font-size:10.5px; font-weight:700; letter-spacing:.3px; padding:2px 8px; border-radius:999px; border:1px solid transparent; }
+  .glc-sig.gold { color:#ffd27d; background:rgba(255,210,125,.1); border-color:rgba(255,210,125,.3); }
+  .glc-sig.green { color:#7dffb0; background:rgba(125,255,176,.1); border-color:rgba(125,255,176,.3); }
+  .glc-sig.red { color:#ff9a9a; background:rgba(255,154,154,.1); border-color:rgba(255,154,154,.3); }
+  .glc-sig.blue { color:#9fe9ff; background:rgba(159,233,255,.1); border-color:rgba(159,233,255,.3); }
+  .glc-read { font-size:12px; color:var(--text-muted); line-height:1.45; }
+  .glc-empty { background:var(--bg3); border:1px dashed var(--border); border-radius:10px; padding:14px 16px; color:var(--text-muted); font-size:13px; }
+</style>
+
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Every League, One Board</div>
+        <h1>Game Lines <span class="accent">Command Center</span></h1>
+        <div class="page-subtitle">The best spots to study across every league with lines posted — spread, total, scoring environment, and the read — ranked so the most notable games rise to the top. This is market context, not a guaranteed winner.</div>
+    </div>
+    <div class="glc-hero-actions">
+        <a href="/sports/nfl/game-lines" class="btn btn-secondary btn-sm">NFL model board</a>
+        <a href="/sports/ncaaf/game-lines" class="btn btn-secondary btn-sm">CFB model board</a>
+    </div>
+</div>
+
+<div class="glc-summary">
+    <div class="glc-stat"><b>{{ board.total_games }}</b><span>Games with lines</span></div>
+    <div class="glc-stat"><b>{{ board.leagues|selectattr('count')|list|length }}</b><span>Leagues live</span></div>
+</div>
+
+{% if board.total_games == 0 %}
+<div class="glc-empty">No leagues have lines posted right now. Lines populate as books release each slate — check back closer to game day.</div>
+{% endif %}
+
+{% for lg in board.leagues %}
+{% if lg.count %}
+<div class="glc-league">
+    <div class="glc-league-h">
+        <span class="glc-badge">{{ lg.label }}</span>
+        <h2>{{ lg.label }} board</h2>
+        <span class="glc-count">{{ lg.count }} game{{ 's' if lg.count != 1 }}{% if lg.count > lg.games|length %} · top {{ lg.games|length }} shown{% endif %}</span>
+    </div>
+    <div class="glc-grid">
+        {% for gm in lg.games %}
+        <div class="glc-card">
+            <div class="glc-card-top">
+                <span class="glc-match">{{ gm.away }} <span style="color:var(--text-muted);font-size:13px;">@</span> {{ gm.home }}</span>
+                <span class="glc-time">{{ gm.date }}{% if gm.time and gm.time != 'TBD' %} · {{ gm.time }}{% endif %}</span>
+            </div>
+            <div class="glc-mkt">{% if gm.market_summary %}{{ gm.market_summary }}{% else %}<span class="glc-na">Line range tightening — check the book</span>{% endif %}</div>
+            {% if gm.signals %}
+            <div class="glc-sigs">{% for s in gm.signals %}<span class="glc-sig {{ s.tone }}">{{ s.tag }}</span>{% endfor %}</div>
+            {% endif %}
+            <div class="glc-read">{{ gm.read }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}
