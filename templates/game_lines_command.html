@@ -30,6 +30,8 @@
   .glc-sig.red { color:#ff9a9a; background:rgba(255,154,154,.1); border-color:rgba(255,154,154,.3); }
   .glc-sig.blue { color:#9fe9ff; background:rgba(159,233,255,.1); border-color:rgba(159,233,255,.3); }
   .glc-read { font-size:12px; color:var(--text-muted); line-height:1.45; }
+  .glc-shop { display:flex; align-items:center; gap:6px; font-size:11.5px; color:#7dffb0; background:rgba(125,255,176,.07); border:1px solid rgba(125,255,176,.22); border-radius:8px; padding:6px 9px; margin:0 0 8px; }
+  .glc-shop b { font-weight:800; }
   .glc-empty { background:var(--bg3); border:1px dashed var(--border); border-radius:10px; padding:14px 16px; color:var(--text-muted); font-size:13px; }
 </style>
 
@@ -72,6 +74,9 @@
             <div class="glc-mkt">{% if gm.market_summary %}{{ gm.market_summary }}{% else %}<span class="glc-na">Line range tightening — check the book</span>{% endif %}</div>
             {% if gm.signals %}
             <div class="glc-sigs">{% for s in gm.signals %}<span class="glc-sig {{ s.tone }}">{{ s.tag }}</span>{% endfor %}</div>
+            {% endif %}
+            {% if gm.shop %}
+            <div class="glc-shop">🛒 <span><b>{{ gm.shop.cents }}¢</b> on the table — best {{ gm.shop.side }} ML <b>{{ gm.shop.best }}</b> at {{ gm.shop.book }} ({{ gm.shop.books }} books)</span></div>
             {% endif %}
             <div class="glc-read">{{ gm.read }}</div>
         </div>

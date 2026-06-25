@@ -30593,6 +30593,67 @@ CROSS_LEAGUE_GAME_SOURCES = [
 ]
 
 
+_LINE_MOVE_FILE = {'nba': 'NBA', 'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL', 'ncaaf': 'NCAAF'}
+
+
+def _load_line_movement_current(sport_key):
+    prefix = _LINE_MOVE_FILE.get(str(sport_key or '').strip().lower())
+    if not prefix:
+        return pd.DataFrame()
+    path = DATA_DIR / 'tracking' / f'{prefix}_LineMovementCurrent.csv'
+    if not path.exists():
+        return pd.DataFrame()
+    return _load_cached_csv(path, default=pd.DataFrame())
+
+
+# A realistic moneyline-shopping gap. Above this, the books usually disagree on the
+# favorite or one price is stale — that's noise, not a clean shopping edge.
+_SHOP_MAX_CENTS = 50
+
+
+def _clean_ml_gap(group, value_col, book_col='Book'):
+    """Best price + gap for one side, ONLY when books agree on the favorite (same
+    sign). Returns (best, gap, book_at_best) or (None, 0, None) if not a clean
+    market. Best American price for the bettor = the highest number."""
+    vals = pd.to_numeric(group[value_col], errors='coerce').dropna()
+    if len(vals) < 2:
+        return None, 0, None
+    if (vals > 0).any() and (vals < 0).any():
+        return None, 0, None  # books split on the favorite — not a cents-shopping spot
+    gap = float(vals.max() - vals.min())
+    best_book = str(group.loc[vals.idxmax(), book_col]) if book_col in group else None
+    return float(vals.max()), gap, best_book
+
+
+def _book_shop_for_game(mv_df, date, away_key, home_key, away_name, home_name):
+    """From the multi-book current feed, find where the bettor saves cents by shopping
+    the moneyline. Honest: same bet, better number — only when the books agree on the
+    favorite and the gap is realistic. Returns a shop dict or None."""
+    if not isinstance(mv_df, pd.DataFrame) or mv_df.empty:
+        return None
+    if not {'Away', 'Home', 'Book'}.issubset(mv_df.columns):
+        return None
+    sub = mv_df[mv_df['Date'].astype(str) == str(date)] if 'Date' in mv_df.columns else mv_df
+    sub = sub[sub['Away'].map(normalize_team_abbr).eq(away_key) & sub['Home'].map(normalize_team_abbr).eq(home_key)]
+    if sub.empty or len(sub) < 2:
+        return None
+    best_home, home_gap, book_home = _clean_ml_gap(sub, 'CurrentHomeML')
+    best_away, away_gap, book_away = _clean_ml_gap(sub, 'CurrentAwayML')
+    if home_gap >= away_gap and best_home is not None:
+        side, best, book, gap = home_name, best_home, book_home, home_gap
+    elif best_away is not None:
+        side, best, book, gap = away_name, best_away, book_away, away_gap
+    else:
+        return None
+    cents = int(round(gap))
+    if cents <= 0 or cents > _SHOP_MAX_CENTS:
+        return None
+    best_str = f"{int(best):+d}"
+    books = int(sub['Book'].nunique())
+    return {'books': books, 'cents': cents, 'side': side, 'best': best_str, 'book': book or 'a book',
+            'note': f"{books} books — best {side} ML {best_str} at {book or 'a book'}, {cents}¢ better than the worst."}
+
+
 def _cross_league_signals(spread, total, env_label, env_key):
     """Notable, *honest* spots to study — market context, not a win prediction.
     Returns (signals, priority). Higher priority floats a game up the board."""
@@ -30629,6 +30690,7 @@ def build_cross_league_game_lines(limit_per_league=10):
         games = []
         if isinstance(sched, pd.DataFrame) and not sched.empty:
             lookup = build_game_market_lookup(odds if isinstance(odds, pd.DataFrame) else pd.DataFrame())
+            mv_df = _load_line_movement_current(src['key'])
             for _, g in sched.iterrows():
                 away = str(g.get('Away', '')).strip()
                 home = str(g.get('Home', '')).strip()
@@ -30645,6 +30707,10 @@ def build_cross_league_game_lines(limit_per_league=10):
                 spread, total = market.get('spread'), market.get('total')
                 env = classify_prop_game_environment(total, spread, sport=src['env'])
                 signals, priority = _cross_league_signals(spread, total, env.get('label'), src['env'])
+                shop = _book_shop_for_game(mv_df, date, ak, hk, away, home)
+                if shop and shop['cents'] >= 8:
+                    signals.append({'tag': f"Shop {shop['cents']}¢", 'tone': 'green'})
+                    priority += 2
                 games.append({
                     'league': src['key'], 'league_label': src['label'],
                     'away': away, 'home': home, 'date': date,
@@ -30654,6 +30720,7 @@ def build_cross_league_game_lines(limit_per_league=10):
                     'read': build_game_line_teaching_note(spread, total),
                     'signals': signals, 'priority': priority,
                     'book': market.get('book', ''),
+                    'shop': shop,
                 })
         games.sort(key=lambda x: (-x['priority'], x['date'], x['time']))
         total_games += len(games)
