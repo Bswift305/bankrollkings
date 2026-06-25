@@ -169,8 +169,8 @@ Weekly staff meeting (each coordinator brings a concern), player conversations, 
 
 ## 6. Recommended build order
 
-- **Phase 1 — Scout Recommendation layer** (System B). Small, uses existing fit math, immediate "wow." Draft board + FA + profile card.
-- **Phase 2 — Coach/staff ideology depth** (System A). Versatility/temperament/specialties + roster-fit on hire; feed dev.
+- **Phase 1 — Scout Recommendation layer** (System B). ✅ SHIPPED. `scout_report()`; Scout column on board + FA + "Scout's Team Fit Report" card. Verdict moves with your staff.
+- **Phase 2 — Coach/staff ideology depth** (System A). ✅ SHIPPED. Ideology/versatility/temperament + `coach_roster_fit()` on hire; feeds `human_development_fit` → scout + yearly development.
 - **Phase 3 — Weekly Command Center MVP** (System C, minimal): checklist + practice (intensity/focus) + injuries + scout assignment + game plan + advance, hung on the live-clock pause.
 - **Phase 4 — Weekly depth**: staff meetings, player conversations, events, locker-room pulse, captains, staff trust.
 - **Phase 5 — Multiplayer weekly checklist** + auto-resolve for inactive GMs.
