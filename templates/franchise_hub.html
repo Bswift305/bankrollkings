@@ -840,6 +840,16 @@
           <form method="post" action="{{ url_for('franchise_fire') }}" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="role" value="{{ role }}">
             <button class="fk-btn fk-btn-ghost fk-btn-sm">Fire</button></form>
+          {% if staff[role].ped %}{% set pd = staff[role].ped %}
+          <div class="fk-ped">
+            <span class="fk-ped-rep fk-ped-{{ 'hi' if pd.rep >= 78 else 'mid' if pd.rep >= 58 else 'lo' }}">{{ pd.label }}</span>
+            <span class="fk-ped-line"><b>{{ pd.tree }}</b> · came up under {{ pd.mentor }} · {{ pd.experience }} yrs</span>
+            <span class="fk-ped-track">
+              {%- if pd.pros %}{{ pd.pros }} pros developed{% endif %}{% if pd.playoffs %}{{ ' · ' if pd.pros }}{{ pd.playoffs }} playoff runs{% endif %}{% if pd.rings %} · 🏆 {{ pd.rings }}{% endif -%}
+            </span>
+            {% if pd.stops %}<span class="fk-ped-path">{% for s in pd.stops %}{{ s.role }} @ {{ s.team }} ({{ s.years }}y){{ ' → ' if not loop.last }}{% endfor %}</span>{% endif %}
+          </div>
+          {% endif %}
         </div>
       {% else %}
         <div class="fk-staffcands">
@@ -847,7 +857,9 @@
           <form method="post" action="{{ url_for('franchise_hire') }}" class="fk-cand">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
-            <span><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}</span>
+            <span class="fk-candmain"><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}
+              {% if c.ped %}<small class="fk-candped"><span class="fk-ped-{{ 'hi' if c.ped.rep >= 78 else 'mid' if c.ped.rep >= 58 else 'lo' }}">{{ c.ped.label }}</span> · {{ c.ped.tree }} · {{ c.ped.experience }}yr{% if c.ped.pros %} · {{ c.ped.pros }} pros{% endif %}{% if c.ped.rings %} · 🏆{{ c.ped.rings }}{% endif %}</small>{% endif %}
+            </span>
             <button class="fk-btn fk-btn-sm">Hire</button></form>
           {% endfor %}
         </div>
@@ -1126,7 +1138,7 @@
   .fk-staffbonus b { color:#fff; }
   .fk-staffrow { padding:10px 0; border-bottom:1px solid rgba(145,168,184,.1); }
   .fk-staffrole strong { color:#fff; } .fk-staffrole small { display:block; color:#7f93a0; font-size:11px; margin:2px 0 6px; }
-  .fk-staffhire { color:var(--text2,#c2cfd8); font-size:13px; display:flex; align-items:center; gap:8px; }
+  .fk-staffhire { color:var(--text2,#c2cfd8); font-size:13px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
   .fk-staffcands { display:flex; flex-wrap:wrap; gap:8px; }
   .fk-cand { display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid rgba(145,168,184,.18); border-radius:9px; background:rgba(10,18,26,.6); font-size:12px; color:var(--text2,#c2cfd8); }
   .fk-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.85); border:1px solid rgba(74,212,240,.25); border-radius:9px; color:#fff; padding:10px 11px; font-size:14px; }
@@ -1193,6 +1205,18 @@
   .fk-nego-context { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
   .fk-nego-context span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Coaching pedigree / tree */
+  .fk-ped { flex-basis:100%; margin-top:7px; padding-top:7px; border-top:1px solid rgba(145,168,184,.14); display:flex; flex-wrap:wrap; gap:5px 10px; align-items:center; }
+  .fk-ped-rep { font-size:10px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; padding:1px 8px; border-radius:999px; }
+  .fk-ped-hi { color:#7dffb0; background:rgba(125,255,176,.13); border:1px solid rgba(125,255,176,.35); }
+  .fk-ped-mid { color:#9fe9ff; background:rgba(74,212,240,.12); border:1px solid rgba(74,212,240,.3); }
+  .fk-ped-lo { color:#b7c6d0; background:rgba(145,168,184,.12); border:1px solid rgba(145,168,184,.3); }
+  .fk-ped-line { font-size:12px; color:#cdd9e2; } .fk-ped-line b { color:#9fe9ff; }
+  .fk-ped-track { font-size:11.5px; color:#7dffb0; }
+  .fk-ped-path { flex-basis:100%; font-size:11px; color:#7f93a0; }
+  .fk-candmain { display:flex; flex-direction:column; gap:2px; }
+  .fk-candped { color:#8fa3b0; font-size:11px; }
+  .fk-candped .fk-ped-hi { padding:0 6px; } .fk-candped .fk-ped-mid { padding:0 6px; } .fk-candped .fk-ped-lo { padding:0 6px; }
   /* Player development engine (conditioning) */
   .fk-devbox { margin:10px 0 14px; padding:12px 14px; border-radius:11px; border:1px solid rgba(125,255,176,.3); background:rgba(125,255,176,.05); }
   .fk-devbox-empty { border-color:rgba(255,210,125,.35); background:rgba(255,210,125,.06); }

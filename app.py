@@ -29572,6 +29572,21 @@ def franchise_league_player(lid, pid):
                            current_user=current_user, **prof)
 
 
+def _dev_outlook(save, grade, pot_grade):
+    """Whether your staff can actually develop a raw prospect — ties the conditioning
+    coach to the draft decision. A project without the staff to grow him is a trap."""
+    gap = (pot_grade or 0) - (grade or 0)
+    project = gap >= 8 and (grade or 99) <= 73
+    cond = fk.conditioning_dev(save)
+    if not project:
+        return None
+    if cond['unlock'] >= 0.6:
+        return {'tier': 'good', 'text': f"Your {cond['style']} conditioning staff can unlock a project like this — bet on the upside."}
+    if cond['unlock'] > 0:
+        return {'tier': 'ok', 'text': "Your staff can grow him, but slowly. A stronger conditioning coach would get more out of him."}
+    return {'tier': 'bad', 'text': "You have no conditioning coach — a raw project like this will likely stay capped. Land the staff first, then draft the upside."}
+
+
 @app.route('/franchise/prospect/<pid>')
 def franchise_prospect(pid):
     current_user, save = _franchise_save()
@@ -29581,6 +29596,7 @@ def franchise_prospect(pid):
     if not prof:
         return redirect(url_for('franchise_hub', tab='draft'))
     prof['fit'] = fk.tactical_fit(save, prof['p'])
+    prof['dev_outlook'] = _dev_outlook(save, prof.get('r1', 0), prof.get('r2', 0))
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
                            current_user=current_user, **prof)
 

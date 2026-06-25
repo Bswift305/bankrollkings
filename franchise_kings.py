@@ -1191,6 +1191,24 @@ COND_STYLES = {
 }
 # Position-coach styles (flavour + a tiny development edge from a great teacher).
 COACH_STYLES = ["Technician", "Teacher", "Motivator", "Players' Coach", "Hard-Driver"]
+# Coaching TREES — the lineages great franchises stay relevant through. A coach's
+# branch + track record is a read on him beyond his raw rating. tier 1-3 prestige;
+# spec hints what the tree produces (off / def / dev).
+COACH_TREES = [
+    {"name": "Shoreline tree", "spec": "off", "tier": 3, "blurb": "West-Coast timing and spacing — a quarterback-whisperer lineage."},
+    {"name": "Foundry tree", "spec": "def", "tier": 3, "blurb": "Hard-nosed defensive architects — pressure, takeaways, toughness."},
+    {"name": "Frostbelt tree", "spec": "off", "tier": 3, "blurb": "Cold-weather power football and roster continuity."},
+    {"name": "Vanguard tree", "spec": "dev", "tier": 3, "blurb": "Sports-science pioneers — turning raw athletes into pros."},
+    {"name": "Highland tree", "spec": "def", "tier": 2, "blurb": "Multiple fronts and disguised coverages."},
+    {"name": "Sundial tree", "spec": "off", "tier": 2, "blurb": "Modern spread / RPO innovators."},
+    {"name": "Ironworks tree", "spec": "dev", "tier": 2, "blurb": "Old-school strength and conditioning roots."},
+    {"name": "no tree", "spec": "any", "tier": 1, "blurb": "A grinder who's bounced around, learning on the job."},
+]
+_LEGEND_COACHES = [
+    "Hollis Crane", "Walt Boudreau", "Sax Delgado", "Marv Holloway", "Eddie Ransom",
+    "Gus Whitfield", "Pell Hargrove", "Cy Lindquist", "Buck Tedesco", "Roman Falk",
+    "Dale Mercer", "Vince Okoye", "Hap Sterling", "Lou Castellano", "Ned Vaughn", "Tate Kowalski",
+]
 # Position coaches -> the position group they develop (+1 dev when rated 60+).
 COACH_GROUP = {"qb_coach": ["QB"], "oline_coach": ["OL"], "db_coach": ["CB", "S"]}
 _STAFF_BASE = 48  # an unhired slot runs at replacement level
@@ -1295,6 +1313,51 @@ def _opposed(a, b):
     return {a, b} == {"Analytics", "Old School"}
 
 
+def _role_spec(role):
+    if role in ("off_coord", "qb_coach", "oline_coach"):
+        return "off"
+    if role in ("def_coord", "db_coach", "st_coord"):
+        return "def"
+    if role in ("cond_coach", "head_medical"):
+        return "dev"
+    return "any"
+
+
+def _coach_pedigree(rng, rating, role):
+    """A coach's lineage + résumé — who he came up under, his stops, and his track
+    record. Correlated with his rating (with noise) so it READS as a real signal:
+    a prestigious tree + a strong record usually means a strong hire."""
+    bias = max(0.0, min(1.0, (rating - 48) / 38.0))          # 0..1 implied quality
+    implied = 1 + round(bias * 2)                            # 1..3 tree tier
+    spec = _role_spec(role)
+    weights = []
+    for t in COACH_TREES:
+        w = 1.0 / (1 + abs(t["tier"] - implied))
+        if t["spec"] == spec:
+            w *= 1.8                                         # lineages tend to match the craft
+        if t["name"] == "no tree":
+            w = (1.4 if rating < 56 else 0.25)
+        weights.append(w)
+    tree = rng.choices(COACH_TREES, weights=weights, k=1)[0]
+    mentor = rng.choice(_LEGEND_COACHES)
+    experience = max(3, int(4 + bias * 16 + rng.triangular(-3, 9, 2)))
+    teams = [f"{c} {m}" for _, _, c, m, _ in NFL_TEAMS]
+    rng.shuffle(teams)
+    ladder = ["Assistant", "Position Coach", "Coordinator"]
+    n = min(3, 1 + experience // 7)
+    stops = [{"team": teams[i], "role": ladder[min(i, 2)], "years": rng.randint(2, 5)} for i in range(n)]
+    pros = max(0, int(bias * 6 + rng.triangular(-1, 4, 1)))
+    playoffs = max(0, int(bias * 5 + rng.triangular(-1, 3, 0)))
+    rings = 1 + rng.randint(0, 1) if (rating >= 84 and rng.random() < 0.45) else (1 if rating >= 78 and rng.random() < 0.3 else 0)
+    rep = max(10, min(99, round(rating * 0.72 + tree["tier"] * 8 + rng.gauss(0, 5))))
+    label = ("Proven winner" if rep >= 82 else "Highly respected" if rep >= 70 else
+             "Rising name" if (rep >= 55 and experience < 11) else "Solid hire" if rep >= 55 else
+             "Journeyman" if experience >= 10 else "Unproven")
+    return {"tree": tree["name"], "tree_blurb": tree["blurb"], "spec": tree["spec"],
+            "mentor": mentor, "experience": experience, "stops": stops,
+            "pros": pros, "playoffs": playoffs, "rings": rings, "rep": rep, "label": label}
+
+
 def _gen_staff(rng, role):
     s = {"id": f"s{rng.randint(100000, 999999)}", "name": _gen_name(rng),
          "role": role, "rating": int(rng.triangular(42, 86, 60))}
@@ -1307,6 +1370,7 @@ def _gen_staff(rng, role):
         s["system"] = rng.choice(list(COND_STYLES))     # his training philosophy
     elif role in COACH_GROUP:
         s["style"] = rng.choice(COACH_STYLES)
+    s["ped"] = _coach_pedigree(rng, s["rating"], role)
     return s
 
 
@@ -1428,10 +1492,9 @@ def hire_staff(save, role, candidate_id):
         return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - cost, 1)
     entry = {"name": cand["name"], "rating": cand["rating"]}
-    if "philosophy" in cand:
-        entry["philosophy"] = cand["philosophy"]
-    if "system" in cand:
-        entry["system"] = cand["system"]
+    for k in ("philosophy", "system", "style", "ped"):
+        if k in cand:
+            entry[k] = cand[k]
     save.setdefault("staff", {})[role] = entry
     market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
     write_save(save)

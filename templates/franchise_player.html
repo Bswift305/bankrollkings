@@ -103,6 +103,13 @@
     {% endif %}
   </div>
 
+  {% if prospect and dev_outlook is defined and dev_outlook %}
+  <div class="fp-card fp-outlook fp-outlook-{{ dev_outlook.tier }}">
+    <div class="fp-h">🏋 Can your staff develop him?</div>
+    <p>{{ dev_outlook.text }}</p>
+  </div>
+  {% endif %}
+
   {% if prospect %}
   <div class="fp-card"><div class="fp-h">🎓 Draft prospect</div>
     <p class="fp-muted">Hasn't taken a pro snap yet — grade him on draft day. His scouted numbers tighten toward his true rating as your scouting improves.</p></div>
@@ -167,5 +174,9 @@
   .fp-exform input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
   .fp-exform button { flex-basis:100%; cursor:pointer; border:none; border-radius:9px; font-weight:800; color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); padding:11px; }
   .fp-muted { color:#7f93a0; font-size:13px; margin-top:10px; } .fp-muted a { color:#4ad4f0; text-decoration:none; }
+  .fp-outlook p { color:#dce8ef; font-size:13.5px; line-height:1.55; margin:0; }
+  .fp-outlook-good { border-color:rgba(125,255,176,.4); } .fp-outlook-good .fp-h { color:#7dffb0; }
+  .fp-outlook-ok { border-color:rgba(255,210,125,.4); } .fp-outlook-ok .fp-h { color:#ffd27d; }
+  .fp-outlook-bad { border-color:rgba(255,122,122,.45); } .fp-outlook-bad .fp-h { color:#ff9a9a; }
 </style>
 {% endblock %}
