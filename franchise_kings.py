@@ -303,9 +303,31 @@ POS_STYLES = {
     "K":  ["Big Leg", "Accurate"],
 }
 
+MOTIVATIONS = ["Prove Them Wrong", "Family Security", "Legacy", "Team-First", "Spotlight", "Craft"]
+LEARNING_STYLES = ["Film Learner", "Repetition", "Instinctive", "Structure", "Confidence"]
+COACH_PREFS = ["Technician", "Teacher", "Motivator", "Players' Coach", "Hard-Driver"]
+
 
 def _style_for(rng, pos):
     return rng.choice(POS_STYLES.get(pos, ["Balanced"]))
+
+
+def _gen_human_profile(rng):
+    return {
+        "motivation": rng.choice(MOTIVATIONS),
+        "learning": rng.choice(LEARNING_STYLES),
+        "coach_pref": rng.choice(COACH_PREFS),
+        "confidence": rng.randint(42, 88),
+        "work_ethic": rng.randint(42, 92),
+    }
+
+
+def ensure_human_profile(p, rng=None):
+    """Backfill human-development fields for older saves and generated prospects."""
+    rng = rng or _rng(abs(hash(p.get("id", p.get("name", "player")))) % 999983)
+    for k, v in _gen_human_profile(rng).items():
+        p.setdefault(k, v)
+    return p
 
 
 def _gen_player(rng, pos, base=None):
@@ -330,6 +352,7 @@ def _gen_player(rng, pos, base=None):
         "morale": rng.randint(55, 90),
         "injury_risk": rng.choice(["Low", "Low", "Medium", "High"]),
         **_gen_background(rng),
+        **_gen_human_profile(rng),
     }
 
 
@@ -463,6 +486,7 @@ def _develop(p, rng, bonus):
         gain = rng.randint(0, _RATE.get(tr, 2)) + bonus + PERSONALITIES.get(p.get("personality"), {}).get("dev", 0)
         if tr == "Late Bloomer" and age >= 25:
             gain += 1
+        gain = max(0, gain)
         p["overall"] = min(cap, p["overall"] + gain)
         # a hidden gem reveals himself: scouts revise the VISIBLE ceiling up as he proves it
         if cap > p["potential"] and p["overall"] >= p["potential"] - 2:
@@ -1011,12 +1035,19 @@ def _advance_year(save):
     cond = sb["conditioning"]
     uid = save["current_team_id"]
     _apply_role_friction(save)   # Loop 4: paid-but-benched players sour over the year
-    breakouts, unlocks = [], []
+    breakouts, unlocks, evolution = [], [], []
     for t in save["teams"]:
         my = t["id"] == uid
         for p in t["roster"]:
+            pre_ovr = p["overall"]
             pre_pot = p["potential"]
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
+            hfit = human_development_fit(save, p) if my else None
+            if hfit:
+                if hfit["score"] >= 82:
+                    bonus += 1
+                elif hfit["score"] <= 38:
+                    bonus -= 1
             if my and cond["gain"]:                          # conditioning coach -> faster growth
                 bonus += int(cond["gain"]) + (1 if rng.random() < (cond["gain"] - int(cond["gain"])) else 0)
             p["age"] += 1
@@ -1024,18 +1055,36 @@ def _advance_year(save):
             # bumping his ceiling PAST it - raising the hidden true_pot so he keeps climbing.
             if my and cond["unlock"] > 0 and p.get("age", 30) <= 25:
                 cap = p.get("true_pot", p["potential"])
-                if p["overall"] >= cap - 4 and rng.random() < cond["unlock"] * 0.45:
+                unlock_chance = cond["unlock"] * (0.60 if hfit and hfit["score"] >= 82 else 0.45)
+                if p["overall"] >= cap - 4 and rng.random() < unlock_chance:
                     ncap = min(99, cap + rng.randint(2, 5))
                     if ncap > cap:
                         p["true_pot"] = ncap
-                        unlocks.append({"name": p["name"], "pos": p["pos"], "from": cap, "to": ncap})
+                        unlocks.append({"name": p["name"], "pos": p["pos"], "from": cap, "to": ncap,
+                                        "why": hfit["label"] if hfit else "development staff"})
+            if my and hfit and p.get("age", 30) <= 25 and hfit["score"] >= 88 and rng.random() < 0.12:
+                cap = p.get("true_pot", p["potential"])
+                ncap = min(99, cap + rng.randint(1, 3))
+                if ncap > cap:
+                    p["true_pot"] = ncap
+                    unlocks.append({"name": p["name"], "pos": p["pos"], "from": cap, "to": ncap,
+                                    "why": "perfect staff/system fit"})
             _develop(p, rng, bonus)   # trait-driven growth / decline
+            if my and hfit and p.get("age", 30) <= 26:
+                if hfit["score"] >= 82 and p["overall"] > pre_ovr:
+                    evolution.append({"name": p["name"], "pos": p["pos"], "label": hfit["label"],
+                                      "note": "; ".join(hfit["notes"][:2])})
+                elif hfit["score"] <= 38:
+                    evolution.append({"name": p["name"], "pos": p["pos"], "label": "Miscast",
+                                      "note": "; ".join(hfit["notes"][:2])})
+            p["last_ovr"] = p["overall"]
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
             if my and p["potential"] - pre_pot >= 2:        # a hidden gem revealed himself
                 breakouts.append({"name": p["name"], "pos": p["pos"],
                                   "ovr": p["overall"], "pot": p["potential"]})
     save["breakouts"] = breakouts
     save["ceiling_unlocks"] = unlocks
+    save["evolution_notes"] = evolution[:8]
     for p in current_team(save).get("practice_squad", []):    # PS develops too
         p["age"] += 1
         _develop(p, rng, dev)
@@ -1465,6 +1514,73 @@ def position_coach_dev(save, pos):
     return 0
 
 
+def _position_coach(save, pos):
+    for role, group in COACH_GROUP.items():
+        if pos in group:
+            return save.get("staff", {}).get(role)
+    if pos in OFFENSE_POS:
+        return save.get("staff", {}).get("off_coord")
+    return save.get("staff", {}).get("def_coord")
+
+
+def human_development_fit(save, p):
+    """How well this staff/system can turn this player into himself.
+    High score means the environment fits his style, learning mode, and motivation."""
+    ensure_human_profile(p)
+    fit = tactical_fit(save, p)
+    coach = _position_coach(save, p.get("pos"))
+    cond = save.get("staff", {}).get("cond_coach")
+    score = 50
+    notes = []
+
+    if fit.get("pct") is not None:
+        score += round((fit["pct"] - 62) * 0.45)
+        notes.append(f"{fit['label']} in {fit.get('scheme') or 'current system'}")
+
+    pref = p.get("coach_pref")
+    coach_style = (coach or {}).get("style") or (coach or {}).get("philosophy")
+    if coach and (coach_style == pref or (pref == "Teacher" and coach_style == "Technician")):
+        score += 14
+        notes.append(f"responds to a {pref} coach")
+    elif coach and coach_style:
+        score -= 4
+        notes.append(f"coach style is {coach_style}, not his preferred {pref}")
+    else:
+        score -= 8
+        notes.append("no dedicated position coach shaping him")
+
+    learning = p.get("learning")
+    cond_style = (cond or {}).get("system")
+    if learning == "Film Learner" and save.get("staff", {}).get("head_analytics"):
+        score += 8
+        notes.append("analytics staff feeds his film learning")
+    if learning == "Repetition" and cond_style in ("Old-School Grind", "Explosive Power"):
+        score += 8
+        notes.append(f"{cond_style} matches his repetition-based growth")
+    if learning == "Structure" and cond_style in ("Sports Science", "Durability First"):
+        score += 8
+        notes.append(f"{cond_style} gives him structure")
+    if learning == "Confidence" and p.get("confidence", 60) < 58:
+        score -= 7
+        notes.append("confidence is fragile; early role clarity matters")
+
+    motivation = p.get("motivation")
+    if motivation == "Spotlight" and p.get("overall", 0) >= 76:
+        score += 5
+    elif motivation == "Team-First" and p.get("morale", 70) >= 70:
+        score += 5
+    elif motivation == "Prove Them Wrong" and p.get("overall", 0) < 72:
+        score += 6
+
+    score += round((p.get("work_ethic", 65) - 65) * 0.18)
+    score += round((p.get("confidence", 65) - 65) * 0.10)
+    score = max(15, min(99, int(score)))
+    label = "Perfect environment" if score >= 84 else "Strong fit" if score >= 70 else "Workable" if score >= 55 else "Miscast"
+    return {"score": score, "label": label, "notes": notes[:4],
+            "coach": (coach or {}).get("name", ""), "coach_style": coach_style or "",
+            "motivation": motivation, "learning": learning, "coach_pref": pref}
+
+
 def staff_bonus(save):
     s = save.get("staff", {})
     coord_avg = (_sr(s, "off_coord") + _sr(s, "def_coord")) / 2.0
@@ -1517,7 +1633,8 @@ def _gen_prospect(rng, pos):
             "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
             "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"]),
             "style": _style_for(rng, pos),
-            **_gen_background(rng)}
+            **_gen_background(rng),
+            **_gen_human_profile(rng)}
 
 
 def generate_draft_class(rng):
@@ -1547,7 +1664,10 @@ def _make_rookie(p):
             "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
             "morale": 75, "injury_risk": "Low",
             "personality": p.get("personality"), "hometown": p.get("hometown"),
-            "high_school": p.get("high_school"), "college": p.get("college")}
+            "high_school": p.get("high_school"), "college": p.get("college"),
+            "motivation": p.get("motivation"), "learning": p.get("learning"),
+            "coach_pref": p.get("coach_pref"), "confidence": p.get("confidence", 65),
+            "work_ethic": p.get("work_ethic", 65)}
 
 
 # --------------------------------------------------------------------------- #
@@ -1818,7 +1938,9 @@ def draft_state(save):
     avail = []
     for pr in _available(draft)[:60]:
         f = tactical_fit(save, pr)
-        avail.append(dict(pr, fit=f["label"], fit_pct=f["pct"]))
+        hf = human_development_fit(save, pr)
+        avail.append(dict(pr, fit=f["label"], fit_pct=f["pct"],
+                          human_fit=hf["label"], human_fit_score=hf["score"]))
     on_clock = _draft_on_clock(draft) == save["current_team_id"]
     return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
             "on_clock": on_clock, "available": avail, "log": draft["user_log"],
@@ -2730,18 +2852,95 @@ def _expected_aav(overall):
     return round(max(0.7, max(0, overall - 55) ** 1.7 / 22.0), 1)
 
 
+def _starter_avg(team, pos):
+    best = sorted((p["overall"] for p in team["roster"] if p["pos"] == pos), reverse=True)[:ROSTER[pos]]
+    return sum(best) / len(best) if best else 50.0
+
+
+def league_context(save):
+    """Read the WHOLE league, not just your roster: your power rank, competitive
+    window, where each of your position groups ranks against the field, which
+    division rival is breathing down your neck, and how scarce real talent is at
+    your weak spots. This is what a sharp consultant actually reasons from."""
+    teams = save["teams"]
+    uid = save["current_team_id"]
+    me = current_team(save)
+    n = len(teams)
+    ranked = _power_rankings(save)
+    rank_map = {r["id"]: i + 1 for i, r in enumerate(ranked)}
+    my_rank = rank_map[uid]
+    window = "contender" if my_rank <= max(1, round(n * 0.28)) else \
+             "fringe" if my_rank <= round(n * 0.60) else "rebuild"
+
+    pos_rank, my_avg, lg_avg, scarcity = {}, {}, {}, {}
+    for pos in ROSTER:
+        vals = [_starter_avg(t, pos) for t in teams]
+        mine = _starter_avg(me, pos)
+        my_avg[pos] = round(mine, 1)
+        lg_avg[pos] = round(sum(vals) / len(vals), 1)
+        pos_rank[pos] = 1 + sum(1 for v in vals if v > mine + 0.01)
+        scarcity[pos] = sum(1 for t in teams for p in t["roster"] if p["pos"] == pos and p["overall"] >= 82)
+
+    by_deficit = sorted(ROSTER, key=lambda pos: my_avg[pos] - lg_avg[pos])
+    weakest, strongest = by_deficit[0], by_deficit[-1]
+    rivals = sorted((t for t in teams if t["division"] == me["division"] and t["id"] != uid),
+                    key=lambda t: rank_map[t["id"]])
+    top_rival = rivals[0] if rivals else None
+    return {"rank": my_rank, "n": n, "window": window,
+            "pos_rank": pos_rank, "my_avg": my_avg, "lg_avg": lg_avg, "scarcity": scarcity,
+            "weakest": weakest, "strongest": strongest,
+            "rival": (top_rival["full"] if top_rival else None),
+            "rival_rank": (rank_map[top_rival["id"]] if top_rival else None),
+            "rival_ahead": bool(top_rival and rank_map[top_rival["id"]] < my_rank)}
+
+
 def consultant_advice(save):
     """A prioritized list of suggestions (most urgent first), independent of the
-    assist level (the level just controls how many the UI reveals)."""
+    assist level (the level just controls how many the UI reveals). Reads the
+    whole league, then your roster."""
     team = current_team(save)
     tips = []
-    best_at = {}
-    for p in team["roster"]:
-        best_at[p["pos"]] = max(best_at.get(p["pos"], 0), p["overall"])
-    weak = min(ROSTER, key=lambda pos: best_at.get(pos, 0))
-    tips.append({"icon": "🎯", "title": f"Upgrade your {weak}",
-                 "detail": f"Your best {weak} is {best_at.get(weak, 0)} OVR - the softest spot in your starting lineup. Target it in free agency or the draft.",
-                 "u": 3})
+    lc = league_context(save)
+    wk, wr = lc["weakest"], lc["pos_rank"][lc["weakest"]]
+    st, sr = lc["strongest"], lc["pos_rank"][lc["strongest"]]
+
+    # 1) Strategic directive from your competitive window vs the league
+    if lc["window"] == "contender":
+        tips.append({"icon": "🏆", "title": f"You're #{lc['rank']} of {lc['n']} — contend NOW",
+                     "detail": f"Your window is open. Spend draft capital and cap on a win-now upgrade at {wk} "
+                               f"(ranks #{wr} leaguewide). Don't sit on picks — convert them into help.", "u": 3})
+    elif lc["window"] == "rebuild":
+        tips.append({"icon": "🧱", "title": f"You're #{lc['rank']} of {lc['n']} — build, don't buy",
+                     "detail": f"Trade aging vets for picks, stockpile, and grow your young core. Your {wk} group is "
+                               f"#{wr} in the league — address it through the draft, not expensive free agents.", "u": 3})
+    else:
+        tips.append({"icon": "⚖", "title": f"You're #{lc['rank']} of {lc['n']} — on the bubble",
+                     "detail": f"One real addition swings your season. {wk} is your softest group (#{wr} leaguewide) — "
+                               f"target it, but don't mortgage future picks chasing a fringe playoff run.", "u": 3})
+
+    # 2) Position need framed against the league average
+    tips.append({"icon": "🎯", "title": f"Your {wk} is below the league",
+                 "detail": f"Your {wk} group grades {lc['my_avg'][wk]:.0f} vs a {lc['lg_avg'][wk]:.0f} league average "
+                           f"(#{wr} of {lc['n']}). That's your real need — not just your weakest spot.", "u": 3})
+
+    # 3) Use your league-elite group as the trade chip
+    if sr <= max(2, round(lc["n"] * 0.15)):
+        tips.append({"icon": "💎", "title": f"Your {st} is league-elite (#{sr})",
+                     "detail": f"You're {lc['my_avg'][st]:.0f} at {st} vs {lc['lg_avg'][st]:.0f} leaguewide — depth you can "
+                               f"trade FROM to fix {wk}. Package a surplus {st} for the need.", "u": 2})
+
+    # 4) Scarcity read — draft it or shop for it
+    sc = lc["scarcity"][wk]
+    if sc <= 6:
+        tips.append({"icon": "🔦", "title": f"Real {wk}s are scarce leaguewide",
+                     "detail": f"Only {sc} starting-caliber {wk}s exist across the league — don't wait for free agency, "
+                               f"draft one and develop him.", "u": 2})
+
+    # 5) Division rival pressure
+    if lc["rival_ahead"]:
+        tips.append({"icon": "🤝", "title": f"{lc['rival']} is ahead of you",
+                     "detail": f"Your division rival sits #{lc['rival_rank']} to your #{lc['rank']}. To win the division "
+                               f"you have to close that gap — start at your {wk}.", "u": 2})
 
     expiring = [p for p in team["roster"] if p["overall"] >= 80
                 and p.get("contract", {}).get("years", 9) <= 1]
