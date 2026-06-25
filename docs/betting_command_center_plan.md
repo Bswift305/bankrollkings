@@ -1,0 +1,117 @@
+# Betting Product — Pivot Plan (grounded in code audit)
+
+> Status: PLAN ONLY. No code shipped from this doc yet. Written for Darrel + the
+> developer to review/edit before any build. Date: 2026-06-25.
+
+This is the pivot from Franchise Kings back to the core betting/analytics product.
+It is grounded in a full audit of the existing betting code so we **build on the
+engines that already exist** rather than rewriting them.
+
+---
+
+## 1. What already exists (audit summary)
+
+The product is **mature and prop-first**. Confirmed in code:
+
+- **Prop boards** across all six sports: `/sports/{nba,wnba,mlb,nfl,ncaaf}/props`,
+  college hoops `/sports/ncaamb|ncaawb/props`, plus `/market-edge` smart-pick boards.
+  Builders: `build_live_props_board()`, `build_mlb_prop_board()`,
+  `build_wnba_prop_board()`, `build_football_live_prop_board()`.
+- **Game-line pages** (sides/totals): `/sports/nfl/game-lines`,
+  `/sports/ncaaf/game-lines`, `/sports/nfl/totals`, and a universal `/game-lines`
+  hub (`game_lines_page()`). Intelligence builder:
+  `build_football_game_line_intelligence()` (app.py:6274),
+  `build_game_line_teaching_note()` (app.py:6242).
+- **Parlay builder** `/parlay`: cross-sport, multi-leg, Kelly sizing
+  (`calculate_bankroll_iq()`), live correlation alerts, saved tickets
+  (`save_parlay_ticket()`, `analyze_saved_parlay_ticket()`).
+- **Edge engines**: `calculate_nfl_edge_score.py`, `calculate_nfl_prop_score.py`,
+  `calculate_ncaaf_edge_score.py`, simulation (`simulate_nfl_props.py`,
+  `simulate_active_sport_props.py`), calibration summaries
+  (`CrossSport_Calibration_Summary.csv`, `Sport_Driver_Calibration.csv`).
+- **Market intelligence**: multi-book disagreement
+  (`build_prop_multi_book_context()`), line-movement history CSVs per sport,
+  Elite sharp-money/line-move scanners.
+- **CLV is already stored** (`ClvLine`, `ClvPricePct` fields, app.py:~10344) —
+  just not surfaced to users.
+
+### The real gaps (where the to-do list maps)
+
+| Gap | Status today | To-do item it serves |
+|-----|--------------|----------------------|
+| Cross-league game-lines board | per-sport pages exist; **no unified ranked board** | Game Lines Command Center / "Opportunity Season" |
+| Discipline/education for regular users | guardrails + trap tags **computed but hidden / Elite-only** | Before You Bet, Heart-Bet warning, Pass Discipline |
+| User bet-tracking dashboard | parlay tickets + Elite bet log only | Bankroll by type, CLV, bettor report card |
+
+The encouraging part: **most of this is surfacing intelligence we already
+compute**, not building new models.
+
+---
+
+## 2. Track A — Game Lines Command Center  *(recommended first)*
+
+A single cross-league ranked board: NFL + CFB + (in season) NBA/CBB best
+sides/totals/moneylines, sorted by edge, each with one intelligence card.
+
+- **Reuse**: `build_football_game_line_intelligence()`, `build_game_line_teaching_note()`,
+  `build_football_environment_note()`, EdgeScore components, line-movement CSVs.
+- **New**: a thin aggregator that calls each sport's game-line builder, normalizes
+  rows to a shared shape `{league, matchup, kickoff, side, model_line, market_line,
+  edge, confidence, trap_flags, line_value_window}`, merges, ranks, and renders.
+- **Card contents**: model line vs market, edge & confidence, line-movement read
+  (opener→now), public-trap warning (wind/role/contradiction tags), and a
+  "line-value window" (is the current number still a good number?).
+- **Route**: extend `/game-lines` (`game_lines_page()`) with a `?view=command`
+  cross-league mode, or a new `/game-lines/command`.
+- **Why first**: headline of the Game Lines to-do, biggest *visible* gap, reuses
+  the most existing engine code, and the cross-league board *is* the
+  "Opportunity Season" concept made real.
+
+## 3. Track B — Discipline & Education layer
+
+Surface the intelligence currently hidden or Elite-gated, for free/pro users.
+
+- **Before You Bet card** — pre-ticket checklist on `/parlay`: correlation risk
+  (already computed), thin-market flags, contradiction warnings
+  (`apply_*_contradiction_guardrails()` — currently hidden), stake-vs-bankroll check.
+- **Heart-Bet warning** — "you keep betting the Lions — here's your record on them."
+  Needs per-user bet history (see Track C) to be meaningful.
+- **Pass Discipline score** — credit/track bankroll preserved by passing flagged
+  traps; needs a lightweight "I passed" action + log.
+- **Reuse**: contradiction guardrails, trap tags (`COLD`, `VOLATILE`, `ROLE SLIP`),
+  `Live_Drift_Alerts.csv`, `/glossary`, `/responsible-gambling`.
+- **Note**: keep framing as *analytics/education*, never personalized financial
+  advice. Strong fit with responsible-gambling positioning.
+
+## 4. Track C — Personal bettor analytics
+
+A real bet-tracking dashboard for everyone, not just Elite.
+
+- **Reuse**: Elite `/elite/bet-log` + `grade_manual_bet_logs()` patterns, stored
+  CLV fields, parlay-ticket grading (`analyze_saved_parlay_ticket()`).
+- **New**: open the bet log to all tiers; aggregate into bankroll-by-bet-type,
+  weekly report card, CLV trend (you beat/lost the close), confidence calibration
+  (are your A/B/C plays actually winning?), and personal leaks (best/worst leagues).
+- **Dependency**: Track B's Heart-Bet warning leans on this history existing.
+
+---
+
+## 5. Suggested build order
+
+1. **Track A — Game Lines Command Center** (standalone, reuses most, highest visibility).
+2. **Track C — Bettor analytics** (unlocks per-user history).
+3. **Track B — Discipline layer** (best once C provides history for Heart-Bet/Pass).
+
+Each track ships in reviewable slices (engine → route → template → verify → deploy),
+same cadence as the franchise work.
+
+---
+
+## 6. Open questions for review
+
+- Tiering: which of these are free vs Pro vs Elite? (Audit shows a lot is Elite-gated
+  today — how much do we move down-tier?)
+- CFBD/Odds API keys: NCAAF live board is offseason-empty and `CFBD_API_KEY` isn't
+  configured locally — does that block Track A's CFB coverage right now?
+- Scope of "cross-league" at launch: football-only (NFL+CFB) first, or include
+  in-season NBA/CBB from day one?
