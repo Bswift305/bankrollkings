@@ -605,17 +605,80 @@ def _game_perf(team, won, rng, out_ids=()):
     return perf
 
 
+# --------------------------------------------------------------------------- #
+# Weekly Command Center — the GM's STANDING weekly plan. These choices persist
+# and actually bend the season: practice intensity (sharpness vs injuries), the
+# focus, how aggressive medical is, the game plan, and what your scouts work on.
+# --------------------------------------------------------------------------- #
+PRACTICE_INTENSITY = {
+    "Recovery":   {"edge": -0.3, "inj": 0.70, "blurb": "Fresh legs, fewer injuries — but a softer edge on Sunday."},
+    "Balanced":   {"edge": 0.0,  "inj": 1.00, "blurb": "A normal week of work."},
+    "Physical":   {"edge": 0.6,  "inj": 1.35, "blurb": "A tougher, sharper team — at a real injury cost."},
+    "High Tempo": {"edge": 0.4,  "inj": 1.18, "blurb": "Conditioning and speed, moderate wear."},
+}
+PRACTICE_FOCUS = ["Scheme Install", "Red Zone", "Pass Game", "Run Game", "Pass Rush",
+                  "Coverage", "Ball Security", "Rookie Development"]
+MEDICAL_POLICY = {
+    "Cautious":    {"inj": 0.80, "ret": 1,  "blurb": "Rest guys fully — healthiest roster, but you're shorthanded longer."},
+    "Balanced":    {"inj": 1.00, "ret": 0,  "blurb": "Standard medical calls."},
+    "Aggressive":  {"inj": 1.20, "ret": -1, "blurb": "Play 'em hurt — bodies back faster, aggravation risk climbs."},
+}
+GAME_PLANS = {
+    "Balanced":         {"edge": 0.0, "blurb": "No strong lean."},
+    "Aggressive":       {"edge": 0.7, "blurb": "Push the tempo and take your shots."},
+    "Conservative":     {"edge": 0.2, "blurb": "Protect the ball, win the margins."},
+    "Attack Weakness":  {"edge": 0.6, "blurb": "Game-planned to your opponent's soft spot."},
+    "Protect the Unit": {"edge": 0.1, "blurb": "Scheme around your banged-up group."},
+}
+SCOUT_ASSIGNMENTS = ["Opponent", "Draft Class", "Free Agents", "Internal Development"]
+
+
+def init_weekly_ops(save):
+    save["weekly_ops"] = {"intensity": "Balanced", "focus": "Scheme Install",
+                          "medical": "Balanced", "game_plan": "Balanced", "scout": "Opponent"}
+    return save["weekly_ops"]
+
+
+def set_weekly_plan(save, **fields):
+    wo = save.setdefault("weekly_ops", {})
+    for key, table in (("intensity", PRACTICE_INTENSITY), ("focus", PRACTICE_FOCUS),
+                       ("medical", MEDICAL_POLICY), ("game_plan", GAME_PLANS), ("scout", SCOUT_ASSIGNMENTS)):
+        v = fields.get(key)
+        if v is not None and v in table:
+            wo[key] = v
+    write_save(save)
+    return wo
+
+
+def weekly_edge(save):
+    """The standing weekly plan's net power edge this Sunday."""
+    wo = save.get("weekly_ops", {})
+    e = PRACTICE_INTENSITY.get(wo.get("intensity", "Balanced"), {}).get("edge", 0.0)
+    e += GAME_PLANS.get(wo.get("game_plan", "Balanced"), {}).get("edge", 0.0)
+    if wo.get("scout") == "Opponent":
+        e += 0.5
+    return round(e, 2)
+
+
+def weekly_injury_factor(save):
+    wo = save.get("weekly_ops", {})
+    return (PRACTICE_INTENSITY.get(wo.get("intensity", "Balanced"), {}).get("inj", 1.0)
+            * MEDICAL_POLICY.get(wo.get("medical", "Balanced"), {}).get("inj", 1.0))
+
+
 def _roll_week_injuries(save, week, rng):
     team = current_team(save)
     med = max(0.4, 1.0 - (staff_bonus(save)["medical"] - 50) / 180.0)
+    plan_inj = weekly_injury_factor(save)                       # Command Center: intensity + medical
+    ret = MEDICAL_POLICY.get(save.get("weekly_ops", {}).get("medical", "Balanced"), {}).get("ret", 0)
     base = {"Low": 0.012, "Medium": 0.025, "High": 0.045}
     new = []
     for p in _starters(team):
         if p.get("out_until", 0) >= week:
             continue
-        ch = base.get(p.get("injury_risk", "Low"), 0.02) * med + max(0, p["age"] - 29) * 0.002
+        ch = base.get(p.get("injury_risk", "Low"), 0.02) * med * plan_inj + max(0, p["age"] - 29) * 0.002
         if rng.random() < ch:
-            dur = rng.randint(1, 6)
+            dur = max(1, rng.randint(1, 6) + ret)              # aggressive medical = back sooner
             p["out_until"] = week + dur
             p["inj_history"] = p.get("inj_history", 0) + 1
             p["inj_weeks"] = p.get("inj_weeks", 0) + dur
@@ -626,6 +689,7 @@ def _roll_week_injuries(save, week, rng):
 def _user_inseason_power(save, week, base_power):
     sb = staff_bonus(save)
     p = base_power + sb["power"] + sb["scheme"] + sb["special_teams"] + atmosphere(save)["home_edge"]
+    p += weekly_edge(save)                                      # Command Center: practice + game plan
     p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
     out = [x for x in _starters(current_team(save)) if x.get("out_until", 0) >= week]
     p -= round(sum(POS_WEIGHT.get(x["pos"], 1.0) * 1.4 for x in out), 1)
@@ -770,6 +834,8 @@ def start_inseason(save):
             p.pop("suspended_until", None)
             p.pop("susp_reason", None)
     save["incidents"] = []
+    if not save.get("weekly_ops"):                 # keep the GM's standing plan across seasons
+        init_weekly_ops(save)
     save["season_schedule_weeks"] = REG_GAMES
     save["schedule"] = make_schedule(save["seed"] + save["season"], [t["id"] for t in save["teams"]])
     save["inseason"] = {"week": 1, "log": [], "offer": None, "injuries": []}
@@ -1042,6 +1108,8 @@ def _advance_year(save):
             pre_ovr = p["overall"]
             pre_pot = p["potential"]
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
+            if my and save.get("weekly_ops", {}).get("focus") == "Rookie Development" and p.get("age", 30) <= 24:
+                bonus += 1                                                    # a season of rookie reps
             hfit = human_development_fit(save, p) if my else None
             if hfit:
                 if hfit["score"] >= 82:
@@ -1883,7 +1951,8 @@ def start_draft(save):
         return
     rng = _rng(save["seed"] + save["season"] * 77 + 13)
     cls = generate_draft_class(rng)
-    acc = max(20, min(92, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"]))
+    scout_bonus = 9 if save.get("weekly_ops", {}).get("scout") == "Draft Class" else 0   # scouts worked the class
+    acc = max(20, min(94, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"] + scout_bonus))
     for p in cls:
         _scout(rng, p, acc)
     save["staff_market"] = generate_staff_market(rng)   # fresh candidates each offseason

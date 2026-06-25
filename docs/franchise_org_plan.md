@@ -171,7 +171,7 @@ Weekly staff meeting (each coordinator brings a concern), player conversations, 
 
 - **Phase 1 — Scout Recommendation layer** (System B). ✅ SHIPPED. `scout_report()`; Scout column on board + FA + "Scout's Team Fit Report" card. Verdict moves with your staff.
 - **Phase 2 — Coach/staff ideology depth** (System A). ✅ SHIPPED. Ideology/versatility/temperament + `coach_roster_fit()` on hire; feeds `human_development_fit` → scout + yearly development.
-- **Phase 3 — Weekly Command Center MVP** (System C, minimal): checklist + practice (intensity/focus) + injuries + scout assignment + game plan + advance, hung on the live-clock pause.
+- **Phase 3 — Weekly Command Center MVP** (System C). ✅ SHIPPED. New Command Center tab + `weekly_ops` standing plan (practice intensity/focus, medical policy, game plan, scout assignment) that REALLY bends the season — power edge, injury rate, return speed, rookie dev, draft scouting accuracy. Next: player-meeting events + live-clock checklist pause (Phase 4).
 - **Phase 4 — Weekly depth**: staff meetings, player conversations, events, locker-room pulse, captains, staff trust.
 - **Phase 5 — Multiplayer weekly checklist** + auto-resolve for inactive GMs.
 

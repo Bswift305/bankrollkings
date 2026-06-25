@@ -598,6 +598,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_new',
     'franchise_sim',
     'franchise_sim_week',
+    'franchise_weekly',
     'franchise_live_toggle',
     'franchise_recap_dismiss',
     'franchise_offer',
@@ -28950,7 +28951,28 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'gridiron', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'command', 'gridiron', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'league', 'draft')
+
+
+def _command_center(save):
+    wo = save.get('weekly_ops') or {}
+
+    def opts(table, cur):
+        if isinstance(table, dict):
+            return [{'name': k, 'on': k == cur, 'blurb': table[k].get('blurb', '')} for k in table]
+        return [{'name': k, 'on': k == cur, 'blurb': ''} for k in table]
+    injfac = fk.weekly_injury_factor(save)
+    return {
+        'plan': wo, 'edge': fk.weekly_edge(save),
+        'injrisk': 'High' if injfac >= 1.2 else 'Low' if injfac <= 0.85 else 'Normal',
+        'groups': [
+            {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
+            {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
+            {'key': 'medical', 'title': 'Medical Policy', 'opts': opts(fk.MEDICAL_POLICY, wo.get('medical'))},
+            {'key': 'game_plan', 'title': 'Game Plan', 'opts': opts(fk.GAME_PLANS, wo.get('game_plan'))},
+            {'key': 'scout', 'title': 'Scout Assignment', 'opts': opts(fk.SCOUT_ASSIGNMENTS, wo.get('scout'))},
+        ],
+    }
 
 
 def _trade_view(save, team_id):
@@ -29057,6 +29079,7 @@ def _franchise_view(save):
         'advice': fk.consultant_advice(save),
         'live': fk.live_status(save, _now_ts),
         'away_recap': save.get('away_recap'),
+        'command_center': _command_center(save) if save.get('inseason') else None,
         'scheme': fk.scheme_identity(save),
         'value_report': fk.roster_value_report(save),
         'role_friction': role_friction,
@@ -29151,6 +29174,17 @@ def franchise_sim_week():
             fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
         fk.write_save(save)
     return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/weekly', methods=['POST'])
+def franchise_weekly():
+    _, save = _franchise_save()
+    if save:
+        fk.set_weekly_plan(save,
+                           intensity=request.form.get('intensity'), focus=request.form.get('focus'),
+                           medical=request.form.get('medical'), game_plan=request.form.get('game_plan'),
+                           scout=request.form.get('scout'))
+    return redirect(url_for('franchise_hub', tab='command'))
 
 
 @app.route('/franchise/live', methods=['POST'])

@@ -27,6 +27,7 @@
 
   <nav class="fk-tabs">
     <a href="{{ url_for('franchise_hub', tab='dashboard') }}" class="fk-tab {% if tab == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('franchise_hub', tab='command') }}" class="fk-tab {% if tab == 'command' %}active{% endif %}">{{ icon('flag', 13) }}Command Center</a>
     <a href="{{ url_for('franchise_hub', tab='gridiron') }}" class="fk-tab fk-tab-gi {% if tab == 'gridiron' %}active{% endif %}">{{ icon('tv', 13) }}GridIron</a>
     {% for t in ['roster','front-office','trades','staff','business','analytics','career','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
@@ -562,6 +563,49 @@
   </div>
   {% else %}
   <div class="fk-card"><p class="fk-muted">GridIron Network spins up once your season is underway.</p></div>
+  {% endif %}
+  {% endif %}
+
+  {# ===================== COMMAND CENTER ===================== #}
+  {% if tab == 'command' %}
+  {% if command_center %}
+  <div class="fk-card fk-cc-head">
+    <div class="fk-cc-top">
+      <div>
+        <div class="fk-card-h" style="margin:0">{{ icon('flag') }}Command Center — Week {{ inseason_week }} of 17</div>
+        <div class="fk-cc-sum">This week's plan: <b class="{{ 'fk-glw' if command_center.edge > 0 else 'fk-gll' if command_center.edge < 0 else '' }}">{{ '%+.1f'|format(command_center.edge) }} power</b> · injury risk <b class="fk-cc-risk-{{ command_center.injrisk|lower }}">{{ command_center.injrisk }}</b></div>
+      </div>
+      {% if live and live.on and not live.paused %}<div class="fk-cc-live">⏱ next game in <b id="fk-countdown" data-secs="{{ live.next_in if live.next_in is not none else 0 }}">—</b></div>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('franchise_sim_week') }}" style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="fk-btn fk-btn-go">▶ Lock it in &amp; Sim Week {{ inseason_week }}</button>
+    </form>
+  </div>
+
+  {% for g in command_center.groups %}
+  <div class="fk-card fk-ccgroup">
+    <div class="fk-card-h">{{ g.title }}</div>
+    <div class="fk-ccopts">
+      {% for o in g.opts %}
+      <form method="post" action="{{ url_for('franchise_weekly') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="{{ g.key }}" value="{{ o.name }}">
+        <button class="fk-ccbtn {{ 'on' if o.on }}">{{ o.name }}</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% for o in g.opts %}{% if o.on and o.blurb %}<p class="fk-ccblurb">{{ o.blurb }}</p>{% endif %}{% endfor %}
+  </div>
+  {% endfor %}
+
+  {% if inseason_injuries %}
+  <div class="fk-card">
+    <div class="fk-card-h">{{ icon('alert') }}Injury report</div>
+    <div class="fk-draftlog">{% for i in inseason_injuries %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · out {{ i.weeks }}w</span>{% endfor %}</div>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="fk-card"><p class="fk-muted">The Command Center opens once your season kicks off — set your weekly plan, then run the week.</p></div>
   {% endif %}
   {% endif %}
 
@@ -1229,6 +1273,18 @@
   .fk-evo-row strong { display:block; color:#fff; font-size:14px; margin-top:5px; }
   .fk-evo-row small { display:block; color:#9fb0bc; font-size:12px; line-height:1.45; margin-top:3px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Command Center */
+  .fk-cc-head { border-color:rgba(74,212,240,.32); background:linear-gradient(135deg,rgba(11,30,42,.96),rgba(6,12,18,.98)); }
+  .fk-cc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  .fk-cc-sum { color:#cdd9e2; font-size:13px; margin-top:4px; } .fk-cc-sum b { font-variant-numeric:tabular-nums; }
+  .fk-cc-risk-high { color:#ff9a9a; } .fk-cc-risk-low { color:#7dffb0; } .fk-cc-risk-normal { color:#9fe9ff; }
+  .fk-cc-live { font-size:12px; color:#ffd5d5; font-weight:700; } .fk-cc-live b { color:#fff; }
+  .fk-ccgroup .fk-card-h { font-size:13px; margin-bottom:8px; }
+  .fk-ccopts { display:flex; flex-wrap:wrap; gap:6px; }
+  .fk-ccbtn { cursor:pointer; font-size:12px; font-weight:700; color:#b7c6d0; background:rgba(3,8,12,.55); border:1px solid rgba(145,168,184,.25); border-radius:8px; padding:6px 12px; }
+  .fk-ccbtn:hover { border-color:rgba(74,212,240,.4); color:#fff; }
+  .fk-ccbtn.on { color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-color:transparent; }
+  .fk-ccblurb { color:#8fa3b0; font-size:12px; font-style:italic; margin:8px 0 0; }
   /* Coaching pedigree / tree */
   .fk-ped { flex-basis:100%; margin-top:7px; padding-top:7px; border-top:1px solid rgba(145,168,184,.14); display:flex; flex-wrap:wrap; gap:5px 10px; align-items:center; }
   .fk-ped-rep { font-size:10px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; padding:1px 8px; border-radius:999px; }
