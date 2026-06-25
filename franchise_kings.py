@@ -228,6 +228,20 @@ def _gen_name(rng):
     return f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}"
 
 
+def _roll_true_pot(rng, overall, potential, age):
+    """The HIDDEN true ceiling. Scouting (the visible `potential`) is just a read -
+    young, unproven players can quietly be more (a hidden gem / UDFA gem) or less
+    (a bust). Established players are known quantities. Revealed only as he develops."""
+    if age >= 27 or potential - overall < 3:
+        return potential                                   # known quantity, no surprise
+    r = rng.random()
+    if r < 0.12:
+        return min(99, potential + int(rng.triangular(3, 19, 6)))   # hidden gem (rare big jumps)
+    if r < 0.22:
+        return max(overall, potential - int(rng.triangular(2, 9, 3)))  # bust risk
+    return potential
+
+
 def _gen_player(rng, pos, base=None):
     age = rng.randint(21, 34)
     overall = base if base is not None else int(rng.triangular(58, 92, 74))
@@ -243,6 +257,7 @@ def _gen_player(rng, pos, base=None):
         "age": age,
         "overall": overall,
         "potential": potential,
+        "true_pot": _roll_true_pot(rng, overall, potential, age),
         "dev": rng.choice(["Normal", "Star", "Slow", "Late Bloomer"]),
         "contract": {"years": rng.randint(1, 4), "aav": aav, "guaranteed": round(aav * rng.uniform(0.3, 0.8), 1)},
         "morale": rng.randint(55, 90),
@@ -376,11 +391,15 @@ _DECLINE = {"Star": 31, "Late Bloomer": 32, "Slow": 30, "Normal": 31}
 
 def _develop(p, rng, bonus):
     tr, age = p.get("dev", "Normal"), p["age"]
-    if age <= _PEAK.get(tr, 28) and p["overall"] < p["potential"]:
+    cap = p.get("true_pot", p["potential"])        # the HIDDEN real ceiling
+    if age <= _PEAK.get(tr, 28) and p["overall"] < cap:
         gain = rng.randint(0, _RATE.get(tr, 2)) + bonus + PERSONALITIES.get(p.get("personality"), {}).get("dev", 0)
         if tr == "Late Bloomer" and age >= 25:
             gain += 1
-        p["overall"] = min(p["potential"], p["overall"] + gain)
+        p["overall"] = min(cap, p["overall"] + gain)
+        # a hidden gem reveals himself: scouts revise the VISIBLE ceiling up as he proves it
+        if cap > p["potential"] and p["overall"] >= p["potential"] - 2:
+            p["potential"] = min(cap, p["potential"] + rng.randint(1, 4))
     if age >= _DECLINE.get(tr, 31):
         p["overall"] = max(45, p["overall"] - rng.randint(1, 3))
 
@@ -526,13 +545,19 @@ def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
     dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)
     uid = save["current_team_id"]
+    breakouts = []
     for t in save["teams"]:
         my = t["id"] == uid
         for p in t["roster"]:
+            pre_pot = p["potential"]
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
             p["age"] += 1
             _develop(p, rng, bonus)   # trait-driven growth / decline
             p["contract"]["years"] = max(0, p["contract"]["years"] - 1)
+            if my and p["potential"] - pre_pot >= 2:        # a hidden gem revealed himself
+                breakouts.append({"name": p["name"], "pos": p["pos"],
+                                  "ovr": p["overall"], "pot": p["potential"]})
+    save["breakouts"] = breakouts
     for p in current_team(save).get("practice_squad", []):    # PS develops too
         p["age"] += 1
         _develop(p, rng, dev)
@@ -868,7 +893,9 @@ def _make_rookie(p):
     aav = round(max(0.7, max(0, p["true_ovr"] - 55) ** 1.6 / 26.0), 1)
     return {"id": "p" + p["id"][1:], "name": p["name"], "pos": p["pos"], "age": p["age"],
             "number": random.randint(*POS_NUM.get(p["pos"], (1, 99))),
-            "overall": p["true_ovr"], "potential": p["true_pot"], "dev": p["dev"],
+            "overall": p["true_ovr"], "potential": p["true_pot"],
+            "true_pot": _roll_true_pot(random, p["true_ovr"], p["true_pot"], p["age"]),
+            "dev": p["dev"],
             "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
             "morale": 75, "injury_risk": "Low",
             "personality": p.get("personality"), "hometown": p.get("hometown"),
@@ -1694,6 +1721,9 @@ def generate_news(save):
     if ap:
         names = ", ".join(f"{a['pos']} {a['name']}" for a in ap[:3])
         add("BUZZ", "All-League Team headlined by the league's elite", f"Leading the way: {names}.")
+    for b in (save.get("breakouts") or [])[:2]:
+        add("BREAKOUT", f"{b['pos']} {b['name']} is breaking out",
+            f"Scouts have revised his ceiling up to {b['pot']} — he's outplaying his projection.")
     for h in (save.get("holdouts") or [])[:2]:
         add("HOLDOUT", f"{h['pos']} {h['name']} is holding out",
             f"Wants a new deal — he's at ${h['aav']}M, market is ~${h['market']}M.")

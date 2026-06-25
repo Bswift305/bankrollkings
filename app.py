@@ -29382,7 +29382,10 @@ def _scout_read(p):
         traj = "Still developing"
     else:
         traj = "In his prime"
-    ceil = f"{pot} ({'+%d upside' % (pot - ovr) if pot > ovr else 'at his ceiling'})"
+    if age <= 23:
+        ceil = f"{pot} projected — raw, scouts can be wrong (could outperform it)"
+    else:
+        ceil = f"{pot} ({'+%d upside' % (pot - ovr) if pot > ovr else 'at his ceiling'})"
     return [("Durability", dur), ("Trajectory", traj), ("Ceiling", ceil)]
 
 
