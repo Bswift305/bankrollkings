@@ -697,6 +697,196 @@ def _user_inseason_power(save, week, base_power):
 
 
 # --------------------------------------------------------------------------- #
+# The living building — weekly agenda. Coaches and players bring you decisions:
+# a buried rookie wants snaps, a vet wants clarity, your OC wants a promotion, a
+# banged-up starter is questionable. Each is YOUR call, with morale / confidence /
+# staff-trust fallout. Plus the locker-room pulse and your captains.
+# --------------------------------------------------------------------------- #
+def _nudge(save, pid, morale=0, conf=0):
+    for t in save["teams"]:
+        for p in t["roster"]:
+            if p["id"] == pid:
+                if morale:
+                    p["morale"] = max(5, min(99, p.get("morale", 70) + morale))
+                if conf:
+                    p["confidence"] = max(5, min(99, p.get("confidence", 65) + conf))
+                return p
+    return None
+
+
+def _starter_ids(team):
+    return {p["id"] for p in _starters(team)}
+
+
+def _ag_young_snaps(save, week, rng):
+    team = current_team(save)
+    starters = _starter_ids(team)
+    pool = [p for p in team["roster"] if p.get("age", 30) <= 24 and p["overall"] >= 70
+            and p["id"] not in starters]
+    if not pool:
+        return None
+    p = max(pool, key=lambda x: x["overall"])
+    return {"kind": "player", "topic": "young_snaps", "icon": "📈", "pid": p["id"],
+            "who": f"{p['pos']} {p['name']}", "title": f"{p['pos']} {p['name']} wants more snaps",
+            "detail": f"He's a {p['overall']}-OVR talent buried on the depth chart and he's pushing for a real role.",
+            "options": [{"key": "promote", "label": "Promote him"},
+                        {"key": "earn", "label": "Tell him to earn it"},
+                        {"key": "defer", "label": "Stay noncommittal"}]}
+
+
+def _ag_vet_clarity(save, week, rng):
+    team = current_team(save)
+    best = {}
+    for p in team["roster"]:
+        best[p["pos"]] = max(best.get(p["pos"], 0), p["overall"])
+    pool = [p for p in team["roster"] if p.get("age", 25) >= 30 and p["overall"] < best.get(p["pos"], 0)]
+    if not pool:
+        return None
+    p = min(pool, key=lambda x: x.get("morale", 70))
+    return {"kind": "player", "topic": "vet_clarity", "icon": "🗣", "pid": p["id"],
+            "who": f"{p['pos']} {p['name']}", "title": f"{p['pos']} {p['name']} wants role clarity",
+            "detail": "He's lost snaps and wants to know where he stands before it festers.",
+            "options": [{"key": "reassure", "label": "Reassure him"},
+                        {"key": "honest", "label": "Be honest — he's depth now"},
+                        {"key": "shop", "label": "Tell him you'll shop a trade"}]}
+
+
+def _ag_coord_promote(save, week, rng):
+    staff = save.get("staff", {})
+    coord = staff.get("off_coord") or staff.get("def_coord")
+    if not coord:
+        return None
+    team = current_team(save)
+    starters = _starter_ids(team)
+    side = OFFENSE_POS if staff.get("off_coord") else {"DL", "LB", "CB", "S"}
+    pool = [p for p in team["roster"] if p["pos"] in side and p.get("age", 30) <= 25 and p["id"] not in starters and p["overall"] >= 68]
+    if not pool:
+        return None
+    p = max(pool, key=lambda x: x["overall"])
+    role = "OC" if staff.get("off_coord") else "DC"
+    return {"kind": "staff", "topic": "coord_promote", "icon": "🧠", "pid": p["id"],
+            "who": f"{role} {coord['name']}", "title": f"{role} wants {p['pos']} {p['name']} promoted",
+            "detail": f"“The kid's earned first-team reps. Trust me on this one.”",
+            "options": [{"key": "trust", "label": "Trust the coach"},
+                        {"key": "override", "label": "Override — not yet"}]}
+
+
+def _ag_questionable(save, week, rng):
+    team = current_team(save)
+    pool = [p for p in _starters(team) if 0 < p.get("out_until", 0) - week <= 1]
+    if not pool:
+        return None
+    p = max(pool, key=lambda x: x["overall"])
+    return {"kind": "medical", "topic": "questionable", "icon": "🏥", "pid": p["id"],
+            "who": f"{p['pos']} {p['name']}", "title": f"{p['pos']} {p['name']} is questionable",
+            "detail": "Medical lists him as a game-time decision. Your call on his participation.",
+            "options": [{"key": "rest", "label": "Rest him"},
+                        {"key": "limited", "label": "Limited package"},
+                        {"key": "push", "label": "Push him to play"}]}
+
+
+_AGENDA_GENS = [_ag_young_snaps, _ag_vet_clarity, _ag_coord_promote, _ag_questionable]
+
+
+def generate_weekly_agenda(save, week, rng):
+    agenda = [a for a in save.get("agenda", []) if week - a.get("week", week) <= 3]   # expire stale
+    if len(agenda) < 5:
+        gens = _AGENDA_GENS[:]
+        rng.shuffle(gens)
+        added = 0
+        for g in gens:
+            if added >= 2 or rng.random() > 0.5:
+                continue
+            item = g(save, week, rng)
+            if item and not any(a.get("pid") == item.get("pid") for a in agenda):
+                item["id"] = f"ag{rng.randint(100000, 999999)}"
+                item["week"] = week
+                agenda.insert(0, item)
+                added += 1
+    save["agenda"] = agenda[:6]
+    return save["agenda"]
+
+
+def resolve_agenda(save, item_id, choice):
+    item = next((a for a in save.get("agenda", []) if a["id"] == item_id), None)
+    if not item:
+        return False, "That item is no longer on your desk."
+    topic, pid = item.get("topic"), item.get("pid")
+    trust = save.get("staff_trust", 60)
+    week = (save.get("inseason") or {}).get("week", item.get("week", 1))
+    if topic == "young_snaps":
+        if choice == "promote":
+            _nudge(save, pid, morale=6, conf=9); msg = f"You promoted {item['who']} — he's fired up."
+        elif choice == "earn":
+            _nudge(save, pid, conf=-4); msg = f"You told {item['who']} to earn it. Message sent."
+        else:
+            _nudge(save, pid, morale=-3); msg = f"You stayed noncommittal on {item['who']}."
+    elif topic == "vet_clarity":
+        if choice == "reassure":
+            _nudge(save, pid, morale=7); msg = f"You reassured {item['who']} — he's bought back in."
+        elif choice == "honest":
+            _nudge(save, pid, morale=-5, conf=-3); msg = f"You leveled with {item['who']}. He respects it, but it stings."
+        else:
+            p = _nudge(save, pid, morale=-6)
+            if p:
+                p["trade_request"], p["trade_reason"] = True, "told he'd be shopped"
+            msg = f"You told {item['who']} you'd shop him — he wants out now."
+    elif topic == "coord_promote":
+        if choice == "trust":
+            save["staff_trust"] = min(99, trust + 5); _nudge(save, pid, conf=7)
+            msg = f"You backed your coordinator. Staff trust up — and {item['who'].split(' ',1)[-1]} got his shot."
+        else:
+            save["staff_trust"] = max(10, trust - 7); msg = "You overrode your coordinator. He'll remember that."
+    elif topic == "questionable":
+        iz = save.get("inseason") or {}
+        if choice == "rest":
+            msg = f"You rested {item['who']} — health over Sunday."
+        elif choice == "limited":
+            p = _nudge(save, pid)
+            if p and p.get("out_until", 0) > week:
+                p["out_until"] = week
+            msg = f"{item['who']} goes in a limited package."
+        else:
+            p = _nudge(save, pid, conf=4)
+            if p:
+                p["out_until"] = 0
+                if random.random() < 0.30:
+                    p["out_until"] = week + random.randint(2, 4)
+                    msg = f"You pushed {item['who']} — and he aggravated it. Out again."
+                else:
+                    msg = f"You pushed {item['who']} to play. He answered the bell."
+            else:
+                msg = "Decision logged."
+    else:
+        msg = "Decision logged."
+    save["agenda"] = [a for a in save.get("agenda", []) if a["id"] != item_id]
+    save.setdefault("agenda_log", []).insert(0, {"week": item.get("week", week), "text": msg})
+    save["agenda_log"] = save["agenda_log"][:8]
+    write_save(save)
+    return True, msg
+
+
+def locker_room(save):
+    """The locker-room pulse — chemistry, your leaders/captains, and volatility."""
+    team = current_team(save)
+    roster = team["roster"]
+    if not roster:
+        return {"chemistry": 60, "label": "Settling in", "morale": 70, "captains": [], "volatile": 0,
+                "staff_trust": save.get("staff_trust", 60)}
+    morale = round(sum(p.get("morale", 70) for p in roster) / len(roster))
+    leaders = [p for p in roster if p.get("personality") in ("Field General", "Mentor", "Throwback", "Clutch Gene")
+               and p["overall"] >= 74]
+    captains = sorted(leaders, key=lambda p: -p["overall"])[:3]
+    volatile = sum(1 for p in roster if p.get("personality") in ("Hothead", "Free Spirit"))
+    chem = morale + len(captains) * 3 - volatile * 2 + (save.get("staff_trust", 60) - 60) * 0.1
+    chem = max(20, min(99, round(chem)))
+    label = "Tight-knit" if chem >= 78 else "Solid" if chem >= 62 else "Fraying" if chem >= 45 else "Toxic"
+    return {"chemistry": chem, "label": label, "morale": morale, "volatile": volatile,
+            "staff_trust": save.get("staff_trust", 60),
+            "captains": [{"pos": c["pos"], "name": c["name"], "pid": c["id"], "per": c.get("personality")} for c in captains]}
+
+
+# --------------------------------------------------------------------------- #
 # Off-field life: real NFL stuff happens away from the field. Personality drives
 # who's at risk - a Hothead boils over, a Showman courts headlines. Incidents
 # cost availability (suspensions reuse the injury out_until lane), morale, money,
@@ -834,6 +1024,7 @@ def start_inseason(save):
             p.pop("suspended_until", None)
             p.pop("susp_reason", None)
     save["incidents"] = []
+    save["agenda"] = []
     if not save.get("weekly_ops"):                 # keep the GM's standing plan across seasons
         init_weekly_ops(save)
     save["season_schedule_weeks"] = REG_GAMES
@@ -885,6 +1076,7 @@ def sim_week(save):
     if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < 0.4:
         iz["offer"] = _maybe_ai_offer(save, rng)
     owner_weekly(save, week, rng)      # the owner reacts to the week just played
+    generate_weekly_agenda(save, week + 1, rng)   # next week's staff/player decisions land
     iz["week"] = week + 1
     if iz["week"] > REG_GAMES:
         _finalize_season(save)

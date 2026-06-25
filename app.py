@@ -599,6 +599,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_sim',
     'franchise_sim_week',
     'franchise_weekly',
+    'franchise_agenda',
     'franchise_live_toggle',
     'franchise_recap_dismiss',
     'franchise_offer',
@@ -28965,6 +28966,9 @@ def _command_center(save):
     return {
         'plan': wo, 'edge': fk.weekly_edge(save),
         'injrisk': 'High' if injfac >= 1.2 else 'Low' if injfac <= 0.85 else 'Normal',
+        'agenda': save.get('agenda', []),
+        'agenda_log': save.get('agenda_log', [])[:4],
+        'locker': fk.locker_room(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
@@ -29174,6 +29178,15 @@ def franchise_sim_week():
             fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
         fk.write_save(save)
     return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/agenda', methods=['POST'])
+def franchise_agenda():
+    _, save = _franchise_save()
+    if save:
+        fk.resolve_agenda(save, str(request.form.get('item_id', '')).strip(),
+                          str(request.form.get('choice', '')).strip())
+    return redirect(url_for('franchise_hub', tab='command'))
 
 
 @app.route('/franchise/weekly', methods=['POST'])
