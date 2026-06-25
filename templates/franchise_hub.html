@@ -171,6 +171,19 @@
     </div>
     {% endif %}
 
+    {% if incidents %}
+    <div class="fk-card fk-wire">
+      <div class="fk-card-h">🚨 Off-Field Wire</div>
+      {% for i in incidents[:8] %}
+      <a class="fk-wire-row fk-wire-{{ i.key }}" href="{{ url_for('franchise_player', pid=i.pid) }}">
+        <span class="fk-wire-tag">{{ i.label }}</span>
+        <strong>{{ i.pos }} {{ i.name }}</strong>
+        <small>{{ i.text }}{% if i.weeks %} · out {{ i.weeks }} {{ 'game' if i.weeks == 1 else 'games' }}{% endif %} <em>· Wk {{ i.week }}</em></small>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="fk-card fk-consult">
       <div class="fk-card-h">🧠 GM Consultant
         <span class="fk-assist">
@@ -421,7 +434,7 @@
       <tbody>
         {% for p in roster_order %}
         <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
-          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.holdout %} <span class="fk-holdtag">HOLDOUT</span>{% endif %}{% if p.role_friction %} <span class="fk-holdtag" style="background:#6b4a1d;color:#ffd27d">BENCHED</span>{% endif %}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.style %} · {{ p.style }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.holdout %} <span class="fk-holdtag">HOLDOUT</span>{% endif %}{% if p.susp_reason %} <span class="fk-holdtag" style="background:#3a1f2a;color:#ff9a9a">SUSPENDED</span>{% endif %}{% if p.role_friction %} <span class="fk-holdtag" style="background:#6b4a1d;color:#ffd27d">BENCHED</span>{% endif %}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.style %} · {{ p.style }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
           <td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}</td>
           <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
           <td>{{ p.dev }}</td><td class="{% if p.injury_risk=='High' %}fk-bust{% endif %}">{{ p.injury_risk }}</td>
@@ -996,6 +1009,14 @@
   .fk-ofc-demand { border-left-color:#ffd27d; } .fk-ofc-demand .fk-ofc-text { color:#ffe6b8; }
   .fk-ofc-concern { border-left-color:#ff9a9a; } .fk-ofc-concern .fk-ofc-text { color:#ffc9c9; }
   .fk-ofc-ultimatum { border-left-color:#ff5d5d; background:rgba(255,93,93,.08); } .fk-ofc-ultimatum .fk-ofc-text { color:#ff9a9a; font-weight:600; }
+  /* Off-Field Wire */
+  .fk-wire-row { display:block; text-decoration:none; border-left:3px solid #ff7a7a; background:rgba(3,8,12,.5); border-radius:0 9px 9px 0; padding:8px 11px; margin-bottom:7px; }
+  .fk-wire-tag { display:inline-block; font-size:9px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; color:#ffb3b3; background:rgba(255,122,122,.14); border:1px solid rgba(255,122,122,.3); border-radius:999px; padding:1px 7px; margin-bottom:3px; }
+  .fk-wire-row strong { display:block; color:#fff; font-size:13px; }
+  .fk-wire-row small { display:block; color:#b7c6d0; font-size:11.5px; line-height:1.4; margin-top:2px; }
+  .fk-wire-row small em { color:#7f93a0; font-style:normal; }
+  .fk-wire-ped { border-left-color:#c98bff; } .fk-wire-ped .fk-wire-tag { color:#d7b3ff; background:rgba(201,139,255,.14); border-color:rgba(201,139,255,.3); }
+  .fk-wire-rules, .fk-wire-blowup { border-left-color:#ffd27d; } .fk-wire-rules .fk-wire-tag, .fk-wire-blowup .fk-wire-tag { color:#ffd27d; background:rgba(255,210,125,.13); border-color:rgba(255,210,125,.3); }
   /* Football Operations card */
   .fk-scheme { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px; }
   .fk-scheme > div { background:rgba(74,212,240,.06); border:1px solid rgba(74,212,240,.18); border-radius:9px; padding:8px 10px; }

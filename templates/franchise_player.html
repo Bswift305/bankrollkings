@@ -69,6 +69,18 @@
     </div>
     {% endif %}
 
+    {% if not prospect and (incidents or susp_reason) %}
+    <div class="fp-card" style="border-color:rgba(255,122,122,.3)">
+      <div class="fp-h">🚨 Off-field record</div>
+      {% if susp_reason %}<p class="fp-blurb" style="color:#ff9a9a;margin:0 0 8px">Currently suspended — {{ susp_reason }}.</p>{% endif %}
+      <div class="fp-rows">
+        {% for i in incidents|reverse %}
+        <div><span>S{{ i.season }} · Wk {{ i.week }}</span><b style="text-align:right;color:#ffb3b3">{{ i.type }}{% if i.weeks %} · {{ i.weeks }} game{{ 's' if i.weeks != 1 }}{% endif %}</b></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if not prospect %}
     <div class="fp-card">
       <div class="fp-h">Contract</div>

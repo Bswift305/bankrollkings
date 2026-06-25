@@ -29056,6 +29056,7 @@ def _franchise_view(save):
         'owner_message': save.get('owner_message'),
         'owner_meeting': save.get('owner_meeting'),
         'owner_feed': save.get('owner_feed', []),
+        'incidents': save.get('incidents', []),
         'hall_of_fame': save.get('hall_of_fame'),
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
@@ -29461,6 +29462,7 @@ def _player_ctx(p, team_full, is_fa=False, mine=False):
             'stat_rows': fk.stat_table(p), 'value': fk.trade_value(p),
             'career': fk.career_table(p), 'scout': _scout_read(p),
             'injuries': p.get('inj_history', 0), 'inj_weeks': p.get('inj_weeks', 0),
+            'incidents': p.get('incidents', []), 'susp_reason': p.get('susp_reason'),
             'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
 
 
@@ -29481,7 +29483,7 @@ def _prospect_profile(draft, pid):
             return {'p': pr, 'prospect': True, 'colors': {'primary': '#3a2d6b', 'secondary': '#9f96ff'},
                     'crest': '', 'sub': f"Draft Prospect · {pr['pos']} · Age {pr.get('age', '?')}",
                     'r1': pr.get('grade', 0), 'r1l': 'GRD', 'r2': pr.get('pot_grade', 0), 'r2l': 'POT',
-                    'stat_rows': [], 'value': 0, 'career': None, 'injuries': 0, 'inj_weeks': 0,
+                    'stat_rows': [], 'value': 0, 'career': None, 'injuries': 0, 'inj_weeks': 0, 'incidents': [],
                     'scout': _scout_read(dict(pr, overall=pr.get('grade', 0), potential=pr.get('pot_grade', 0))),
                     'trait_blurb': fk.PERSONALITIES.get(pr.get('personality'), {}).get('blurb', '')}
     return None

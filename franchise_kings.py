@@ -564,6 +564,85 @@ def _user_inseason_power(save, week, base_power):
     return round(p, 1), out
 
 
+# --------------------------------------------------------------------------- #
+# Off-field life: real NFL stuff happens away from the field. Personality drives
+# who's at risk - a Hothead boils over, a Showman courts headlines. Incidents
+# cost availability (suspensions reuse the injury out_until lane), morale, money,
+# and the owner's trust, and they go on the player's permanent record.
+# --------------------------------------------------------------------------- #
+_OFFFIELD_RISK = {
+    "Hothead": 2.4, "Showman": 1.9, "Free Spirit": 1.7, "Freak Athlete": 1.2,
+    "Clutch Gene": 1.1, "Underdog": 0.9, "Field General": 0.8, "Throwback": 0.6,
+    "Quiet Pro": 0.4, "Gym Rat": 0.4, "Film Junkie": 0.3, "Mentor": 0.3,
+}
+# key, weeks lo/hi, morale/trust/fan hit, fine $M, base weight, news verb ({n} = games)
+_INCIDENTS = [
+    {"key": "ped",     "wlo": 4, "whi": 6, "label": "PED suspension",     "morale": 16, "trust": 8,  "fan": 10, "fine": 0.0,  "weight": 0.8,
+     "news": "is suspended {n} games for a banned substance"},
+    {"key": "arrest",  "wlo": 1, "whi": 4, "label": "Legal trouble",      "morale": 16, "trust": 12, "fan": 14, "fine": 0.5,  "weight": 0.7,
+     "news": "was arrested — a {n}-game suspension is expected"},
+    {"key": "conduct", "wlo": 1, "whi": 3, "label": "Conduct suspension", "morale": 12, "trust": 6,  "fan": 8,  "fine": 0.25, "weight": 1.0,
+     "news": "is suspended {n} games for conduct detrimental to the team"},
+    {"key": "blowup",  "wlo": 0, "whi": 0, "label": "Sideline blowup",    "morale": 12, "trust": 4,  "fan": 4,  "fine": 0.3,  "weight": 1.3,
+     "news": "was fined after a sideline blowup boiled over"},
+    {"key": "rules",   "wlo": 0, "whi": 0, "label": "Team rules",         "morale": 6,  "trust": 0,  "fan": 2,  "fine": 0.1,  "weight": 1.6,
+     "news": "was fined for a violation of team rules"},
+]
+_INCIDENT_FEED_MAX = 16
+
+
+def _pick_incident(rng, personality):
+    pool = _INCIDENTS
+    w = [i["weight"] for i in pool]
+    for i, inc in enumerate(pool):
+        if personality == "Hothead" and inc["key"] in ("blowup", "conduct"):
+            w[i] *= 2.2
+        elif personality == "Showman" and inc["key"] in ("conduct", "rules"):
+            w[i] *= 2.0
+        elif personality in ("Freak Athlete", "Gym Rat") and inc["key"] == "ped":
+            w[i] *= 2.5
+    return rng.choices(pool, weights=w, k=1)[0]
+
+
+def _roll_offfield(save, week, rng):
+    """Roll the user roster for off-field incidents this week. At most one per
+    player per season. Returns the new incidents (also logged to save+player)."""
+    team = current_team(save)
+    season = save.get("season", 1)
+    base = 0.0018
+    fired = []
+    for p in team["roster"]:
+        if p.get("out_until", 0) >= week or p.get("last_incident_season") == season:
+            continue
+        risk = _OFFFIELD_RISK.get(p.get("personality"), 1.0)
+        if rng.random() >= base * risk:
+            continue
+        inc = _pick_incident(rng, p.get("personality"))
+        weeks = rng.randint(inc["wlo"], inc["whi"]) if inc["whi"] else 0
+        p["last_incident_season"] = season
+        if weeks:
+            p["out_until"] = week + weeks
+            p["suspended_until"] = week + weeks
+            p["susp_reason"] = inc["label"]
+        p["morale"] = max(10, p.get("morale", 70) - inc["morale"])
+        hist = p.setdefault("incidents", [])
+        hist.append({"season": season, "week": week, "type": inc["label"], "weeks": weeks})
+        p["incidents"] = hist[-8:]
+        b = _business(save)
+        b["cash"] = round(max(0.0, b["cash"] - inc["fine"]), 1)
+        b["fan_happiness"] = max(0, b["fan_happiness"] - inc["fan"])
+        save["gm"]["owner_trust"] = max(0, save["gm"]["owner_trust"] - inc["trust"])
+        text = f"{p['pos']} {p['name']} {inc['news'].format(n=weeks)}"
+        rec = {"season": season, "week": week, "key": inc["key"], "label": inc["label"],
+               "pos": p["pos"], "name": p["name"], "pid": p["id"], "weeks": weeks, "text": text}
+        save.setdefault("incidents", []).insert(0, rec)
+        save["incidents"] = save["incidents"][:_INCIDENT_FEED_MAX]
+        fired.append(rec)
+        sev = "concern" if weeks else "neutral"
+        owner_say(save, f"{p['pos']} {p['name']} — {inc['label'].lower()}? That reflects on all of us. Get it handled.", tone=sev)
+    return fired
+
+
 def _maybe_ai_offer(save, rng):
     uid = save["current_team_id"]
     myteam = current_team(save)
@@ -620,6 +699,9 @@ def start_inseason(save):
         for p in t["roster"]:
             p["stats"] = {}
             p.pop("out_until", None)
+            p.pop("suspended_until", None)
+            p.pop("susp_reason", None)
+    save["incidents"] = []
     save["season_schedule_weeks"] = REG_GAMES
     save["schedule"] = make_schedule(save["seed"] + save["season"], [t["id"] for t in save["teams"]])
     save["inseason"] = {"week": 1, "log": [], "offer": None, "injuries": []}
@@ -642,6 +724,7 @@ def sim_week(save):
     powers = {tid: power_rating(t) for tid, t in teams.items()}
     uid = save["current_team_id"]
     iz["injuries"] = _roll_week_injuries(save, week, rng)
+    iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
     powers[uid], out = _user_inseason_power(save, week, powers[uid])
     out_ids = {p["id"] for p in out}
     for g in save["schedule"]:
@@ -738,6 +821,8 @@ def _finalize_season(save):
     for t in save["teams"]:
         for p in t["roster"]:
             p.pop("out_until", None)
+            p.pop("suspended_until", None)
+            p.pop("susp_reason", None)
     write_save(save)
     if outcome["status"] == "retained" and not save.get("offseason_mode"):
         start_draft(save)
@@ -2420,6 +2505,9 @@ def generate_news(save):
     om = save.get("owner_message")
     if om:
         add("OWNER", f"{tn} owner speaks out", om["text"])
+    for inc in (save.get("incidents") or [])[:3]:
+        add("WIRE", f"{inc['pos']} {inc['name']}: {inc['label']}",
+            f"{inc['text']}." + (f" Missed {inc['weeks']} game{'s' if inc['weeks'] != 1 else ''}." if inc.get("weeks") else ""))
     for cat in (save.get("leaders") or [])[:3]:
         r = cat["rows"][0]
         v = ("%.1f" % r["val"]) if cat["key"] == "sack" else f"{r['val']:,}"
