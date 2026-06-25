@@ -242,6 +242,28 @@ def _roll_true_pot(rng, overall, potential, age):
     return potential
 
 
+# Within a position every player has a STYLE - the archetype a scheme covets.
+# Two equally-rated WRs can fit your offense very differently. This is the
+# per-player layer that sits UNDER the coordinator's scheme (which re-weights
+# whole position groups). See SCHEME_STYLE_FIT + tactical_fit() below.
+POS_STYLES = {
+    "QB": ["Pocket Passer", "Dual Threat", "Game Manager"],
+    "RB": ["Power Back", "Scat Back", "Every-Down"],
+    "WR": ["Deep Threat", "Possession", "Slot"],
+    "TE": ["Move TE", "In-Line Blocker"],
+    "OL": ["Power", "Zone"],
+    "DL": ["Run Stuffer", "Pass Rusher"],
+    "LB": ["Coverage", "Thumper"],
+    "CB": ["Press Man", "Zone"],
+    "S":  ["Box", "Center Field"],
+    "K":  ["Big Leg", "Accurate"],
+}
+
+
+def _style_for(rng, pos):
+    return rng.choice(POS_STYLES.get(pos, ["Balanced"]))
+
+
 def _gen_player(rng, pos, base=None):
     age = rng.randint(21, 34)
     overall = base if base is not None else int(rng.triangular(58, 92, 74))
@@ -259,6 +281,7 @@ def _gen_player(rng, pos, base=None):
         "potential": potential,
         "true_pot": _roll_true_pot(rng, overall, potential, age),
         "dev": rng.choice(["Normal", "Star", "Slow", "Late Bloomer"]),
+        "style": _style_for(rng, pos),
         "contract": {"years": rng.randint(1, 4), "aav": aav, "guaranteed": round(aav * rng.uniform(0.3, 0.8), 1)},
         "morale": rng.randint(55, 90),
         "injury_risk": rng.choice(["Low", "Low", "Medium", "High"]),
@@ -682,6 +705,7 @@ def _finalize_season(save):
     rec = dict(teams[uid]["record"])
     made_playoffs, won_title = uid in playoff_ids, champion == uid
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
+    outcome["season"] = save["season"]
     _apply_finance(save, rec, won_title)
 
     gl = (save.get("inseason") or {}).get("log", [])
@@ -704,6 +728,7 @@ def _finalize_season(save):
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
     owner_statement(save, outcome)
+    owner_meeting(save, outcome)
     _check_holdouts(save)
     generate_news(save)
     save.pop("inseason", None)
@@ -731,6 +756,7 @@ def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
     dev = staff_bonus(save)["development"] + (1 if _business(save)["facility"] >= 3 else 0)
     uid = save["current_team_id"]
+    _apply_role_friction(save)   # Loop 4: paid-but-benched players sour over the year
     breakouts = []
     for t in save["teams"]:
         my = t["id"] == uid
@@ -858,7 +884,8 @@ def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
         gm["titles"] = gm.get("titles", 0) + 1
     return {"status": status, "headline": headline, "record": rec,
             "won_title": won_title, "made_playoffs": made_playoffs,
-            "champion": champion_name, "offers": offers, "owner_trust": gm["owner_trust"]}
+            "champion": champion_name, "offers": offers, "owner_trust": gm["owner_trust"],
+            "expectation": exp}
 
 
 def _job_openings(save, want):
@@ -915,6 +942,76 @@ DEF_SCHEME_W = {
     "Cover 3 Zone": {"DL": 0.90, "LB": 1.00, "CB": 1.45, "S": 1.30},
     "Blitz Heavy":  {"DL": 1.40, "LB": 1.25, "CB": 1.15, "S": 0.85},
 }
+
+
+# Which player STYLES each scheme prizes, by position. A player whose style is
+# listed here fits the system; same overall, different style = a worse fit. This
+# is the per-player half of scheme (scheme_effect handles the group-power half).
+OFFENSE_POS = {"QB", "RB", "WR", "TE", "OL"}
+SCHEME_STYLE_FIT = {
+    "Air Raid":     {"QB": ["Pocket Passer", "Dual Threat"], "WR": ["Deep Threat", "Slot"], "TE": ["Move TE"]},
+    "West Coast":   {"QB": ["Game Manager", "Pocket Passer"], "WR": ["Possession", "Slot"], "TE": ["Move TE", "In-Line Blocker"]},
+    "Power Run":    {"QB": ["Game Manager"], "RB": ["Power Back", "Every-Down"], "OL": ["Power"], "TE": ["In-Line Blocker"]},
+    "Spread":       {"QB": ["Dual Threat"], "WR": ["Slot", "Deep Threat"], "RB": ["Scat Back", "Every-Down"]},
+    "4-3 Front":    {"DL": ["Pass Rusher", "Run Stuffer"], "LB": ["Thumper"]},
+    "3-4 Front":    {"LB": ["Thumper", "Coverage"], "DL": ["Run Stuffer"]},
+    "Cover 3 Zone": {"CB": ["Zone"], "S": ["Center Field"]},
+    "Blitz Heavy":  {"DL": ["Pass Rusher"], "LB": ["Thumper"], "CB": ["Press Man"]},
+}
+
+
+def _team_schemes(save):
+    """(offensive scheme, defensive scheme) currently installed by your OC / DC."""
+    s = save.get("staff", {})
+    return s.get("off_coord", {}).get("system"), s.get("def_coord", {}).get("system")
+
+
+def scheme_identity(save):
+    """A readable summary of the system you run + the positions it leans on."""
+    oc, dc = _team_schemes(save)
+    return {
+        "offense": oc, "defense": dc,
+        "off_lean": OFF_SCHEMES.get(oc, []),
+        "def_lean": DEF_SCHEMES.get(dc, []),
+        "installed": bool(oc or dc),
+    }
+
+
+def tactical_fit(save, p):
+    """How well one player fits YOUR scheme. Returns pct (None if no scheme is
+    installed yet), a label, and which scheme judged him. A 'Square peg' is a
+    featured-position player whose style fights the system; an 'Ideal fit' is the
+    archetype the scheme was built for."""
+    pos = p.get("pos")
+    oc, dc = _team_schemes(save)
+    scheme = oc if pos in OFFENSE_POS else dc
+    style = p.get("style")
+    if not scheme or not style:
+        return {"pct": None, "label": "—", "scheme": scheme}
+    pref = SCHEME_STYLE_FIT.get(scheme, {}).get(pos)
+    lean = pos in (OFF_SCHEMES.get(scheme) or DEF_SCHEMES.get(scheme) or [])
+    base = 62
+    if pref is None:                       # scheme is indifferent to this spot
+        pct, label = base, "Scheme-neutral"
+    elif style in pref:
+        pct = base + (30 if lean else 18)
+        label = "Ideal fit" if lean else "Good fit"
+    else:
+        pct = base - (20 if lean else 8)
+        label = "Square peg" if lean else "Off-scheme"
+    return {"pct": max(25, min(99, pct)), "label": label, "scheme": scheme, "style": style}
+
+
+def scheme_value(save, p):
+    """A player's value SEEN THROUGH your scheme: raw trade value bent by fit.
+    Drives the draft board / FA board so the system - not generic OVR - ranks who
+    you should chase. Returns (adjusted_value, fit_dict)."""
+    base = trade_value(p)
+    fit = tactical_fit(save, p)
+    if fit["pct"] is None:
+        return base, fit
+    factor = 0.82 + (fit["pct"] - 62) / 110.0     # ~0.5 square peg .. ~1.16 ideal
+    return round(base * max(0.5, factor), 1), fit
 
 
 def _opposed(a, b):
@@ -1056,6 +1153,7 @@ def _gen_prospect(rng, pos):
     return {"id": f"d{rng.randint(100000, 999999)}", "name": _gen_name(rng), "pos": pos,
             "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
             "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"]),
+            "style": _style_for(rng, pos),
             **_gen_background(rng)}
 
 
@@ -1082,6 +1180,7 @@ def _make_rookie(p):
             "overall": p["true_ovr"], "potential": p["true_pot"],
             "true_pot": _roll_true_pot(random, p["true_ovr"], p["true_pot"], p["age"]),
             "dev": p["dev"],
+            "style": p.get("style") or _style_for(random, p["pos"]),
             "contract": {"years": 4, "aav": aav, "guaranteed": round(aav * 0.6, 1)},
             "morale": 75, "injury_risk": "Low",
             "personality": p.get("personality"), "hometown": p.get("hometown"),
@@ -1176,9 +1275,13 @@ def draft_state(save):
     if not draft:
         return None
     rnd, pk = _draft_round_pick(draft)
+    avail = []
+    for pr in _available(draft)[:60]:
+        f = tactical_fit(save, pr)
+        avail.append(dict(pr, fit=f["label"], fit_pct=f["pct"]))
     return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
             "on_clock": _draft_on_clock(draft) == save["current_team_id"],
-            "available": _available(draft)[:60], "log": draft["user_log"]}
+            "available": avail, "log": draft["user_log"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -1241,12 +1344,119 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
         "created_at": datetime.now().strftime("%Y-%m-%d"),
     }
     _set_expectation(save)
+    generate_front_office_issues(save)
     write_save(save)
     return save
 
 
 def current_team(save):
     return next(t for t in save["teams"] if t["id"] == save["current_team_id"])
+
+
+def _player_market_context(save, p, kind="extension"):
+    rng = _rng(save["seed"] + save.get("season", 1) * 707 + abs(hash(p["id"])) % 100000)
+    market = _market_aav(p)
+    reasons = []
+    leverage = 1.0
+    if p.get("holdout"):
+        leverage += 0.12
+        reasons.append(p.get("holdout_reason") or "he believes he has outplayed his current deal")
+    if p.get("trade_request"):
+        leverage += 0.08
+        reasons.append(p.get("trade_reason") or "he wants a clearer role somewhere else")
+    if p.get("tag_candidate"):
+        leverage += 0.06
+        reasons.append("his camp knows the franchise tag is on the table")
+    if p.get("underperforming_contract"):
+        leverage -= 0.08
+        reasons.append("ownership sees him as overpaid for his production")
+    if p.get("age", 27) >= 31:
+        leverage -= 0.06
+        reasons.append("age is working against a long guarantee")
+    if p.get("overall", 0) >= 82 and kind == "free_agent":
+        rival = round(market * rng.uniform(1.08, 1.28), 1)
+        reasons.append(f"another club is believed to be near ${rival}M per year")
+        return {"ask": round(max(market * leverage, rival), 1), "rival_offer": rival, "reasons": reasons}
+    return {"ask": round(max(0.7, market * leverage), 1), "rival_offer": None, "reasons": reasons}
+
+
+def _issue_player_row(p):
+    return {"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"],
+            "age": p.get("age"), "aav": p.get("contract", {}).get("aav", 0),
+            "years": p.get("contract", {}).get("years", 0)}
+
+
+def generate_front_office_issues(save):
+    """Create the mess a GM inherits: money, leverage, trade pressure, and tag calls."""
+    team = current_team(save)
+    rng = _rng(save["seed"] + save.get("season", 1) * 997 + abs(hash(team["id"])) % 100000)
+    for p in team["roster"]:
+        for key in ("holdout", "holdout_reason", "trade_request", "trade_reason",
+                    "tag_candidate", "underperforming_contract"):
+            p.pop(key, None)
+
+    issues = []
+    roster = sorted(team["roster"], key=lambda p: -p["overall"])
+
+    dispute_pool = [p for p in roster if p["overall"] >= 78 and p.get("contract", {}).get("years", 1) <= 1]
+    if not dispute_pool:
+        dispute_pool = [p for p in roster if p["overall"] >= 80]
+    if dispute_pool:
+        p = dispute_pool[0]
+        reason = rng.choice([
+            "he wants security before risking another season on a short deal",
+            "his camp says the last contract no longer matches his role",
+            "he wants guarantees before reporting at full speed",
+        ])
+        p["holdout"] = True
+        p["holdout_reason"] = reason
+        issues.append({"type": "contract_dispute", "severity": "high", "label": "Contract dispute",
+                       "player": _issue_player_row(p),
+                       "summary": f"{p['pos']} {p['name']} may hold out: {reason}.",
+                       "action": "Extend him, franchise him, trade him, or eat the power hit."})
+
+    tag_pool = [p for p in roster if p.get("contract", {}).get("years", 1) <= 1 and p["overall"] >= 76]
+    tag_pick = next((p for p in tag_pool if not p.get("holdout")), tag_pool[0] if tag_pool else None)
+    if tag_pick:
+        tag_pick["tag_candidate"] = True
+        issues.append({"type": "franchise_tag", "severity": "medium", "label": "Franchise tag decision",
+                       "player": _issue_player_row(tag_pick),
+                       "summary": f"{tag_pick['pos']} {tag_pick['name']} is tag-eligible before he reaches the market.",
+                       "action": "Tagging buys time, but it can sour the relationship."})
+
+    trade_pool = [p for p in roster if p["overall"] >= 72 and not p.get("holdout")]
+    trade_pool.sort(key=lambda p: (p.get("morale", 70), -p["overall"]))
+    if trade_pool:
+        p = trade_pool[0]
+        reason = rng.choice([
+            "he wants a bigger role in the offense",
+            "he does not believe the club is close enough to contend",
+            "his camp is tired of short-term promises from the front office",
+        ])
+        p["trade_request"] = True
+        p["trade_reason"] = reason
+        p["morale"] = max(20, p.get("morale", 70) - 10)
+        issues.append({"type": "trade_request", "severity": "high", "label": "Trade request",
+                       "player": _issue_player_row(p),
+                       "summary": f"{p['pos']} {p['name']} has asked out: {reason}.",
+                       "action": "Repair the relationship with a role/pay plan or shop him before value slips."})
+
+    overpaid = [p for p in roster if p.get("contract", {}).get("aav", 0) >= 5
+                and p.get("contract", {}).get("aav", 0) > expected_aav(p["overall"]) * 1.45]
+    if not overpaid:
+        overpaid = [p for p in roster if p.get("contract", {}).get("aav", 0) >= 8]
+    if overpaid:
+        p = max(overpaid, key=lambda x: x.get("contract", {}).get("aav", 0) / max(1, x["overall"]))
+        p["underperforming_contract"] = True
+        issues.append({"type": "overpaid", "severity": "medium", "label": "Overpaid veteran",
+                       "player": _issue_player_row(p),
+                       "summary": f"{p['pos']} {p['name']} is carrying a ${p['contract']['aav']:.1f}M AAV without matching value.",
+                       "action": "Move the deal, restructure later, or accept the cap drag."})
+
+    save["front_office_issues"] = issues[:4]
+    _check_holdouts(save)
+    write_save(save)
+    return save["front_office_issues"]
 
 
 def sign_free_agent(save, player_id):
@@ -1282,12 +1492,15 @@ def negotiate(save, player_id, years, aav):
     except (TypeError, ValueError):
         return {"ok": False, "msg": "Enter a valid offer."}
 
+    context = _player_market_context(save, fa, kind="free_agent")
     eff = demand_aav
     if pers == "Loyal":
         eff = round(demand_aav * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
+    eff = max(eff, context["ask"])
 
     res = {"ok": True, "id": fa["id"], "player": fa["name"], "pos": fa["pos"], "ovr": fa["overall"],
-           "agent": fa["agent"], "demand": demand_aav, "offer": {"years": years, "aav": aav}}
+           "agent": fa["agent"], "demand": eff, "offer": {"years": years, "aav": aav},
+           "context": context}
     if cap_used(team) + aav > CAP_TOTAL:
         res.update(status="rejected", msg=f"That ${aav}M deal puts you over the cap.")
     elif aav >= eff:
@@ -1300,10 +1513,13 @@ def negotiate(save, player_id, years, aav):
         res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
     elif aav >= eff * 0.90:
         counter = round(eff * A["counter"], 1)
+        why = (" " + context["reasons"][0]) if context["reasons"] else ""
         res.update(status="countered", counter={"years": years, "aav": counter},
-                   msg=f"{agent_name}: \"{res['player']} signs {years}yr at ${counter}M - meet us there.\"")
+                   msg=f"{agent_name}: \"{res['player']} signs {years}yr at ${counter}M - meet us there.\"{why}")
     else:
-        res.update(status="rejected", msg=f"{agent_name} scoffs - {res['player']} wants about ${eff}M/yr.")
+        why = " ".join(context["reasons"][:2])
+        res.update(status="rejected",
+                   msg=f"{agent_name} rejects it - {res['player']} wants about ${eff}M/yr. {why}".strip())
     save["last_nego"] = res
     write_save(save)
     return res
@@ -1334,11 +1550,22 @@ _OWNER_TYPE_LINE = {
     "Billionaire": "Money is no object. Just win.",
 }
 
+_OWNER_PROFILES = {
+    "Impatient": {"name": "Victor Cross", "title": "Chairman", "style": "demands quick proof"},
+    "Cheap": {"name": "Milton Price", "title": "Managing Partner", "style": "protects margin first"},
+    "Hands-Off": {"name": "Elliot Vale", "title": "Principal Owner", "style": "backs the football staff"},
+    "Meddling": {"name": "Cassandra Knox", "title": "Governor", "style": "wants a voice in every big move"},
+    "Legacy": {"name": "Arthur Bell", "title": "Family Owner", "style": "guards the franchise standard"},
+    "Billionaire": {"name": "Nadia Sterling", "title": "Owner", "style": "expects premium results"},
+}
+
 
 def owner_state(save):
     trust = save["gm"]["owner_trust"]
     mood, icon = next((m, i) for thr, m, i in _OWNER_MOODS if trust >= thr)
-    return {"type": current_team(save)["owner"]["type"], "trust": trust, "mood": mood, "icon": icon}
+    otype = current_team(save)["owner"]["type"]
+    profile = _OWNER_PROFILES.get(otype, _OWNER_PROFILES["Hands-Off"])
+    return {"type": otype, "trust": trust, "mood": mood, "icon": icon, **profile}
 
 
 def _owner_tier(save, outcome):
@@ -1356,6 +1583,75 @@ def owner_statement(save, outcome):
     line = _OWNER_TIER_LINE[_owner_tier(save, outcome)] + _OWNER_TYPE_LINE.get(otype, "")
     save["owner_message"] = {"type": otype, "text": line, "mood": owner_state(save)["mood"]}
     return save["owner_message"]
+
+
+def owner_meeting(save, outcome):
+    """Post-season owner/GM meeting with direct Q&A and next-year vision."""
+    team = current_team(save)
+    owner = owner_state(save)
+    rec = outcome.get("record", {})
+    wins, losses = int(rec.get("w", 0) or 0), int(rec.get("l", 0) or 0)
+    exp = int(outcome.get("expectation", save.get("expectation", {}).get("wins", 0)) or 0)
+    margin = wins - exp
+    team_power = power_rating(team)
+    cap_room = round(CAP_TOTAL - cap_used(team), 1)
+    weak_pos = min(ROSTER, key=lambda pos: max([p["overall"] for p in team["roster"] if p["pos"] == pos] or [0]))
+
+    if outcome.get("status") == "fired":
+        verdict = "The meeting ends with ownership choosing a new direction."
+        vision = "The next GM will be asked to reset standards and restore credibility immediately."
+    elif outcome.get("won_title"):
+        verdict = "Ownership credits the GM, but wants proof this was not a one-year spike."
+        vision = "Keep the championship core intact, avoid sentimental contracts, and make another deep run."
+    elif margin >= 3:
+        verdict = "Ownership sees a real builder and wants the roster pushed harder."
+        vision = "Convert the overachievement into a sustainable playoff team."
+    elif margin >= -1:
+        verdict = "Ownership accepts the season, but the patience meter did not move much."
+        vision = "Raise the floor, clean up the weakest position group, and make the mandate feel routine."
+    else:
+        verdict = "Ownership is not buying process talk after missing the mandate."
+        vision = "Fix the roster fast, show sharper cap discipline, and start winning earlier in the year."
+
+    if margin > 0:
+        mandate_line = f"You beat the number by {margin}."
+    elif margin < 0:
+        mandate_line = f"You were {abs(margin)} wins short."
+    else:
+        mandate_line = "You landed right on the number."
+
+    qas = [
+        {
+            "q": "What do you see when you look at this season?",
+            "a": f"{wins}-{losses} against a {exp}-win mandate. {mandate_line}",
+        },
+        {
+            "q": "Where is this roster most exposed?",
+            "a": f"The first pressure point is {weak_pos}. Team power sits at {team_power}, so one real starter there changes the whole conversation.",
+        },
+        {
+            "q": "How aggressive should we be?",
+            "a": (
+                f"We have about ${cap_room:.0f}M of cap room. "
+                + ("Spend into the window, but do not bury us in dead money." if cap_room >= 25 else
+                   "Create flexibility before chasing names. The budget is not the problem; discipline is.")
+            ),
+        },
+        {"q": "What is your vision for next season?", "a": vision},
+    ]
+    meeting = {
+        "season": outcome.get("season", save.get("season", 1)),
+        "team": team["full"],
+        "owner": owner,
+        "verdict": verdict,
+        "vision": vision,
+        "record": f"{wins}-{losses}",
+        "mandate": exp,
+        "trust": owner["trust"],
+        "qas": qas,
+    }
+    save["owner_meeting"] = meeting
+    return meeting
 
 
 def _market_aav(p):
@@ -1386,11 +1682,13 @@ def extend_player(save, player_id, years, aav):
                       "personality": random.choice(list(AGENTS))}
     pers = p["agent"]["personality"]
     A = AGENTS[pers]
-    ask = round(_market_aav(p) * A["markup"], 1)
+    context = _player_market_context(save, p, kind="extension")
+    ask = round(max(_market_aav(p) * A["markup"], context["ask"]), 1)
     if pers == "Loyal":
         ask = round(ask * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
     res = {"ok": True, "id": p["id"], "player": p["name"], "pos": p["pos"], "ovr": p["overall"],
-           "agent": p["agent"], "demand": ask, "offer": {"years": years, "aav": aav}}
+           "agent": p["agent"], "demand": ask, "offer": {"years": years, "aav": aav},
+           "context": context}
     room = CAP_TOTAL - cap_used(team) + p["contract"].get("aav", 0)   # his old deal frees up
     if aav > room:
         res.update(status="rejected", msg=f"That ${aav}M deal won't fit under the cap.")
@@ -1398,14 +1696,20 @@ def extend_player(save, player_id, years, aav):
         p["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.55, 1)}
         p.pop("agent", None)
         p.pop("holdout", None)
+        p.pop("holdout_reason", None)
+        p.pop("trade_request", None)
+        p.pop("trade_reason", None)
         p["morale"] = min(99, p.get("morale", 75) + 12)
         save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= ask else 1)
         res.update(status="accepted", msg=f"Extension done — {p['name']} for {years}yr / ${aav}M.")
     elif aav >= ask * 0.9:
+        why = (" " + context["reasons"][0]) if context["reasons"] else ""
         res.update(status="countered", counter={"years": years, "aav": ask},
-                   msg=f"{p['agent']['name']} counters: {years}yr at ${ask}M.")
+                   msg=f"{p['agent']['name']} counters: {years}yr at ${ask}M.{why}")
     else:
-        res.update(status="rejected", msg=f"{p['agent']['name']} scoffs at ${aav}M - he's worth ${ask}M/yr.")
+        why = " ".join(context["reasons"][:2])
+        res.update(status="rejected",
+                   msg=f"{p['agent']['name']} rejects ${aav}M - he wants about ${ask}M/yr. {why}".strip())
     save["last_nego"] = res
     write_save(save)
     return res
@@ -1417,12 +1721,19 @@ def _check_holdouts(save):
     flagged = []
     for p in team["roster"]:
         market = _market_aav(p)
-        if (p["overall"] >= 80 and p.get("contract", {}).get("years", 9) <= 1
+        if p.get("holdout_reason"):
+            p["holdout"] = True
+            flagged.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
+                            "ovr": p["overall"], "aav": p["contract"]["aav"],
+                            "market": market, "reason": p.get("holdout_reason")})
+        elif (p["overall"] >= 80 and p.get("contract", {}).get("years", 9) <= 1
                 and p.get("contract", {}).get("aav", 99) < market * 0.6):
             p["holdout"] = True
+            p["holdout_reason"] = "he believes he has outplayed his current deal"
             p["morale"] = max(20, p.get("morale", 75) - 15)
             flagged.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
-                            "ovr": p["overall"], "aav": p["contract"]["aav"], "market": market})
+                            "ovr": p["overall"], "aav": p["contract"]["aav"],
+                            "market": market, "reason": p.get("holdout_reason")})
         else:
             p.pop("holdout", None)
     save["holdouts"] = flagged
@@ -1437,6 +1748,7 @@ def take_job(save, team_id):
     save["unemployed"] = False
     save["last_outcome"] = None
     _set_expectation(save)
+    generate_front_office_issues(save)
     write_save(save)
     start_draft(save)   # the offseason draft opens for your new club
     return True
@@ -1466,6 +1778,72 @@ def contract_grade(p):
 
 def player_roi(p):
     return round(trade_value(p) / max(0.5, p["contract"]["aav"]), 1)
+
+
+def cut_penalty(p):
+    """Dead money if you release him now - the remaining guaranteed shell. The
+    real cost of moving on, so cutting a liability isn't free."""
+    c = p.get("contract", {})
+    g = c.get("guaranteed", 0) or 0
+    yrs = max(1, c.get("years", 1) or 1)
+    return round(g * min(1.0, yrs / 3.0), 1)
+
+
+def roster_value_report(save):
+    """Loop 1 - the Value vs. Cap engine. Runs the roster and surfaces the two
+    decisions that actually move the franchise: bargains to lock up before they
+    walk, and liabilities to move/restructure (with the dead-cap cost of cutting).
+    Production justifies pay or it doesn't."""
+    team = current_team(save)
+    extend, liabilities = [], []
+    for p in team["roster"]:
+        c = p.get("contract", {})
+        aav = c.get("aav", 0) or 0
+        yrs = c.get("years", 0) or 0
+        g, ratio = contract_grade(p)
+        fit = tactical_fit(save, p)
+        row = {**_issue_player_row(p), "grade": g, "ratio": ratio, "fit": fit["label"]}
+        if ratio >= 1.25 and p["overall"] >= 72 and yrs <= 2 and p.get("age", 27) <= 29:
+            row["note"] = "Outplaying his deal - extend before he hits the market."
+            extend.append(row)
+        elif aav >= 5 and ratio <= 0.8:
+            row["dead_cap"] = cut_penalty(p)
+            row["note"] = f"${aav:.1f}M for {g}-grade value - cut costs ${row['dead_cap']:.1f}M dead."
+            liabilities.append(row)
+    extend.sort(key=lambda x: -x["ratio"])
+    liabilities.sort(key=lambda x: x["ratio"])
+    return {"extend": extend[:4], "liabilities": liabilities[:4]}
+
+
+def role_friction_report(save):
+    """Loop 4 (display) - who is paid like a starter but buried on the depth chart.
+    Pure: tags p['role_friction'] and refreshes save['role_friction'] for the
+    dashboard, WITHOUT touching morale, so it's safe to call on every page load."""
+    team = current_team(save)
+    starters = {p["id"] for p in _starters(team)}
+    flagged = []
+    for p in team["roster"]:
+        aav = p.get("contract", {}).get("aav", 0) or 0
+        if aav >= 7 and p["id"] not in starters:
+            p["role_friction"] = True
+            flagged.append({**_issue_player_row(p),
+                            "note": f"${aav:.1f}M AAV and not in the starting lineup."})
+        else:
+            p.pop("role_friction", None)
+    save["role_friction"] = flagged
+    return flagged
+
+
+def _apply_role_friction(save):
+    """Loop 4 (yearly) - the buried, expensive players actually lose morale over a
+    season. Called once from _advance_year so the penalty doesn't compound on
+    every page view."""
+    flagged = role_friction_report(save)
+    by_id = {f["id"] for f in flagged}
+    for p in current_team(save)["roster"]:
+        if p["id"] in by_id:
+            p["morale"] = max(15, p.get("morale", 70) - 8)
+    return flagged
 
 
 def analytics(save):
@@ -1732,6 +2110,22 @@ def consultant_advice(save):
         tips.append({"icon": "🎓", "title": "You're on the clock",
                      "detail": "Best player available beats reaching for need - the value compounds.",
                      "u": 3})
+
+    ident = scheme_identity(save)
+    if not ident["installed"]:
+        tips.append({"icon": "🧩", "title": "Install a scheme",
+                     "detail": "Hire an OC and DC to set your system. Until then you can't grade players on fit - "
+                               "you're scouting raw talent blind to how it plays in your offense/defense.",
+                     "u": 2})
+    else:
+        pegs = [p for p in team["roster"]
+                if (tactical_fit(save, p)["label"] == "Square peg") and p["overall"] >= 76]
+        if pegs:
+            sp = max(pegs, key=lambda p: p["overall"])
+            tips.append({"icon": "🧩", "title": f"{sp['pos']} {sp['name']} doesn't fit your scheme",
+                         "detail": f"A {sp['overall']}-OVR talent miscast as a {sp.get('style')} in your "
+                                   f"{tactical_fit(save, sp)['scheme']}. Scheme around him, trade him, or expect less than his rating.",
+                         "u": 2})
 
     tips.sort(key=lambda t: -t["u"])
     return tips
@@ -2260,7 +2654,10 @@ def trade_value(p):
     base = max(1, ov - 50) ** 2 / 10.0
     youth = max(0, 27 - age) * (max(0, pot - ov) * 0.12 + 0.8)
     cost = p["contract"]["aav"] * 0.4
-    return round(max(0.5, base + youth - cost), 1)
+    val = max(0.5, base + youth - cost)
+    if p.get("role_friction"):        # unhappy, buried -> the market knows it
+        val *= 0.9
+    return round(val, 1)
 
 
 def _grade(ratio):

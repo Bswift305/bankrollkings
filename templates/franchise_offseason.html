@@ -30,12 +30,31 @@
       {% endfor %}
     </div>
     <div class="os-needhint">Starter-average OVR per spot · ⚠ = upgrade target (under 72) · weakest first. This is what you have and what you need.</div>
+    {% if scheme is defined and scheme and scheme.installed %}
+    <div class="os-scheme">🧩 <b>{{ scheme.offense }}</b> offense{% if scheme.off_lean %} (leans {{ scheme.off_lean|join('/') }}){% endif %} · <b>{{ scheme.defense }}</b> defense{% if scheme.def_lean %} (leans {{ scheme.def_lean|join('/') }}){% endif %} — chase players who fit it.</div>
+    {% elif scheme is defined %}
+    <div class="os-scheme os-scheme-off">🧩 No scheme installed — hire an OC &amp; DC so scouting can rank by fit, not just raw grade.</div>
+    {% endif %}
+    {% if (value_report is defined and value_report and (value_report.extend or value_report.liabilities)) or (role_friction is defined and role_friction) %}
+    <div class="os-valuewatch">
+      {% for r in (value_report.extend if value_report is defined and value_report else []) %}
+      <a href="{{ url_for('franchise_player', pid=r.id) }}" class="os-vw os-vw-good">💰 Extend {{ r.pos }} {{ r.name }} <small>outplaying his deal</small></a>
+      {% endfor %}
+      {% for r in (value_report.liabilities if value_report is defined and value_report else []) %}
+      <a href="{{ url_for('franchise_player', pid=r.id) }}" class="os-vw os-vw-bad">📉 {{ r.pos }} {{ r.name }} <small>${{ '%.1f'|format(r.aav) }}M, {{ r.grade }} value · ${{ '%.1f'|format(r.dead_cap) }}M to cut</small></a>
+      {% endfor %}
+      {% for r in (role_friction if role_friction is defined else []) %}
+      <a href="{{ url_for('franchise_player', pid=r.id) }}" class="os-vw os-vw-warn">🪑 {{ r.pos }} {{ r.name }} <small>paid but benched</small></a>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="os-tscroll os-rosterlist"><table class="os-table">
-      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Last season</th></tr></thead>
+      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Fit</th><th>Last season</th></tr></thead>
       <tbody>
       {% for p in os_roster %}
       <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
         <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+        <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td style="color:#8fa3b0">{{ p.sl }}</td></tr>
       {% endfor %}
       </tbody></table></div>
@@ -62,6 +81,20 @@
       {% endfor %}
     {% endif %}
   </div>
+
+  {% if front_office_issues %}
+  <div class="os-card os-issues">
+    <div class="os-consulthead">Inherited Problems</div>
+    {% for issue in front_office_issues %}
+    <div class="os-issue os-issue-{{ issue.severity }}">
+      <span>{{ issue.label }}</span>
+      <strong>{{ issue.player.pos }} {{ issue.player.name }}</strong>
+      <small>{{ issue.summary }}</small>
+      <em>{{ issue.action }}</em>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ---------------- SELECT: pick any of the 32 ---------------- #}
@@ -136,6 +169,9 @@
   <div class="os-card">
     <div class="os-ch">✍ Re-Sign Your Own</div>
     {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if last_nego and last_nego.context and last_nego.context.reasons %}
+    <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
+    {% endif %}
     {% if not expiring %}
       <p class="os-sub">No expiring contracts — your core is locked up. On to free agency.</p>
     {% elif nego_p %}
@@ -169,6 +205,9 @@
   <div class="os-card">
     <div class="os-ch">💰 Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
     {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if last_nego and last_nego.context and last_nego.context.reasons %}
+    <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
+    {% endif %}
     {% if nego_fa %}
       <p class="os-sub"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR) · agent {{ nego_fa.agent.personality if nego_fa.agent }} · asking ${{ '%.1f'|format(nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}M/yr</p>
       <form method="post" action="{{ url_for('franchise_offseason_fa') }}" class="os-offer">
@@ -179,9 +218,10 @@
       </form>
       <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to free agents</a></p>
     {% else %}
-      <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
+      <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
       {% for p in free_agents %}
-        <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.overall }}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
+        <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
+          <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
           <td><a class="os-mini" href="{{ url_for('franchise_offseason', fa=p.id) }}">Negotiate</a></td></tr>
       {% endfor %}
@@ -197,9 +237,10 @@
     {% if draft_pending and draft %}
       {% if draft.on_clock %}
         <p class="os-sub">You're on the clock.</p>
-        <div class="os-tscroll"><table class="os-table"><thead><tr><th>Prospect</th><th>Pos</th><th>Grade</th><th></th></tr></thead><tbody>
+        <div class="os-tscroll"><table class="os-table"><thead><tr><th>Prospect</th><th>Pos</th><th>Grade</th><th>Fit</th><th></th></tr></thead><tbody>
         {% for p in draft.available[:40] %}
-          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.grade }}</td>
+          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}{% if p.college %} · {{ p.college }}{% endif %}</small>{% elif p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.grade }}</td>
+            <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td><form method="post" action="{{ url_for('franchise_offseason_draft') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="os-mini os-mini-btn">Draft</button></form></td></tr>
         {% endfor %}
         </tbody></table></div>
@@ -287,6 +328,18 @@
   .os-need-ok { color:#7dffb0; border-color:rgba(125,255,176,.4); background:rgba(125,255,176,.08); }
   .os-need-red { color:#ff9a9a; border-color:rgba(255,122,122,.45); background:rgba(255,122,122,.1); }
   .os-needhint { color:#6b7d8a; font-size:11px; font-style:italic; margin-bottom:8px; }
+  .os-scheme { font-size:12px; color:#cfe3ee; background:rgba(74,212,240,.07); border:1px solid rgba(74,212,240,.2); border-radius:8px; padding:7px 10px; margin-bottom:8px; }
+  .os-scheme b { color:#9fe9ff; } .os-scheme-off { color:#ffd27d; background:rgba(255,210,125,.07); border-color:rgba(255,210,125,.25); }
+  .os-valuewatch { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .os-vw { text-decoration:none; font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:8px; border:1px solid; }
+  .os-vw small { font-weight:500; opacity:.85; }
+  .os-vw-good { color:#7dffb0; border-color:rgba(125,255,176,.4); background:rgba(125,255,176,.08); }
+  .os-vw-bad { color:#ff9a9a; border-color:rgba(255,122,122,.4); background:rgba(255,122,122,.09); }
+  .os-vw-warn { color:#ffd27d; border-color:rgba(255,210,125,.4); background:rgba(255,210,125,.08); }
+  .os-fit { font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; white-space:nowrap; }
+  .os-fit-hi { color:#7dffb0; background:rgba(125,255,176,.13); }
+  .os-fit-mid { color:#ffd27d; background:rgba(255,210,125,.12); }
+  .os-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
   .os-rosterlist { max-height:300px; overflow-y:auto; }
   .os-consult { border-color:rgba(159,150,255,.4); }
   .os-consulthead { font-family:var(--font-display); color:#fff; font-size:16px; }
@@ -296,6 +349,14 @@
   .os-tip { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid rgba(145,168,184,.1); }
   .os-tipic { font-size:16px; line-height:1.3; }
   .os-tip strong { color:#fff; display:block; font-size:14px; } .os-tip small { color:#8fa3b0; font-size:12px; line-height:1.5; }
+  .os-issues { border-color:rgba(255,196,120,.45); }
+  .os-issue { padding:10px 0; border-top:1px solid rgba(255,196,120,.12); }
+  .os-issue:first-of-type { border-top:none; padding-top:4px; }
+  .os-issue span { display:inline-block; margin-bottom:5px; padding:2px 8px; border-radius:999px; background:rgba(255,196,120,.12); border:1px solid rgba(255,196,120,.28); color:#ffd089; font-size:10px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+  .os-issue-high span { background:rgba(255,122,122,.13); border-color:rgba(255,122,122,.35); color:#ffb3b3; }
+  .os-issue strong { display:block; color:#fff; font-size:14px; }
+  .os-issue small { display:block; color:#b7c6d0; font-size:12px; line-height:1.45; margin-top:3px; }
+  .os-issue em { display:block; color:#8fa3b0; font-size:11px; margin-top:5px; font-style:normal; }
   .os-tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .os-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
   .os-table th { text-align:left; color:#7f93a0; font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:5px 7px; border-bottom:1px solid rgba(145,168,184,.18); }
@@ -313,6 +374,8 @@
   .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
   .os-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
   .os-nego-yes strong { color:#7dffb0; } .os-nego-no strong { color:#ff9a9a; }
+  .os-nego-tags { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
+  .os-nego-tags span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .os-link { color:#4ad4f0; text-decoration:none; font-size:13px; } .os-mini-btn { color:#9fe9ff; }
 </style>
 {% endblock %}

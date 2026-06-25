@@ -187,6 +187,8 @@ def start_offseason(save, choose_team=False):
     save["offseason_mode"] = True               # this save uses the staged offseason loop
     save["offseason"] = {"stage": "select" if choose_team else "recap",
                          "year": save.get("season", 1), "log": []}
+    if not choose_team:
+        fk.generate_front_office_issues(save)
     fk.write_save(save)
     return save
 
@@ -195,6 +197,7 @@ def pick_team(save, team_id):
     if any(t["id"] == team_id for t in save["teams"]):
         save["current_team_id"] = team_id
         fk._set_expectation(save)
+        fk.generate_front_office_issues(save)
         save["offseason"]["stage"] = "recap"
         fk.write_save(save)
         return True

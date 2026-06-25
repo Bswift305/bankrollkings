@@ -30,6 +30,10 @@
         <div><span>High School</span><b>{{ p.high_school|default('—') }}</b></div>
         <div><span>Hometown</span><b>{{ p.hometown|default('—') }}</b></div>
         <div><span>Age</span><b>{{ p.age }}</b></div>
+        {% if p.style %}<div><span>Player type</span><b>{{ p.style }}</b></div>{% endif %}
+        {% if fit is defined and fit and fit.pct %}
+        <div><span>Scheme fit</span><b style="color:{{ '#7dffb0' if fit.pct >= 80 else '#ffd27d' if fit.pct >= 60 else '#ff9a9a' }}">{{ fit.label }} · {{ fit.pct }}%{% if fit.scheme %} ({{ fit.scheme }}){% endif %}</b></div>
+        {% endif %}
         <div><span>Dev Trait</span><b>{{ p.dev|default('Normal') }}</b></div>
         {% if not prospect %}
         <div><span>Injury Risk</span><b class="{{ 'fp-risk' if p.injury_risk == 'High' }}">{{ p.injury_risk|default('Low') }}</b></div>

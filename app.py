@@ -28990,6 +28990,7 @@ def _inseason_ctx(save, team):
 
 def _franchise_view(save):
     team = fk.current_team(save)
+    role_friction = fk.role_friction_report(save)   # tags p['role_friction'] before avatars are built
     by_pos = {}
     for p in team['roster']:
         by_pos.setdefault(p['pos'], []).append(p)
@@ -29001,7 +29002,8 @@ def _franchise_view(save):
         ini = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else '')).upper()
         grp = ('skill' if p['pos'] in ('QB', 'RB', 'WR', 'TE') else 'oline' if p['pos'] == 'OL'
                else 'front' if p['pos'] in ('DL', 'LB') else 'back' if p['pos'] in ('CB', 'S') else 'kick')
-        return dict(p, ini=ini, grp=grp)
+        f = fk.tactical_fit(save, p)
+        return dict(p, ini=ini, grp=grp, fit=f['label'], fit_pct=f['pct'])
     return {
         'team': team,
         'power': fk.power_rating(team),
@@ -29010,10 +29012,13 @@ def _franchise_view(save):
         'extend_players': sorted([dict(p, market=fk._market_aav(p)) for p in team['roster']],
                                  key=lambda p: -p['overall'])[:16],
         'holdouts': save.get('holdouts') or [],
+        'front_office_issues': save.get('front_office_issues') or [],
         'roster_order': [_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])],
         'practice_squad': [_avatar(p) for p in sorted(fk.ensure_practice_squad(save),
                                                       key=lambda x: -x['overall'])],
-        'free_agents': sorted(save.get('free_agents', []), key=lambda x: -x['overall']),
+        'free_agents': [dict(p, fit=fk.tactical_fit(save, p)['label'],
+                             fit_pct=fk.tactical_fit(save, p)['pct'])
+                        for p in sorted(save.get('free_agents', []), key=lambda x: -x['overall'])],
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
         'expectation': save.get('expectation', {}),
@@ -29038,6 +29043,9 @@ def _franchise_view(save):
         'assist': save['gm'].get('assist', 'Full'),
         'gm_grade': fk.gm_grade(save),
         'advice': fk.consultant_advice(save),
+        'scheme': fk.scheme_identity(save),
+        'value_report': fk.roster_value_report(save),
+        'role_friction': role_friction,
         **_inseason_ctx(save, team),
         'leaders': save.get('leaders'),
         'season_mvp': save.get('season_mvp'),
@@ -29046,6 +29054,7 @@ def _franchise_view(save):
         'career_records': save.get('career_records'),
         'owner': fk.owner_state(save),
         'owner_message': save.get('owner_message'),
+        'owner_meeting': save.get('owner_meeting'),
         'hall_of_fame': save.get('hall_of_fame'),
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
@@ -29173,7 +29182,10 @@ def franchise_offseason():
     elif stage == 'free_agency':
         team = fk.current_team(save)
         fa_id = str(request.args.get('fa', '')).strip()
-        ctx.update(free_agents=sorted(save.get('free_agents', []), key=lambda p: -p['overall'])[:30],
+        ctx.update(free_agents=[dict(p, fit=fk.tactical_fit(save, p)['label'],
+                                     fit_pct=fk.tactical_fit(save, p)['pct'])
+                                for p in sorted(save.get('free_agents', []),
+                                                key=lambda p: -p['overall'])[:30]],
                    last_nego=save.get('last_nego'),
                    nego_fa=next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None,
                    cap_used=fk.cap_used(team), cap_total=fk.CAP_TOTAL)
@@ -29193,10 +29205,16 @@ def franchise_offseason():
     if stage != 'select':                     # persistent roster + needs panel
         t = fk.current_team(save)
         ctx['team_needs'] = fk.team_needs(save)
+        ctx['front_office_issues'] = save.get('front_office_issues') or []
+        ctx['scheme'] = fk.scheme_identity(save)
+        ctx['value_report'] = fk.roster_value_report(save)
+        ctx['role_friction'] = fk.role_friction_report(save)
         ctx['os_power'] = fk.power_rating(t)
         ctx['os_cap_used'] = round(fk.cap_used(t))
         ctx['os_cap_total'] = round(fk.CAP_TOTAL)
-        ctx['os_roster'] = [dict(_league_avatar(p), sl=fk.stat_line(p))
+        ctx['os_roster'] = [dict(_league_avatar(p), sl=fk.stat_line(p),
+                                 fit=fk.tactical_fit(save, p)['label'],
+                                 fit_pct=fk.tactical_fit(save, p)['pct'])
                             for pos in fk.ROSTER
                             for p in sorted([x for x in t['roster'] if x['pos'] == pos],
                                             key=lambda x: -x['overall'])]
@@ -29477,6 +29495,7 @@ def franchise_player(pid):
     if not prof:
         return redirect(url_for('franchise_hub', tab='roster'))
     prof['last_nego'] = save.get('last_nego')
+    prof['fit'] = fk.tactical_fit(save, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
 
@@ -29505,6 +29524,7 @@ def franchise_prospect(pid):
     prof = _prospect_profile(save.get('draft'), pid)
     if not prof:
         return redirect(url_for('franchise_hub', tab='draft'))
+    prof['fit'] = fk.tactical_fit(save, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
                            current_user=current_user, **prof)
 

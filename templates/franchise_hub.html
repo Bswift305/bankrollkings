@@ -72,6 +72,66 @@
   {% endif %}
 
   <div class="fk-grid2">
+    {% if front_office_issues %}
+    <div class="fk-card fk-issues">
+      <div class="fk-card-h">Inherited Problems</div>
+      {% for issue in front_office_issues %}
+      <div class="fk-issue fk-issue-{{ issue.severity }}">
+        <span class="fk-issue-type">{{ issue.label }}</span>
+        <strong>{{ issue.player.pos }} {{ issue.player.name }}</strong>
+        <small>{{ issue.summary }}</small>
+        <em>{{ issue.action }}</em>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="fk-card fk-ops">
+      <div class="fk-card-h">🧩 Football Operations</div>
+      {% if scheme and scheme.installed %}
+      <div class="fk-scheme">
+        <div><span>Offense</span><b>{{ scheme.offense or '—' }}</b>{% if scheme.off_lean %}<small>leans {{ scheme.off_lean|join(', ') }}</small>{% endif %}</div>
+        <div><span>Defense</span><b>{{ scheme.defense or '—' }}</b>{% if scheme.def_lean %}<small>leans {{ scheme.def_lean|join(', ') }}</small>{% endif %}</div>
+      </div>
+      {% else %}
+      <p class="fk-ops-note">No scheme installed — hire an OC and DC on the <strong>Staff</strong> tab to set your system. Scheme fit drives the draft board, free agency, and how much you get out of each player.</p>
+      {% endif %}
+
+      {% if value_report and value_report.extend %}
+      <div class="fk-ops-h">💰 Extend before they walk <small>(outplaying their deal)</small></div>
+      {% for r in value_report.extend %}
+      <a class="fk-ops-row fk-ops-good" href="{{ url_for('franchise_player', pid=r.id) }}">
+        <strong>{{ r.pos }} {{ r.name }}</strong> · {{ r.ovr }} OVR · ${{ '%.1f'|format(r.aav) }}M
+        <small>{{ r.note }}{% if r.fit and r.fit != '—' %} · {{ r.fit }}{% endif %}</small>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {% if value_report and value_report.liabilities %}
+      <div class="fk-ops-h">📉 Cap liabilities <small>(production ≠ pay)</small></div>
+      {% for r in value_report.liabilities %}
+      <a class="fk-ops-row fk-ops-bad" href="{{ url_for('franchise_player', pid=r.id) }}">
+        <strong>{{ r.pos }} {{ r.name }}</strong> · {{ r.ovr }} OVR · ${{ '%.1f'|format(r.aav) }}M
+        <small>{{ r.note }}</small>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {% if role_friction %}
+      <div class="fk-ops-h">🪑 Paid but benched <small>(chemistry risk)</small></div>
+      {% for r in role_friction %}
+      <a class="fk-ops-row fk-ops-warn" href="{{ url_for('franchise_player', pid=r.id) }}">
+        <strong>{{ r.pos }} {{ r.name }}</strong> · {{ r.ovr }} OVR
+        <small>{{ r.note }} Morale and trade value are slipping.</small>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {% if not (value_report and (value_report.extend or value_report.liabilities)) and not role_friction %}
+      <p class="fk-ops-note">No flags right now — your contracts match production and everyone you pay is playing. Clean books, boss.</p>
+      {% endif %}
+    </div>
+
     <div class="fk-card">
       <div class="fk-card-h">Front office standing</div>
       {% for label, val in [('Owner Trust', gm.owner_trust), ('Fan Support', gm.fan_support), ('Reputation', gm.reputation)] %}
@@ -82,6 +142,13 @@
       <div class="fk-exp">Owner mandate: <strong>{{ expectation.text }}</strong></div>
       {% if owner %}
       <div class="fk-ownermsg">
+        <div class="fk-ownerrow">
+          <div class="fk-ownerpic">{{ owner.name.split()[0][0] }}{{ owner.name.split()[-1][0] }}</div>
+          <div>
+            <div class="fk-ownername">{{ owner.name }} · {{ owner.title }}</div>
+            <small>{{ owner.type }} owner · {{ owner.mood }} · {{ owner.style }}</small>
+          </div>
+        </div>
         <div class="fk-ownerhead">{{ owner.icon }} {{ owner.type }} owner · <span>{{ owner.mood }}</span></div>
         {% if owner_message %}<em>“{{ owner_message.text }}”</em>{% endif %}
       </div>
@@ -112,6 +179,32 @@
         <div class="fk-consult-hint">{{ 'Showing the top 2 — switch to Full for everything, or Off to go solo.' if assist == 'Light' else 'Full readout. Dial to Light or Off if you want less hand-holding.' }}</div>
       {% endif %}
     </div>
+
+    {% if owner_meeting %}
+    <div class="fk-card fk-meeting">
+      <div class="fk-meetingtop">
+        <div class="fk-ownerpic fk-ownerpic-lg">{{ owner_meeting.owner.name.split()[0][0] }}{{ owner_meeting.owner.name.split()[-1][0] }}</div>
+        <div>
+          <div class="fk-card-h" style="margin:0">Owner Review Meeting</div>
+          <div class="fk-meetmeta">Season {{ owner_meeting.season }} · {{ owner_meeting.owner.name }} vs. GM {{ gm.name }}</div>
+        </div>
+      </div>
+      <div class="fk-meetverdict">{{ owner_meeting.verdict }}</div>
+      <div class="fk-meetstats">
+        <div><span>Record</span><b>{{ owner_meeting.record }}</b></div>
+        <div><span>Mandate</span><b>{{ owner_meeting.mandate }} wins</b></div>
+        <div><span>Trust</span><b>{{ owner_meeting.trust }}</b></div>
+      </div>
+      <div class="fk-qa">
+        {% for row in owner_meeting.qas %}
+        <div class="fk-qaitem">
+          <strong>Q: {{ row.q }}</strong>
+          <small>A: {{ row.a }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
 
     {% if leaders %}
     <div class="fk-card fk-leaders">
@@ -308,12 +401,13 @@
       <button class="fk-btn fk-btn-sm">Rename</button>
     </form>
     <table class="fk-table">
-      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot</th><th>Trait</th><th>Risk</th><th>AAV</th></tr></thead>
+      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot</th><th>Fit</th><th>Trait</th><th>Risk</th><th>AAV</th></tr></thead>
       <tbody>
         {% for p in roster_order %}
         <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
-          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.holdout %} <span class="fk-holdtag">HOLDOUT</span>{% endif %}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.holdout %} <span class="fk-holdtag">HOLDOUT</span>{% endif %}{% if p.role_friction %} <span class="fk-holdtag" style="background:#6b4a1d;color:#ffd27d">BENCHED</span>{% endif %}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.style %} · {{ p.style }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
           <td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}</td>
+          <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
           <td>{{ p.dev }}</td><td class="{% if p.injury_risk=='High' %}fk-bust{% endif %}">{{ p.injury_risk }}</td>
           <td>${{ '%.1f'|format(p.contract.aav) }}M</td></tr>
         {% endfor %}
@@ -359,6 +453,11 @@
     {% endif %}
     {% if last_nego and last_nego.ok and last_nego.offer %}
       <div class="fk-trade-result fk-trade-{{ 'yes' if last_nego.status=='accepted' else 'no' }}">{{ last_nego.msg }}</div>
+      {% if last_nego.context and last_nego.context.reasons %}
+      <div class="fk-nego-context">
+        {% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}
+      </div>
+      {% endif %}
     {% endif %}
     <form method="post" action="{{ url_for('franchise_extend') }}" class="fk-exform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -377,6 +476,11 @@
         <span class="fk-grade fk-grade-{{ 'A' if last_nego.status=='accepted' else 'C' if last_nego.status=='countered' else 'F' }}" style="width:30px;height:30px;font-size:16px">{{ last_nego.status[0]|upper }}</span>
         <div>{{ last_nego.msg }}</div>
       </div>
+      {% if last_nego.context and last_nego.context.reasons %}
+      <div class="fk-nego-context">
+        {% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}
+      </div>
+      {% endif %}
     {% endif %}
     {% if nego_fa %}
       <div class="fk-card-h">Negotiate — {{ nego_fa.pos }} {{ nego_fa.name }} ({{ nego_fa.overall }} OVR)</div>
@@ -399,10 +503,11 @@
     {% else %}
       <div class="fk-card-h">Free agents — negotiate with their agents</div>
       <table class="fk-table">
-        <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
+        <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
         <tbody>
           {% for p in free_agents %}
-          <tr><td>{{ p.name }}</td><td class="fk-pos">{{ p.pos }}</td><td class="fk-ovr">{{ p.overall }}</td>
+          <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td class="fk-ovr">{{ p.overall }}</td>
+            <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td>{{ p.agent.personality if p.agent else '—' }}</td>
             <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
             <td><a class="fk-btn fk-btn-sm" href="{{ url_for('franchise_hub', tab='front-office', fa=p.id) }}">Negotiate</a></td></tr>
@@ -635,11 +740,12 @@
       <p class="fk-muted">Grades carry your scouting error — the top of the board isn't always right.
         Better scouting (your Drafting rating + future scout hires) tightens it.</p>
       <table class="fk-table">
-        <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th></th></tr></thead>
+        <thead><tr><th>Prospect</th><th>Pos</th><th>Age</th><th>Grade</th><th>Pot</th><th>Fit</th><th></th></tr></thead>
         <tbody>
           {% for p in draft.available %}
-          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.personality %} · {{ p.personality }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
+          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}{% if p.college %} · {{ p.college }}{% endif %}</small>{% elif p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
             <td class="fk-ovr">{{ p.grade }}</td><td>{{ p.pot_grade }}</td>
+            <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td>{% if draft.on_clock %}<form method="post" action="{{ url_for('franchise_draft') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="prospect_id" value="{{ p.id }}">
@@ -698,7 +804,8 @@
   .fk-assist-btn { cursor:pointer; border:1px solid rgba(159,150,255,.4); background:transparent; color:#b9b2ff; font-size:11px; font-weight:800; padding:3px 9px; border-radius:7px; }
   .fk-assist-btn.on { background:linear-gradient(135deg,#9f96ff,#c7c1ff); color:#0a0820; border-color:#c7c1ff; }
   .fk-tip { display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid rgba(145,168,184,.1); }
-  .fk-tip-ic { font-size:17px; line-height:1.2; }
+  .fk-tip-ic { min-width:42px; height:22px; border-radius:7px; background:rgba(159,150,255,.16); border:1px solid rgba(159,150,255,.35); color:#d7d2ff; font-size:0; line-height:22px; text-align:center; font-weight:900; letter-spacing:.08em; }
+  .fk-tip-ic::after { content:"READ"; font-size:9px; }
   .fk-tip strong { color:#fff; display:block; font-size:14px; } .fk-tip small { color:#8fa3b0; font-size:12px; line-height:1.5; }
   .fk-tip-u3 strong { color:#ffd9a0; }
   .fk-consult-off { color:#b9b2ff; font-size:13px; margin:2px 0; } .fk-consult-off strong { color:#fff; }
@@ -715,8 +822,24 @@
   .fk-offeract { display:flex; gap:8px; margin-top:8px; } .fk-offeract form { margin:0; }
   .fk-declinebtn { cursor:pointer; border:1px solid rgba(255,122,122,.4); background:rgba(255,122,122,.12); color:#ff9a9a; font-size:11px; font-weight:800; padding:5px 11px; border-radius:7px; }
   .fk-ownermsg { margin-top:10px; padding:10px 12px; border-radius:9px; background:rgba(159,150,255,.08); border:1px solid rgba(159,150,255,.3); }
-  .fk-ownerhead { color:#c7c1ff; font-weight:800; font-size:12px; } .fk-ownerhead span { color:#fff; }
+  .fk-ownerrow { display:flex; gap:10px; align-items:center; }
+  .fk-ownerpic { flex:0 0 42px; width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#f5c860,#fff1b0); color:#161002; border:2px solid rgba(245,200,96,.65); font-family:var(--font-display,sans-serif); font-weight:900; font-size:14px; }
+  .fk-ownerpic-lg { flex-basis:58px; width:58px; height:58px; font-size:18px; }
+  .fk-ownername { color:#fff; font-weight:900; font-size:13px; }
+  .fk-ownerrow small { display:block; color:#9fb0bc; font-size:11px; margin-top:2px; }
+  .fk-ownerhead { display:none; color:#c7c1ff; font-weight:800; font-size:12px; } .fk-ownerhead span { color:#fff; }
   .fk-ownermsg em { display:block; color:var(--text2,#b7c6d0); font-size:13px; margin-top:5px; }
+  .fk-meeting { border-color:rgba(245,200,96,.5); background:linear-gradient(135deg, rgba(25,20,12,.96), rgba(6,12,18,.98)); }
+  .fk-meetingtop { display:flex; align-items:center; gap:13px; margin-bottom:12px; }
+  .fk-meetmeta { color:#f5c860; font-size:12px; font-weight:800; margin-top:3px; }
+  .fk-meetverdict { color:#fff; font-size:15px; line-height:1.45; padding:11px 12px; border-radius:10px; background:rgba(245,200,96,.1); border:1px solid rgba(245,200,96,.28); margin-bottom:10px; }
+  .fk-meetstats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px; }
+  .fk-meetstats div { background:rgba(3,8,12,.45); border:1px solid rgba(245,200,96,.18); border-radius:9px; padding:9px 6px; text-align:center; }
+  .fk-meetstats span { display:block; color:#9fb0bc; font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+  .fk-meetstats b { display:block; color:#fff; font-family:var(--font-display); font-size:17px; margin-top:2px; }
+  .fk-qaitem { padding:9px 0; border-top:1px solid rgba(245,200,96,.12); }
+  .fk-qaitem strong { color:#fff; display:block; font-size:13px; }
+  .fk-qaitem small { color:#b7c6d0; display:block; font-size:12px; line-height:1.5; margin-top:3px; }
   .fk-holdout { background:rgba(255,122,122,.12); border:1px solid rgba(255,122,122,.4); border-radius:9px; padding:9px 12px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); } .fk-holdout strong { color:#ff9a9a; }
   .fk-holdtag { font-size:9px; font-weight:800; color:#ff9a9a; background:rgba(255,122,122,.15); padding:1px 6px; border-radius:5px; }
   .fk-exform .fk-input { width:100%; box-sizing:border-box; }
@@ -835,6 +958,35 @@
   .fk-pill-retained { background:rgba(145,168,184,.18); color:#cfdae2; }
   .fk-pill-courted { background:rgba(74,212,240,.18); color:#9fe9ff; }
   .fk-pill-fired { background:rgba(255,122,122,.18); color:#ffb3b3; }
+  .fk-issues { border-color:rgba(255,196,120,.45); }
+  .fk-issue { padding:10px 0; border-top:1px solid rgba(255,196,120,.12); }
+  .fk-issue:first-of-type { border-top:none; padding-top:0; }
+  .fk-issue-type { display:inline-block; margin-bottom:5px; padding:2px 8px; border-radius:999px; background:rgba(255,196,120,.12); border:1px solid rgba(255,196,120,.28); color:#ffd089; font-size:10px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+  .fk-issue-high .fk-issue-type { background:rgba(255,122,122,.13); border-color:rgba(255,122,122,.35); color:#ffb3b3; }
+  .fk-issue strong { display:block; color:#fff; font-size:14px; }
+  .fk-issue small { display:block; color:#b7c6d0; font-size:12px; line-height:1.45; margin-top:3px; }
+  .fk-issue em { display:block; color:#8fa3b0; font-size:11px; margin-top:5px; font-style:normal; }
+  .fk-nego-context { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
+  .fk-nego-context span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Football Operations card */
+  .fk-scheme { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px; }
+  .fk-scheme > div { background:rgba(74,212,240,.06); border:1px solid rgba(74,212,240,.18); border-radius:9px; padding:8px 10px; }
+  .fk-scheme span { display:block; color:#7f93a0; font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+  .fk-scheme b { color:#9fe9ff; font-size:15px; font-weight:800; }
+  .fk-scheme small { display:block; color:#7f93a0; font-size:11px; margin-top:2px; }
+  .fk-ops-note { color:#8fa3b0; font-size:12.5px; line-height:1.5; margin:6px 0 2px; }
+  .fk-ops-h { color:#cfe3ee; font-size:12px; font-weight:800; margin:12px 0 5px; }
+  .fk-ops-h small { color:#7f93a0; font-weight:500; }
+  .fk-ops-row { display:block; text-decoration:none; border-radius:9px; padding:8px 10px; margin-bottom:6px; border:1px solid rgba(145,168,184,.16); background:rgba(3,8,12,.45); }
+  .fk-ops-row strong { color:#fff; font-size:13px; }
+  .fk-ops-row small { display:block; color:#9fb0bd; font-size:11.5px; line-height:1.4; margin-top:2px; }
+  .fk-ops-good { border-left:3px solid #7dffb0; }
+  .fk-ops-bad { border-left:3px solid #ff9a9a; }
+  .fk-ops-warn { border-left:3px solid #ffd27d; }
+  .fk-fit { font-size:10px; font-weight:800; padding:1px 7px; border-radius:6px; white-space:nowrap; }
+  .fk-fit-hi { color:#7dffb0; background:rgba(125,255,176,.13); }
+  .fk-fit-mid { color:#ffd27d; background:rgba(255,210,125,.12); }
+  .fk-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
 </style>
 {% endblock %}
