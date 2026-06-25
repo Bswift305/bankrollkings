@@ -1096,6 +1096,59 @@ def _archive_season(teams, season):
                     del car[:-24]
 
 
+# --------------------------------------------------------------------------- #
+# Dynamic Career Timeline — your franchise's story, threaded from the milestones
+# the engine already produces (titles, owner verdicts, breakouts, ceiling
+# unlocks, Hall-of-Famers, hot-seat survivals). Persisted so you can scroll back
+# through a whole tenure. The thing a GM won't walk away from.
+# --------------------------------------------------------------------------- #
+def _tl(save, season, kind, icon, head, sub="", pid=None):
+    tl = save.setdefault("timeline", [])
+    entry = {"season": season, "kind": kind, "icon": icon, "head": head, "sub": sub}
+    if pid:
+        entry["pid"] = pid
+    tl.insert(0, entry)
+    save["timeline"] = tl[:80]
+
+
+def career_timeline(save):
+    return save.get("timeline", [])
+
+
+def _log_season_milestones(save, outcome):
+    s = outcome.get("season", save.get("season", 1) - 1)
+    team = current_team(save)
+    tn, tname = team["full"], team.get("name", team["full"])
+    rec = outcome.get("record", {})
+    w, l = rec.get("w", 0), rec.get("l", 0)
+    exp = outcome.get("expectation", save.get("expectation", {}).get("wins", 0))
+
+    if outcome.get("won_title"):
+        _tl(save, s, "title", "🏆", f"CHAMPIONS — {tn} win it all", f"{w}-{l}. You're a champion GM.")
+    elif outcome.get("status") == "fired":
+        _tl(save, s, "fired", "🌋", f"Fired by {tn}", f"{w}-{l} against a {exp}-win mandate. Ownership moved on.")
+    else:
+        sub = outcome.get("headline") or (f"Beat the {exp}-win mandate." if w > exp else
+                                          f"Fell {exp - w} short of the mandate." if w < exp else "Met the mandate.")
+        if save["gm"]["owner_trust"] < 30 and w >= exp:
+            _tl(save, s, "hotseat", "🔥", f"{tn} go {w}-{l} — you survive the hot seat", sub)
+        else:
+            _tl(save, s, "season", "📅", f"{tn} finish {w}-{l}", sub)
+
+    mvp = save.get("season_mvp")
+    if mvp and mvp.get("team") == tname:
+        _tl(save, s, "mvp", "⭐", f"{mvp['pos']} {mvp['name']} wins MVP", f"{mvp.get('line', '')} — your guy.", mvp.get("pid"))
+    for u in (save.get("ceiling_unlocks") or [])[:1]:
+        _tl(save, s, "unlock", "🔓", f"{u['pos']} {u['name']} breaks his ceiling",
+            f"{u['from']} → {u['to']} — development you coached into him.")
+    for b in (save.get("breakouts") or [])[:1]:
+        _tl(save, s, "breakout", "📈", f"{b['pos']} {b['name']} breaks out", f"Ceiling revised up to {b['pot']}.")
+    for r in (save.get("retirements") or []):
+        if r.get("hof"):
+            _tl(save, s, "hof", "🎖", f"{r['pos']} {r['name']} retires — Hall of Fame bound",
+                r.get("summary", "A legend hangs them up."))
+
+
 def _finalize_season(save):
     rng = _rng(save["seed"] + save["season"] * 1000 + 991)
     teams = {t["id"]: t for t in save["teams"]}
@@ -1143,6 +1196,7 @@ def _finalize_season(save):
     _set_expectation(save)
     owner_statement(save, outcome)
     owner_meeting(save, outcome)
+    _log_season_milestones(save, outcome)          # thread the season into the career timeline
     _check_holdouts(save)
     generate_news(save)
     save.pop("inseason", None)
@@ -3042,6 +3096,8 @@ def take_job(save, team_id):
     save["last_outcome"] = None
     _set_expectation(save)
     generate_front_office_issues(save)
+    _tl(save, save.get("season", 1), "hired", "📝",
+        f"Hired as GM of the {current_team(save)['full']}", "A new chapter begins.")
     write_save(save)
     start_draft(save)   # the offseason draft opens for your new club
     return True

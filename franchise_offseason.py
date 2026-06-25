@@ -198,6 +198,8 @@ def pick_team(save, team_id):
         save["current_team_id"] = team_id
         fk._set_expectation(save)
         fk.generate_front_office_issues(save)
+        fk._tl(save, save.get("season", 1), "hired", "📝",
+               f"Hired as GM of the {fk.current_team(save)['full']}", "Your story begins here.")
         save["offseason"]["stage"] = "recap"
         fk.write_save(save)
         return True

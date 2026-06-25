@@ -969,6 +969,22 @@
 
   {# ===================== CAREER ===================== #}
   {% if tab == 'career' %}
+  {% if timeline %}
+  <div class="fk-card fk-tlcard">
+    <div class="fk-card-h">{{ icon('book') }}Your Story — the {{ gm.name }} era</div>
+    <div class="fk-tl">
+      {% for e in timeline %}
+      <div class="fk-tl-row fk-tl-{{ e.kind }}">
+        <div class="fk-tl-rail"><span class="fk-tl-dot">{{ e.icon }}</span></div>
+        <div class="fk-tl-body">
+          <div class="fk-tl-head">{% if e.pid is defined %}<a href="{{ url_for('franchise_player', pid=e.pid) }}">{{ e.head }}</a>{% else %}{{ e.head }}{% endif %} <span class="fk-tl-szn">S{{ e.season }}</span></div>
+          {% if e.sub %}<div class="fk-tl-sub">{{ e.sub }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   <div class="fk-card">
     <div class="fk-card-h">{{ gm.name }} — career résumé · {{ gm.titles }} title(s) · Reputation {{ gm.reputation }}</div>
     {% if career %}
@@ -1323,6 +1339,24 @@
   .fk-ccbtn:hover { border-color:rgba(74,212,240,.4); color:#fff; }
   .fk-ccbtn.on { color:#05121a; background:linear-gradient(135deg,#4ad4f0,#8fe9ff); border-color:transparent; }
   .fk-ccblurb { color:#8fa3b0; font-size:12px; font-style:italic; margin:8px 0 0; }
+  /* Career timeline */
+  .fk-tlcard { border-color:rgba(245,200,96,.3); }
+  .fk-tl { position:relative; }
+  .fk-tl-row { display:flex; gap:12px; }
+  .fk-tl-rail { position:relative; flex:0 0 auto; width:30px; display:flex; justify-content:center; }
+  .fk-tl-rail:before { content:''; position:absolute; top:0; bottom:0; width:2px; background:rgba(145,168,184,.2); }
+  .fk-tl-row:first-child .fk-tl-rail:before { top:14px; } .fk-tl-row:last-child .fk-tl-rail:before { bottom:auto; height:14px; }
+  .fk-tl-dot { position:relative; z-index:1; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; background:rgba(11,24,34,1); border:1px solid rgba(145,168,184,.3); }
+  .fk-tl-body { flex:1; min-width:0; padding:2px 0 16px; }
+  .fk-tl-head { color:#fff; font-size:14px; font-weight:700; } .fk-tl-head a { color:#9fe9ff; text-decoration:none; }
+  .fk-tl-szn { font-size:10px; color:#7f93a0; font-weight:600; margin-left:6px; }
+  .fk-tl-sub { color:#9fb0bc; font-size:12.5px; line-height:1.45; margin-top:2px; }
+  .fk-tl-title .fk-tl-dot { border-color:#f5c860; background:rgba(245,200,96,.18); } .fk-tl-title .fk-tl-head { color:#f5c860; }
+  .fk-tl-fired .fk-tl-dot { border-color:#ff7a7a; } .fk-tl-fired .fk-tl-head { color:#ff9a9a; }
+  .fk-tl-unlock .fk-tl-dot, .fk-tl-breakout .fk-tl-dot { border-color:#7dffb0; }
+  .fk-tl-hof .fk-tl-dot, .fk-tl-mvp .fk-tl-dot { border-color:#f5c860; }
+  .fk-tl-hotseat .fk-tl-dot { border-color:#ffd27d; }
+  .fk-tl-hired .fk-tl-dot { border-color:#4ad4f0; }
   .fk-agenda { border-color:rgba(245,200,96,.38); }
   .fk-agcount { float:right; font-size:11px; font-weight:900; color:#05121a; background:#f5c860; border-radius:999px; padding:1px 8px; }
   .fk-agitem { border-left:3px solid #f5c860; background:rgba(3,8,12,.4); border-radius:0 9px 9px 0; padding:10px 12px; margin-bottom:9px; }

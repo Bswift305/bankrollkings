@@ -29056,6 +29056,7 @@ def _franchise_view(save):
                         for p in sorted(save.get('free_agents', []), key=lambda x: -x['overall'])],
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
+        'timeline': fk.career_timeline(save),
         'expectation': save.get('expectation', {}),
         'last_outcome': save.get('last_outcome'),
         'last_injuries': save.get('last_injuries', []),
