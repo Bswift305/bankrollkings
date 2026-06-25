@@ -600,6 +600,7 @@ def accept_ai_offer(save):
     myteam["roster"] = [p for p in myteam["roster"] if p["id"] != want["id"]] + [give]
     ai["roster"] = [p for p in ai["roster"] if p["id"] != give["id"]] + [want]
     save["last_trade"] = {"ok": True, "summary": f"Acquired {give['pos']} {give['name']} from the {o['team']} for {want['pos']} {want['name']}."}
+    _owner_trade_react(save, give["pos"], give["name"], want["pos"], want["name"], o.get("grade", "C"))
     iz["offer"] = None
     write_save(save)
     return True
@@ -626,6 +627,7 @@ def start_inseason(save):
     save["unemployed"] = False
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": 0, "l": 0} for t in save["teams"]]
+    owner_season_open(save)
     write_save(save)
     return save
 
@@ -663,6 +665,7 @@ def sim_week(save):
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
     if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < 0.4:
         iz["offer"] = _maybe_ai_offer(save, rng)
+    owner_weekly(save, week, rng)      # the owner reacts to the week just played
     iz["week"] = week + 1
     if iz["week"] > REG_GAMES:
         _finalize_season(save)
@@ -1510,6 +1513,7 @@ def negotiate(save, player_id, years, aav):
         team["roster"].append(fa)
         save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
         save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= demand_aav else 1)
+        _owner_sign_react(save, fa["name"], fa["pos"], fa["overall"], aav)
         res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
     elif aav >= eff * 0.90:
         counter = round(eff * A["counter"], 1)
@@ -1580,9 +1584,143 @@ def _owner_tier(save, outcome):
 
 def owner_statement(save, outcome):
     otype = current_team(save)["owner"]["type"]
-    line = _OWNER_TIER_LINE[_owner_tier(save, outcome)] + _OWNER_TYPE_LINE.get(otype, "")
+    tier = _owner_tier(save, outcome)
+    line = _OWNER_TIER_LINE[tier] + _OWNER_TYPE_LINE.get(otype, "")
     save["owner_message"] = {"type": otype, "text": line, "mood": owner_state(save)["mood"]}
+    tone = {"title": "praise", "good": "praise", "ok": "neutral",
+            "bad": "concern", "fired": "ultimatum"}.get(tier, "neutral")
+    owner_say(save, line.strip(), tone=tone, tag="seasonend")
     return save["owner_message"]
+
+
+# --------------------------------------------------------------------------- #
+# In-season owner presence: the owner is around ALL year, not just at season's
+# end. He reacts to streaks, the mandate pace, your trades and your spending -
+# flavored by his archetype and current patience - and his messages stack into
+# an Owner's Office feed on the dashboard. Small in-season trust drift makes his
+# mood move week to week, so the relationship feels live.
+# --------------------------------------------------------------------------- #
+_OWNER_FEED_MAX = 14
+_OWNER_VOICE = {
+    "Impatient":   "I don't do patience.",
+    "Cheap":       "And mind the budget.",
+    "Hands-Off":   "You know your job - go do it.",
+    "Meddling":    "Keep me in the loop.",
+    "Legacy":      "This franchise has a standard.",
+    "Billionaire": "Spare no expense - just deliver.",
+}
+
+
+def _owner_voice(otype):
+    return _OWNER_VOICE.get(otype, "")
+
+
+def owner_say(save, text, tone="neutral", tag=None, dedupe_window=3):
+    """Push one message into the Owner's Office feed (newest first). When tag is
+    set, won't repeat the same tag inside the recent window this season."""
+    feed = save.setdefault("owner_feed", [])
+    season = save.get("season", 1)
+    if tag:
+        for m in feed[:dedupe_window]:
+            if m.get("tag") == tag and m.get("season") == season:
+                return None
+    owner = owner_state(save)
+    msg = {"season": season, "week": (save.get("inseason") or {}).get("week", 0),
+           "tone": tone, "tag": tag, "owner": owner["name"], "title": owner["title"],
+           "icon": owner["icon"], "mood": owner["mood"], "text": text}
+    feed.insert(0, msg)
+    del feed[_OWNER_FEED_MAX:]
+    return msg
+
+
+def owner_season_open(save):
+    """A start-of-season note that sets the tone and restates the mandate."""
+    otype = current_team(save)["owner"]["type"]
+    exp = save.get("expectation", {})
+    voice = _owner_voice(otype)
+    hot = otype in ("Impatient", "Legacy", "Billionaire")
+    owner_say(save, f"New season. The bar is {exp.get('wins', '?')} wins - {exp.get('text', 'win.')} {voice}".strip(),
+              tone="demand" if hot else "neutral", tag="seasonopen")
+
+
+def owner_weekly(save, week, rng):
+    """The owner reacts to the week just played: hot/cold streaks, the mid-season
+    pace check, and late-season pressure if the mandate is slipping away."""
+    team = current_team(save)
+    iz = save.get("inseason") or {}
+    log = iz.get("log", [])
+    if not log:
+        return
+    otype = team["owner"]["type"]
+    voice = _owner_voice(otype)
+    won = log[-1]["won"]
+    streak = 0
+    for g in reversed(log):
+        if g["won"] == won:
+            streak += 1
+        else:
+            break
+    if won and streak >= 3 and streak % 2 == 1:
+        save["gm"]["owner_trust"] = min(100, save["gm"]["owner_trust"] + 1)
+        owner_say(save, f"{streak} straight. The building feels it - keep it rolling. {voice}".strip(),
+                  tone="praise", tag=f"wstreak{streak}")
+    elif (not won) and streak >= 3 and streak % 2 == 1:
+        hit = 2 if otype == "Impatient" else 1
+        save["gm"]["owner_trust"] = max(0, save["gm"]["owner_trust"] - hit)
+        tail = "This is exactly what I won't tolerate." if otype == "Impatient" else "Right the ship - fast."
+        owner_say(save, f"{streak} losses in a row. {tail}", tone="concern", tag=f"lstreak{streak}")
+
+    played = team["record"]["w"] + team["record"]["l"]
+    mandate = save.get("expectation", {}).get("wins", 9)
+    if week == REG_GAMES // 2 and played:
+        proj = round(team["record"]["w"] / played * REG_GAMES)
+        if proj >= mandate + 2:
+            owner_say(save, f"Halfway and you're tracking for ~{proj} wins against a {mandate}-win bar. I like where this is going.",
+                      tone="praise", tag="midcheck")
+        elif proj >= mandate - 1:
+            owner_say(save, f"Halfway home, projecting ~{proj} wins. You're on the number - now separate from the pack.",
+                      tone="neutral", tag="midcheck")
+        else:
+            owner_say(save, f"We're halfway and this is tracking for ~{proj} wins. The mandate is {mandate}. I need a response.",
+                      tone="demand", tag="midcheck")
+
+    games_left = REG_GAMES - played
+    if 0 < games_left <= 4 and save["gm"]["owner_trust"] < 35 and team["record"]["w"] + games_left < mandate:
+        owner_say(save, f"Let me be blunt: {games_left} to play and the mandate is out of reach. Your seat is hot.",
+                  tone="ultimatum", tag="ultimatum")
+
+
+def _owner_trade_react(save, got_pos, got_name, gave_pos, gave_name, grade):
+    """The owner weighs in on a completed trade - was it sharp or did you get fleeced?"""
+    otype = current_team(save)["owner"]["type"]
+    if grade in ("A", "B"):
+        txt, tone = f"Bringing in {got_pos} {got_name} for {gave_pos} {gave_name} - sharp work.", "praise"
+    elif grade in ("D", "F"):
+        txt, tone = f"You moved {gave_pos} {gave_name} for {got_pos} {got_name}? We'd better not regret that.", "concern"
+    else:
+        txt, tone = f"Deal done - {got_pos} {got_name} in, {gave_pos} {gave_name} out. We'll see.", "neutral"
+    if otype == "Meddling":
+        txt += " Walk me through the next one that size first."
+    elif otype == "Cheap":
+        txt += " And mind what it does to the books."
+    owner_say(save, txt, tone=tone)
+
+
+def _owner_sign_react(save, name, pos, ovr, aav):
+    """The owner reacts to the money you just committed in free agency / an extension."""
+    otype = current_team(save)["owner"]["type"]
+    if aav >= 14:
+        if otype == "Cheap":
+            txt, tone = f"${aav:.0f}M for {pos} {name}? At that price he had better be a difference-maker.", "concern"
+        elif otype == "Billionaire":
+            txt, tone = f"${aav:.0f}M for {name}? Good - pay for the best and go win.", "praise"
+        else:
+            txt, tone = f"That's real money on {pos} {name} - ${aav:.0f}M. Make it pay off.", "neutral"
+    elif ovr >= 80 and aav <= expected_aav(ovr) * 0.9:
+        txt, tone = f"{pos} {name} at ${aav:.1f}M is a bargain. That's how you build a winner.", "praise"
+    else:
+        txt, tone = f"{pos} {name} is in the building. Solid addition.", "neutral"
+    owner_say(save, txt, tone=tone)
 
 
 def owner_meeting(save, outcome):
@@ -1701,6 +1839,7 @@ def extend_player(save, player_id, years, aav):
         p.pop("trade_reason", None)
         p["morale"] = min(99, p.get("morale", 75) + 12)
         save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= ask else 1)
+        _owner_sign_react(save, p["name"], p["pos"], p["overall"], aav)
         res.update(status="accepted", msg=f"Extension done — {p['name']} for {years}yr / ${aav}M.")
     elif aav >= ask * 0.9:
         why = (" " + context["reasons"][0]) if context["reasons"] else ""

@@ -155,6 +155,22 @@
       {% endif %}
     </div>
 
+    {% if owner_feed %}
+    <div class="fk-card fk-ofc">
+      <div class="fk-card-h">🏛 Owner's Office
+        {% if owner %}<span class="fk-ofc-who">{{ owner.name }} · {{ owner.mood }} {{ owner.icon }}</span>{% endif %}
+      </div>
+      <div class="fk-ofc-feed">
+        {% for m in owner_feed[:8] %}
+        <div class="fk-ofc-msg fk-ofc-{{ m.tone }}">
+          <div class="fk-ofc-when">S{{ m.season }}{% if m.week %} · Wk {{ m.week }}{% endif %}</div>
+          <div class="fk-ofc-text">“{{ m.text }}”</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="fk-card fk-consult">
       <div class="fk-card-h">🧠 GM Consultant
         <span class="fk-assist">
@@ -789,8 +805,8 @@
   .fk-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:14px 0; border-bottom:1px solid rgba(145,168,184,.15); }
   .fk-tab { padding:9px 14px; color:var(--text2,#9fb0bc); text-decoration:none; font-weight:700; font-size:13px; border-bottom:2px solid transparent; }
   .fk-tab.active { color:#fff; border-bottom-color:#4ad4f0; }
-  .fk-grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-  @media (max-width:760px){ .fk-grid2 { grid-template-columns: 1fr; } }
+  .fk-grid2 { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:start; }
+  @media (max-width:760px){ .fk-grid2 { grid-template-columns: minmax(0,1fr); } }
   .fk-card { background:linear-gradient(135deg, rgba(11,24,34,.96), rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.18); border-radius:14px; padding:16px; }
   .fk-card-h { color:#fff; font-weight:800; font-size:13px; letter-spacing:.03em; margin-bottom:12px; }
   .fk-meter { display:grid; grid-template-columns: 96px 1fr 36px; align-items:center; gap:10px; margin:7px 0; font-size:12px; color:var(--text2,#9fb0bc); }
@@ -969,6 +985,17 @@
   .fk-nego-context { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
   .fk-nego-context span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .fk-restart { margin-top:18px; text-align:center; }
+  /* Owner's Office feed */
+  .fk-ofc-who { float:right; font-size:11px; color:#b7c6d0; font-weight:600; }
+  .fk-ofc-feed { display:flex; flex-direction:column; gap:8px; }
+  .fk-ofc-msg { border-left:3px solid #5f7280; background:rgba(3,8,12,.45); border-radius:0 9px 9px 0; padding:8px 11px; }
+  .fk-ofc-when { font-size:10px; color:#7f93a0; text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px; }
+  .fk-ofc-text { color:#dce8ef; font-size:13px; font-style:italic; line-height:1.45; }
+  .fk-ofc-praise { border-left-color:#7dffb0; } .fk-ofc-praise .fk-ofc-text { color:#bfffd9; }
+  .fk-ofc-neutral { border-left-color:#4ad4f0; }
+  .fk-ofc-demand { border-left-color:#ffd27d; } .fk-ofc-demand .fk-ofc-text { color:#ffe6b8; }
+  .fk-ofc-concern { border-left-color:#ff9a9a; } .fk-ofc-concern .fk-ofc-text { color:#ffc9c9; }
+  .fk-ofc-ultimatum { border-left-color:#ff5d5d; background:rgba(255,93,93,.08); } .fk-ofc-ultimatum .fk-ofc-text { color:#ff9a9a; font-weight:600; }
   /* Football Operations card */
   .fk-scheme { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px; }
   .fk-scheme > div { background:rgba(74,212,240,.06); border:1px solid rgba(74,212,240,.18); border-radius:9px; padding:8px 10px; }

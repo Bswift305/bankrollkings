@@ -29055,6 +29055,7 @@ def _franchise_view(save):
         'owner': fk.owner_state(save),
         'owner_message': save.get('owner_message'),
         'owner_meeting': save.get('owner_meeting'),
+        'owner_feed': save.get('owner_feed', []),
         'hall_of_fame': save.get('hall_of_fame'),
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
