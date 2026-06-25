@@ -25,6 +25,7 @@ import threading
 import franchise_kings as fk
 import franchise_league as fl
 import franchise_offseason as fo
+import prop_pointers
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -32633,6 +32634,7 @@ def render_props_screener_page(
         model_debug=False,
         pagination=pagination,
         board_intelligence=build_board_intelligence_summary(normalized_rows),
+        prop_pointers=prop_pointers.get_prop_pointers(sport_key),
         props_sport_key=sport_key,
         props_sport_label=sport_label,
         props_base_path=props_base_path,
@@ -32804,6 +32806,7 @@ def render_nba_props_page(filter_type=None):
         stat_query=stat_query, query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
         base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug,
         pagination=pagination, board_intelligence=build_board_intelligence_summary(all_props),
+        prop_pointers=prop_pointers.get_prop_pointers('nba'),
         props_sport_key='nba',
         props_sport_label='NBA',
         props_base_path='/sports/nba/props',

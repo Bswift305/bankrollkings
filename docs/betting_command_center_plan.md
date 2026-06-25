@@ -107,11 +107,19 @@ same cadence as the franchise work.
 
 ---
 
-## 6. Open questions for review
+## 6. Decisions (answered 2026-06-25)
 
-- Tiering: which of these are free vs Pro vs Elite? (Audit shows a lot is Elite-gated
-  today — how much do we move down-tier?)
-- CFBD/Odds API keys: NCAAF live board is offseason-empty and `CFBD_API_KEY` isn't
-  configured locally — does that block Track A's CFB coverage right now?
-- Scope of "cross-league" at launch: football-only (NFL+CFB) first, or include
-  in-season NBA/CBB from day one?
+- **Tiering: gone.** Single price of admission — every member sees everything. No
+  free/Pro/Elite split. So all the currently Elite-gated intelligence (line-move
+  alerts, sharp-money scanner, bet log, guardrails) moves to *every* user.
+- **CFB data: good to go.** `CFBD_API_KEY` is fine; CFB coverage is in scope for
+  Track A.
+- **Cross-league = all sports.** The Game Lines Command Center should span every
+  sport from launch, not football-only.
+
+## 7. Shipped from this plan
+
+- **Prop Betting Pointers Engine** (`prop_pointers.py`) — universal + sport-specific
+  pointers and a sport profile (Opportunity / Reliability / Best market / Main trap)
+  on every prop page via the shared `props.html`. Teaches while the user bets.
+  Covers nba, wnba, nfl, ncaaf, mlb, ncaamb, ncaawb. SHIPPED 2026-06-25.
