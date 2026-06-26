@@ -1,3 +1,12 @@
+"""
+Team_Strength_Priors — a lightweight team-strength CONTEXT signal for prop rows.
+
+IMPORTANT BOUNDARY: this score is partly built FROM the betting market (moneyline /
+spread / totals), so it is suitable only as display context on a prop board. It must
+NOT be used for any model-vs-market edge — comparing a market-derived number against
+the market is circular and produces fake edges. For an honest model-vs-market edge,
+use power_ratings.py (Elo from actual game results, market-independent).
+"""
 from __future__ import annotations
 
 from pathlib import Path

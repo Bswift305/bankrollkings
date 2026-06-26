@@ -135,8 +135,19 @@ same cadence as the franchise work.
   a "Model +/-z pts" chip. Still open: (1) **refresh ratings on a schedule** (cron
   after the nightly data refresh — currently a manual `venv/bin/python
   power_ratings.py` on deploy); (2) **sync football history files** (data/historical/*)
-  to prod so NFL/CFB ratings exist there (data/ is gitignored); (3) retire the old
-  market-derived Team_Strength_Priors now that real ratings exist.
+  to prod so NFL/CFB ratings exist there (data/ is gitignored); (3) ~~retire the old
+  market-derived Team_Strength_Priors~~ — RESOLVED differently: on audit these are
+  load-bearing prop-board team CONTEXT (NBA/WNBA/MLB), never used for a model edge, so
+  deleting them would regress the boards. They're not circular where they live.
+  Action taken: documented the boundary in code (calculate_team_strength_priors.py +
+  attach_team_strength_priors_to_rows) so they can't be misused for an edge later.
+  Optional future upgrade: feed prop-row team context from power_ratings where we have
+  results-based ratings (WNBA/MLB) — a behavior change to the prop boards, scoped
+  separately. (NBA has no results-based rating, so it would still need the prior.)
+
+Daily refresh: power_ratings rebuilds as the final step of run_daily.py (~13:00 UTC).
+Football history (NFL/NCAAF) synced to prod, so all four sports' ratings build there
+(MLB stays gated by the skill test).
 
 
 - **Game Lines Command Center** (`/game-lines/command`, `build_cross_league_game_lines`):

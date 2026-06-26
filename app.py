@@ -3804,6 +3804,9 @@ def load_team_strength_prior_lookup():
 
 
 def attach_team_strength_priors_to_rows(rows, sport='NBA'):
+    # Adds market-derived team-strength CONTEXT to prop rows for display only. Do NOT
+    # repurpose these fields for a model-vs-market edge — they are partly built from
+    # the market (circular). The honest edge engine is power_ratings.py / _model_edge.
     if not rows:
         return rows
     sport_key = str(sport or '').strip().upper()
