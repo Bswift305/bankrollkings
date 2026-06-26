@@ -30613,8 +30613,10 @@ def load_power_ratings():
     ratings = {}
     for _, row in rdf.iterrows():
         ratings.setdefault(str(row['Sport']).lower(), {})[_pr_norm(row['Team'])] = float(row['Elo'])
-    meta = {str(row['Sport']).lower(): {'hfa': float(row['HFAelo']),
-                                        'surfaced': str(row.get('Surfaced')).strip().lower() in ('true', '1')}
+    meta = {str(row['Sport']).lower(): {
+                'hfa': float(row['HFAelo']),
+                'ppe': pd.to_numeric(pd.Series([row.get('PointsPerElo')]), errors='coerce').iloc[0],
+                'surfaced': str(row.get('Surfaced')).strip().lower() in ('true', '1')}
             for _, row in mdf.iterrows()}
     _POWER_RATINGS_CACHE.update(key=key, ratings=ratings, meta=meta)
     return ratings, meta
@@ -30645,10 +30647,23 @@ def _model_edge_for_game(sport, away, home, market):
     ph, pa = _ml_implied_prob(market.get('home_ml')), _ml_implied_prob(market.get('away_ml'))
     market_h = ph / (ph + pa) if (ph and pa and (ph + pa) > 0) else None
     edge = (model_h - market_h) if market_h is not None else None
-    return {'model_home': round(model_h * 100), 'model_away': round((1 - model_h) * 100),
-            'market_home': round(market_h * 100) if market_h is not None else None,
-            'edge': round(edge * 100) if edge is not None else None,
-            'lean': home if (edge or 0) > 0 else away, 'home': home, 'away': away}
+    out = {'model_home': round(model_h * 100), 'model_away': round((1 - model_h) * 100),
+           'market_home': round(market_h * 100) if market_h is not None else None,
+           'edge': round(edge * 100) if edge is not None else None,
+           'lean': home if (edge or 0) > 0 else away, 'home': home, 'away': away}
+    # Model spread (points), where the Elo->points scale is meaningful (not baseball).
+    ppe = sm.get('ppe')
+    mkt_spread = pd.to_numeric(pd.Series([market.get('spread')]), errors='coerce').iloc[0]
+    if ppe and not pd.isna(ppe) and abs(float(ppe)) > 1e-6:
+        margin = pr.model_home_margin(eh, ea, sm['hfa'], float(ppe))  # +ve = home favored
+        model_spread = round((-margin) * 2) / 2.0                     # home spread, to nearest 0.5
+        out['model_spread'] = model_spread
+        if not pd.isna(mkt_spread):
+            pts_edge = round((margin - (-float(mkt_spread))) * 2) / 2.0  # +ve = value on home
+            out['market_spread'] = float(mkt_spread)
+            out['pts_edge'] = pts_edge
+            out['pts_lean'] = home if pts_edge > 0 else away
+    return out
 
 
 _LINE_MOVE_FILE = {'nba': 'NBA', 'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL', 'ncaaf': 'NCAAF'}
@@ -30819,9 +30834,14 @@ def build_cross_league_game_lines(limit_per_league=10):
                     signals.append({'tag': 'Line move', 'tone': 'gold'})
                     priority += 2
                 model = _model_edge_for_game(src['key'], away, home, market)
-                if model and model.get('edge') is not None and abs(model['edge']) >= 5:
-                    signals.append({'tag': f"Model {model['edge']:+d}%", 'tone': 'green'})
-                    priority += 3
+                if model:
+                    pe = model.get('pts_edge')
+                    if pe is not None and abs(pe) >= 1.5:
+                        signals.append({'tag': f"Model {pe:+g} pts", 'tone': 'green'})
+                        priority += 3
+                    elif model.get('edge') is not None and abs(model['edge']) >= 5:
+                        signals.append({'tag': f"Model {model['edge']:+d}%", 'tone': 'green'})
+                        priority += 3
                 read = build_game_line_teaching_note(spread, total)
                 script_tags = []
                 intel = script_lookup.get(f"{ak} @ {hk}")

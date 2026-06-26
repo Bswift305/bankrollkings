@@ -188,6 +188,7 @@ def compute_elo(sport):
     elo, last_season = {}, None
     correct = total = 0
     brier_sum = 0.0
+    scale_num = scale_den = 0.0  # least-squares: points per Elo point, from real margins
     for _, g in df.iterrows():
         if regress and last_season is not None and g['season'] != last_season:
             for t in elo:  # pull every team a third of the way back to the mean
@@ -201,11 +202,14 @@ def compute_elo(sport):
         if margin == 0:
             continue
         actual_h = 1.0 if margin > 0 else 0.0
-        # backtest (graded before the update = out-of-sample for this game)
+        # backtest + scale fit (graded before the update = out-of-sample for this game)
         if (a in elo) and (h in elo):
             total += 1
             correct += 1 if (exp_h >= 0.5) == (actual_h == 1.0) else 0
             brier_sum += (exp_h - actual_h) ** 2
+            ediff = (rh + hfa) - ra            # pre-game home Elo edge
+            scale_num += ediff * margin        # margin = home - away points
+            scale_den += ediff * ediff
         change = k * _mov_mult(margin) * (actual_h - exp_h)
         elo[h] = rh + change
         elo[a] = ra - change
@@ -217,10 +221,12 @@ def compute_elo(sport):
 
     ratings = {t: {'elo': round(r, 1), 'games': games_count.get(t, 0)} for t, r in elo.items()}
     acc = round(correct / total, 3) if total else None
+    pts_per_elo = round(scale_num / scale_den, 4) if scale_den else None
     meta = {'hfa_elo': round(hfa, 1), 'home_win_rate': round(_home_win_rate(df), 3),
             'n_games': int(len(df)),
             'su_accuracy': acc,
             'brier': round(brier_sum / total, 4) if total else None,
+            'points_per_elo': pts_per_elo,
             'surfaced': bool(acc is not None and acc >= MIN_SKILL_ACCURACY)}
     return ratings, meta
 
@@ -236,7 +242,7 @@ def build_power_ratings():
             meta_rows.append({'Sport': sport, 'HFAelo': meta['hfa_elo'],
                               'HomeWinRate': meta['home_win_rate'], 'NGames': meta['n_games'],
                               'SUAccuracy': meta['su_accuracy'], 'Brier': meta['brier'],
-                              'Surfaced': meta['surfaced']})
+                              'PointsPerElo': meta['points_per_elo'], 'Surfaced': meta['surfaced']})
     RATINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rating_rows).to_csv(RATINGS_PATH, index=False)
     pd.DataFrame(meta_rows).to_csv(META_PATH, index=False)
@@ -245,6 +251,13 @@ def build_power_ratings():
 
 def win_probability(home_elo, away_elo, hfa_elo):
     return _expected(home_elo + hfa_elo, away_elo)
+
+
+def model_home_margin(home_elo, away_elo, hfa_elo, points_per_elo):
+    """Model's projected home margin (positive = home favored), in points/runs."""
+    if not points_per_elo:
+        return None
+    return (home_elo + hfa_elo - away_elo) * points_per_elo
 
 
 if __name__ == '__main__':
@@ -256,7 +269,9 @@ if __name__ == '__main__':
             print(f"{sport.upper()}: no data")
             continue
         top = rat[rat['Sport'] == sport].sort_values('Elo', ascending=False).head(5)
+        ppe = m.get('PointsPerElo')
+        pts_note = f"  pts/100elo={round(ppe * 100, 1)}" if ppe else ""
         print(f"\n{sport.upper()}  games={m['NGames']}  HFA={m['HFAelo']}elo  "
-              f"homeWR={m['HomeWinRate']}  SU-acc={m['SUAccuracy']}  Brier={m['Brier']}")
+              f"homeWR={m['HomeWinRate']}  SU-acc={m['SUAccuracy']}  Brier={m['Brier']}{pts_note}")
         for _, r in top.iterrows():
             print(f"   {r['Team']:<26} {r['Elo']}")

@@ -92,7 +92,9 @@
             <div class="glc-script">{% for st in gm.script_tags %}<span class="glc-stag">{{ st }}</span>{% endfor %}</div>
             {% endif %}
             {% if gm.model %}
-            <div class="glc-model">🧠 Model: {{ gm.home }} <b>{{ gm.model.model_home }}%</b> / {{ gm.away }} <b>{{ gm.model.model_away }}%</b>{% if gm.model.market_home is not none %} <span class="glc-mkt-wp">· market {{ gm.model.market_home }}%{% if gm.model.edge is not none %} → <b>{{ '%+d'|format(gm.model.edge) }}%</b> lean {{ gm.model.lean }}{% endif %}</span>{% endif %}</div>
+            <div class="glc-model">🧠 Model: {{ gm.home }} <b>{{ gm.model.model_home }}%</b> / {{ gm.away }} <b>{{ gm.model.model_away }}%</b>{% if gm.model.market_home is not none %} <span class="glc-mkt-wp">· market {{ gm.model.market_home }}%{% if gm.model.edge is not none %} → <b>{{ '%+d'|format(gm.model.edge) }}%</b> lean {{ gm.model.lean }}{% endif %}</span>{% endif %}
+              {% if gm.model.model_spread is defined %}<div style="margin-top:3px">Model line: {{ gm.home }} <b>{{ '%+g'|format(gm.model.model_spread) }}</b>{% if gm.model.market_spread is defined %} <span class="glc-mkt-wp">· market {{ '%+g'|format(gm.model.market_spread) }}{% if gm.model.pts_edge is defined and gm.model.pts_edge != 0 %} → <b>{{ '%+g'|format(gm.model.pts_edge) }} pt</b> value on {{ gm.model.pts_lean }}{% endif %}</span>{% endif %}</div>{% endif %}
+            </div>
             {% endif %}
             <div class="glc-read">{{ gm.read }}</div>
         </div>
