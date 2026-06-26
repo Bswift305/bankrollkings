@@ -129,8 +129,14 @@ same cadence as the franchise work.
   flip is not an edge. Ratings persisted to `data/tracking/Power_Ratings.csv` +
   `_Meta.csv`; rebuild with `python power_ratings.py` (cron candidate). Shown on the
   Game Lines Command Center with a "Model ±X%" chip when the lean is >= 5%. SHIPPED
-  2026-06-25. Next: model spread-in-points (needs Elo->points calibration); refresh
-  ratings on a schedule; replace the old market-derived Team_Strength_Priors.
+  2026-06-25. Model **spread-in-points** now shipped too: Elo->points fit by least
+  squares on real margins (~4 pts/100elo NFL/WNBA, ~7 college, ~0 MLB so it stays
+  gated). Board shows "Model line: HOME +/-x (mkt +/-y) -> +/-z pt value on TEAM" and
+  a "Model +/-z pts" chip. Still open: (1) **refresh ratings on a schedule** (cron
+  after the nightly data refresh — currently a manual `venv/bin/python
+  power_ratings.py` on deploy); (2) **sync football history files** (data/historical/*)
+  to prod so NFL/CFB ratings exist there (data/ is gitignored); (3) retire the old
+  market-derived Team_Strength_Priors now that real ratings exist.
 
 
 - **Game Lines Command Center** (`/game-lines/command`, `build_cross_league_game_lines`):
