@@ -307,7 +307,7 @@
     <div class="p-16" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
         <div class="parlay-surface-soft" style="padding:12px;">
             <div class="page-kicker" style="margin-bottom:8px;">Team Prior Leaders</div>
-            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">Pre-game team strength on a 0&ndash;100 scale (50 is neutral), blended from market win odds, how often this team's player props have actually hit, and team ratings. A high score means props on that team start with a friendlier backdrop &mdash; it is context for the row, not a pick by itself.</div>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">Pre-game team strength on a 0&ndash;100 scale (50 is neutral). Where we have enough game results it's a market-independent power rating (league percentile from results); otherwise it blends market win odds, how often this team's player props have hit, and team ratings. A high score means props on that team start with a friendlier backdrop &mdash; context for the row, not a pick by itself.</div>
             {% for row in board_intelligence.top_priors %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
                 <span style="color:var(--text-bright); font-weight:700;">{{ row.team_prior_team or row.team }}</span>

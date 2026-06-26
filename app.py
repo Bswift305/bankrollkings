@@ -3811,7 +3811,10 @@ def attach_team_strength_priors_to_rows(rows, sport='NBA'):
         return rows
     sport_key = str(sport or '').strip().upper()
     lookup = load_team_strength_prior_lookup()
-    if not lookup:
+    # Results-based ratings take precedence as context where we have them (WNBA/MLB);
+    # NBA has none, so it falls back to the market-derived prior below.
+    power_ctx = _power_rating_context(sport_key.lower())
+    if not lookup and not power_ctx:
         return rows
 
     enriched = []
@@ -3824,6 +3827,32 @@ def attach_team_strength_priors_to_rows(rows, sport='NBA'):
             item.get('team_abbr'),
             item.get('player_team'),
         ]
+        # Prefer the market-INDEPENDENT power rating (results-based) for context.
+        abbr_to_full = (pr._WNBA_ABBR_TO_FULL if sport_key == 'WNBA'
+                        else MLB_TEAM_ABBR_TO_NAME if sport_key == 'MLB' else {})
+        power, power_name = None, None
+        if power_ctx:
+            for candidate in team_candidates:
+                if not candidate:
+                    continue
+                cand = str(candidate).strip()
+                full = abbr_to_full.get(cand.upper())
+                power = power_ctx.get(_pr_norm(cand)) or (power_ctx.get(_pr_norm(full)) if full else None)
+                if power:
+                    power_name = full or cand  # prefer the full team name for display
+                    break
+        if power:
+            item['team_prior_team'] = power_name
+            item['team_prior_score'] = power['pct']
+            item['team_prior_label'] = _power_strength_label(power['pct'])
+            item['team_prior_source'] = 'results-based power rating'
+            item['team_market_win_prob'] = None
+            item['team_prior_rank'] = f"#{power['rank']} of {power['n']}"
+            item['team_prior_note'] = (f"Power {power['pct']} ({_power_strength_label(power['pct'])}) "
+                                       f"· #{power['rank']} of {power['n']} by Elo")
+            enriched.append(item)
+            continue
+
         prior = None
         for candidate in team_candidates:
             key = _team_strength_prior_key(candidate)
@@ -3869,11 +3898,16 @@ def build_board_intelligence_summary(rows):
     for row in prior_rows:
         label = str(row.get('team_prior_label') or 'UNKNOWN').strip().upper() or 'UNKNOWN'
         prior_counts[label] = prior_counts.get(label, 0) + 1
-    top_priors = sorted(
-        prior_rows,
-        key=lambda row: _safe_float(row.get('team_prior_score')) or 0,
-        reverse=True,
-    )[:3]
+    # Distinct teams (the top team would otherwise repeat once per prop on the board).
+    top_priors, _seen_teams = [], set()
+    for row in sorted(prior_rows, key=lambda r: _safe_float(r.get('team_prior_score')) or 0, reverse=True):
+        tkey = str(row.get('team_prior_team') or row.get('team') or '').strip().lower()
+        if tkey in _seen_teams:
+            continue
+        _seen_teams.add(tkey)
+        top_priors.append(row)
+        if len(top_priors) >= 3:
+            break
     top_sims = sorted(
         sim_rows,
         key=lambda row: _safe_float(row.get('calibrated_sim_hit_probability')) or 0,
@@ -30623,6 +30657,53 @@ def load_power_ratings():
             for _, row in mdf.iterrows()}
     _POWER_RATINGS_CACHE.update(key=key, ratings=ratings, meta=meta)
     return ratings, meta
+
+
+def _power_strength_label(pct):
+    if pct >= 85:
+        return 'Elite'
+    if pct >= 68:
+        return 'Strong'
+    if pct >= 55:
+        return 'Above Average'
+    if pct >= 45:
+        return 'Average'
+    if pct >= 30:
+        return 'Below Average'
+    return 'Weak'
+
+
+def _power_rating_context(sport_key):
+    """League-percentile team strength from the market-INDEPENDENT Elo ratings, for
+    prop-row context display. Keyed by normalized team name. Empty if the sport has
+    no results-based ratings (e.g. NBA), so those boards keep the old prior."""
+    ratings, meta = load_power_ratings()
+    key = str(sport_key or '').lower()
+    sm = meta.get(key)
+    # Only surface results-based context where the rating is actually meaningful. A
+    # low-skill rating (e.g. MLB) would stretch noise across percentiles and mislabel
+    # average teams as "Elite" — so gated-off sports keep their market prior.
+    if not sm or not sm.get('surfaced'):
+        return {}
+    rs = ratings.get(key)
+    if not rs or len(rs) < 4:
+        return {}
+    ordered = sorted(rs.items(), key=lambda kv: kv[1])  # ascending Elo
+    n = len(ordered)
+    out = {}
+    for i, (norm_team, elo) in enumerate(ordered):
+        pct = round(100 * i / (n - 1)) if n > 1 else 50
+        out[norm_team] = {'pct': pct, 'rank': n - i, 'n': n, 'elo': round(elo, 1)}
+    # Ratings are keyed by whatever team format the results files use (MLB = abbr,
+    # WNBA = full name). Add aliases in the other format so prop rows match either way.
+    key = str(sport_key or '').lower()
+    alias_map = MLB_TEAM_ABBR_TO_NAME if key == 'mlb' else (pr._WNBA_ABBR_TO_FULL if key == 'wnba' else {})
+    for abbr, full in alias_map.items():
+        for src in (_pr_norm(abbr), _pr_norm(full)):
+            if src in out:
+                out.setdefault(_pr_norm(abbr), out[src])
+                out.setdefault(_pr_norm(full), out[src])
+    return out
 
 
 def _ml_implied_prob(ml):
