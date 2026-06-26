@@ -119,6 +119,20 @@ same cadence as the franchise work.
 
 ## 7. Shipped from this plan
 
+- **Market-independent power ratings + true model-vs-market edge** (`power_ratings.py`):
+  Elo computed purely from final game results (NFL 1999-now, NCAAF 2025 FBS-only,
+  WNBA & MLB from gamelog-derived team scores) — owes nothing to the betting market,
+  so the comparison is honest. The board shows the model's home win% vs the market's
+  no-vig implied win% (win-prob needs no points-scale calibration). Backtested
+  straight-up accuracy: NFL .649, NCAAF .681, WNBA .585, MLB .508. A **skill gate**
+  (`MIN_SKILL_ACCURACY = 0.55`) means **MLB is computed but NOT surfaced** — a coin
+  flip is not an edge. Ratings persisted to `data/tracking/Power_Ratings.csv` +
+  `_Meta.csv`; rebuild with `python power_ratings.py` (cron candidate). Shown on the
+  Game Lines Command Center with a "Model ±X%" chip when the lean is >= 5%. SHIPPED
+  2026-06-25. Next: model spread-in-points (needs Elo->points calibration); refresh
+  ratings on a schedule; replace the old market-derived Team_Strength_Priors.
+
+
 - **Game Lines Command Center** (`/game-lines/command`, `build_cross_league_game_lines`):
   one ranked board across every league with lines posted (NFL, CFB, NBA, WNBA, MLB),
   each game showing best market read (spread/total/ML), scoring environment, a plain

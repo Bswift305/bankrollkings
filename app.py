@@ -26,6 +26,7 @@ import franchise_kings as fk
 import franchise_league as fl
 import franchise_offseason as fo
 import prop_pointers
+import power_ratings as pr
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
@@ -30593,6 +30594,63 @@ CROSS_LEAGUE_GAME_SOURCES = [
 ]
 
 
+_POWER_RATINGS_CACHE = {}
+
+
+def _pr_norm(s):
+    return ''.join(ch for ch in str(s).lower() if ch.isalnum())
+
+
+def load_power_ratings():
+    """Cached read of the market-independent Elo ratings + per-sport meta."""
+    rpath, mpath = pr.RATINGS_PATH, pr.META_PATH
+    if not rpath.exists() or not mpath.exists():
+        return {}, {}
+    key = (rpath.stat().st_mtime, mpath.stat().st_mtime)
+    if _POWER_RATINGS_CACHE.get('key') == key:
+        return _POWER_RATINGS_CACHE['ratings'], _POWER_RATINGS_CACHE['meta']
+    rdf, mdf = pd.read_csv(rpath), pd.read_csv(mpath)
+    ratings = {}
+    for _, row in rdf.iterrows():
+        ratings.setdefault(str(row['Sport']).lower(), {})[_pr_norm(row['Team'])] = float(row['Elo'])
+    meta = {str(row['Sport']).lower(): {'hfa': float(row['HFAelo']),
+                                        'surfaced': str(row.get('Surfaced')).strip().lower() in ('true', '1')}
+            for _, row in mdf.iterrows()}
+    _POWER_RATINGS_CACHE.update(key=key, ratings=ratings, meta=meta)
+    return ratings, meta
+
+
+def _ml_implied_prob(ml):
+    ml = pd.to_numeric(pd.Series([ml]), errors='coerce').iloc[0]
+    if pd.isna(ml):
+        return None
+    ml = float(ml)
+    return (-ml) / ((-ml) + 100.0) if ml < 0 else 100.0 / (ml + 100.0)
+
+
+def _model_edge_for_game(sport, away, home, market):
+    """Our Elo model's home win% vs the market's no-vig home win%. The Elo comes
+    purely from game results, so this comparison is a genuine model-vs-market read.
+    Returns None unless the sport's backtest cleared the skill gate AND both teams
+    are rated."""
+    ratings, meta = load_power_ratings()
+    sm = meta.get(sport)
+    if not sm or not sm.get('surfaced'):
+        return None
+    rs = ratings.get(sport, {})
+    eh, ea = rs.get(_pr_norm(home)), rs.get(_pr_norm(away))
+    if eh is None or ea is None:
+        return None
+    model_h = pr.win_probability(eh, ea, sm['hfa'])
+    ph, pa = _ml_implied_prob(market.get('home_ml')), _ml_implied_prob(market.get('away_ml'))
+    market_h = ph / (ph + pa) if (ph and pa and (ph + pa) > 0) else None
+    edge = (model_h - market_h) if market_h is not None else None
+    return {'model_home': round(model_h * 100), 'model_away': round((1 - model_h) * 100),
+            'market_home': round(market_h * 100) if market_h is not None else None,
+            'edge': round(edge * 100) if edge is not None else None,
+            'lean': home if (edge or 0) > 0 else away, 'home': home, 'away': away}
+
+
 _LINE_MOVE_FILE = {'nba': 'NBA', 'wnba': 'WNBA', 'mlb': 'MLB', 'nfl': 'NFL', 'ncaaf': 'NCAAF'}
 
 
@@ -30760,6 +30818,10 @@ def build_cross_league_game_lines(limit_per_league=10):
                 if move:
                     signals.append({'tag': 'Line move', 'tone': 'gold'})
                     priority += 2
+                model = _model_edge_for_game(src['key'], away, home, market)
+                if model and model.get('edge') is not None and abs(model['edge']) >= 5:
+                    signals.append({'tag': f"Model {model['edge']:+d}%", 'tone': 'green'})
+                    priority += 3
                 read = build_game_line_teaching_note(spread, total)
                 script_tags = []
                 intel = script_lookup.get(f"{ak} @ {hk}")
@@ -30779,6 +30841,7 @@ def build_cross_league_game_lines(limit_per_league=10):
                     'signals': signals, 'priority': priority,
                     'book': market.get('book', ''),
                     'shop': shop, 'move': move, 'script_tags': script_tags,
+                    'model': model,
                 })
         games.sort(key=lambda x: (-x['priority'], x['date'], x['time']))
         total_games += len(games)

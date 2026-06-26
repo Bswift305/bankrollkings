@@ -36,6 +36,9 @@
   .glc-move b { font-weight:800; }
   .glc-script { font-size:11px; color:var(--text-muted); margin:0 0 8px; }
   .glc-script .glc-stag { display:inline-block; background:rgba(159,233,255,.08); border:1px solid rgba(159,233,255,.2); color:#9fe9ff; border-radius:6px; padding:1px 7px; margin:2px 4px 0 0; }
+  .glc-model { font-size:11.5px; color:#7dffb0; background:rgba(125,255,176,.06); border:1px solid rgba(125,255,176,.2); border-radius:8px; padding:6px 9px; margin:0 0 8px; line-height:1.45; }
+  .glc-model b { font-weight:800; }
+  .glc-model .glc-mkt-wp { color:var(--text-muted); }
   .glc-empty { background:var(--bg3); border:1px dashed var(--border); border-radius:10px; padding:14px 16px; color:var(--text-muted); font-size:13px; }
 </style>
 
@@ -87,6 +90,9 @@
             {% endif %}
             {% if gm.script_tags %}
             <div class="glc-script">{% for st in gm.script_tags %}<span class="glc-stag">{{ st }}</span>{% endfor %}</div>
+            {% endif %}
+            {% if gm.model %}
+            <div class="glc-model">🧠 Model: {{ gm.home }} <b>{{ gm.model.model_home }}%</b> / {{ gm.away }} <b>{{ gm.model.model_away }}%</b>{% if gm.model.market_home is not none %} <span class="glc-mkt-wp">· market {{ gm.model.market_home }}%{% if gm.model.edge is not none %} → <b>{{ '%+d'|format(gm.model.edge) }}%</b> lean {{ gm.model.lean }}{% endif %}</span>{% endif %}</div>
             {% endif %}
             <div class="glc-read">{{ gm.read }}</div>
         </div>
