@@ -40,6 +40,9 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
             ("WNBA calibration", _python("calibrate_wnba_model.py"), 300),
             ("Runtime snapshots", _python("refresh_runtime_snapshots.py", "--sports", "wnba", "--skip-prewarm"), 300),
         ])
+    # Rebuild the market-independent Elo power ratings LAST, so they reflect the
+    # freshly-refreshed game results / gamelogs the model is built from.
+    steps.append(("Power ratings", _python("power_ratings.py"), 300))
     return steps
 
 
