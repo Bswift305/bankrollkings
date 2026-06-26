@@ -141,9 +141,11 @@ same cadence as the franchise work.
   deleting them would regress the boards. They're not circular where they live.
   Action taken: documented the boundary in code (calculate_team_strength_priors.py +
   attach_team_strength_priors_to_rows) so they can't be misused for an edge later.
-  Optional future upgrade: feed prop-row team context from power_ratings where we have
-  results-based ratings (WNBA/MLB) — a behavior change to the prop boards, scoped
-  separately. (NBA has no results-based rating, so it would still need the prior.)
+  Optional future upgrade: ✅ SHIPPED 2026-06-25. Prop-row team context now prefers the
+  market-independent power rating (league percentile + Elite->Weak label), gated by the
+  same skill test — so WNBA shows results-based context while MLB/NBA keep the market
+  prior (low-skill Elo would mislabel average teams). "Team Prior Leaders" panel also
+  deduped to distinct teams.
 
 Daily refresh: power_ratings rebuilds as the final step of run_daily.py (~13:00 UTC).
 Football history (NFL/NCAAF) synced to prod, so all four sports' ratings build there
