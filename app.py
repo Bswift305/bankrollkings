@@ -14714,6 +14714,124 @@ def build_elite_learning_modules():
     ]
 
 
+def build_personal_clv_report(user_tickets):
+    """Personal CLV report card: join the user's saved legs to the candidate
+    archive (the board snapshots that capture closing lines) and measure
+    whether the user beat the close. Legs with no archived close for the same
+    day/player/stat/side are excluded, never estimated."""
+    report = {
+        'legs_total': 0, 'legs_matched': 0,
+        'avg_clv_line': None, 'beat_close_rate': None, 'avg_clv_price_pct': None,
+        'beat': 0, 'matched_close': 0, 'lost': 0,
+        'weekly': [], 'by_sport': [], 'recent': [],
+    }
+    if not user_tickets:
+        return report
+    archive = load_candidate_archive()
+    if archive.empty or 'CloseLine' not in archive.columns:
+        return report
+    arc = archive.copy()
+    arc['_close'] = pd.to_numeric(arc.get('CloseLine'), errors='coerce')
+    arc = arc[arc['_close'].notna()]
+    if arc.empty:
+        return report
+    arc['_line'] = pd.to_numeric(arc.get('Line'), errors='coerce')
+    arc['_close_price'] = pd.to_numeric(arc.get('ClosePrice'), errors='coerce')
+    lookup = {}
+    arc_cols = ['SnapshotDate', 'Sport', 'Player', 'Stat', 'Direction', '_line', '_close', '_close_price']
+    for row in arc[arc_cols].to_dict('records'):
+        key = (
+            str(row.get('SnapshotDate', ''))[:10],
+            str(row.get('Sport', '')).strip().upper(),
+            str(row.get('Player', '')).strip().upper(),
+            str(row.get('Stat', '')).strip().upper(),
+            str(row.get('Direction', '')).strip().upper(),
+        )
+        lookup.setdefault(key, []).append(row)
+
+    legs = []
+    for ticket in user_tickets or []:
+        saved_date = str(ticket.get('saved_at', ''))[:10]
+        ticket_sport = str(ticket.get('sport', '') or 'NBA').strip().upper()
+        for pick in ticket.get('picks') or []:
+            report['legs_total'] += 1
+            player = str(pick.get('player', '')).strip()
+            stat = str(pick.get('stat', '')).strip()
+            direction = str(pick.get('direction', '')).strip().upper()
+            if not player or not stat or direction not in {'OVER', 'UNDER'}:
+                continue
+            sport = str(pick.get('sport', '') or ticket_sport).strip().upper()
+            rows = lookup.get((saved_date, sport, player.upper(), stat.upper(), direction))
+            if not rows:
+                continue
+            bet_line = pd.to_numeric(pick.get('line'), errors='coerce')
+            match = None
+            if pd.notna(bet_line):
+                match = next((r for r in rows if pd.notna(r['_line']) and float(r['_line']) == float(bet_line)), None)
+            if match is None:
+                match = rows[0]
+            line_val = bet_line if pd.notna(bet_line) else match['_line']
+            if pd.isna(line_val):
+                continue
+            close_val = float(match['_close'])
+            clv_line = round((close_val - float(line_val)) if direction == 'OVER' else (float(line_val) - close_val), 2)
+            bet_prob = _implied_from_american_value(pick.get('market_price'))
+            close_prob = _implied_from_american_value(match['_close_price'])
+            clv_price_pct = round(close_prob - bet_prob, 1) if bet_prob is not None and close_prob is not None else None
+            legs.append({
+                'date': saved_date, 'sport': sport, 'player': player, 'stat': stat,
+                'direction': direction, 'bet_line': float(line_val), 'close_line': close_val,
+                'clv_line': clv_line, 'clv_price_pct': clv_price_pct,
+            })
+
+    if not legs:
+        return report
+    report['legs_matched'] = len(legs)
+    clv_vals = [leg['clv_line'] for leg in legs]
+    report['avg_clv_line'] = round(sum(clv_vals) / len(clv_vals), 2)
+    report['beat'] = sum(1 for v in clv_vals if v > 0)
+    report['matched_close'] = sum(1 for v in clv_vals if v == 0)
+    report['lost'] = sum(1 for v in clv_vals if v < 0)
+    decisive = report['beat'] + report['lost']
+    if decisive:
+        report['beat_close_rate'] = round(report['beat'] / decisive * 100, 1)
+    price_vals = [leg['clv_price_pct'] for leg in legs if leg['clv_price_pct'] is not None]
+    if price_vals:
+        report['avg_clv_price_pct'] = round(sum(price_vals) / len(price_vals), 1)
+
+    weeks = {}
+    for leg in legs:
+        try:
+            day = datetime.strptime(leg['date'], '%Y-%m-%d')
+        except ValueError:
+            continue
+        monday = day - timedelta(days=day.weekday())
+        weeks.setdefault(monday, []).append(leg['clv_line'])
+    for monday in sorted(weeks.keys(), reverse=True)[:8]:
+        vals = weeks[monday]
+        report['weekly'].append({
+            'label': monday.strftime('%b %d'),
+            'legs': len(vals),
+            'avg_clv_line': round(sum(vals) / len(vals), 2),
+            'beat': sum(1 for v in vals if v > 0),
+        })
+
+    sports = {}
+    for leg in legs:
+        sports.setdefault(leg['sport'], []).append(leg['clv_line'])
+    for sport, vals in sorted(sports.items(), key=lambda kv: len(kv[1]), reverse=True):
+        decisive_sport = sum(1 for v in vals if v != 0)
+        report['by_sport'].append({
+            'sport': sport,
+            'legs': len(vals),
+            'avg_clv_line': round(sum(vals) / len(vals), 2),
+            'beat_rate': round(sum(1 for v in vals if v > 0) / decisive_sport * 100, 1) if decisive_sport else None,
+        })
+
+    report['recent'] = sorted(legs, key=lambda leg: leg['date'], reverse=True)[:10]
+    return report
+
+
 def build_elite_dashboard_context(current_user, focus_sport=''):
     user_tickets = format_saved_parlays_for_view(
         filter_saved_parlays_for_user(load_saved_parlays(), current_user),
@@ -14721,6 +14839,7 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
         limit=None,
     )
     review = summarize_bet_review(user_tickets)
+    clv_report = build_personal_clv_report(user_tickets)
     # Cross-sport cockpit: candidate pool, parlay EV, sharp money, timing, best
     # books and alert history are all cross-sport (ranked by model edge/EV across
     # sports). Team is backfilled from gamelogs so prop tables can show team+logo.
@@ -14769,6 +14888,7 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
     weekly['roi_pct'] = round(weekly['profit'] / weekly['staked'] * 100, 1) if weekly['staked'] > 0 else None
     return {
         'review': review,
+        'clv_report': clv_report,
         'saved_tickets': user_tickets,
         'recent_tickets': user_tickets[:5],
         'candidate_pool': candidates[:24],
@@ -34489,7 +34609,7 @@ def elite_dashboard():
     # should stay on the selected sport instead of flipping to a hardcoded MLB.
     focus_sport = normalize_sport_access_key(request.args.get('sport', '').strip())
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
-    snapshot_key = f"elite_dashboard_v2_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    snapshot_key = f"elite_dashboard_v3_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     if snapshot:
         context = snapshot.get('payload') or {}

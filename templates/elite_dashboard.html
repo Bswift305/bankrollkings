@@ -354,6 +354,98 @@
     </div>
 </div>
 
+{% set clv = clv_report if clv_report is defined and clv_report else none %}
+<div class="card mb-24 panel-glow" id="clv-report-card">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">CLV Report Card — Did You Beat the Close?</div>
+            <div class="cell-meta" style="margin-top:4px;">Your saved legs vs the closing line the board captured that day. Positive CLV is the strongest long-term proof of edge — stronger than a short win streak.</div>
+        </div>
+        {% if clv and clv.legs_matched %}
+        <span class="badge badge-accent">{{ clv.legs_matched }} of {{ clv.legs_total }} legs closed</span>
+        {% else %}
+        <span class="badge">Bet Tracker</span>
+        {% endif %}
+    </div>
+    {% if clv and clv.legs_matched %}
+    <div class="p-16" style="padding-bottom:0;">
+        <div class="grid-3" style="gap:10px; margin-bottom:12px;">
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Avg Line CLV</div>
+                <div style="font-size:22px; font-weight:800; color:{% if clv.avg_clv_line is not none and clv.avg_clv_line < 0 %}var(--danger){% else %}var(--accent){% endif %};">{% if clv.avg_clv_line is not none %}{{ '%+.2f'|format(clv.avg_clv_line) }}{% else %}-{% endif %}</div>
+                <div class="cell-meta" style="margin-top:4px;">points vs close per leg</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Beat The Close</div>
+                <div style="font-size:22px; font-weight:800; color:{% if clv.beat_close_rate is not none and clv.beat_close_rate < 50 %}var(--danger){% else %}var(--accent-blue){% endif %};">{% if clv.beat_close_rate is not none %}{{ clv.beat_close_rate }}%{% else %}-{% endif %}</div>
+                <div class="cell-meta" style="margin-top:4px;">{{ clv.beat }} beat · {{ clv.matched_close }} matched · {{ clv.lost }} lost</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding:10px;">
+                <div class="page-kicker" style="margin-bottom:6px;">Avg Price CLV</div>
+                <div style="font-size:22px; font-weight:800; color:{% if clv.avg_clv_price_pct is not none and clv.avg_clv_price_pct < 0 %}var(--danger){% else %}var(--accent){% endif %};">{% if clv.avg_clv_price_pct is not none %}{{ '%+.1f'|format(clv.avg_clv_price_pct) }}%{% else %}-{% endif %}</div>
+                <div class="cell-meta" style="margin-top:4px;">implied-probability points vs closing price</div>
+            </div>
+        </div>
+        {% if clv.weekly|length > 1 or clv.by_sport|length > 1 %}
+        <div class="grid-2" style="gap:10px; margin-bottom:12px;">
+            <div>
+                <div class="page-kicker" style="margin-bottom:6px;">Weekly Trend</div>
+                <div style="display:grid; gap:4px;">
+                    {% for week in clv.weekly[:6] %}
+                    <div class="cell-meta">Wk of {{ week.label }} — {{ '%+.2f'|format(week.avg_clv_line) }} avg · {{ week.beat }}/{{ week.legs }} beat the close</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <div class="page-kicker" style="margin-bottom:6px;">By Sport</div>
+                <div style="display:grid; gap:4px;">
+                    {% for row in clv.by_sport[:5] %}
+                    <div class="cell-meta">{{ row.sport }} — {{ '%+.2f'|format(row.avg_clv_line) }} avg across {{ row.legs }} legs{% if row.beat_rate is not none %} · beat close {{ row.beat_rate }}%{% endif %}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="table-shell">
+        <table class="data-table compact-board">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Sport</th>
+                    <th>Leg</th>
+                    <th>Your Line</th>
+                    <th>Close</th>
+                    <th>Line CLV</th>
+                    <th>Price CLV</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for leg in clv.recent %}
+                <tr>
+                    <td class="cell-meta">{{ leg.date }}</td>
+                    <td><span class="badge">{{ leg.sport }}</span></td>
+                    <td><strong>{{ leg.player }}</strong><div class="cell-meta">{{ leg.direction }} {{ leg.stat }}</div></td>
+                    <td>{{ leg.bet_line }}</td>
+                    <td>{{ leg.close_line }}</td>
+                    <td style="color:{% if leg.clv_line > 0 %}var(--accent){% elif leg.clv_line < 0 %}var(--danger){% else %}var(--text-muted){% endif %}; font-weight:800;">{{ '%+.2f'|format(leg.clv_line) }}</td>
+                    <td style="color:{% if leg.clv_price_pct is not none and leg.clv_price_pct > 0 %}var(--accent){% elif leg.clv_price_pct is not none and leg.clv_price_pct < 0 %}var(--danger){% else %}var(--text-muted){% endif %};">{% if leg.clv_price_pct is not none %}{{ '%+.1f'|format(leg.clv_price_pct) }}%{% else %}-{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif clv and clv.legs_total %}
+    <div class="p-16">
+        <div class="cell-meta">None of your {{ clv.legs_total }} saved legs have a captured closing line yet. Closes are recorded when the board archives a candidate for the same player, stat, and side on the day you saved it — keep saving tickets from the live boards and this report fills in on its own.</div>
+    </div>
+    {% else %}
+    <div class="p-16">
+        <div class="cell-meta">Save tickets from the live boards (or log bets below) and this report card starts grading you against the closing line — the metric that proves edge even through losing streaks.</div>
+    </div>
+    {% endif %}
+</div>
+
 <div class="card mb-24">
     <div class="card-header">
         <div>
