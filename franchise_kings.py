@@ -1455,6 +1455,7 @@ def _advance_year(save):
     save["retirements"] = process_retirements(save["teams"], save["season"],
                                               save.setdefault("hall_of_fame", []))
     save["hall_of_fame"] = save["hall_of_fame"][:40]
+    develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
     save["free_agents"] = _gen_fa_pool(rng)
 
 
@@ -1815,6 +1816,7 @@ def _gen_staff(rng, role):
         s["style"] = rng.choice(COACH_STYLES)
     s["ped"] = _coach_pedigree(rng, s["rating"], role)
     s.update(_gen_ideology(rng, s["rating"]))
+    s["age"] = min(68, max(31, 26 + s["ped"]["experience"] + rng.randint(0, 5)))
     return s
 
 
@@ -2069,7 +2071,7 @@ def hire_staff(save, role, candidate_id):
         return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - cost, 1)
     entry = {"name": cand["name"], "rating": cand["rating"]}
-    for k in ("philosophy", "system", "style", "ped",
+    for k in ("philosophy", "system", "style", "ped", "age", "former_player",
               "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in cand:
             entry[k] = cand[k]
@@ -2083,6 +2085,148 @@ def fire_staff(save, role):
     save.get("staff", {}).pop(role, None)
     write_save(save)
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Staff lifecycle — coaches are people too. They age a year every offseason,
+# the young sharpen, the old fade and eventually retire, and the market
+# backfills with fresh names PLUS retired players who move into coaching.
+# Old saves get missing profiles (pedigree/ideology/age) backfilled on load.
+# --------------------------------------------------------------------------- #
+_ROLE_LABELS = {role: label for role, label, _ in STAFF_ROLES}
+
+
+def _staff_rng(save, *parts):
+    """Deterministic rng per save + coach so backfill is stable across loads."""
+    h = 0
+    for part in parts:
+        for ch in str(part):
+            h = (h * 131 + ord(ch)) % 1000003
+    return _rng(int(save.get("seed", 1) or 1) + h)
+
+
+def _backfill_staff_entry(save, role, entry):
+    """Give a pre-profile coach the fields hires generate today (pedigree,
+    ideology, style/system, age). Never overwrites what he already has."""
+    rng = _staff_rng(save, role, entry.get("name", ""))
+    rating = int(entry.get("rating", 55) or 55)
+    changed = False
+    if role in ("off_coord", "def_coord"):
+        if not entry.get("philosophy"):
+            entry["philosophy"] = rng.choice(["Analytics", "Old School", "Balanced"]); changed = True
+        if not entry.get("system"):
+            entry["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES)); changed = True
+    elif role == "st_coord" and not entry.get("system"):
+        entry["system"] = rng.choice(list(ST_SCHEMES)); changed = True
+    elif role == "cond_coach" and not entry.get("system"):
+        entry["system"] = rng.choice(list(COND_STYLES)); changed = True
+    elif role in COACH_GROUP and not entry.get("style"):
+        entry["style"] = rng.choice(COACH_STYLES); changed = True
+    if not entry.get("ped"):
+        entry["ped"] = _coach_pedigree(rng, rating, role); changed = True
+    if not entry.get("ideology"):
+        entry.update(_gen_ideology(rng, rating)); changed = True
+    if not entry.get("age"):
+        exp = int((entry.get("ped") or {}).get("experience", 8) or 8)
+        entry["age"] = min(68, max(31, 26 + exp + rng.randint(0, 5))); changed = True
+    return changed
+
+
+def ensure_staff_profiles(save):
+    """Backfill profiles for coaches hired (or generated) before pedigrees,
+    ideologies, and ages existed. Returns True if anything changed so the
+    caller can persist once."""
+    changed = False
+    for role, entry in (save.get("staff") or {}).items():
+        if isinstance(entry, dict) and _backfill_staff_entry(save, role, entry):
+            changed = True
+    for role, cands in (save.get("staff_market") or {}).items():
+        for cand in cands or []:
+            if isinstance(cand, dict) and _backfill_staff_entry(save, role, cand):
+                changed = True
+    return changed
+
+
+def develop_staff(save, rng):
+    """One offseason of staff life: everyone ages a year, young coaches sharpen,
+    veterans plateau, old coaches fade — winning buys everyone a bump — and the
+    ones at the end of the road hang up the whistle."""
+    ensure_staff_profiles(save)
+    staff = save.get("staff") or {}
+    winner = (current_team(save).get("record", {}).get("w", 0) or 0) >= 10
+    retired = []
+    for role, c in list(staff.items()):
+        if not isinstance(c, dict):
+            continue
+        c["age"] = int(c.get("age", 48) or 48) + 1
+        ped = c.get("ped")
+        if isinstance(ped, dict):
+            ped["experience"] = int(ped.get("experience", 5) or 5) + 1
+        age = c["age"]
+        drift = (rng.randint(0, 2) if age <= 42 else rng.randint(-1, 1) if age <= 55 else -rng.randint(0, 2))
+        if winner and rng.random() < 0.5:
+            drift += 1
+        c["rating"] = max(40, min(95, int(c.get("rating", 55) or 55) + drift))
+        if age >= 70 or (age >= 61 and rng.random() < (age - 58) * 0.055):
+            retired.append((role, c))
+    for role, c in retired:
+        staff.pop(role, None)
+        _tl(save, save.get("season", 1), "staff", "🎓",
+            f"{_ROLE_LABELS.get(role, role)} {c.get('name', 'Coach')} retires at {c.get('age', '?')}",
+            "Hangs up the whistle after "
+            f"{int((c.get('ped') or {}).get('experience', 0) or 0)} years on the sidelines. "
+            "New candidates are on the market.")
+    save["staff_retirements"] = [
+        {"role": role, "label": _ROLE_LABELS.get(role, role),
+         "name": c.get("name", ""), "age": c.get("age")}
+        for role, c in retired
+    ]
+
+
+_PLAYER_COACH_ROLE = {"QB": "qb_coach", "OL": "oline_coach", "CB": "db_coach", "S": "db_coach",
+                      "DL": "def_coord", "LB": "def_coord", "EDGE": "def_coord",
+                      "WR": "off_coord", "TE": "off_coord", "RB": "off_coord",
+                      "K": "st_coord", "P": "st_coord"}
+
+
+def inject_player_coaches(save, rng):
+    """Some of this offseason's retirees move straight into coaching: the best
+    of them (peak 76+) can show up in the fresh staff market at a role that
+    fits the position they played, carrying a Former Player profile."""
+    market = save.get("staff_market") or {}
+    pool = [r for r in (save.get("retirements") or []) if int(r.get("peak", 0) or 0) >= 76]
+    pool.sort(key=lambda r: -(int(r.get("peak", 0) or 0) + int(r.get("all_pro", 0) or 0) * 2))
+    added = 0
+    for r in pool:
+        if added >= 2:
+            break
+        if rng.random() > 0.6:
+            continue
+        role = _PLAYER_COACH_ROLE.get(str(r.get("pos", "")).upper(), "cond_coach")
+        cand = _gen_staff(rng, role)
+        peak = int(r.get("peak", 76) or 76)
+        seasons = int(r.get("seasons", 0) or 0)
+        cand["name"] = r.get("name", cand["name"])
+        cand["rating"] = max(42, min(79, int(44 + (peak - 70) * 0.55
+                                             + int(r.get("all_pro", 0) or 0) * 2.5
+                                             + (5 if r.get("hof") else 0))))
+        cand["age"] = min(46, 25 + max(4, seasons) + rng.randint(1, 3))
+        ped = cand.get("ped") or {}
+        ped.update({
+            "experience": 0,
+            "stops": [{"team": r.get("team", ""), "role": "Player", "years": seasons}],
+            "pros": 0, "playoffs": 0, "rings": 0,
+            "rep": max(35, min(90, 30 + peak // 2 + (12 if r.get("hof") else 0))),
+            "label": "HOF player, rookie coach" if r.get("hof") else "Former player",
+        })
+        cand["ped"] = ped
+        cand["former_player"] = {"pos": r.get("pos", ""), "peak": peak,
+                                 "seasons": seasons, "hof": bool(r.get("hof"))}
+        market.setdefault(role, []).append(cand)
+        _tl(save, save.get("season", 1), "staff", "🎓",
+            f"{r.get('pos', '')} {r.get('name', '')} moves into coaching",
+            f"Joins the {_ROLE_LABELS.get(role, role)} market after {seasons} seasons on the field.")
+        added += 1
 
 
 # --------------------------------------------------------------------------- #
@@ -2251,6 +2395,7 @@ def start_draft(save):
     for p in cls:
         _scout(rng, p, acc)
     save["staff_market"] = generate_staff_market(rng)   # fresh candidates each offseason
+    inject_player_coaches(save, rng)   # this year's retired stars can enter the market
     order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
     n = len(order)
     picks = []
@@ -2509,9 +2654,17 @@ def load_save(user_id):
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        save = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
+    try:
+        # Older saves: staff hired before pedigrees/ideologies/ages existed get
+        # their profile backfilled once, deterministically, and persisted.
+        if save and ensure_staff_profiles(save):
+            write_save(save)
+    except Exception:
+        pass
+    return save
 
 
 def write_save(save):
