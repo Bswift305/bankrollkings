@@ -29433,6 +29433,13 @@ def franchise_offseason():
         team = fk.current_team(save)
         ctx.update(narrative=fo.scenario_narrative(fo.my_scenario(save)),
                    team=team, power=fk.power_rating(team))
+    elif stage == 'staff':
+        ctx.update(staff=save.get('staff', {}), staff_market=save.get('staff_market', {}),
+                   staff_roles=fk.STAFF_ROLES, staff_bonus=fk.staff_bonus(save),
+                   staff_cost=fk.staff_cost,
+                   cash=save.get('business', {}).get('cash', 0),
+                   hire_msg=request.args.get('hire_msg', ''),
+                   hire_ok=request.args.get('hire_ok', ''))
     elif stage == 'workouts':
         ctx['report'] = [_league_avatar(p) for p in fo.workouts_report(save)]
     elif stage == 'resign':
@@ -29919,9 +29926,19 @@ def franchise_hire():
     if save:
         ok, msg = fk.hire_staff(save, str(request.form.get('role', '')).strip(),
                                 str(request.form.get('candidate_id', '')).strip())
-        return redirect(url_for('franchise_hub', tab='staff',
-                                hire_ok='1' if ok else '0', hire_msg=msg))
-    return redirect(url_for('franchise_hub', tab='staff'))
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
+
+
+def _staff_action_redirect(save, ok=None, msg=None):
+    """Staff actions land back where the user works: the offseason Staff stage
+    while the offseason is live, the hub Staff tab otherwise."""
+    params = {}
+    if msg is not None:
+        params = {'hire_ok': '1' if ok else '0', 'hire_msg': msg}
+    if save and fo.offseason_active(save):
+        return redirect(url_for('franchise_offseason', **params))
+    return redirect(url_for('franchise_hub', tab='staff', **params))
 
 
 @app.route('/franchise/philosophy', methods=['POST'])
@@ -29929,9 +29946,8 @@ def franchise_philosophy():
     _, save = _franchise_save()
     if save:
         ok, msg = fk.set_gm_philosophy(save, str(request.form.get('philosophy', '')).strip())
-        return redirect(url_for('franchise_hub', tab='staff',
-                                hire_ok='1' if ok else '0', hire_msg=msg))
-    return redirect(url_for('franchise_hub', tab='staff'))
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
 
 
 @app.route('/franchise/poach', methods=['POST'])
@@ -29939,9 +29955,8 @@ def franchise_poach():
     _, save = _franchise_save()
     if save:
         ok, msg = fk.resolve_staff_poach(save, str(request.form.get('action', '')).strip())
-        return redirect(url_for('franchise_hub', tab='staff',
-                                hire_ok='1' if ok else '0', hire_msg=msg))
-    return redirect(url_for('franchise_hub', tab='staff'))
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
 
 
 @app.route('/franchise/fire', methods=['POST'])
@@ -29949,7 +29964,7 @@ def franchise_fire():
     _, save = _franchise_save()
     if save:
         fk.fire_staff(save, str(request.form.get('role', '')).strip())
-    return redirect(url_for('franchise_hub', tab='staff'))
+    return _staff_action_redirect(save)
 
 
 # ---- Multiplayer commissioner leagues (foundation) ----

@@ -25,6 +25,7 @@ CAMP_KEEP_MAX = 80          # camp rosters are capped here before cuts
 
 STAGES = [
     {"key": "recap",       "title": "Season Recap",       "icon": "\U0001F4CB"},
+    {"key": "staff",       "title": "Build Your Staff",   "icon": "\U0001F4E3"},
     {"key": "workouts",    "title": "Voluntary Workouts", "icon": "\U0001F3CB"},
     {"key": "resign",      "title": "Re-Sign Your Own",   "icon": "✍"},
     {"key": "free_agency", "title": "Free Agency",        "icon": "\U0001F4B0"},
