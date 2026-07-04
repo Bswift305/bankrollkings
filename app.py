@@ -18742,17 +18742,17 @@ GLOBAL_FEATURE_PREVIEWS = {
     },
     'elite': {
         'nav_key': 'elite',
-        'title': 'Elite Upgrade Preview',
-        'kicker': 'Beyond Pro',
+        'title': 'Elite Cockpit Preview',
+        'kicker': 'Included with All Access',
         'preview_heading': 'Sample Elite Cockpit',
-        'preview_copy': 'Pro gives you the live boards and core tools. Elite adds the cutting-edge layer: timing alerts, deeper ticket intelligence, bankroll tracking, saved-performance review, and operator-level signals.',
-        'subtitle': 'Pro includes the core boards, props, market reads, parlay builder, review center, trends, injuries, officiating previews, and sport command surfaces. Elite is for users who want more advanced data and decision support: cross-sport EV, CorrelationIQ, BankrollIQ, saved tickets, bankroll counter intelligence, matchup builders, line-move alerts, leak finding, and weekly performance review.',
+        'preview_copy': 'The Elite cockpit is the edge layer every member gets: sharp-money line-move alerts, market timing, cross-sport EV builds, ticket intelligence, and bankroll review.',
+        'subtitle': 'Every All Access membership includes the full Elite cockpit: sharp-money and line-move alerts, market timing windows, cross-sport EV, CorrelationIQ, BankrollIQ, saved tickets, matchup builders, leak finding, and weekly performance review. Sign in and it opens directly.',
         'primary_cta': 'Open elite',
         'proof_label': 'Elite signals',
         'steps': [
-            ('Pro gives the board', 'Use Pro for the sport boards, props, markets, parlays, review, injuries, trends, and officiating context.'),
-            ('Elite adds the edge layer', 'Elite adds line-move alerts, deeper market timing, cross-sport EV, ticket correlation, and bankroll risk reads.'),
-            ('Elite closes the loop', 'Saved tickets, bankroll counter movement, leak finding, personal performance review, and weekly reports turn results into the next adjustment.'),
+            ('Start with the alerts', 'Sharp-money and line-move alerts show where price pressure is building before a good number disappears.'),
+            ('Check the model side', 'When the model side and the sharp side align, the action window closes fast. When they conflict, the best play is often no play.'),
+            ('Close the loop', 'Saved tickets, bankroll counter movement, leak finding, personal performance review, and weekly reports turn results into the next adjustment.'),
         ],
     },
 }
@@ -26785,6 +26785,11 @@ def free_sport_preview(sport_key):
 @app.route('/home/<feature_key>')
 def global_feature_preview(feature_key):
     normalized_feature, feature = get_global_feature_preview(feature_key)
+    # Elite is cross-sport (no sport pick needed), so members skip the preview
+    # and land on the live cockpit with the sharp-money/line-move alerts.
+    if normalized_feature == 'elite':
+        if normalize_user_plan(get_current_user()) in ALL_SPORT_PLAN_KEYS:
+            return redirect('/elite')
     postseason_only = postseason_only_enabled()
     sport_snapshots = build_cross_sport_dashboard_snapshots(postseason_only=postseason_only)
     live_sports = [
