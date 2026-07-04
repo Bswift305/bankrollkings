@@ -427,7 +427,27 @@ def new_league(seed):
     rng = _rng(seed)
     teams = [_gen_team(rng, i, NFL_TEAMS[i]) for i in range(LEAGUE_SIZE)]
     generate_team_histories(teams, rng)
+    ensure_owner_names(teams, rng)
     return teams, _gen_fa_pool(rng)
+
+
+def ensure_owner_names(teams, rng):
+    """Every club gets its own owner NAME (the type profile only supplies the
+    title/style) — 32 clubs, 32 different people. Returns True if changed."""
+    seen = {(t.get("owner") or {}).get("name") for t in teams}
+    seen.discard(None)
+    changed = False
+    for t in teams:
+        owner = t.setdefault("owner", {"type": "Hands-Off"})
+        if owner.get("name"):
+            continue
+        name = _gen_name(rng)
+        while name in seen:
+            name = _gen_name(rng)
+        owner["name"] = name
+        seen.add(name)
+        changed = True
+    return changed
 
 
 # --------------------------------------------------------------------------- #
@@ -481,13 +501,20 @@ def generate_team_histories(teams, rng):
 
 
 def ensure_team_histories(save):
-    """Backfill histories into pre-history saves, deterministically. Returns
-    True if anything changed so the caller can persist once."""
+    """Backfill histories and per-team owner names into older saves,
+    deterministically. Returns True if anything changed so the caller can
+    persist once."""
     teams = save.get("teams") or []
-    if not teams or all(t.get("history") for t in teams):
+    if not teams:
         return False
-    generate_team_histories(teams, _rng(int(save.get("seed", 1) or 1) + 4242))
-    return True
+    seed = int(save.get("seed", 1) or 1)
+    changed = False
+    if not all(t.get("history") for t in teams):
+        generate_team_histories(teams, _rng(seed + 4242))
+        changed = True
+    if ensure_owner_names(teams, _rng(seed + 515)):
+        changed = True
+    return changed
 
 
 def make_schedule(seed, team_ids):
@@ -3129,7 +3156,8 @@ def team_job_offer(save, t):
              f"and the #{pick} pick" + (f" plus {comp} comp pick{'s' if comp != 1 else ''}" if comp else "")
              + f". Our strength is {strengths[0] if strengths else 'a balanced roster'}, "
              f"but {needs[0] if needs else 'depth'} keeps me up at night.")
-    return {"owner": {**prof, "type": otype}, "tier": tier, "label": _TIER_LABEL[tier],
+    return {"owner": {**prof, "type": otype, "name": t["owner"].get("name") or prof["name"]},
+            "tier": tier, "label": _TIER_LABEL[tier],
             "pitch": pitch, "mandate": mandate, "power": power_rating(t), "pick": pick,
             "comp": comp, "cap_room": cap_room, "strengths": strengths, "needs": needs,
             "stars": stars, "age": round(sum(p["age"] for p in t["roster"]) / max(1, len(t["roster"])), 1)}
@@ -3138,9 +3166,11 @@ def team_job_offer(save, t):
 def owner_state(save):
     trust = save["gm"]["owner_trust"]
     mood, icon = next((m, i) for thr, m, i in _OWNER_MOODS if trust >= thr)
-    otype = current_team(save)["owner"]["type"]
+    owner = current_team(save)["owner"]
+    otype = owner["type"]
     profile = _OWNER_PROFILES.get(otype, _OWNER_PROFILES["Hands-Off"])
-    return {"type": otype, "trust": trust, "mood": mood, "icon": icon, **profile}
+    return {"type": otype, "trust": trust, "mood": mood, "icon": icon,
+            **profile, "name": owner.get("name") or profile["name"]}
 
 
 def _owner_tier(save, outcome):
