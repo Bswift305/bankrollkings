@@ -450,8 +450,8 @@ def _gen_team_history(rng, team, rival_name):
     legend_era = rng.randint(max(founded + 3, 1950), 2018)
     legend = {"name": _gen_name(rng), "pos": rng.choice(_LEGEND_POS),
               "era": f"{legend_era}-{legend_era + rng.randint(7, 14)}"}
-    mascot = team["full"].split()[-1]
-    city = " ".join(team["full"].split()[:-1])
+    mascot = team.get("name") or team["full"].split()[-1]
+    city = team.get("city") or team["full"].replace(mascot, "").strip()
     if titles >= 3 and drought <= 12:
         blurb = f"A modern power — the {mascot} hang banners, and {city} expects another."
     elif titles >= 3:
