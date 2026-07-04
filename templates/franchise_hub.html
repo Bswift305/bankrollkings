@@ -946,8 +946,16 @@
       {% endif %}
     </div>
     <div class="fk-staffrow fk-hc">
-      <div class="fk-staffrole"><strong>You — Head Coach</strong><small>Your philosophy. Coordinators who match give synergy; an opposite philosophy clashes.</small></div>
-      <span class="fk-tag fk-tag-hc">{{ gm.philosophy }}</span>
+      <div class="fk-staffrole"><strong>You — Head Coach</strong><small>Your philosophy. Coordinators who match give synergy; an opposite philosophy clashes. You can change identity any time — synergy re-reads immediately.</small></div>
+      <form method="post" action="{{ url_for('franchise_philosophy') }}" style="display:flex; gap:8px; align-items:center;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="philosophy" class="fk-btn fk-btn-ghost fk-btn-sm" style="cursor:pointer;">
+          {% for key in ['Analytics', 'Old School', 'Balanced'] %}
+          <option value="{{ key }}" {% if gm.philosophy == key %}selected{% endif %}>{{ key }}</option>
+          {% endfor %}
+        </select>
+        <button class="fk-btn fk-btn-sm">Change</button>
+      </form>
     </div>
     {% for role, label, desc in staff_roles %}
     <div class="fk-staffrow">

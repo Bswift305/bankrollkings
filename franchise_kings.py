@@ -426,7 +426,68 @@ def _gen_fa_pool(rng, n=40):
 def new_league(seed):
     rng = _rng(seed)
     teams = [_gen_team(rng, i, NFL_TEAMS[i]) for i in range(LEAGUE_SIZE)]
+    generate_team_histories(teams, rng)
     return teams, _gen_fa_pool(rng)
+
+
+# --------------------------------------------------------------------------- #
+# Franchise histories — every club carries a past: when it was founded, the
+# trophies (or the drought), a franchise legend, a division rival, and an
+# identity blurb. Pure flavor with teeth: it makes picking a job mean something.
+# --------------------------------------------------------------------------- #
+_LEGEND_POS = ["QB", "RB", "WR", "OL", "DL", "LB", "CB", "S"]
+
+
+def _gen_team_history(rng, team, rival_name):
+    founded = rng.choice(
+        [rng.randint(1921, 1935)] * 3 + [rng.randint(1946, 1969)] * 4 + [rng.randint(1970, 1999)] * 3)
+    era_span = max(1, (2025 - founded) // 12)          # older clubs had more swings
+    titles = max(0, int(rng.triangular(-1.2, min(6, era_span), 0.8)))
+    last_title = rng.randint(founded + 5, 2025) if titles else None
+    if titles and rng.random() < 0.45:                  # dynasties cluster; droughts are real
+        last_title = rng.randint(founded + 5, min(2025, founded + 35))
+    drought = (2026 - last_title) if last_title else (2026 - founded)
+    legend_era = rng.randint(max(founded + 3, 1950), 2018)
+    legend = {"name": _gen_name(rng), "pos": rng.choice(_LEGEND_POS),
+              "era": f"{legend_era}-{legend_era + rng.randint(7, 14)}"}
+    mascot = team["full"].split()[-1]
+    city = " ".join(team["full"].split()[:-1])
+    if titles >= 3 and drought <= 12:
+        blurb = f"A modern power — the {mascot} hang banners, and {city} expects another."
+    elif titles >= 3:
+        blurb = f"A faded flagship: {titles} trophies in the case, all of them dusty. {city} aches for the old days."
+    elif titles and drought <= 12:
+        blurb = f"Recent champions still hungry — {city} tasted it and wants more."
+    elif titles:
+        blurb = f"One glorious run in {last_title}, and {city} has retold it every season since."
+    elif founded < 1970:
+        blurb = f"The league's longest ache — since {founded} the {mascot} have never won it all. {city} would build a statue of the GM who ends it."
+    else:
+        blurb = f"A young club still writing its identity — no banners yet, no ghosts either. {city} is all upside."
+    return {"founded": founded, "titles": titles, "last_title": last_title,
+            "drought": drought, "legend": legend, "rival": rival_name, "blurb": blurb}
+
+
+def generate_team_histories(teams, rng):
+    for t in teams:
+        if t.get("history"):
+            continue
+        divmates = [x["full"] for x in teams
+                    if x["id"] != t["id"] and x.get("division") == t.get("division")
+                    and x.get("conference") == t.get("conference")]
+        rival = rng.choice(divmates) if divmates else (rng.choice(
+            [x["full"] for x in teams if x["id"] != t["id"]]) if len(teams) > 1 else "")
+        t["history"] = _gen_team_history(rng, t, rival)
+
+
+def ensure_team_histories(save):
+    """Backfill histories into pre-history saves, deterministically. Returns
+    True if anything changed so the caller can persist once."""
+    teams = save.get("teams") or []
+    if not teams or all(t.get("history") for t in teams):
+        return False
+    generate_team_histories(teams, _rng(int(save.get("seed", 1) or 1) + 4242))
+    return True
 
 
 def make_schedule(seed, team_ids):
@@ -2217,6 +2278,24 @@ def _maybe_poach_staff(save, rng, winner):
         return
 
 
+def set_gm_philosophy(save, philosophy):
+    """The GM/HC can reshape his coaching identity mid-career. Free to do —
+    the price is real: coordinator synergy and clashes re-read immediately."""
+    if philosophy not in PHILOSOPHIES:
+        return False, "Pick a real philosophy."
+    old = save["gm"].get("philosophy", "Balanced")
+    if philosophy == old:
+        return False, f"You already coach {PHILOSOPHIES[philosophy]['label']}."
+    save["gm"]["philosophy"] = philosophy
+    _tl(save, save.get("season", 1), "staff", "🧭",
+        f"New identity: {PHILOSOPHIES[philosophy]['label']} football",
+        f"You reshaped your head-coaching philosophy (was {PHILOSOPHIES[old]['label']}). "
+        "Coordinator synergy and clashes re-read immediately.")
+    write_save(save)
+    return True, (f"You now coach {PHILOSOPHIES[philosophy]['label']} football. "
+                  "Check your coordinators — synergy and friction just moved.")
+
+
 def resolve_staff_poach(save, action):
     """GM answers the rival's offer: match (pay the retention bonus) or decline
     (he leaves now). Returns (ok, msg) like hire_staff."""
@@ -2737,9 +2816,13 @@ def load_save(user_id):
         return None
     try:
         # Older saves: staff hired before pedigrees/ideologies/ages existed get
-        # their profile backfilled once, deterministically, and persisted.
-        if save and ensure_staff_profiles(save):
-            write_save(save)
+        # their profile backfilled once, deterministically, and persisted —
+        # same for teams created before franchise histories.
+        if save:
+            changed = ensure_staff_profiles(save)
+            changed = ensure_team_histories(save) or changed
+            if changed:
+                write_save(save)
     except Exception:
         pass
     return save

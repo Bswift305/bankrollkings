@@ -29426,7 +29426,8 @@ def franchise_offseason():
             sc = save['scenarios'][t['id']]
             board.append({'id': t['id'], 'full': t['full'], 'tier': sc['tier'],
                           'slot': sc['draft_slot'], 'power': fk.power_rating(t),
-                          'colors': fk.team_colors(t['full']), 'offer': fk.team_job_offer(save, t)})
+                          'colors': fk.team_colors(t['full']), 'offer': fk.team_job_offer(save, t),
+                          'history': t.get('history')})
         ctx['board'] = board
     elif stage == 'recap':
         team = fk.current_team(save)
@@ -29918,6 +29919,16 @@ def franchise_hire():
     if save:
         ok, msg = fk.hire_staff(save, str(request.form.get('role', '')).strip(),
                                 str(request.form.get('candidate_id', '')).strip())
+        return redirect(url_for('franchise_hub', tab='staff',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
+    return redirect(url_for('franchise_hub', tab='staff'))
+
+
+@app.route('/franchise/philosophy', methods=['POST'])
+def franchise_philosophy():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.set_gm_philosophy(save, str(request.form.get('philosophy', '')).strip())
         return redirect(url_for('franchise_hub', tab='staff',
                                 hire_ok='1' if ok else '0', hire_msg=msg))
     return redirect(url_for('franchise_hub', tab='staff'))
