@@ -1065,6 +1065,7 @@ def decline_ai_offer(save):
 
 def start_inseason(save):
     """Kick off a turn-based, week-by-week regular season the GM plays through."""
+    _expire_staff_poach(save)      # an unanswered rival offer costs you the coach
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
         for p in t["roster"]:
@@ -2181,6 +2182,83 @@ def develop_staff(save, rng):
          "name": c.get("name", ""), "age": c.get("age")}
         for role, c in retired
     ]
+    _maybe_poach_staff(save, rng, winner)
+
+
+def _maybe_poach_staff(save, rng, winner):
+    """Success gets your staff raided: after the season a rival can come for
+    your hottest coach. Match the offer with a retention bonus or he walks at
+    kickoff. At most one attempt a year, aimed at the best remaining name."""
+    if save.get("staff_poach"):
+        return                                     # one live offer at a time
+    staff = save.get("staff") or {}
+    hot = []
+    for role, c in staff.items():
+        if not isinstance(c, dict):
+            continue
+        rating = int(c.get("rating", 0) or 0)
+        if rating < 72 or int(c.get("age", 48) or 48) >= 62:
+            continue
+        p = min(0.35, (rating - 70) * 0.03 + (0.10 if winner else 0.0))
+        hot.append((rating, role, c, p))
+    hot.sort(reverse=True, key=lambda x: x[0])
+    for rating, role, c, p in hot[:2]:             # only the top names draw calls
+        if rng.random() >= p:
+            continue
+        rivals = [t["full"] for t in save.get("teams", []) if t["id"] != save.get("current_team_id")]
+        cost = round(staff_cost(rating) * 0.6, 1)
+        save["staff_poach"] = {"role": role, "label": _ROLE_LABELS.get(role, role),
+                               "name": c.get("name", ""), "rating": rating,
+                               "rival": rng.choice(rivals) if rivals else "a rival club",
+                               "cost": cost}
+        _tl(save, save.get("season", 1), "staff", "📞",
+            f"The {save['staff_poach']['rival']} want {c.get('name', 'your coach')}",
+            f"Your {_ROLE_LABELS.get(role, role)} is their top target. Match with a ${cost}M retention bonus or he walks at kickoff.")
+        return
+
+
+def resolve_staff_poach(save, action):
+    """GM answers the rival's offer: match (pay the retention bonus) or decline
+    (he leaves now). Returns (ok, msg) like hire_staff."""
+    poach = save.get("staff_poach")
+    if not poach:
+        return False, "There is no offer on the table."
+    role, name = poach.get("role", ""), poach.get("name", "your coach")
+    if action == "match":
+        cost = float(poach.get("cost", 0) or 0)
+        b = _business(save)
+        if b["cash"] < cost:
+            return False, f"Keeping {name} costs ${cost}M - you have ${b['cash']}M."
+        b["cash"] = round(b["cash"] - cost, 1)
+        save.pop("staff_poach", None)
+        _tl(save, save.get("season", 1), "staff", "🤝",
+            f"{name} stays — offer matched",
+            f"You paid a ${cost}M retention bonus to keep your {poach.get('label', role)} in the building.")
+        write_save(save)
+        return True, f"{name} stays. The ${cost}M retention bonus is paid."
+    staff = save.get("staff") or {}
+    if staff.get(role, {}).get("name") == name:
+        staff.pop(role, None)
+    save.pop("staff_poach", None)
+    _tl(save, save.get("season", 1), "staff", "👋",
+        f"{name} leaves for the {poach.get('rival', 'rival')}",
+        f"You let your {poach.get('label', role)} take the offer. The market has candidates below.")
+    write_save(save)
+    return True, f"{name} takes the {poach.get('rival', 'rival')} job. His seat is open."
+
+
+def _expire_staff_poach(save):
+    """Kickoff deadline: an unanswered offer means he's gone."""
+    poach = save.pop("staff_poach", None)
+    if not poach:
+        return
+    role, name = poach.get("role", ""), poach.get("name", "your coach")
+    staff = save.get("staff") or {}
+    if staff.get(role, {}).get("name") == name:
+        staff.pop(role, None)
+    _tl(save, save.get("season", 1), "staff", "👋",
+        f"{name} left while you sat on the offer",
+        f"The {poach.get('rival', 'rival')} hired your {poach.get('label', role)} away — the offer expired at kickoff.")
 
 
 _PLAYER_COACH_ROLE = {"QB": "qb_coach", "OL": "oline_coach", "CB": "db_coach", "S": "db_coach",

@@ -29923,6 +29923,16 @@ def franchise_hire():
     return redirect(url_for('franchise_hub', tab='staff'))
 
 
+@app.route('/franchise/poach', methods=['POST'])
+def franchise_poach():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.resolve_staff_poach(save, str(request.form.get('action', '')).strip())
+        return redirect(url_for('franchise_hub', tab='staff',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
+    return redirect(url_for('franchise_hub', tab='staff'))
+
+
 @app.route('/franchise/fire', methods=['POST'])
 def franchise_fire():
     _, save = _franchise_save()

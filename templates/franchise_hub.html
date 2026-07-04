@@ -910,6 +910,20 @@
     {% if hire_msg %}
     <div class="fk-trade-result fk-trade-{{ 'yes' if request.args.get('hire_ok') == '1' else 'no' }}">{{ hire_msg }}</div>
     {% endif %}
+    {% if save.staff_poach %}{% set poach = save.staff_poach %}
+    <div class="fk-ownermsg">
+      <strong>📞 The {{ poach.rival }} are trying to hire away {{ poach.name }}</strong>
+      <em>Your {{ poach.label }} ({{ poach.rating }} OVR) is their top target. Match the offer with a ${{ poach.cost }}M retention bonus or he walks — decide before kickoff, or the decision makes itself.</em>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <form method="post" action="{{ url_for('franchise_poach') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="match">
+          <button class="fk-btn fk-btn-sm">Match — pay ${{ poach.cost }}M</button></form>
+        <form method="post" action="{{ url_for('franchise_poach') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="decline">
+          <button class="fk-btn fk-btn-ghost fk-btn-sm">Let him walk</button></form>
+      </div>
+    </div>
+    {% endif %}
     <div class="fk-staffbonus">
       <span>Coaching edge <b>{{ '%+.1f'|format(staff_bonus.power) }} power</b></span>
       <span>Scheme fit <b>{{ '%+.1f'|format(staff_bonus.scheme) }} power</b></span>
