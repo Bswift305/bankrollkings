@@ -29916,8 +29916,10 @@ def franchise_ticket():
 def franchise_hire():
     _, save = _franchise_save()
     if save:
-        fk.hire_staff(save, str(request.form.get('role', '')).strip(),
-                      str(request.form.get('candidate_id', '')).strip())
+        ok, msg = fk.hire_staff(save, str(request.form.get('role', '')).strip(),
+                                str(request.form.get('candidate_id', '')).strip())
+        return redirect(url_for('franchise_hub', tab='staff',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
     return redirect(url_for('franchise_hub', tab='staff'))
 
 

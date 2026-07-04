@@ -906,6 +906,10 @@
   {% if tab == 'staff' %}
   <div class="fk-card">
     <div class="fk-card-h">Staff &amp; coaching</div>
+    {% set hire_msg = request.args.get('hire_msg', '') %}
+    {% if hire_msg %}
+    <div class="fk-trade-result fk-trade-{{ 'yes' if request.args.get('hire_ok') == '1' else 'no' }}">{{ hire_msg }}</div>
+    {% endif %}
     <div class="fk-staffbonus">
       <span>Coaching edge <b>{{ '%+.1f'|format(staff_bonus.power) }} power</b></span>
       <span>Scheme fit <b>{{ '%+.1f'|format(staff_bonus.scheme) }} power</b></span>
