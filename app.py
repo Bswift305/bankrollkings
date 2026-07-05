@@ -29575,6 +29575,15 @@ def franchise_offseason_fa():
     return redirect(url_for('franchise_offseason', fa=pid))
 
 
+@app.route('/franchise/offseason/proday', methods=['POST'])
+def franchise_offseason_proday():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        ok, msg = fk.run_pro_day(save, str(request.form.get('prospect_id', '')).strip())
+        return redirect(url_for('franchise_offseason', pd_ok='1' if ok else '0', pd_msg=msg))
+    return redirect(url_for('franchise_offseason'))
+
+
 @app.route('/franchise/offseason/stash', methods=['POST'])
 def franchise_offseason_stash():
     _, save = _franchise_save()

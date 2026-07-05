@@ -470,13 +470,18 @@
       </div>
       {% endif %}
       {% if draft.on_clock %}
-        <p class="os-sub">You're on the clock.</p>
+        <p class="os-sub">You're on the clock. <span style="color:#f5c860">Pro-day visits left: <b>{{ draft.pro_days }}</b></span> — burn one on a prospect you're serious about and his grade gets re-scouted for real.</p>
+        {% set pd_msg = request.args.get('pd_msg', '') %}
+        {% if pd_msg %}<div class="os-li" style="border-left:3px solid {{ '#7dffb0' if request.args.get('pd_ok') == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if request.args.get('pd_ok') == '1' else '#ff9a9a' }};">{{ pd_msg }}</div>{% endif %}
         <div class="os-tscroll"><table class="os-table"><thead><tr><th>Prospect</th><th>Pos</th><th>Grade</th><th>Fit</th><th>Scout</th><th></th></tr></thead><tbody>
         {% for p in draft.available[:40] %}
-          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}{% if p.college %} · {{ p.college }}{% endif %}</small>{% elif p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.grade }}</td>
+          <tr><td><a href="{{ url_for('franchise_prospect', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}{% if p.college %} · {{ p.college }}{% endif %}</small>{% elif p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}</small>{% endif %}
+            {% if p.combine %}<small style="display:block;color:#5f7280">{{ '%.2f'|format(p.combine.forty) }}s 40 · {{ p.combine.bench }} bench · {{ p.combine.vert }}″ vert · {{ p.combine.traits|join(', ') }}</small>{% endif %}
+            {% if p.pro_day %}<small style="display:block;color:#7dffb0">✓ {{ p.pro_day_note }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.grade }}</td>
             <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
             <td>{% if p.scout %}<span class="os-fit os-fit-{{ 'hi' if p.scout_tier=='hi' else 'lo' if p.scout_tier=='lo' else 'mid' }}">{{ p.scout }}</span>{% endif %}</td>
-            <td><form method="post" action="{{ url_for('franchise_offseason_draft') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="os-mini os-mini-btn">Draft</button></form></td></tr>
+            <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_draft') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="os-mini os-mini-btn">Draft</button></form>
+            {% if draft.pro_days > 0 and not p.pro_day %}<form method="post" action="{{ url_for('franchise_offseason_proday') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="prospect_id" value="{{ p.id }}"><button class="os-mini">Pro day</button></form>{% endif %}</td></tr>
         {% endfor %}
         </tbody></table></div>
       {% else %}

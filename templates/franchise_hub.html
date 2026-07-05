@@ -985,9 +985,20 @@
     <div class="fk-staffbonus">
       <span>Coaching edge <b>{{ '%+.1f'|format(staff_bonus.power) }} power</b></span>
       <span>Scheme fit <b>{{ '%+.1f'|format(staff_bonus.scheme) }} power</b></span>
+      <span>Playbook <b>{{ '%+.1f'|format(staff_bonus.playbook.edge) }} power</b></span>
       <span>Scouting <b>{{ '%+.0f'|format(staff_bonus.scouting) }} acc</b></span>
       <span>Development <b>{{ 'boosted' if staff_bonus.development else 'standard' }}</b></span>
     </div>
+    {% if staff_bonus.playbook.packages %}
+    <div style="display:grid; gap:4px; margin:8px 0 4px;">
+      {% for pk in staff_bonus.playbook.packages %}
+      <div class="fk-muted" style="font-size:12px;">
+        {{ '✅' if pk.on else '⭕' }} <b style="color:{{ '#7dffb0' if pk.on else '#8fa3b0' }}">{{ pk.name }}</b>
+        <small>— {{ pk.blurb }} {{ ('Run by ' ~ pk.who) if pk.on else ('Not installed: ' ~ pk.who) }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% set cond = staff_bonus.conditioning %}
     <div class="fk-devbox {{ 'fk-devbox-empty' if not cond.style }}">
       <div class="fk-devbox-h">{{ icon('bulb') }}Player Development Engine</div>
@@ -1024,6 +1035,7 @@
           {% if staff[role].age %}<span class="fk-tag">{{ staff[role].age }} yrs</span>{% endif %}
           {% if staff[role].former_player %}<span class="fk-tag fk-tag-hc">Former {{ staff[role].former_player.pos }}{% if staff[role].former_player.hof %} · HOF{% endif %}</span>{% endif %}
           {% if staff[role].system %}<span class="fk-tag">{{ staff[role].system }}</span>{% endif %}
+          {% for pk in staff[role].playbook or [] %}<span class="fk-tag" title="{{ pk.blurb }}">📖 {{ pk.name }}</span>{% endfor %}
           {% if staff[role].style %}<span class="fk-tag">{{ staff[role].style }}</span>{% endif %}
           {% if staff[role].ideology %}<span class="fk-tag fk-tag-ideo">{{ staff[role].ideology }}{% if staff[role].versatility is defined %} · {{ 'Adaptive' if staff[role].versatility >= 65 else 'Rigid' if staff[role].versatility <= 38 else 'Balanced' }}{% endif %}</span>{% endif %}
           {% if staff[role].philosophy %}
@@ -1051,7 +1063,7 @@
           <form method="post" action="{{ url_for('franchise_hire') }}" class="fk-cand">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
-            <span class="fk-candmain"><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.age %} · {{ c.age }}y{% endif %}{% if c.former_player %} <span class="fk-tag fk-tag-hc">Former {{ c.former_player.pos }}{% if c.former_player.hof %} · HOF{% endif %}</span>{% endif %}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}
+            <span class="fk-candmain"><span class="fk-ovr">{{ c.rating }}</span> {{ c.name }}{% if c.age %} · {{ c.age }}y{% endif %}{% if c.former_player %} <span class="fk-tag fk-tag-hc">Former {{ c.former_player.pos }}{% if c.former_player.hof %} · HOF{% endif %}</span>{% endif %}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.style %} · <em>{{ c.style }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}{% if c.playbook %} · <span style="color:#9fe9ff">📖 {% for pk in c.playbook %}{{ pk.name }}{{ ' + ' if not loop.last }}{% endfor %}</span>{% endif %}
               {% if c.ideology %}<small class="fk-candideo"><b>{{ c.ideology }}</b>{% if c.versatility is defined %} · {{ 'Adaptive' if c.versatility >= 65 else 'Rigid' if c.versatility <= 38 else 'Balanced' }}{% endif %}{% if c.specialties %} · best with {{ c.specialties }}{% endif %}{% if c.roster_fit %} · <span class="fk-rfit fk-rfit-{{ 'hi' if c.roster_fit.score >= 68 else 'mid' if c.roster_fit.score >= 50 else 'lo' }}">Roster fit {{ c.roster_fit.score }}</span>{% endif %}{% if c.roster_fit and c.roster_fit.notes %} — {{ c.roster_fit.notes[0] }}{% endif %}</small>{% endif %}
               {% if c.ped %}<small class="fk-candped"><span class="fk-ped-{{ 'hi' if c.ped.rep >= 78 else 'mid' if c.ped.rep >= 58 else 'lo' }}">{{ c.ped.label }}</span> · {{ c.ped.tree }} · {{ c.ped.experience }}yr{% if c.ped.pros %} · {{ c.ped.pros }} pros{% endif %}{% if c.ped.rings %} · 🏆{{ c.ped.rings }}{% endif %}</small>{% endif %}
             </span>

@@ -291,7 +291,7 @@ def _roll_true_pot(rng, overall, potential, age):
 # per-player layer that sits UNDER the coordinator's scheme (which re-weights
 # whole position groups). See SCHEME_STYLE_FIT + tactical_fit() below.
 POS_STYLES = {
-    "QB": ["Pocket Passer", "Dual Threat", "Game Manager"],
+    "QB": ["Pocket Passer", "Dual Threat", "Game Manager", "RPO Specialist"],
     "RB": ["Power Back", "Scat Back", "Every-Down"],
     "WR": ["Deep Threat", "Possession", "Slot"],
     "TE": ["Move TE", "In-Line Blocker"],
@@ -776,7 +776,8 @@ def _roll_week_injuries(save, week, rng):
 
 def _user_inseason_power(save, week, base_power):
     sb = staff_bonus(save)
-    p = base_power + sb["power"] + sb["scheme"] + sb["special_teams"] + atmosphere(save)["home_edge"]
+    p = (base_power + sb["power"] + sb["scheme"] + sb["playbook"]["edge"]
+         + sb["special_teams"] + atmosphere(save)["home_edge"])
     p += weekly_edge(save)                                      # Command Center: practice + game plan
     p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
     out = [x for x in _starters(current_team(save)) if x.get("out_until", 0) >= week]
@@ -1784,12 +1785,77 @@ SCHEME_STYLE_FIT = {
     "Air Raid":     {"QB": ["Pocket Passer", "Dual Threat"], "WR": ["Deep Threat", "Slot"], "TE": ["Move TE"]},
     "West Coast":   {"QB": ["Game Manager", "Pocket Passer"], "WR": ["Possession", "Slot"], "TE": ["Move TE", "In-Line Blocker"]},
     "Power Run":    {"QB": ["Game Manager"], "RB": ["Power Back", "Every-Down"], "OL": ["Power"], "TE": ["In-Line Blocker"]},
-    "Spread":       {"QB": ["Dual Threat"], "WR": ["Slot", "Deep Threat"], "RB": ["Scat Back", "Every-Down"]},
+    "Spread":       {"QB": ["Dual Threat", "RPO Specialist"], "WR": ["Slot", "Deep Threat"], "RB": ["Scat Back", "Every-Down"]},
     "4-3 Front":    {"DL": ["Pass Rusher", "Run Stuffer"], "LB": ["Thumper"]},
     "3-4 Front":    {"LB": ["Thumper", "Coverage"], "DL": ["Run Stuffer"]},
     "Cover 3 Zone": {"CB": ["Zone"], "S": ["Center Field"]},
     "Blitz Heavy":  {"DL": ["Pass Rusher"], "LB": ["Thumper"], "CB": ["Press Man"]},
 }
+
+
+# Playbook PACKAGES — the "how" inside a scheme. Every coordinator carries two
+# signature packages; each one fully installs only when a starter matches the
+# style it's built around, and an installed package is worth real power.
+PLAYBOOK_PACKAGES = {
+    "Air Raid": [
+        {"name": "Four Verticals", "blurb": "Streaks — stretch the top off the coverage.", "pos": "WR", "styles": ["Deep Threat"]},
+        {"name": "Mesh & Crossers", "blurb": "Shallow crossers that win against man.", "pos": "WR", "styles": ["Slot", "Possession"]},
+        {"name": "Screen & Bubble Game", "blurb": "Bubbles and tunnel screens — free yards in space.", "pos": "RB", "styles": ["Scat Back"]},
+    ],
+    "West Coast": [
+        {"name": "Quick Slants & Timing", "blurb": "Three-step rhythm throws.", "pos": "WR", "styles": ["Possession", "Slot"]},
+        {"name": "Backfield Pass Game", "blurb": "Checkdowns, angles, swing passes to the back.", "pos": "RB", "styles": ["Scat Back", "Every-Down"]},
+        {"name": "Play-Action Boot", "blurb": "Keepers off the run look.", "pos": "QB", "styles": ["Game Manager", "Pocket Passer"]},
+    ],
+    "Power Run": [
+        {"name": "Duo & Gap Scheme", "blurb": "Downhill doubles — move the line of scrimmage.", "pos": "OL", "styles": ["Power"]},
+        {"name": "Heavy Play-Action Shots", "blurb": "Punish the loaded box over the top.", "pos": "WR", "styles": ["Deep Threat"]},
+        {"name": "Under-Center Grind", "blurb": "Clock control, downhill runs, third-and-short money.", "pos": "RB", "styles": ["Power Back", "Every-Down"]},
+    ],
+    "Spread": [
+        {"name": "RPO Package", "blurb": "Read the conflict defender — run or throw.", "pos": "QB", "styles": ["RPO Specialist", "Dual Threat"]},
+        {"name": "Jet Motion & Space", "blurb": "Horizontal stress, easy touches.", "pos": "WR", "styles": ["Slot"]},
+        {"name": "Tempo Attack", "blurb": "No-huddle — tire the front, steal snaps.", "pos": "RB", "styles": ["Scat Back"]},
+    ],
+    "4-3 Front": [
+        {"name": "Wide-9 Rush", "blurb": "Tee off from the edge.", "pos": "DL", "styles": ["Pass Rusher"]},
+        {"name": "Spill & Kill Run Fits", "blurb": "Force it wide, rally and tackle.", "pos": "LB", "styles": ["Thumper"]},
+    ],
+    "3-4 Front": [
+        {"name": "Two-Gap Wall", "blurb": "Occupy blockers, free the backers.", "pos": "DL", "styles": ["Run Stuffer"]},
+        {"name": "Edge Pressure Package", "blurb": "Stand-up rushers off both edges.", "pos": "LB", "styles": ["Thumper"]},
+    ],
+    "Cover 3 Zone": [
+        {"name": "Pattern-Match Carry", "blurb": "Zone eyes, man leverage on verticals.", "pos": "CB", "styles": ["Zone"]},
+        {"name": "Single-High Robber", "blurb": "The free safety reads the QB's eyes.", "pos": "S", "styles": ["Center Field"]},
+    ],
+    "Blitz Heavy": [
+        {"name": "Zero Pressure Looks", "blurb": "Send more than they can block.", "pos": "LB", "styles": ["Thumper"]},
+        {"name": "Press-and-Pray Corners", "blurb": "Man coverage buys the rush its second.", "pos": "CB", "styles": ["Press Man"]},
+    ],
+}
+
+
+def playbook_edge(save):
+    """Each coordinator package installs when a starter matches its style —
+    an installed package is +0.5 power. This is where 'we run RPOs' becomes
+    'we run RPOs AND we have the quarterback for it'."""
+    team = current_team(save)
+    edge, packages = 0.0, []
+    for role in ("off_coord", "def_coord"):
+        coach = (save.get("staff") or {}).get(role) or {}
+        for pk in coach.get("playbook") or []:
+            starters = sorted([p for p in team["roster"] if p["pos"] == pk["pos"]],
+                              key=lambda x: -x["overall"])[:ROSTER.get(pk["pos"], 1)]
+            hit = next((p for p in starters if p.get("style") in pk["styles"]), None)
+            if hit:
+                edge += 0.5
+                packages.append({"name": pk["name"], "blurb": pk["blurb"], "on": True,
+                                 "who": f"{hit['pos']} {hit['name']} ({hit.get('style', '')})"})
+            else:
+                packages.append({"name": pk["name"], "blurb": pk["blurb"], "on": False,
+                                 "who": f"needs a {pk['pos']}: {' / '.join(pk['styles'])}"})
+    return {"edge": round(edge, 1), "packages": packages}
 
 
 def _team_schemes(save):
@@ -1901,6 +1967,8 @@ def _gen_staff(rng, role):
     if role in ("off_coord", "def_coord"):
         s["philosophy"] = rng.choice(["Analytics", "Old School", "Balanced"])
         s["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES))
+        pool = PLAYBOOK_PACKAGES.get(s["system"], [])
+        s["playbook"] = rng.sample(pool, k=min(2, len(pool)))
     elif role == "st_coord":
         s["system"] = rng.choice(list(ST_SCHEMES))
     elif role == "cond_coach":
@@ -2144,6 +2212,7 @@ def staff_bonus(save):
     return {
         "power": coaching_power(save),
         "scheme": scheme_effect(save),
+        "playbook": playbook_edge(save),
         "special_teams": special_teams(save),
         "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
         "development": 1 if coord_avg >= 65 else 0,
@@ -2164,7 +2233,7 @@ def hire_staff(save, role, candidate_id):
         return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - cost, 1)
     entry = {"name": cand["name"], "rating": cand["rating"]}
-    for k in ("philosophy", "system", "style", "ped", "age", "former_player",
+    for k in ("philosophy", "system", "style", "ped", "age", "former_player", "playbook",
               "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in cand:
             entry[k] = cand[k]
@@ -2209,6 +2278,9 @@ def _backfill_staff_entry(save, role, entry):
             entry["philosophy"] = rng.choice(["Analytics", "Old School", "Balanced"]); changed = True
         if not entry.get("system"):
             entry["system"] = rng.choice(list(OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES)); changed = True
+        if not entry.get("playbook"):
+            pool = PLAYBOOK_PACKAGES.get(entry["system"], [])
+            entry["playbook"] = rng.sample(pool, k=min(2, len(pool))); changed = True
     elif role == "st_coord" and not entry.get("system"):
         entry["system"] = rng.choice(list(ST_SCHEMES)); changed = True
     elif role == "cond_coach" and not entry.get("system"):
@@ -2500,6 +2572,38 @@ def scout_report(save, p):
 # --------------------------------------------------------------------------- #
 # Rookie draft + scouting
 # --------------------------------------------------------------------------- #
+# Combine baselines per position — the numbers scouts argue about. A prospect's
+# athletic tilt is correlated with his hidden quality (with real noise), so the
+# testing is a genuine but imperfect signal.
+_COMBINE_40 = {"QB": 4.85, "RB": 4.52, "WR": 4.47, "TE": 4.72, "OL": 5.22,
+               "DL": 4.95, "LB": 4.68, "CB": 4.45, "S": 4.52, "K": 5.05}
+_COMBINE_BENCH = {"QB": 16, "RB": 20, "WR": 14, "TE": 20, "OL": 28,
+                  "DL": 27, "LB": 23, "CB": 14, "S": 17, "K": 8}
+
+
+def _gen_combine(rng, pos, true_ovr, true_pot):
+    ath = ((true_ovr + true_pot) / 2 - 62) / 26.0 + rng.gauss(0, 0.45)
+    base40 = _COMBINE_40.get(pos, 4.8)
+    forty = round(base40 - 0.11 * ath + rng.gauss(0, 0.05), 2)
+    bench = max(4, int(_COMBINE_BENCH.get(pos, 18) + 3.5 * ath + rng.gauss(0, 2.5)))
+    vert = round(max(24.0, 33 + 3.2 * ath + rng.gauss(0, 1.6)), 1)
+    cone = round(7.05 - 0.13 * ath + rng.gauss(0, 0.09), 2)
+    traits = []
+    if forty <= base40 - 0.10:
+        traits.append("burner")
+    elif forty >= base40 + 0.10:
+        traits.append("slow feet")
+    if bench >= _COMBINE_BENCH.get(pos, 18) + 4:
+        traits.append("weight-room strong")
+    if vert >= 36.5:
+        traits.append("explosive")
+    if cone <= 6.85:
+        traits.append("bendy mover")
+    if not traits:
+        traits.append("solid tester")
+    return {"forty": forty, "bench": bench, "vert": vert, "cone": cone, "traits": traits}
+
+
 def _gen_prospect(rng, pos):
     true_ovr = max(50, min(90, int(rng.triangular(52, 86, 64))))
     true_pot = min(99, true_ovr + int(rng.triangular(2, 26, 12)))
@@ -2507,6 +2611,7 @@ def _gen_prospect(rng, pos):
             "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
             "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"]),
             "style": _style_for(rng, pos),
+            "combine": _gen_combine(rng, pos, true_ovr, true_pot),
             **_gen_background(rng),
             **_gen_human_profile(rng)}
 
@@ -2601,7 +2706,8 @@ def start_draft(save):
                 break
     save["pick_swaps"] = [sw for sw in save.get("pick_swaps", []) if sw.get("season") != season]
     save["draft"] = {"class": cls, "picks": picks, "order": order,
-                     "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": []}
+                     "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": [],
+                     "pro_days": 3}   # private-workout visits your scouts can burn
     save["draft_pending"] = True
     _draft_advance(save)
     write_save(save)
@@ -2806,6 +2912,36 @@ def accept_draft_trade(save, offer_id):
     return True, off["summary"]
 
 
+def run_pro_day(save, pid):
+    """Send your scouts to one prospect's pro day (3 visits per class). His
+    grade gets re-scouted with far tighter noise and his medical gets a read —
+    the private-workout edge real war rooms pay for."""
+    draft = save.get("draft")
+    if not draft or not save.get("draft_pending"):
+        return False, "No draft in progress."
+    if draft.get("pro_days", 0) <= 0:
+        return False, "Your scouts have no pro-day visits left this spring."
+    p = next((x for x in draft["class"] if x["id"] == pid), None)
+    if not p or p.get("drafted"):
+        return False, "He's off the board."
+    if p.get("pro_day"):
+        return False, f"You already worked out {p['name']}."
+    rng = _rng(save["seed"] + sum(ord(c) for c in str(pid)) + 5)
+    acc = max(20, min(96, save["gm"]["ratings"].get("drafting", 50)
+                      + staff_bonus(save)["scouting"] + 24))
+    _scout(rng, p, acc)
+    p["pro_day"] = True
+    med = ("medical checks clean" if p.get("dev") != "Slow" and rng.random() < 0.8
+           else "some medical flags in the file")
+    c = p.get("combine") or {}
+    p["pro_day_note"] = (f"Private workout: {c.get('forty', '?')}s forty confirmed, "
+                         f"{med}. This grade is real.")
+    draft["pro_days"] = draft.get("pro_days", 0) - 1
+    write_save(save)
+    return True, (f"Pro day done — {p['name']} re-scouted ({p['grade']} grade, "
+                  f"{p['pot_grade']} ceiling). {draft['pro_days']} visit(s) left.")
+
+
 def draft_state(save):
     draft = save.get("draft")
     if not draft:
@@ -2823,6 +2959,7 @@ def draft_state(save):
     return {"round": rnd, "pick": pk, "rounds": draft["rounds"],
             "on_clock": on_clock, "available": avail, "log": draft["user_log"],
             "offers": draft.get("offers", []) if on_clock else [],
+            "pro_days": draft.get("pro_days", 0),
             "on_clock_ov": draft["picks"][draft["ptr"]]["ov"] if draft["ptr"] < len(draft["picks"]) else None}
 
 
