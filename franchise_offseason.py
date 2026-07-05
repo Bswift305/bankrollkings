@@ -243,10 +243,12 @@ def _apply_scenario_shift(save):
 # Stage: Voluntary Workouts - evaluate your talent
 # --------------------------------------------------------------------------- #
 def workouts_report(save):
-    """Per-player evaluation: trajectory (rising/declining/steady) + contract status."""
+    """Per-player evaluation: trajectory (rising/declining/steady) + contract status.
+    Grouped by position (depth-chart order), best player first within each group."""
     team = fk.current_team(save)
+    pos_order = {pos: i for i, pos in enumerate(fk.ROSTER)}
     out = []
-    for p in sorted(team["roster"], key=lambda x: -x["overall"]):
+    for p in sorted(team["roster"], key=lambda x: (pos_order.get(x["pos"], 99), -x["overall"])):
         pot = p.get("potential", p["overall"])
         age = p["age"]
         if pot - p["overall"] >= 4 and age <= 25:
