@@ -29159,6 +29159,9 @@ def _trade_view(save, team_id):
         'trade_team': sel,
         'give_list': withval(fk.current_team(save)['roster']),
         'get_list': withval(sel['roster']) if sel else [],
+        'block_list': sorted(fk.blocked_players(save), key=lambda p: -p['overall']),
+        'wants_out': sorted(fk.wants_out_players(save), key=lambda p: -p['overall']),
+        'trades_open': fk.solo_trades_open(save),
         'last_trade': save.get('last_trade'),
     }
 
@@ -29939,6 +29942,19 @@ def _staff_action_redirect(save, ok=None, msg=None):
     if save and fo.offseason_active(save):
         return redirect(url_for('franchise_offseason', **params))
     return redirect(url_for('franchise_hub', tab='staff', **params))
+
+
+@app.route('/franchise/blocklist', methods=['POST'])
+def franchise_blocklist():
+    _, save = _franchise_save()
+    if save:
+        pid = str(request.form.get('pid', '')).strip()
+        action = str(request.form.get('action', 'list')).strip()
+        ok, msg = (fk.unblock_player(save, pid) if action == 'unlist'
+                   else fk.block_player(save, pid))
+        return redirect(url_for('franchise_hub', tab='trades',
+                                block_ok='1' if ok else '0', block_msg=msg))
+    return redirect(url_for('franchise_hub', tab='trades'))
 
 
 @app.route('/franchise/philosophy', methods=['POST'])

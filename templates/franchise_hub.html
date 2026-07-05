@@ -790,7 +790,46 @@
   {# ===================== TRADES ===================== #}
   {% if tab == 'trades' %}
   <div class="fk-card">
-    <div class="fk-card-h">Trade block</div>
+    <div class="fk-card-h">Trading Block</div>
+    {% set block_msg = request.args.get('block_msg', '') %}
+    {% if block_msg %}
+    <div class="fk-trade-result fk-trade-{{ 'yes' if request.args.get('block_ok') == '1' else 'no' }}">{{ block_msg }}</div>
+    {% endif %}
+    <p class="fk-muted" style="margin:6px 0 10px">List a player and rival GMs bring offers to <em>you</em> — listed players draw calls first, and offers roll in until the Week {{ 9 }} deadline. Word gets out though: being shopped stings his morale (volatile players take it worst, and shopping a locker-room captain rattles the whole room). Pulling him off the block heals some of it.</p>
+    {% if block_list %}
+    <div style="display:grid; gap:6px; margin-bottom:10px;">
+      {% for p in block_list %}
+      <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; background:rgba(3,10,16,.5); border:1px solid rgba(245,200,96,.35); border-radius:9px; padding:7px 10px;">
+        <span>📰 <b>{{ p.pos }} <a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></b> ({{ p.overall }} OVR) — on the block · morale {{ p.morale }}{% if p.trade_request %} · <b style="color:#ff9a9a">wants out</b>{% endif %}</span>
+        <form method="post" action="{{ url_for('franchise_blocklist') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="action" value="unlist">
+          <button class="fk-btn fk-btn-ghost fk-btn-sm">Pull off the block</button></form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if wants_out %}
+    <div class="fk-muted" style="margin-bottom:10px;">😤 Wants out:
+      {% for p in wants_out %}<b style="color:#ff9a9a">{{ p.pos }} {{ p.name }}</b> ({{ p.trade_reason or 'unhappy' }}){{ ', ' if not loop.last }}{% endfor %}
+      — consider listing or dealing them before it poisons the room.</div>
+    {% endif %}
+    {% if trades_open %}
+    <form method="post" action="{{ url_for('franchise_blocklist') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="list">
+      <select name="pid" class="fk-input" style="max-width:340px;" required>
+        {% for p in give_list if not p.on_block %}
+        <option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}{% if p.trade_request %} · WANTS OUT{% endif %}</option>
+        {% endfor %}
+      </select>
+      <button class="fk-btn fk-btn-sm">Put him on the block</button>
+    </form>
+    {% else %}
+    <p class="fk-muted">The trade market is closed until the offseason — no new listings.</p>
+    {% endif %}
+  </div>
+
+  <div class="fk-card">
+    <div class="fk-card-h">Propose a trade</div>
     {% if last_trade and last_trade.ok %}
       <div class="fk-trade-result fk-trade-{{ 'yes' if last_trade.accepted else 'no' }}">
         <span class="fk-grade fk-grade-{{ last_trade.grade }}">{{ last_trade.grade }}</span>
@@ -813,7 +852,7 @@
         <input type="hidden" name="team_id" value="{{ trade_team.id }}">
         <label class="fk-label">You give</label>
         <select name="give_id" class="fk-input" required>
-          {% for p in give_list %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}</option>{% endfor %}
+          {% for p in give_list %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}{% if p.on_block %} · LISTED{% endif %}{% if p.trade_request %} · WANTS OUT{% endif %}</option>{% endfor %}
         </select>
         <label class="fk-label" style="margin-top:10px">You get from {{ trade_team.full }}</label>
         <select name="get_id" class="fk-input" required>

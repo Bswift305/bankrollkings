@@ -1108,7 +1108,9 @@ def _maybe_ai_offer(save, rng):
     mine = sorted([p for p in myteam["roster"] if not p.get("holdout")], key=lambda p: -trade_value(p))[:14]
     if not mine:
         return None
-    want = rng.choice(mine)
+    # listed players are the ones rival GMs actually call about
+    blocked = [p for p in myteam["roster"] if p.get("on_block") and not p.get("holdout")]
+    want = rng.choice(blocked) if blocked and rng.random() < 0.75 else rng.choice(mine)
     ai = rng.choice([t for t in save["teams"] if t["id"] != uid])
     theirs = sorted(ai["roster"], key=lambda p: abs(trade_value(p) - trade_value(want)))[:6]
     if not theirs:
@@ -1138,6 +1140,7 @@ def accept_ai_offer(save):
     myteam["roster"] = [p for p in myteam["roster"] if p["id"] != want["id"]] + [give]
     ai["roster"] = [p for p in ai["roster"] if p["id"] != give["id"]] + [want]
     save["last_trade"] = {"ok": True, "summary": f"Acquired {give['pos']} {give['name']} from the {o['team']} for {want['pos']} {want['name']}."}
+    _trade_fallout(save, myteam, want, give)
     _owner_trade_react(save, give["pos"], give["name"], want["pos"], want["name"], o.get("grade", "C"))
     iz["offer"] = None
     write_save(save)
@@ -1211,7 +1214,8 @@ def sim_week(save):
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
     _update_power_rank(save)        # GridIron Network week-over-week movement
-    if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < 0.4:
+    offer_chance = 0.75 if any(p.get("on_block") for p in current_team(save)["roster"]) else 0.4
+    if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < offer_chance:
         iz["offer"] = _maybe_ai_offer(save, rng)
     owner_weekly(save, week, rng)      # the owner reacts to the week just played
     generate_weekly_agenda(save, week + 1, rng)   # next week's staff/player decisions land
@@ -4235,7 +4239,10 @@ def broadcast(save):
         wire.append({"tag": "OWNER", "text": m["text"], "kind": "owner"})
     lt = save.get("last_trade")
     if lt and lt.get("ok"):
-        wire.append({"tag": "TRADE", "text": lt["summary"], "kind": "trade"})
+        # AI-offer trades store a 'summary'; user-proposed trades store 'msg'
+        text = lt.get("summary") or lt.get("msg")
+        if text:
+            wire.append({"tag": "TRADE", "text": text, "kind": "trade"})
 
     last = iz.get("log") or []
     lg = last[-1] if last else None
@@ -4612,6 +4619,82 @@ def solo_trades_open(save):
     return True
 
 
+# --------------------------------------------------------------------------- #
+# Trading block — flag a player as available and the league comes to YOU.
+# Word gets out: being shopped stings (volatile personalities take it worst,
+# shopping a locker-room leader rattles the whole room), listed players draw
+# extra inbound offers until the deadline, and pulling a guy off the block
+# heals some of the hurt — not all of it.
+# --------------------------------------------------------------------------- #
+_VOLATILE_PERSONALITIES = ("Hothead", "Free Spirit", "Showman")
+_LEADER_PERSONALITIES = ("Field General", "Mentor", "Throwback", "Clutch Gene")
+
+
+def _is_leader(p):
+    return p.get("personality") in _LEADER_PERSONALITIES and p.get("overall", 0) >= 74
+
+
+def blocked_players(save):
+    return [p for p in current_team(save)["roster"] if p.get("on_block")]
+
+
+def wants_out_players(save):
+    return [p for p in current_team(save)["roster"]
+            if p.get("trade_request") and not p.get("on_block")]
+
+
+def block_player(save, pid):
+    if not solo_trades_open(save):
+        return False, "The trade market is closed — no listings until the offseason."
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He's not on your roster."
+    if p.get("on_block"):
+        return False, f"{p['name']} is already listed."
+    p["on_block"] = True
+    volatile = p.get("personality") in _VOLATILE_PERSONALITIES
+    hit = 8 if volatile else 4
+    p["morale"] = max(5, min(99, p.get("morale", 70) - hit))
+    note = "he's furious" if volatile else "he heard, and it stings"
+    if _is_leader(p):
+        for mate in team["roster"]:
+            if mate["id"] != pid:
+                mate["morale"] = max(5, min(99, mate.get("morale", 70) - 1))
+        note += " — and the room noticed you'd shop a captain"
+    if p.get("overall", 0) >= 80:
+        _tl(save, save.get("season", 1), "trade", "📰",
+            f"{p['pos']} {p['name']} is on the trading block",
+            "League sources say you're listening on your star. Rival GMs are circling.")
+    write_save(save)
+    return True, f"{p['name']} is on the block — {note}. Listed players draw offers first."
+
+
+def unblock_player(save, pid):
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p or not p.get("on_block"):
+        return False, "He isn't on the block."
+    p.pop("on_block", None)
+    p["morale"] = max(5, min(99, p.get("morale", 70) + 3))
+    write_save(save)
+    return True, f"{p['name']} is off the block. Some of the sting fades — not all of it."
+
+
+def _trade_fallout(save, team, departed, arrived):
+    """The human cost of a completed deal: ship out a leader or a star and the
+    room feels it for a stretch; the man coming in arrives on a clean slate."""
+    if _is_leader(departed) or departed.get("overall", 0) >= 84:
+        for mate in team["roster"]:
+            mate["morale"] = max(5, min(99, mate.get("morale", 70) - 2))
+        _tl(save, save.get("season", 1), "trade", "🚌",
+            f"Locker room shaken by the {departed['name']} trade",
+            "You moved a leader. The room takes a small morale dip while it re-forms.")
+    for key in ("on_block", "trade_request", "trade_reason"):
+        arrived.pop(key, None)
+    arrived["morale"] = max(arrived.get("morale", 70), 68)   # fresh start in a new building
+
+
 def propose_trade(save, give_id, get_id):
     user = current_team(save)
     give = next((p for p in user["roster"] if p["id"] == give_id), None)
@@ -4651,6 +4734,7 @@ def propose_trade(save, give_id, get_id):
         target["roster"] = [p for p in target["roster"] if p["id"] != get_id] + [give]
         result["accepted"] = True
         result["msg"] = f"Trade accepted! {give['name']} to {target['full']} for {get['name']}."
+        _trade_fallout(save, user, give, get)
     save["last_trade"] = result
     write_save(save)
     return result
