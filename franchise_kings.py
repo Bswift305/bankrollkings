@@ -4585,6 +4585,103 @@ def run_training_camp(save, final=53):
     return save["camp_report"]
 
 
+def _preseason_perf(p, rng):
+    """One preseason outing: a quality roll (talent-tilted, high variance — it's
+    August football) and a position-true stat line rendered from it."""
+    q = rng.gauss((p["overall"] - 60) / 18.0, 1.0)
+    pos = p["pos"]
+    if pos == "QB":
+        att = rng.randint(10, 22)
+        comp = int(att * max(0.3, min(0.8, 0.5 + 0.05 * q + rng.uniform(0, .08))))
+        yd = int(comp * rng.uniform(6.0, 8.5))
+        td = 1 if q > 0.8 and rng.random() < .6 else 0
+        intc = 1 if q < -0.8 and rng.random() < .5 else 0
+        line = f"{comp}/{att}, {yd} yd" + (", 1 TD" if td else "") + (", 1 INT" if intc else "")
+    elif pos == "RB":
+        car = rng.randint(6, 14)
+        yd = max(4, int(car * (2.8 + 1.1 * max(-1.5, q))))
+        line = f"{car} car, {yd} yd" + (", 1 TD" if q > 1.0 and rng.random() < .5 else "")
+    elif pos in ("WR", "TE"):
+        rec = max(0, int(2 + 1.3 * q + rng.uniform(0, 2)))
+        yd = int(rec * rng.uniform(8, 14))
+        line = f"{rec} rec, {yd} yd" + (", 1 TD" if q > 1.1 and rng.random() < .5 else "")
+    elif pos == "OL":
+        pr = max(0, int(2.2 - q + rng.uniform(0, 1.5)))
+        line = ("clean sheet in pass pro" if pr == 0 else
+                f"{pr} pressure{'s' if pr != 1 else ''} allowed")
+    elif pos in ("DL", "LB"):
+        tkl = max(1, int(3 + 1.4 * q + rng.uniform(0, 2)))
+        line = f"{tkl} tkl" + (", 1 sack" if q > 0.9 and rng.random() < .55 else "")
+    elif pos in ("CB", "S"):
+        tkl = max(0, int(2 + q + rng.uniform(0, 2)))
+        line = f"{tkl} tkl" + (", 1 PD" if q > 0.5 and rng.random() < .6 else "") \
+               + (", 1 INT" if q > 1.3 and rng.random() < .4 else "")
+    else:
+        fga = rng.randint(1, 3)
+        fgm = fga if q > 0 else max(0, fga - 1)
+        line = f"{fgm}/{fga} FG"
+    return line, q
+
+
+def run_preseason(save, final=53):
+    """Three preseason games: the bubble plays big minutes, rookies get live
+    reps, and the stock report they produce is the LAST input before cut day.
+    A bubble man who dominates all three forces his way up (+1 OVR). Runs once
+    per offseason."""
+    season = save.get("season", 1)
+    rep = save.get("preseason_report")
+    if rep and rep.get("season") == season:
+        return rep
+    team = current_team(save)
+    rng = _rng(save["seed"] + season * 97 + 3)
+    camp_rows = {r["id"]: r for r in (save.get("camp_report") or {}).get("rows", [])}
+    roster = sorted(team["roster"], key=lambda p: -p["overall"])
+    keep = {p["id"] for p in roster[:final]}
+    focus = [p for p in roster
+             if p["id"] not in keep or int(p.get("age", 27) or 27) <= 24
+             or camp_rows.get(p["id"], {}).get("tag") in ("Camp standout", "Struggling", "Turning heads")]
+    if len(focus) < 9:
+        focus = roster[-max(9, len(roster) // 3):]
+    rng.shuffle(focus)
+    pool = [t["full"] for t in save["teams"] if t["id"] != team["id"]]
+    opponents = rng.sample(pool, min(3, len(pool)))
+    games, totals = [], {}
+    for gi, opp in enumerate(opponents):
+        us, them = rng.randint(9, 31), rng.randint(6, 30)
+        if us == them:
+            us += 3
+        featured = focus[gi::3][:8] or roster[-6:]
+        perfs = []
+        for p in featured:
+            line, q = _preseason_perf(p, rng)
+            perfs.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
+                          "ovr": p["overall"], "line": line, "q": q,
+                          "bubble": p["id"] not in keep, "star": False})
+            totals[p["id"]] = totals.get(p["id"], 0.0) + q
+        perfs.sort(key=lambda x: -x["q"])
+        for x in perfs[:2]:
+            x["star"] = True
+        games.append({"opponent": opp, "us": us, "them": them,
+                      "won": us > them, "perfs": perfs})
+    verdicts = []
+    for p in roster:
+        if p["id"] not in totals:
+            continue
+        tq = totals[p["id"]]
+        verdict = ("Stock way up" if tq >= 2.2 else "Stock up" if tq >= 1.0 else
+                   "Stock down" if tq <= -1.6 else "Slipping" if tq <= -0.6 else "Held serve")
+        bubble = p["id"] not in keep
+        if bubble and tq >= 2.2:
+            p["overall"] = min(99, p["overall"] + 1)   # forced his way into the conversation
+        verdicts.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
+                         "ovr": p["overall"], "verdict": verdict,
+                         "q": round(tq, 1), "bubble": bubble})
+    verdicts.sort(key=lambda x: -x["q"])
+    save["preseason_report"] = {"season": season, "games": games, "verdicts": verdicts}
+    write_save(save)
+    return save["preseason_report"]
+
+
 def team_needs(save):
     """Positional snapshot - starter-average OVR per spot, graded, weakest first,
     so you can see at a glance what you have and what you still need."""

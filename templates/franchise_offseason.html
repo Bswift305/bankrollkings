@@ -515,6 +515,42 @@
       {% endfor %}
       </tbody></table></div>
   </div>
+  {{ advance('Play the Preseason →') }}
+
+  {# ---------------- PRESEASON: the final audition ---------------- #}
+  {% elif stage == 'preseason' %}
+  <div class="os-card">
+    <div class="os-ch">{{ icon('cap') }}Preseason — the final audition <span class="os-cap">{{ camp_count }} in camp · keep {{ final }}</span></div>
+    <p class="os-sub">Three August games. The bubble plays big minutes, the rookies get live reps, and the film decides who survives cut day. ⭐ = game star. A bubble man whose stock is <b style="color:#7dffb0">way up</b> just played himself onto the roster conversation.</p>
+    {% for g in ps_games %}
+    <div class="os-counter" style="border-color:rgba(74,212,240,.25); background:rgba(74,212,240,.04);">
+      <b style="color:{{ '#7dffb0' if g.won else '#ff9a9a' }}">{{ 'W' if g.won else 'L' }} {{ g.us }}–{{ g.them }}</b> <span style="color:#cfe3ee">vs {{ g.opponent }}</span> <small style="color:#8fa3b0">· Preseason Week {{ loop.index }}</small>
+      <div class="os-tscroll" style="margin-top:6px"><table class="os-table">
+        <tbody>
+        {% for x in g.perfs %}
+        <tr>
+          <td style="width:20px">{% if x.star %}⭐{% endif %}</td>
+          <td><a href="{{ url_for('franchise_player', pid=x.id) }}" style="color:#9fe9ff;text-decoration:none">{{ x.name }}</a> <small style="color:#8fa3b0">{{ x.pos }} · {{ x.ovr }} OVR</small>{% if x.bubble %} <span class="os-exp">BUBBLE</span>{% endif %}</td>
+          <td style="color:#dce8ef">{{ x.line }}</td>
+        </tr>
+        {% endfor %}
+        </tbody></table></div>
+    </div>
+    {% endfor %}
+    <div class="os-ch" style="font-size:14px; margin-top:12px">Stock report — three games of film</div>
+    <div class="os-tscroll"><table class="os-table">
+      <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Verdict</th><th>Bubble</th></tr></thead>
+      <tbody>
+      {% for v in ps_verdicts %}
+      <tr>
+        <td><a href="{{ url_for('franchise_player', pid=v.id) }}" style="color:#9fe9ff;text-decoration:none">{{ v.name }}</a></td>
+        <td>{{ v.pos }}</td><td style="color:#fff">{{ v.ovr }}</td>
+        <td><span class="os-traj os-traj-{{ 'rising' if v.q >= 1.0 else 'declining' if v.q <= -0.6 else 'steady' }}">{{ v.verdict }}</span></td>
+        <td>{% if v.bubble %}<span class="os-exp">BUBBLE</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
   {{ advance('Make the Cuts →') }}
 
   {# ---------------- CUTS to 53 ---------------- #}
@@ -526,7 +562,10 @@
     {% for p in roster %}
       {% set ct = camp_tags.get(p.id) if camp_tags is defined else none %}
       <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
-        <td>{% if ct %}<span class="os-traj os-traj-{{ ct.traj }}">{{ ct.tag }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+        <td>{% if ct %}<span class="os-traj os-traj-{{ ct.traj }}">{{ ct.tag }}</span>{% endif %}
+          {% set sv = stock.get(p.id) if stock is defined else none %}
+          {% if sv %}<div style="margin-top:3px"><span class="os-traj os-traj-{{ 'rising' if sv.q >= 1.0 else 'declining' if sv.q <= -0.6 else 'steady' }}">{{ sv.verdict }}</span></div>{% endif %}
+          {% if not ct and not sv %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form>
         {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}</td></tr>
     {% endfor %}

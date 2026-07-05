@@ -29477,12 +29477,17 @@ def franchise_offseason():
         ctx.update(camp_rows=[_league_avatar(r) for r in rows],
                    camp_count=len(fk.current_team(save)['roster']), final=fo.ROSTER_FINAL,
                    ps_count=len(fk.current_team(save).get('practice_squad', [])), ps_max=fk.PS_MAX)
+    elif stage == 'preseason':
+        report = fk.run_preseason(save, final=fo.ROSTER_FINAL)
+        ctx.update(ps_games=report.get('games', []), ps_verdicts=report.get('verdicts', []),
+                   camp_count=len(fk.current_team(save)['roster']), final=fo.ROSTER_FINAL)
     elif stage == 'cuts':
         team = fk.current_team(save)
         camp_tags = {r['id']: r for r in (save.get('camp_report') or {}).get('rows', [])}
+        stock = {v['id']: v for v in (save.get('preseason_report') or {}).get('verdicts', [])}
         ctx.update(roster=[_league_avatar(p) for p in sorted(team['roster'], key=lambda x: -x['overall'])],
                    camp_count=len(team['roster']), final=fo.ROSTER_FINAL,
-                   camp_tags=camp_tags,
+                   camp_tags=camp_tags, stock=stock,
                    ps_count=len(team.get('practice_squad', [])), ps_max=fk.PS_MAX)
     elif stage == 'kickoff':
         team = fk.current_team(save)
