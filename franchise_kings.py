@@ -4692,7 +4692,7 @@ def unblock_player(save, pid):
     return True, f"{p['name']} is off the block. Some of the sting fades — not all of it."
 
 
-def _trade_fallout(save, team, departed, arrived):
+def _trade_fallout(save, team, departed, arrived=None):
     """The human cost of a completed deal: ship out a leader or a star and the
     room feels it for a stretch; the man coming in arrives on a clean slate."""
     if _is_leader(departed) or departed.get("overall", 0) >= 84:
@@ -4701,9 +4701,106 @@ def _trade_fallout(save, team, departed, arrived):
         _tl(save, save.get("season", 1), "trade", "🚌",
             f"Locker room shaken by the {departed['name']} trade",
             "You moved a leader. The room takes a small morale dip while it re-forms.")
+    if arrived is not None:
+        for key in ("on_block", "trade_request", "trade_reason"):
+            arrived.pop(key, None)
+        arrived["morale"] = max(arrived.get("morale", 70), 68)   # fresh start in a new building
+
+
+# --------------------------------------------------------------------------- #
+# Shop a player for PICKS — the other half of the trade desk. Rival clubs
+# answer with 1-3 picks in the upcoming (or next) draft; accept one and the
+# picks convey through save['pick_swaps'] when that draft opens.
+# --------------------------------------------------------------------------- #
+# A pick's worth in PLAYER-value terms (trade_value lens, not chart points):
+# roughly "the trade value of the player you'd expect to draft there".
+_PICK_PLAYER_WORTH = {1: 120, 2: 72, 3: 42, 4: 24, 5: 13, 6: 7, 7: 4}
+
+
+def _pick_trade_season(save):
+    """Which draft incoming picks convey to: this offseason's draft if it has
+    not opened yet, otherwise next year's."""
+    if save.get("inseason") or save.get("draft_pending") or (save.get("offseason") or {}).get("drafted"):
+        return save.get("season", 1) + 1
+    return save.get("season", 1)
+
+
+def shop_for_picks(save, pid):
+    """Shop one of your players league-wide for pick packages. Up to three
+    clubs answer; their packages are stored on save['pick_shop']."""
+    if not solo_trades_open(save):
+        return False, "The trade market is closed until the offseason."
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He's not on your roster."
+    v = trade_value(p)
+    season_target = _pick_trade_season(save)
+    rng = _rng(save["seed"] + save.get("season", 1) * 17 + sum(ord(c) for c in str(pid)))
+    clubs = [t for t in save["teams"] if t["id"] != team["id"]]
+    rng.shuffle(clubs)
+    offers = []
+    for idx, t in enumerate(clubs[:4]):
+        budget = v * rng.uniform(0.78, 1.06)
+        picks, total = [], 0.0
+        for rnd in (1, 2, 3, 4, 5, 6, 7):
+            worth = _PICK_PLAYER_WORTH[rnd]
+            if total + worth <= budget and len(picks) < 3:
+                picks.append({"round": rnd, "worth": worth})
+                total += worth
+            if total >= budget * 0.9:
+                break
+        if not picks or total < v * 0.55:
+            continue                      # this club's package would insult you
+        ratio = (total / v) if v else 0
+        grade = ("A" if ratio >= 1.0 else "B" if ratio >= 0.88 else
+                 "C" if ratio >= 0.75 else "D")
+        offers.append({"id": idx + 1, "team_id": t["id"], "team": t["full"],
+                       "picks": picks, "total": round(total, 1), "grade": grade,
+                       "season": season_target})
+    if not offers:
+        return False, f"No club is offering real pick value for {p['name']} right now."
+    offers.sort(key=lambda o: -o["total"])
+    save["pick_shop"] = {"pid": pid, "player": p["name"], "pos": p["pos"],
+                         "ovr": p["overall"], "value": v, "offers": offers[:3]}
+    write_save(save)
+    return True, f"{len(save['pick_shop']['offers'])} club(s) answered with pick packages for {p['name']}."
+
+
+def accept_pick_offer(save, offer_id):
+    shop = save.get("pick_shop") or {}
+    team = current_team(save)
+    off = next((o for o in shop.get("offers", []) if str(o.get("id")) == str(offer_id)), None)
+    p = next((x for x in team["roster"] if x["id"] == shop.get("pid")), None)
+    ai = next((t for t in save["teams"] if off and t["id"] == off["team_id"]), None)
+    if not (off and p and ai):
+        save.pop("pick_shop", None)
+        write_save(save)
+        return False, "That package is no longer on the table."
+    team["roster"] = [x for x in team["roster"] if x["id"] != p["id"]]
     for key in ("on_block", "trade_request", "trade_reason"):
-        arrived.pop(key, None)
-    arrived["morale"] = max(arrived.get("morale", 70), 68)   # fresh start in a new building
+        p.pop(key, None)
+    ai["roster"].append(p)
+    uid = team["id"]
+    for pk in off["picks"]:
+        save.setdefault("pick_swaps", []).append(
+            {"season": off["season"], "round": pk["round"], "orig": off["team_id"], "to": uid})
+    picks_txt = " + ".join(f"R{pk['round']}" for pk in off["picks"])
+    save["last_trade"] = {"ok": True, "summary":
+                          f"Traded {p['pos']} {p['name']} to the {off['team']} for {picks_txt} (season {off['season']} draft)."}
+    _tl(save, save.get("season", 1), "trade", "🎫",
+        f"{p['pos']} {p['name']} traded for draft capital",
+        f"To the {off['team']} for {picks_txt} in the season-{off['season']} draft.")
+    _trade_fallout(save, team, p)
+    save.pop("pick_shop", None)
+    write_save(save)
+    return True, save["last_trade"]["summary"]
+
+
+def cancel_pick_shop(save):
+    save.pop("pick_shop", None)
+    write_save(save)
+    return True, "You pulled him off the pick market."
 
 
 def propose_trade(save, give_id, get_id):

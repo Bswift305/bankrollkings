@@ -813,15 +813,34 @@
       {% for p in wants_out %}<b style="color:#ff9a9a">{{ p.pos }} {{ p.name }}</b> ({{ p.trade_reason or 'unhappy' }}){{ ', ' if not loop.last }}{% endfor %}
       — consider listing or dealing them before it poisons the room.</div>
     {% endif %}
+    {% if pick_shop %}{% set ps = pick_shop %}
+    <div style="border:1px solid rgba(245,200,96,.4); background:rgba(245,200,96,.07); border-radius:9px; padding:10px 12px; margin-bottom:10px;">
+      <b style="color:#f5c860">Pick offers for {{ ps.pos }} {{ ps.player }}</b> ({{ ps.ovr }} OVR · player value {{ ps.value }})
+      <div style="display:grid; gap:6px; margin-top:8px;">
+        {% for o in ps.offers %}
+        <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="accept"><input type="hidden" name="offer_id" value="{{ o.id }}">
+          <span><b>{{ o.team }}</b> — {% for pk in o.picks %}R{{ pk.round }}{{ ' + ' if not loop.last }}{% endfor %} in the season-{{ o.season }} draft · package value {{ o.total }} · grade <b>{{ o.grade }}</b></span>
+          <button class="fk-btn fk-btn-sm">Accept</button>
+        </form>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="cancel">
+        <button class="fk-btn fk-btn-ghost fk-btn-sm">Keep him — decline all</button>
+      </form>
+    </div>
+    {% endif %}
     {% if trades_open %}
-    <form method="post" action="{{ url_for('franchise_blocklist') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="list">
+    <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="pid" class="fk-input" style="max-width:340px;" required>
         {% for p in give_list if not p.on_block %}
         <option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.overall }} OVR · val {{ p.tval }}{% if p.trade_request %} · WANTS OUT{% endif %}</option>
         {% endfor %}
       </select>
-      <button class="fk-btn fk-btn-sm">Put him on the block</button>
+      <button class="fk-btn fk-btn-sm" name="action" value="shop">Shop for picks</button>
+      <button class="fk-btn fk-btn-ghost fk-btn-sm" formaction="{{ url_for('franchise_blocklist') }}" name="action" value="list">Put him on the block</button>
     </form>
     {% else %}
     <p class="fk-muted">The trade market is closed until the offseason — no new listings.</p>

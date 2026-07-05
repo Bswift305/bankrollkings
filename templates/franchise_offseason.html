@@ -12,6 +12,61 @@
   <button class="os-btn os-btn-go">{{ label }}</button>
 </form>
 {% endmacro %}
+
+{% macro trade_desk_card() %}
+{% if trade_desk %}{% set td = trade_desk %}
+<div class="os-card">
+  <div class="os-ch">{{ icon('swap') }}Trade Desk — deal players for picks, or put them on the block</div>
+  {% if td.msg %}
+  <div class="os-li" style="border-left:3px solid {{ '#7dffb0' if td.ok == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if td.ok == '1' else '#ff9a9a' }};">{{ td.msg }}</div>
+  {% endif %}
+  {% if td.wants_out %}
+  <div class="os-sub">😤 Wants out: {% for p in td.wants_out %}<b style="color:#ff9a9a">{{ p.pos }} {{ p.name }}</b>{{ ', ' if not loop.last }}{% endfor %} — shop them below before it poisons the room.</div>
+  {% endif %}
+  {% if td.pick_shop %}{% set ps = td.pick_shop %}
+  <div class="os-counter">
+    <b>Pick offers for {{ ps.pos }} {{ ps.player }}</b> ({{ ps.ovr }} OVR · player value {{ ps.value }})
+    <div style="display:grid; gap:6px; margin-top:8px;">
+      {% for o in ps.offers %}
+      <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="accept"><input type="hidden" name="offer_id" value="{{ o.id }}">
+        <span><b>{{ o.team }}</b> — {% for pk in o.picks %}R{{ pk.round }}{{ ' + ' if not loop.last }}{% endfor %} in the season-{{ o.season }} draft · package value {{ o.total }} · grade <b>{{ o.grade }}</b></span>
+        <button class="os-btn os-btn-xs">Accept</button>
+      </form>
+      {% endfor %}
+    </div>
+    <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="margin-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="cancel">
+      <button class="os-btn os-btn-ghost os-btn-xs">Keep him — decline all</button>
+    </form>
+  </div>
+  {% endif %}
+  {% if td.blocked %}
+  <div style="display:grid; gap:6px; margin-bottom:10px;">
+    {% for p in td.blocked %}
+    <div class="os-cand">
+      <span class="os-candmain">📰 <b>{{ p.pos }} {{ p.name }}</b> ({{ p.overall }} OVR) — on the block · morale {{ p.morale }}</span>
+      <form method="post" action="{{ url_for('franchise_blocklist') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="action" value="unlist">
+        <button class="os-btn os-btn-ghost os-btn-xs">Unlist</button></form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <select name="pid" class="fkl-input" style="max-width:340px;" required>
+      {% for p in td.roster %}
+      <option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · {{ p.ovr }} OVR · val {{ p.tval }}{% if p.on_block %} · LISTED{% endif %}{% if p.wants_out %} · WANTS OUT{% endif %}</option>
+      {% endfor %}
+    </select>
+    <button class="os-btn os-btn-xs" name="action" value="shop">Shop for picks</button>
+    <button class="os-btn os-btn-ghost os-btn-xs" formaction="{{ url_for('franchise_blocklist') }}" name="action" value="list">Put on block</button>
+  </form>
+  <p class="os-sub" style="margin-top:8px">Shopping for picks pays out in draft capital when that draft opens. Blocked players draw extra player-for-player offers during the season — and being shopped stings morale either way.</p>
+</div>
+{% endif %}
+{% endmacro %}
 <section class="os-wrap">
 
   {% if hero_team is defined and hero_team %}
@@ -310,6 +365,7 @@
       </tbody></table></div>
     {% endif %}
   </div>
+  {{ trade_desk_card() }}
   {{ advance('Move to Free Agency →') }}
 
   {# ---------------- FREE AGENCY ---------------- #}
@@ -352,6 +408,7 @@
       </tbody></table></div>
     {% endif %}
   </div>
+  {{ trade_desk_card() }}
   {{ advance('Move to the Draft →') }}
 
   {# ---------------- DRAFT ---------------- #}

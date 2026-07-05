@@ -29162,6 +29162,7 @@ def _trade_view(save, team_id):
         'block_list': sorted(fk.blocked_players(save), key=lambda p: -p['overall']),
         'wants_out': sorted(fk.wants_out_players(save), key=lambda p: -p['overall']),
         'trades_open': fk.solo_trades_open(save),
+        'pick_shop': save.get('pick_shop'),
         'last_trade': save.get('last_trade'),
     }
 
@@ -29476,6 +29477,20 @@ def franchise_offseason():
         team = fk.current_team(save)
         ctx.update(team=team, power=fk.power_rating(team), ready=fo.ready_to_kick(save),
                    camp_count=fo.camp_count(save), final=fo.ROSTER_FINAL)
+    if stage in ('resign', 'free_agency'):    # the roster-shaping stages carry the trade desk
+        ctx['trade_desk'] = {
+            'roster': sorted([{'id': p['id'], 'name': p['name'], 'pos': p['pos'],
+                               'ovr': p['overall'], 'tval': fk.trade_value(p),
+                               'on_block': bool(p.get('on_block')),
+                               'wants_out': bool(p.get('trade_request'))}
+                              for p in fk.current_team(save)['roster']],
+                             key=lambda x: -x['tval']),
+            'blocked': fk.blocked_players(save),
+            'wants_out': fk.wants_out_players(save),
+            'pick_shop': save.get('pick_shop'),
+            'msg': request.args.get('block_msg', ''),
+            'ok': request.args.get('block_ok', ''),
+        }
     if stage != 'select':                     # persistent roster + needs panel
         t = fk.current_team(save)
         ctx['hero_team'] = t                  # team-identity band (matches the hub)
@@ -29944,6 +29959,17 @@ def _staff_action_redirect(save, ok=None, msg=None):
     return redirect(url_for('franchise_hub', tab='staff', **params))
 
 
+def _trade_action_redirect(save, ok=None, msg=None):
+    """Trade-desk actions land back where the user works: the offseason page
+    while the offseason is live, the hub Trades tab otherwise."""
+    params = {}
+    if msg is not None:
+        params = {'block_ok': '1' if ok else '0', 'block_msg': msg}
+    if save and fo.offseason_active(save):
+        return redirect(url_for('franchise_offseason', **params))
+    return redirect(url_for('franchise_hub', tab='trades', **params))
+
+
 @app.route('/franchise/blocklist', methods=['POST'])
 def franchise_blocklist():
     _, save = _franchise_save()
@@ -29952,9 +29978,23 @@ def franchise_blocklist():
         action = str(request.form.get('action', 'list')).strip()
         ok, msg = (fk.unblock_player(save, pid) if action == 'unlist'
                    else fk.block_player(save, pid))
-        return redirect(url_for('franchise_hub', tab='trades',
-                                block_ok='1' if ok else '0', block_msg=msg))
-    return redirect(url_for('franchise_hub', tab='trades'))
+        return _trade_action_redirect(save, ok, msg)
+    return _trade_action_redirect(save)
+
+
+@app.route('/franchise/shop-picks', methods=['POST'])
+def franchise_shop_picks():
+    _, save = _franchise_save()
+    if save:
+        action = str(request.form.get('action', 'shop')).strip()
+        if action == 'accept':
+            ok, msg = fk.accept_pick_offer(save, str(request.form.get('offer_id', '')).strip())
+        elif action == 'cancel':
+            ok, msg = fk.cancel_pick_shop(save)
+        else:
+            ok, msg = fk.shop_for_picks(save, str(request.form.get('pid', '')).strip())
+        return _trade_action_redirect(save, ok, msg)
+    return _trade_action_redirect(save)
 
 
 @app.route('/franchise/philosophy', methods=['POST'])
