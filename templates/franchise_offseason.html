@@ -413,7 +413,26 @@
   {# ---------------- FREE AGENCY ---------------- #}
   {% elif stage == 'free_agency' %}
   <div class="os-card">
-    <div class="os-ch">{{ icon('swap') }}Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
+    <div class="os-ch">{{ icon('swap') }}Free Agency — Day {{ fa_day }} of {{ fa_days_max }} <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
+    {% if fa_msg %}<div class="os-li" style="border-left:3px solid {{ '#7dffb0' if fa_ok == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if fa_ok == '1' else '#ff9a9a' }};">{{ fa_msg }}</div>{% endif %}
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+      {% if fa_day < fa_days_max %}
+      <form method="post" action="{{ url_for('franchise_offseason_fa_day') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="os-btn os-btn-xs">Let a day pass — asks soften, players sign ⏳</button>
+      </form>
+      <small class="os-sub" style="margin:0">Every day unsigned drops an agent's price (~4% off every ask, hungry agents fold faster) — but rival clubs are shopping too, and the best names go first. Loyal players tend to go home early.</small>
+      {% else %}
+      <small class="os-sub" style="margin:0; color:#f5c860">The market has gone quiet — what's left is the bargain bin. Sign who you need and move to the draft.</small>
+      {% endif %}
+    </div>
+    {% if fa_log %}
+    <div style="display:grid; gap:3px; margin-bottom:10px; max-height:130px; overflow-y:auto;">
+      {% for e in fa_log %}
+      <div class="os-li" style="font-size:11.5px; color:{{ '#dce8ef' if e.kind == 'signing' else '#8fa3b0' }};"><b style="color:#5f7280">Day {{ e.day }}</b> · {{ e.text }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if last_nego %}{% set nstat = last_nego.get('status', '') %}<div class="os-nego os-nego-{{ 'yes' if nstat == 'accepted' else 'mid' if nstat == 'countered' else 'no' }}"><strong>{{ nstat|upper or 'NO DEAL' }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
@@ -444,7 +463,7 @@
         <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
           <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
           <td>{% if p.scout %}<span class="os-fit os-fit-{{ 'hi' if p.scout_tier=='hi' else 'lo' if p.scout_tier=='lo' else 'mid' }}">{{ p.scout }}</span>{% endif %}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
-          <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
+          <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M{% if p.demand and p.demand.get('ask0') and p.demand.ask0 > p.demand.aav %} <small style="color:#7dffb0; display:block;">▼ was ${{ '%.1f'|format(p.demand.ask0) }}M</small>{% endif %}</td>
           <td><a class="os-mini" href="{{ url_for('franchise_offseason', fa=p.id) }}">Negotiate</a></td></tr>
       {% endfor %}
       </tbody></table></div>

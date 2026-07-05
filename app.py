@@ -29494,7 +29494,10 @@ def franchise_offseason():
                                                 key=lambda p: -p['overall'])[:30]],
                    last_nego=save.get('last_nego'),
                    nego_fa=next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None,
-                   cap_used=fk.cap_used(team), cap_total=fk.CAP_TOTAL)
+                   cap_used=fk.cap_used(team), cap_total=fk.CAP_TOTAL,
+                   fa_day=int(save['offseason'].get('fa_day', 1) or 1), fa_days_max=fk.FA_DAYS,
+                   fa_log=save['offseason'].get('fa_log', []),
+                   fa_msg=request.args.get('fa_msg', ''), fa_ok=request.args.get('fa_ok', ''))
     elif stage == 'draft':
         if not save.get('draft_pending') and not save['offseason'].get('drafted'):
             fk.start_draft(save)
@@ -29616,6 +29619,15 @@ def franchise_offseason_fa():
     if save and fo.offseason_active(save):
         fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
     return redirect(url_for('franchise_offseason', fa=pid))
+
+
+@app.route('/franchise/offseason/fa-day', methods=['POST'])
+def franchise_offseason_fa_day():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        ok, msg = fk.advance_fa_day(save)
+        return redirect(url_for('franchise_offseason', fa_ok='1' if ok else '0', fa_msg=msg))
+    return redirect(url_for('franchise_offseason'))
 
 
 @app.route('/franchise/offseason/proday', methods=['POST'])

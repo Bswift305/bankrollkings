@@ -3258,6 +3258,70 @@ def sign_free_agent(save, player_id):
     return True, f"Signed {fa['name']} ({fa['pos']}, {fa['overall']} OVR)."
 
 
+FA_DAYS = 7
+
+
+def fa_market_discount(save):
+    """The market softens as free agency drags on: every day a man sits
+    unsigned knocks ~4% off what his agent can hold out for."""
+    off = save.get("offseason") or {}
+    if off.get("stage") != "free_agency":
+        return 1.0
+    return round(0.96 ** (int(off.get("fa_day", 1) or 1) - 1), 3)
+
+
+def advance_fa_day(save):
+    """One day of the open market: asks soften (hungry agents fold fastest),
+    and rival clubs sign players out from under you — wait for the bargain
+    and you may lose the man. Loyal players tend to go home early."""
+    off = save.get("offseason") or {}
+    if off.get("stage") != "free_agency":
+        return False, "The market only moves during the free-agency window."
+    day = int(off.get("fa_day", 1) or 1)
+    if day >= FA_DAYS:
+        return False, "The market has gone quiet — only the bargain bin is left."
+    rng = _rng(save["seed"] + save.get("season", 1) * 211 + day)
+    log = off.setdefault("fa_log", [])
+    uid = save["current_team_id"]
+    decay = {"Reasonable": 0.06, "Shrewd": 0.035, "Greedy": 0.02, "Loyal": 0.045}
+    signed_ids = []
+    for p in sorted(save.get("free_agents", []), key=lambda x: -x["overall"]):
+        pers = (p.get("agent") or {}).get("personality", "Reasonable")
+        d = p.setdefault("demand", {"aav": p["contract"]["aav"], "years": 3})
+        d.setdefault("ask0", d.get("aav", p["contract"]["aav"]))
+        # rival clubs move on the best names first; loyal men go home early
+        p_sign = max(0.0, 0.05 + (p["overall"] - 68) * 0.02) * (1.35 if pers == "Loyal" else 1.0)
+        if rng.random() < min(0.45, p_sign):
+            club = min([t for t in save["teams"] if t["id"] != uid],
+                       key=lambda t: (sum(1 for x in t["roster"] if x["pos"] == p["pos"]),
+                                      rng.random()))
+            yrs = rng.randint(2, 4)
+            aav = round(d["aav"], 1)
+            p.pop("agent", None)
+            deal = p.pop("demand", None) or {}
+            p["contract"] = {"years": yrs, "aav": aav, "guaranteed": round(aav * 0.5, 1)}
+            club["roster"].append(p)
+            signed_ids.append(p["id"])
+            log.insert(0, {"day": day, "kind": "signing",
+                           "text": f"{p['pos']} {p['name']} signs with the {club['full']} — "
+                                   f"{yrs}yr / ${aav}M"
+                                   + (" (went home — loyalty won)" if pers == "Loyal" else "")})
+            continue
+        drop = round(d["aav"] * decay.get(pers, 0.04), 1)
+        floor = round(max(1.0, d["ask0"] * 0.62), 1)
+        if d["aav"] - drop >= floor:
+            d["aav"] = round(d["aav"] - drop, 1)
+            if p["overall"] >= 78:
+                log.insert(0, {"day": day, "kind": "price",
+                               "text": f"{p['pos']} {p['name']}'s camp is getting nervous — "
+                                       f"ask down to ${d['aav']}M/yr (opened at ${d['ask0']}M)."})
+    save["free_agents"] = [p for p in save.get("free_agents", []) if p["id"] not in signed_ids]
+    off["fa_day"] = day + 1
+    off["fa_log"] = log[:30]
+    write_save(save)
+    return True, f"Day {day} closes — {len(signed_ids)} signing(s) around the league. Asks are softening."
+
+
 def negotiate(save, player_id, years, aav):
     """Make a contract offer to a free agent's agent. Returns accepted / countered
     / rejected with the agent's response. Loyal agents discount for a happy club."""
@@ -3285,6 +3349,7 @@ def negotiate(save, player_id, years, aav):
     if pers == "Loyal":
         eff = round(demand_aav * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
     eff = max(eff, context["ask"])
+    eff = round(eff * fa_market_discount(save), 1)   # a dragging market softens every ask
     # A counter is a commitment: if the agent named a number for THIS player last
     # round, meeting it closes the deal (otherwise his sub-ask counter loops forever).
     prev = save.get("last_nego") or {}
