@@ -1366,7 +1366,9 @@ def sim_week(save):
     week = iz["week"]
     rng = _rng(save["seed"] + save["season"] * 1000 + week)
     teams = {t["id"]: t for t in save["teams"]}
-    powers = {tid: power_rating(t) for tid, t in teams.items()}
+    powers = {tid: power_rating(t)
+              + (ai_coach_edge(t) if tid != save["current_team_id"] else 0.0)
+              for tid, t in teams.items()}
     uid = save["current_team_id"]
     iz["injuries"] = _roll_week_injuries(save, week, rng)
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
@@ -1472,7 +1474,9 @@ def _log_season_milestones(save, outcome):
 def _finalize_season(save):
     rng = _rng(save["seed"] + save["season"] * 1000 + 991)
     teams = {t["id"]: t for t in save["teams"]}
-    powers = {tid: power_rating(t) for tid, t in teams.items()}
+    powers = {tid: power_rating(t)
+              + (ai_coach_edge(t) if tid != save["current_team_id"] else 0.0)
+              for tid, t in teams.items()}
     save["leaders"] = stat_leaders(save["teams"])          # from the season actually played
     save["season_mvp"] = stat_mvp(save["teams"])
     save["all_pro"] = all_pro_team(save["teams"])
@@ -1756,6 +1760,7 @@ def _advance_year(save):
                  "retired": save["season"], "hof": bool(r.get("hof"))})
     save["legacy_pool"] = save.get("legacy_pool", [])[-20:]
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
+    run_coaching_carousel(save, rng)   # ...and the rest of the league moves too
     save["free_agents"] = _gen_fa_pool(rng, season=save.get("season", 1) + 1, seen=league_names_seen(save))
 
 
@@ -2061,6 +2066,160 @@ def playbook_edge(save):
                 packages.append({"name": pk["name"], "blurb": pk["blurb"], "on": False,
                                  "who": f"needs a {pk['pos']}: {' / '.join(pk['styles'])}"})
     return {"edge": round(edge, 1), "packages": packages}
+
+
+# --------------------------------------------------------------------------- #
+# The LIVING LEAGUE — every rival club has a real coaching staff (HC/OC/DC),
+# and the offseason carousel keeps the ecosystem moving: bad seasons get
+# coaches fired, old coaches retire, coordinators get promoted to head jobs,
+# your poached coaches actually join their new clubs, and your fired coaches
+# resurface across the league.
+# --------------------------------------------------------------------------- #
+_AI_STAFF_ROLES = ("head_coach", "off_coord", "def_coord")
+_AI_ROLE_LABEL = {"head_coach": "Head Coach", "off_coord": "OC", "def_coord": "DC"}
+
+
+def _gen_ai_coach(rng, role):
+    c = _gen_staff(rng, "off_coord" if role == "head_coach" else role)
+    c.pop("id", None)
+    return _fit_role(c, role, rng)
+
+
+def _fit_role(c, role, rng):
+    """Make a coach's kit match the chair he's sitting in."""
+    c = dict(c)
+    if role == "head_coach":
+        c.pop("system", None)
+        c.pop("playbook", None)
+        c.setdefault("philosophy", rng.choice(["Analytics", "Old School", "Balanced"]))
+        return c
+    schemes = OFF_SCHEMES if role == "off_coord" else DEF_SCHEMES
+    if c.get("system") not in schemes:
+        c["system"] = rng.choice(list(schemes))
+        c.pop("playbook", None)
+    if not c.get("playbook"):
+        pool = PLAYBOOK_PACKAGES.get(c["system"], [])
+        c["playbook"] = rng.sample(pool, k=min(2, len(pool)))
+    return c
+
+
+def ensure_ai_staffs(save):
+    """Every club that isn't yours gets a named HC / OC / DC. Returns True if
+    anything changed so the caller can persist once."""
+    changed = False
+    uid = save.get("current_team_id")
+    for t in save.get("teams", []):
+        if t["id"] == uid:
+            continue
+        staff = t.setdefault("staff", {})
+        for role in _AI_STAFF_ROLES:
+            if not staff.get(role):
+                rng = _rng(int(save.get("seed", 1) or 1)
+                           + abs(hash(str(t["id"]) + role)) % 99991)
+                staff[role] = _gen_ai_coach(rng, role)
+                changed = True
+    return changed
+
+
+def ai_coach_edge(team):
+    """A rival's bench matters: a well-coached AI club plays above its roster."""
+    staff = team.get("staff") or {}
+    if not staff:
+        return 0.0
+    ratings = [c.get("rating", 55) for c in staff.values() if isinstance(c, dict)]
+    if not ratings:
+        return 0.0
+    return round((sum(ratings) / len(ratings) - 60) * 0.05, 2)
+
+
+def _coach_joins_rival(save, coach, role, rival_full):
+    """A coach who leaves you doesn't evaporate — he takes the rival's job
+    (their old man drops into the carousel pool), or waits in the pool."""
+    if not isinstance(coach, dict):
+        return
+    coach = dict(coach, rating=min(95, int(coach.get("rating", 55) or 55) + 2))
+    rival = next((t for t in save.get("teams", [])
+                  if t.get("full") == rival_full and t["id"] != save.get("current_team_id")), None)
+    if rival is None:
+        save.setdefault("coach_pool", []).append(dict(coach, ex_user=True, ex_role=role))
+        return
+    slot = role if role in _AI_STAFF_ROLES else (
+        "off_coord" if role in ("qb_coach", "oline_coach", "cond_coach", "st_coord") else "def_coord")
+    staff = rival.setdefault("staff", {})
+    old = staff.get(slot)
+    if isinstance(old, dict):
+        save.setdefault("coach_pool", []).append(dict(old, ex_role=slot))
+    rng = _rng(int(save.get("seed", 1) or 1) + sum(ord(ch) for ch in str(coach.get("name", ""))))
+    staff[slot] = _fit_role(coach, slot, rng)
+
+
+def run_coaching_carousel(save, rng):
+    """One offseason of league-wide staff movement. Runs at season end."""
+    ensure_ai_staffs(save)
+    uid = save["current_team_id"]
+    pool = save.setdefault("coach_pool", [])
+    log = []
+    order = {s["id"]: i for i, s in enumerate(save.get("standings_cache", []))}
+    n = max(8, len(order) or len(save["teams"]))
+    for t in save["teams"]:
+        if t["id"] == uid:
+            continue
+        staff = t.setdefault("staff", {})
+        for role in _AI_STAFF_ROLES:                       # age, drift, retire
+            c = staff.get(role)
+            if not isinstance(c, dict):
+                continue
+            c["age"] = int(c.get("age", 48) or 48) + 1
+            drift = (rng.randint(0, 2) if c["age"] <= 42 else
+                     rng.randint(-1, 1) if c["age"] <= 55 else -rng.randint(0, 2))
+            c["rating"] = max(40, min(95, int(c.get("rating", 55) or 55) + drift))
+            if c["age"] >= 70 or (c["age"] >= 61 and rng.random() < (c["age"] - 58) * 0.05):
+                log.append({"team": t["full"], "role": _AI_ROLE_LABEL[role],
+                            "out": c["name"], "in": "", "why": "retired at " + str(c["age"])})
+                staff[role] = None
+        rank = order.get(t["id"], n // 2)                  # bad seasons cost jobs
+        if rank >= n - 8 and rng.random() < 0.45:
+            role = rng.choice(_AI_STAFF_ROLES)
+            c = staff.get(role)
+            if isinstance(c, dict):
+                pool.append(dict(c, ex_role=role))
+                log.append({"team": t["full"], "role": _AI_ROLE_LABEL[role],
+                            "out": c["name"], "in": "", "why": "fired after a lost season"})
+                staff[role] = None
+        for role in _AI_STAFF_ROLES:                       # fill the chairs
+            if staff.get(role):
+                continue
+            hire, why = None, ""
+            if role == "head_coach":                       # the coaching-tree chain
+                cands = [r for r in ("off_coord", "def_coord")
+                         if isinstance(staff.get(r), dict) and staff[r].get("rating", 0) >= 68]
+                if cands and rng.random() < 0.5:
+                    src_role = rng.choice(cands)
+                    hire = dict(staff[src_role])
+                    staff[src_role] = None
+                    why = "promoted from " + _AI_ROLE_LABEL[src_role]
+            if hire is None and pool and rng.random() < 0.6:
+                hire = pool.pop(rng.randrange(len(pool)))
+                was_user = hire.pop("ex_user", False)
+                hire.pop("ex_role", None)
+                why = "hired off the carousel"
+                if was_user:
+                    why = "your former coach lands on his feet"
+                    _tl(save, save.get("season", 1), "staff", "\U0001F501",
+                        (hire.get("name", "A coach")) + " hired as " + t["full"] + " " + _AI_ROLE_LABEL[role],
+                        "A coach from your old staff resurfaces across the league.")
+            if hire is None:
+                hire = _gen_ai_coach(rng, role)
+                mentor = next((staff[r]["name"] for r in _AI_STAFF_ROLES
+                               if isinstance(staff.get(r), dict)), None)
+                if mentor and hire.get("ped"):
+                    hire["ped"]["mentor"] = mentor         # the tree grows
+                why = "up-and-comer gets his shot"
+            staff[role] = _fit_role(hire, role, rng)
+            log.append({"team": t["full"], "role": _AI_ROLE_LABEL[role],
+                        "out": "", "in": staff[role]["name"], "why": why})
+    save["coach_pool"] = pool[-24:]
+    save["carousel_log"] = log[:24]
 
 
 def _team_schemes(save):
@@ -2446,7 +2605,9 @@ def hire_staff(save, role, candidate_id):
 
 
 def fire_staff(save, role):
-    save.get("staff", {}).pop(role, None)
+    c = save.get("staff", {}).pop(role, None)
+    if isinstance(c, dict):
+        save.setdefault("coach_pool", []).append(dict(c, ex_user=True, ex_role=role))
     write_save(save)
     return True
 
@@ -2622,7 +2783,7 @@ def resolve_staff_poach(save, action):
         return True, f"{name} stays. The ${cost}M retention bonus is paid."
     staff = save.get("staff") or {}
     if staff.get(role, {}).get("name") == name:
-        staff.pop(role, None)
+        _coach_joins_rival(save, staff.pop(role, None), role, poach.get("rival", ""))
     save.pop("staff_poach", None)
     _tl(save, save.get("season", 1), "staff", "👋",
         f"{name} leaves for the {poach.get('rival', 'rival')}",
@@ -2639,7 +2800,7 @@ def _expire_staff_poach(save):
     role, name = poach.get("role", ""), poach.get("name", "your coach")
     staff = save.get("staff") or {}
     if staff.get(role, {}).get("name") == name:
-        staff.pop(role, None)
+        _coach_joins_rival(save, staff.pop(role, None), role, poach.get("rival", ""))
     _tl(save, save.get("season", 1), "staff", "👋",
         f"{name} left while you sat on the offer",
         f"The {poach.get('rival', 'rival')} hired your {poach.get('label', role)} away — the offer expired at kickoff.")
@@ -3287,6 +3448,7 @@ def load_save(user_id):
             changed = ensure_staff_profiles(save)
             changed = ensure_team_histories(save) or changed
             changed = ensure_player_identities(save) or changed
+            changed = ensure_ai_staffs(save) or changed
             if changed:
                 write_save(save)
     except Exception:

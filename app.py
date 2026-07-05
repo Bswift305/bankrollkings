@@ -29144,6 +29144,17 @@ def _command_center(save):
     }
 
 
+def _coach_line(c):
+    if not isinstance(c, dict):
+        return '—'
+    line = f"{c.get('name', '?')} ({c.get('rating', '?')})"
+    if c.get('system'):
+        line += f" · {c['system']}"
+    elif c.get('philosophy'):
+        line += f" · {c['philosophy']}"
+    return line
+
+
 def _trade_view(save, team_id):
     uid = save['current_team_id']
     partners = sorted(
@@ -29309,6 +29320,23 @@ def franchise_hub():
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     elif tab == 'almanac':
         view['almanac'] = fk.almanac(save)
+    elif tab == 'league':
+        rows = []
+        for t in sorted(save['teams'], key=lambda x: x['full']):
+            if t['id'] == save['current_team_id']:
+                s = save.get('staff', {})
+                rows.append({'team': t['full'], 'you': True,
+                             'hc': f"{save['gm']['name']} — you ({save['gm'].get('philosophy', 'Balanced')})",
+                             'oc': _coach_line(s.get('off_coord')),
+                             'dc': _coach_line(s.get('def_coord'))})
+            else:
+                st = t.get('staff', {})
+                rows.append({'team': t['full'], 'you': False,
+                             'hc': _coach_line(st.get('head_coach')),
+                             'oc': _coach_line(st.get('off_coord')),
+                             'dc': _coach_line(st.get('def_coord'))})
+        view['league_staffs'] = rows
+        view['carousel_log'] = save.get('carousel_log', [])
     elif tab == 'roster':
         team = fk.current_team(save)
         groups = []

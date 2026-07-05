@@ -1277,6 +1277,38 @@
     <div class="fk-card"><p class="fk-muted">Standings appear after your first simulated season. The
       BRK League is 32 teams — 2 conferences (Apex, Crown) × 4 divisions. Top 7 per conference make the playoffs.</p></div>
   {% endif %}
+
+  {% if carousel_log is defined and carousel_log %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">🔁 Coaching Carousel — this offseason's moves</div>
+    <div style="display:grid; gap:4px;">
+      {% for m in carousel_log %}
+      <div class="fk-muted" style="font-size:12px;">
+        <b style="color:#e8f4fb">{{ m.team }}</b> {{ m.role }}:
+        {% if m.out and not m.in %}<span style="color:#ff9a9a">{{ m.out }} out</span>{% elif m.in %}<span style="color:#7dffb0">{{ m.in }} in</span>{% endif %}
+        <small>— {{ m.why }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if league_staffs is defined and league_staffs %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">The League's Sidelines — who runs every club</div>
+    <table class="fk-table">
+      <thead><tr><th>Team</th><th>Head Coach</th><th>OC · scheme</th><th>DC · scheme</th></tr></thead>
+      <tbody>
+      {% for r in league_staffs %}
+      <tr class="{% if r.you %}fk-you{% endif %}">
+        <td><b>{{ r.team }}</b>{% if r.you %} ◄ you{% endif %}</td>
+        <td>{{ r.hc }}</td><td>{{ r.oc }}</td><td>{{ r.dc }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== DRAFT ===================== #}
