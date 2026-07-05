@@ -8,6 +8,7 @@
 {% block content %}
 <section class="fp-wrap">
   <div class="fp-hero" style="border-left:5px solid {{ colors.primary }}">
+    {% if portrait_url %}<img class="fp-portrait" src="{{ portrait_url }}" alt="{{ p.name }} portrait">{% endif %}
     <div class="fp-crest">{% if prospect %}<span style="font-size:38px">🎓</span>{% else %}{{ crest|safe }}{% endif %}</div>
     <div class="fp-id">
       <h1>{{ p.name }}{% if p.nickname %} <small style="font-size:16px; color:#f5c860">“{{ p.nickname }}”</small>{% endif %}</h1>
@@ -185,6 +186,7 @@
 <style>
   .fp-wrap { max-width: 760px; margin: 0 auto; padding: 8px 16px 40px; }
   .fp-hero { display:flex; align-items:center; gap:14px; background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:18px; margin-bottom:12px; }
+  .fp-portrait { width:86px; height:86px; object-fit:cover; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:rgba(3,8,12,.65); box-shadow:0 8px 24px rgba(0,0,0,.28); }
   .fp-crest { flex:0 0 auto; }
   .fp-id { flex:1; min-width:0; }
   .fp-id h1 { font-family:var(--font-display); font-size:clamp(22px,5vw,32px); margin:0; color:#fff; }

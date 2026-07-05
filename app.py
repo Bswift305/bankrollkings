@@ -25,6 +25,7 @@ import threading
 import franchise_kings as fk
 import franchise_league as fl
 import franchise_offseason as fo
+import portrait_assets
 import prop_pointers
 import power_ratings as pr
 import pandas as pd
@@ -157,6 +158,7 @@ def _csrf_protect():
 
 app.template_folder = str(TEMPLATES_DIR)
 app.static_folder = str(STATIC_DIR)
+ASSETS_DIR = BASE_DIR / 'assets'
 JINJA_CACHE_DIR = DATA_DIR / 'cache' / 'jinja'
 JINJA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 app.jinja_env.bytecode_cache = FileSystemBytecodeCache(str(JINJA_CACHE_DIR), '%s.cache')
@@ -182,6 +184,13 @@ def service_worker():
     response = send_from_directory(STATIC_DIR, 'service-worker.js', mimetype='application/javascript')
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
+
+@app.route('/assets/<path:filename>')
+def generated_assets(filename):
+    response = send_from_directory(ASSETS_DIR, filename)
+    response.headers['Cache-Control'] = 'public, max-age=86400'
     return response
 
 
@@ -29925,6 +29934,7 @@ def _player_ctx(p, team_full, is_fa=False, mine=False):
             'career': fk.career_table(p), 'scout': _scout_read(p),
             'injuries': p.get('inj_history', 0), 'inj_weeks': p.get('inj_weeks', 0),
             'incidents': p.get('incidents', []), 'susp_reason': p.get('susp_reason'),
+            'portrait_url': portrait_assets.portrait_url(p.get('portrait_id')),
             'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
 
 
@@ -29946,6 +29956,7 @@ def _prospect_profile(draft, pid):
                     'crest': '', 'sub': f"Draft Prospect · {pr['pos']} · Age {pr.get('age', '?')}",
                     'r1': pr.get('grade', 0), 'r1l': 'GRD', 'r2': pr.get('pot_grade', 0), 'r2l': 'POT',
                     'stat_rows': [], 'value': 0, 'career': None, 'injuries': 0, 'inj_weeks': 0, 'incidents': [],
+                    'portrait_url': portrait_assets.portrait_url(pr.get('portrait_id')),
                     'scout': _scout_read(dict(pr, overall=pr.get('grade', 0), potential=pr.get('pot_grade', 0))),
                     'trait_blurb': fk.PERSONALITIES.get(pr.get('personality'), {}).get('blurb', '')}
     return None
@@ -30316,7 +30327,7 @@ def _league_avatar(p):
     ini = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else '')).upper()
     grp = ('skill' if p['pos'] in ('QB', 'RB', 'WR', 'TE') else 'oline' if p['pos'] == 'OL'
            else 'front' if p['pos'] in ('DL', 'LB') else 'back' if p['pos'] in ('CB', 'S') else 'kick')
-    return dict(p, ini=ini, grp=grp)
+    return dict(p, ini=ini, grp=grp, portrait_url=portrait_assets.portrait_url(p.get('portrait_id')))
 
 
 @app.route('/franchise/league/<lid>/team')

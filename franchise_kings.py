@@ -16,6 +16,8 @@ import random
 from datetime import datetime
 from pathlib import Path
 
+import portrait_assets
+
 BASE_DIR = Path(__file__).resolve().parent
 SAVE_DIR = BASE_DIR / "data" / "franchise"
 
@@ -535,6 +537,33 @@ def _gen_fa_pool(rng, n=40, season=1, seen=None):
     for p in pool:
         _attach_agent(rng, p)
     return pool
+
+
+def _all_generated_players(save):
+    for team in save.get("teams", []):
+        for p in team.get("roster", []):
+            yield p
+        for p in team.get("practice_squad", []):
+            yield p
+    for p in save.get("free_agents", []):
+        yield p
+    for p in (save.get("draft") or {}).get("class", []):
+        yield p
+
+
+def ensure_player_portraits(save):
+    records = portrait_assets.load_records()
+    if not records:
+        return 0
+    used = {p.get("portrait_id") for p in _all_generated_players(save) if p.get("portrait_id")}
+    changed = 0
+    for p in _all_generated_players(save):
+        if not p.get("portrait_id"):
+            pid = portrait_assets.assign_player(p, used_ids=used, records=records)
+            if pid:
+                used.add(pid)
+                changed += 1
+    return changed
 
 
 def new_league(seed):
@@ -2376,6 +2405,7 @@ def _advance_year(save):
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
     run_coaching_carousel(save, rng)   # ...and the rest of the league moves too
     save["free_agents"] = _gen_fa_pool(rng, season=save.get("season", 1) + 1, seen=league_names_seen(save))
+    ensure_player_portraits(save)
 
 
 # --------------------------------------------------------------------------- #
@@ -4095,6 +4125,7 @@ def _make_rookie(p):
             "morale": 75, "injury_risk": "Low",
             "personality": p.get("personality"), "hometown": p.get("hometown"),
             "high_school": p.get("high_school"), "college": p.get("college"),
+            "portrait_id": p.get("portrait_id"),
             "motivation": p.get("motivation"), "learning": p.get("learning"),
             "coach_pref": p.get("coach_pref"), "confidence": p.get("confidence", 65),
             "work_ethic": p.get("work_ethic", 65)}
@@ -4160,6 +4191,7 @@ def start_draft(save):
     save["draft"] = {"class": cls, "picks": picks, "order": order,
                      "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": [],
                      "pro_days": 3}   # private-workout visits your scouts can burn
+    ensure_player_portraits(save)
     save["draft_pending"] = True
     _draft_advance(save)
     write_save(save)
@@ -4446,6 +4478,7 @@ def load_save(user_id):
             changed = ensure_city_economics(save) or changed
             changed = ensure_team_cultures(save) or changed
             changed = ensure_world_systems(save) or changed
+            changed = bool(ensure_player_portraits(save)) or changed
             if changed:
                 write_save(save)
     except Exception:
@@ -4495,6 +4528,7 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
     }
     _set_expectation(save)
     generate_front_office_issues(save)
+    ensure_player_portraits(save)
     write_save(save)
     return save
 

@@ -753,7 +753,7 @@
       <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Pot</th><th>Fit</th><th>Trait</th><th>Risk</th><th>AAV</th></tr></thead>
       <tbody>
         {% for p in roster_order %}
-        <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
+        <tr><td>{% if p.portrait_url %}<img class="fk-avimg" src="{{ p.portrait_url }}" alt="{{ p.name }} portrait">{% else %}<span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span>{% endif %}</td>
           <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="fk-jersey">#{{ p.number|default('—') }}</span>{% if p.holdout %} <span class="fk-holdtag">HOLDOUT</span>{% endif %}{% if p.susp_reason %} <span class="fk-holdtag" style="background:#3a1f2a;color:#ff9a9a">SUSPENDED</span>{% endif %}{% if p.role_friction %} <span class="fk-holdtag" style="background:#6b4a1d;color:#ffd27d">BENCHED</span>{% endif %}{% if p.college %}<small style="display:block;color:#7f93a0">{{ p.college }}{% if p.style %} · {{ p.style }}{% endif %}</small>{% endif %}</td><td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td>
           <td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}</td>
           <td>{% if p.fit_pct %}<span class="fk-fit fk-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
@@ -768,7 +768,7 @@
     <div class="fk-card-h">{{ icon('users') }}Practice Squad <span style="float:right;font-size:11px;color:#7f93a0">{{ practice_squad|length }}/12 · develops, no cap hit</span></div>
     <table class="fk-table"><tbody>
       {% for p in practice_squad %}
-      <tr><td><span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span></td>
+      <tr><td>{% if p.portrait_url %}<img class="fk-avimg" src="{{ p.portrait_url }}" alt="{{ p.name }} portrait">{% else %}<span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span>{% endif %}</td>
         <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td>
         <td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td><td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}<small style="color:#7f93a0"> pot</small></td>
         <td><form method="post" action="{{ url_for('franchise_promote') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-psbtn">↑ Promote</button></form></td></tr>
@@ -1813,6 +1813,7 @@
   .fk-atmo-meter { display:flex; align-items:center; gap:8px; font-size:12px; color:#b7c6d0; } .fk-atmo-meter .fk-bar { flex:1; } .fk-atmo-meter b { color:#fff; }
   .fk-stadium { display:block; width:100%; height:auto; }
   .fk-av { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-size:10px; font-weight:800; color:#05121a; font-family:var(--font-display,sans-serif); }
+  .fk-avimg { width:30px; height:30px; object-fit:cover; border-radius:7px; border:1px solid rgba(255,255,255,.18); background:rgba(3,8,12,.55); vertical-align:middle; }
   .fk-av-skill { background:linear-gradient(135deg,#4ad4f0,#8fe9ff); }
   .fk-av-oline { background:linear-gradient(135deg,#f5c860,#ffe09a); }
   .fk-av-front { background:linear-gradient(135deg,#ff8a8a,#ffb3a0); }
