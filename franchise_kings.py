@@ -1582,6 +1582,13 @@ def start_inseason(save):
     return save
 
 
+def _score_line(rng, win_power, lose_power):
+    """A plausible final: the favorite pulls away, the underdog keeps it close."""
+    margin = int(max(1, min(38, round(3 + (win_power - lose_power) * 0.35 + rng.triangular(0, 21, 7)))))
+    base = rng.choice([10, 13, 14, 16, 17, 17, 20, 20, 21, 23, 24, 27])
+    return base + margin, base
+
+
 def sim_week(save):
     iz = save.get("inseason")
     if not iz:
@@ -1613,8 +1620,10 @@ def sim_week(save):
             opp = teams[g["away"] if g["home"] == uid else g["home"]]
             mine = ph if g["home"] == uid else pa
             st = max(mine, key=lambda x: x["score"]) if mine else None
+            _ws, _ls = _score_line(rng, powers.get(win, 60.0), powers.get(lose, 60.0))
+            _us, _them = (_ws, _ls) if win == uid else (_ls, _ws)
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
-                              "weather": weather,
+                              "us": _us, "them": _them, "weather": weather,
                               "key_moment": key_moment_summary(save),
                               "star": {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None,
                               "_score": st["score"] if st else 0})
@@ -5216,6 +5225,7 @@ def load_save(user_id):
             changed = ensure_player_identities(save) or changed
             changed = ensure_ai_staffs(save) or changed
             changed = ensure_ai_executives(save) or changed
+            changed = sync_front_office_issues(save) or changed
             changed = ensure_city_economics(save) or changed
             changed = ensure_team_cultures(save) or changed
             changed = ensure_world_systems(save) or changed
@@ -5309,6 +5319,23 @@ def _issue_player_row(p):
     return {"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"],
             "age": p.get("age"), "aav": p.get("contract", {}).get("aav", 0),
             "years": p.get("contract", {}).get("years", 0)}
+
+
+def sync_front_office_issues(save):
+    """Drop 'inherited problems' about players no longer on your roster (traded,
+    cut, or walked). Returns True if anything changed."""
+    issues = save.get("front_office_issues")
+    if not issues:
+        return False
+    try:
+        ids = {p["id"] for p in current_team(save)["roster"]}
+    except Exception:
+        return False
+    kept = [i for i in issues if (i.get("player") or {}).get("id") in ids]
+    if len(kept) != len(issues):
+        save["front_office_issues"] = kept
+        return True
+    return False
 
 
 def generate_front_office_issues(save):

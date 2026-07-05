@@ -414,6 +414,11 @@
       <div class="fk-card-h">This season</div>
       {% if inseason %}
         <div class="fk-inseason-wk">📅 Regular season — <strong>Week {{ inseason_week }} of 17</strong> · trade deadline Week {{ trade_deadline }}{% if not trades_open %} <span style="color:#ff9a9a">(passed)</span>{% endif %}</div>
+        {% if inseason_log %}{% set lg = inseason_log[0] %}
+        <div class="fk-lastresult fk-lastresult-{{ 'w' if lg.won else 'l' }}">
+          <b>{{ 'WON' if lg.won else 'LOST' }}</b>{% if lg.us is defined and lg.us is not none %} {{ lg.us }}–{{ lg.them }}{% endif %} {{ 'vs' if lg.home else '@' }} {{ lg.opp }} <small>· Week {{ lg.week }}{% if lg.star %} · ⭐ {{ lg.star.name }} {{ lg.star.line }}{% endif %}</small>
+        </div>
+        {% endif %}
         {% if live %}
         <div class="fk-live {{ 'fk-live-paused' if live.paused else 'fk-live-on' if live.on else 'fk-live-off' }}">
           {% if live.paused %}
@@ -452,7 +457,7 @@
         <div class="fk-gloscroll" style="max-height:210px;overflow-y:auto;margin-top:10px"><table class="fk-table"><tbody>
           {% for g in inseason_log %}
           <tr><td style="color:#7f93a0">Wk {{ g.week }}</td><td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
-            <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
+            <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}{% if g.us is defined and g.us is not none %} {{ g.us }}–{{ g.them }}{% endif %}</b></td>
             <td>{% if g.weather %}<span class="fk-tag">{{ g.weather.label }}</span>{% endif %}</td>
             <td>{% if g.key_moment %}<span class="fk-tag">{{ g.key_moment.call }} {{ '%+.2f'|format(g.key_moment.edge) }}</span>{% endif %}</td>
             <td>{% if g.star %}⭐ {{ g.star.pos }} {{ g.star.name }} · {{ g.star.line }}{% endif %}</td></tr>
@@ -1931,6 +1936,11 @@
   .fk-pos { color:#4ad4f0; font-weight:700; }
   .fk-ovr { color:#fff; font-weight:700; }
   .fk-you td { background:rgba(74,212,240,.08); color:#fff; }
+  .fk-lastresult { margin-top:8px; padding:9px 12px; border-radius:9px; font-size:14px; }
+  .fk-lastresult b { font-size:15px; letter-spacing:.03em; }
+  .fk-lastresult small { color:var(--text2,#b7c6d0); font-weight:400; }
+  .fk-lastresult-w { background:rgba(125,255,176,.1); border:1px solid rgba(125,255,176,.4); color:#7dffb0; }
+  .fk-lastresult-l { background:rgba(255,122,122,.1); border:1px solid rgba(255,122,122,.4); color:#ff9a9a; }
   .fk-champbar { margin-top:12px; padding:9px 14px; border-radius:10px; background:rgba(74,212,240,.08); border:1px solid rgba(74,212,240,.25); color:var(--text2,#c2cfd8); font-size:13px; }
   .fk-champbar strong { color:#fff; }
   .fk-legend { float:right; color:#7f93a0; font-weight:600; font-size:11px; }
