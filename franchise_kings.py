@@ -1047,18 +1047,27 @@ GAME_PLANS = {
     "Protect the Unit": {"edge": 0.1, "blurb": "Scheme around your banged-up group."},
 }
 SCOUT_ASSIGNMENTS = ["Opponent", "Draft Class", "Free Agents", "Internal Development"]
+KEY_MOMENTS = {
+    "Balanced": {"edge": 0.0, "blurb": "Default sideline calls in high-leverage spots."},
+    "Trust the Math": {"edge": 0.45, "blurb": "Aggressive 4th downs and two-point math. More upside, more scrutiny."},
+    "Field Position": {"edge": 0.18, "blurb": "Punt, pin, and protect the defense in swing moments."},
+    "Red Zone Punch": {"edge": 0.32, "blurb": "Lean into heavy red-zone calls and finish drives."},
+    "Two-Minute Heat": {"edge": 0.28, "blurb": "Tempo, sideline throws, and end-half pressure."},
+}
 
 
 def init_weekly_ops(save):
     save["weekly_ops"] = {"intensity": "Balanced", "focus": "Scheme Install",
-                          "medical": "Balanced", "game_plan": "Balanced", "scout": "Opponent"}
+                          "medical": "Balanced", "game_plan": "Balanced", "scout": "Opponent",
+                          "key_moment": "Balanced"}
     return save["weekly_ops"]
 
 
 def set_weekly_plan(save, **fields):
     wo = save.setdefault("weekly_ops", {})
     for key, table in (("intensity", PRACTICE_INTENSITY), ("focus", PRACTICE_FOCUS),
-                       ("medical", MEDICAL_POLICY), ("game_plan", GAME_PLANS), ("scout", SCOUT_ASSIGNMENTS)):
+                       ("medical", MEDICAL_POLICY), ("game_plan", GAME_PLANS), ("scout", SCOUT_ASSIGNMENTS),
+                       ("key_moment", KEY_MOMENTS)):
         v = fields.get(key)
         if v is not None and v in table:
             wo[key] = v
@@ -1066,11 +1075,35 @@ def set_weekly_plan(save, **fields):
     return wo
 
 
+def key_moment_edge(save):
+    wo = save.get("weekly_ops", {})
+    call = wo.get("key_moment", "Balanced")
+    edge = KEY_MOMENTS.get(call, KEY_MOMENTS["Balanced"]).get("edge", 0.0)
+    focus = wo.get("focus", "")
+    plan = wo.get("game_plan", "")
+    if call == "Trust the Math" and plan == "Aggressive":
+        edge += 0.18
+    elif call == "Field Position" and plan in ("Conservative", "Protect the Unit"):
+        edge += 0.15
+    elif call == "Red Zone Punch" and focus == "Red Zone":
+        edge += 0.2
+    elif call == "Two-Minute Heat" and focus in ("Pass Game", "Ball Security"):
+        edge += 0.14
+    return round(edge, 2)
+
+
+def key_moment_summary(save):
+    call = (save.get("weekly_ops") or {}).get("key_moment", "Balanced")
+    spec = KEY_MOMENTS.get(call, KEY_MOMENTS["Balanced"])
+    return {"call": call, "edge": key_moment_edge(save), "blurb": spec.get("blurb", "")}
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
     e = PRACTICE_INTENSITY.get(wo.get("intensity", "Balanced"), {}).get("edge", 0.0)
     e += GAME_PLANS.get(wo.get("game_plan", "Balanced"), {}).get("edge", 0.0)
+    e += key_moment_edge(save)
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -1551,6 +1584,7 @@ def sim_week(save):
             st = max(mine, key=lambda x: x["score"]) if mine else None
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
                               "weather": weather,
+                              "key_moment": key_moment_summary(save),
                               "star": {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None,
                               "_score": st["score"] if st else 0})
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)

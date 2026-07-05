@@ -177,9 +177,11 @@ v0.1 ships Power Rating; the rest layer in with their systems.
 
 ---
 
-**Status:** plan only — no code yet. Next step on approval: scaffold the v0.1
-loop (create GM → sim season → owner outcome → career), 16-team fictional football
-league, JSON save, reusing the Fantasy hub patterns.
+**Status:** implemented and production-shipped. The mode now includes the career
+loop, live seasons, draft, day-by-day free agency, trades, staff, facilities,
+business operations, league politics/expansion, media/world systems, depth charts,
+situational packages, weather, report cards, data mode, and key-moment game-day
+calls.
 
 ---
 
@@ -194,18 +196,18 @@ HOF, box scores, multiplayer leagues). SHIPPED from this pass: **League Almanac
 tab** (season ledger w/ champion/runner-up/MVP + user result, records book,
 all-time leaders, Hall of Fame in one dense book).
 
-Remaining gaps, in rough priority order:
-1. **Depth charts & situational packages** (nickel/dime/red-zone/3rd-down starters,
-   role weighting in the sim) — biggest football-feel gap.
-2. **Contract restructures** (convert salary to signing bonus, dead-money
-   acceleration on cuts) — biggest cap-feel gap.
-3. **Day-by-day free agency** (agents lower asks as FA days pass; loyalty
-   re-signs like the Seahawks-safety story).
-4. **Weather** (city climates, game-day weather affecting sim + box scores).
-5. **Concessions/parking pricing + relocation & public stadium votes.**
-6. **Play calling / interactive game day** (drive-by-drive choices) — the
-   biggest lift; consider a "key moments" mode (4th downs, 2-min drill choices).
-7. **Franchise evaluation report card** (team/financial/roster/franchise-value
-   four-grade year-end review).
-8. **Interface density pass** — FOF-style compact tables as a user-selectable
-   "Data mode" across franchise screens.
+Completed closeout items:
+1. **Depth charts & situational packages** - base depth plus nickel, dime,
+   red-zone, 3rd-down, and goal-line personnel feed game-week power.
+2. **Contract restructures** - salary can convert into guaranteed bonus with
+   dead-money consequences.
+3. **Day-by-day free agency** - agent asks soften as days pass, with loyalty and
+   rival signings in the market log.
+4. **Weather** - city climate and game-day conditions affect weekly sim power.
+5. **Concessions/parking pricing + public stadium votes** - game-day pricing,
+   facility/district economics, and league/public-funding politics are live.
+6. **Play calling / interactive game day** - Command Center key-moment calls cover
+   4th-down math, field position, red zone, and two-minute strategy.
+7. **Franchise evaluation report card** - roster, staff, finance, culture, and
+   outlook grades are visible on the dashboard.
+8. **Interface density pass** - Data Mode compacts the franchise screens.

@@ -436,6 +436,7 @@
           <tr><td style="color:#7f93a0">Wk {{ g.week }}</td><td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
             <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
             <td>{% if g.weather %}<span class="fk-tag">{{ g.weather.label }}</span>{% endif %}</td>
+            <td>{% if g.key_moment %}<span class="fk-tag">{{ g.key_moment.call }} {{ '%+.2f'|format(g.key_moment.edge) }}</span>{% endif %}</td>
             <td>{% if g.star %}⭐ {{ g.star.pos }} {{ g.star.name }} · {{ g.star.line }}{% endif %}</td></tr>
           {% endfor %}
         </tbody></table></div>
@@ -598,7 +599,7 @@
     <div class="fk-cc-top">
       <div>
         <div class="fk-card-h" style="margin:0">{{ icon('flag') }}Command Center — Week {{ inseason_week }} of 17</div>
-        <div class="fk-cc-sum">This week's plan: <b class="{{ 'fk-glw' if command_center.edge > 0 else 'fk-gll' if command_center.edge < 0 else '' }}">{{ '%+.1f'|format(command_center.edge) }} power</b> · injury risk <b class="fk-cc-risk-{{ command_center.injrisk|lower }}">{{ command_center.injrisk }}</b></div>
+        <div class="fk-cc-sum">This week's plan: <b class="{{ 'fk-glw' if command_center.edge > 0 else 'fk-gll' if command_center.edge < 0 else '' }}">{{ '%+.1f'|format(command_center.edge) }} power</b> · key moments <b>{{ command_center.key_moment.call }}</b> · injury risk <b class="fk-cc-risk-{{ command_center.injrisk|lower }}">{{ command_center.injrisk }}</b></div>
       </div>
       {% if live and live.on and not live.paused %}<div class="fk-cc-live">⏱ next game in <b id="fk-countdown" data-secs="{{ live.next_in if live.next_in is not none else 0 }}">—</b></div>{% endif %}
     </div>

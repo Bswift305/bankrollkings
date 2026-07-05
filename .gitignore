@@ -40,6 +40,8 @@ server*.err.txt
 # Generated app data and bulky local datasets
 data/cache/
 data/debug/
+data/franchise/
+data/franchise_leagues/
 data/gamelogs/
 data/historical/
 data/injuries/
@@ -64,6 +66,7 @@ data/tracking/
 # case-insensitive (Windows/macOS) filesystem also matches static/logos/
 # and silently drops the sidebar league logos from the repo.
 /Logos/
+/icons/New Icons.png
 
 # Keep intentional repo seed/config CSVs, not generated slate context
 !data/context/MLB_BallparkFactors.csv

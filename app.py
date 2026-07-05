@@ -29130,6 +29130,7 @@ def _command_center(save):
     injfac = fk.weekly_injury_factor(save)
     return {
         'plan': wo, 'edge': fk.weekly_edge(save),
+        'key_moment': fk.key_moment_summary(save),
         'injrisk': 'High' if injfac >= 1.2 else 'Low' if injfac <= 0.85 else 'Normal',
         'agenda': save.get('agenda', []),
         'agenda_log': save.get('agenda_log', [])[:4],
@@ -29139,6 +29140,7 @@ def _command_center(save):
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
             {'key': 'medical', 'title': 'Medical Policy', 'opts': opts(fk.MEDICAL_POLICY, wo.get('medical'))},
             {'key': 'game_plan', 'title': 'Game Plan', 'opts': opts(fk.GAME_PLANS, wo.get('game_plan'))},
+            {'key': 'key_moment', 'title': 'Key Moments', 'opts': opts(fk.KEY_MOMENTS, wo.get('key_moment', 'Balanced'))},
             {'key': 'scout', 'title': 'Scout Assignment', 'opts': opts(fk.SCOUT_ASSIGNMENTS, wo.get('scout'))},
         ],
     }
@@ -29457,7 +29459,7 @@ def franchise_weekly():
         fk.set_weekly_plan(save,
                            intensity=request.form.get('intensity'), focus=request.form.get('focus'),
                            medical=request.form.get('medical'), game_plan=request.form.get('game_plan'),
-                           scout=request.form.get('scout'))
+                           scout=request.form.get('scout'), key_moment=request.form.get('key_moment'))
     return redirect(url_for('franchise_hub', tab='command'))
 
 
