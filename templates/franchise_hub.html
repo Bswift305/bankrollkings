@@ -1021,11 +1021,15 @@
   <div class="fk-card">
     <div class="fk-card-h">Propose a trade</div>
     {% if last_trade and last_trade.ok %}
+      {% if last_trade.give is defined and last_trade.give %}
       <div class="fk-trade-result fk-trade-{{ 'yes' if last_trade.accepted else 'no' }}">
         <span class="fk-grade fk-grade-{{ last_trade.grade }}">{{ last_trade.grade }}</span>
         <div>{{ last_trade.msg }}<small>Give {{ last_trade['give'].pos }} {{ last_trade['give'].name }} ({{ last_trade['give'].ovr }} · val {{ last_trade['give'].val }}) →
           Get {{ last_trade['get'].pos }} {{ last_trade['get'].name }} ({{ last_trade['get'].ovr }} · val {{ last_trade['get'].val }})</small></div>
       </div>
+      {% else %}
+      <div class="fk-trade-result fk-trade-yes"><div>{{ last_trade.summary or last_trade.msg }}</div></div>
+      {% endif %}
     {% elif last_trade and not last_trade.ok %}<p class="fk-muted">{{ last_trade.msg }}</p>{% endif %}
 
     {% if not trade_team %}
