@@ -29366,6 +29366,8 @@ def franchise_hub():
         view['exec_view'] = fk.exec_report(save)
     elif tab == 'staff':
         view['alumni_market'] = fk.alumni_front_office_market(save)
+        view['sim_depth'] = bool(save.get('sim_depth'))
+        view['attr_edge'] = fk.attr_scheme_edge(save) if save.get('sim_depth') else 0.0
     elif tab == 'roster':
         team = fk.current_team(save)
         groups = []
@@ -30164,6 +30166,16 @@ def franchise_hire():
                                 str(request.form.get('candidate_id', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
+
+
+@app.route('/franchise/sim-depth', methods=['POST'])
+def franchise_sim_depth():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.set_sim_depth(save, not save.get('sim_depth'))
+        return redirect(url_for('franchise_hub', tab='staff',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
+    return redirect(url_for('franchise_hub', tab='staff'))
 
 
 @app.route('/franchise/sign-udfa', methods=['POST'])

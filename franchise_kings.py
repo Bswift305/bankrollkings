@@ -1167,7 +1167,7 @@ def _roll_week_injuries(save, week, rng):
 def _user_inseason_power(save, week, base_power):
     sb = staff_bonus(save)
     p = (base_power + sb["power"] + sb["scheme"] + sb["playbook"]["edge"]
-         + sb["special_teams"] + atmosphere(save)["home_edge"])
+         + sb["special_teams"] + atmosphere(save)["home_edge"] + attr_scheme_edge(save))
     p += weekly_edge(save)                                      # Command Center: practice + game plan
     p += package_edge(save)                                     # Situational packages matching the weekly plan
     p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
@@ -3838,6 +3838,64 @@ def scheme_identity(save):
     }
 
 
+# --------------------------------------------------------------------------- #
+# ATTRIBUTE-DRIVEN SCHEME FIT (opt-in, save['sim_depth']). Each scheme leans on
+# specific ATTRIBUTES, not just style labels: an Air Raid wants Deep Accuracy +
+# Deep Threat + Speed. When Deep Sim is on, a player whose key attributes beat
+# his overall sharpens the scheme fit and earns a small, bounded sim edge.
+# --------------------------------------------------------------------------- #
+SCHEME_KEY_ATTRS = {
+    "Air Raid": {"QB": ["Deep Accuracy", "Arm Strength"], "WR": ["Deep Threat", "Speed", "Release"]},
+    "West Coast": {"QB": ["Short Accuracy", "Awareness"], "WR": ["Route Running", "Hands"],
+                   "TE": ["Route Running", "Hands"]},
+    "Power Run": {"RB": ["Power", "Vision"], "OL": ["Run Block", "Strength"], "TE": ["Run Blocking", "Strength"]},
+    "Spread": {"QB": ["Mobility", "Short Accuracy"], "WR": ["YAC", "Route Running"], "RB": ["Elusiveness", "Speed"]},
+    "4-3 Front": {"DL": ["Pass Rush", "Finesse Moves"], "LB": ["Tackle", "Pursuit"]},
+    "3-4 Front": {"DL": ["Run Defense", "Strength"], "LB": ["Pass Rush", "Hit Power"]},
+    "Cover 3 Zone": {"CB": ["Zone Coverage", "Ball Skills"], "S": ["Range", "Coverage"]},
+    "Blitz Heavy": {"DL": ["Pass Rush", "Power Moves"], "LB": ["Pass Rush", "Speed"], "CB": ["Man Coverage", "Press"]},
+}
+
+
+def _attr_fit_delta(player, keys):
+    """How much a player's scheme-key attributes beat (or trail) his overall."""
+    attrs = {a["attr"]: a["value"] for a in player_attributes(player)}
+    if not attrs:
+        return 0.0
+    vals = [attrs[k] for k in keys if k in attrs]
+    if not vals:
+        return 0.0
+    return (sum(vals) / len(vals)) - int(player.get("overall") or player.get("grade") or 60)
+
+
+def attr_scheme_edge(save):
+    """Opt-in bounded sim edge for a roster whose ATTRIBUTES fit the scheme."""
+    if not save.get("sim_depth"):
+        return 0.0
+    team = current_team(save)
+    oc, dc = _team_schemes(save)
+    total, n = 0.0, 0
+    for pos, slots in ROSTER.items():
+        scheme = oc if pos in OFFENSE_POS else dc
+        keys = SCHEME_KEY_ATTRS.get(scheme, {}).get(pos) if scheme else None
+        if not keys:
+            continue
+        for pl in pos_depth(team, pos)[:slots]:
+            total += _attr_fit_delta(pl, keys)
+            n += 1
+    if not n:
+        return 0.0
+    return round(max(-2.5, min(2.5, (total / n) * 0.12)), 2)
+
+
+def set_sim_depth(save, on):
+    save["sim_depth"] = bool(on)
+    write_save(save)
+    return True, ("Deep Sim ON \u2014 attributes now sharpen scheme fit and the game."
+                  if save["sim_depth"] else
+                  "Deep Sim OFF \u2014 back to overall-driven fit.")
+
+
 def tactical_fit(save, p):
     """How well one player fits YOUR scheme. Returns pct (None if no scheme is
     installed yet), a label, and which scheme judged him. A 'Square peg' is a
@@ -3860,7 +3918,15 @@ def tactical_fit(save, p):
     else:
         pct = base - (20 if lean else 8)
         label = "Square peg" if lean else "Off-scheme"
-    return {"pct": max(25, min(99, pct)), "label": label, "scheme": scheme, "style": style}
+    result = {"pct": max(25, min(99, pct)), "label": label, "scheme": scheme, "style": style}
+    if save.get("sim_depth"):
+        keys = SCHEME_KEY_ATTRS.get(scheme, {}).get(pos)
+        if keys:
+            adj = int(round(max(-8, min(8, _attr_fit_delta(p, keys))) * 0.6))
+            if adj:
+                result["pct"] = max(20, min(99, result["pct"] + adj))
+                result["attr_adj"] = adj
+    return result
 
 
 def scheme_value(save, p):

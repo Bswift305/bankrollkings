@@ -1212,6 +1212,13 @@
       <span>Scouting <b>{{ '%+.0f'|format(staff_bonus.scouting) }} acc</b></span>
       <span>Development <b>{{ 'boosted' if staff_bonus.development else 'standard' }}</b></span>
     </div>
+    {% if sim_depth is defined %}
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px; padding:8px 10px; background:rgba(159,150,255,.06); border:1px solid rgba(159,150,255,.28); border-radius:9px;">
+      <span style="font-size:12.5px;">🧬 <b>Deep Sim</b> — attribute-driven scheme fit is <b style="color:{{ '#7dffb0' if sim_depth else '#8fa3b0' }}">{{ 'ON' if sim_depth else 'OFF' }}</b>{% if sim_depth %} · roster attribute edge <b style="color:{{ '#7dffb0' if attr_edge >= 0 else '#ff9a9a' }}">{{ '%+.2f'|format(attr_edge) }} power</b>{% endif %}
+        <small class="fk-muted" style="display:block">When on, schemes reward the actual attributes they lean on (Air Raid wants Deep Threat + Deep Accuracy), not just style labels — draft/FA fit and game power shift to match.</small></span>
+      <form method="post" action="{{ url_for('franchise_sim_depth') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="fk-btn fk-btn-ghost fk-btn-sm">{{ 'Turn OFF' if sim_depth else 'Turn ON' }}</button></form>
+    </div>
+    {% endif %}
     {% if staff_bonus.playbook.packages %}
     <div style="display:grid; gap:4px; margin:8px 0 4px;">
       {% for pk in staff_bonus.playbook.packages %}

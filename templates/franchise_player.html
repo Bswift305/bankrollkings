@@ -34,7 +34,7 @@
         <div><span>Age</span><b>{{ p.age }}</b></div>
         {% if p.style %}<div><span>Player type</span><b>{{ p.style }}</b></div>{% endif %}
         {% if fit is defined and fit and fit.pct %}
-        <div><span>Scheme fit</span><b style="color:{{ '#7dffb0' if fit.pct >= 80 else '#ffd27d' if fit.pct >= 60 else '#ff9a9a' }}">{{ fit.label }} · {{ fit.pct }}%{% if fit.scheme %} ({{ fit.scheme }}){% endif %}</b></div>
+        <div><span>Scheme fit</span><b style="color:{{ '#7dffb0' if fit.pct >= 80 else '#ffd27d' if fit.pct >= 60 else '#ff9a9a' }}">{{ fit.label }} · {{ fit.pct }}%{% if fit.scheme %} ({{ fit.scheme }}){% endif %}{% if fit.attr_adj %} <small style="color:{{ '#7dffb0' if fit.attr_adj > 0 else '#ff9a9a' }}">· attributes {{ '%+d'|format(fit.attr_adj) }}</small>{% endif %}</b></div>
         {% endif %}
         <div><span>Dev Trait</span><b>{{ p.dev|default('Normal') }}</b></div>
         {% if not prospect %}
