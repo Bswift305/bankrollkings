@@ -1550,6 +1550,7 @@ def start_inseason(save):
     """Kick off a turn-based, week-by-week regular season the GM plays through."""
     _expire_staff_poach(save)      # an unanswered rival offer costs you the coach
     save.pop("ownership_change", None)   # last offseason's new-owner banner clears
+    ensure_draft_preview(save)           # next spring's class becomes scoutable now
     me = current_team(save)
     for p in me["roster"]:
         p.pop("rep_starter", None)
@@ -4738,12 +4739,100 @@ def _team_abbr(save, tid):
     return ((t.get("name") or t["full"])[:3].upper()) if t else "?"
 
 
+def ensure_draft_preview(save):
+    """Generate next spring's incoming class so it's scoutable all season.
+    Early grades are fuzzy; the Senior Bowl then shakes them up."""
+    target = save.get("season", 1) + 1
+    prev = save.get("draft_preview")
+    if isinstance(prev, dict) and prev.get("season") == target and prev.get("class"):
+        return False
+    rng = _rng(save["seed"] + target * 131 + 17)
+    cls = generate_draft_class(rng, season=target, seen=league_names_seen(save))
+    _inject_bloodlines(save, rng, cls)
+    acc = max(20, min(66, int(save["gm"]["ratings"].get("drafting", 50)) - 8))
+    for p in cls:
+        _scout(rng, p, acc)
+        p["buzz"] = ""
+    save["draft_preview"] = {"season": target, "class": cls, "senior_bowl_done": False}
+    run_senior_bowl(save)
+    return True
+
+
+def run_senior_bowl(save):
+    """The pre-draft all-star showcase: mid-tier prospects have the most to
+    gain or lose. Risers climb the board; strugglers slide."""
+    prev = save.get("draft_preview")
+    if not isinstance(prev, dict) or prev.get("senior_bowl_done"):
+        return
+    cls = prev.get("class") or []
+    if not cls:
+        return
+    rng = _rng(save["seed"] + int(prev.get("season", 1)) * 313 + 71)
+    ranked = sorted(cls, key=lambda p: -p.get("grade", 0))
+    pool = ranked[3:44] if len(ranked) > 44 else ranked[1:]
+    rng.shuffle(pool)
+    risers, fallers = [], []
+    for p in pool[:14]:
+        roll = rng.gauss(0, 1)
+        if roll > 0.8:
+            p["grade"] = min(99, int(p.get("grade", 60)) + rng.randint(2, 5))
+            p["pot_grade"] = min(99, max(int(p.get("pot_grade", p["grade"])), p["grade"]))
+            p["buzz"] = "Senior Bowl riser"
+            risers.append({"name": p["name"], "pos": p["pos"], "grade": p["grade"],
+                           "college": p.get("college", "")})
+        elif roll < -0.9:
+            p["grade"] = max(40, int(p.get("grade", 60)) - rng.randint(2, 5))
+            p["buzz"] = "Struggled at the Senior Bowl"
+            fallers.append({"name": p["name"], "pos": p["pos"], "grade": p["grade"],
+                            "college": p.get("college", "")})
+    prev["senior_bowl_done"] = True
+    prev["senior_bowl"] = {"risers": risers, "fallers": fallers}
+
+
+def college_pipeline_report(save):
+    prev = save.get("draft_preview") or {}
+    cls = prev.get("class") or []
+    board = sorted(cls, key=lambda p: -p.get("grade", 0))[:24]
+    top = [{"name": p["name"], "pos": p["pos"], "grade": p.get("grade", 0),
+            "pot": p.get("pot_grade", p.get("grade", 0)), "college": p.get("college", ""),
+            "hometown": p.get("hometown", ""), "buzz": p.get("buzz", ""),
+            "legacy": p.get("legacy")} for p in board]
+    sb = prev.get("senior_bowl") or {"risers": [], "fallers": []}
+    return {"season": prev.get("season"), "top": top, "count": len(cls),
+            "risers": sb.get("risers", []), "fallers": sb.get("fallers", [])}
+
+
+def sign_udfa(save, pid):
+    """Sign an undrafted prospect to your practice squad."""
+    pool = save.get("udfa_pool") or []
+    entry = next((u for u in pool if u.get("id") == pid), None)
+    if not entry:
+        return False, "That player has already signed elsewhere."
+    team = current_team(save)
+    ps = team.setdefault("practice_squad", [])
+    cap = int((save.get("league_rules") or {}).get("practice_squad_slots", PS_MAX) or PS_MAX)
+    if len(ps) >= cap:
+        return False, "Your practice squad is full (" + str(cap) + ")."
+    rookie = _make_rookie(entry.get("_full") or entry)
+    rookie["practice"] = True
+    ps.append(rookie)
+    save["udfa_pool"] = [u for u in pool if u.get("id") != pid]
+    write_save(save)
+    return True, "Signed UDFA " + str(entry.get("pos", "")) + " " + str(entry.get("name", "")) + " to the practice squad."
+
+
 def start_draft(save):
     if save.get("draft_pending"):
         return
     rng = _rng(save["seed"] + save["season"] * 77 + 13)
-    cls = generate_draft_class(rng, season=save.get("season", 1), seen=league_names_seen(save))
-    _inject_bloodlines(save, rng, cls)
+    preview = save.get("draft_preview")
+    if (isinstance(preview, dict) and preview.get("season") == save.get("season")
+            and preview.get("class")):
+        cls = preview["class"]                         # the class you watched all season
+        save.pop("draft_preview", None)                # consumed into the live draft
+    else:
+        cls = generate_draft_class(rng, season=save.get("season", 1), seen=league_names_seen(save))
+        _inject_bloodlines(save, rng, cls)
     scout_bonus = 9 if save.get("weekly_ops", {}).get("scout") == "Draft Class" else 0   # scouts worked the class
     acc = max(20, min(94, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"] + scout_bonus))
     for p in cls:
@@ -4845,6 +4934,13 @@ def _finalize_draft(save):
         for t in save["teams"]:
             t["roster"].sort(key=lambda p: -p["overall"])
             del t["roster"][ROSTER_CAP:]
+    _draft = save.get("draft") or {}
+    _undrafted = sorted([p for p in _draft.get("class", []) if not p.get("drafted")],
+                        key=lambda p: -p.get("grade", 0))
+    save["udfa_pool"] = [{"id": p["id"], "name": p["name"], "pos": p["pos"],
+                          "grade": p.get("grade", 0), "pot_grade": p.get("pot_grade", p.get("grade", 0)),
+                          "college": p.get("college", ""), "style": p.get("style", ""), "_full": p}
+                         for p in _undrafted[:16]]
     save["draft_pending"] = False
     save["last_draft_log"] = save.get("draft", {}).get("user_log", [])
     save.pop("draft", None)

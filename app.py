@@ -29339,6 +29339,8 @@ def franchise_hub():
         tab = 'dashboard'
     view = _franchise_view(save)
     view['career_ladder'] = fk.career_ladder(save)
+    view['college_pipeline'] = fk.college_pipeline_report(save)
+    view['udfa_pool'] = save.get('udfa_pool', [])
     if tab == 'trades':
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     elif tab == 'almanac':
@@ -30160,6 +30162,16 @@ def franchise_hire():
                                 str(request.form.get('candidate_id', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
+
+
+@app.route('/franchise/sign-udfa', methods=['POST'])
+def franchise_sign_udfa():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.sign_udfa(save, str(request.form.get('pid', '')).strip())
+        return redirect(url_for('franchise_hub', tab='dashboard',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
+    return redirect(url_for('franchise_hub'))
 
 
 @app.route('/franchise/career-offer', methods=['POST'])

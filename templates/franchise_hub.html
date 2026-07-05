@@ -523,6 +523,46 @@
       {% endif %}
     </div>
   </div>
+
+  {% if college_pipeline is defined and college_pipeline and college_pipeline.top %}{% set cp = college_pipeline %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">🎓 College Pipeline — the S{{ cp.season }} class <span style="float:right;font-size:12px;color:#8fa3b0">{{ cp.count }} prospects · scout them all year</span></div>
+    <p class="fk-muted" style="margin:2px 0 8px">The players you watch now are the players you'll draft. Assign scouts to the Draft Class (Command Center) to sharpen these grades.</p>
+    {% if cp.risers or cp.fallers %}
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
+      {% for r in cp.risers %}<span class="fk-tag" style="color:#7dffb0" title="{{ r.college }}">▲ {{ r.pos }} {{ r.name }} ({{ r.grade }})</span>{% endfor %}
+      {% for f in cp.fallers %}<span class="fk-tag" style="color:#ff9a9a" title="{{ f.college }}">▼ {{ f.pos }} {{ f.name }} ({{ f.grade }})</span>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="table-shell"><table class="fk-table">
+      <thead><tr><th>#</th><th>Prospect</th><th>Pos</th><th>Grade</th><th>Ceiling</th><th>College</th><th></th></tr></thead>
+      <tbody>
+      {% for p in cp.top %}
+      <tr><td class="fk-muted">{{ loop.index }}</td>
+        <td><b>{{ p.name }}</b>{% if p.legacy %} <span style="color:#f5c860">🩸</span>{% endif %}{% if p.buzz %} <small style="color:{{ '#7dffb0' if 'riser' in p.buzz else '#ff9a9a' }}">· {{ p.buzz }}</small>{% endif %}</td>
+        <td>{{ p.pos }}</td><td style="color:#fff">{{ p.grade }}</td><td>{{ p.pot }}</td>
+        <td class="fk-muted">{{ p.college }}</td><td class="fk-muted">{{ p.hometown }}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+  {% endif %}
+
+  {% if udfa_pool is defined and udfa_pool %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">📝 Undrafted Free Agents — sign to your practice squad</div>
+    <p class="fk-muted" style="margin:2px 0 8px">The draft's over, but talent slips through. Stash an undrafted rookie on the practice squad and develop him.</p>
+    <div style="display:grid; gap:6px;">
+      {% for u in udfa_pool %}
+      <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; background:rgba(3,10,16,.5); border:1px solid rgba(74,212,240,.14); border-radius:9px; padding:7px 10px;">
+        <span style="font-size:12.5px;"><span class="fk-ovr">{{ u.grade }}</span> <b>{{ u.name }}</b> <small class="fk-muted">· {{ u.pos }} · ceiling {{ u.pot_grade }}{% if u.college %} · {{ u.college }}{% endif %}</small></span>
+        <form method="post" action="{{ url_for('franchise_sign_udfa') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ u.id }}">
+          <button class="fk-btn fk-btn-ghost fk-btn-sm">→ Practice Squad</button></form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== GRIDIRON NETWORK ===================== #}
