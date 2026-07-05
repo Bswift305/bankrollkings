@@ -960,6 +960,16 @@
 
   {# ===================== TRADES ===================== #}
   {% if tab == 'trades' %}
+  {% if inseason_offer %}
+  <div class="fk-card" style="border-color:rgba(245,200,96,.5); background:rgba(245,200,96,.06);">
+    <div class="fk-card-h">{{ icon('swap') }}📨 Trade offer from the {{ inseason_offer.team }} <span class="fk-grade fk-grade-{{ inseason_offer.grade }}" style="float:right">{{ inseason_offer.grade }} for you</span></div>
+    <p style="margin:6px 0 10px">You <b style="color:#7dffb0">get</b> {{ inseason_offer.give_pos }} <a href="{{ url_for('franchise_player', pid=inseason_offer.give_id) }}" style="color:#9fe9ff;text-decoration:none">{{ inseason_offer.give }}</a> ({{ inseason_offer.give_ovr }}) · you <b style="color:#ff9a9a">give</b> {{ inseason_offer.want_pos }} <a href="{{ url_for('franchise_player', pid=inseason_offer.want_id) }}" style="color:#9fe9ff;text-decoration:none">{{ inseason_offer.want }}</a> ({{ inseason_offer.want_ovr }})</p>
+    <div style="display:flex; gap:8px;">
+      <form method="post" action="{{ url_for('franchise_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accept" value="1"><button class="fk-btn fk-btn-sm">Accept trade</button></form>
+      <form method="post" action="{{ url_for('franchise_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="fk-btn fk-btn-ghost fk-btn-sm">Decline</button></form>
+    </div>
+  </div>
+  {% endif %}
   <div class="fk-card">
     <div class="fk-card-h">Trading Block</div>
     {% set block_msg = request.args.get('block_msg', '') %}
