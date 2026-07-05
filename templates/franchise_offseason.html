@@ -558,10 +558,11 @@
   <div class="os-card">
     <div class="os-ch">{{ icon('users') }}Cut Day — down to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
     <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit.</p>
-    <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Camp</th><th></th></tr></thead><tbody>
+    <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Fit</th><th>Camp</th><th></th></tr></thead><tbody>
     {% for p in roster %}
       {% set ct = camp_tags.get(p.id) if camp_tags is defined else none %}
       <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+        <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td>{% if ct %}<span class="os-traj os-traj-{{ ct.traj }}">{{ ct.tag }}</span>{% endif %}
           {% set sv = stock.get(p.id) if stock is defined else none %}
           {% if sv %}<div style="margin-top:3px"><span class="os-traj os-traj-{{ 'rising' if sv.q >= 1.0 else 'declining' if sv.q <= -0.6 else 'steady' }}">{{ sv.verdict }}</span></div>{% endif %}

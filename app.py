@@ -29485,7 +29485,10 @@ def franchise_offseason():
         team = fk.current_team(save)
         camp_tags = {r['id']: r for r in (save.get('camp_report') or {}).get('rows', [])}
         stock = {v['id']: v for v in (save.get('preseason_report') or {}).get('verdicts', [])}
-        ctx.update(roster=[_league_avatar(p) for p in sorted(team['roster'], key=lambda x: -x['overall'])],
+        ctx.update(roster=[dict(_league_avatar(p),
+                                fit=fk.tactical_fit(save, p)['label'],
+                                fit_pct=fk.tactical_fit(save, p)['pct'])
+                           for p in sorted(team['roster'], key=lambda x: -x['overall'])],
                    camp_count=len(team['roster']), final=fo.ROSTER_FINAL,
                    camp_tags=camp_tags, stock=stock,
                    ps_count=len(team.get('practice_squad', [])), ps_max=fk.PS_MAX)
