@@ -5322,20 +5322,32 @@ def _issue_player_row(p):
 
 
 def sync_front_office_issues(save):
-    """Drop 'inherited problems' about players no longer on your roster (traded,
-    cut, or walked). Returns True if anything changed."""
-    issues = save.get("front_office_issues")
-    if not issues:
-        return False
+    """Drop any stored roster-keyed nags (inherited problems, holdouts) about
+    players no longer on your roster — traded, cut, or walked. These lists are
+    snapshots that only rebuild at season end, so they otherwise go stale the
+    moment you move a player. Returns True if anything changed."""
     try:
         ids = {p["id"] for p in current_team(save)["roster"]}
     except Exception:
         return False
-    kept = [i for i in issues if (i.get("player") or {}).get("id") in ids]
-    if len(kept) != len(issues):
-        save["front_office_issues"] = kept
-        return True
-    return False
+    changed = False
+    issues = save.get("front_office_issues")
+    if issues:
+        kept = [i for i in issues if (i.get("player") or {}).get("id") in ids]
+        if len(kept) != len(issues):
+            save["front_office_issues"] = kept
+            changed = True
+    holdouts = save.get("holdouts")
+    if holdouts:
+        kept = [h for h in holdouts if h.get("id") in ids]
+        if len(kept) != len(holdouts):
+            save["holdouts"] = kept
+            changed = True
+    iz = save.get("inseason")           # a pending AI offer for a player you've since dealt
+    if iz and isinstance(iz.get("offer"), dict) and iz["offer"].get("want_id") not in ids:
+        iz["offer"] = None
+        changed = True
+    return changed
 
 
 def generate_front_office_issues(save):
