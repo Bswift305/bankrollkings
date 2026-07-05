@@ -531,14 +531,49 @@ def make_schedule(seed, team_ids):
 # --------------------------------------------------------------------------- #
 # Ratings + sim
 # --------------------------------------------------------------------------- #
-def power_rating(team):
-    """Weighted average of the BEST starters per position (auto depth chart)."""
-    by_pos = {}
-    for p in team["roster"]:
-        by_pos.setdefault(p["pos"], []).append(p)
+def pos_depth(team, pos):
+    """Position depth order: the GM's saved chart first (self-healing as the
+    roster churns), everyone else by overall. Clubs with no saved chart —
+    every AI team — field best-OVR lineups exactly as before."""
+    players = [p for p in team["roster"] if p["pos"] == pos]
+    order = (team.get("depth") or {}).get(pos) or []
+    idx = {pid: i for i, pid in enumerate(order)}
+    return sorted(players, key=lambda p: (idx.get(p["id"], 999), -p["overall"]))
+
+
+def move_up_depth(save, pid):
+    """Bump a player one slot up his position's depth chart."""
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He's not on your roster."
+    pos = p["pos"]
+    cur = [x["id"] for x in pos_depth(team, pos)]
+    i = cur.index(pid)
+    if i == 0:
+        return False, f"{p['name']} already tops the {pos} depth chart."
+    cur[i - 1], cur[i] = cur[i], cur[i - 1]
+    team.setdefault("depth", {})[pos] = cur
+    write_save(save)
+    return True, f"{p['name']} moves up the {pos} depth chart."
+
+
+def reset_depth(save):
+    current_team(save).pop("depth", None)
+    write_save(save)
+    return True, "Depth chart reset — best man plays at every spot."
+
+
+def power_rating(team, ignore_depth=False):
+    """Weighted average of the STARTERS per position — the GM's depth chart if
+    he set one (benching a stud costs real power), best-OVR otherwise."""
     num = den = 0.0
     for pos, slots in ROSTER.items():
-        best = sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])[:slots]
+        if ignore_depth:
+            best = sorted([p for p in team["roster"] if p["pos"] == pos],
+                          key=lambda x: -x["overall"])[:slots]
+        else:
+            best = pos_depth(team, pos)[:slots]
         if not best:
             continue
         w = POS_WEIGHT.get(pos, 1.0)
@@ -552,12 +587,9 @@ def cap_used(team):
 
 
 def _starters(team):
-    by_pos = {}
-    for p in team["roster"]:
-        by_pos.setdefault(p["pos"], []).append(p)
     out = []
     for pos, slots in ROSTER.items():
-        out += sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])[:slots]
+        out += pos_depth(team, pos)[:slots]
     return out
 
 
@@ -1158,6 +1190,11 @@ def decline_ai_offer(save):
 def start_inseason(save):
     """Kick off a turn-based, week-by-week regular season the GM plays through."""
     _expire_staff_poach(save)      # an unanswered rival offer costs you the coach
+    me = current_team(save)
+    for p in me["roster"]:
+        p.pop("rep_starter", None)
+    for p in _starters(me):
+        p["rep_starter"] = True   # live reps all season -> young starters grow faster
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
         for p in t["roster"]:
@@ -1514,6 +1551,9 @@ def _advance_year(save):
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
             if my and save.get("weekly_ops", {}).get("focus") == "Rookie Development" and p.get("age", 30) <= 24:
                 bonus += 1                                                    # a season of rookie reps
+            started = p.pop("rep_starter", False) if my else False
+            if started and p.get("age", 30) <= 25:
+                bonus += 1                                                    # live starter reps develop the young
             hfit = human_development_fit(save, p) if my else None
             if hfit:
                 if hfit["score"] >= 82:
@@ -1860,8 +1900,7 @@ def playbook_edge(save):
     for role in ("off_coord", "def_coord"):
         coach = (save.get("staff") or {}).get(role) or {}
         for pk in coach.get("playbook") or []:
-            starters = sorted([p for p in team["roster"] if p["pos"] == pk["pos"]],
-                              key=lambda x: -x["overall"])[:ROSTER.get(pk["pos"], 1)]
+            starters = pos_depth(team, pk["pos"])[:ROSTER.get(pk["pos"], 1)]
             hit = next((p for p in starters if p.get("style") in pk["styles"]), None)
             if hit:
                 edge += 0.5
@@ -2035,12 +2074,9 @@ def scheme_effect(save):
     if not mult:
         return 0.0
     team = current_team(save)
-    by_pos = {}
-    for p in team["roster"]:
-        by_pos.setdefault(p["pos"], []).append(p)
     num = den = 0.0
     for pos, slots in ROSTER.items():
-        best = sorted(by_pos.get(pos, []), key=lambda x: -x["overall"])[:slots]
+        best = pos_depth(team, pos)[:slots]
         if not best:
             continue
         w = POS_WEIGHT.get(pos, 1.0) * mult.get(pos, 1.0)
@@ -4569,8 +4605,8 @@ def process_retirements(teams, season, hof_list):
 
 
 def game_starter(team, pos):
-    cands = [p for p in team["roster"] if p["pos"] == pos]
-    return max(cands, key=lambda p: p["overall"]) if cands else None
+    cands = pos_depth(team, pos)
+    return cands[0] if cands else None
 
 
 def game_line(p, won, rng):

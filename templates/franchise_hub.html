@@ -660,8 +660,42 @@
 
   {# ===================== ROSTER ===================== #}
   {% if tab == 'roster' %}
+  {% if depth_view is defined and depth_view %}{% set dv = depth_view %}
+  <div class="fk-card" id="depth-chart">
+    <div class="fk-card-h">Depth Chart — you decide who starts
+      <span style="float:right;font-size:12px;color:{{ '#f5c860' if dv.lineup_power < dv.best_power else '#7dffb0' }}">Lineup power {{ dv.lineup_power }}{% if dv.lineup_power < dv.best_power %} · best possible {{ dv.best_power }}{% endif %}</span>
+    </div>
+    {% if dv.msg %}<div class="fk-trade-result fk-trade-{{ 'yes' if dv.ok == '1' else 'no' }}">{{ dv.msg }}</div>{% endif %}
+    <p class="fk-muted" style="margin:4px 0 10px">Move a man up with ↑. Starting a young player (25 or under) gives him live reps — <b>he develops faster all season</b> — but benching a better veteran costs lineup power. Scheme fit tells you who your system actually wants out there.</p>
+    <div class="fk-bizgrid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; align-items:start;">
+      {% for g in dv.groups %}
+      <div style="background:rgba(3,10,16,.45); border:1px solid rgba(74,212,240,.14); border-radius:9px; padding:8px 10px;">
+        <div style="font-weight:800; color:#9fe9ff; font-size:12px; letter-spacing:.08em; margin-bottom:6px;">{{ g.pos }} <small style="color:#5f7280">· {{ g.slots }} start{{ 's' if g.slots > 1 }}</small></div>
+        {% for p in g.players %}
+        <div style="display:flex; align-items:center; gap:8px; padding:3px 0; {% if loop.index0 == g.slots %}border-top:1px dashed rgba(255,154,154,.35); margin-top:3px; padding-top:6px;{% endif %}">
+          <span style="width:52px; flex:none; font-size:10px; font-weight:800; color:{{ '#7dffb0' if loop.index0 < g.slots else '#5f7280' }}">{{ 'STARTER' if loop.index0 < g.slots else 'No.' ~ loop.index }}</span>
+          <span style="flex:1; font-size:12.5px;"><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <b style="color:#fff">{{ p.overall }}</b>{% if p.age <= 25 %} <small style="color:#7dffb0">{{ p.age }}y ▲dev</small>{% else %} <small style="color:#8fa3b0">{{ p.age }}y</small>{% endif %}{% if p.style %} <small style="color:#8fa3b0">· {{ p.style }}</small>{% endif %}
+            {% if p.fit_pct %}<span class="os-fit fk-tag" style="color:{{ '#7dffb0' if p.fit_pct >= 80 else '#f5c860' if p.fit_pct >= 60 else '#ff9a9a' }}; border:none; background:transparent; padding:0;">{{ p.fit }}</span>{% endif %}</span>
+          {% if not loop.first %}
+          <form method="post" action="{{ url_for('franchise_depth') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}">
+            <button class="fk-btn fk-btn-ghost fk-btn-sm" title="Move up">↑</button></form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if dv.custom %}
+    <form method="post" action="{{ url_for('franchise_depth') }}" style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="reset" value="1">
+      <button class="fk-btn fk-btn-ghost fk-btn-sm">Reset — best man plays everywhere</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
   <div class="fk-card">
-    <div class="fk-card-h">Roster — auto depth chart (best players start) · Power {{ power }}</div>
+    <div class="fk-card-h">Roster · Power {{ power }}</div>
     <form method="post" action="{{ url_for('franchise_rename') }}" class="fk-renameform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="player_id" class="fk-input">{% for p in roster_order %}<option value="{{ p.id }}">{{ p.pos }} · {{ p.name }}</option>{% endfor %}</select>

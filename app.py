@@ -29309,6 +29309,20 @@ def franchise_hub():
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     elif tab == 'almanac':
         view['almanac'] = fk.almanac(save)
+    elif tab == 'roster':
+        team = fk.current_team(save)
+        groups = []
+        for pos, slots in fk.ROSTER.items():
+            rows = [dict(p, fit=fk.tactical_fit(save, p)['label'],
+                         fit_pct=fk.tactical_fit(save, p)['pct'])
+                    for p in fk.pos_depth(team, pos)]
+            groups.append({'pos': pos, 'slots': slots, 'players': rows})
+        view['depth_view'] = {'groups': groups,
+                              'lineup_power': fk.power_rating(team),
+                              'best_power': fk.power_rating(team, ignore_depth=True),
+                              'custom': bool(team.get('depth')),
+                              'msg': request.args.get('dc_msg', ''),
+                              'ok': request.args.get('dc_ok', '')}
     elif tab == 'front-office':
         fa_id = str(request.args.get('fa', '')).strip()
         view['nego_fa'] = next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None
@@ -30042,6 +30056,19 @@ def franchise_philosophy():
         ok, msg = fk.set_gm_philosophy(save, str(request.form.get('philosophy', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
+
+
+@app.route('/franchise/depth', methods=['POST'])
+def franchise_depth():
+    _, save = _franchise_save()
+    if save:
+        if request.form.get('reset'):
+            ok, msg = fk.reset_depth(save)
+        else:
+            ok, msg = fk.move_up_depth(save, str(request.form.get('pid', '')).strip())
+        return redirect(url_for('franchise_hub', tab='roster',
+                                dc_ok='1' if ok else '0', dc_msg=msg) + '#depth-chart')
+    return redirect(url_for('franchise_hub', tab='roster'))
 
 
 @app.route('/franchise/poach', methods=['POST'])
