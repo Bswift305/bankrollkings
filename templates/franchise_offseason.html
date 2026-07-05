@@ -444,7 +444,7 @@
     <div class="os-ch">{{ icon('cap') }}The Draft {% if draft %}<span class="os-cap">Round {{ draft.round }} · Pick {{ draft.pick }}</span>{% endif %}</div>
     {% if draft_pending and draft %}
       {% if draft_capital %}
-      <div class="os-cap">
+      <div class="os-capital">
         <div class="os-cap-h">{{ icon('swap') }}Your draft capital · {{ '{:,}'.format(draft_capital.total) }} pts</div>
         <div class="os-cap-picks">
           {% for p in draft_capital.now %}<span class="os-cap-pick"><b>R{{ p.r }}</b> #{{ p.ov }}{% if p.from %} via {{ p.from }}{% endif %} <span class="os-cap-val">{{ p.value }}</span></span>{% endfor %}
@@ -628,7 +628,7 @@
   .os-fit-lo { color:#ff9a9a; background:rgba(255,154,154,.13); }
   .os-rosterlist { max-height:300px; overflow-y:auto; }
   /* Draft capital + trade-down */
-  .os-cap { background:rgba(74,212,240,.05); border:1px solid rgba(74,212,240,.2); border-radius:10px; padding:10px 12px; margin-bottom:11px; }
+  .os-capital { background:rgba(74,212,240,.05); border:1px solid rgba(74,212,240,.2); border-radius:10px; padding:10px 12px; margin-bottom:11px; }
   .os-cap-h { display:flex; align-items:center; color:#fff; font-weight:800; font-size:12.5px; margin-bottom:8px; }
   .os-cap-picks { display:flex; flex-wrap:wrap; gap:5px; }
   .os-cap-pick { font-size:11px; color:#dce8ef; background:rgba(3,8,12,.55); border:1px solid rgba(145,168,184,.2); border-radius:7px; padding:2px 7px; }
