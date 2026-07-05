@@ -93,6 +93,12 @@
     </div>
   </div>
 
+  {% if save.ownership_change %}{% set oc = save.ownership_change %}
+  <div class="fk-card" style="margin-top:12px; border-color:rgba(159,150,255,.5); background:rgba(159,150,255,.08);">
+    <div class="fk-card-h">🔑 New Ownership — {{ oc.new }}</div>
+    <p style="margin:4px 0 0; color:var(--text2,#c2cfd8);">{{ oc.new }} {{ 'inherits' if oc.kind == 'heir' else 'has bought' }} the franchise as a <b style="color:#9f96ff">{{ oc.type }}</b> owner ({{ oc.style }}). A new boss means a clean-ish slate — your standing has reset to <b>{{ oc.trust }}</b>, and a fresh mandate is coming. Earn his trust.</p>
+  </div>
+  {% endif %}
   {% if career_ladder is defined and career_ladder and career_ladder.offer %}{% set off = career_ladder.offer %}
   <div class="fk-card" style="margin-top:12px; border-color:rgba(245,200,96,.45); background:rgba(245,200,96,.06);">
     <div class="fk-card-h">🎖 Career Opportunity — {{ off.title }}</div>
@@ -200,6 +206,7 @@
           <div>
             <div class="fk-ownername">{{ owner.name }} · {{ owner.title }}</div>
             <small>{{ owner.type }} owner · {{ owner.mood }} · {{ owner.style }}</small>
+            {% if owner.age %}<small class="fk-muted">{{ owner.age }} yrs{% if owner.industry %} · {{ owner.industry }}{% endif %}{% if owner.net_worth %} · ${{ owner.net_worth }}B{% endif %}{% if owner.heir %} · heir apparent: {{ owner.heir }}{% endif %}</small>{% endif %}
           </div>
         </div>
         <div class="fk-ownerhead">{{ owner.icon }} {{ owner.type }} owner · <span>{{ owner.mood }}</span></div>

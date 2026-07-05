@@ -1549,6 +1549,7 @@ def decline_ai_offer(save):
 def start_inseason(save):
     """Kick off a turn-based, week-by-week regular season the GM plays through."""
     _expire_staff_poach(save)      # an unanswered rival offer costs you the coach
+    save.pop("ownership_change", None)   # last offseason's new-owner banner clears
     me = current_team(save)
     for p in me["roster"]:
         p.pop("rep_starter", None)
@@ -2032,25 +2033,58 @@ def hold_public_stadium_vote(save):
     return passed, msg
 
 
+def _succeed_owner(save, t, rng, kind, old_name):
+    """New owner, new regime: roll a fresh archetype (heirs often keep the
+    family lean; buyers start clean), and if it's YOUR club, the new boss
+    forms his own opinion of you and issues a fresh mandate."""
+    owner = t["owner"]
+    old_type = owner.get("type", "Hands-Off")
+    others = [x for x in OWNER_TYPES if x != old_type]
+    if kind == "heir" and (old_type == "Legacy" or rng.random() < 0.5):
+        new_type = old_type                              # family continuity
+    else:
+        new_type = rng.choice(others) if others else old_type
+    owner["type"] = new_type
+    if t["id"] == save.get("current_team_id"):
+        gm = save.get("gm", {})
+        ot = int(gm.get("owner_trust", 55) or 55)
+        gm["owner_trust"] = int(round(50 + (ot - 50) * 0.35))   # he barely knows you yet
+        save.pop("owner_directive", None)                       # a new mandate is coming
+        prof = _OWNER_PROFILES.get(new_type, {})
+        save["ownership_change"] = {
+            "old": old_name, "new": owner.get("name", "the new owner"),
+            "kind": kind, "type": new_type, "title": prof.get("title", "Owner"),
+            "style": prof.get("style", ""), "trust": gm["owner_trust"]}
+        _tl(save, save.get("season", 1), "owner", "\U0001F511",
+            ("New ownership: " + owner.get("name", "A new owner") + " takes over the "
+             + t["full"]),
+            (("Inherits the franchise" if kind == "heir" else "Buys the franchise")
+             + " as a " + new_type + " owner. Your standing resets \u2014 earn his trust."))
+    return new_type
+
+
 def evolve_world_systems(save, rng):
     ensure_world_systems(save)
     for t in save.get("teams", []):
         owner = t.setdefault("owner", {})
         owner["age"] = int(owner.get("age", 55) or 55) + 1
-        if owner["age"] >= 86 and rng.random() < 0.18:
+        if owner["age"] >= 84 and rng.random() < 0.20:
             old = owner.get("name", "The owner")
             owner["name"] = owner.get("heir") or _gen_name(rng)
             owner["age"] = rng.randint(34, 58)
             owner["heir"] = _gen_name(rng)
+            _succeed_owner(save, t, rng, "heir", old)
             save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "succession",
-                                                        "text": f"{old} transfers control of the {t['full']} to {owner['name']}."})
-        elif owner["age"] >= 74 and rng.random() < 0.04:
+                                                        "text": f"{old} passes the {t['full']} to {owner['name']} ({owner['type']} owner)."})
+        elif owner["age"] >= 72 and rng.random() < 0.05:
             old = owner.get("name", "The owner")
             owner["name"] = _gen_name(rng)
             owner["age"] = rng.randint(38, 64)
+            owner["heir"] = _gen_name(rng)
             owner["net_worth"] = round(float(owner.get("net_worth", 6) or 6) * rng.uniform(0.8, 1.45), 1)
+            _succeed_owner(save, t, rng, "sale", old)
             save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "sale",
-                                                        "text": f"{old} sells the {t['full']} to {owner['name']}."})
+                                                        "text": f"{old} sells the {t['full']} to {owner['name']} ({owner['type']} owner)."})
 
     # Retired players can become part of the broader ecosystem.
     for r in (save.get("retirements") or [])[:4]:
@@ -5428,7 +5462,9 @@ def owner_state(save):
     otype = owner["type"]
     profile = _OWNER_PROFILES.get(otype, _OWNER_PROFILES["Hands-Off"])
     return {"type": otype, "trust": trust, "mood": mood, "icon": icon,
-            **profile, "name": owner.get("name") or profile["name"]}
+            **profile, "name": owner.get("name") or profile["name"],
+            "age": owner.get("age"), "heir": owner.get("heir"),
+            "industry": owner.get("industry"), "net_worth": owner.get("net_worth")}
 
 
 def _owner_tier(save, outcome):
