@@ -29338,6 +29338,7 @@ def franchise_hub():
     if tab not in FRANCHISE_TABS:
         tab = 'dashboard'
     view = _franchise_view(save)
+    view['career_ladder'] = fk.career_ladder(save)
     if tab == 'trades':
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     elif tab == 'almanac':
@@ -30159,6 +30160,17 @@ def franchise_hire():
                                 str(request.form.get('candidate_id', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
+
+
+@app.route('/franchise/career-offer', methods=['POST'])
+def franchise_career_offer():
+    _, save = _franchise_save()
+    if save:
+        accept = str(request.form.get('choice', '')).strip() == 'accept'
+        ok, msg = fk.resolve_career_offer(save, accept)
+        return redirect(url_for('franchise_hub', tab='career',
+                                hire_ok='1' if ok else '0', hire_msg=msg))
+    return redirect(url_for('franchise_hub'))
 
 
 @app.route('/franchise/hire-alumnus', methods=['POST'])

@@ -2175,6 +2175,7 @@ def _finalize_season(save):
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
     _issue_owner_directive(save)
+    _consider_career_promotion(save)
     owner_statement(save, outcome)
     owner_meeting(save, outcome)
     _log_season_milestones(save, outcome)          # thread the season into the career timeline
@@ -2642,6 +2643,124 @@ def retire_gm(save):
     return True, f"{record['name']} retires as {record['tier']}."
 
 
+def gm_career_rank(save):
+    """Your current place in a front-office career."""
+    gm = save.get("gm", {})
+    leg = gm_legacy(save)
+    titles = int(leg.get("titles", 0) or 0)
+    seasons = int(leg.get("seasons", 0) or 0)
+    score = int(leg.get("score", 0) or 0)
+    if gm.get("is_commissioner"):
+        return {"title": "League Commissioner", "icon": "\u2696", "tier": "commissioner",
+                "blurb": "You run the whole league now \u2014 the pinnacle of the profession."}
+    if gm.get("part_owner"):
+        return {"title": "GM & Part-Owner", "icon": "\U0001F3E6", "tier": "owner",
+                "blurb": "You bought in. Owners don't fire themselves."}
+    if gm.get("president"):
+        return {"title": "GM & President of Football Ops", "icon": "\U0001F454", "tier": "president",
+                "blurb": "You run the entire football operation, not just the roster."}
+    if titles >= 2 or score >= 88:
+        return {"title": "League Icon", "icon": "\U0001F31F", "tier": "icon",
+                "blurb": "A name the whole league knows."}
+    if titles >= 1 or score >= 72:
+        return {"title": "Respected GM", "icon": "\U0001F4C8", "tier": "respected",
+                "blurb": "You've proven you can build a winner."}
+    if seasons >= 3:
+        return {"title": "Established GM", "icon": "\U0001F4BC", "tier": "established",
+                "blurb": "A steady hand running the show."}
+    return {"title": "Rookie Executive", "icon": "\U0001F195", "tier": "rookie",
+            "blurb": "Your career is just beginning."}
+
+
+def _consider_career_promotion(save):
+    """At the offseason, offer the next rung if it's been earned."""
+    if save.get("career_offer"):
+        return
+    gm = save.get("gm", {})
+    leg = gm_legacy(save)
+    titles = int(leg.get("titles", 0) or 0)
+    seasons = int(leg.get("seasons", 0) or 0)
+    money = int(leg.get("money", 0) or 0)
+    if gm.get("president") and titles >= 3 and seasons >= 10 and not gm.get("is_commissioner"):
+        save["career_offer"] = {"kind": "commissioner", "title": "The Commissioner's Chair",
+            "text": "The owners want YOU to run the league. Take the Commissioner's chair \u2014 the highest honor in football operations?"}
+        return
+    if titles >= 2 and money >= 1200 and not gm.get("part_owner") and not gm.get("is_commissioner"):
+        save["career_offer"] = {"kind": "ownership", "title": "An Ownership Stake",
+            "text": "You've earned the chance to buy an ownership stake in the club. Own a piece \u2014 and never fear the firing squad again?"}
+        return
+    if not gm.get("president") and not gm.get("part_owner") and titles >= 1 and seasons >= 4:
+        save["career_offer"] = {"kind": "president", "title": "President of Football Operations",
+            "text": "The owner wants to promote you to President of Football Operations \u2014 full authority over the entire football side. Take it?"}
+        return
+
+
+def resolve_career_offer(save, accept):
+    off = save.pop("career_offer", None)
+    if not off:
+        return False, "There is no offer on the table."
+    gm = save["gm"]
+    kind = off["kind"]
+    if not accept:
+        _tl(save, save.get("season", 1), "owner", "\U0001F91A",
+            "You turned down " + off["title"], "Not the right time \u2014 the door may open again.")
+        write_save(save)
+        return True, "You passed on " + off["title"] + " \u2014 for now."
+    if kind == "president":
+        gm["president"] = True
+        _business(save)["cash"] = round(_business(save)["cash"] + 25.0, 1)
+        _tl(save, save.get("season", 1), "owner", "\U0001F454",
+            gm.get("name", "You") + " promoted to President of Football Operations",
+            "Full authority over the football operation \u2014 and a longer leash from ownership.")
+        write_save(save)
+        return True, "Promotion accepted \u2014 you're now GM & President of Football Operations. The hot seat cools, and $25M is added to your operating budget."
+    if kind == "ownership":
+        gm["part_owner"] = True
+        _tl(save, save.get("season", 1), "owner", "\U0001F3E6",
+            gm.get("name", "You") + " buys an ownership stake",
+            "You're part-owner now. Owners don't fire themselves \u2014 the hot seat is gone.")
+        write_save(save)
+        return True, "You bought in. As a part-owner you can no longer be fired, and a share of revenue flows to you each season."
+    if kind == "commissioner":
+        gm["is_commissioner"] = True
+        leg = gm_legacy(save)
+        save["commissioner"] = {"name": gm.get("name", "You"), "since": save.get("season", 1),
+                                "age": 55, "is_user": True}
+        rec = {"name": gm.get("name", "You"), "retired": save.get("season", 1),
+               "tier": "League Commissioner", "score": 125, "grade": "A+",
+               "seasons": int(leg.get("seasons", 0) or 0),
+               "record": (str(leg.get("w", 0)) + "-" + str(leg.get("l", 0))) if leg.get("w") or leg.get("l") else "\u2014",
+               "winpct": float(leg.get("winpct", 0) or 0), "titles": int(leg.get("titles", 0) or 0),
+               "playoffs": int(leg.get("playoffs", 0) or 0), "money": int(leg.get("money", 0) or 0), "jobs": 1,
+               "case": ["Rose from GM to Commissioner", "The pinnacle of the profession"], "hof": True}
+        hall = save.setdefault("executive_hall", [])
+        if not any(h.get("name") == rec["name"] and h.get("tier") == "League Commissioner" for h in hall):
+            hall.insert(0, rec)
+        save["executive_hall"] = hall[:20]
+        _tl(save, save.get("season", 1), "hof", "\u2696",
+            gm.get("name", "You") + " elected LEAGUE COMMISSIONER",
+            "From running a roster to running the league \u2014 the rarest career capstone in football.")
+        write_save(save)
+        return True, "You've been elected League Commissioner \u2014 the pinnacle. You keep your club, but your name now sits atop the whole league."
+    return False, "Unknown offer."
+
+
+def career_ladder(save):
+    gm = save.get("gm", {})
+    steps = [
+        {"title": "President of Football Ops", "icon": "\U0001F454",
+         "have": bool(gm.get("president") or gm.get("part_owner") or gm.get("is_commissioner")),
+         "need": "1 title + 4 seasons"},
+        {"title": "Part-Owner", "icon": "\U0001F3E6",
+         "have": bool(gm.get("part_owner") or gm.get("is_commissioner")),
+         "need": "2 titles + deep pockets (\u2248$1.2B earned)"},
+        {"title": "League Commissioner", "icon": "\u2696",
+         "have": bool(gm.get("is_commissioner")),
+         "need": "President + 3 titles + 10 seasons"},
+    ]
+    return {"rank": gm_career_rank(save), "steps": steps, "offer": save.get("career_offer")}
+
+
 def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
     gm = save["gm"]
     exp = save["expectation"]["wins"]
@@ -2659,8 +2778,13 @@ def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
     record = {"season": save["season"], "team": team["full"],
               "record": f"{rec['w']}-{rec['l']}", "expectation": exp}
 
+    fire_floor = 25
+    if gm.get("president"):
+        fire_floor = 12
+    if gm.get("part_owner") or gm.get("is_commissioner"):
+        fire_floor = -1
     status, headline, offers = "retained", "", []
-    if gm["owner_trust"] < 25:
+    if gm["owner_trust"] < fire_floor:
         status = "fired"
         headline = f"You've been FIRED by the {team['full']} after a {rec['w']}-{rec['l']} season."
         offers = _job_openings(save, want="bad")
@@ -3271,7 +3395,7 @@ def run_executive_carousel(save, rng):
                     "A former player is now running a franchise's football operations.")
             log.append({"scope": t["full"], "role": "GM", "name": hire["name"], "why": why})
     com = save.get("commissioner")
-    if isinstance(com, dict):
+    if isinstance(com, dict) and not save.get("gm", {}).get("is_commissioner"):
         com["age"] = int(com.get("age", 58) or 58) + 1
         if com["age"] >= 72 or (com["age"] >= 66 and rng.random() < 0.15):
             new = (max(prez_pool, key=lambda p: p.get("rating", 0)) if prez_pool
@@ -6117,6 +6241,8 @@ def _apply_finance(save, rec, won_title):
     b = _business(save)
     rev = projected_revenue(save)
     b["cash"] = round(b["cash"] + rev, 1)
+    if save.get("gm", {}).get("part_owner"):
+        b["cash"] = round(b["cash"] + rev * 0.10, 1)   # your ownership dividend
     _, hd, _ = TICKET.get(b["ticket"], TICKET["normal"])
     parking_hd = VENUE_PRICING.get(b.get("parking_price", "normal"), VENUE_PRICING["normal"])["fan"]
     concessions_hd = VENUE_PRICING.get(b.get("concessions_price", "normal"), VENUE_PRICING["normal"])["fan"]

@@ -74,8 +74,8 @@
       {% else %}<span class="fk-gmmono">{{ (gm.name.split()[0][0] + (gm.name.split()[-1][0] if gm.name.split()|length > 1 else ''))|upper }}</span>{% endif %}
     </div>
     <div class="fk-gmmeta">
-      <div class="fk-card-h" style="margin:0">{{ gm.name }} — GM &amp; Head Coach</div>
-      <div class="fk-gmphil">{{ gm.philosophy }} philosophy</div>
+      <div class="fk-card-h" style="margin:0">{{ gm.name }} — {% if gm.is_commissioner %}Commissioner &amp; GM{% elif gm.part_owner %}GM, HC &amp; Part-Owner{% elif gm.president %}President of Football Ops{% else %}GM &amp; Head Coach{% endif %}</div>
+      <div class="fk-gmphil">{% if career_ladder is defined and career_ladder %}{{ career_ladder.rank.icon }} {{ career_ladder.rank.title }} · {% endif %}{{ gm.philosophy }} philosophy</div>
       <details class="fk-gmupload">
         <summary>{{ 'Change' if avatar_url else 'Add' }} your photo</summary>
         <form method="post" action="{{ url_for('franchise_avatar') }}" enctype="multipart/form-data">
@@ -92,6 +92,17 @@
       </details>
     </div>
   </div>
+
+  {% if career_ladder is defined and career_ladder and career_ladder.offer %}{% set off = career_ladder.offer %}
+  <div class="fk-card" style="margin-top:12px; border-color:rgba(245,200,96,.45); background:rgba(245,200,96,.06);">
+    <div class="fk-card-h">🎖 Career Opportunity — {{ off.title }}</div>
+    <p style="margin:4px 0 10px; color:var(--text2,#c2cfd8);">{{ off.text }}</p>
+    <div style="display:flex; gap:8px;">
+      <form method="post" action="{{ url_for('franchise_career_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="choice" value="accept"><button class="fk-btn fk-btn-sm">Accept</button></form>
+      <form method="post" action="{{ url_for('franchise_career_offer') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="choice" value="decline"><button class="fk-btn fk-btn-ghost fk-btn-sm">Not now</button></form>
+    </div>
+  </div>
+  {% endif %}
 
   {% if gm_grade %}
   <div class="fk-card fk-gmcard">
@@ -1395,6 +1406,22 @@
 
   {# ===================== CAREER ===================== #}
   {% if tab == 'career' %}
+  {% if career_ladder is defined and career_ladder %}{% set cl = career_ladder %}
+  <div class="fk-card">
+    <div class="fk-card-h">{{ cl.rank.icon }} Your Standing — {{ cl.rank.title }}</div>
+    <p class="fk-muted" style="margin:2px 0 10px">{{ cl.rank.blurb }}</p>
+    <div style="display:grid; gap:6px;">
+      {% for s in cl.steps %}
+      <div style="display:flex; align-items:center; gap:10px; background:rgba(3,10,16,.45); border:1px solid rgba(74,212,240,.14); border-radius:9px; padding:8px 11px;">
+        <span style="font-size:16px;">{{ s.icon }}</span>
+        <span style="flex:1; font-size:13px;"><b style="color:{{ '#7dffb0' if s.have else '#e8f4fb' }}">{{ s.title }}</b>{% if not s.have %} <small class="fk-muted">— earn it: {{ s.need }}</small>{% endif %}</span>
+        <span style="font-size:12px; font-weight:800; color:{{ '#7dffb0' if s.have else '#5f7280' }}">{{ '✔ ACHIEVED' if s.have else 'locked' }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if cl.offer %}<p class="fk-muted" style="margin-top:8px; color:#f5c860">🎖 An offer is on the table — respond on your dashboard.</p>{% endif %}
+  </div>
+  {% endif %}
   {% if timeline %}
   <div class="fk-card fk-tlcard">
     <div class="fk-card-h">{{ icon('book') }}Your Story — the {{ gm.name }} era</div>
