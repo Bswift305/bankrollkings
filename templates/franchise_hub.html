@@ -6,7 +6,7 @@
 {% block workflow_toolbar %}{% endblock %}
 {% block content %}
 {% from "_fk_icons.html" import icon %}
-<section class="fk-wrap">
+<section class="fk-wrap {% if request.args.get('dense') == '1' %}fk-dense{% endif %}">
 
   <header class="fk-hero" style="--team:{{ colors.primary }};--team2:{{ colors.secondary }};--accent:{{ accent }}">
     <div class="fk-hero-crest">{{ team_crest(team.full, 62)|safe }}</div>
@@ -33,6 +33,7 @@
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
+    <a href="{{ url_for('franchise_hub', tab=tab, dense='0' if request.args.get('dense') == '1' else '1') }}" class="fk-tab">{{ 'Standard' if request.args.get('dense') == '1' else 'Data Mode' }}</a>
   </nav>
 
   {# ===================== DASHBOARD ===================== #}
@@ -196,6 +197,17 @@
       </div>
       {% endif %}
     </div>
+
+    {% if report_card %}
+    <div class="fk-card">
+      <div class="fk-card-h">Franchise Report Card <span style="float:right;color:#f5c860">{{ report_card.grade }} · {{ report_card.verdict }}</span></div>
+      <div class="fk-bizgrid" style="margin-top:8px">
+        {% for r in report_card.rows %}
+        <div class="fk-bizstat"><span>{{ r.label }}</span><b>{{ r.grade }}</b><small>{{ r.note }}</small></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
 
     {% if owner_feed %}
     <div class="fk-card fk-ofc">
@@ -423,6 +435,7 @@
           {% for g in inseason_log %}
           <tr><td style="color:#7f93a0">Wk {{ g.week }}</td><td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
             <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
+            <td>{% if g.weather %}<span class="fk-tag">{{ g.weather.label }}</span>{% endif %}</td>
             <td>{% if g.star %}⭐ {{ g.star.pos }} {{ g.star.name }} · {{ g.star.line }}{% endif %}</td></tr>
           {% endfor %}
         </tbody></table></div>
@@ -687,10 +700,42 @@
       </div>
       {% endfor %}
     </div>
+    {% if dv.packages %}
+    <div class="fk-card-h" style="font-size:13px; margin:14px 0 6px;">Situational Packages <span style="float:right;color:#9fe9ff">weekly edge {{ '%+.2f'|format(dv.package_edge) }}</span></div>
+    <p class="fk-muted" style="margin:0 0 10px">Set Nickel, Dime, Red Zone, 3rd Down, and Goal Line personnel. These packages feed game-week power when they match your Command Center plan.</p>
+    <div class="fk-bizgrid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; align-items:start;">
+      {% for pk in dv.packages %}
+      <div style="background:rgba(3,10,16,.45); border:1px solid rgba(159,150,255,.18); border-radius:9px; padding:8px 10px;">
+        <div style="font-weight:800; color:#c7c1ff; font-size:12px; letter-spacing:.08em; margin-bottom:3px;">{{ pk.label }} <small style="color:#7f93a0">Power {{ pk.power }}</small></div>
+        <div class="fk-muted" style="font-size:11px; margin-bottom:6px;">{{ pk.desc }}</div>
+        {% for g in pk.groups %}
+        <div style="font-weight:800; color:#9fe9ff; font-size:11px; margin-top:6px;">{{ g.pos }} <small style="color:#5f7280">slots {{ g.slots }}</small></div>
+          {% for p in g.players[:g.slots + 2] %}
+          <div style="display:flex; align-items:center; gap:6px; padding:2px 0; {% if loop.index0 == g.slots %}border-top:1px dashed rgba(255,154,154,.28); margin-top:2px; padding-top:5px;{% endif %}">
+            <span style="width:42px; flex:none; font-size:9px; font-weight:800; color:{{ '#7dffb0' if loop.index0 < g.slots else '#5f7280' }}">{{ 'IN' if loop.index0 < g.slots else 'ALT' }}</span>
+            <span style="flex:1; font-size:12px;"><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <b style="color:#fff">{{ p.overall }}</b></span>
+            {% if not loop.first %}
+            <form method="post" action="{{ url_for('franchise_depth') }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="package" value="{{ pk.key }}"><input type="hidden" name="pid" value="{{ p.id }}">
+              <button class="fk-btn fk-btn-ghost fk-btn-sm" title="Move up">Up</button></form>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% endfor %}
+        {% if pk.custom %}
+        <form method="post" action="{{ url_for('franchise_depth') }}" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="package" value="{{ pk.key }}"><input type="hidden" name="reset" value="1">
+          <button class="fk-btn fk-btn-ghost fk-btn-sm">Reset {{ pk.label }}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if dv.custom %}
     <form method="post" action="{{ url_for('franchise_depth') }}" style="margin-top:10px">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="reset" value="1">
-      <button class="fk-btn fk-btn-ghost fk-btn-sm">Reset — best man plays everywhere</button>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="package" value="all"><input type="hidden" name="reset" value="1">
+      <button class="fk-btn fk-btn-ghost fk-btn-sm">Reset - best man plays everywhere</button>
     </form>
     {% endif %}
   </div>
@@ -1064,6 +1109,17 @@
         {% endfor %}
       </div>
     </div>
+    {% for key, label in [('parking_price', 'Parking'), ('concessions_price', 'Concessions')] %}
+    <div class="fk-staffrow" style="border-bottom:none">
+      <div class="fk-staffrole"><strong>{{ label }} pricing</strong><small>Game-day revenue against fan patience.</small></div>
+      <div class="fk-ticketbtns">
+        {% for lv in ['low','normal','high'] %}
+        <form method="post" action="{{ url_for('franchise_venue_pricing') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="{{ key }}"><input type="hidden" name="level" value="{{ lv }}">
+          <button class="fk-btn fk-btn-sm {% if business[key]==lv %}fk-btn-on{% else %}fk-btn-ghost{% endif %}">{{ lv|title }}</button></form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
     <p class="fk-muted" style="margin-top:12px">Cash funds staff hires and upgrades. Win games → happier fans → more revenue → reinvest. Staff costs are charged from cash when you hire.</p>
   </div>
   {% endif %}
@@ -1700,6 +1756,13 @@
   .fk-table { width:100%; border-collapse:collapse; font-size:13px; }
   .fk-table th { text-align:left; color:#7f93a0; font-size:11px; letter-spacing:.05em; padding:6px 8px; border-bottom:1px solid rgba(145,168,184,.15); }
   .fk-table td { padding:7px 8px; border-bottom:1px solid rgba(145,168,184,.07); color:var(--text2,#c2cfd8); }
+  .fk-dense .fk-card { padding:11px; }
+  .fk-dense .fk-table { font-size:12px; }
+  .fk-dense .fk-table th { padding:4px 6px; }
+  .fk-dense .fk-table td { padding:4px 6px; }
+  .fk-dense .fk-bizgrid { gap:7px; }
+  .fk-dense .fk-bizstat { padding:7px 6px; }
+  .fk-dense .fk-muted, .fk-dense small { line-height:1.35; }
   .fk-pos { color:#4ad4f0; font-weight:700; }
   .fk-ovr { color:#fff; font-weight:700; }
   .fk-you td { background:rgba(74,212,240,.08); color:#fff; }

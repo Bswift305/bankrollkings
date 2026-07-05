@@ -646,6 +646,20 @@ def make_schedule(seed, team_ids):
 # --------------------------------------------------------------------------- #
 # Ratings + sim
 # --------------------------------------------------------------------------- #
+SITUATIONAL_PACKAGES = {
+    "nickel": {"label": "Nickel", "desc": "Passing downs with a fourth corner.",
+               "slots": {"DL": 4, "LB": 2, "CB": 4, "S": 2}},
+    "dime": {"label": "Dime", "desc": "Long-yardage coverage with five DBs.",
+             "slots": {"DL": 3, "LB": 1, "CB": 5, "S": 2}},
+    "red_zone": {"label": "Red Zone", "desc": "Condensed-field scoring package.",
+                 "slots": {"QB": 1, "RB": 1, "WR": 2, "TE": 2, "OL": 5, "DL": 4, "LB": 3, "CB": 3, "S": 2}},
+    "third_down": {"label": "3rd Down", "desc": "Money-down receivers and rushers.",
+                   "slots": {"QB": 1, "RB": 1, "WR": 4, "TE": 1, "OL": 5, "DL": 4, "LB": 2, "CB": 3, "S": 2}},
+    "goal_line": {"label": "Goal Line", "desc": "Heavy bodies for short yardage.",
+                  "slots": {"QB": 1, "RB": 2, "WR": 1, "TE": 2, "OL": 5, "DL": 5, "LB": 4, "CB": 1, "S": 1}},
+}
+
+
 def pos_depth(team, pos):
     """Position depth order: the GM's saved chart first (self-healing as the
     roster churns), everyone else by overall. Clubs with no saved chart —
@@ -656,27 +670,93 @@ def pos_depth(team, pos):
     return sorted(players, key=lambda p: (idx.get(p["id"], 999), -p["overall"]))
 
 
-def move_up_depth(save, pid):
+def package_depth(team, package, pos):
+    players = [p for p in team["roster"] if p["pos"] == pos]
+    order = (team.get("packages") or {}).get(package, {}).get(pos) or []
+    if not order:
+        return pos_depth(team, pos)
+    idx = {pid: i for i, pid in enumerate(order)}
+    return sorted(players, key=lambda p: (idx.get(p["id"], 999), -p["overall"]))
+
+
+def package_power(team, package):
+    spec = SITUATIONAL_PACKAGES.get(package)
+    if not spec:
+        return power_rating(team)
+    num = den = 0.0
+    for pos, slots in spec["slots"].items():
+        best = package_depth(team, package, pos)[:slots]
+        if not best:
+            continue
+        w = POS_WEIGHT.get(pos, 1.0)
+        num += w * (sum(x["overall"] for x in best) / len(best)) * slots
+        den += w * slots
+    return round(num / den, 1) if den else power_rating(team)
+
+
+def package_edge(save):
+    team = current_team(save)
+    wo = save.get("weekly_ops", {})
+    focus = wo.get("focus", "")
+    plan = wo.get("game_plan", "")
+    wanted = set()
+    if focus in ("Pass Game", "Pass Rush") or plan == "Aggressive":
+        wanted.update(("third_down", "dime"))
+    if focus == "Coverage" or wo.get("scout") == "Opponent":
+        wanted.update(("nickel", "dime"))
+    if focus == "Red Zone":
+        wanted.add("red_zone")
+    if focus == "Run Game" or plan in ("Conservative", "Protect the Unit"):
+        wanted.add("goal_line")
+    if not wanted:
+        wanted = {"nickel", "third_down"}
+    base = power_rating(team)
+    edges = [max(-0.4, min(0.8, (package_power(team, p) - base) / 12.0)) for p in wanted]
+    return round(sum(edges) / len(edges), 2) if edges else 0.0
+
+
+def move_up_depth(save, pid, package="base"):
     """Bump a player one slot up his position's depth chart."""
     team = current_team(save)
     p = next((x for x in team["roster"] if x["id"] == pid), None)
     if not p:
         return False, "He's not on your roster."
     pos = p["pos"]
-    cur = [x["id"] for x in pos_depth(team, pos)]
+    package = (package or "base").strip()
+    if package != "base" and package not in SITUATIONAL_PACKAGES:
+        return False, "That package does not exist."
+    if package != "base" and pos not in SITUATIONAL_PACKAGES[package]["slots"]:
+        return False, f"{p['name']} does not play in that package."
+    cur = [x["id"] for x in (pos_depth(team, pos) if package == "base" else package_depth(team, package, pos))]
     i = cur.index(pid)
     if i == 0:
-        return False, f"{p['name']} already tops the {pos} depth chart."
+        label = "depth chart" if package == "base" else SITUATIONAL_PACKAGES[package]["label"]
+        return False, f"{p['name']} already tops the {pos} {label}."
     cur[i - 1], cur[i] = cur[i], cur[i - 1]
-    team.setdefault("depth", {})[pos] = cur
+    if package == "base":
+        team.setdefault("depth", {})[pos] = cur
+    else:
+        team.setdefault("packages", {}).setdefault(package, {})[pos] = cur
     write_save(save)
-    return True, f"{p['name']} moves up the {pos} depth chart."
+    label = "depth chart" if package == "base" else SITUATIONAL_PACKAGES[package]["label"]
+    return True, f"{p['name']} moves up the {pos} {label}."
 
 
-def reset_depth(save):
-    current_team(save).pop("depth", None)
+def reset_depth(save, package="base"):
+    team = current_team(save)
+    package = (package or "base").strip()
+    if package == "all":
+        team.pop("depth", None)
+        team.pop("packages", None)
+        msg = "All depth charts reset - best man plays in every package."
+    elif package == "base":
+        team.pop("depth", None)
+        msg = "Depth chart reset - best man plays at every spot."
+    else:
+        team.setdefault("packages", {}).pop(package, None)
+        msg = f"{SITUATIONAL_PACKAGES.get(package, {}).get('label', 'Package')} reset - best fits play there."
     write_save(save)
-    return True, "Depth chart reset — best man plays at every spot."
+    return True, msg
 
 
 def power_rating(team, ignore_depth=False):
@@ -794,6 +874,72 @@ def _sim_game(rng, pa, pb):
     return rng.random() < p  # True => home wins
 
 
+COLD_WEATHER_CITIES = {"Buffalo", "Chicago", "Cleveland", "Detroit", "Green Bay", "Minneapolis",
+                       "New England", "New York", "Philadelphia", "Pittsburgh", "Denver",
+                       "Cincinnati", "Indianapolis", "Kansas City", "Salt Lake City", "St. Louis"}
+WARM_WEATHER_CITIES = {"Arizona", "Atlanta", "Carolina", "Dallas", "Houston", "Jacksonville",
+                       "Las Vegas", "Los Angeles", "Miami", "New Orleans", "San Diego",
+                       "San Francisco", "Tampa Bay", "Tennessee", "Orlando", "San Antonio",
+                       "Oklahoma City", "Memphis"}
+DOME_CITIES = {"Atlanta", "Dallas", "Detroit", "Houston", "Indianapolis", "Las Vegas",
+               "Los Angeles", "Minnesota", "Minneapolis", "New Orleans", "Arizona"}
+RAIN_CITIES = {"Seattle", "Portland", "Carolina", "Jacksonville", "Miami", "Tampa Bay",
+               "New England", "New York", "Philadelphia", "Washington", "Baltimore"}
+
+
+def game_weather(save, home_id, week):
+    teams = {t["id"]: t for t in save.get("teams", [])}
+    home = teams.get(home_id, {})
+    city = home.get("city", "")
+    if city in DOME_CITIES:
+        return {"label": "Dome", "condition": "Indoor", "temp": 72, "wind": 0, "impact": 0.0}
+    seed = int(save.get("seed", 1) or 1) + save.get("season", 1) * 503 + week * 37 + sum(ord(c) for c in city)
+    rng = _rng(seed)
+    late = week >= 12
+    if city in COLD_WEATHER_CITIES:
+        temp = rng.randint(18, 55) if late else rng.randint(42, 74)
+    elif city in WARM_WEATHER_CITIES:
+        temp = rng.randint(55, 88) if late else rng.randint(72, 98)
+    else:
+        temp = rng.randint(35, 68) if late else rng.randint(55, 82)
+    wind = rng.randint(3, 24)
+    wet_chance = 0.32 if city in RAIN_CITIES else 0.18
+    condition = "Clear"
+    if temp <= 32 and rng.random() < (0.28 if late else 0.08):
+        condition = "Snow"
+    elif rng.random() < wet_chance:
+        condition = "Rain"
+    elif wind >= 18:
+        condition = "Wind"
+    impact = 0.0
+    if condition == "Snow":
+        impact += 1.4
+    elif condition == "Rain":
+        impact += 0.9
+    elif condition == "Wind":
+        impact += 0.7
+    if wind >= 18:
+        impact += 0.4
+    if temp <= 25:
+        impact += 0.3
+    label = f"{condition}, {temp}F" + (f", {wind} mph wind" if wind >= 12 else "")
+    return {"label": label, "condition": condition, "temp": temp, "wind": wind, "impact": round(impact, 2)}
+
+
+def weather_power_adjust(team, weather):
+    impact = float(weather.get("impact", 0) or 0)
+    if impact <= 0:
+        return 0.0
+    def avg(pos):
+        vals = [p["overall"] for p in pos_depth(team, pos)[:ROSTER.get(pos, 1)]]
+        return sum(vals) / len(vals) if vals else 65
+    pass_core = (avg("QB") * 1.4 + avg("WR") + avg("TE") * 0.7) / 3.1
+    run_core = (avg("RB") + avg("OL") * 1.3) / 2.3
+    front = (avg("DL") + avg("LB")) / 2.0
+    fit = ((run_core - pass_core) / 18.0) + ((front - 68) / 45.0)
+    return round(max(-1.0, min(1.0, fit * impact)), 2)
+
+
 def _run_playoffs(rng, seeds, powers):
     """Single-elim bracket from a seeded list (best first). Top seed gets a bye
     when the field is odd; reseed by original seed each round. Returns winner."""
@@ -825,12 +971,7 @@ def _add_stats(p, d):
 def _game_perf(team, won, rng, out_ids=()):
     """Generate ONE game's box-score lines for a team's contributors, add them to
     running season totals, and return the skill/defense standouts (for game stars)."""
-    by_pos = {}
-    for p in team["roster"]:
-        if p["id"] not in out_ids:
-            by_pos.setdefault(p["pos"], []).append(p)
-    for k in by_pos:
-        by_pos[k].sort(key=lambda x: -x["overall"])
+    by_pos = {pos: [p for p in pos_depth(team, pos) if p["id"] not in out_ids] for pos in ROSTER}
     wb = 1.1 if won else 0.92
     perf = []
 
@@ -966,6 +1107,7 @@ def _user_inseason_power(save, week, base_power):
     p = (base_power + sb["power"] + sb["scheme"] + sb["playbook"]["edge"]
          + sb["special_teams"] + atmosphere(save)["home_edge"])
     p += weekly_edge(save)                                      # Command Center: practice + game plan
+    p += package_edge(save)                                     # Situational packages matching the weekly plan
     p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
     out = [x for x in _starters(current_team(save)) if x.get("out_until", 0) >= week]
     p -= round(sum(POS_WEIGHT.get(x["pos"], 1.0) * 1.4 for x in out), 1)
@@ -1394,7 +1536,10 @@ def sim_week(save):
     for g in save["schedule"]:
         if g["week"] != week:
             continue
-        home_win = _sim_game(rng, powers[g["home"]], powers[g["away"]])
+        weather = game_weather(save, g["home"], week)
+        home_power = powers[g["home"]] + weather_power_adjust(teams[g["home"]], weather)
+        away_power = powers[g["away"]] + weather_power_adjust(teams[g["away"]], weather)
+        home_win = _sim_game(rng, home_power, away_power)
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
@@ -1405,6 +1550,7 @@ def sim_week(save):
             mine = ph if g["home"] == uid else pa
             st = max(mine, key=lambda x: x["score"]) if mine else None
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
+                              "weather": weather,
                               "star": {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None,
                               "_score": st["score"] if st else 0})
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
@@ -2299,6 +2445,89 @@ def gm_legacy(save):
     return {**g, "score": score, "legacy_tier": tier, "jobs": jobs,
             "case": case or ["No completed seasons yet."],
             "hall_worthy": score >= 88 or titles >= 3 or (titles >= 2 and rating >= 74)}
+
+
+def franchise_report_card(save):
+    team = current_team(save)
+    teams = save.get("teams", [])
+    powers = sorted([power_rating(t) for t in teams], reverse=True)
+    my_power = power_rating(team)
+    rank = (powers.index(my_power) + 1) if my_power in powers else len(powers)
+    roster_score = int(max(15, min(95, 96 - (rank - 1) * (70 / max(1, len(powers) - 1)))))
+
+    sb = staff_bonus(save)
+    staff_score = int(max(20, min(95, 58 + sb.get("power", 0) * 7 + sb.get("scheme", 0) * 4
+                                  + (8 if sb.get("development") else 0) + (sb.get("scouting", 0) - 50) * 0.25)))
+
+    b = _business(save)
+    cap_room = cap_total(save) - cap_used(team)
+    finance_score = int(max(15, min(98, 42 + min(25, b.get("cash", 0) / 6)
+                                    + max(-12, min(12, cap_room / 2))
+                                    + (b.get("fan_happiness", 50) - 50) * 0.35
+                                    + (city_economy_score(save) - 50) * 0.25)))
+
+    c = team_culture(save)
+    traits = c.get("traits", {})
+    culture_score = int(max(15, min(98, (sum(traits.values()) / len(traits)) if traits else 55)))
+
+    young_core = [p for p in team.get("roster", []) if int(p.get("age", 30) or 30) <= 25 and p.get("overall", 0) >= 70]
+    outlook_score = int(max(15, min(98, roster_score * 0.35 + staff_score * 0.2 + finance_score * 0.2
+                                    + min(20, len(young_core) * 3) + max(-8, min(8, cap_room / 6)))))
+
+    rows = [
+        {"key": "roster", "label": "Roster", "score": roster_score, "grade": _rating_to_grade(roster_score),
+         "note": f"#{rank} league power at {my_power}."},
+        {"key": "staff", "label": "Staff", "score": staff_score, "grade": _rating_to_grade(staff_score),
+         "note": f"Power edge {sb.get('power', 0):+.1f}, scheme {sb.get('scheme', 0):+.1f}."},
+        {"key": "finance", "label": "Finance", "score": finance_score, "grade": _rating_to_grade(finance_score),
+         "note": f"${b.get('cash', 0):.1f}M cash, ${cap_room:.1f}M cap room."},
+        {"key": "culture", "label": "Culture", "score": culture_score, "grade": _rating_to_grade(culture_score),
+         "note": c.get("identity", "Identity forming.")},
+        {"key": "outlook", "label": "Outlook", "score": outlook_score, "grade": _rating_to_grade(outlook_score),
+         "note": f"{len(young_core)} young core players, city score {city_economy_score(save)}."},
+    ]
+    overall = int(round(sum(r["score"] for r in rows) / len(rows)))
+    return {"overall": overall, "grade": _rating_to_grade(overall),
+            "verdict": ("Built to contend" if overall >= 78 else "Ascending" if overall >= 65 else
+                        "Stable but flawed" if overall >= 50 else "Rebuild pressure"),
+            "rows": rows}
+
+
+def alert_inbox(save):
+    alerts = []
+
+    def add(kind, title, body, tab="dashboard", urgency=1):
+        icons = {"draft": "D", "staff": "S", "trade": "T", "league": "L", "owner": "O",
+                 "weekly": "W", "medical": "M", "contract": "$", "front-office": "!", "report": "R"}
+        alerts.append({"kind": kind, "title": title, "body": body, "text": f"{title}: {body}".strip(": "),
+                       "tab": tab, "urgency": urgency, "pri": urgency, "icon": icons.get(kind, "!")})
+
+    if save.get("draft_pending"):
+        add("draft", "Rookie Draft is open", "Your pick board is live. Make selections or work trade-down offers.", "draft", 3)
+    if save.get("staff_poach"):
+        p = save["staff_poach"]
+        add("staff", f"{p.get('rival')} are chasing your coach", f"Decide whether to match for {p.get('name')}.", "staff", 3)
+    if (save.get("inseason") or {}).get("offer"):
+        o = save["inseason"]["offer"]
+        add("trade", f"Trade offer from {o.get('team')}", "A rival deal is waiting for your answer.", "trades", 2)
+    if save.get("league_vote"):
+        add("league", "Owners' vote on the table", save["league_vote"].get("title", "A league proposal needs your position."), "league", 2)
+    if save.get("owner_directive"):
+        add("owner", "Owner directive active", save["owner_directive"].get("text", ""), "dashboard", 2)
+    for i in (save.get("agenda") or [])[:3]:
+        add("weekly", i.get("title", "Weekly decision"), i.get("detail", "A staff/player issue needs a call."), "command", 2)
+    for i in (save.get("inseason", {}) or {}).get("injuries", [])[:3]:
+        add("medical", f"{i.get('pos')} {i.get('name')} injured", f"Out about {i.get('weeks')} week(s). Review medical policy/depth.", "command", 2)
+    if save.get("holdouts"):
+        h = save["holdouts"][0]
+        add("contract", f"{h.get('pos')} {h.get('name')} is holding out", "Extension pressure is affecting the roster.", "front-office", 2)
+    if save.get("front_office_issues"):
+        issue = save["front_office_issues"][0]
+        add("front-office", issue.get("label", "Front-office issue"), issue.get("summary", ""), "front-office", 1)
+    card = franchise_report_card(save)
+    if card["overall"] < 50:
+        add("report", "Franchise report card is under pressure", f"{card['grade']} overall: {card['verdict']}.", "dashboard", 1)
+    return sorted(alerts, key=lambda a: -a["urgency"])[:10]
 
 
 def retire_gm(save):
@@ -5041,6 +5270,9 @@ def analytics(save):
 MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
 # ticket level -> (attendance mult, fan-happiness delta/season, price-per-seat mult)
 TICKET = {"low": (1.12, 1, 0.84), "normal": (1.0, 0, 1.0), "high": (0.9, -3, 1.18)}
+VENUE_PRICING = {"low": {"label": "Low", "rev": 0.84, "fan": 1},
+                 "normal": {"label": "Normal", "rev": 1.0, "fan": 0},
+                 "high": {"label": "High", "rev": 1.16, "fan": -2}}
 STADIUM_CAP = {1: 45, 2: 58, 3: 68, 4: 76, 5: 85}     # seats (thousands) by stadium level
 SPONSOR_SLOTS = {
     "naming_rights": {"label": "Naming Rights", "base": 10.0, "years": 4},
@@ -5119,6 +5351,8 @@ def _business(save):
         except (TypeError, ValueError):
             district[key] = 0
     b.setdefault("ticket", "normal")
+    b.setdefault("parking_price", "normal")
+    b.setdefault("concessions_price", "normal")
     return b
 
 
@@ -5367,10 +5601,14 @@ def projected_revenue(save):
     if save.get("rev_share"):
         mm = max(mm, 0.97)   # the league props up small markets
     _, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
+    parking = VENUE_PRICING.get(b.get("parking_price", "normal"), VENUE_PRICING["normal"])
+    concessions = VENUE_PRICING.get(b.get("concessions_price", "normal"), VENUE_PRICING["normal"])
     # seats actually filled x price-per-seat x market (so winning -> fuller house -> more money)
     gate = ((16 + b["stadium"] * 5) * mm * (att["fill"] / 100.0 + 0.22) * pm
             * facility_revenue_multiplier(save) * city_revenue_multiplier(save))
-    return round(gate + sponsorship_revenue(save) + district_revenue(save), 1)
+    gameday = (3.8 + b["stadium"] * 0.9) * (att["fill"] / 100.0 + 0.15) * mm
+    gameday *= (parking["rev"] * 0.45 + concessions["rev"] * 0.55)
+    return round(gate + gameday + sponsorship_revenue(save) + district_revenue(save), 1)
 
 
 def stadium_cost(save):
@@ -5391,9 +5629,11 @@ def _apply_finance(save, rec, won_title):
     rev = projected_revenue(save)
     b["cash"] = round(b["cash"] + rev, 1)
     _, hd, _ = TICKET.get(b["ticket"], TICKET["normal"])
+    parking_hd = VENUE_PRICING.get(b.get("parking_price", "normal"), VENUE_PRICING["normal"])["fan"]
+    concessions_hd = VENUE_PRICING.get(b.get("concessions_price", "normal"), VENUE_PRICING["normal"])["fan"]
     fan_bonus = max(0, facility_level(save, "fan_experience") - 1) + district_fan_bonus(save)
     b["fan_happiness"] = max(0, min(100, b["fan_happiness"] + (rec["w"] - rec["l"]) * 1.5
-                                    + (10 if won_title else 0) + hd + fan_bonus))
+                                    + (10 if won_title else 0) + hd + parking_hd + concessions_hd + fan_bonus))
     b["last_revenue"] = rev
     save["gm"]["money_earned"] = round(save["gm"].get("money_earned", 0) + rev, 1)   # career revenue
     for key, deal in list(b.get("sponsors", {}).items()):
@@ -5437,6 +5677,14 @@ def set_ticket(save, level):
     if level in TICKET:
         _business(save)["ticket"] = level
         write_save(save)
+    return True
+
+
+def set_venue_pricing(save, kind, level):
+    if kind not in ("parking_price", "concessions_price") or level not in VENUE_PRICING:
+        return False
+    _business(save)[kind] = level
+    write_save(save)
     return True
 
 

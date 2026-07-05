@@ -29267,6 +29267,7 @@ def _franchise_view(save):
         'assist': save['gm'].get('assist', 'Full'),
         'gm_grade': fk.gm_grade(save),
         'gm_legacy': fk.gm_legacy(save),
+        'report_card': fk.franchise_report_card(save),
         'gm_retired': save.get('gm_retired'),
         'relationships': fk.relationship_report(save),
         'culture': fk.culture_report(save),
@@ -29275,7 +29276,7 @@ def _franchise_view(save):
         'live': fk.live_status(save, _now_ts),
         'away_recap': save.get('away_recap'),
         'command_center': _command_center(save) if save.get('inseason') else None,
-        'alerts': fk.alerts(save),
+        'alerts': sorted(fk.alerts(save) + fk.alert_inbox(save), key=lambda a: -a.get('pri', 0))[:10],
         'scheme': fk.scheme_identity(save),
         'value_report': fk.roster_value_report(save),
         'role_friction': role_friction,
@@ -29356,9 +29357,19 @@ def franchise_hub():
                     for p in fk.pos_depth(team, pos)]
             groups.append({'pos': pos, 'slots': slots, 'players': rows})
         view['depth_view'] = {'groups': groups,
+                              'packages': [{'key': key, 'label': spec['label'], 'desc': spec['desc'],
+                                            'power': fk.package_power(team, key),
+                                            'custom': bool((team.get('packages') or {}).get(key)),
+                                            'groups': [{'pos': pos, 'slots': slots,
+                                                        'players': [dict(p, fit=fk.tactical_fit(save, p)['label'],
+                                                                         fit_pct=fk.tactical_fit(save, p)['pct'])
+                                                                    for p in fk.package_depth(team, key, pos)]}
+                                                       for pos, slots in spec['slots'].items()]}
+                                           for key, spec in fk.SITUATIONAL_PACKAGES.items()],
+                              'package_edge': fk.package_edge(save),
                               'lineup_power': fk.power_rating(team),
                               'best_power': fk.power_rating(team, ignore_depth=True),
-                              'custom': bool(team.get('depth')),
+                              'custom': bool(team.get('depth') or team.get('packages')),
                               'msg': request.args.get('dc_msg', ''),
                               'ok': request.args.get('dc_ok', '')}
     elif tab == 'front-office':
@@ -30088,6 +30099,15 @@ def franchise_ticket():
     return redirect(url_for('franchise_hub', tab='business'))
 
 
+@app.route('/franchise/venue-pricing', methods=['POST'])
+def franchise_venue_pricing():
+    _, save = _franchise_save()
+    if save:
+        fk.set_venue_pricing(save, str(request.form.get('kind', '')).strip(),
+                             str(request.form.get('level', '')).strip())
+    return redirect(url_for('franchise_hub', tab='business'))
+
+
 @app.route('/franchise/sponsor', methods=['POST'])
 def franchise_sponsor():
     _, save = _franchise_save()
@@ -30198,10 +30218,11 @@ def franchise_restructure():
 def franchise_depth():
     _, save = _franchise_save()
     if save:
+        package = str(request.form.get('package', 'base')).strip() or 'base'
         if request.form.get('reset'):
-            ok, msg = fk.reset_depth(save)
+            ok, msg = fk.reset_depth(save, package)
         else:
-            ok, msg = fk.move_up_depth(save, str(request.form.get('pid', '')).strip())
+            ok, msg = fk.move_up_depth(save, str(request.form.get('pid', '')).strip(), package)
         return redirect(url_for('franchise_hub', tab='roster',
                                 dc_ok='1' if ok else '0', dc_msg=msg) + '#depth-chart')
     return redirect(url_for('franchise_hub', tab='roster'))
