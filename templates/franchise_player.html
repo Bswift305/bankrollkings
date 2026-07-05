@@ -39,7 +39,7 @@
         <div><span>Dev Trait</span><b>{{ p.dev|default('Normal') }}</b></div>
         {% if not prospect %}
         <div><span>Injury Risk</span><b class="{{ 'fp-risk' if p.injury_risk == 'High' }}">{{ p.injury_risk|default('Low') }}</b></div>
-        <div><span>Career injuries</span><b class="{{ 'fp-risk' if injuries >= 3 }}">{{ injuries }}{% if injuries %} · {{ inj_weeks }} games missed{% endif %}</b></div>
+        <div><span>Career injuries</span><b class="{{ 'fp-risk' if career_injuries >= 3 }}">{{ career_injuries }}{% if career_injuries %} · {{ inj_weeks }} games missed{% endif %}</b></div>
         {% if p.morale is defined %}<div><span>Morale</span><b>{{ p.morale }}</b></div>{% endif %}
         {% endif %}
       </div>
