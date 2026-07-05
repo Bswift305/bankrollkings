@@ -2890,7 +2890,7 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
         "last_champion": "",
         "staff": {},
         "staff_market": generate_staff_market(_rng(seed + 999)),
-        "business": {"cash": 40.0, "fan_happiness": 50, "stadium": 1, "facility": 1, "ticket": "normal"},
+        "business": {"cash": 95.0, "fan_happiness": 50, "stadium": 1, "facility": 1, "ticket": "normal"},
         "created_at": datetime.now().strftime("%Y-%m-%d"),
     }
     _set_expectation(save)
@@ -3648,7 +3648,7 @@ def atmosphere(save):
 
 def _business(save):
     b = save.setdefault("business", {})
-    b.setdefault("cash", 40.0)
+    b.setdefault("cash", 95.0)
     b.setdefault("fan_happiness", 50)
     b.setdefault("stadium", 1)
     b.setdefault("facility", 1)
