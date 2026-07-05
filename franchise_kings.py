@@ -166,7 +166,103 @@ LAST_NAMES = [
     "Kane", "Sloan", "Boone", "Hayes", "Dawson", "Foster", "Mata", "Okafor",
     "Vega", "Prince", "Steele", "Calloway", "Drummond", "Fontaine", "Ash", "Roy",
     "Barlow", "Quint", "Vasquez", "Nash", "Wexler", "Pryor", "Salas", "Trent",
+    "Whitfield", "Ellison", "Marsh", "Coble", "Renner", "Stokes", "Padgett", "Irby",
+    "Lattimore", "Winslow", "Granger", "Holliday", "Beckett", "Sutter", "Mabry", "Teague",
 ]
+
+# --------------------------------------------------------------------------- #
+# Player IDENTITY engine — names are a draft resource, not two random lists.
+# Rarity tiers (common names dominate, rare ones surprise), regional pools tied
+# to a player's hometown, era pools that drift as the decades roll, middle
+# names for disambiguation, "football names" (William -> Will), nicknames, and
+# a legal/preferred/jersey identity for every man.
+# --------------------------------------------------------------------------- #
+FIRST_TIERS = [
+    (8, ["Marcus", "Michael", "Chris", "James", "John", "David", "Anthony", "Josh",
+         "Jordan", "Justin", "Brandon", "William", "Robert", "Isaiah", "Carter", "Cole"]),
+    (3, ["DeShawn", "Tyrell", "Xavier", "Malik", "Andre", "Darius", "Bryce", "Hunter",
+         "Dominic", "Trey", "Cooper", "Quinton", "Rashad", "Khalil", "Jaxon", "Roman",
+         "Emmett", "Nasir", "Zane", "Lincoln", "Silas", "Tobias", "Diego", "Gio",
+         "Brock", "Kade", "Beau", "Jaylen", "Christopher", "Cassius"]),
+    (1, ["Tavion", "Keisean", "Zamir", "Ozzie", "Bodie", "Maverick", "Kingston",
+         "Baron", "Duke", "Ransom", "Colter", "Stellan", "Ivory", "Booker"]),
+]
+_FIRST_WEIGHTED = [n for w, names in FIRST_TIERS for n in names for _ in range(w)]
+
+REGIONAL_FIRST = {
+    "South":   ["DeAndre", "JaCorey", "Tyreek", "Quan", "Malik", "Trevon", "Tyjae",
+                "Darius", "Jalen", "Ladarius", "Keshawn", "Montario", "Amari", "Devonta"],
+    "Midwest": ["Erik", "Gunnar", "Mason", "Cole", "Wyatt", "Lars", "Soren",
+                "Brecken", "Casey", "Dane", "Anders", "Holt"],
+    "West":    ["Diego", "Santiago", "Kai", "Adrian", "Rocco", "Nico", "Dre",
+                "Cruz", "Mateo", "Ezekiel"],
+    "Islands": ["Keanu", "Kaimana", "Alika", "Tui", "Sione", "Tavita", "Penei",
+                "Manti", "Talanoa", "Marist"],
+    "Africa":  ["Chukwuemeka", "Oluwaseun", "Emeka", "Chidi", "Osa", "Efe",
+                "Tunde", "Kelechi", "Uche", "Femi"],
+}
+REGIONAL_LAST = {
+    "Islands": ["Tagovailoa", "Fangupo", "Sopoaga", "Tuipulotu", "Niumatalolo", "Amosa"],
+    "Africa":  ["Okafor", "Adebayo", "Ekwonu", "Umeh", "Ogbah", "Nwosu"],
+    "South":   ["Lattimore", "Holliday", "Boone", "Calloway", "Mabry", "Teague"],
+}
+STATE_REGION = {
+    "TX": "South", "FL": "South", "GA": "South", "LA": "South", "AL": "South",
+    "TN": "South", "NC": "South", "VA": "South", "MS": "South",
+    "OH": "Midwest", "MI": "Midwest", "IL": "Midwest", "MO": "Midwest",
+    "MN": "Midwest", "PA": "Midwest", "NJ": "Midwest",
+    "CA": "West", "NV": "West", "AZ": "West", "WA": "West",
+    "HI": "Islands", "AS": "Islands", "NGA": "Africa", "GHA": "Africa",
+}
+# Naming trends drift ~ every 8 seasons: a 30-year franchise SOUNDS like eras.
+ERA_FIRST = {
+    1: ["Zaiden", "Kylo", "Onyx", "Ace", "Wilder", "Creed", "Legend", "Maddox", "Ryker"],
+    2: ["Neo", "Orion", "Zephyr", "Atlas", "Nova", "Kaius", "Jettson", "Halcyon", "Vega"],
+}
+SHORT_FORMS = {
+    "William": ["Will", "Billy"], "Robert": ["Rob", "Bobby"], "James": ["Jim", "Jimmy"],
+    "Anthony": ["Ant", "Tony"], "Christopher": ["Chris", "Topher"], "Michael": ["Mike"],
+    "DeAndre": ["Dre"], "Joshua": ["Josh"], "Ezekiel": ["Zeke"], "Chukwuemeka": ["Emeka"],
+    "Oluwaseun": ["Seun"], "Cassius": ["Cash"], "Santiago": ["Santi"],
+}
+NICKNAMES = ["Tank", "Jet", "Deuce", "Slim", "Bo", "Moose", "Ace", "Smoke", "Flash",
+             "Truck", "Champ", "Sticks", "Bear", "Blue", "Scooter", "Pop", "Juice", "Bolt"]
+
+
+def _pick_first(rng, region, season):
+    if region and region in REGIONAL_FIRST and rng.random() < 0.40:
+        return rng.choice(REGIONAL_FIRST[region])
+    era = min(2, max(0, (int(season or 1) - 1) // 8))
+    if era and rng.random() < 0.18:
+        return rng.choice(ERA_FIRST[era])
+    return rng.choice(_FIRST_WEIGHTED)
+
+
+def _gen_identity(rng, hometown="", season=1, seen=None):
+    """A complete identity: legal name (first middle last), preferred football
+    name, jersey name, maybe a nickname — unique against `seen` display names."""
+    st = hometown.rsplit(", ", 1)[-1] if hometown and ", " in hometown else ""
+    region = STATE_REGION.get(st)
+    first = last = ""
+    for _ in range(12):
+        first = _pick_first(rng, region, season)
+        last = (rng.choice(REGIONAL_LAST[region])
+                if region in REGIONAL_LAST and rng.random() < 0.35
+                else rng.choice(LAST_NAMES))
+        if seen is None or f"{first} {last}" not in seen:
+            break
+    middle = rng.choice(_FIRST_WEIGHTED)
+    while middle == first:
+        middle = rng.choice(_FIRST_WEIGHTED)
+    preferred = (rng.choice(SHORT_FORMS[first])
+                 if first in SHORT_FORMS and rng.random() < 0.6 else first)
+    nickname = rng.choice(NICKNAMES) if rng.random() < 0.10 else ""
+    if seen is not None:
+        seen.add(f"{first} {last}")
+        seen.add(f"{preferred} {last}")
+    return {"name": f"{preferred} {last}", "first": first, "middle": middle, "last": last,
+            "legal_name": f"{first} {middle} {last}", "nickname": nickname,
+            "jersey_name": f"{preferred[0]}. {last}"}
 
 # Starter slots per position (the depth chart auto-starts the best by position).
 ROSTER = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "OL": 5, "DL": 4, "LB": 3, "CB": 3, "S": 2, "K": 1}
@@ -246,7 +342,8 @@ HOMETOWNS = [
     ("Newark", "NJ"), ("Memphis", "TN"), ("Nashville", "TN"), ("Charlotte", "NC"),
     ("Richmond", "VA"), ("St. Louis", "MO"), ("Kansas City", "MO"), ("Phoenix", "AZ"),
     ("Las Vegas", "NV"), ("Seattle", "WA"), ("Oakland", "CA"), ("Jacksonville", "FL"),
-    ("Orlando", "FL"), ("San Diego", "CA"), ("Fresno", "CA"),
+    ("Orlando", "FL"), ("San Diego", "CA"), ("Fresno", "CA"), ("Minneapolis", "MN"),
+    ("Honolulu", "HI"), ("Laie", "HI"), ("Pago Pago", "AS"), ("Lagos", "NGA"), ("Accra", "GHA"),
 ]
 _HS_NAMES = ["Lincoln", "Washington", "Jackson", "Lakeview", "Riverside", "Oakwood",
              "St. Augustine", "St. Thomas", "Hillcrest", "Northgate", "Pinecrest",
@@ -330,16 +427,19 @@ def ensure_human_profile(p, rng=None):
     return p
 
 
-def _gen_player(rng, pos, base=None):
+def _gen_player(rng, pos, base=None, season=1, seen=None):
     age = rng.randint(21, 34)
     overall = base if base is not None else int(rng.triangular(58, 92, 74))
     overall = max(48, min(99, overall))
     pot_gap = max(0, int(rng.triangular(0, 22, 6)) - (age - 24))
     potential = max(overall, min(99, overall + pot_gap))
     aav = round(max(0.7, max(0, overall - 55) ** 1.7 / 22.0), 1)
+    bg = _gen_background(rng)
+    ident = _gen_identity(rng, bg["hometown"], season, seen)
     return {
         "id": f"p{rng.randint(100000, 999999)}",
-        "name": _gen_name(rng),
+        **ident,
+        **bg,
         "pos": pos,
         "number": rng.randint(*POS_NUM.get(pos, (1, 99))),
         "age": age,
@@ -351,12 +451,11 @@ def _gen_player(rng, pos, base=None):
         "contract": {"years": rng.randint(1, 4), "aav": aav, "guaranteed": round(aav * rng.uniform(0.3, 0.8), 1)},
         "morale": rng.randint(55, 90),
         "injury_risk": rng.choice(["Low", "Low", "Medium", "High"]),
-        **_gen_background(rng),
         **_gen_human_profile(rng),
     }
 
 
-def _gen_roster(rng, strength):
+def _gen_roster(rng, strength, season=1, seen=None):
     """strength 0..1 nudges the talent floor so weak teams feel weak. Builds a full
     ~54-man camp roster: starters are strong, depth tapers off (cuttable bodies)."""
     roster = []
@@ -368,7 +467,7 @@ def _gen_roster(rng, strength):
             else:                                  # depth tapers down the chart
                 taper = 10 + (i - starters) * 4
                 base = int(rng.triangular(50, 78, max(52, 70 + strength * 10 - taper)))
-            roster.append(_gen_player(rng, pos, base))
+            roster.append(_gen_player(rng, pos, base, season=season, seen=seen))
     return roster
 
 
@@ -389,10 +488,10 @@ def _inject_stars(rng, roster):
         p["contract"]["years"] = rng.randint(2, 5)
 
 
-def _gen_team(rng, idx, entry):
+def _gen_team(rng, idx, entry, season=1, seen=None):
     conf, div, city, mascot, market = entry
     strength = rng.random()
-    roster = _gen_roster(rng, strength)
+    roster = _gen_roster(rng, strength, season=season, seen=seen)
     _inject_stars(rng, roster)
     return {
         "id": f"t{idx}",
@@ -416,8 +515,8 @@ def _attach_agent(rng, p):
     return p
 
 
-def _gen_fa_pool(rng, n=40):
-    pool = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70))) for _ in range(n)]
+def _gen_fa_pool(rng, n=40, season=1, seen=None):
+    pool = [_gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(60, 88, 70)), season=season, seen=seen) for _ in range(n)]
     for p in pool:
         _attach_agent(rng, p)
     return pool
@@ -425,10 +524,11 @@ def _gen_fa_pool(rng, n=40):
 
 def new_league(seed):
     rng = _rng(seed)
-    teams = [_gen_team(rng, i, NFL_TEAMS[i]) for i in range(LEAGUE_SIZE)]
+    seen = set()   # league-wide name uniqueness from day one
+    teams = [_gen_team(rng, i, NFL_TEAMS[i], seen=seen) for i in range(LEAGUE_SIZE)]
     generate_team_histories(teams, rng)
     ensure_owner_names(teams, rng)
-    return teams, _gen_fa_pool(rng)
+    return teams, _gen_fa_pool(rng, seen=seen)
 
 
 def ensure_owner_names(teams, rng):
@@ -1648,8 +1748,15 @@ def _advance_year(save):
     save["retirements"] = process_retirements(save["teams"], save["season"],
                                               save.setdefault("hall_of_fame", []))
     save["hall_of_fame"] = save["hall_of_fame"][:40]
+    for r in save["retirements"]:                     # great careers seed bloodlines
+        if r.get("peak", 0) >= 80 and rng.random() < 0.35:
+            parts = r["name"].split()
+            save.setdefault("legacy_pool", []).append(
+                {"first": parts[0], "last": parts[-1], "pos": r["pos"],
+                 "retired": save["season"], "hof": bool(r.get("hof"))})
+    save["legacy_pool"] = save.get("legacy_pool", [])[-20:]
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
-    save["free_agents"] = _gen_fa_pool(rng)
+    save["free_agents"] = _gen_fa_pool(rng, season=save.get("season", 1) + 1, seen=league_names_seen(save))
 
 
 # --------------------------------------------------------------------------- #
@@ -2699,23 +2806,117 @@ def _gen_combine(rng, pos, true_ovr, true_pot):
     return {"forty": forty, "bench": bench, "vert": vert, "cone": cone, "traits": traits}
 
 
-def _gen_prospect(rng, pos):
+def _gen_prospect(rng, pos, season=1, seen=None):
     true_ovr = max(50, min(90, int(rng.triangular(52, 86, 64))))
     true_pot = min(99, true_ovr + int(rng.triangular(2, 26, 12)))
-    return {"id": f"d{rng.randint(100000, 999999)}", "name": _gen_name(rng), "pos": pos,
+    bg = _gen_background(rng)
+    ident = _gen_identity(rng, bg["hometown"], season, seen)
+    return {"id": f"d{rng.randint(100000, 999999)}", **ident, **bg, "pos": pos,
             "age": rng.randint(21, 23), "true_ovr": true_ovr, "true_pot": true_pot,
             "dev": rng.choice(["Normal", "Normal", "Star", "Slow", "Late Bloomer"]),
             "style": _style_for(rng, pos),
             "combine": _gen_combine(rng, pos, true_ovr, true_pot),
-            **_gen_background(rng),
             **_gen_human_profile(rng)}
 
 
-def generate_draft_class(rng):
+def generate_draft_class(rng, season=1, seen=None):
     weighted = []
     for pos, cnt in ROSTER.items():
         weighted += [pos] * (cnt + 1)
-    return [_gen_prospect(rng, rng.choice(weighted)) for _ in range(DRAFT_CLASS)]
+    seen = seen if seen is not None else set()
+    return [_gen_prospect(rng, rng.choice(weighted), season=season, seen=seen)
+            for _ in range(DRAFT_CLASS)]
+
+
+def _inject_bloodlines(save, rng, cls):
+    """A retired great's son can enter the draft: same last name, same position,
+    Jr./III suffix, and expectations he didn't ask for."""
+    pool = [l for l in save.get("legacy_pool", [])
+            if save.get("season", 1) - l.get("retired", 0) >= 2]
+    if not pool or rng.random() > 0.5:
+        return
+    legacy = rng.choice(pool)
+    save["legacy_pool"].remove(legacy)
+    pr = next((x for x in cls if x["pos"] == legacy["pos"]), cls[0])
+    suffix = "Jr." if rng.random() < 0.7 else "III"
+    pr["first"], pr["last"] = legacy["first"], legacy["last"]
+    pr["name"] = f"{legacy['first']} {legacy['last']} {suffix}"
+    pr["legal_name"] = f"{legacy['first']} {pr.get('middle', legacy['first'])} {legacy['last']} {suffix}"
+    pr["jersey_name"] = f"{legacy['first'][0]}. {legacy['last']} {suffix}"
+    if suffix == "III":
+        pr["nickname"] = pr.get("nickname") or "Trey"
+    pr["legacy"] = {"parent": f"{legacy['first']} {legacy['last']}", "hof": legacy["hof"]}
+    pr["true_pot"] = min(99, pr["true_pot"] + 3)      # bloodlines carry juice
+    _tl(save, save.get("season", 1), "draft", "🩸",
+        f"Bloodlines: {pr['name']} declares for the draft",
+        f"Son of {'Hall of Famer' if legacy['hof'] else 'the great'} "
+        f"{legacy['first']} {legacy['last']} — same position, same name, enormous expectations.")
+
+
+def ensure_player_identities(save):
+    """Backfill identity fields (middle, legal, jersey, maybe a nickname) onto
+    players from before the identity engine — deterministic per player, and the
+    display name is left alone. Then fix same-team display collisions by
+    inserting middle initials. Returns True if anything changed."""
+    changed = False
+    containers = [t.get("roster", []) + t.get("practice_squad", [])
+                  for t in save.get("teams", [])]
+    containers.append(save.get("free_agents", []))
+    for players in containers:
+        for p in players:
+            if p.get("legal_name") or not p.get("name"):
+                continue
+            rng = _rng(int(save.get("seed", 1) or 1) + sum(ord(c) for c in str(p.get("id", p["name"]))))
+            parts = p["name"].split()
+            p["first"], p["last"] = parts[0], parts[-1]
+            middle = rng.choice(_FIRST_WEIGHTED)
+            while middle == p["first"]:
+                middle = rng.choice(_FIRST_WEIGHTED)
+            p["middle"] = middle
+            p["legal_name"] = f"{p['first']} {middle} {p['last']}"
+            p["jersey_name"] = f"{p['first'][0]}. {p['last']}"
+            if rng.random() < 0.10:
+                p["nickname"] = rng.choice(NICKNAMES)
+            changed = True
+    if disambiguate_rosters(save):
+        changed = True
+    return changed
+
+
+def disambiguate_rosters(save):
+    """Two men, one display name, same team -> both pick up their middle
+    initial ('Marcus A. Davis' / 'Marcus L. Davis')."""
+    changed = False
+    for t in save.get("teams", []):
+        by_name = {}
+        for p in t.get("roster", []):
+            by_name.setdefault(p.get("name", ""), []).append(p)
+        for name, group in by_name.items():
+            if len(group) < 2 or not name:
+                continue
+            for p in group:
+                mid = (p.get("middle") or "X")[0]
+                first = p.get("first") or name.split()[0]
+                last = p.get("last") or name.split()[-1]
+                new = f"{first} {mid}. {last}"
+                if p["name"] != new:
+                    p["name"] = new
+                    changed = True
+    return changed
+
+
+def league_names_seen(save):
+    """Every display name already in this universe — new names must dodge them."""
+    seen = set()
+    for t in save.get("teams", []):
+        for p in t.get("roster", []) + t.get("practice_squad", []):
+            seen.add(p.get("name", ""))
+            if p.get("first") and p.get("last"):
+                seen.add(f"{p['first']} {p['last']}")
+    for p in save.get("free_agents", []):
+        seen.add(p.get("name", ""))
+    seen.discard("")
+    return seen
 
 
 def _scout(rng, p, accuracy):
@@ -2777,7 +2978,8 @@ def start_draft(save):
     if save.get("draft_pending"):
         return
     rng = _rng(save["seed"] + save["season"] * 77 + 13)
-    cls = generate_draft_class(rng)
+    cls = generate_draft_class(rng, season=save.get("season", 1), seen=league_names_seen(save))
+    _inject_bloodlines(save, rng, cls)
     scout_bonus = 9 if save.get("weekly_ops", {}).get("scout") == "Draft Class" else 0   # scouts worked the class
     acc = max(20, min(94, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"] + scout_bonus))
     for p in cls:
@@ -3084,6 +3286,7 @@ def load_save(user_id):
         if save:
             changed = ensure_staff_profiles(save)
             changed = ensure_team_histories(save) or changed
+            changed = ensure_player_identities(save) or changed
             if changed:
                 write_save(save)
     except Exception:
