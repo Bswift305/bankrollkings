@@ -29342,6 +29342,7 @@ def franchise_hub():
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
     elif tab == 'almanac':
         view['almanac'] = fk.almanac(save)
+        view['people'] = fk.people_report(save)
     elif tab == 'league':
         rows = []
         for t in sorted(save['teams'], key=lambda x: x['full']):

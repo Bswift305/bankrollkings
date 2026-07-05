@@ -1332,6 +1332,43 @@
     </tbody></table>
     {% else %}<p class="fk-muted">No executives have entered yet. Retire a legendary GM and this wing starts filling with builders, not just players.</p>{% endif %}
   </div>
+
+  {% if people is defined and people %}
+  <div class="fk-card" style="margin-top:12px;">
+    <div class="fk-card-h">{{ icon('users') }}Where Are They Now — career tracks <span style="float:right;font-size:12px;color:#8fa3b0">{{ people.total }} tracked</span></div>
+    <p class="fk-muted" style="margin:2px 0 10px">The world remembers. Retired stars move into coaching, scouting, the booth, and the front office — and the game follows them wherever they land.</p>
+    {% if people.alumni %}
+    <div class="fk-card-h" style="font-size:13px">🎓 Your alumni, out in the world</div>
+    <table class="fk-table"><thead><tr><th>Player you had</th><th>Was</th><th>Now</th><th>Where</th></tr></thead><tbody>
+      {% for e in people.alumni %}
+      <tr><td><b>{{ e.name }}</b>{% if e.hof %} <span style="color:#f5c860">HOF</span>{% endif %}</td>
+        <td class="fk-muted">{{ e.former_player.pos }}{% if e.former_player.peak %} · peak {{ e.former_player.peak }}{% endif %}</td>
+        <td>{% if e.milestone %}<b style="color:#f5c860">{{ e.current.role }}</b>{% else %}{{ e.current.role }}{% endif %}</td>
+        <td class="fk-muted">{{ e.current.team }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% endif %}
+    {% if people.milestones %}
+    <div class="fk-card-h" style="font-size:13px; margin-top:10px">🏆 From the field to the top</div>
+    <div style="display:grid; gap:4px;">
+      {% for e in people.milestones %}
+      <div class="fk-muted" style="font-size:12px;"><b style="color:#e8f4fb">{{ e.former_player.pos }} {{ e.name }}</b> — {{ e.milestone }} <small>({{ e.current.team }})</small></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if people.notable %}
+    <div class="fk-card-h" style="font-size:13px; margin-top:10px">Notable names around the league</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+      {% for e in people.notable %}
+      <span class="fk-tag" title="{{ e.former_player.pos }} · peak {{ e.former_player.peak }}">{{ e.name }} → {{ e.current.role }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if not people.alumni and not people.milestones and not people.notable %}
+    <p class="fk-muted">No second-career arcs yet — they start filling in as your stars and the league's greats retire and take on new roles.</p>
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== CAREER ===================== #}

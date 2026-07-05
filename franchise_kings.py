@@ -2130,6 +2130,7 @@ def _finalize_season(save):
         conf_champs.append(_run_playoffs(rng, seeds, powers))
     champion = (conf_champs[0] if _sim_game(rng, powers[conf_champs[0]], powers[conf_champs[1]])
                 else conf_champs[1])
+    _record_champion_bench(save, teams[champion])
 
     uid = save["current_team_id"]
     rec = dict(teams[uid]["record"])
@@ -2400,6 +2401,7 @@ def _advance_year(save):
                 {"first": parts[0], "last": parts[-1], "pos": r["pos"],
                  "retired": save["season"], "hof": bool(r.get("hof"))})
     save["legacy_pool"] = save.get("legacy_pool", [])[-20:]
+    route_retiree_careers(save, rng)   # retirees enter the People registry + second careers
     evolve_city_economics(save, rng)
     evolve_world_systems(save, rng)
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
@@ -2978,6 +2980,174 @@ def _coach_joins_rival(save, coach, role, rival_full):
     staff[slot] = _fit_role(coach, slot, rng)
 
 
+# --------------------------------------------------------------------------- #
+# THE PEOPLE REGISTRY — a career-state machine. Any notable person (starting
+# with retired players) gets a permanent record: their playing career, then
+# their second act, then every stop after. The carousel and the championship
+# write to it, so the world REMEMBERS — the QB you drafted can be tracked all
+# the way to a title-winning head-coaching career somewhere else.
+# --------------------------------------------------------------------------- #
+_SECOND_CAREER_ROLES = {
+    "scouting": ("Scout", "\U0001F50D", "takes a scouting job"),
+    "broadcasting": ("Broadcaster", "\U0001F399", "joins the broadcast booth"),
+    "front_office": ("Front Office", "\U0001F3E2", "moves into a front-office role"),
+}
+_SECOND_CAREER_WEIGHTS = [("coaching", 0.40), ("broadcasting", 0.26),
+                          ("scouting", 0.20), ("front_office", 0.14)]
+
+
+def _person_key(name):
+    return " ".join(str(name or "").split()).lower()
+
+
+def register_person(save, name, **fields):
+    reg = save.setdefault("people", {})
+    key = _person_key(name)
+    if not key:
+        return None
+    e = reg.get(key)
+    if e is None:
+        e = {"name": name, "stints": []}
+        reg[key] = e
+    for k, v in fields.items():
+        if v is not None:
+            e[k] = v
+    return e
+
+
+def add_person_stint(save, name, role, team, note="", milestone=False):
+    e = register_person(save, name)
+    if e is None:
+        return None
+    season = save.get("season", 1)
+    stints = e.setdefault("stints", [])
+    if not (stints and stints[0].get("role") == role and stints[0].get("team") == team):
+        stints.insert(0, {"season": season, "role": role, "team": team, "note": note})
+        e["stints"] = stints[:20]
+    e["current"] = {"role": role, "team": team, "season": season}
+    if milestone:
+        e["milestone"] = note or role
+    return e
+
+
+def _prune_people(save, cap=200):
+    reg = save.get("people") or {}
+    if len(reg) <= cap:
+        return
+    keep = [(k, e) for k, e in reg.items()
+            if e.get("your_alum") or e.get("milestone") or e.get("hof")]
+    rest = [(k, e) for k, e in reg.items()
+            if not (e.get("your_alum") or e.get("milestone") or e.get("hof"))]
+    rest.sort(key=lambda kv: (kv[1].get("current") or {}).get("season", 0), reverse=True)
+    room = max(0, cap - len(keep))
+    save["people"] = dict(keep + rest[:room])
+
+
+def route_retiree_careers(save, rng):
+    """This offseason's notable retirees enter the People registry with their
+    playing career, and some pick up a second career. Coaching flows through
+    the hireable staff market (inject_player_coaches); scouting/broadcasting/
+    front-office are recorded here as league-wide career moves."""
+    uid_team = current_team(save).get("full", "")
+    for r in save.get("retirements", []):
+        peak = int(r.get("peak", 0) or 0)
+        if peak < 74:
+            r["second_career"] = None
+            continue
+        e = register_person(
+            save, r.get("name", ""),
+            former_player={"pos": r.get("pos", ""), "peak": peak,
+                           "hof": bool(r.get("hof")),
+                           "seasons": int(r.get("seasons", 0) or 0),
+                           "summary": r.get("summary", "")},
+            hof=bool(r.get("hof")),
+            your_alum=(bool(uid_team) and r.get("team") == uid_team))
+        if e is not None and not e.get("stints"):
+            e["stints"].append({"season": int(r.get("retired", save.get("season", 1)) or save.get("season", 1)),
+                                "role": "Player (" + str(r.get("pos", "")) + ")",
+                                "team": r.get("team", ""), "note": r.get("summary", "")})
+        chance = 0.42 + (peak - 74) * 0.03 + (0.20 if r.get("hof") else 0)
+        if rng.random() > min(0.90, chance):
+            r["second_career"] = None
+            continue
+        total = sum(w for _, w in _SECOND_CAREER_WEIGHTS)
+        roll, acc, kind = rng.random() * total, 0.0, "coaching"
+        for k, w in _SECOND_CAREER_WEIGHTS:
+            acc += w
+            if roll <= acc:
+                kind = k
+                break
+        r["second_career"] = kind
+        if kind == "coaching":
+            role0 = _PLAYER_COACH_ROLE.get(str(r.get("pos", "")).upper(), "off_coord")
+            if role0 not in ("off_coord", "def_coord"):
+                role0 = ("off_coord" if role0 in ("qb_coach", "oline_coach", "cond_coach", "st_coord")
+                         else "def_coord")
+            cc = _gen_ai_coach(rng, role0)
+            cc["name"] = r.get("name", cc.get("name", ""))
+            cc["rating"] = max(46, min(78, int(46 + (peak - 72) * 0.5
+                                              + int(r.get("all_pro", 0) or 0) * 2
+                                              + (5 if r.get("hof") else 0))))
+            cc["age"] = min(48, 26 + int(r.get("seasons", 0) or 0) + rng.randint(1, 3))
+            cc["former_player"] = {"pos": r.get("pos", ""), "peak": peak,
+                                   "seasons": int(r.get("seasons", 0) or 0),
+                                   "hof": bool(r.get("hof"))}
+            save.setdefault("coach_pool", []).append(dict(cc, ex_role=role0))
+            add_person_stint(save, r["name"], "Coaching ranks", "the league",
+                             note="entering the coaching pipeline")
+            continue
+        role_label, icon, verb = _SECOND_CAREER_ROLES[kind]
+        add_person_stint(save, r["name"], role_label, "the league",
+                         note="second career after football")
+        _tl(save, save.get("season", 1), "staff", icon,
+            (str(r.get("pos", "")) + " " + str(r.get("name", ""))).strip() + " " + verb,
+            ("A Hall of Famer" if r.get("hof") else "A respected veteran")
+            + " begins his post-playing career.")
+    _prune_people(save)
+
+
+def _record_champion_bench(save, champ_team):
+    """If an AI club wins the title with a former-player head coach, the world
+    remembers — the loudest continuity payoff, extra loud if he was YOURS."""
+    if not champ_team or champ_team.get("id") == save.get("current_team_id"):
+        return
+    hc = (champ_team.get("staff") or {}).get("head_coach")
+    if not isinstance(hc, dict):
+        return
+    e = (save.get("people") or {}).get(_person_key(hc.get("name", "")))
+    if not e or not e.get("former_player"):
+        return
+    fp = e["former_player"]
+    add_person_stint(save, hc["name"], "Head Coach \u2014 League Champion",
+                     champ_team["full"], note="won the title as a head coach", milestone=True)
+    pos = str(fp.get("pos", "")).strip()
+    if e.get("your_alum"):
+        head = (pos + " " + hc["name"]).strip() + " wins it all as a head coach"
+        sub = ("The " + (pos or "player") + " you developed just lifted the trophy as "
+               + champ_team["full"] + " head coach. That one stings and shines.")
+    else:
+        head = (pos + " " + hc["name"]).strip() + " goes from the field to a title"
+        sub = ("A former " + (pos or "player") + " wins the championship as "
+               + champ_team["full"] + " head coach.")
+    _tl(save, save.get("season", 1), "hof", "\U0001F3C6", head, sub)
+
+
+def people_report(save):
+    """Where they are now: your alumni's second acts, the milestone movers,
+    and the notable Hall-of-Fame names spread across the league."""
+    reg = list((save.get("people") or {}).values())
+    tracked = [e for e in reg if e.get("former_player") and e.get("current")
+               and (e.get("current") or {}).get("role") not in (None, "Coaching ranks", "Player")]
+    def _peak(e):
+        return int((e.get("former_player") or {}).get("peak", 0) or 0)
+    alumni = sorted([e for e in tracked if e.get("your_alum")], key=lambda e: -_peak(e))
+    milestones = sorted([e for e in tracked if e.get("milestone")], key=lambda e: -_peak(e))
+    notable = sorted([e for e in tracked if e.get("hof") and not e.get("your_alum")],
+                     key=lambda e: -_peak(e))
+    return {"alumni": alumni[:12], "milestones": milestones[:10],
+            "notable": notable[:12], "total": len(tracked)}
+
+
 def run_coaching_carousel(save, rng):
     """One offseason of league-wide staff movement. Runs at season end."""
     ensure_ai_staffs(save)
@@ -3041,6 +3211,20 @@ def run_coaching_carousel(save, rng):
                     hire["ped"]["mentor"] = mentor         # the tree grows
                 why = "up-and-comer gets his shot"
             staff[role] = _fit_role(hire, role, rng)
+            if staff[role].get("former_player"):
+                is_hc = role == "head_coach"
+                add_person_stint(save, staff[role]["name"], _AI_ROLE_LABEL[role], t["full"],
+                                 note=("head coach of " + t["full"] if is_hc else why),
+                                 milestone=is_hc)
+                if is_hc:
+                    fp = staff[role]["former_player"]
+                    alum = (save.get("people") or {}).get(
+                        _person_key(staff[role]["name"]), {}).get("your_alum")
+                    _tl(save, save.get("season", 1), "staff", "\U0001F3AF",
+                        (str(fp.get("pos", "")) + " " + staff[role]["name"]).strip()
+                        + " named head coach of the " + t["full"],
+                        ("A player you once had now runs a franchise." if alum
+                         else "A former player takes over a sideline as head coach."))
             log.append({"team": t["full"], "role": _AI_ROLE_LABEL[role],
                         "out": "", "in": staff[role]["name"], "why": why})
     save["coach_pool"] = pool[-24:]
@@ -3841,7 +4025,9 @@ def inject_player_coaches(save, rng):
     of them (peak 76+) can show up in the fresh staff market at a role that
     fits the position they played, carrying a Former Player profile."""
     market = save.get("staff_market") or {}
-    pool = [r for r in (save.get("retirements") or []) if int(r.get("peak", 0) or 0) >= 76]
+    pool = [r for r in (save.get("retirements") or [])
+            if int(r.get("peak", 0) or 0) >= 76
+            and r.get("second_career") in (None, "coaching")]
     pool.sort(key=lambda r: -(int(r.get("peak", 0) or 0) + int(r.get("all_pro", 0) or 0) * 2))
     added = 0
     for r in pool:
@@ -3870,6 +4056,8 @@ def inject_player_coaches(save, rng):
         cand["former_player"] = {"pos": r.get("pos", ""), "peak": peak,
                                  "seasons": seasons, "hof": bool(r.get("hof"))}
         market.setdefault(role, []).append(cand)
+        add_person_stint(save, cand["name"], "Coaching ranks", "the market",
+                         note="entered the coaching market")
         _tl(save, save.get("season", 1), "staff", "🎓",
             f"{r.get('pos', '')} {r.get('name', '')} moves into coaching",
             f"Joins the {_ROLE_LABELS.get(role, role)} market after {seasons} seasons on the field.")
