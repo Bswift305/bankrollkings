@@ -11,10 +11,10 @@ the platform-level betting handoff lives in `docs/DEVELOPER_HANDOFF.md`._
 | | |
 |---|---|
 | Branch | `master` |
-| HEAD | `9f39278` Add franchise portrait automation |
+| HEAD | `e798d8f` Attribute-driven scheme fit (Deep Sim) |
 | Production | `https://bankrollkings.com` — home `200`, `/healthz` `200`, `/assets/...` `200` |
 | Deploy | `git push origin master` → ssh `ubuntu@32.195.123.245` → `cd /opt/bankrollkings && git pull && sudo systemctl restart bankrollkings` (**restart, not reload** — gunicorn `preload_app`) |
-| Engine | `franchise_kings.py` ~7,100 lines · `franchise_offseason.py` ~390 lines |
+| Engine | `franchise_kings.py` ~7,900 lines · `franchise_offseason.py` ~390 lines |
 | Web | routes + view assembly in `app.py` (`/franchise*`); templates `franchise_hub.html`, `franchise_offseason.html`, `franchise_player.html` |
 | Save model | one JSON per user at `data/franchise/<user_id>.json` (gitignored). Pure functions over a `save` dict; **all migrations are idempotent backfills run in `fk.load_save`** |
 | Hub tabs | dashboard · command · gridiron · roster · front-office · trades · staff · business · analytics · career · almanac · league · draft |
@@ -22,6 +22,47 @@ the platform-level betting handoff lives in `docs/DEVELOPER_HANDOFF.md`._
 **Design principle in force:** every system feeds another through the `save` dict and the
 sim's `power_rating` composition. Nothing is cosmetic — staff, scheme, playbook, packages,
 weather, key-moments, facilities, and home-field all resolve into the number that decides games.
+
+---
+
+## 0b. Session changelog — `9f39278` → `e798d8f` (2026-07-05)
+
+The remaining roadmap tracks were built out this session (all deployed, each with a headless
+`app.test_client()` verification pass; existing saves upgrade via idempotent backfills on load):
+
+- **`33d7bd8` People career-state machine (inc.1).** `save['people']` registry keyed by
+  `_person_key(name)`; notable retirees enter with a playing stint, then a second career
+  (`route_retiree_careers`: coaching/broadcasting/scouting/front-office). Coaching-bound
+  retirees feed the carousel's AI hire pool → former players climb the tree. `_record_champion_bench`
+  = former-player HC wins a title = premium continuity payoff. Almanac "Where Are They Now" card.
+- **`c50d406` Executive ladder + hireable alumni (inc.2/3).** Every AI club gets a GM
+  (`t['exec']['gm']`) + league `save['commissioner']`; `run_executive_carousel` moves them
+  (retire/promote to President/Commissioner), former players climb to GM+, builders enter the
+  Executive Hall. `alumni_front_office_market` + `hire_alumnus` = bring a retired legend into
+  your Head Scout/Analytics/Medical chair. League tab "Front Offices" + Executive Carousel log.
+- **`f09bc24` GM career ladder (Level 8).** `gm_career_rank` + earned promotion offers
+  (`_consider_career_promotion`, `resolve_career_offer`): President (+$25M, fire_floor 25→12),
+  Part-Owner (unfireable + 10% dividend), Commissioner (capstone, installs you atop the league,
+  top exec-hall tier). Dashboard accept/decline card; Career-tab ladder. `_evaluate_gm` fire_floor
+  reads the rank.
+- **`38f0e6c` Owner succession with teeth.** `_succeed_owner` rolls a new archetype on
+  heir/sale; on YOUR club it resets owner trust toward neutral, clears the directive, and raises
+  a dashboard banner. Owner card shows age/heir/net worth/industry.
+- **`e4a0a89` College Pipeline.** `ensure_draft_preview` (at kickoff) generates next spring's
+  class a year early → scoutable all season; `start_draft` consumes the matching preview
+  (continuity: the players you watch are the ones you draft); `run_senior_bowl` risers/fallers;
+  `_finalize_draft` → `save['udfa_pool']`; `sign_udfa` → practice squad. Dashboard cards.
+- **`88ecf74` Deep per-position attributes.** `POSITION_ATTRIBUTES` (11 positions) +
+  `player_attributes(p)` — a full scouting-attribute breakdown DERIVED from overall + style +
+  combine + age (balance-neutral lens; sim still runs on overall). Profile attribute grid.
+- **`e798d8f` Attribute-driven scheme fit (Deep Sim, opt-in).** `save['sim_depth']` toggle +
+  `SCHEME_KEY_ATTRS` + `attr_scheme_edge` — schemes reward the traits they lean on (bounded
+  ±2.5 regular-season power, folds into `tactical_fit`). **OFF by default = byte-identical to
+  prior behavior → zero rebalancing risk.** Staff-tab toggle.
+
+Net: the People Ecosystem, the GM career loop, owner succession, the college feeder, and deep
+ratings are all now built. Level tags below updated to match. Remaining ⬜ items are genuinely
+optional or enormous (snap-level engine, deepest per-position rating trees, deep city/finance vars).
 
 ---
 
@@ -94,8 +135,11 @@ Legend: ✅ built & deployed · 🟡 partial (exists, shallow vs. the full visio
   extensions, holdouts, franchise tag.
 - ✅ **Style archetypes** — per-position styles (QB Pocket/Dual/Game-Manager/RPO; RB Power/Scat/
   Every-Down; etc.) driving scheme fit and playbook installs; combine measurables + trait chips.
-- ⬜ **Deep per-position ratings** (20–40 specialized attributes per position). Today a player is
-  `overall` + `potential` + `style` + `combine` + traits, not a per-skill tree.
+- ✅ **Deep per-position attributes** (`88ecf74`) — `POSITION_ATTRIBUTES` (11 positions, grouped
+  Physical/Skill/Mental) + `player_attributes(p)`, a full scouting breakdown DERIVED from
+  overall + style + combine + age (balance-neutral lens). Profile grid. **Opt-in Deep Sim**
+  (`e798d8f`, `save['sim_depth']`) makes them feed scheme fit + a bounded sim edge.
+- 🟡 Even deeper per-skill trees (30–40 attrs/pos) could expand the current ~7–9; the framework is there.
 - ⬜ **Deep identity vars** (birth date, parents/family, dominant hand/foot, languages) and
   **advanced contract clauses** (no-trade, escalators, options, performance bonuses).
 
@@ -122,14 +166,17 @@ Legend: ✅ built & deployed · 🟡 partial (exists, shallow vs. the full visio
   block), waivers (leagues), retirements, Hall of Fame, awards (MVP / All-League), expansion,
   relocation pressure, **rule changes via owner votes**.
 - 🟡 Media / world feed (`world_report`, GridIron news).
-- ⬜ College/feeder pipeline (Senior Bowl, college season, recruiting, transfer portal,
-  international academies), collective bargaining.
+- ✅ **College Pipeline** (`e4a0a89`) — Senior Bowl + a scoutable incoming class generated a year
+  early with draft continuity + a UDFA pool (`ensure_draft_preview`, `run_senior_bowl`, `sign_udfa`).
+- ⬜ College season / recruiting / transfer portal / international academies as deeper feeders,
+  collective bargaining.
 
 ### Level 8 — Career Mode (the signature)
 - ✅ Résumé, reputation, relationships (`relationship_report`), awards, championships, failures,
   **GM report card / grade** (`gm_grade`), career timeline, poaching, firing, negotiation wins.
-- ⬜ **GM progression ladder**: promoted → President of Football Ops → Commissioner → own a team;
-  GM retirement + **Executive wing of the Hall of Fame**.
+- ✅ **GM progression ladder** (`f09bc24`) — `gm_career_rank` + earned promotions: President of
+  Football Ops → Part-Owner → Commissioner, each with real teeth (fire_floor, unfireable,
+  dividend, capstone). `retire_gm` + **Executive Hall** (players' HOF is separate).
 
 ### Level 9 — The Living World
 - ✅ **Coaching carousel** (`run_coaching_carousel`) — every rival club has a real HC/OC/DC; they
@@ -138,16 +185,21 @@ Legend: ✅ built & deployed · 🟡 partial (exists, shallow vs. the full visio
   (`ai_coach_edge`).
 - ✅ **Player → coach pipeline** (retired players enter the coaching market; bloodline sons enter
   the draft). Dynasties rise/fall (Almanac), records break, expansion/relocation, rule changes.
+- ✅ **Owner succession with teeth** (`38f0e6c`) — owners age, die (heirs inherit), or sell;
+  `_succeed_owner` rolls a new archetype, resets your relationship, raises a dashboard banner.
+- ✅ **Executive pipeline** (`c50d406`) — scouts/FO/former players → Assistant GM → GM → President
+  → Commissioner across the league (`run_executive_carousel`).
 - 🟡 **Culture / relationships / world** — `culture_report`, `relationship_report`, `world_report`.
-- ⬜ Owners age/die/sell → **heirs inherit**; scouts→coaches→GMs→president full pipeline;
-  economies crash; TV-contract cycles; fan generational turnover.
+- ⬜ Economies crash; TV-contract cycles; fan generational turnover.
 
-### People Ecosystem (cross-cutting)
-- ✅ Coaching carousel + coaching trees; retired-player-to-coach; bloodline draft entrants.
-- ⬜ The full pipeline: HS → college recruit → draft/UDFA → practice squad / dev league → retire
-  → coach **or** scout **or** broadcaster **or** agent **or** exec; scout → personnel director →
-  assistant GM → GM → President → (rare) Commissioner. **Biggest remaining differentiator** —
-  build as ONE unified "person career-state machine," not per-role one-offs.
+### People Ecosystem (cross-cutting) — ✅ BUILT (`33d7bd8` + `c50d406`)
+- ✅ The unified **`save['people']` career-state machine**: retirees → second careers (coach /
+  scout / broadcaster / front office); coaching tree (coordinator → HC); executive ladder
+  (Assistant GM → GM → President → Commissioner); hireable alumni into your own front office;
+  continuity payoffs (the QB you drafted can be followed to a title-winning coaching career, or
+  to running a franchise). `people_report` → Almanac "Where Are They Now".
+- 🟡 Deeper feeders still ⬜ at the front of the pipe (HS → college recruit as distinct stages);
+  the draft/UDFA end is built.
 
 ---
 
@@ -170,21 +222,21 @@ type, position bias, category, current-save avoidance).
 
 ---
 
-## 3. Recommended build order (highest immersion-per-effort first)
+## 3. Build order — status
 
-1. **Unified People career-state machine** — one `person` model + lifecycle every human (player,
-   coach, scout, exec, owner, agent, media) flows through. Collapses many ⬜ Level-9 items into
-   one system and unlocks the "HOF QB becomes the coach who wins elsewhere" payoff. Highest leverage.
-2. **GM progression ladder + Executive Hall** — promote to President/Commissioner/owner, GM
-   retirement, exec HOF wing in the Almanac. Completes the signature Level-8 loop; small effort.
-3. **Owner mortality & succession** — owners age, sell, or pass teams to heirs. Mortal world;
-   medium effort, big flavor.
-4. **Deep per-position ratings (opt-in)** — expand `overall+style` into per-position skill trees
-   feeding sim + scouting. Large; gate behind a "sim depth" flag to protect balance.
-5. **Feeder pipeline** — college/Senior Bowl/UDFA/dev-league so the draft has a visible source.
-6. **Finance depth + TV-contract cycles + org chart as hireable people.**
-7. **Interactive game day** — extend Key Moments into a drive-level "key situations" mode before
-   attempting a full snap engine.
+Items 1–5 below were completed this session (see the 0b changelog). Remaining, in priority order:
+
+1. ✅ **Unified People career-state machine** — `33d7bd8` + `c50d406`.
+2. ✅ **GM progression ladder + Executive Hall** — `f09bc24`.
+3. ✅ **Owner mortality & succession** — `38f0e6c`.
+4. ✅ **Deep per-position ratings (opt-in)** — `88ecf74` + `e798d8f` (Deep Sim toggle).
+5. ✅ **Feeder pipeline** — `e4a0a89` (Senior Bowl / preview / UDFA; deeper college-season/
+   recruiting stages remain optional).
+6. ⬜ **Finance depth + TV-contract cycles + org chart as hireable people.**
+7. ⬜ **Interactive game day** — extend Key Moments into a drive-level "key situations" mode before
+   attempting a full snap engine. (A full snap engine is deliberately deferred — a front-office
+   sim arguably shouldn't have one.)
+8. ⬜ **Deeper per-skill rating trees** (30–40 attrs/pos) and **deep city/owner vars**.
 
 Keep the running roadmap in `docs/franchise_kings_plan.md` (source of truth between sessions).
 
