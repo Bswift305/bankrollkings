@@ -280,6 +280,28 @@
       </div>
     </div>
   </div>
+  {% set vt_msg = request.args.get('vt_msg', '') %}
+  {% if vt_msg %}
+  <div class="os-card"><div class="os-li" style="border-left:3px solid {{ '#7dffb0' if request.args.get('vt_ok') == '1' else '#ff9a9a' }}; padding-left:10px; color:#dce8ef;">🗳 {{ vt_msg }}</div></div>
+  {% endif %}
+  {% if save.owner_directive %}
+  <div class="os-card" style="border-color:rgba(159,150,255,.35);">
+    <div class="os-ch" style="font-size:15px">🗒 The Owner's Directive</div>
+    <p class="os-sub" style="margin:0">“{{ save.owner_directive.text }}”</p>
+    <p class="os-sub" style="margin:6px 0 0; color:#8fa3b0">Deliver it and trust rises at season's end. Fail it and he remembers that too.</p>
+  </div>
+  {% endif %}
+  {% if save.league_vote %}{% set lv = save.league_vote %}
+  <div class="os-card" style="border-color:rgba(245,200,96,.35);">
+    <div class="os-ch" style="font-size:15px">🗳 Owners' Meeting — a proposal is on the table</div>
+    <p class="os-sub" style="margin:0 0 4px"><b style="color:#f5c860">{{ lv.title }}</b></p>
+    <p class="os-sub" style="margin:0 0 10px">{{ lv.blurb }} It takes 17 of 32 to pass — your owner votes how you advise, and a respected GM sways a fence-sitter or two. Skip the meeting and you abstain.</p>
+    <div style="display:flex; gap:8px;">
+      <form method="post" action="{{ url_for('franchise_offseason_vote') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="choice" value="for"><button class="os-btn os-btn-xs">Vote FOR</button></form>
+      <form method="post" action="{{ url_for('franchise_offseason_vote') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="choice" value="against"><button class="os-btn os-btn-ghost os-btn-xs">Vote AGAINST</button></form>
+    </div>
+  </div>
+  {% endif %}
   {{ advance('Build Your Staff →') }}
 
   {# ---------------- STAFF: hire your coaching room first ---------------- #}

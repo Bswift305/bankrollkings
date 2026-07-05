@@ -29221,7 +29221,7 @@ def _franchise_view(save):
         'accent': fk.team_accent(team['full']),
         'power': fk.power_rating(team),
         'cap_used': fk.cap_used(team),
-        'cap_total': fk.CAP_TOTAL,
+        'cap_total': fk.cap_total(save),
         'extend_players': sorted([dict(p, market=fk._market_aav(p)) for p in team['roster']],
                                  key=lambda p: -p['overall'])[:16],
         'holdouts': save.get('holdouts') or [],
@@ -29522,7 +29522,7 @@ def franchise_offseason():
                                                 key=lambda p: -p['overall'])[:30]],
                    last_nego=save.get('last_nego'),
                    nego_fa=next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None,
-                   cap_used=fk.cap_used(team), cap_total=fk.CAP_TOTAL,
+                   cap_used=fk.cap_used(team), cap_total=fk.cap_total(save),
                    fa_day=int(save['offseason'].get('fa_day', 1) or 1), fa_days_max=fk.FA_DAYS,
                    fa_log=save['offseason'].get('fa_log', []),
                    fa_msg=request.args.get('fa_msg', ''), fa_ok=request.args.get('fa_ok', ''))
@@ -29597,7 +29597,7 @@ def franchise_offseason():
         ctx['role_friction'] = fk.role_friction_report(save)
         ctx['os_power'] = fk.power_rating(t)
         ctx['os_cap_used'] = round(fk.cap_used(t))
-        ctx['os_cap_total'] = round(fk.CAP_TOTAL)
+        ctx['os_cap_total'] = round(fk.cap_total(save))
         ctx['os_roster'] = [dict(_league_avatar(p), sl=fk.stat_line(p),
                                  fit=fk.tactical_fit(save, p)['label'],
                                  fit_pct=fk.tactical_fit(save, p)['pct'])
@@ -29647,6 +29647,16 @@ def franchise_offseason_fa():
     if save and fo.offseason_active(save):
         fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
     return redirect(url_for('franchise_offseason', fa=pid))
+
+
+@app.route('/franchise/offseason/vote', methods=['POST'])
+def franchise_offseason_vote():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        choice = str(request.form.get('choice', 'abstain')).strip()
+        ok, msg = fk.resolve_league_vote(save, choice if choice in ('for', 'against') else 'abstain')
+        return redirect(url_for('franchise_offseason', vt_ok='1' if ok else '0', vt_msg=msg))
+    return redirect(url_for('franchise_offseason'))
 
 
 @app.route('/franchise/offseason/fa-day', methods=['POST'])

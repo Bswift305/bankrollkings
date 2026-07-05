@@ -187,6 +187,7 @@ def start_offseason(save, choose_team=False):
             {"id": tid, "full": tmap[tid]["full"], "conf": tmap[tid]["conference"],
              "div": tmap[tid]["division"], "w": 0, "l": 0} for tid in order]
     _apply_scenario_shift(save)
+    fk.propose_league_vote(save)                # the owners' table convenes
     save["offseason_mode"] = True               # this save uses the staged offseason loop
     save["offseason"] = {"stage": "select" if choose_team else "recap",
                          "year": save.get("season", 1), "log": []}
@@ -214,6 +215,8 @@ def advance_stage(save):
     if cur not in STAGE_KEYS:
         return save
     i = STAGE_KEYS.index(cur)
+    if cur == "recap" and save.get("league_vote"):
+        fk.resolve_league_vote(save, "abstain")   # skipped the meeting = abstained
     if cur == "cuts":
         _finalize_camp(save)                 # AI cuts to 53 + safety-trim the user
     if i + 1 < len(STAGE_KEYS):

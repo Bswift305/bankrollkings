@@ -23,6 +23,21 @@ LEAGUE_SIZE = 32
 REG_GAMES = 17
 CONF_PLAYOFF_SEEDS = 7   # per conference -> 14-team playoff (NFL-style)
 CAP_TOTAL = 350.0        # millions (sized for 53-man rosters; expensive teams run tight)
+
+
+def cap_total(save):
+    """The league salary cap — the owners can vote it upward over the years."""
+    try:
+        return float((save or {}).get("cap_total") or CAP_TOTAL)
+    except (TypeError, ValueError):
+        return CAP_TOTAL
+
+
+def playoff_seeds(save):
+    try:
+        return int((save or {}).get("playoff_seeds") or CONF_PLAYOFF_SEEDS)
+    except (TypeError, ValueError):
+        return CONF_PLAYOFF_SEEDS
 DRAFT_ROUNDS = 7
 DRAFT_CLASS = 240        # prospects (>= rounds * teams)
 ROSTER_CAP = 53          # final active roster (the 53-man); camp trims down to it
@@ -1188,7 +1203,7 @@ def alerts(save):
     if not save.get("staff", {}).get("cond_coach"):
         out.append({"icon": "🏋", "kind": "staff", "pri": 2, "text": "No conditioning coach — your young players are stalling.", "tab": "staff"})
 
-    room = round(CAP_TOTAL - cap_used(current_team(save)), 1)
+    room = round(cap_total(save) - cap_used(current_team(save)), 1)
     if room < 3:
         out.append({"icon": "💸", "kind": "cap", "pri": 2, "text": f"Cap nearly maxed — only ${room:.0f}M of room.", "tab": "front-office"})
 
@@ -1335,6 +1350,8 @@ def start_inseason(save):
         p.pop("rep_starter", None)
     for p in _starters(me):
         p["rep_starter"] = True   # live reps all season -> young starters grow faster
+    save.setdefault("season_flags", {})["young_starters"] = sum(
+        1 for p in _starters(me) if int(p.get("age", 30) or 30) <= 25)
     for t in save["teams"]:
         t["record"] = {"w": 0, "l": 0}
         for p in t["roster"]:
@@ -1486,7 +1503,7 @@ def _finalize_season(save):
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
     conf_champs, playoff_ids = [], set()
     for conf in CONFERENCES:
-        seeds = [t["id"] for t in standings if t["conference"] == conf][:CONF_PLAYOFF_SEEDS]
+        seeds = [t["id"] for t in standings if t["conference"] == conf][:playoff_seeds(save)]
         playoff_ids.update(seeds)
         conf_champs.append(_run_playoffs(rng, seeds, powers))
     champion = (conf_champs[0] if _sim_game(rng, powers[conf_champs[0]], powers[conf_champs[1]])
@@ -1495,6 +1512,7 @@ def _finalize_season(save):
     uid = save["current_team_id"]
     rec = dict(teams[uid]["record"])
     made_playoffs, won_title = uid in playoff_ids, champion == uid
+    _evaluate_owner_directive(save, rec, made_playoffs)
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
     outcome["season"] = save["season"]
     _apply_finance(save, rec, won_title)
@@ -1533,6 +1551,7 @@ def _finalize_season(save):
     save["last_outcome"] = outcome
     save["unemployed"] = outcome["status"] == "fired"
     _set_expectation(save)
+    _issue_owner_directive(save)
     owner_statement(save, outcome)
     owner_meeting(save, outcome)
     _log_season_milestones(save, outcome)          # thread the season into the career timeline
@@ -2220,6 +2239,168 @@ def run_coaching_carousel(save, rng):
                         "out": "", "in": staff[role]["name"], "why": why})
     save["coach_pool"] = pool[-24:]
     save["carousel_log"] = log[:24]
+
+
+# --------------------------------------------------------------------------- #
+# Owner DIRECTIVES — the mandate beyond wins. Every archetype wants something
+# different from your year, it's issued at the offseason, and the verdict
+# lands on your trust at season's end.
+# --------------------------------------------------------------------------- #
+OWNER_DIRECTIVES = {
+    "Cheap": [
+        {"key": "profit", "target": 20,
+         "text": "Run this club in the black — I want a ${target}M revenue season. Wins are optional; margins aren't."},
+        {"key": "payroll", "target": 330,
+         "text": "Keep the cap sheet under ${target}M. I'm not paying luxury prices to lose football games."},
+    ],
+    "Impatient": [
+        {"key": "playoffs", "text": "Playoffs. This season. I don't want to hear about windows."},
+        {"key": "wins", "text": "Ten wins minimum. Count them out loud if it helps."},
+    ],
+    "Meddling": [
+        {"key": "draft_pos", "text": "I watch the games too — draft a {pos} early. Round one or two."},
+        {"key": "splash", "text": "Sign somebody this town has heard of. A real free agent — $10M a year or better."},
+    ],
+    "Legacy": [
+        {"key": "keep_star", "text": "{star} IS this franchise. He retires here — no trades, no cuts. Understood?"},
+        {"key": "develop", "text": "Build through the draft like this club always has — I want the young ones starting."},
+    ],
+    "Billionaire": [
+        {"key": "splash", "text": "Make a splash. Premium free agent, $10M-plus — I didn't buy this team to shop clearance."},
+        {"key": "wins", "text": "I expect a double-digit win season. My other holdings deliver; so will this one."},
+    ],
+    "Hands-Off": [],
+}
+
+
+def _issue_owner_directive(save):
+    team = current_team(save)
+    pool = OWNER_DIRECTIVES.get(team["owner"]["type"], [])
+    rng = _rng(save["seed"] + save.get("season", 1) * 313)
+    if not pool or rng.random() < 0.25:
+        save.pop("owner_directive", None)
+        return
+    d = dict(rng.choice(pool))
+    if d["key"] == "draft_pos":
+        needs = team_needs(save)
+        d["pos"] = needs[0]["pos"] if needs else "QB"
+        d["text"] = d["text"].format(pos=d["pos"])
+    elif d["key"] == "keep_star":
+        star = max(team["roster"], key=lambda p: p["overall"])
+        d["pid"], d["star"] = star["id"], star["name"]
+        d["text"] = d["text"].format(star=star["name"])
+    elif "target" in d:
+        d["text"] = d["text"].format(target=d["target"])
+    d["season"] = save.get("season", 1)
+    save["owner_directive"] = d
+    save["season_flags"] = {}
+    _tl(save, d["season"], "owner", "\U0001F5D2",
+        "The owner's directive for the year", d["text"])
+
+
+def _evaluate_owner_directive(save, rec, made_playoffs):
+    d = save.pop("owner_directive", None)
+    if not d:
+        return
+    team = current_team(save)
+    flags = save.get("season_flags") or {}
+    k = d.get("key")
+    ok = False
+    if k == "profit":
+        ok = _business(save).get("last_revenue", 0) >= d.get("target", 20)
+    elif k == "payroll":
+        ok = cap_used(team) <= d.get("target", 330)
+    elif k == "playoffs":
+        ok = made_playoffs
+    elif k == "wins":
+        ok = rec.get("w", 0) >= 10
+    elif k == "splash":
+        ok = bool(flags.get("splash_fa"))
+    elif k == "draft_pos":
+        ok = any(x.get("pos") == d.get("pos") and int(x.get("round", 9) or 9) <= 2
+                 for x in (save.get("last_draft_log") or []))
+    elif k == "keep_star":
+        ok = any(p["id"] == d.get("pid") for p in team["roster"])
+    elif k == "develop":
+        ok = int(flags.get("young_starters", 0) or 0) >= 3
+    delta = 6 if ok else -8
+    save["gm"]["owner_trust"] = max(0, min(100, save["gm"]["owner_trust"] + delta))
+    _tl(save, save.get("season", 1), "owner", "\u2705" if ok else "\u274C",
+        ("Directive delivered — the owner noticed (+6 trust)" if ok
+         else "Directive failed — the owner noticed (\u22128 trust)"), d["text"])
+    save["season_flags"] = {}
+
+
+# --------------------------------------------------------------------------- #
+# LEAGUE POLITICS — once a year a proposal comes to the owners' table. Every
+# archetype leans a way, your vote counts, and a respected GM sways the room.
+# --------------------------------------------------------------------------- #
+LEAGUE_PROPOSALS = [
+    {"key": "cap_up", "title": "Raise the salary cap by $15M",
+     "blurb": "More money for everyone's stars — and everyone's mistakes.",
+     "yes": {"Billionaire": .8, "Meddling": .6, "Impatient": .6, "Hands-Off": .5, "Legacy": .45, "Cheap": .15}},
+    {"key": "seeds_up", "title": "Expand the playoffs by one seed per conference",
+     "blurb": "Two more markets alive in December. Purists hate it; accountants love it.",
+     "yes": {"Billionaire": .7, "Cheap": .7, "Meddling": .55, "Hands-Off": .5, "Impatient": .5, "Legacy": .3}},
+    {"key": "rev_share", "title": "Boost small-market revenue sharing",
+     "blurb": "The little markets want a bigger slice of the big markets' pie.",
+     "yes": {"Legacy": .7, "Hands-Off": .6, "Cheap": .55, "Impatient": .5, "Meddling": .4, "Billionaire": .25}},
+]
+
+
+def propose_league_vote(save):
+    """Bring one proposal to the annual owners' meeting (some years are quiet)."""
+    if save.get("league_vote"):
+        return
+    rng = _rng(save["seed"] + save.get("season", 1) * 419)
+    eligible = [p for p in LEAGUE_PROPOSALS
+                if not (p["key"] == "seeds_up" and playoff_seeds(save) >= 8)
+                and not (p["key"] == "rev_share" and save.get("rev_share"))]
+    if not eligible or rng.random() < 0.30:
+        return
+    save["league_vote"] = dict(rng.choice(eligible), season=save.get("season", 1))
+
+
+def resolve_league_vote(save, user_vote="abstain"):
+    """Tally the room: 31 owners lean by archetype, you vote, and a respected
+    GM swings a fence-sitter or two. 17 yeses carries it."""
+    v = save.pop("league_vote", None)
+    if not v:
+        return False, "There is no proposal on the table."
+    rng = _rng(save["seed"] + int(v.get("season", 1)) * 421)
+    yes = 0
+    for t in save["teams"]:
+        if t["id"] == save["current_team_id"]:
+            continue
+        if rng.random() < v.get("yes", {}).get(t["owner"]["type"], 0.5):
+            yes += 1
+    rep = int(save["gm"].get("reputation", 50) or 50)
+    sway = 2 if rep >= 70 else 1 if rep >= 55 else 0
+    if user_vote == "for":
+        yes += 1 + sway
+    elif user_vote == "against":
+        yes = max(0, yes - sway)
+    passed = yes >= 17
+    note = ""
+    if passed:
+        if v["key"] == "cap_up":
+            save["cap_total"] = round(cap_total(save) + 15.0, 1)
+            note = f"The cap rises to ${save['cap_total']:.0f}M next season."
+        elif v["key"] == "seeds_up":
+            save["playoff_seeds"] = min(8, playoff_seeds(save) + 1)
+            note = f"{save['playoff_seeds']} clubs per conference make the playoffs now."
+        elif v["key"] == "rev_share":
+            save["rev_share"] = True
+            note = "Small markets get a bigger slice of league revenue."
+    save.setdefault("vote_history", []).insert(0, {
+        "season": v.get("season", 1), "title": v["title"], "yes": yes,
+        "passed": passed, "your_vote": user_vote})
+    save["vote_history"] = save["vote_history"][:20]
+    _tl(save, v.get("season", 1), "owner", "\U0001F5F3",
+        f"Owners' vote: {v['title']} — {'PASSES' if passed else 'FAILS'} {yes}-{31 - yes + 1}",
+        (note or "The proposal dies on the table.") + f" You voted {user_vote}.")
+    write_save(save)
+    return True, f"The vote {'passes' if passed else 'fails'}, {yes} for. {note}".strip()
 
 
 def _team_schemes(save):
@@ -3615,7 +3796,7 @@ def sign_free_agent(save, player_id):
     fa = next((p for p in save["free_agents"] if p["id"] == player_id), None)
     if not fa:
         return False, "That player is no longer available."
-    if cap_used(team) + fa["contract"]["aav"] > CAP_TOTAL:
+    if cap_used(team) + fa["contract"]["aav"] > cap_total(save):
         return False, "Not enough cap space for that contract."
     team["roster"].append(fa)
     save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
@@ -3726,7 +3907,7 @@ def negotiate(save, player_id, years, aav):
     res = {"ok": True, "id": fa["id"], "player": fa["name"], "pos": fa["pos"], "ovr": fa["overall"],
            "agent": fa["agent"], "demand": eff, "offer": {"years": years, "aav": aav},
            "context": context}
-    if cap_used(team) + aav > CAP_TOTAL:
+    if cap_used(team) + aav > cap_total(save):
         res.update(status="rejected", msg=f"That ${aav}M deal puts you over the cap.")
     elif aav >= accept_at:
         fa["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.5, 1)}
@@ -3735,6 +3916,8 @@ def negotiate(save, player_id, years, aav):
         team["roster"].append(fa)
         save["free_agents"] = [p for p in save["free_agents"] if p["id"] != player_id]
         save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= demand_aav else 1)
+        if aav >= 10:
+            save.setdefault("season_flags", {})["splash_fa"] = True
         _owner_sign_react(save, fa["name"], fa["pos"], fa["overall"], aav)
         res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
     elif aav >= eff * 0.90:
@@ -3822,7 +4005,7 @@ def team_job_offer(save, t):
     needs = [p for p, _ in ranked[-2:][::-1]]
     stars = [{"pos": p["pos"], "name": p["name"], "ovr": p["overall"], "id": p["id"]}
              for p in sorted(t["roster"], key=lambda x: -x["overall"])[:3]]
-    cap_room = round(CAP_TOTAL - cap_used(t) + sc.get("cap_bonus", 0))
+    cap_room = round(cap_total(save) - cap_used(t) + sc.get("cap_bonus", 0))
     pick = sc.get("draft_slot", n // 2)
     comp = sc.get("comp_picks", 0)
     mandate = _TIER_MANDATE[tier]
@@ -4008,7 +4191,7 @@ def owner_meeting(save, outcome):
     exp = int(outcome.get("expectation", save.get("expectation", {}).get("wins", 0)) or 0)
     margin = wins - exp
     team_power = power_rating(team)
-    cap_room = round(CAP_TOTAL - cap_used(team), 1)
+    cap_room = round(cap_total(save) - cap_used(team), 1)
     weak_pos = min(ROSTER, key=lambda pos: max([p["overall"] for p in team["roster"] if p["pos"] == pos] or [0]))
 
     if outcome.get("status") == "fired":
@@ -4105,7 +4288,7 @@ def extend_player(save, player_id, years, aav):
     res = {"ok": True, "id": p["id"], "player": p["name"], "pos": p["pos"], "ovr": p["overall"],
            "agent": p["agent"], "demand": ask, "offer": {"years": years, "aav": aav},
            "context": context}
-    room = CAP_TOTAL - cap_used(team) + p["contract"].get("aav", 0)   # his old deal frees up
+    room = cap_total(save) - cap_used(team) + p["contract"].get("aav", 0)   # his old deal frees up
     if aav > room:
         res.update(status="rejected", msg=f"That ${aav}M deal won't fit under the cap.")
     elif aav >= ask:
@@ -4284,7 +4467,7 @@ def analytics(save):
     best = sorted([r for r in rated if r["ovr"] >= 68], key=lambda r: -r["roi"])[:6]
     overpays = sorted([r for r in rated if r["aav"] >= 3], key=lambda r: r["ratio"])[:6]
     return {"power": round(my, 1), "league_avg": round(avg, 1), "proj_wins": proj_wins,
-            "playoff_odds": playoff_odds, "cap_used": cap, "cap_total": CAP_TOTAL,
+            "playoff_odds": playoff_odds, "cap_used": cap, "cap_total": cap_total(save),
             "starter_value": starter_value, "cap_eff": round(starter_value / max(1.0, cap), 2),
             "best": best, "overpays": overpays}
 
@@ -4337,6 +4520,8 @@ def projected_revenue(save):
     b = _business(save)
     att = attendance(save)
     mm = MARKET_MULT.get(current_team(save)["market"], 1.0)
+    if save.get("rev_share"):
+        mm = max(mm, 0.97)   # the league props up small markets
     _, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
     # seats actually filled x price-per-seat x market (so winning -> fuller house -> more money)
     return round((16 + b["stadium"] * 5) * mm * (att["fill"] / 100.0 + 0.22) * pm, 1)
@@ -4578,7 +4763,7 @@ def consultant_advice(save):
                      "detail": f"${o['contract']['aav']:.0f}M for a {o['overall']} OVR. Shop him or move on to free up cap.",
                      "u": 2})
 
-    room = round(CAP_TOTAL - cap_used(team), 1)
+    room = round(cap_total(save) - cap_used(team), 1)
     if room > 40:
         tips.append({"icon": "💰", "title": "You're sitting on cap space",
                      "detail": f"~${room:.0f}M free. Aggressively pursue a free agent or extend your young core now.",
@@ -5407,7 +5592,7 @@ def offseason_advice(save, stage):
     team = current_team(save)
     needs = team_needs(save)
     weak = [n for n in needs if n["need"]][:3]
-    room = round(CAP_TOTAL - cap_used(team))
+    room = round(cap_total(save) - cap_used(team))
     tips = []
     if stage == "workouts" and weak:
         ws = ", ".join(f"{n['pos']} {n['startavg']}" for n in weak)
@@ -5684,7 +5869,7 @@ def propose_trade(save, give_id, get_id):
     if not accepts:
         result["accepted"] = False
         result["msg"] = f"{target['full']} said no - they value {get['name']} more than your offer."
-    elif cap_used(user) - give["contract"]["aav"] + get["contract"]["aav"] > CAP_TOTAL:
+    elif cap_used(user) - give["contract"]["aav"] + get["contract"]["aav"] > cap_total(save):
         result["accepted"] = False
         result["msg"] = f"{target['full']} would do it, but {get['name']}'s contract puts you over the cap."
     else:
@@ -5706,7 +5891,7 @@ if __name__ == "__main__":
     print(f"League: {len(s['teams'])} teams, {len(CONFERENCES)} conferences x {len(DIVISIONS)} divisions")
     t = current_team(s)
     print(f"Team: {t['full']} ({t['conference']} {t['division']})  Power {power_rating(t)}  "
-          f"Roster {len(t['roster'])}  Cap {cap_used(t)}/{CAP_TOTAL}")
+          f"Roster {len(t['roster'])}  Cap {cap_used(t)}/{cap_total(s)}")
     print("Expectation:", s["expectation"]["text"])
     for yr in range(5):
         s, out = sim_season(s)

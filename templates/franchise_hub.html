@@ -192,6 +192,7 @@
         </div>
         <div class="fk-ownerhead">{{ owner.icon }} {{ owner.type }} owner · <span>{{ owner.mood }}</span></div>
         {% if owner_message %}<em>“{{ owner_message.text }}”</em>{% endif %}
+        {% if save.owner_directive %}<em style="color:#9f96ff">🗒 This year's directive: “{{ save.owner_directive.text }}”</em>{% endif %}
       </div>
       {% endif %}
     </div>
