@@ -1326,6 +1326,21 @@ def _finalize_season(save):
             g.pop("_score", None)
     save["game_log"] = gl
 
+    # League Almanac ledger — the season goes into the book forever.
+    runner_up = conf_champs[1] if champion == conf_champs[0] else conf_champs[0]
+    save.setdefault("league_history", []).insert(0, {
+        "season": save["season"],
+        "champion": teams[champion]["full"],
+        "runner_up": teams[runner_up]["full"],
+        "mvp": save.get("season_mvp"),
+        "user_team": teams[uid]["full"],
+        "user_w": rec["w"], "user_l": rec["l"],
+        "user_result": ("Champions 🏆" if won_title else
+                        "Lost the title game" if uid == runner_up else
+                        "Made the playoffs" if made_playoffs else "Missed the playoffs"),
+    })
+    save["league_history"] = save["league_history"][:60]
+
     _advance_year(save)
     save["season"] += 1
     save["schedule"] = make_schedule(save["seed"] + save["season"], [t["id"] for t in save["teams"]])
@@ -4436,6 +4451,35 @@ def all_pro_team(teams):
 _RECORD_CATS = [("Passing Yards", "pass_yd"), ("Passing TDs", "pass_td"), ("Rushing Yards", "rush_yd"),
                 ("Rushing TDs", "rush_td"), ("Receiving Yards", "rec_yd"), ("Receptions", "rec"),
                 ("Sacks", "sack"), ("Interceptions", "def_int")]
+
+
+def almanac(save):
+    """The league in one book: the season-by-season ledger, award winners,
+    the records book, all-time career leaders, and the Hall of Fame."""
+    cats = [("pass_yd", "Passing yards"), ("pass_td", "Passing TD"),
+            ("rush_yd", "Rushing yards"), ("rush_td", "Rushing TD"),
+            ("rec_yd", "Receiving yards"), ("rec_td", "Receiving TD"),
+            ("sack", "Sacks"), ("def_int", "Interceptions")]
+    totals = []
+    for t in save.get("teams", []):
+        for p in t["roster"]:
+            cs = _career_sums(p)
+            if cs:
+                totals.append((p, t, cs))
+    leaders = []
+    for key, label in cats:
+        rows = sorted(((cs.get(key, 0), p, t) for p, t, cs in totals if cs.get(key)),
+                      reverse=True, key=lambda x: x[0])[:6]
+        if rows:
+            leaders.append({"label": label, "rows": [
+                {"name": p["name"], "pos": p["pos"], "team": t.get("name", t["full"]),
+                 "value": (round(v, 1) if key == "sack" else int(v))}
+                for v, p, t in rows]})
+    return {"history": save.get("league_history", []),
+            "records": sorted((save.get("records") or {}).values(), key=lambda r: r["label"]),
+            "career_records": sorted((save.get("career_records") or {}).values(), key=lambda r: r["label"]),
+            "hall_of_fame": save.get("hall_of_fame", []),
+            "leaders": leaders}
 
 
 def update_records(store, teams, season):

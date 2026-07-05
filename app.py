@@ -29117,7 +29117,7 @@ def delete_fantasy_lineup():
 # FRANCHISE KINGS - GM career-mode simulator (v0.1). Engine: franchise_kings.py
 # Free hook: login-required (own save), no paid plan needed.
 # =============================================================================
-FRANCHISE_TABS = ('dashboard', 'command', 'gridiron', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'league', 'draft')
+FRANCHISE_TABS = ('dashboard', 'command', 'gridiron', 'roster', 'front-office', 'trades', 'staff', 'business', 'analytics', 'career', 'almanac', 'league', 'draft')
 
 
 def _command_center(save):
@@ -29307,6 +29307,8 @@ def franchise_hub():
     view = _franchise_view(save)
     if tab == 'trades':
         view.update(_trade_view(save, str(request.args.get('team', '')).strip()))
+    elif tab == 'almanac':
+        view['almanac'] = fk.almanac(save)
     elif tab == 'front-office':
         fa_id = str(request.args.get('fa', '')).strip()
         view['nego_fa'] = next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None

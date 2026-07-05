@@ -29,7 +29,7 @@
     <a href="{{ url_for('franchise_hub', tab='dashboard') }}" class="fk-tab {% if tab == 'dashboard' %}active{% endif %}">Dashboard</a>
     <a href="{{ url_for('franchise_hub', tab='command') }}" class="fk-tab {% if tab == 'command' %}active{% endif %}">{{ icon('flag', 13) }}Command Center</a>
     <a href="{{ url_for('franchise_hub', tab='gridiron') }}" class="fk-tab fk-tab-gi {% if tab == 'gridiron' %}active{% endif %}">{{ icon('tv', 13) }}GridIron</a>
-    {% for t in ['roster','front-office','trades','staff','business','analytics','career','league'] %}
+    {% for t in ['roster','front-office','trades','staff','business','analytics','career','almanac','league'] %}
     <a href="{{ url_for('franchise_hub', tab=t) }}" class="fk-tab {% if tab == t %}active{% endif %}">{{ t|replace('-',' ')|title }}</a>
     {% endfor %}
     {% if draft_pending %}<a href="{{ url_for('franchise_hub', tab='draft') }}" class="fk-tab fk-tab-draft {% if tab == 'draft' %}active{% endif %}">● Draft</a>{% endif %}
@@ -1073,6 +1073,87 @@
       {% endif %}
     </div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ===================== ALMANAC ===================== #}
+  {% if tab == 'almanac' %}
+  <div class="fk-card">
+    <div class="fk-card-h">{{ icon('book') }}League Almanac — the book of record</div>
+    <div class="fk-card-h" style="font-size:13px; margin-top:6px;">Season Ledger</div>
+    {% if almanac.history %}
+    <div class="table-shell"><table class="fk-table">
+      <thead><tr><th>Season</th><th>Champion</th><th>Runner-up</th><th>League MVP</th><th>Your season</th></tr></thead>
+      <tbody>
+      {% for h in almanac.history %}
+      <tr>
+        <td><b>S{{ h.season }}</b></td>
+        <td style="color:#f5c860"><b>🏆 {{ h.champion }}</b></td>
+        <td>{{ h.runner_up }}</td>
+        <td>{% if h.mvp %}{{ h.mvp.pos }} <b>{{ h.mvp.name }}</b> <small class="fk-muted">{{ h.mvp.team }} · {{ h.mvp.line }}</small>{% else %}—{% endif %}</td>
+        <td>{{ h.user_team }} <b>{{ h.user_w }}–{{ h.user_l }}</b> <small class="fk-muted">· {{ h.user_result }}</small></td>
+      </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}
+    <p class="fk-muted">The ledger starts writing itself when your current season ends — every champion, runner-up, and MVP goes in the book from then on, forever.</p>
+    {% endif %}
+  </div>
+
+  <div class="grid-2 mb-24" style="gap:14px; margin-top:12px;">
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">Single-Season Records</div>
+      {% if almanac.records %}
+      <table class="fk-table"><thead><tr><th>Record</th><th>Holder</th><th>Mark</th><th></th></tr></thead><tbody>
+        {% for r in almanac.records %}
+        <tr><td>{{ r.label }}</td><td><b>{{ r.holder }}</b> <small class="fk-muted">{{ r.pos }} · {{ r.team }}</small></td>
+          <td style="color:#9fe9ff"><b>{{ r.value }}</b></td><td class="fk-muted">S{{ r.season }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}<p class="fk-muted">No records logged yet.</p>{% endif %}
+    </div>
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">Career Records</div>
+      {% if almanac.career_records %}
+      <table class="fk-table"><thead><tr><th>Record</th><th>Holder</th><th>Mark</th></tr></thead><tbody>
+        {% for r in almanac.career_records %}
+        <tr><td>{{ r.label }}</td><td><b>{{ r.holder }}</b> <small class="fk-muted">{{ r.pos }} · {{ r.team }}</small></td>
+          <td style="color:#9fe9ff"><b>{{ r.value }}</b></td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}<p class="fk-muted">No career records logged yet.</p>{% endif %}
+    </div>
+  </div>
+
+  {% if almanac.leaders %}
+  <div class="fk-card" style="margin-top:12px;">
+    <div class="fk-card-h">All-Time Leaders <small class="fk-muted" style="font-weight:400">— active players' career totals; the retired greats live in the Hall below</small></div>
+    <div class="grid-2" style="gap:14px;">
+      {% for cat in almanac.leaders %}
+      <div>
+        <div class="fk-card-h" style="font-size:12.5px; margin-bottom:4px;">{{ cat.label }}</div>
+        <table class="fk-table"><tbody>
+        {% for row in cat.rows %}
+        <tr><td class="fk-muted" style="width:18px">{{ loop.index }}</td><td><b>{{ row.name }}</b> <small class="fk-muted">{{ row.pos }} · {{ row.team }}</small></td><td style="color:#9fe9ff; text-align:right"><b>{{ '{:,}'.format(row.value) if row.value is number and row.value == row.value|int else row.value }}</b></td></tr>
+        {% endfor %}
+        </tbody></table>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="fk-card" style="margin-top:12px;">
+    <div class="fk-card-h">{{ icon('star') }}Hall of Fame <span style="float:right;font-size:12px;color:#f5c860">{{ almanac.hall_of_fame|length }} legend{{ 's' if almanac.hall_of_fame|length != 1 }}</span></div>
+    {% if almanac.hall_of_fame %}
+    <table class="fk-table"><thead><tr><th>Legend</th><th>Pos</th><th>Team</th><th>Peak</th><th>Seasons</th><th>All-Pro</th><th>Career</th><th>Retired</th></tr></thead><tbody>
+      {% for h in almanac.hall_of_fame %}
+      <tr><td><b style="color:#f5c860">{{ h.name }}</b></td><td>{{ h.pos }}</td><td>{{ h.team }}</td>
+        <td>{{ h.peak }}</td><td>{{ h.seasons }}</td><td>{{ h.all_pro }}</td>
+        <td class="fk-muted">{{ h.summary }}</td><td class="fk-muted">S{{ h.retired }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="fk-muted">No inductions yet — the first busts get cast when your aging greats hang them up.</p>{% endif %}
   </div>
   {% endif %}
 

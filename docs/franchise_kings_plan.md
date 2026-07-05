@@ -180,3 +180,32 @@ v0.1 ships Power Rating; the rest layer in with their systems.
 **Status:** plan only — no code yet. Next step on approval: scaffold the v0.1
 loop (create GM → sim season → owner outcome → career), 16-team fictional football
 league, JSON save, reusing the Fantasy hub patterns.
+
+---
+
+## FOF9-inspired roadmap (user request 2026-07-04, from the Reddit/FOF9 study)
+
+Much of FOF9's list already exists in Franchise Kings (cap/contracts/extensions/
+holdouts, agent personalities + counters, scouting noise + hidden ceilings,
+combine + pro days, pick trading + trading block + deadline, practice squad,
+chemistry/mentors/personalities, aging curves, stadium/ticket/attendance economy,
+owner archetypes + firings, GM career + poaching, records book, All-League team,
+HOF, box scores, multiplayer leagues). SHIPPED from this pass: **League Almanac
+tab** (season ledger w/ champion/runner-up/MVP + user result, records book,
+all-time leaders, Hall of Fame in one dense book).
+
+Remaining gaps, in rough priority order:
+1. **Depth charts & situational packages** (nickel/dime/red-zone/3rd-down starters,
+   role weighting in the sim) — biggest football-feel gap.
+2. **Contract restructures** (convert salary to signing bonus, dead-money
+   acceleration on cuts) — biggest cap-feel gap.
+3. **Day-by-day free agency** (agents lower asks as FA days pass; loyalty
+   re-signs like the Seahawks-safety story).
+4. **Weather** (city climates, game-day weather affecting sim + box scores).
+5. **Concessions/parking pricing + relocation & public stadium votes.**
+6. **Play calling / interactive game day** (drive-by-drive choices) — the
+   biggest lift; consider a "key moments" mode (4th downs, 2-min drill choices).
+7. **Franchise evaluation report card** (team/financial/roster/franchise-value
+   four-grade year-end review).
+8. **Interface density pass** — FOF-style compact tables as a user-selectable
+   "Data mode" across franchise screens.
