@@ -29942,6 +29942,7 @@ def _player_ctx(p, team_full, is_fa=False, mine=False):
             'injuries': p.get('inj_history', 0), 'inj_weeks': p.get('inj_weeks', 0),
             'incidents': p.get('incidents', []), 'susp_reason': p.get('susp_reason'),
             'portrait_url': portrait_assets.portrait_url(p.get('portrait_id')),
+            'attributes': fk.attribute_groups(p),
             'trait_blurb': fk.PERSONALITIES.get(p.get('personality'), {}).get('blurb', '')}
 
 
@@ -29964,6 +29965,7 @@ def _prospect_profile(draft, pid):
                     'r1': pr.get('grade', 0), 'r1l': 'GRD', 'r2': pr.get('pot_grade', 0), 'r2l': 'POT',
                     'stat_rows': [], 'value': 0, 'career': None, 'injuries': 0, 'inj_weeks': 0, 'incidents': [],
                     'portrait_url': portrait_assets.portrait_url(pr.get('portrait_id')),
+                    'attributes': fk.attribute_groups(pr),
                     'scout': _scout_read(dict(pr, overall=pr.get('grade', 0), potential=pr.get('pot_grade', 0))),
                     'trait_blurb': fk.PERSONALITIES.get(pr.get('personality'), {}).get('blurb', '')}
     return None

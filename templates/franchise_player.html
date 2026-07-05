@@ -45,6 +45,20 @@
       </div>
     </div>
 
+    {% if attributes %}
+    <div class="fp-card fp-attrcard">
+      <div class="fp-h">📋 Scouting Attributes <small class="fp-attrtop">Best: {{ attributes.top|join(' · ') }}</small></div>
+      {% for cat, items in attributes.groups %}
+      <div class="fp-attrcat">{{ cat }}</div>
+      {% for a in items %}
+      <div class="fp-attrrow"><span class="fp-attrname">{{ a.attr }}</span>
+        <span class="fp-attrbar"><span style="width:{{ a.value }}%;{% if a.value >= 85 %}background:#7dffb0{% elif a.value >= 70 %}background:#9fe9ff{% elif a.value >= 55 %}background:#ffd27d{% else %}background:#ff9a9a{% endif %}"></span></span>
+        <b class="fp-attrval">{{ a.value }}</b></div>
+      {% endfor %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if human_fit is defined and human_fit %}
     <div class="fp-card fp-human">
       <div class="fp-h">Human development fit</div>
@@ -198,6 +212,13 @@
   .fp-blurb { color:#9fe9ff; font-size:15px; font-style:italic; margin:0 0 14px; padding-left:6px; }
   .fp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
   .fp-card { background:linear-gradient(135deg,rgba(11,24,34,.96),rgba(6,12,18,.98)); border:1px solid rgba(74,212,240,.22); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .fp-attrtop { float:right; font-weight:400; color:#8fa3b0; font-size:11px; }
+  .fp-attrcat { font-size:11px; font-weight:800; letter-spacing:.1em; color:#9fe9ff; margin:9px 0 4px; text-transform:uppercase; }
+  .fp-attrrow { display:flex; align-items:center; gap:8px; margin:3px 0; font-size:12.5px; }
+  .fp-attrname { flex:0 0 128px; color:#c2cfd8; }
+  .fp-attrbar { flex:1; height:7px; background:rgba(255,255,255,.08); border-radius:4px; overflow:hidden; }
+  .fp-attrbar > span { display:block; height:100%; border-radius:4px; }
+  .fp-attrval { flex:0 0 26px; text-align:right; color:#fff; font-family:var(--font-display); }
   .fp-h { font-family:var(--font-display); color:#fff; font-size:17px; margin-bottom:10px; }
   .fp-rows > div { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(145,168,184,.1); font-size:13px; }
   .fp-rows span { color:#8fa3b0; } .fp-rows b { color:#fff; font-weight:700; }

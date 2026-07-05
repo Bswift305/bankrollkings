@@ -7162,6 +7162,139 @@ def stat_line(p):
     return ""
 
 
+# --------------------------------------------------------------------------- #
+# DEEP PER-POSITION ATTRIBUTES — a full scouting breakdown for every player,
+# DERIVED from his overall + style + combine + age. It's a lens on the player
+# (the sim still runs on overall in v1), so it adds scouting depth without
+# rebalancing anything. Deterministic per player id.
+# --------------------------------------------------------------------------- #
+POSITION_ATTRIBUTES = {
+    "QB": [("Arm Strength", "Physical"), ("Deep Accuracy", "Skill"), ("Short Accuracy", "Skill"),
+           ("Throw on Run", "Skill"), ("Release", "Skill"), ("Awareness", "Mental"),
+           ("Poise", "Mental"), ("Mobility", "Physical"), ("Toughness", "Physical")],
+    "RB": [("Speed", "Physical"), ("Acceleration", "Physical"), ("Power", "Physical"),
+           ("Elusiveness", "Skill"), ("Vision", "Mental"), ("Hands", "Skill"),
+           ("Pass Protection", "Skill"), ("Ball Security", "Mental"), ("Durability", "Physical")],
+    "WR": [("Speed", "Physical"), ("Acceleration", "Physical"), ("Route Running", "Skill"),
+           ("Hands", "Skill"), ("Release", "Skill"), ("Contested Catch", "Skill"),
+           ("YAC", "Skill"), ("Deep Threat", "Skill"), ("Awareness", "Mental")],
+    "TE": [("Speed", "Physical"), ("Run Blocking", "Skill"), ("Route Running", "Skill"),
+           ("Hands", "Skill"), ("Contested Catch", "Skill"), ("Strength", "Physical"),
+           ("Awareness", "Mental")],
+    "OL": [("Run Block", "Skill"), ("Pass Block", "Skill"), ("Strength", "Physical"),
+           ("Anchor", "Skill"), ("Agility", "Physical"), ("Awareness", "Mental"),
+           ("Toughness", "Physical")],
+    "DL": [("Pass Rush", "Skill"), ("Run Defense", "Skill"), ("Strength", "Physical"),
+           ("Power Moves", "Skill"), ("Finesse Moves", "Skill"), ("Motor", "Mental"),
+           ("Awareness", "Mental")],
+    "LB": [("Tackle", "Skill"), ("Coverage", "Skill"), ("Pass Rush", "Skill"),
+           ("Speed", "Physical"), ("Play Recognition", "Mental"), ("Hit Power", "Physical"),
+           ("Pursuit", "Physical")],
+    "CB": [("Man Coverage", "Skill"), ("Zone Coverage", "Skill"), ("Speed", "Physical"),
+           ("Press", "Skill"), ("Ball Skills", "Mental"), ("Recovery", "Physical"),
+           ("Awareness", "Mental")],
+    "S": [("Coverage", "Skill"), ("Run Support", "Skill"), ("Speed", "Physical"),
+          ("Ball Skills", "Mental"), ("Hit Power", "Physical"), ("Range", "Physical"),
+          ("Awareness", "Mental")],
+    "K": [("Kick Power", "Physical"), ("Kick Accuracy", "Skill"), ("Clutch", "Mental")],
+    "P": [("Punt Power", "Physical"), ("Punt Accuracy", "Skill"), ("Hang Time", "Skill")],
+}
+
+# style -> per-attribute tilt. Keys not on a position are harmlessly ignored,
+# so shared style names (e.g. "Zone" for OL and CB) can co-exist in one entry.
+STYLE_TILTS = {
+    "Pocket Passer": {"Arm Strength": 6, "Deep Accuracy": 6, "Poise": 5, "Mobility": -9, "Throw on Run": -4},
+    "Dual Threat": {"Mobility": 10, "Throw on Run": 7, "Release": 3, "Poise": -4, "Deep Accuracy": -3},
+    "Game Manager": {"Short Accuracy": 7, "Awareness": 6, "Arm Strength": -5, "Deep Accuracy": -6},
+    "RPO Specialist": {"Mobility": 8, "Release": 6, "Short Accuracy": 5, "Deep Accuracy": -4},
+    "Power Back": {"Power": 10, "Durability": 5, "Elusiveness": -7, "Speed": -6, "Acceleration": -3},
+    "Scat Back": {"Speed": 9, "Acceleration": 8, "Elusiveness": 9, "Hands": 5, "Power": -9},
+    "Every-Down": {"Vision": 6, "Pass Protection": 6, "Hands": 3, "Durability": 3},
+    "Deep Threat": {"Speed": 10, "Acceleration": 6, "Deep Threat": 11, "Route Running": -5, "Contested Catch": -2},
+    "Possession": {"Hands": 9, "Contested Catch": 9, "Route Running": 6, "Speed": -5, "YAC": -2},
+    "Slot": {"Route Running": 9, "YAC": 9, "Release": 6, "Deep Threat": -6, "Awareness": 3},
+    "Move TE": {"Speed": 7, "Route Running": 8, "Hands": 6, "Run Blocking": -9, "Strength": -4},
+    "In-Line Blocker": {"Run Blocking": 9, "Strength": 7, "Route Running": -7, "Speed": -5},
+    "Power": {"Run Block": 9, "Strength": 8, "Anchor": 6, "Agility": -7, "Pass Block": -2},
+    "Zone": {"Agility": 8, "Pass Block": 6, "Awareness": 4, "Strength": -4,
+             "Zone Coverage": 9, "Man Coverage": -6, "Recovery": 3},
+    "Press Man": {"Man Coverage": 10, "Press": 10, "Recovery": 5, "Zone Coverage": -6},
+    "Pass Rusher": {"Pass Rush": 10, "Finesse Moves": 8, "Power Moves": 2, "Run Defense": -7},
+    "Run Stuffer": {"Run Defense": 9, "Strength": 8, "Power Moves": 7, "Pass Rush": -7},
+    "Coverage": {"Coverage": 9, "Speed": 6, "Play Recognition": 5, "Hit Power": -6, "Pass Rush": -3},
+    "Thumper": {"Tackle": 8, "Hit Power": 9, "Pass Rush": 5, "Coverage": -9, "Pursuit": -2},
+    "Box": {"Run Support": 10, "Hit Power": 8, "Coverage": -7, "Range": -5},
+    "Center Field": {"Coverage": 8, "Range": 10, "Ball Skills": 6, "Run Support": -7, "Hit Power": -4},
+    "Big Leg": {"Kick Power": 11, "Kick Accuracy": -5},
+    "Accurate": {"Kick Accuracy": 11, "Kick Power": -5, "Clutch": 4},
+}
+
+_ATTR_MENTAL = {"Awareness", "Poise", "Play Recognition", "Vision", "Ball Security",
+                "Ball Skills", "Motor", "Clutch"}
+_ATTR_SPEED = {"Speed", "Acceleration", "Mobility", "Range", "Recovery", "Elusiveness",
+               "Pursuit", "Agility"}
+
+
+def _combine_attr_deltas(pos, combine):
+    d = {}
+    if not combine:
+        return d
+    forty, bench, vert, cone = (combine.get("forty"), combine.get("bench"),
+                                combine.get("vert"), combine.get("cone"))
+    if forty:
+        fast = max(-8, min(8, round((_COMBINE_40.get(pos, 4.8) - forty) * 40)))
+        for a in ("Speed", "Acceleration", "Mobility", "Range", "Recovery", "Deep Threat", "Pursuit"):
+            d[a] = d.get(a, 0) + fast
+    if bench:
+        strong = max(-6, min(6, round((bench - _COMBINE_BENCH.get(pos, 18)) * 0.8)))
+        for a in ("Strength", "Power", "Run Block", "Power Moves", "Anchor", "Run Defense", "Hit Power"):
+            d[a] = d.get(a, 0) + strong
+    if vert:
+        hi = max(-5, min(6, round((vert - 33) * 0.7)))
+        for a in ("Contested Catch", "Ball Skills", "Deep Threat"):
+            d[a] = d.get(a, 0) + hi
+    if cone:
+        agile = max(-5, min(6, round((7.05 - cone) * 30)))
+        for a in ("Agility", "Elusiveness", "Route Running", "Man Coverage", "Press"):
+            d[a] = d.get(a, 0) + agile
+    return d
+
+
+def player_attributes(p):
+    """The full derived attribute set for one player (or prospect)."""
+    spec = POSITION_ATTRIBUTES.get(p.get("pos"))
+    if not spec:
+        return []
+    ovr = int(p.get("overall") or p.get("grade") or 60)
+    tilts = STYLE_TILTS.get(p.get("style"), {})
+    cdelta = _combine_attr_deltas(p.get("pos"), p.get("combine") or {})
+    age = int(p.get("age", 26) or 26)
+    seed = sum(ord(c) for c in str(p.get("id", "x")))
+    out = []
+    for attr, cat in spec:
+        d = tilts.get(attr, 0) + cdelta.get(attr, 0)
+        if attr in _ATTR_MENTAL:
+            d += max(-2, min(5, (age - 25) // 2))       # vets sharper mentally
+        if attr in _ATTR_SPEED:
+            d += max(-6, min(2, (25 - age) // 2))        # legs fade with age
+        noise = ((seed + sum(ord(c) for c in attr)) % 7) - 3
+        out.append({"attr": attr, "cat": cat, "value": max(28, min(99, ovr + d + noise))})
+    return out
+
+
+def attribute_groups(p):
+    """Grouped for the profile: Physical / Skill / Mental, plus his top traits."""
+    attrs = player_attributes(p)
+    if not attrs:
+        return None
+    groups = {}
+    for a in attrs:
+        groups.setdefault(a["cat"], []).append(a)
+    ordered = [(cat, groups[cat]) for cat in ("Physical", "Skill", "Mental") if groups.get(cat)]
+    top = [a["attr"] for a in sorted(attrs, key=lambda a: -a["value"])[:3]]
+    return {"groups": ordered, "top": top}
+
+
 def stat_table(p):
     """Labeled (stat, value) rows for a player's season - shaped by position."""
     s = p.get("stats") or {}
