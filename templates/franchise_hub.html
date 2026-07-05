@@ -996,17 +996,65 @@
     </div>
     <div class="fk-meter" style="margin:10px 0 14px"><span>Fans</span>
       <div class="fk-bar"><i style="width:{{ business.fan_happiness|round|int }}%"></i></div><b>{{ business.fan_happiness|round|int }}</b></div>
+    {% if city_economy %}
+    <div class="fk-card-h" style="font-size:13px; margin:12px 0 4px;">City Economy <span style="float:right;color:#9fe9ff">Score {{ city_economy.score }} · Rev x{{ '%.2f'|format(city_economy.revenue_multiplier) }}</span></div>
+    <div class="fk-bizgrid" style="margin-bottom:12px">
+      <div class="fk-bizstat"><span>Metro Pop</span><b>{{ '%.2f'|format(city_economy.population) }}M</b><small>{{ '%.2f'|format(city_economy.growth) }}% growth</small></div>
+      <div class="fk-bizstat"><span>Income</span><b>{{ city_economy.income_index }}</b><small>index</small></div>
+      <div class="fk-bizstat"><span>Corporate</span><b>{{ city_economy.corporate }}</b><small>sponsor base</small></div>
+      <div class="fk-bizstat"><span>Tourism</span><b>{{ city_economy.tourism }}</b><small>travel demand</small></div>
+      <div class="fk-bizstat"><span>Transit</span><b>{{ city_economy.transit }}</b><small>game access</small></div>
+      <div class="fk-bizstat"><span>Tax Climate</span><b>{{ city_economy.tax_climate }}</b><small>political room</small></div>
+    </div>
+    {% endif %}
+    {% if world and world.relocation %}
+    <div class="fk-card-h" style="font-size:13px; margin:12px 0 4px;">City Hall & Relocation <span style="float:right;color:#f5c860">Pressure {{ world.relocation.score }}/100</span></div>
+    <div class="fk-ownermsg">
+      <em>{{ world.relocation.note }} Public funding odds: {{ world.relocation.public_odds }}%. Potential support: ${{ '%.1f'|format(world.relocation.funding_amount) }}M.</em>
+      <form method="post" action="{{ url_for('franchise_public_funding') }}" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="fk-btn fk-btn-sm">Hold Public Funding Vote</button>
+      </form>
+    </div>
+    {% endif %}
 
     <div class="fk-staffrow">
       <div class="fk-staffrole"><strong>Stadium — Level {{ business.stadium }}/5</strong><small>Bigger stadium → more ticket revenue every season.</small></div>
       <form method="post" action="{{ url_for('franchise_upgrade') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="which" value="stadium">
         <button class="fk-btn fk-btn-sm" {% if business.stadium>=5 %}disabled{% endif %}>{% if business.stadium>=5 %}Max{% else %}Upgrade · ${{ '%.0f'|format(stadium_cost) }}M{% endif %}</button></form>
     </div>
+    {% for f in facilities %}
     <div class="fk-staffrow">
-      <div class="fk-staffrole"><strong>Training Facility — Level {{ business.facility }}/5</strong><small>Level 3+ speeds up young-player development.</small></div>
-      <form method="post" action="{{ url_for('franchise_upgrade') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="which" value="facility">
-        <button class="fk-btn fk-btn-sm" {% if business.facility>=5 %}disabled{% endif %}>{% if business.facility>=5 %}Max{% else %}Upgrade · ${{ '%.0f'|format(facility_cost) }}M{% endif %}</button></form>
+      <div class="fk-staffrole"><strong>{{ f.label }} — Level {{ f.level }}/5</strong><small>{{ f.effect }}</small></div>
+      <form method="post" action="{{ url_for('franchise_upgrade') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="which" value="facility"><input type="hidden" name="facility" value="{{ f.key }}">
+        <button class="fk-btn fk-btn-sm" {% if f.level>=5 %}disabled{% endif %}>{% if f.level>=5 %}Max{% else %}Upgrade · ${{ '%.0f'|format(f.cost) }}M{% endif %}</button></form>
     </div>
+    {% endfor %}
+    {% if sponsorships %}
+    <div class="fk-card-h" style="font-size:13px; margin:12px 0 4px;">Sponsorships <span style="float:right;color:#f5c860">${{ '%.1f'|format(sponsorships.annual) }}M / yr</span></div>
+    {% for s in sponsorships.rows %}
+    <div class="fk-staffrow">
+      {% if s.active %}
+      <div class="fk-staffrole"><strong>{{ s.label }} — {{ s.active.brand }}</strong><small>${{ '%.1f'|format(s.active.amount) }}M per year · {{ s.active.years }} yr left</small></div>
+      <button class="fk-btn fk-btn-sm" disabled>Signed</button>
+      {% else %}
+      <div class="fk-staffrole"><strong>{{ s.label }} — {{ s.offer.brand }}</strong><small>Offer: ${{ '%.1f'|format(s.offer.amount) }}M per year · {{ s.offer.years }} yr</small></div>
+      <form method="post" action="{{ url_for('franchise_sponsor') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="slot" value="{{ s.key }}">
+        <button class="fk-btn fk-btn-sm">Sign</button></form>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% if district %}
+    <div class="fk-card-h" style="font-size:13px; margin:12px 0 4px;">Stadium District <span style="float:right;color:#f5c860">${{ '%.1f'|format(district.annual) }}M / yr</span></div>
+    {% for d in district.rows %}
+    <div class="fk-staffrow">
+      <div class="fk-staffrole"><strong>{{ d.label }} — Level {{ d.level }}/3</strong><small>{{ d.effect }}</small></div>
+      <form method="post" action="{{ url_for('franchise_upgrade') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="which" value="district"><input type="hidden" name="district" value="{{ d.key }}">
+        <button class="fk-btn fk-btn-sm" {% if d.level>=3 %}disabled{% endif %}>{% if d.level>=3 %}Built{% else %}Upgrade · ${{ '%.0f'|format(d.cost) }}M{% endif %}</button></form>
+    </div>
+    {% endfor %}
+    {% endif %}
     <div class="fk-staffrow" style="border-bottom:none">
       <div class="fk-staffrole"><strong>Ticket pricing</strong><small>Higher prices = more revenue, but fans like it less.</small></div>
       <div class="fk-ticketbtns">
@@ -1215,6 +1263,18 @@
     </tbody></table>
     {% else %}<p class="fk-muted">No inductions yet — the first busts get cast when your aging greats hang them up.</p>{% endif %}
   </div>
+  <div class="fk-card" style="margin-top:12px;">
+    <div class="fk-card-h">{{ icon('owner') }}Executive Hall <span style="float:right;font-size:12px;color:#f5c860">{{ almanac.executive_hall|length }} architect{{ 's' if almanac.executive_hall|length != 1 }}</span></div>
+    {% if almanac.executive_hall %}
+    <table class="fk-table"><thead><tr><th>Executive</th><th>Tier</th><th>Score</th><th>Record</th><th>Titles</th><th>Playoffs</th><th>Legacy Case</th><th>Retired</th></tr></thead><tbody>
+      {% for h in almanac.executive_hall %}
+      <tr><td><b style="color:#f5c860">{{ h.name }}</b></td><td>{{ h.tier }}</td><td>{{ h.score }}</td>
+        <td>{{ h.record }}</td><td>{{ h.titles }}</td><td>{{ h.playoffs }}</td>
+        <td class="fk-muted">{{ h.case[:3]|join(' / ') }}</td><td class="fk-muted">S{{ h.retired }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="fk-muted">No executives have entered yet. Retire a legendary GM and this wing starts filling with builders, not just players.</p>{% endif %}
+  </div>
   {% endif %}
 
   {# ===================== CAREER ===================== #}
@@ -1237,6 +1297,26 @@
   {% endif %}
   <div class="fk-card">
     <div class="fk-card-h">{{ gm.name }} — career résumé · {{ gm.titles }} title(s) · Reputation {{ gm.reputation }}</div>
+    {% set retire_msg = request.args.get('retire_msg', '') %}
+    {% if retire_msg %}
+    <div class="fk-trade-result fk-trade-{{ 'yes' if request.args.get('retire_ok') == '1' else 'no' }}">{{ retire_msg }}</div>
+    {% endif %}
+    {% if gm_legacy %}
+    <div class="fk-bizgrid" style="margin:8px 0 12px">
+      <div class="fk-bizstat"><span>Legacy</span><b>{{ gm_legacy.legacy_tier }}</b></div>
+      <div class="fk-bizstat"><span>Score</span><b>{{ gm_legacy.score }}</b></div>
+      <div class="fk-bizstat"><span>Jobs</span><b>{{ gm_legacy.jobs }}</b></div>
+    </div>
+    <p class="fk-muted" style="margin:0 0 12px">{{ gm_legacy.case[:4]|join(' / ') }}</p>
+    {% endif %}
+    {% if gm_retired %}
+    <div class="fk-ownermsg"><em>{{ gm_retired.name }} is retired: {{ gm_retired.tier }} / {{ gm_retired.record }} / {{ gm_retired.titles }} title{{ 's' if gm_retired.titles != 1 }}.</em></div>
+    {% elif career %}
+    <form method="post" action="{{ url_for('franchise_retire') }}" style="margin:0 0 12px" onsubmit="return confirm('Retire this GM career and lock in the legacy grade?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="fk-btn fk-btn-ghost fk-btn-sm">Retire GM Career</button>
+    </form>
+    {% endif %}
     {% if career %}
     <table class="fk-table">
       <thead><tr><th>Season</th><th>Team</th><th>Record</th><th>Mandate</th><th>Outcome</th></tr></thead>
@@ -1249,13 +1329,114 @@
     </table>
     {% else %}<p class="fk-muted">No seasons completed yet. Run your first season from the Dashboard.</p>{% endif %}
   </div>
+  {% if culture %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">{{ icon('flag') }}Organizational Culture — {{ culture.identity }}</div>
+    <p class="fk-muted" style="margin:0 0 10px">{{ culture.note }}</p>
+    <div class="fk-bizgrid" style="margin-bottom:10px">
+      {% for c in culture.rows %}
+      <div class="fk-bizstat"><span>{{ c.label }}</span><b>{{ c.score }}</b></div>
+      {% endfor %}
+    </div>
+    {% if culture.log %}
+    <table class="fk-table"><tbody>
+      {% for e in culture.log %}
+      <tr><td class="fk-muted">S{{ e.season }}</td><td>{{ e.trait|replace('_',' ')|title }}</td><td style="color:{{ '#7dffb0' if e.delta > 0 else '#ff9a9a' }}">{{ '%+d'|format(e.delta) }}</td><td class="fk-muted">{{ e.reason }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if relationships %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">{{ icon('users') }}Relationship Map</div>
+    <div class="fk-bizgrid" style="margin-bottom:10px">
+      {% for r in relationships.rows %}
+      <div class="fk-bizstat"><span>{{ r.label }}</span><b>{{ r.score }}</b><small>{{ r.tier }} · {{ r.note }}</small></div>
+      {% endfor %}
+    </div>
+    {% if relationships.log %}
+    <table class="fk-table"><tbody>
+      {% for e in relationships.log %}
+      <tr><td class="fk-muted">S{{ e.season }}</td><td>{{ e.group }}</td><td style="color:{{ '#7dffb0' if e.delta > 0 else '#ff9a9a' }}">{{ '%+d'|format(e.delta) }}</td><td class="fk-muted">{{ e.reason }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="fk-muted">Relationships start moving as you negotiate, trade, vote, win, and lose.</p>{% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== LEAGUE ===================== #}
   {% if tab == 'league' %}
+  {% if world %}
+  {% set expansion_msg = request.args.get('expansion_msg', '') %}
+  {% if expansion_msg %}
+  <div class="fk-trade-result fk-trade-{{ 'yes' if request.args.get('expansion_ok') == '1' else 'no' }}">{{ expansion_msg }}</div>
+  {% endif %}
+  <div class="grid-2 mb-24" style="gap:14px;">
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">{{ icon('owner') }}Ownership & League Rules</div>
+      <div class="fk-bizgrid">
+        <div class="fk-bizstat"><span>Owner Age</span><b>{{ world.owner.age }}</b><small>{{ world.owner.name }}</small></div>
+        <div class="fk-bizstat"><span>Heir</span><b>{{ world.owner.heir }}</b><small>{{ world.owner.industry }}</small></div>
+        <div class="fk-bizstat"><span>Worth</span><b>${{ '%.1f'|format(world.owner.net_worth) }}B</b><small>estimated</small></div>
+      </div>
+      <table class="fk-table" style="margin-top:8px"><tbody>
+        <tr><td>International games</td><td>{{ 'Active' if world.rules.international_games else 'No package' }}</td></tr>
+        <tr><td>Trade deadline</td><td>Week {{ world.rules.trade_deadline_week }}</td></tr>
+        <tr><td>Practice squad</td><td>{{ world.rules.practice_squad_slots }} slots</td></tr>
+        <tr><td>Expansion study</td><td>{{ 'Authorized' if world.rules.expansion_study else 'Not started' }}</td></tr>
+        <tr><td>League size</td><td>{{ world.league_size }} clubs</td></tr>
+      </tbody></table>
+    </div>
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">{{ icon('tv') }}Media & Fanbase</div>
+      {% for m in world.media[:4] %}
+      <div class="fk-leadrow">{{ m.name }} <b>{{ m.role }}</b><small>{{ m.angle }} · favor {{ m.favor }}</small></div>
+      {% endfor %}
+      <div class="fk-bizgrid" style="margin-top:8px">
+        {% for f in world.fans %}
+        <div class="fk-bizstat"><span>{{ f.label }}</span><b>{{ f.score }}</b></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="grid-2 mb-24" style="gap:14px;">
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">Expansion Candidates</div>
+      {% if world.expansion_teams %}
+        {% for t in world.expansion_teams %}
+        <div class="fk-leadrow">{{ t.full }} <b>{{ t.conference }}</b><small>{{ t.division }} Division &middot; joined S{{ t.expansion.season }}</small></div>
+        {% endfor %}
+      {% endif %}
+      {% for c in world.expansion %}
+      <div class="fk-leadrow">{{ c.city }} <b>{{ c.score }}</b><small>market readiness score</small></div>
+      {% endfor %}
+      {% if world.rules.expansion_study and not world.rules.expansion_awarded %}
+      <form method="post" action="{{ url_for('franchise_activate_expansion') }}" style="margin-top:10px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="fk-btn fk-btn-sm">Award 2 Expansion Franchises</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="fk-card" style="margin:0">
+      <div class="fk-card-h">People Pipeline</div>
+      {% if world.pipeline %}
+        {% for p in world.pipeline[:5] %}
+        <div class="fk-leadrow">{{ p.name }} <b>{{ p.role }}</b><small>{{ p.from }} · {{ p.note }}</small></div>
+        {% endfor %}
+      {% else %}<p class="fk-muted">Retired players, staff, and executives will start feeding second careers as the world ages.</p>{% endif %}
+      {% if world.world_log %}
+      <table class="fk-table" style="margin-top:8px"><tbody>
+        {% for e in world.world_log[:4] %}<tr><td class="fk-muted">S{{ e.season }}</td><td>{{ e.text }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
   {% if standings %}
     {% if save.last_champion %}<div class="fk-champbar">🏆 League champion: <strong>{{ save.last_champion }}</strong></div>{% endif %}
-    {% for conf in ['Apex', 'Crown'] %}
+    {% for conf in conferences %}
     <div class="fk-card" style="margin-top:12px">
       <div class="fk-card-h">{{ conf }} Conference <span class="fk-legend">● = playoffs</span></div>
       <table class="fk-table">
@@ -1276,7 +1457,7 @@
     {% endfor %}
   {% else %}
     <div class="fk-card"><p class="fk-muted">Standings appear after your first simulated season. The
-      BRK League is 32 teams — 2 conferences (Apex, Crown) × 4 divisions. Top 7 per conference make the playoffs.</p></div>
+      BRK League is {{ world.league_size if world else save.teams|length }} teams across {{ conferences|length }} conferences and 4 divisions. Top {{ save.playoff_seeds or 7 }} per conference make the playoffs.</p></div>
   {% endif %}
 
   {% if carousel_log is defined and carousel_log %}

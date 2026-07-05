@@ -29234,6 +29234,7 @@ def _franchise_view(save):
                              scout=fk.scout_report(save, p)['rec'],
                              scout_tier=fk.scout_report(save, p)['tier'])
                         for p in sorted(save.get('free_agents', []), key=lambda x: -x['overall'])],
+        'conferences': fk.CONFERENCES,
         'standings': save.get('standings_cache', []),
         'career': save['gm'].get('career', []),
         'timeline': fk.career_timeline(save),
@@ -29253,6 +29254,10 @@ def _franchise_view(save):
         'staff_bonus': fk.staff_bonus(save),
         'staff_roles': fk.STAFF_ROLES,
         'business': fk._business(save),
+        'facilities': fk.facilities_view(save),
+        'sponsorships': fk.sponsorship_view(save),
+        'district': fk.district_view(save),
+        'city_economy': fk.city_economics_view(save),
         'revenue': fk.projected_revenue(save),
         'stadium_cost': fk.stadium_cost(save),
         'facility_cost': fk.facility_cost(save),
@@ -29261,6 +29266,11 @@ def _franchise_view(save):
         'atmosphere': fk.atmosphere(save),
         'assist': save['gm'].get('assist', 'Full'),
         'gm_grade': fk.gm_grade(save),
+        'gm_legacy': fk.gm_legacy(save),
+        'gm_retired': save.get('gm_retired'),
+        'relationships': fk.relationship_report(save),
+        'culture': fk.culture_report(save),
+        'world': fk.world_report(save),
         'advice': fk.consultant_advice(save),
         'live': fk.live_status(save, _now_ts),
         'away_recap': save.get('away_recap'),
@@ -29394,9 +29404,18 @@ def franchise_new():
 @app.route('/franchise/sim', methods=['POST'])
 def franchise_sim():
     _, save = _franchise_save()
-    if save and not save.get('unemployed'):
+    if save and not save.get('unemployed') and not save.get('gm_retired'):
         fk.start_inseason(save)            # play it week by week, not all at once
     return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/retire', methods=['POST'])
+def franchise_retire():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.retire_gm(save)
+        return redirect(url_for('franchise_hub', tab='career', retire_ok='1' if ok else '0', retire_msg=msg))
+    return redirect(url_for('franchise_hub', tab='career'))
 
 
 @app.route('/franchise/sim-week', methods=['POST'])
@@ -30055,7 +30074,9 @@ def franchise_upgrade():
         if which == 'stadium':
             fk.upgrade_stadium(save)
         elif which == 'facility':
-            fk.upgrade_facility(save)
+            fk.upgrade_facility(save, str(request.form.get('facility', 'training')).strip())
+        elif which == 'district':
+            fk.upgrade_district(save, str(request.form.get('district', '')).strip())
     return redirect(url_for('franchise_hub', tab='business'))
 
 
@@ -30065,6 +30086,32 @@ def franchise_ticket():
     if save:
         fk.set_ticket(save, str(request.form.get('level', '')).strip())
     return redirect(url_for('franchise_hub', tab='business'))
+
+
+@app.route('/franchise/sponsor', methods=['POST'])
+def franchise_sponsor():
+    _, save = _franchise_save()
+    if save:
+        fk.sign_sponsor(save, str(request.form.get('slot', '')).strip())
+    return redirect(url_for('franchise_hub', tab='business'))
+
+
+@app.route('/franchise/public-funding', methods=['POST'])
+def franchise_public_funding():
+    _, save = _franchise_save()
+    if save:
+        fk.hold_public_stadium_vote(save)
+    return redirect(url_for('franchise_hub', tab='business'))
+
+
+@app.route('/franchise/activate-expansion', methods=['POST'])
+def franchise_activate_expansion():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.activate_expansion(save)
+        return redirect(url_for('franchise_hub', tab='league',
+                                expansion_ok='1' if ok else '0', expansion_msg=msg))
+    return redirect(url_for('franchise_hub', tab='league'))
 
 
 @app.route('/franchise/hire', methods=['POST'])

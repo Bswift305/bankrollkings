@@ -1412,7 +1412,8 @@ def sim_week(save):
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
     _update_power_rank(save)        # GridIron Network week-over-week movement
     offer_chance = 0.75 if any(p.get("on_block") for p in current_team(save)["roster"]) else 0.4
-    if week <= TRADE_DEADLINE_SOLO and not iz.get("offer") and rng.random() < offer_chance:
+    deadline = int(save.get("league_rules", {}).get("trade_deadline_week", TRADE_DEADLINE_SOLO) or TRADE_DEADLINE_SOLO)
+    if week <= deadline and not iz.get("offer") and rng.random() < offer_chance:
         iz["offer"] = _maybe_ai_offer(save, rng)
     owner_weekly(save, week, rng)      # the owner reacts to the week just played
     generate_weekly_agenda(save, week + 1, rng)   # next week's staff/player decisions land
@@ -1452,6 +1453,418 @@ def _tl(save, season, kind, icon, head, sub="", pid=None):
 
 def career_timeline(save):
     return save.get("timeline", [])
+
+
+# --------------------------------------------------------------------------- #
+# Relationship web. This is deliberately passive for now: existing systems keep
+# their proven math, while decisions leave a memory trail around the league.
+# --------------------------------------------------------------------------- #
+RELATIONSHIP_GROUPS = {
+    "agents": {"label": "Agents", "high": "trusted negotiator", "low": "hard to deal with"},
+    "rival_gms": {"label": "Rival GMs", "high": "respected trade partner", "low": "calls go cold"},
+    "media": {"label": "Media", "high": "national darling", "low": "easy target"},
+    "league_office": {"label": "League Office", "high": "serious operator", "low": "low influence"},
+    "locker_room": {"label": "Locker Room", "high": "players believe the plan", "low": "thin trust"},
+}
+
+
+def _relationships(save):
+    rel = save.setdefault("relationships", {})
+    for key in RELATIONSHIP_GROUPS:
+        rel.setdefault(key, 50)
+        try:
+            rel[key] = max(0, min(100, int(rel[key])))
+        except (TypeError, ValueError):
+            rel[key] = 50
+    save.setdefault("relationship_log", [])
+    return rel
+
+
+def _rel_tier(score):
+    return ("Excellent" if score >= 75 else "Good" if score >= 60 else
+            "Neutral" if score >= 42 else "Strained" if score >= 25 else "Damaged")
+
+
+def _rel_nudge(save, key, delta, reason):
+    if key not in RELATIONSHIP_GROUPS or not delta:
+        return
+    rel = _relationships(save)
+    before = rel[key]
+    after = max(0, min(100, before + int(delta)))
+    if after == before:
+        return
+    rel[key] = after
+    save.setdefault("relationship_log", []).insert(0, {
+        "season": save.get("season", 1),
+        "group": RELATIONSHIP_GROUPS[key]["label"],
+        "delta": after - before,
+        "score": after,
+        "reason": reason,
+    })
+    save["relationship_log"] = save["relationship_log"][:18]
+
+
+def relationship_report(save):
+    rel = _relationships(save)
+    rows = []
+    for key, meta in RELATIONSHIP_GROUPS.items():
+        score = rel[key]
+        rows.append({"key": key, "label": meta["label"], "score": score,
+                     "tier": _rel_tier(score),
+                     "note": meta["high"] if score >= 60 else meta["low"] if score < 42 else "steady"})
+    return {"rows": rows, "log": save.get("relationship_log", [])[:8]}
+
+
+CULTURE_ARCHETYPES = {
+    "Stability": {"note": "patient, process-driven, slow to panic",
+                  "traits": {"stability": 74, "discipline": 58, "ambition": 52, "tradition": 64, "player_trust": 58, "analytics": 48}},
+    "Win Now": {"note": "aggressive, impatient, built around pressure",
+                "traits": {"stability": 42, "discipline": 58, "ambition": 82, "tradition": 45, "player_trust": 46, "analytics": 54}},
+    "Player Friendly": {"note": "loyal to the room, attractive to veterans",
+                        "traits": {"stability": 60, "discipline": 45, "ambition": 56, "tradition": 48, "player_trust": 78, "analytics": 45}},
+    "Old School": {"note": "physical, traditional, coach-led",
+                   "traits": {"stability": 62, "discipline": 74, "ambition": 56, "tradition": 78, "player_trust": 52, "analytics": 34}},
+    "Analytics Driven": {"note": "value-focused, experimental, edge-seeking",
+                         "traits": {"stability": 52, "discipline": 56, "ambition": 64, "tradition": 30, "player_trust": 48, "analytics": 82}},
+    "Showtime": {"note": "brand-first, star-driven, media-aware",
+                 "traits": {"stability": 48, "discipline": 44, "ambition": 76, "tradition": 42, "player_trust": 54, "analytics": 58}},
+}
+
+
+def _new_culture(save, team):
+    owner = (team.get("owner") or {}).get("type", "Hands-Off")
+    if owner == "Legacy":
+        name = "Old School"
+    elif owner == "Impatient":
+        name = "Win Now"
+    elif owner == "Billionaire":
+        name = "Showtime"
+    elif owner == "Hands-Off":
+        name = "Stability"
+    elif owner == "Cheap":
+        name = "Analytics Driven"
+    else:
+        name = "Player Friendly"
+    base = CULTURE_ARCHETYPES[name]
+    rng = _rng(_city_seed(save, team["id"]) + 909)
+    traits = {k: max(10, min(95, v + rng.randint(-7, 7))) for k, v in base["traits"].items()}
+    return {"identity": name, "note": base["note"], "traits": traits, "log": []}
+
+
+def ensure_team_cultures(save):
+    cultures = save.setdefault("team_cultures", {})
+    changed = False
+    for team in save.get("teams", []):
+        if team["id"] not in cultures or not isinstance(cultures.get(team["id"]), dict):
+            cultures[team["id"]] = _new_culture(save, team)
+            changed = True
+    return changed
+
+
+def team_culture(save, team_id=None):
+    ensure_team_cultures(save)
+    tid = team_id or save.get("current_team_id")
+    return save.get("team_cultures", {}).get(tid, {})
+
+
+def _culture_nudge(save, trait, delta, reason, team_id=None):
+    c = team_culture(save, team_id)
+    traits = c.setdefault("traits", {})
+    if trait not in traits:
+        return
+    before = int(traits.get(trait, 50) or 50)
+    after = max(0, min(100, before + int(delta)))
+    if after == before:
+        return
+    traits[trait] = after
+    c.setdefault("log", []).insert(0, {"season": save.get("season", 1), "trait": trait,
+                                       "delta": after - before, "reason": reason})
+    c["log"] = c["log"][:10]
+
+
+def culture_report(save):
+    c = team_culture(save)
+    traits = c.get("traits", {})
+    rows = [{"key": k, "label": k.replace("_", " ").title(), "score": int(v)}
+            for k, v in traits.items()]
+    rows.sort(key=lambda r: -r["score"])
+    return {"identity": c.get("identity", "Unknown"), "note": c.get("note", ""),
+            "rows": rows, "log": c.get("log", [])[:5]}
+
+
+# --------------------------------------------------------------------------- #
+# World systems: owner succession, media personalities, fan segments, public
+# funding, relocation pressure, expansion studies, and a light people pipeline.
+# These are intentionally additive and informational; they do not change team
+# count or core sim balance yet.
+# --------------------------------------------------------------------------- #
+MEDIA_ARCHETYPES = [
+    ("Mara Voss", "National Insider", "transaction hawk"),
+    ("Trey Halden", "Studio Host", "legacy debate machine"),
+    ("Nico Cross", "Cap Analyst", "contract-value obsessive"),
+    ("Sasha Bell", "Beat Writer", "locker-room pulse reader"),
+    ("Damon Vale", "Podcast Host", "fan mood amplifier"),
+]
+FAN_SEGMENTS = {
+    "diehards": {"label": "Diehards", "base": 64},
+    "casuals": {"label": "Casuals", "base": 50},
+    "tradition": {"label": "Tradition Fans", "base": 55},
+    "stars": {"label": "Star Chasers", "base": 48},
+    "families": {"label": "Families", "base": 52},
+}
+EXPANSION_CITIES = ["Portland", "San Antonio", "Salt Lake City", "Orlando", "Oklahoma City", "Memphis", "St. Louis", "San Diego"]
+EXPANSION_MASCOTS = {
+    "Portland": "Evergreens",
+    "San Antonio": "Vaqueros",
+    "Salt Lake City": "Summit",
+    "Orlando": "Comets",
+    "Oklahoma City": "Outlaws",
+    "Memphis": "Kings",
+    "St. Louis": "Archers",
+    "San Diego": "Breakers",
+}
+EXPANSION_MARKETS = {
+    "Portland": "Mid",
+    "San Antonio": "Large",
+    "Salt Lake City": "Mid",
+    "Orlando": "Mid",
+    "Oklahoma City": "Mid",
+    "Memphis": "Mid",
+    "St. Louis": "Mid",
+    "San Diego": "Large",
+}
+
+
+def ensure_world_systems(save):
+    changed = False
+    rng = _rng(int(save.get("seed", 1) or 1) + 8128)
+    for t in save.get("teams", []):
+        owner = t.setdefault("owner", {"type": "Hands-Off"})
+        if "age" not in owner:
+            owner["age"] = rng.randint(42, 78); changed = True
+        if "net_worth" not in owner:
+            mult = {"Small": (1.8, 7.0), "Mid": (3.0, 12.0), "Large": (7.0, 32.0)}.get(t.get("market"), (3.0, 12.0))
+            owner["net_worth"] = round(rng.uniform(*mult), 1); changed = True
+        if "heir" not in owner:
+            owner["heir"] = _gen_name(rng); changed = True
+        if "industry" not in owner:
+            owner["industry"] = rng.choice(["Real Estate", "Technology", "Finance", "Energy", "Media", "Retail", "Logistics"]); changed = True
+
+    if "media_personalities" not in save:
+        save["media_personalities"] = [
+            {"name": n, "role": role, "angle": angle, "favor": rng.randint(38, 64)}
+            for n, role, angle in MEDIA_ARCHETYPES
+        ]
+        changed = True
+    if "fan_segments" not in save:
+        save["fan_segments"] = {}
+        changed = True
+    fan_segments = save.setdefault("fan_segments", {})
+    for t in save.get("teams", []):
+        if t["id"] not in fan_segments:
+            fan_segments[t["id"]] = {k: max(20, min(90, v["base"] + rng.randint(-8, 8)))
+                                     for k, v in FAN_SEGMENTS.items()}
+            changed = True
+    save.setdefault("people_pipeline", [])
+    save.setdefault("world_log", [])
+    rules = save.setdefault("league_rules", {})
+    rules.setdefault("international_games", False)
+    rules.setdefault("trade_deadline_week", TRADE_DEADLINE_SOLO)
+    rules.setdefault("practice_squad_slots", 12)
+    rules.setdefault("expansion_study", False)
+    rules.setdefault("expansion_awarded", False)
+    save.setdefault("expansion_candidates", [{"city": c, "score": rng.randint(42, 88)} for c in EXPANSION_CITIES])
+    return changed
+
+
+def fan_segment_view(save, team_id=None):
+    ensure_world_systems(save)
+    tid = team_id or save.get("current_team_id")
+    segs = save.get("fan_segments", {}).get(tid, {})
+    return [{"key": k, "label": FAN_SEGMENTS[k]["label"], "score": int(segs.get(k, FAN_SEGMENTS[k]["base"]))}
+            for k in FAN_SEGMENTS]
+
+
+def world_report(save):
+    ensure_world_systems(save)
+    team = current_team(save)
+    owner = team.get("owner", {})
+    pressure = relocation_pressure(save)
+    expansion_teams = [t for t in save.get("teams", []) if t.get("expansion")]
+    return {
+        "owner": {"name": owner.get("name"), "age": owner.get("age"), "heir": owner.get("heir"),
+                  "net_worth": owner.get("net_worth"), "industry": owner.get("industry")},
+        "media": save.get("media_personalities", []),
+        "fans": fan_segment_view(save),
+        "pipeline": save.get("people_pipeline", [])[:8],
+        "world_log": save.get("world_log", [])[:8],
+        "rules": save.get("league_rules", {}),
+        "league_size": len(save.get("teams", [])),
+        "expansion_teams": expansion_teams,
+        "expansion": sorted(save.get("expansion_candidates", []), key=lambda x: -x.get("score", 0))[:4],
+        "relocation": pressure,
+    }
+
+
+def _next_team_id(save):
+    nums = []
+    for t in save.get("teams", []):
+        tid = str(t.get("id", ""))
+        if tid.startswith("t") and tid[1:].isdigit():
+            nums.append(int(tid[1:]))
+    return (max(nums) + 1) if nums else len(save.get("teams", []))
+
+
+def _least_loaded(items, teams, key, conf=None):
+    counts = {x: 0 for x in items}
+    for t in teams:
+        if conf is not None and t.get("conference") != conf:
+            continue
+        if t.get(key) in counts:
+            counts[t.get(key)] += 1
+    return min(items, key=lambda x: (counts[x], items.index(x)))
+
+
+def _expansion_team(save, rng, city, conf, div, idx, seen):
+    mascot = EXPANSION_MASCOTS.get(city, "Founders")
+    entry = (conf, div, city, mascot, EXPANSION_MARKETS.get(city, "Mid"))
+    team = _gen_team(rng, idx, entry, season=save.get("season", 1), seen=seen)
+    team["expansion"] = {"season": save.get("season", 1), "kind": "expansion"}
+    team["record"] = {"w": 0, "l": 0}
+    return team
+
+
+def activate_expansion(save, count=2):
+    """Award expansion franchises after the owners authorize the study.
+    Kept out of active seasons/drafts so schedules, standings, and pick ledgers
+    do not change underneath a proven in-progress flow."""
+    ensure_world_systems(save)
+    rules = save.setdefault("league_rules", {})
+    if not rules.get("expansion_study"):
+        return False, "Owners have not authorized the expansion study yet."
+    if rules.get("expansion_awarded"):
+        return False, "Expansion franchises have already been awarded."
+    if save.get("inseason") or save.get("draft_pending") or save.get("draft"):
+        return False, "Expansion can only be awarded outside an active season or draft."
+
+    existing_cities = {t.get("city") for t in save.get("teams", [])}
+    candidates = [c for c in sorted(save.get("expansion_candidates", []), key=lambda x: -x.get("score", 0))
+                  if c.get("city") not in existing_cities]
+    if len(candidates) < count:
+        return False, "There are not enough expansion markets available."
+
+    rng = _rng(int(save.get("seed", 1) or 1) + save.get("season", 1) * 1889)
+    seen = league_names_seen(save)
+    added = []
+    teams = save.setdefault("teams", [])
+    for cand in candidates[:count]:
+        conf = _least_loaded(CONFERENCES, teams, "conference")
+        div = _least_loaded(DIVISIONS, teams, "division", conf=conf)
+        idx = _next_team_id(save)
+        team = _expansion_team(save, rng, cand["city"], conf, div, idx, seen)
+        teams.append(team)
+        added.append(team)
+
+    generate_team_histories(teams, _rng(int(save.get("seed", 1) or 1) + 9292 + len(teams)))
+    ensure_owner_names(teams, rng)
+    ensure_ai_staffs(save)
+    ensure_city_economics(save)
+    ensure_team_cultures(save)
+    ensure_world_systems(save)
+    rules["expansion_awarded"] = True
+    rules["expansion_season"] = save.get("season", 1)
+    save["schedule"] = make_schedule(save["seed"] + save.get("season", 1), [t["id"] for t in teams])
+    save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
+                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]}
+                               for t in teams]
+    names = ", ".join(t["full"] for t in added)
+    msg = f"Expansion awarded: {names} join the league."
+    save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "expansion", "text": msg})
+    save["world_log"] = save["world_log"][:20]
+    write_save(save)
+    return True, msg
+
+
+def relocation_pressure(save):
+    team = current_team(save)
+    b = _business(save)
+    c = city_economy(save)
+    owner_type = (team.get("owner") or {}).get("type", "Hands-Off")
+    base = 18
+    base += max(0, 4 - int(b.get("stadium", 1) or 1)) * 9
+    base += max(0, 48 - int(b.get("fan_happiness", 50) or 50)) // 2
+    base += max(0, 58 - city_economy_score(save)) // 3
+    base += 12 if owner_type in ("Billionaire", "Meddling") else 6 if owner_type == "Impatient" else 0
+    base -= 10 if owner_type == "Legacy" else 0
+    public_odds = int(max(12, min(88, c.get("tax_climate", 50) * 0.42 + b.get("fan_happiness", 50) * 0.38
+                                  + c.get("transit", 50) * 0.16 - c.get("construction", 100) * 0.08)))
+    amount = round(18 + (4 - min(3, int(b.get("stadium", 1) or 1))) * 10 + max(0, city_economy_score(save) - 55) * 0.25, 1)
+    return {"score": int(max(0, min(100, base))), "public_odds": public_odds, "funding_amount": amount,
+            "note": ("Relocation pressure is loud." if base >= 70 else
+                     "Owner is watching the stadium situation." if base >= 45 else
+                     "City/franchise relationship is stable.")}
+
+
+def hold_public_stadium_vote(save):
+    pressure = relocation_pressure(save)
+    rng = _rng(int(save.get("seed", 1) or 1) + save.get("season", 1) * 877)
+    passed = rng.randint(1, 100) <= pressure["public_odds"]
+    if passed:
+        _business(save)["cash"] = round(_business(save)["cash"] + pressure["funding_amount"], 1)
+        msg = f"Public stadium funding passes: ${pressure['funding_amount']}M added to club cash."
+        _rel_nudge(save, "league_office", 1, "secured public stadium support")
+    else:
+        msg = "Public stadium funding fails. Relocation pressure rises."
+        _rel_nudge(save, "media", -1, "lost a public stadium vote")
+    save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "stadium_vote",
+                                                "text": msg, "passed": passed})
+    save["world_log"] = save["world_log"][:20]
+    write_save(save)
+    return passed, msg
+
+
+def evolve_world_systems(save, rng):
+    ensure_world_systems(save)
+    for t in save.get("teams", []):
+        owner = t.setdefault("owner", {})
+        owner["age"] = int(owner.get("age", 55) or 55) + 1
+        if owner["age"] >= 86 and rng.random() < 0.18:
+            old = owner.get("name", "The owner")
+            owner["name"] = owner.get("heir") or _gen_name(rng)
+            owner["age"] = rng.randint(34, 58)
+            owner["heir"] = _gen_name(rng)
+            save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "succession",
+                                                        "text": f"{old} transfers control of the {t['full']} to {owner['name']}."})
+        elif owner["age"] >= 74 and rng.random() < 0.04:
+            old = owner.get("name", "The owner")
+            owner["name"] = _gen_name(rng)
+            owner["age"] = rng.randint(38, 64)
+            owner["net_worth"] = round(float(owner.get("net_worth", 6) or 6) * rng.uniform(0.8, 1.45), 1)
+            save.setdefault("world_log", []).insert(0, {"season": save.get("season", 1), "kind": "sale",
+                                                        "text": f"{old} sells the {t['full']} to {owner['name']}."})
+
+    # Retired players can become part of the broader ecosystem.
+    for r in (save.get("retirements") or [])[:4]:
+        if r.get("hof") or rng.random() < 0.16:
+            role = rng.choice(["coach", "scout", "agent", "broadcaster", "front-office assistant"])
+            item = {"season": save.get("season", 1), "name": r.get("name"), "from": "retired player",
+                    "role": role, "note": f"{r.get('pos', '')} career opens a second act."}
+            save.setdefault("people_pipeline", []).insert(0, item)
+            if role == "broadcaster":
+                save.setdefault("media_personalities", []).insert(0, {"name": r.get("name"), "role": "Former Player Analyst",
+                                                                       "angle": "player credibility", "favor": rng.randint(45, 68)})
+
+    rec = (save.get("last_outcome") or {}).get("record", {})
+    w, l = int(rec.get("w", 8) or 8), int(rec.get("l", 8) or 8)
+    segs = save.get("fan_segments", {}).get(save.get("current_team_id"), {})
+    if segs:
+        segs["diehards"] = max(10, min(100, segs.get("diehards", 60) + (1 if w >= l else -1)))
+        segs["casuals"] = max(10, min(100, segs.get("casuals", 50) + (2 if w >= 11 else -2 if w <= 5 else 0)))
+        segs["stars"] = max(10, min(100, segs.get("stars", 50) + (1 if save.get("season_mvp") else 0)))
+
+    save["world_log"] = save.get("world_log", [])[:20]
+    save["people_pipeline"] = save.get("people_pipeline", [])[:30]
+    save["media_personalities"] = save.get("media_personalities", [])[:12]
 
 
 def _log_season_milestones(save, outcome):
@@ -1701,7 +2114,7 @@ def live_tick(save, now):
 def _advance_year(save):
     rng = _rng(save["seed"] + save["season"] * 31 + 5)
     sb = staff_bonus(save)
-    dev = sb["development"] + (1 if _business(save)["facility"] >= 3 else 0)
+    dev = sb["development"] + facility_development_bonus(save)
     cond = sb["conditioning"]
     uid = save["current_team_id"]
     _apply_role_friction(save)   # Loop 4: paid-but-benched players sour over the year
@@ -1778,6 +2191,8 @@ def _advance_year(save):
                 {"first": parts[0], "last": parts[-1], "pos": r["pos"],
                  "retired": save["season"], "hof": bool(r.get("hof"))})
     save["legacy_pool"] = save.get("legacy_pool", [])[-20:]
+    evolve_city_economics(save, rng)
+    evolve_world_systems(save, rng)
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
     run_coaching_carousel(save, rng)   # ...and the rest of the league moves too
     save["free_agents"] = _gen_fa_pool(rng, season=save.get("season", 1) + 1, seen=league_names_seen(save))
@@ -1845,6 +2260,92 @@ def gm_grade(save):
             "money": money, "negos": negos}
 
 
+def gm_legacy(save):
+    """A GM's historical case: the grade is current reputation; legacy is what
+    the league remembers when the career ends."""
+    g = gm_grade(save)
+    gm = save["gm"]
+    seasons = int(g.get("seasons") or 0)
+    titles = int(g.get("titles") or 0)
+    playoffs = int(g.get("playoffs") or 0)
+    rating = int(g.get("rating") or 0)
+    money = int(g.get("money") or 0)
+    jobs = len({c.get("team") for c in gm.get("career", []) if c.get("team")})
+    score = rating + titles * 7 + playoffs * 2 + min(12, seasons) + min(10, money // 250) + max(0, jobs - 1) * 2
+    score = int(max(0, min(125, score)))
+    if score >= 105:
+        tier = "First-ballot Executive Hall of Famer"
+    elif score >= 88:
+        tier = "Executive Hall of Fame"
+    elif score >= 72:
+        tier = "Franchise Legend"
+    elif score >= 55:
+        tier = "Respected Builder"
+    elif score >= 35:
+        tier = "Working GM"
+    else:
+        tier = "Unfinished Resume"
+    case = []
+    if titles:
+        case.append(f"{titles} championship{'s' if titles != 1 else ''}")
+    if playoffs:
+        case.append(f"{playoffs} playoff run{'s' if playoffs != 1 else ''}")
+    if g.get("w") or g.get("l"):
+        case.append(f"{g['w']}-{g['l']} career record")
+    if jobs > 1:
+        case.append(f"built across {jobs} franchises")
+    if money:
+        case.append(f"${money}M in career revenue")
+    return {**g, "score": score, "legacy_tier": tier, "jobs": jobs,
+            "case": case or ["No completed seasons yet."],
+            "hall_worthy": score >= 88 or titles >= 3 or (titles >= 2 and rating >= 74)}
+
+
+def retire_gm(save):
+    """End the active GM career and, if the resume is strong enough, cast the
+    GM into the executive wing of the Hall."""
+    if save.get("gm_retired"):
+        return False, "This GM career is already retired."
+    leg = gm_legacy(save)
+    if not leg.get("seasons"):
+        return False, "Finish at least one season before retiring the GM."
+    gm = save["gm"]
+    record = {
+        "name": gm.get("name", "GM"),
+        "retired": save.get("season", 1),
+        "tier": leg["legacy_tier"],
+        "score": leg["score"],
+        "grade": leg["grade"],
+        "seasons": leg["seasons"],
+        "record": f"{leg['w']}-{leg['l']}",
+        "winpct": leg["winpct"],
+        "titles": leg["titles"],
+        "playoffs": leg["playoffs"],
+        "money": leg["money"],
+        "jobs": leg["jobs"],
+        "case": leg["case"],
+        "hof": bool(leg["hall_worthy"]),
+    }
+    save["gm_retired"] = record
+    save["unemployed"] = True
+    save.pop("inseason", None)
+    save.pop("offseason", None)
+    save.pop("offseason_mode", None)
+    save.pop("draft_pending", None)
+    save.pop("draft", None)
+    save.pop("staff_poach", None)
+    if record["hof"]:
+        hall = save.setdefault("executive_hall", [])
+        if not any(h.get("name") == record["name"] and h.get("retired") == record["retired"] for h in hall):
+            hall.insert(0, record)
+        save["executive_hall"] = hall[:20]
+    _tl(save, save.get("season", 1), "hof" if record["hof"] else "retired", "🏛" if record["hof"] else "📁",
+        f"{record['name']} retires — {record['tier']}",
+        " · ".join(record["case"][:3]))
+    write_save(save)
+    return True, f"{record['name']} retires as {record['tier']}."
+
+
 def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
     gm = save["gm"]
     exp = save["expectation"]["wins"]
@@ -1885,6 +2386,18 @@ def _evaluate_gm(save, rec, made_playoffs, won_title, champion_name):
         gm["playoffs"] = gm.get("playoffs", 0) + 1
     if won_title:
         gm["titles"] = gm.get("titles", 0) + 1
+        _rel_nudge(save, "media", 4, "delivered a championship season")
+        _rel_nudge(save, "locker_room", 3, "the room saw the plan end in a title")
+        _culture_nudge(save, "ambition", 3, "a championship raised the standard")
+        _culture_nudge(save, "player_trust", 2, "the locker room saw the plan work")
+    elif made_playoffs:
+        _rel_nudge(save, "media", 1, "kept the club in the playoff conversation")
+        _culture_nudge(save, "stability", 1, "a playoff season reinforced the process")
+    if status == "fired":
+        _rel_nudge(save, "media", -2, "ownership moved on after a failed mandate")
+        _rel_nudge(save, "league_office", -1, "lost a front-office seat")
+        _culture_nudge(save, "stability", -3, "another leadership change shook the building")
+        _culture_nudge(save, "player_trust", -2, "players watched the front office turn over")
     return {"status": status, "headline": headline, "record": rec,
             "won_title": won_title, "made_playoffs": made_playoffs,
             "champion": champion_name, "offers": offers, "owner_trust": gm["owner_trust"],
@@ -2345,6 +2858,18 @@ LEAGUE_PROPOSALS = [
     {"key": "rev_share", "title": "Boost small-market revenue sharing",
      "blurb": "The little markets want a bigger slice of the big markets' pie.",
      "yes": {"Legacy": .7, "Hands-Off": .6, "Cheap": .55, "Impatient": .5, "Meddling": .4, "Billionaire": .25}},
+    {"key": "intl_games", "title": "Create an international games package",
+     "blurb": "More global branding, more travel headaches, more league money.",
+     "yes": {"Billionaire": .75, "Meddling": .62, "Hands-Off": .52, "Impatient": .5, "Legacy": .4, "Cheap": .35}},
+    {"key": "deadline_late", "title": "Move the trade deadline back two weeks",
+     "blurb": "Contenders want more time to buy; traditionalists hate the churn.",
+     "yes": {"Impatient": .7, "Billionaire": .65, "Meddling": .58, "Hands-Off": .48, "Cheap": .42, "Legacy": .32}},
+    {"key": "practice_slots", "title": "Expand practice squads by two spots",
+     "blurb": "Development staffs want more young players in the building.",
+     "yes": {"Legacy": .65, "Hands-Off": .62, "Cheap": .58, "Meddling": .48, "Impatient": .45, "Billionaire": .45}},
+    {"key": "expansion_study", "title": "Authorize an expansion study",
+     "blurb": "Portland, San Antonio, and other markets want into the room. This starts the process.",
+     "yes": {"Billionaire": .72, "Cheap": .64, "Meddling": .56, "Hands-Off": .5, "Impatient": .44, "Legacy": .28}},
 ]
 
 
@@ -2356,6 +2881,12 @@ def propose_league_vote(save):
     eligible = [p for p in LEAGUE_PROPOSALS
                 if not (p["key"] == "seeds_up" and playoff_seeds(save) >= 8)
                 and not (p["key"] == "rev_share" and save.get("rev_share"))]
+    rules = save.setdefault("league_rules", {})
+    eligible = [p for p in eligible
+                if not (p["key"] == "intl_games" and rules.get("international_games"))
+                and not (p["key"] == "deadline_late" and int(rules.get("trade_deadline_week", TRADE_DEADLINE_SOLO) or TRADE_DEADLINE_SOLO) >= TRADE_DEADLINE_SOLO + 2)
+                and not (p["key"] == "practice_slots" and int(rules.get("practice_squad_slots", 12) or 12) >= 14)
+                and not (p["key"] == "expansion_study" and rules.get("expansion_study"))]
     if not eligible or rng.random() < 0.30:
         return
     save["league_vote"] = dict(rng.choice(eligible), season=save.get("season", 1))
@@ -2380,7 +2911,10 @@ def resolve_league_vote(save, user_vote="abstain"):
         yes += 1 + sway
     elif user_vote == "against":
         yes = max(0, yes - sway)
-    passed = yes >= 17
+    league_size = max(1, len(save.get("teams", [])) or LEAGUE_SIZE)
+    yes = min(league_size, yes)
+    no = max(0, league_size - yes)
+    passed = yes > league_size // 2
     note = ""
     if passed:
         if v["key"] == "cap_up":
@@ -2392,12 +2926,28 @@ def resolve_league_vote(save, user_vote="abstain"):
         elif v["key"] == "rev_share":
             save["rev_share"] = True
             note = "Small markets get a bigger slice of league revenue."
+        elif v["key"] == "intl_games":
+            save.setdefault("league_rules", {})["international_games"] = True
+            note = "International games enter the annual schedule package."
+        elif v["key"] == "deadline_late":
+            save.setdefault("league_rules", {})["trade_deadline_week"] = TRADE_DEADLINE_SOLO + 2
+            note = "The trade deadline moves later, giving contenders more time to buy."
+        elif v["key"] == "practice_slots":
+            save.setdefault("league_rules", {})["practice_squad_slots"] = 14
+            note = "Practice squads expand to 14 slots."
+        elif v["key"] == "expansion_study":
+            save.setdefault("league_rules", {})["expansion_study"] = True
+            city = max(save.get("expansion_candidates", []), key=lambda x: x.get("score", 0), default={"city": "Portland"})
+            note = f"The league authorizes an expansion study led by {city['city']}."
+    if user_vote in ("for", "against"):
+        _rel_nudge(save, "league_office", 1 if passed else -1,
+                   f"took a public position on {v['title'].lower()}")
     save.setdefault("vote_history", []).insert(0, {
         "season": v.get("season", 1), "title": v["title"], "yes": yes,
         "passed": passed, "your_vote": user_vote})
     save["vote_history"] = save["vote_history"][:20]
     _tl(save, v.get("season", 1), "owner", "\U0001F5F3",
-        f"Owners' vote: {v['title']} — {'PASSES' if passed else 'FAILS'} {yes}-{31 - yes + 1}",
+        f"Owners' vote: {v['title']} — {'PASSES' if passed else 'FAILS'} {yes}-{no}",
         (note or "The proposal dies on the table.") + f" You voted {user_vote}.")
     write_save(save)
     return True, f"The vote {'passes' if passed else 'fails'}, {yes} for. {note}".strip()
@@ -2756,10 +3306,10 @@ def staff_bonus(save):
         "scheme": scheme_effect(save),
         "playbook": playbook_edge(save),
         "special_teams": special_teams(save),
-        "scouting": round((_sr(s, "head_scout") - 50) * 0.6, 1),
+        "scouting": round((_sr(s, "head_scout") - 50) * 0.6 + facility_scouting_bonus(save), 1),
         "development": 1 if coord_avg >= 65 else 0,
-        "medical": _sr(s, "head_medical") + cond["durability"],   # conditioning keeps them healthy
-        "analytics": _sr(s, "head_analytics"),
+        "medical": _sr(s, "head_medical") + cond["durability"] + facility_medical_bonus(save),
+        "analytics": _sr(s, "head_analytics") + facility_scouting_bonus(save),
         "conditioning": cond,
     }
 
@@ -3630,6 +4180,9 @@ def load_save(user_id):
             changed = ensure_team_histories(save) or changed
             changed = ensure_player_identities(save) or changed
             changed = ensure_ai_staffs(save) or changed
+            changed = ensure_city_economics(save) or changed
+            changed = ensure_team_cultures(save) or changed
+            changed = ensure_world_systems(save) or changed
             if changed:
                 write_save(save)
     except Exception:
@@ -3672,7 +4225,9 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
         "last_champion": "",
         "staff": {},
         "staff_market": generate_staff_market(_rng(seed + 999)),
-        "business": {"cash": 95.0, "fan_happiness": 50, "stadium": 1, "facility": 1, "ticket": "normal"},
+        "business": {"cash": 95.0, "fan_happiness": 50, "stadium": 1, "facility": 1,
+                     "facilities": {"training": 1, "medical": 1, "analytics": 1, "fan_experience": 1},
+                     "ticket": "normal"},
         "created_at": datetime.now().strftime("%Y-%m-%d"),
     }
     _set_expectation(save)
@@ -3919,6 +4474,8 @@ def negotiate(save, player_id, years, aav):
         if aav >= 10:
             save.setdefault("season_flags", {})["splash_fa"] = True
         _owner_sign_react(save, fa["name"], fa["pos"], fa["overall"], aav)
+        _rel_nudge(save, "agents", 2, f"closed a free-agent deal with {agent_name}")
+        _rel_nudge(save, "locker_room", 1, f"added {fa['pos']} {fa['name']} to the room")
         res.update(status="accepted", msg=f"Done. {res['player']} signs {years}yr / ${aav}M.")
     elif aav >= eff * 0.90:
         counter = round(eff * A["counter"], 1)
@@ -3929,6 +4486,7 @@ def negotiate(save, player_id, years, aav):
         why = " ".join(context["reasons"][:2])
         res.update(status="rejected",
                    msg=f"{agent_name} rejects it - {res['player']} wants about ${eff}M/yr. {why}".strip())
+        _rel_nudge(save, "agents", -1, f"low offer frustrated {agent_name}")
     save["last_nego"] = res
     write_save(save)
     return res
@@ -4292,6 +4850,7 @@ def extend_player(save, player_id, years, aav):
     if aav > room:
         res.update(status="rejected", msg=f"That ${aav}M deal won't fit under the cap.")
     elif aav >= ask:
+        was_dispute = bool(p.get("holdout") or p.get("trade_request"))
         p["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.55, 1)}
         p.pop("agent", None)
         p.pop("holdout", None)
@@ -4301,6 +4860,9 @@ def extend_player(save, player_id, years, aav):
         p["morale"] = min(99, p.get("morale", 75) + 12)
         save["gm"]["nego_wins"] = save["gm"].get("nego_wins", 0) + (2 if aav <= ask else 1)
         _owner_sign_react(save, p["name"], p["pos"], p["overall"], aav)
+        _rel_nudge(save, "agents", 2, f"extended {p['pos']} {p['name']}")
+        if was_dispute:
+            _rel_nudge(save, "locker_room", 2, f"resolved {p['pos']} {p['name']}'s dispute")
         res.update(status="accepted", msg=f"Extension done — {p['name']} for {years}yr / ${aav}M.")
     elif aav >= ask * 0.9:
         why = (" " + context["reasons"][0]) if context["reasons"] else ""
@@ -4310,6 +4872,7 @@ def extend_player(save, player_id, years, aav):
         why = " ".join(context["reasons"][:2])
         res.update(status="rejected",
                    msg=f"{p['agent']['name']} rejects ${aav}M - he wants about ${ask}M/yr. {why}".strip())
+        _rel_nudge(save, "agents", -1, f"extension talks with {p['pos']} {p['name']} went nowhere")
     save["last_nego"] = res
     write_save(save)
     return res
@@ -4479,6 +5042,27 @@ MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
 # ticket level -> (attendance mult, fan-happiness delta/season, price-per-seat mult)
 TICKET = {"low": (1.12, 1, 0.84), "normal": (1.0, 0, 1.0), "high": (0.9, -3, 1.18)}
 STADIUM_CAP = {1: 45, 2: 58, 3: 68, 4: 76, 5: 85}     # seats (thousands) by stadium level
+SPONSOR_SLOTS = {
+    "naming_rights": {"label": "Naming Rights", "base": 10.0, "years": 4},
+    "uniform_partner": {"label": "Uniform Partner", "base": 5.0, "years": 3},
+    "training_camp": {"label": "Training Camp Sponsor", "base": 3.0, "years": 2},
+    "local_media": {"label": "Local Media Partner", "base": 2.5, "years": 2},
+    "luxury_suites": {"label": "Luxury Suite Partner", "base": 4.0, "years": 3},
+}
+SPONSOR_BRANDS = ["CrownBank", "Apex Wireless", "Summit Auto", "Volt Energy", "Keystone Health",
+                  "Harbor Hotels", "MetroAir", "IronGate Logistics", "BlueLine Foods", "Northstar Tech"]
+DISTRICT_PROJECTS = {
+    "parking": {"label": "Parking & Transit", "effect": "Easier access raises attendance and game-day revenue.", "cost": 12.0, "rev": 1.8, "fan": 1},
+    "restaurants": {"label": "Restaurants", "effect": "Food and nightlife turn games into full-day events.", "cost": 16.0, "rev": 2.4, "fan": 1},
+    "retail": {"label": "Retail Row", "effect": "Team stores and local shops boost merchandise spend.", "cost": 14.0, "rev": 2.0, "fan": 0},
+    "hotels": {"label": "Hotels", "effect": "Traveling fans and premium weekends expand the market.", "cost": 22.0, "rev": 3.1, "fan": 1},
+    "entertainment": {"label": "Entertainment Plaza", "effect": "Concerts and events keep the district alive year-round.", "cost": 26.0, "rev": 3.8, "fan": 2},
+}
+CITY_MARKET_BASE = {
+    "Small": {"population": (0.6, 2.5), "income": (84, 112), "corporate": (28, 62), "media": (32, 60)},
+    "Mid": {"population": (1.5, 5.5), "income": (92, 122), "corporate": (45, 78), "media": (48, 76)},
+    "Large": {"population": (4.5, 18.0), "income": (102, 138), "corporate": (65, 98), "media": (72, 99)},
+}
 
 
 def attendance(save):
@@ -4491,7 +5075,9 @@ def attendance(save):
     diff = last.get("w", 8) - last.get("l", 8)
     am, _, _ = TICKET.get(b["ticket"], TICKET["normal"])
     market_bump = {"Small": -4, "Mid": 0, "Large": 7}.get(team["market"], 0)
-    fill = 58 + (b["fan_happiness"] - 50) * 0.55 + diff * 1.6 + market_bump + (am - 1.0) * 60
+    city_bump = round((city_economy_score(save, team["id"]) - 50) / 18.0)
+    fill = (58 + (b["fan_happiness"] - 50) * 0.55 + diff * 1.6 + market_bump
+            + city_bump + (am - 1.0) * 60 + district_attendance_bonus(save))
     fill = int(max(34, min(100, round(fill))))
     return {"fill": fill, "capacity": cap, "avg": round(cap * fill / 100.0, 1)}
 
@@ -4511,9 +5097,267 @@ def _business(save):
     b.setdefault("cash", 95.0)
     b.setdefault("fan_happiness", 50)
     b.setdefault("stadium", 1)
-    b.setdefault("facility", 1)
+    legacy = int(b.get("facility", 1) or 1)
+    b["facility"] = max(1, min(5, legacy))
+    facilities = b.setdefault("facilities", {})
+    for key in FACILITY_DEPARTMENTS:
+        facilities.setdefault(key, b["facility"])
+        try:
+            facilities[key] = max(1, min(5, int(facilities[key])))
+        except (TypeError, ValueError):
+            facilities[key] = b["facility"]
+    b["facility"] = max(facilities.values() or [b["facility"]])
+    sponsors = b.setdefault("sponsors", {})
+    for key, deal in list(sponsors.items()):
+        if key not in SPONSOR_SLOTS or not isinstance(deal, dict):
+            sponsors.pop(key, None)
+    district = b.setdefault("district", {})
+    for key in DISTRICT_PROJECTS:
+        district.setdefault(key, 0)
+        try:
+            district[key] = max(0, min(3, int(district[key])))
+        except (TypeError, ValueError):
+            district[key] = 0
     b.setdefault("ticket", "normal")
     return b
+
+
+def _city_seed(save, team_id):
+    return int(save.get("seed", 1) or 1) + sum((i + 1) * ord(ch) for i, ch in enumerate(str(team_id)))
+
+
+def _new_city_economy(save, team):
+    rng = _rng(_city_seed(save, team["id"]))
+    base = CITY_MARKET_BASE.get(team.get("market"), CITY_MARKET_BASE["Mid"])
+    pop_lo, pop_hi = base["population"]
+    income_lo, income_hi = base["income"]
+    corp_lo, corp_hi = base["corporate"]
+    media_lo, media_hi = base["media"]
+    return {
+        "city": team.get("city", team.get("full", "")),
+        "market": team.get("market", "Mid"),
+        "population": round(rng.uniform(pop_lo, pop_hi), 2),      # metro population, millions
+        "growth": round(rng.uniform(-0.4, 2.4), 2),               # annual percent
+        "income_index": rng.randint(income_lo, income_hi),
+        "corporate": rng.randint(corp_lo, corp_hi),
+        "tourism": rng.randint(25, 96),
+        "transit": rng.randint(28, 88),
+        "tax_climate": rng.randint(28, 86),
+        "construction": rng.randint(70, 145),
+        "media": rng.randint(media_lo, media_hi),
+        "college_football": rng.randint(20, 92),
+        "youth_football": rng.randint(20, 92),
+    }
+
+
+def ensure_city_economics(save):
+    cities = save.setdefault("city_economics", {})
+    changed = False
+    for team in save.get("teams", []):
+        if team["id"] not in cities or not isinstance(cities.get(team["id"]), dict):
+            cities[team["id"]] = _new_city_economy(save, team)
+            changed = True
+    return changed
+
+
+def city_economy(save, team_id=None):
+    ensure_city_economics(save)
+    tid = team_id or save.get("current_team_id")
+    return save.get("city_economics", {}).get(tid, {})
+
+
+def city_economy_score(save, team_id=None):
+    c = city_economy(save, team_id)
+    if not c:
+        return 50
+    score = (
+        min(100, c.get("population", 1.0) * 9)
+        + c.get("income_index", 100) * 0.38
+        + c.get("corporate", 50) * 0.34
+        + c.get("tourism", 50) * 0.18
+        + c.get("transit", 50) * 0.14
+        + c.get("media", 50) * 0.22
+        + c.get("tax_climate", 50) * 0.10
+        - max(0, c.get("construction", 100) - 100) * 0.12
+    )
+    return int(max(20, min(99, round(score / 1.6))))
+
+
+def city_revenue_multiplier(save):
+    score = city_economy_score(save, save.get("current_team_id"))
+    return round(0.92 + (score / 100.0) * 0.20, 3)  # 0.96-ish to 1.12-ish for most cities
+
+
+def city_economics_view(save):
+    c = city_economy(save)
+    score = city_economy_score(save)
+    return {**c, "score": score, "revenue_multiplier": city_revenue_multiplier(save)}
+
+
+def evolve_city_economics(save, rng):
+    ensure_city_economics(save)
+    for tid, c in save.get("city_economics", {}).items():
+        growth = float(c.get("growth", 0) or 0)
+        c["population"] = round(max(0.25, float(c.get("population", 1.0) or 1.0) * (1 + growth / 100.0)), 2)
+        c["growth"] = round(max(-1.2, min(3.2, growth + rng.uniform(-0.25, 0.25))), 2)
+        for key in ("corporate", "tourism", "transit", "media", "tax_climate", "youth_football"):
+            c[key] = max(10, min(100, int(c.get(key, 50) or 50) + rng.choice([-1, 0, 0, 1])))
+
+
+FACILITY_DEPARTMENTS = {
+    "training": {
+        "label": "Training Complex",
+        "effect": "Young-player development and camp growth.",
+        "cost": 20.0,
+    },
+    "medical": {
+        "label": "Medical Center",
+        "effect": "Fewer injuries and better recovery decisions.",
+        "cost": 18.0,
+    },
+    "analytics": {
+        "label": "Analytics Department",
+        "effect": "Sharper scouting and value intelligence.",
+        "cost": 16.0,
+    },
+    "fan_experience": {
+        "label": "Fan Experience",
+        "effect": "Better attendance, revenue, and patience from the market.",
+        "cost": 14.0,
+    },
+}
+
+
+def facility_level(save, key="training"):
+    b = _business(save)
+    return int(b.get("facilities", {}).get(key, b.get("facility", 1)) or 1)
+
+
+def facilities_view(save):
+    _business(save)
+    return [
+        {**meta, "key": key, "level": facility_level(save, key), "cost": facility_cost(save, key)}
+        for key, meta in FACILITY_DEPARTMENTS.items()
+    ]
+
+
+def facility_development_bonus(save):
+    return 1 if facility_level(save, "training") >= 3 else 0
+
+
+def facility_medical_bonus(save):
+    return (facility_level(save, "medical") - 1) * 6
+
+
+def facility_scouting_bonus(save):
+    return round((facility_level(save, "analytics") - 1) * 3.5, 1)
+
+
+def facility_revenue_multiplier(save):
+    return 1.0 + (facility_level(save, "fan_experience") - 1) * 0.035
+
+
+def sponsorship_revenue(save):
+    sponsors = _business(save).get("sponsors", {})
+    return round(sum(float(d.get("amount", 0) or 0) for d in sponsors.values()), 1)
+
+
+def district_revenue(save):
+    district = _business(save).get("district", {})
+    return round(sum(DISTRICT_PROJECTS[k]["rev"] * int(district.get(k, 0) or 0)
+                     for k in DISTRICT_PROJECTS), 1)
+
+
+def district_fan_bonus(save):
+    district = _business(save).get("district", {})
+    return sum(DISTRICT_PROJECTS[k]["fan"] * int(district.get(k, 0) or 0)
+               for k in DISTRICT_PROJECTS)
+
+
+def district_attendance_bonus(save):
+    district = _business(save).get("district", {})
+    return min(8, int(district.get("parking", 0) or 0) * 2
+               + int(district.get("restaurants", 0) or 0)
+               + int(district.get("entertainment", 0) or 0))
+
+
+def district_cost(save, key):
+    key = key if key in DISTRICT_PROJECTS else "parking"
+    level = int(_business(save).get("district", {}).get(key, 0) or 0)
+    return round((level + 1) * DISTRICT_PROJECTS[key]["cost"], 1)
+
+
+def district_view(save):
+    b = _business(save)
+    return {"annual": district_revenue(save), "rows": [
+        {**meta, "key": key, "level": int(b["district"].get(key, 0) or 0), "cost": district_cost(save, key)}
+        for key, meta in DISTRICT_PROJECTS.items()
+    ]}
+
+
+def upgrade_district(save, key):
+    key = key if key in DISTRICT_PROJECTS else ""
+    if not key:
+        return False, "That district project does not exist."
+    b = _business(save)
+    level = int(b["district"].get(key, 0) or 0)
+    label = DISTRICT_PROJECTS[key]["label"]
+    if level >= 3:
+        return False, f"{label} is already fully built."
+    cost = district_cost(save, key)
+    if b["cash"] < cost:
+        return False, f"{label} costs ${cost}M - you have ${b['cash']}M."
+    b["cash"] = round(b["cash"] - cost, 1)
+    b["district"][key] = level + 1
+    _rel_nudge(save, "media", 1, f"invested in the stadium district: {label}")
+    write_save(save)
+    return True, f"{label} upgraded to Level {level + 1}."
+
+
+def _sponsor_offer(save, key):
+    key = key if key in SPONSOR_SLOTS else "local_media"
+    slot = SPONSOR_SLOTS[key]
+    team = current_team(save)
+    market = MARKET_MULT.get(team["market"], 1.0)
+    att = attendance(save)
+    city = city_economy(save)
+    gm = save.get("gm", {})
+    title_bonus = min(0.35, gm.get("titles", 0) * 0.08)
+    rep_bonus = max(-0.12, min(0.22, (gm.get("reputation", 50) - 50) / 220.0))
+    fan_bonus = max(-0.15, min(0.25, (_business(save)["fan_happiness"] - 50) / 180.0))
+    stadium_bonus = (_business(save)["stadium"] - 1) * 0.045
+    city_bonus = (city.get("corporate", 50) - 50) / 260.0 + (city.get("media", 50) - 50) / 320.0
+    amount = round(slot["base"] * market * (0.75 + att["fill"] / 180.0 + title_bonus
+                                            + rep_bonus + fan_bonus + stadium_bonus + city_bonus), 1)
+    rng = _rng(save["seed"] + save.get("season", 1) * 733 + sum(ord(c) for c in key))
+    return {"key": key, "label": slot["label"], "brand": rng.choice(SPONSOR_BRANDS),
+            "amount": max(0.8, amount), "years": slot["years"]}
+
+
+def sponsorship_view(save):
+    b = _business(save)
+    rows = []
+    for key, slot in SPONSOR_SLOTS.items():
+        active = b.get("sponsors", {}).get(key)
+        rows.append({"key": key, "label": slot["label"], "active": active,
+                     "offer": None if active else _sponsor_offer(save, key)})
+    return {"annual": sponsorship_revenue(save), "rows": rows}
+
+
+def sign_sponsor(save, key):
+    key = key if key in SPONSOR_SLOTS else ""
+    if not key:
+        return False, "That sponsor slot does not exist."
+    b = _business(save)
+    sponsors = b.setdefault("sponsors", {})
+    if key in sponsors:
+        return False, f"{SPONSOR_SLOTS[key]['label']} is already under contract."
+    offer = _sponsor_offer(save, key)
+    sponsors[key] = {"brand": offer["brand"], "amount": offer["amount"], "years": offer["years"],
+                     "signed": save.get("season", 1)}
+    _rel_nudge(save, "media", 1, f"signed {offer['brand']} as {offer['label'].lower()}")
+    write_save(save)
+    return True, f"{offer['brand']} signs {offer['years']}yr / ${offer['amount']}M per year for {offer['label']}."
 
 
 def projected_revenue(save):
@@ -4524,15 +5368,18 @@ def projected_revenue(save):
         mm = max(mm, 0.97)   # the league props up small markets
     _, _, pm = TICKET.get(b["ticket"], TICKET["normal"])
     # seats actually filled x price-per-seat x market (so winning -> fuller house -> more money)
-    return round((16 + b["stadium"] * 5) * mm * (att["fill"] / 100.0 + 0.22) * pm, 1)
+    gate = ((16 + b["stadium"] * 5) * mm * (att["fill"] / 100.0 + 0.22) * pm
+            * facility_revenue_multiplier(save) * city_revenue_multiplier(save))
+    return round(gate + sponsorship_revenue(save) + district_revenue(save), 1)
 
 
 def stadium_cost(save):
     return round(_business(save)["stadium"] * 28.0, 1)
 
 
-def facility_cost(save):
-    return round(_business(save)["facility"] * 20.0, 1)
+def facility_cost(save, which="training"):
+    which = which if which in FACILITY_DEPARTMENTS else "training"
+    return round(facility_level(save, which) * FACILITY_DEPARTMENTS[which]["cost"], 1)
 
 
 def staff_cost(rating):
@@ -4544,9 +5391,15 @@ def _apply_finance(save, rec, won_title):
     rev = projected_revenue(save)
     b["cash"] = round(b["cash"] + rev, 1)
     _, hd, _ = TICKET.get(b["ticket"], TICKET["normal"])
-    b["fan_happiness"] = max(0, min(100, b["fan_happiness"] + (rec["w"] - rec["l"]) * 1.5 + (10 if won_title else 0) + hd))
+    fan_bonus = max(0, facility_level(save, "fan_experience") - 1) + district_fan_bonus(save)
+    b["fan_happiness"] = max(0, min(100, b["fan_happiness"] + (rec["w"] - rec["l"]) * 1.5
+                                    + (10 if won_title else 0) + hd + fan_bonus))
     b["last_revenue"] = rev
     save["gm"]["money_earned"] = round(save["gm"].get("money_earned", 0) + rev, 1)   # career revenue
+    for key, deal in list(b.get("sponsors", {}).items()):
+        deal["years"] = int(deal.get("years", 1) or 1) - 1
+        if deal["years"] <= 0:
+            b["sponsors"].pop(key, None)
 
 
 def upgrade_stadium(save):
@@ -4562,17 +5415,22 @@ def upgrade_stadium(save):
     return True, f"Stadium upgraded to Level {b['stadium']} (more seats, more revenue)."
 
 
-def upgrade_facility(save):
+def upgrade_facility(save, which="training"):
+    which = which if which in FACILITY_DEPARTMENTS else "training"
     b = _business(save)
-    if b["facility"] >= 5:
-        return False, "Training facility is already at the max level."
-    c = facility_cost(save)
+    facilities = b.setdefault("facilities", {})
+    current = facility_level(save, which)
+    label = FACILITY_DEPARTMENTS[which]["label"]
+    if current >= 5:
+        return False, f"{label} is already at the max level."
+    c = facility_cost(save, which)
     if b["cash"] < c:
-        return False, f"A facility upgrade costs ${c}M - you have ${b['cash']}M."
+        return False, f"{label} upgrade costs ${c}M - you have ${b['cash']}M."
     b["cash"] = round(b["cash"] - c, 1)
-    b["facility"] += 1
+    facilities[which] = current + 1
+    b["facility"] = max(facilities.values())
     write_save(save)
-    return True, f"Training facility upgraded to Level {b['facility']} (faster development)."
+    return True, f"{label} upgraded to Level {facilities[which]}."
 
 
 def set_ticket(save, level):
@@ -5174,6 +6032,7 @@ def almanac(save):
             "records": sorted((save.get("records") or {}).values(), key=lambda r: r["label"]),
             "career_records": sorted((save.get("career_records") or {}).values(), key=lambda r: r["label"]),
             "hall_of_fame": save.get("hall_of_fame", []),
+            "executive_hall": save.get("executive_hall", []),
             "leaders": leaders}
 
 
@@ -5365,6 +6224,10 @@ def career_table(p):
 PS_MAX = 12
 
 
+def practice_squad_limit(save):
+    return int(save.get("league_rules", {}).get("practice_squad_slots", PS_MAX) or PS_MAX)
+
+
 def _gen_ps_player(rng):
     p = _gen_player(rng, rng.choice(list(ROSTER)), int(rng.triangular(55, 68, 60)))
     p["age"] = rng.randint(21, 23)
@@ -5396,7 +6259,7 @@ def promote_player(save, pid):
 
 def demote_player(save, pid):
     team = current_team(save)
-    if len(team.get("practice_squad", [])) >= PS_MAX:
+    if len(team.get("practice_squad", [])) >= practice_squad_limit(save):
         return False
     p = next((x for x in team["roster"] if x["id"] == pid), None)
     if not p:
@@ -5661,7 +6524,8 @@ def solo_trades_open(save):
     """Trades run until the in-season deadline; open the rest of the time (offseason)."""
     iz = save.get("inseason")
     if iz:
-        return iz.get("week", 1) <= TRADE_DEADLINE_SOLO
+        deadline = int(save.get("league_rules", {}).get("trade_deadline_week", TRADE_DEADLINE_SOLO) or TRADE_DEADLINE_SOLO)
+        return iz.get("week", 1) <= deadline
     return True
 
 
@@ -5823,6 +6687,9 @@ def accept_pick_offer(save, offer_id):
     picks_txt = " + ".join(f"R{pk['round']}" for pk in off["picks"])
     save["last_trade"] = {"ok": True, "summary":
                           f"Traded {p['pos']} {p['name']} to the {off['team']} for {picks_txt} (season {off['season']} draft)."}
+    _rel_nudge(save, "rival_gms", 1, f"completed a draft-pick deal with {off['team']}")
+    _rel_nudge(save, "locker_room", -1, f"traded {p['pos']} {p['name']} out of the building")
+    _culture_nudge(save, "player_trust", -1, f"{p['pos']} {p['name']} was moved for picks")
     _tl(save, save.get("season", 1), "trade", "🎫",
         f"{p['pos']} {p['name']} traded for draft capital",
         f"To the {off['team']} for {picks_txt} in the season-{off['season']} draft.")
@@ -5869,6 +6736,7 @@ def propose_trade(save, give_id, get_id):
     if not accepts:
         result["accepted"] = False
         result["msg"] = f"{target['full']} said no - they value {get['name']} more than your offer."
+        _rel_nudge(save, "rival_gms", -1, f"{target['full']} rejected a light trade offer")
     elif cap_used(user) - give["contract"]["aav"] + get["contract"]["aav"] > cap_total(save):
         result["accepted"] = False
         result["msg"] = f"{target['full']} would do it, but {get['name']}'s contract puts you over the cap."
@@ -5877,6 +6745,9 @@ def propose_trade(save, give_id, get_id):
         target["roster"] = [p for p in target["roster"] if p["id"] != get_id] + [give]
         result["accepted"] = True
         result["msg"] = f"Trade accepted! {give['name']} to {target['full']} for {get['name']}."
+        _rel_nudge(save, "rival_gms", 1, f"completed a player trade with {target['full']}")
+        _rel_nudge(save, "locker_room", -1, f"traded away {give['pos']} {give['name']}")
+        _culture_nudge(save, "player_trust", -1, f"{give['pos']} {give['name']} was traded")
         _trade_fallout(save, user, give, get)
     save["last_trade"] = result
     write_save(save)
