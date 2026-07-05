@@ -938,7 +938,8 @@
       </form>
       <a class="fk-back" href="{{ url_for('franchise_hub', tab='front-office') }}">← all free agents</a>
     {% else %}
-      <div class="fk-card-h">Free agents — negotiate with their agents</div>
+      <div class="fk-card-h">💰 Free Agents — sign help now</div>
+      <p class="fk-muted" style="margin:2px 0 8px">Available any time, in-season too. <b>Sign</b> = one-click at his asking price; <b>Haggle</b> to try for a discount. Cap room: ${{ '%.0f'|format(cap_total - cap_used) }}M.</p>
       <table class="fk-table">
         <thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Scout</th><th>Agent</th><th>Asking</th><th></th></tr></thead>
         <tbody>
@@ -948,7 +949,8 @@
             <td>{% if p.scout %}<span class="fk-scout fk-scout-{{ p.scout_tier }}">{{ p.scout }}</span>{% endif %}</td>
             <td>{{ p.agent.personality if p.agent else '—' }}</td>
             <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
-            <td><a class="fk-btn fk-btn-sm" href="{{ url_for('franchise_hub', tab='front-office', fa=p.id) }}">Negotiate</a></td></tr>
+            <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_sign_fa') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-btn fk-btn-sm">Sign ${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</button></form>
+            <a class="fk-btn fk-btn-ghost fk-btn-sm" href="{{ url_for('franchise_hub', tab='front-office', fa=p.id) }}">Haggle</a></td></tr>
           {% endfor %}
         </tbody>
       </table>

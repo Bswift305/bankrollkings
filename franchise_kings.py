@@ -5621,6 +5621,22 @@ _TIER_MANDATE = {
 }
 
 
+def sign_fa_at_ask(save, pid):
+    """One-click: sign a free agent at his asking price (meeting a counter if
+    the agent throws one). Cap-checked via negotiate. Signable in-season and in
+    the FA window — the quick way to grab help after an injury or a thin spot."""
+    fa = next((p for p in save.get("free_agents", []) if p["id"] == pid), None)
+    if not fa:
+        return False, "That free agent already signed elsewhere."
+    demand = fa.get("demand") or {}
+    ask = round(float(demand.get("aav", fa["contract"]["aav"]) or fa["contract"]["aav"]), 1)
+    years = int(demand.get("years", 3) or 3)
+    res = negotiate(save, pid, years, ask)
+    if res.get("status") == "countered" and res.get("counter"):
+        res = negotiate(save, pid, res["counter"]["years"], res["counter"]["aav"])
+    return res.get("status") == "accepted", res.get("msg", "Couldn't get it done.")
+
+
 def team_job_offer(save, t):
     """The owner's interview pitch for one club: who he is, what he's offering
     (cap, picks), the mandate, and an honest read of the roster he's handing you."""

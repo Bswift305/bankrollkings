@@ -29836,6 +29836,14 @@ def franchise_negotiate():
     return redirect(url_for('franchise_hub', tab='front-office', fa=pid))
 
 
+@app.route('/franchise/sign-fa', methods=['POST'])
+def franchise_sign_fa():
+    _, save = _franchise_save()
+    if save:
+        fk.sign_fa_at_ask(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='front-office'))
+
+
 @app.route('/franchise/trade', methods=['POST'])
 def franchise_trade():
     _, save = _franchise_save()
