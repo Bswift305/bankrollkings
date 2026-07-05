@@ -93,11 +93,17 @@
   <details class="os-card os-rostercard" open>
     <summary class="os-rosterhead">{{ icon('users') }}Your roster &amp; needs — Power {{ os_power }} · Cap ${{ os_cap_used }}M/${{ os_cap_total }}M (${{ os_cap_total - os_cap_used }}M free) · {{ os_roster|length }} players</summary>
     <div class="os-needs">
+      <span class="os-need os-need-ok os-need-active" data-pos="" onclick="osFilterPos('')" style="cursor:pointer">All</span>
       {% for n in team_needs %}
-      <span class="os-need {{ 'os-need-red' if n.need else 'os-need-ok' }}" title="{{ n.grade }} · best {{ n.best }}">{{ n.pos }} <b>{{ n.startavg }}</b>{% if n.need %} ⚠{% endif %}</span>
+      <span class="os-need {{ 'os-need-red' if n.need else 'os-need-ok' }} os-depth-{{ n.depth_state }}" data-pos="{{ n.pos }}" style="cursor:pointer"
+            onclick="osFilterPos(this.classList.contains('os-need-active') ? '' : '{{ n.pos }}')"
+            title="{{ n.grade }} · best {{ n.best }} · {{ n.count }} of {{ n.ideal }} rostered ({{ 'safe minimum ' ~ n.min_safe }})">
+        {{ n.pos }} <b>{{ n.startavg }}</b>{% if n.need %} ⚠{% endif %}
+        <small class="os-depthtag">{{ n.count }}/{{ n.ideal }}{% if n.delta > 0 %} · +{{ n.delta }} over{% elif n.depth_state == 'short' %} · {{ n.min_safe - n.count }} SHORT{% elif n.delta < 0 %} · {{ -n.delta }} thin{% endif %}</small>
+      </span>
       {% endfor %}
     </div>
-    <div class="os-needhint">Starter-average OVR per spot · ⚠ = upgrade target (under 72) · weakest first. This is what you have and what you need.</div>
+    <div class="os-needhint">Starter-average OVR · ⚠ = upgrade target (under 72) · <b>count/ideal roster spots</b> — SHORT means you can't survive an injury there, +over means camp bodies you'll cut. Click a position to filter the chart.</div>
     {% if scheme is defined and scheme and scheme.installed %}
     <div class="os-scheme">🧩 <b>{{ scheme.offense }}</b> offense{% if scheme.off_lean %} (leans {{ scheme.off_lean|join('/') }}){% endif %} · <b>{{ scheme.defense }}</b> defense{% if scheme.def_lean %} (leans {{ scheme.def_lean|join('/') }}){% endif %} — chase players who fit it.</div>
     {% elif scheme is defined %}
@@ -117,15 +123,36 @@
     </div>
     {% endif %}
     <div class="os-tscroll os-rosterlist"><table class="os-table">
-      <thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Fit</th><th>Last season</th></tr></thead>
+      <thead><tr><th></th><th>Player</th><th>Age</th><th>OVR</th><th>POT</th><th>Fit</th><th>Deal</th><th>Last season</th></tr></thead>
       <tbody>
+      {% set needs_by_pos = {} %}
+      {% for n in team_needs %}{% if needs_by_pos.update({n.pos: n}) %}{% endif %}{% endfor %}
       {% for p in os_roster %}
-      <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
-        <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
+      {% if loop.first or os_roster[loop.index0 - 1].pos != p.pos %}
+      {% set n = needs_by_pos.get(p.pos) %}
+      <tr class="os-posrow" data-pos="{{ p.pos }}"><td colspan="8">{{ p.pos }}{% if n %} — {{ n.count }} of {{ n.ideal }} ideal
+        {%- if n.depth_state == 'short' %} · <b style="color:#ff9a9a">{{ n.min_safe - n.count }} SHORT of the safe minimum</b>
+        {%- elif n.delta < 0 %} · <span style="color:#f5c860">{{ -n.delta }} thin</span>
+        {%- elif n.delta > 0 %} · <span style="color:#9fe9ff">+{{ n.delta }} over (cut candidates)</span>
+        {%- else %} · <span style="color:#7dffb0">full</span>{% endif %}{% endif %}</td></tr>
+      {% endif %}
+      <tr data-pos="{{ p.pos }}"><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
+        <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td><td>{{ p.potential }}</td>
         <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+        <td>{% if p.contract and p.contract.years <= 0 %}<span class="os-exp">EXPIRING</span>{% elif p.contract %}{{ p.contract.years }}y · ${{ '%.1f'|format(p.contract.aav) }}M{% else %}—{% endif %}</td>
         <td style="color:#8fa3b0">{{ p.sl }}</td></tr>
       {% endfor %}
       </tbody></table></div>
+    <script>
+    function osFilterPos(pos){
+      document.querySelectorAll('.os-rosterlist [data-pos]').forEach(function(el){
+        el.style.display = (!pos || el.dataset.pos === pos) ? '' : 'none';
+      });
+      document.querySelectorAll('.os-need[data-pos]').forEach(function(ch){
+        ch.classList.toggle('os-need-active', ch.dataset.pos === pos || (!pos && ch.dataset.pos === ''));
+      });
+    }
+    </script>
   </details>
 
   <div class="os-card os-consult">
@@ -581,6 +608,11 @@
   .os-need b { font-family:var(--font-display); }
   .os-need-ok { color:#7dffb0; border-color:rgba(125,255,176,.4); background:rgba(125,255,176,.08); }
   .os-need-red { color:#ff9a9a; border-color:rgba(255,122,122,.45); background:rgba(255,122,122,.1); }
+  .os-need-active { outline:2px solid rgba(74,212,240,.7); outline-offset:1px; }
+  .os-depthtag { display:block; font-size:10px; font-weight:600; opacity:.85; margin-top:1px; }
+  .os-depth-short .os-depthtag { color:#ff9a9a; }
+  .os-depth-thin .os-depthtag { color:#f5c860; }
+  .os-depth-over .os-depthtag { color:#9fe9ff; }
   .os-needhint { color:#6b7d8a; font-size:11px; font-style:italic; margin-bottom:8px; }
   .os-scheme { font-size:12px; color:#cfe3ee; background:rgba(74,212,240,.07); border:1px solid rgba(74,212,240,.2); border-radius:8px; padding:7px 10px; margin-bottom:8px; }
   .os-scheme b { color:#9fe9ff; } .os-scheme-off { color:#ffd27d; background:rgba(255,210,125,.07); border-color:rgba(255,210,125,.25); }

@@ -4545,9 +4545,18 @@ def team_needs(save):
         startavg = round(sum(p["overall"] for p in players[:starters]) / starters) if players else 0
         grade = ("Elite" if startavg >= 86 else "Strong" if startavg >= 79 else
                  "Solid" if startavg >= 72 else "Average" if startavg >= 64 else "NEED")
-        out.append({"pos": pos, "count": len(players), "best": players[0]["overall"] if players else 0,
+        count = len(players)
+        ideal = ROSTER_DEPTH.get(pos, starters + 1)      # a safe camp room at the spot
+        min_safe = min(ideal, starters + 1)              # starters + one backup, bare minimum
+        delta = count - ideal
+        depth_state = ("short" if count < min_safe else
+                       "thin" if count < ideal else
+                       "over" if count > ideal else "ok")
+        out.append({"pos": pos, "count": count, "best": players[0]["overall"] if players else 0,
                     "startavg": int(startavg), "starters": starters, "grade": grade,
-                    "need": startavg < 72})
+                    "need": startavg < 72,
+                    "ideal": ideal, "min_safe": min_safe, "delta": delta,
+                    "depth_state": depth_state})
     out.sort(key=lambda x: x["startavg"])      # weakest first
     return out
 
