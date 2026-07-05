@@ -582,8 +582,48 @@ def power_rating(team, ignore_depth=False):
     return round(num / den, 1) if den else 60.0
 
 
+def team_dead_cap(team):
+    return round(sum(e.get("amount", 0) for e in team.get("dead_cap_entries", [])), 1)
+
+
+def charge_dead_money(team, p):
+    """Cutting a man doesn't erase his guarantees — the shell hits this year's
+    cap as dead money (cleared when the season closes)."""
+    amt = cut_penalty(p)
+    if amt >= 0.3:
+        team.setdefault("dead_cap_entries", []).append(
+            {"name": p["name"], "pos": p["pos"], "amount": amt, "seasons_left": 1})
+    return amt
+
+
+def restructure_contract(save, pid):
+    """Convert salary into guaranteed bonus: ~40% of his AAV becomes cap room
+    for every remaining year — but the money is now guaranteed, so the
+    dead-money cost of ever cutting him balloons. Flexibility today,
+    handcuffs tomorrow. Once per player per season."""
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He's not on your roster."
+    c = p.get("contract") or {}
+    if int(c.get("years", 0) or 0) < 2:
+        return False, f"{p['name']} is in his final year — nothing left to restructure."
+    if float(c.get("aav", 0) or 0) < 6:
+        return False, f"{p['name']}'s deal is too small to move money around."
+    if c.get("restructured_season") == save.get("season"):
+        return False, f"You already restructured {p['name']} this year."
+    relief = round(c["aav"] * 0.4, 1)
+    c["aav"] = round(c["aav"] - relief, 1)
+    c["guaranteed"] = round((c.get("guaranteed", 0) or 0) + relief * c["years"], 1)
+    c["restructured_season"] = save.get("season")
+    write_save(save)
+    return True, (f"Restructured — ${relief}M/yr of cap room opened for the rest of his deal. "
+                  f"That money is guaranteed now: cutting {p['name']} would cost "
+                  f"${cut_penalty(p)}M dead against the cap.")
+
+
 def cap_used(team):
-    return round(sum(p["contract"]["aav"] for p in team["roster"]), 1)
+    return round(sum(p["contract"]["aav"] for p in team["roster"]) + team_dead_cap(team), 1)
 
 
 def _starters(team):
@@ -1542,6 +1582,10 @@ def _advance_year(save):
     cond = sb["conditioning"]
     uid = save["current_team_id"]
     _apply_role_friction(save)   # Loop 4: paid-but-benched players sour over the year
+    for t in save["teams"]:      # dead money ages off as the season closes
+        entries = [dict(e, seasons_left=int(e.get("seasons_left", 1)) - 1)
+                   for e in t.get("dead_cap_entries", [])]
+        t["dead_cap_entries"] = [e for e in entries if e["seasons_left"] > 0]
     breakouts, unlocks, evolution = [], [], []
     for t in save["teams"]:
         my = t["id"] == uid

@@ -63,6 +63,21 @@
     <button class="os-btn os-btn-xs" name="action" value="shop">Shop for picks</button>
     <button class="os-btn os-btn-ghost os-btn-xs" formaction="{{ url_for('franchise_blocklist') }}" name="action" value="list">Put on block</button>
   </form>
+  {% if td.restructure %}
+  <div style="margin-top:12px; padding-top:10px; border-top:1px dashed rgba(143,163,176,.25);">
+    <div style="font-weight:800; color:#e8f4fb; font-size:13px; margin-bottom:4px;">Need cap room? Restructure a deal{% if td.dead_total %} <small style="color:#ff9a9a">· carrying ${{ td.dead_total }}M dead money</small>{% endif %}</div>
+    <p class="os-sub" style="margin:0 0 8px">Convert ~40% of a salary into guaranteed bonus — cap room now, but cutting him later costs it all in dead money. Once per player per season.</p>
+    <form method="post" action="{{ url_for('franchise_restructure') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="pid" class="fkl-input" style="max-width:340px;" required>
+        {% for p in td.restructure %}
+        <option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · ${{ '%.1f'|format(p.aav) }}M × {{ p.years }}y → frees ${{ p.relief }}M/yr</option>
+        {% endfor %}
+      </select>
+      <button class="os-btn os-btn-xs">Restructure</button>
+    </form>
+  </div>
+  {% endif %}
   <p class="os-sub" style="margin-top:8px">Shopping for picks pays out in draft capital when that draft opens. Blocked players draw extra player-for-player offers during the season — and being shopped stings morale either way.</p>
 </div>
 {% endif %}
@@ -562,7 +577,7 @@
   {% elif stage == 'cuts' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('users') }}Cut Day — down to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
-    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit.</p>
+    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit. <b style="color:#ff9a9a">Cuts aren't free anymore:</b> a player's guarantees hit your cap as dead money for the season{% if dead_total %} — you're already carrying <b style="color:#ff9a9a">${{ dead_total }}M dead</b>{% endif %}.</p>
     <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Fit</th><th>Camp</th><th></th></tr></thead><tbody>
     {% for p in roster %}
       {% set ct = camp_tags.get(p.id) if camp_tags is defined else none %}
@@ -573,7 +588,8 @@
           {% if sv %}<div style="margin-top:3px"><span class="os-traj os-traj-{{ 'rising' if sv.q >= 1.0 else 'declining' if sv.q <= -0.6 else 'steady' }}">{{ sv.verdict }}</span></div>{% endif %}
           {% if not ct and not sv %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form>
-        {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}</td></tr>
+        {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}
+        {% if p.dead and p.dead >= 0.3 %}<small style="display:block; color:#ff9a9a; font-size:10px;">cut = ${{ '%.1f'|format(p.dead) }}M dead</small>{% endif %}</td></tr>
     {% endfor %}
     </tbody></table></div>
   </div>

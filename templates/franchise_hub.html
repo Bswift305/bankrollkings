@@ -746,6 +746,31 @@
       <b>${{ '%.1f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</b></div>
   </div>
 
+  {% if restructure_view is defined and restructure_view %}{% set rv = restructure_view %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">{{ icon('pen') }}Restructure a contract{% if rv.dead_total %} <span style="float:right;font-size:12px;color:#ff9a9a">Dead money on the cap: ${{ rv.dead_total }}M</span>{% endif %}</div>
+    {% if rv.msg %}<div class="fk-trade-result fk-trade-{{ 'yes' if rv.ok == '1' else 'no' }}">{{ rv.msg }}</div>{% endif %}
+    <p class="fk-muted" style="margin:4px 0 10px">Convert ~40% of a player's salary into guaranteed bonus: that much cap room opens for every remaining year of his deal — but the money is guaranteed, so cutting him later hits your cap hard. Cap flexibility today, handcuffs tomorrow. Once per player per season.</p>
+    {% if rv.eligible %}
+    <form method="post" action="{{ url_for('franchise_restructure') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="pid" class="fk-input" style="max-width:420px;" required>
+        {% for p in rv.eligible %}
+        <option value="{{ p.id }}">{{ p.pos }} · {{ p.name }} · ${{ '%.1f'|format(p.aav) }}M × {{ p.years }}y → frees ${{ p.relief }}M/yr · dead-if-cut becomes ${{ p.dead_after }}M</option>
+        {% endfor %}
+      </select>
+      <button class="fk-btn fk-btn-sm">Restructure</button>
+    </form>
+    {% else %}
+    <p class="fk-muted">No eligible deals right now (needs 2+ years left, $6M+ salary, not already done this season).</p>
+    {% endif %}
+    {% if rv.dead_entries %}
+    <div class="fk-muted" style="margin-top:8px; font-size:12px;">Dead money this season:
+      {% for e in rv.dead_entries %}{{ e.pos }} {{ e.name }} ${{ '%.1f'|format(e.amount) }}M{{ '; ' if not loop.last }}{% endfor %}
+      — clears when the season closes.</div>
+    {% endif %}
+  </div>
+  {% endif %}
   <div class="fk-card" style="margin-top:12px">
     <div class="fk-card-h">{{ icon('pen') }}Contract extensions</div>
     {% if holdouts %}

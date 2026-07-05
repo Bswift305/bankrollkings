@@ -320,6 +320,7 @@ def cut_player(save, player_id):
     if not p:
         return False
     team["roster"] = [x for x in team["roster"] if x["id"] != player_id]
+    fk.charge_dead_money(team, p)     # his guarantees stay on your cap this year
     save.setdefault("free_agents", []).append(p)
     fk.write_save(save)
     return True
@@ -336,6 +337,8 @@ def _finalize_camp(save):
         cut = t["roster"][ROSTER_FINAL:]
         t["roster"] = t["roster"][:ROSTER_FINAL]
         if t["id"] == uid:
+            for p in cut:
+                fk.charge_dead_money(t, p)
             save.setdefault("free_agents", []).extend(cut)
 
 

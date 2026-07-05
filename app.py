@@ -29326,6 +29326,22 @@ def franchise_hub():
     elif tab == 'front-office':
         fa_id = str(request.args.get('fa', '')).strip()
         view['nego_fa'] = next((p for p in save.get('free_agents', []) if p['id'] == fa_id), None) if fa_id else None
+        team = fk.current_team(save)
+        view['restructure_view'] = {
+            'eligible': sorted([{'id': p['id'], 'name': p['name'], 'pos': p['pos'],
+                                 'aav': p['contract']['aav'], 'years': p['contract']['years'],
+                                 'relief': round(p['contract']['aav'] * 0.4, 1),
+                                 'dead_after': round((p['contract'].get('guaranteed', 0) or 0)
+                                                     + p['contract']['aav'] * 0.4 * p['contract']['years'], 1)}
+                                for p in team['roster']
+                                if int(p['contract'].get('years', 0) or 0) >= 2
+                                and float(p['contract'].get('aav', 0) or 0) >= 6
+                                and p['contract'].get('restructured_season') != save.get('season')],
+                               key=lambda x: -x['aav']),
+            'dead_entries': team.get('dead_cap_entries', []),
+            'dead_total': fk.team_dead_cap(team),
+            'msg': request.args.get('rs_msg', ''), 'ok': request.args.get('rs_ok', ''),
+        }
     return render_template('franchise_hub.html', tab=tab, save=save, gm=save['gm'],
                            current_user=current_user, **view)
 
@@ -29503,10 +29519,12 @@ def franchise_offseason():
         stock = {v['id']: v for v in (save.get('preseason_report') or {}).get('verdicts', [])}
         ctx.update(roster=[dict(_league_avatar(p),
                                 fit=fk.tactical_fit(save, p)['label'],
-                                fit_pct=fk.tactical_fit(save, p)['pct'])
+                                fit_pct=fk.tactical_fit(save, p)['pct'],
+                                dead=fk.cut_penalty(p))
                            for p in sorted(team['roster'], key=lambda x: -x['overall'])],
                    camp_count=len(team['roster']), final=fo.ROSTER_FINAL,
                    camp_tags=camp_tags, stock=stock,
+                   dead_total=fk.team_dead_cap(team),
                    ps_count=len(team.get('practice_squad', [])), ps_max=fk.PS_MAX)
     elif stage == 'kickoff':
         team = fk.current_team(save)
@@ -29523,6 +29541,15 @@ def franchise_offseason():
             'blocked': fk.blocked_players(save),
             'wants_out': fk.wants_out_players(save),
             'pick_shop': save.get('pick_shop'),
+            'restructure': sorted([{'id': p['id'], 'name': p['name'], 'pos': p['pos'],
+                                    'aav': p['contract']['aav'], 'years': p['contract']['years'],
+                                    'relief': round(p['contract']['aav'] * 0.4, 1)}
+                                   for p in fk.current_team(save)['roster']
+                                   if int(p['contract'].get('years', 0) or 0) >= 2
+                                   and float(p['contract'].get('aav', 0) or 0) >= 6
+                                   and p['contract'].get('restructured_season') != save.get('season')],
+                                  key=lambda x: -x['aav']),
+            'dead_total': fk.team_dead_cap(fk.current_team(save)),
             'msg': request.args.get('block_msg', ''),
             'ok': request.args.get('block_ok', ''),
         }
@@ -30056,6 +30083,18 @@ def franchise_philosophy():
         ok, msg = fk.set_gm_philosophy(save, str(request.form.get('philosophy', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
+
+
+@app.route('/franchise/restructure', methods=['POST'])
+def franchise_restructure():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.restructure_contract(save, str(request.form.get('pid', '')).strip())
+        if save.get('offseason'):
+            return redirect(url_for('franchise_offseason', block_ok='1' if ok else '0', block_msg=msg))
+        return redirect(url_for('franchise_hub', tab='front-office',
+                                rs_ok='1' if ok else '0', rs_msg=msg))
+    return redirect(url_for('franchise_hub', tab='front-office'))
 
 
 @app.route('/franchise/depth', methods=['POST'])
