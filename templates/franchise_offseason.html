@@ -189,7 +189,8 @@
   {% elif stage == 'staff' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('users') }}Build Your Staff — before anything else</div>
-    <p class="os-sub">Your coordinators shape the scheme, your scouts shape the draft, your medical and conditioning staff keep the roster standing. Hire the room now — every evaluation that follows runs through these people. Cash on hand: <b style="color:#f5c860">${{ cash }}M</b>.</p>
+    <p class="os-sub">Your coordinators shape the scheme, your scouts shape the draft, your medical and conditioning staff keep the roster standing. Hire the room now — every evaluation that follows runs through these people.</p>
+    <p class="os-sub">Operating cash: <b style="color:#f5c860">${{ cash }}M</b> — this is your front-office budget, separate from the player salary cap. It also funds stadium and facility upgrades, and it refills each season from ticket revenue (bigger markets and winning teams earn more). You don't have to fill every seat this year — hires have no refund, so spend on the roles that fit your plan.</p>
     {% if hire_msg %}
     <div class="os-li" style="border-left:3px solid {{ '#7dffb0' if hire_ok == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if hire_ok == '1' else '#ff9a9a' }};">{{ hire_msg }}</div>
     {% endif %}
@@ -410,6 +411,12 @@
   </form>
   {% endif %}
 
+  <form method="post" action="{{ url_for('franchise_restart') }}" class="os-restart"
+        onsubmit="return confirm('Start a brand-new GM career? Your current save will be erased.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="os-btn os-btn-ghost os-btn-xs">Start a new career</button>
+  </form>
+
 </section>
 
 <style>
@@ -469,6 +476,7 @@
   .os-btn-go { padding:14px; font-size:15px; } .os-adv { margin-top:6px; }
   .os-btn-ghost { background:transparent; color:#9fe9ff; border:1px solid rgba(74,212,240,.5); }
   .os-btn-xs { width:auto; padding:6px 11px; font-size:11.5px; white-space:nowrap; }
+  .os-restart { margin-top:26px; text-align:center; opacity:.75; }
   .os-staffgrid { display:grid; gap:10px; margin-top:12px; }
   .os-staffrow { display:grid; grid-template-columns:190px 1fr; gap:12px; padding:10px 0; border-top:1px dashed rgba(143,163,176,.2); }
   .os-staffrole b { color:#e8f4fb; font-size:13px; } .os-staffrole small { display:block; color:#8fa3b0; font-size:11px; line-height:1.4; margin-top:3px; }
