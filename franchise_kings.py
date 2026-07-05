@@ -4532,6 +4532,59 @@ def demote_player(save, pid):
     return True
 
 
+def run_training_camp(save, final=53):
+    """Training camp: every man gets evaluated before cut-day. Young players can
+    out-play (or fall short of) their scouting report — camp is where hidden
+    ceilings start to show — and the verdicts feed the cut / practice-squad
+    calls. Runs once per offseason; re-entering the stage reuses the report."""
+    season = save.get("season", 1)
+    report = save.get("camp_report")
+    if report and report.get("season") == season:
+        return report
+    team = current_team(save)
+    ensure_practice_squad(save)
+    rng = _rng(save["seed"] + season * 53 + 7)
+    roster = sorted(team["roster"], key=lambda p: -p["overall"])
+    keep_ids = {p["id"] for p in roster[:final]}
+    rows = []
+    for p in roster:
+        pot = int(p.get("potential", p["overall"]) or p["overall"])
+        true_pot = int(p.get("true_pot", pot) or pot)
+        gap = true_pot - pot
+        age = int(p.get("age", 27) or 27)
+        rookie = age <= 23 and not p.get("career")
+        young = age <= 25
+        roll = rng.gauss(0, 1)
+        traj, tag = "steady", "Steady"
+        note = "Doing his job — no surprises either way."
+        if young and gap >= 3 and rng.random() < 0.6:
+            reveal = rng.randint(1, min(3, gap))
+            p["potential"] = pot + reveal
+            tag, traj = "Camp standout", "rising"
+            note = f"Playing past his scouting report — ceiling re-graded {pot} → {p['potential']}."
+        elif young and gap <= -3 and rng.random() < 0.45:
+            drop = rng.randint(1, min(2, -gap))
+            p["potential"] = max(p["overall"], pot - drop)
+            tag, traj = "Looked ordinary", "declining"
+            note = f"The tape isn't matching the grade — ceiling re-read {pot} → {p['potential']}."
+        elif roll > 0.95:
+            tag, traj = "Turning heads", "rising"
+            note = "Winning his reps every day — pushing for a bigger role."
+        elif roll < -1.15:
+            tag, traj = "Struggling", "declining"
+            note = "Losing his battles. If he's on the bubble, he's in trouble."
+        if rookie:
+            note = "Rookie camp: " + note
+        rows.append({"id": p["id"], "name": p["name"], "pos": p["pos"],
+                     "number": p.get("number"), "age": age, "overall": p["overall"],
+                     "potential": int(p.get("potential", p["overall"]) or p["overall"]),
+                     "rookie": rookie, "tag": tag, "traj": traj, "note": note,
+                     "bubble": p["id"] not in keep_ids})
+    save["camp_report"] = {"season": season, "rows": rows}
+    write_save(save)
+    return save["camp_report"]
+
+
 def team_needs(save):
     """Positional snapshot - starter-average OVR per spot, graded, weakest first,
     so you can see at a glance what you have and what you still need."""

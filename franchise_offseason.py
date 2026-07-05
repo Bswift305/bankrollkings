@@ -30,6 +30,7 @@ STAGES = [
     {"key": "resign",      "title": "Re-Sign Your Own",   "icon": "✍"},
     {"key": "free_agency", "title": "Free Agency",        "icon": "\U0001F4B0"},
     {"key": "draft",       "title": "The Draft",          "icon": "\U0001F393"},
+    {"key": "camp",        "title": "Training Camp",      "icon": "\U0001F3D5"},
     {"key": "cuts",        "title": "Cuts to 53",         "icon": "✂"},
     {"key": "kickoff",     "title": "Kickoff",            "icon": "\U0001F3C8"},
 ]

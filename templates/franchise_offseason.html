@@ -491,17 +491,44 @@
       {% for d in (last_draft_log or []) %}<div class="os-li">R{{ d.round }}: {{ d.pos }} {{ d.name }} ({{ d.ovr }} OVR · grade {{ d.grade }})</div>{% endfor %}
     {% endif %}
   </div>
-  {% if not draft_pending %}{{ advance('Move to Training Camp Cuts →') }}{% endif %}
+  {% if not draft_pending %}{{ advance('Head to Training Camp →') }}{% endif %}
+
+  {# ---------------- TRAINING CAMP: evaluate before cut day ---------------- #}
+  {% elif stage == 'camp' %}
+  <div class="os-card">
+    <div class="os-ch">{{ icon('users') }}Training Camp — the evaluation <span class="os-cap">{{ camp_count }} in camp · keep {{ final }}</span></div>
+    <p class="os-sub">Every man gets his reps before cut day. <b style="color:#7dffb0">Camp standouts</b> are out-playing their scouting report — their ceiling just got re-graded. <b style="color:#ff9a9a">Strugglers on the bubble</b> are telling you who to cut. Bubble youngsters you like are practice-squad stash candidates ({{ ps_count }}/{{ ps_max }} PS spots used) — you'll make the calls on the next screen.</p>
+    <div class="os-tscroll"><table class="os-table">
+      <thead><tr><th></th><th>Player</th><th>Age</th><th>OVR</th><th>POT</th><th>Camp verdict</th><th>Bubble</th></tr></thead>
+      <tbody>
+      {% for p in camp_rows %}
+        {% if loop.first or camp_rows[loop.index0 - 1].pos != p.pos %}
+        <tr class="os-posrow"><td colspan="7">{{ p.pos }}</td></tr>
+        {% endif %}
+        <tr>
+          <td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td>
+          <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.rookie %} <span class="os-tag">ROOKIE</span>{% endif %}</td>
+          <td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td><td>{{ p.potential }}</td>
+          <td><span class="os-traj os-traj-{{ p.traj }}">{{ p.tag }}</span><div class="cell-meta" style="color:#8fa3b0; font-size:11px; margin-top:2px;">{{ p.note }}</div></td>
+          <td>{% if p.bubble %}<span class="os-exp">BUBBLE</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+  {{ advance('Make the Cuts →') }}
 
   {# ---------------- CUTS to 53 ---------------- #}
   {% elif stage == 'cuts' %}
   <div class="os-card">
-    <div class="os-ch">{{ icon('users') }}Training Camp — cut to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
-    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %}</p>
-    <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th></th></tr></thead><tbody>
+    <div class="os-ch">{{ icon('users') }}Cut Day — down to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
+    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit.</p>
+    <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Camp</th><th></th></tr></thead><tbody>
     {% for p in roster %}
+      {% set ct = camp_tags.get(p.id) if camp_tags is defined else none %}
       <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a> <span class="os-num">#{{ p.number }}</span></td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td style="color:#fff">{{ p.overall }}</td>
-        <td><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form></td></tr>
+        <td>{% if ct %}<span class="os-traj os-traj-{{ ct.traj }}">{{ ct.tag }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
+        <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form>
+        {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}</td></tr>
     {% endfor %}
     </tbody></table></div>
   </div>

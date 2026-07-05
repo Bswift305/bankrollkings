@@ -29469,10 +29469,21 @@ def franchise_offseason():
         ctx.update(draft=fk.draft_state(save), draft_pending=save.get('draft_pending', False),
                    draft_capital=fk.draft_capital(save) if save.get('draft_pending') else None,
                    last_draft_log=save.get('last_draft_log'))
+    elif stage == 'camp':
+        report = fk.run_training_camp(save, final=fo.ROSTER_FINAL)
+        pos_order = {pos: i for i, pos in enumerate(fk.ROSTER)}
+        rows = sorted(report.get('rows', []),
+                      key=lambda r: (pos_order.get(r['pos'], 99), -r['overall']))
+        ctx.update(camp_rows=[_league_avatar(r) for r in rows],
+                   camp_count=len(fk.current_team(save)['roster']), final=fo.ROSTER_FINAL,
+                   ps_count=len(fk.current_team(save).get('practice_squad', [])), ps_max=fk.PS_MAX)
     elif stage == 'cuts':
         team = fk.current_team(save)
+        camp_tags = {r['id']: r for r in (save.get('camp_report') or {}).get('rows', [])}
         ctx.update(roster=[_league_avatar(p) for p in sorted(team['roster'], key=lambda x: -x['overall'])],
-                   camp_count=len(team['roster']), final=fo.ROSTER_FINAL)
+                   camp_count=len(team['roster']), final=fo.ROSTER_FINAL,
+                   camp_tags=camp_tags,
+                   ps_count=len(team.get('practice_squad', [])), ps_max=fk.PS_MAX)
     elif stage == 'kickoff':
         team = fk.current_team(save)
         ctx.update(team=team, power=fk.power_rating(team), ready=fo.ready_to_kick(save),
@@ -29554,6 +29565,14 @@ def franchise_offseason_fa():
     if save and fo.offseason_active(save):
         fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
     return redirect(url_for('franchise_offseason', fa=pid))
+
+
+@app.route('/franchise/offseason/stash', methods=['POST'])
+def franchise_offseason_stash():
+    _, save = _franchise_save()
+    if save and fo.offseason_active(save):
+        fk.demote_player(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_offseason'))
 
 
 @app.route('/franchise/offseason/draft', methods=['POST'])
