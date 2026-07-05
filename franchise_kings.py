@@ -3044,20 +3044,29 @@ def negotiate(save, player_id, years, aav):
         years = max(1, min(6, int(years)))
         aav = round(float(aav), 1)
     except (TypeError, ValueError):
-        return {"ok": False, "msg": "Enter a valid offer."}
+        save["last_nego"] = {"ok": False, "status": "rejected", "msg": "Enter a valid offer."}
+        write_save(save)
+        return save["last_nego"]
 
     context = _player_market_context(save, fa, kind="free_agent")
     eff = demand_aav
     if pers == "Loyal":
         eff = round(demand_aav * (1 - min(0.12, _business(save)["fan_happiness"] / 900.0)), 1)
     eff = max(eff, context["ask"])
+    # A counter is a commitment: if the agent named a number for THIS player last
+    # round, meeting it closes the deal (otherwise his sub-ask counter loops forever).
+    prev = save.get("last_nego") or {}
+    accept_at = eff
+    if (prev.get("ok") and prev.get("status") == "countered"
+            and prev.get("id") == fa["id"] and prev.get("counter")):
+        accept_at = min(eff, float(prev["counter"].get("aav", eff)))
 
     res = {"ok": True, "id": fa["id"], "player": fa["name"], "pos": fa["pos"], "ovr": fa["overall"],
            "agent": fa["agent"], "demand": eff, "offer": {"years": years, "aav": aav},
            "context": context}
     if cap_used(team) + aav > CAP_TOTAL:
         res.update(status="rejected", msg=f"That ${aav}M deal puts you over the cap.")
-    elif aav >= eff:
+    elif aav >= accept_at:
         fa["contract"] = {"years": years, "aav": aav, "guaranteed": round(aav * 0.5, 1)}
         fa.pop("agent", None)
         fa.pop("demand", None)
@@ -3419,7 +3428,9 @@ def extend_player(save, player_id, years, aav):
         years = max(1, min(6, int(years)))
         aav = round(float(aav), 1)
     except (TypeError, ValueError):
-        return {"ok": False, "msg": "Enter a valid offer."}
+        save["last_nego"] = {"ok": False, "status": "rejected", "msg": "Enter a valid offer."}
+        write_save(save)
+        return save["last_nego"]
     if "agent" not in p:
         p["agent"] = {"name": _gen_name(_rng(abs(hash(player_id)) % 999983)),
                       "personality": random.choice(list(AGENTS))}

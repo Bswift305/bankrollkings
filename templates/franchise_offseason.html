@@ -269,7 +269,7 @@
   {% elif stage == 'resign' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('pen') }}Re-Sign Your Own</div>
-    {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if last_nego %}{% set nstat = last_nego.get('status', '') %}<div class="os-nego os-nego-{{ 'yes' if nstat == 'accepted' else 'mid' if nstat == 'countered' else 'no' }}"><strong>{{ nstat|upper or 'NO DEAL' }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
     {% endif %}
@@ -277,11 +277,22 @@
       <p class="os-sub">No expiring contracts — your core is locked up. On to free agency.</p>
     {% elif nego_p %}
       <p class="os-sub"><strong>{{ nego_p.pos }} {{ nego_p.name }}</strong> ({{ nego_p.overall }} OVR) · agent {{ nego_p.agent.personality if nego_p.agent }} · wants ${{ '%.1f'|format(nego_p.demand.aav if nego_p.demand else nego_p.contract.aav) }}M/yr</p>
+      {% set ctr = last_nego.counter if last_nego and last_nego.ok and last_nego.status == 'countered' and last_nego.id == nego_p.id else none %}
+      {% if ctr %}
+      <div class="os-counter">
+        <b>Agent counter on the table:</b> {{ ctr.years }}yr / ${{ '%.1f'|format(ctr.aav) }}M — meet it and he signs.
+        <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_p.id }}">
+          <input type="hidden" name="years" value="{{ ctr.years }}"><input type="hidden" name="aav" value="{{ ctr.aav }}">
+          <button class="os-btn os-btn-xs">Accept counter — {{ ctr.years }}yr / ${{ '%.1f'|format(ctr.aav) }}M</button>
+        </form>
+      </div>
+      {% endif %}
       <form method="post" action="{{ url_for('franchise_offseason_resign') }}" class="os-offer">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_p.id }}">
-        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (nego_p.demand.years if nego_p.demand else 3) }}"></label>
-        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (nego_p.demand.aav if nego_p.demand else nego_p.contract.aav) }}"></label>
-        <button class="os-btn">Offer extension</button>
+        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (ctr.years if ctr else (nego_p.demand.years if nego_p.demand else 3)) }}"></label>
+        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (ctr.aav if ctr else (nego_p.demand.aav if nego_p.demand else nego_p.contract.aav)) }}"></label>
+        <button class="os-btn">{{ 'Re-offer' if ctr else 'Offer extension' }}</button>
       </form>
       <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="margin-top:8px">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_p.id }}"><input type="hidden" name="walk" value="1">
@@ -305,17 +316,28 @@
   {% elif stage == 'free_agency' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('swap') }}Free Agency <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
-    {% if last_nego %}<div class="os-nego os-nego-{{ 'yes' if last_nego.status=='accepted' else 'no' }}"><strong>{{ last_nego.status|upper }}</strong> — {{ last_nego.msg }}</div>{% endif %}
+    {% if last_nego %}{% set nstat = last_nego.get('status', '') %}<div class="os-nego os-nego-{{ 'yes' if nstat == 'accepted' else 'mid' if nstat == 'countered' else 'no' }}"><strong>{{ nstat|upper or 'NO DEAL' }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
     {% endif %}
     {% if nego_fa %}
       <p class="os-sub"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR) · agent {{ nego_fa.agent.personality if nego_fa.agent }} · asking ${{ '%.1f'|format(nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}M/yr</p>
+      {% set ctr = last_nego.counter if last_nego and last_nego.ok and last_nego.status == 'countered' and last_nego.id == nego_fa.id else none %}
+      {% if ctr %}
+      <div class="os-counter">
+        <b>Agent counter on the table:</b> {{ ctr.years }}yr / ${{ '%.1f'|format(ctr.aav) }}M — meet it and he signs.
+        <form method="post" action="{{ url_for('franchise_offseason_fa') }}" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_fa.id }}">
+          <input type="hidden" name="years" value="{{ ctr.years }}"><input type="hidden" name="aav" value="{{ ctr.aav }}">
+          <button class="os-btn os-btn-xs">Accept counter — {{ ctr.years }}yr / ${{ '%.1f'|format(ctr.aav) }}M</button>
+        </form>
+      </div>
+      {% endif %}
       <form method="post" action="{{ url_for('franchise_offseason_fa') }}" class="os-offer">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ nego_fa.id }}">
-        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (nego_fa.demand.years if nego_fa.demand else 3) }}"></label>
-        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}"></label>
-        <button class="os-btn">Send offer</button>
+        <label>Years<input class="fkl-input" type="number" name="years" min="1" max="6" value="{{ (ctr.years if ctr else (nego_fa.demand.years if nego_fa.demand else 3)) }}"></label>
+        <label>AAV $M<input class="fkl-input" type="number" step="0.1" name="aav" value="{{ (ctr.aav if ctr else (nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav)) }}"></label>
+        <button class="os-btn">{{ 'Re-offer' if ctr else 'Send offer' }}</button>
       </form>
       <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to free agents</a></p>
     {% else %}
@@ -562,7 +584,9 @@
   .os-offer { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; } .os-offer label { flex:1; min-width:90px; color:#b7c6d0; font-size:12px; } .os-offer button { flex-basis:100%; }
   .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
   .os-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
-  .os-nego-yes strong { color:#7dffb0; } .os-nego-no strong { color:#ff9a9a; }
+  .os-nego-yes strong { color:#7dffb0; } .os-nego-no strong { color:#ff9a9a; } .os-nego-mid strong { color:#f5c860; }
+  .os-counter { border:1px solid rgba(245,200,96,.4); background:rgba(245,200,96,.07); border-radius:9px; padding:10px 12px; margin-bottom:10px; }
+  .os-counter b { color:#f5c860; }
   .os-nego-tags { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px; }
   .os-nego-tags span { border:1px solid rgba(245,200,96,.28); background:rgba(245,200,96,.08); color:#f4d990; border-radius:999px; padding:3px 8px; font-size:11px; }
   .os-link { color:#4ad4f0; text-decoration:none; font-size:13px; } .os-mini-btn { color:#9fe9ff; }
