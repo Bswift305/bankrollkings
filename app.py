@@ -29360,6 +29360,9 @@ def franchise_hub():
                              'dc': _coach_line(st.get('def_coord'))})
         view['league_staffs'] = rows
         view['carousel_log'] = save.get('carousel_log', [])
+        view['exec_view'] = fk.exec_report(save)
+    elif tab == 'staff':
+        view['alumni_market'] = fk.alumni_front_office_market(save)
     elif tab == 'roster':
         team = fk.current_team(save)
         groups = []
@@ -30154,6 +30157,16 @@ def franchise_hire():
     if save:
         ok, msg = fk.hire_staff(save, str(request.form.get('role', '')).strip(),
                                 str(request.form.get('candidate_id', '')).strip())
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
+
+
+@app.route('/franchise/hire-alumnus', methods=['POST'])
+def franchise_hire_alumnus():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.hire_alumnus(save, str(request.form.get('name', '')).strip(),
+                                  str(request.form.get('role', '')).strip())
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
 

@@ -2406,6 +2406,7 @@ def _advance_year(save):
     evolve_world_systems(save, rng)
     develop_staff(save, rng)   # coaches age, sharpen/fade, and eventually retire
     run_coaching_carousel(save, rng)   # ...and the rest of the league moves too
+    run_executive_carousel(save, rng)   # ...and the front offices move too
     save["free_agents"] = _gen_fa_pool(rng, season=save.get("season", 1) + 1, seen=league_names_seen(save))
     ensure_player_portraits(save)
 
@@ -3146,6 +3147,237 @@ def people_report(save):
                      key=lambda e: -_peak(e))
     return {"alumni": alumni[:12], "milestones": milestones[:10],
             "notable": notable[:12], "total": len(tracked)}
+
+
+# --------------------------------------------------------------------------- #
+# THE EXECUTIVE LADDER — the front-office half of the People machine. Every AI
+# club has a GM; the league has a Commissioner; and over the decades people
+# climb: front-office/scouting second-careers -> Assistant GM -> GM ->
+# President of Football Ops -> (rarely) Commissioner. Accomplished builders
+# retire into the Executive Hall next to the great GMs you retire yourself.
+# --------------------------------------------------------------------------- #
+def _gen_exec(rng, rank="GM", from_person=None):
+    band = {"Personnel Director": (48, 70), "Assistant GM": (52, 74),
+            "GM": (58, 82), "President of Football Ops": (66, 86)}.get(rank, (55, 78))
+    rating = int(rng.triangular(band[0], band[1], (band[0] + band[1]) // 2))
+    if from_person is not None:
+        fp = from_person.get("former_player") or {}
+        rating = max(rating, min(86, 52 + int(fp.get("peak", 70) or 70) // 3))
+    age = rng.randint(42, 60) if rank in ("GM", "President of Football Ops") else rng.randint(34, 50)
+    return {"name": (from_person or {}).get("name") or _gen_name(rng),
+            "rank": rank, "rating": rating, "age": age, "tenure": 0,
+            "former_player": (from_person or {}).get("former_player")}
+
+
+def ensure_ai_executives(save):
+    """Every rival club gets a GM; the league gets a Commissioner. Returns True
+    if anything changed so the caller can persist once."""
+    changed = False
+    uid = save.get("current_team_id")
+    for t in save.get("teams", []):
+        if t["id"] == uid:
+            continue
+        ex = t.setdefault("exec", {})
+        if not isinstance(ex.get("gm"), dict):
+            rng = _rng(int(save.get("seed", 1) or 1) + abs(hash(str(t["id"]) + "gm")) % 99991)
+            ex["gm"] = _gen_exec(rng, "GM")
+            changed = True
+    if not isinstance(save.get("commissioner"), dict):
+        rng = _rng(int(save.get("seed", 1) or 1) + 90210)
+        save["commissioner"] = {"name": _gen_name(rng), "since": save.get("season", 1),
+                                "age": rng.randint(54, 64)}
+        changed = True
+    return changed
+
+
+def _retire_exec(save, ex, team_full):
+    if int(ex.get("tenure", 0) or 0) >= 8 and int(ex.get("rating", 0) or 0) >= 76:
+        rec = {"name": ex["name"], "retired": save.get("season", 1),
+               "tier": "Front-Office Builder", "score": int(ex.get("rating", 0) or 0),
+               "grade": _rating_to_grade(int(ex.get("rating", 0) or 0)),
+               "seasons": int(ex.get("tenure", 0) or 0), "record": "\u2014", "winpct": 0.0,
+               "titles": 0, "playoffs": 0, "money": 0, "jobs": 1,
+               "case": [str(ex.get("tenure", 0)) + " yrs in the chair",
+                        "last with " + team_full,
+                        "rose from " + str((ex.get("former_player") or {}).get("pos", "the ranks"))
+                        if ex.get("former_player") else "career football man"],
+               "hof": True}
+        hall = save.setdefault("executive_hall", [])
+        if not any(h.get("name") == rec["name"] and h.get("retired") == rec["retired"] for h in hall):
+            hall.insert(0, rec)
+        save["executive_hall"] = hall[:20]
+    if ex.get("former_player"):
+        add_person_stint(save, ex["name"], "Retired executive", team_full,
+                         note="stepped away from football ops")
+
+
+def run_executive_carousel(save, rng):
+    """One offseason of front-office movement across the league."""
+    ensure_ai_executives(save)
+    uid = save["current_team_id"]
+    pool = save.setdefault("exec_pool", [])
+    prez_pool = save.setdefault("president_pool", [])
+    log = []
+    # former players in FO/scouting second careers step onto the exec ladder
+    for e in list((save.get("people") or {}).values()):
+        cur = e.get("current") or {}
+        if (e.get("former_player") and cur.get("team") == "the league"
+                and cur.get("role") in ("Front Office", "Scout")
+                and rng.random() < 0.25):
+            cand = _gen_exec(rng, "Assistant GM", from_person=e)
+            pool.append(cand)
+            add_person_stint(save, e["name"], "Assistant GM", "the league",
+                             note="moves into football operations")
+    for t in save["teams"]:
+        if t["id"] == uid:
+            continue
+        ex = t.setdefault("exec", {})
+        gm = ex.get("gm")
+        if isinstance(gm, dict):
+            gm["age"] = int(gm.get("age", 50) or 50) + 1
+            gm["tenure"] = int(gm.get("tenure", 0) or 0) + 1
+            drift = rng.randint(0, 2) if gm["age"] <= 54 else -rng.randint(0, 2)
+            gm["rating"] = max(45, min(92, int(gm.get("rating", 60) or 60) + drift))
+            if gm["tenure"] >= 8 and gm["rating"] >= 78 and rng.random() < 0.18:
+                prez = dict(gm, rank="President of Football Ops")
+                prez_pool.append(prez)
+                add_person_stint(save, gm["name"], "President of Football Ops", t["full"],
+                                 note="promoted to president", milestone=bool(gm.get("former_player")))
+                log.append({"scope": t["full"], "role": "President", "name": gm["name"],
+                            "why": "promoted from GM"})
+                ex["gm"] = None
+            elif gm["age"] >= 70 or (gm["age"] >= 64 and rng.random() < (gm["age"] - 60) * 0.06):
+                _retire_exec(save, gm, t["full"])
+                log.append({"scope": t["full"], "role": "GM", "name": gm["name"],
+                            "why": "retired at " + str(gm["age"])})
+                ex["gm"] = None
+        if not isinstance(ex.get("gm"), dict):
+            hire, why = None, ""
+            if pool and rng.random() < 0.6:
+                idx = max(range(len(pool)), key=lambda i: pool[i].get("rating", 0))
+                hire = pool.pop(idx)
+                hire["rank"], hire["tenure"] = "GM", 0
+                why = ("a former player earns a GM job" if hire.get("former_player")
+                       else "hired off the executive market")
+            if hire is None:
+                hire = _gen_exec(rng, "GM")
+                why = "a new name gets the job"
+            ex["gm"] = hire
+            if hire.get("former_player"):
+                add_person_stint(save, hire["name"], "GM", t["full"],
+                                 note="named general manager", milestone=True)
+                _tl(save, save.get("season", 1), "staff", "\U0001F9ED",
+                    hire["name"] + " named GM of the " + t["full"],
+                    "A former player is now running a franchise's football operations.")
+            log.append({"scope": t["full"], "role": "GM", "name": hire["name"], "why": why})
+    com = save.get("commissioner")
+    if isinstance(com, dict):
+        com["age"] = int(com.get("age", 58) or 58) + 1
+        if com["age"] >= 72 or (com["age"] >= 66 and rng.random() < 0.15):
+            new = (max(prez_pool, key=lambda p: p.get("rating", 0)) if prez_pool
+                   else _gen_exec(rng, "President of Football Ops"))
+            if new in prez_pool:
+                prez_pool.remove(new)
+            save["commissioner"] = {"name": new["name"], "since": save.get("season", 1),
+                                    "age": max(56, int(new.get("age", 60) or 60))}
+            add_person_stint(save, new["name"], "Commissioner", "the league",
+                             note="elected league commissioner", milestone=True)
+            _tl(save, save.get("season", 1), "hof", "\u2696",
+                new["name"] + " elected league Commissioner",
+                "The owners choose a new steward for the whole league.")
+            log.append({"scope": "League", "role": "Commissioner", "name": new["name"],
+                        "why": "elected"})
+    save["exec_pool"] = pool[-20:]
+    save["president_pool"] = prez_pool[-12:]
+    save["exec_carousel_log"] = log[:20]
+    _prune_people(save)
+
+
+def exec_report(save):
+    """League front offices + the commissioner, for the League tab."""
+    uid = save.get("current_team_id")
+    rows = []
+    for t in sorted(save.get("teams", []), key=lambda x: x.get("full", "")):
+        if t["id"] == uid:
+            rows.append({"team": t["full"], "you": True,
+                         "gm": save["gm"].get("name", "You") + " — you"})
+        else:
+            gm = (t.get("exec") or {}).get("gm") or {}
+            tag = ""
+            if gm.get("former_player"):
+                tag = " (former " + str(gm["former_player"].get("pos", "player")) + ")"
+            rows.append({"team": t["full"], "you": False,
+                         "gm": (gm.get("name", "\u2014") + " (" + str(gm.get("rating", "?")) + ")" + tag)})
+    return {"rows": rows, "commissioner": save.get("commissioner"),
+            "log": save.get("exec_carousel_log", [])}
+
+
+# --------------------------------------------------------------------------- #
+# HIREABLE ALUMNI — bring a retired legend back into YOUR front office. Notable
+# registry people (your alumni + Hall-of-Fame former players in scouting/FO/
+# exec second careers) can be hired into your Head Scout / Analytics / Medical
+# chairs, carrying a rating from their career and a continuity stint.
+# --------------------------------------------------------------------------- #
+_ALUMNI_SLOTS = {"head_scout": "Head of Scouting", "head_analytics": "Head of Analytics",
+                 "head_medical": "Head of Medical"}
+
+
+def _alumnus_rating(e):
+    fp = e.get("former_player") or {}
+    return max(48, min(84, 44 + int(fp.get("peak", 70) or 70) // 3
+                       + (6 if e.get("hof") else 0)))
+
+
+def alumni_front_office_market(save):
+    """Notable people you could bring into your front office right now."""
+    out = []
+    for e in (save.get("people") or {}).values():
+        if not e.get("former_player"):
+            continue
+        cur = e.get("current") or {}
+        if not (e.get("your_alum") or e.get("hof")):
+            continue
+        if cur.get("role") in ("GM", "President of Football Ops", "Commissioner",
+                               "Head Coach", "OC", "DC"):
+            continue  # he's got a bigger job already
+        out.append({"name": e["name"], "pos": (e.get("former_player") or {}).get("pos", ""),
+                    "hof": bool(e.get("hof")), "alum": bool(e.get("your_alum")),
+                    "rating": _alumnus_rating(e),
+                    "doing": cur.get("role", "out of football")})
+    out.sort(key=lambda x: (-x["rating"], not x["alum"]))
+    return out[:12]
+
+
+def hire_alumnus(save, name, role):
+    if role not in _ALUMNI_SLOTS:
+        return False, "That's not a front-office chair."
+    e = (save.get("people") or {}).get(_person_key(name))
+    if not e or not e.get("former_player"):
+        return False, "No such alumnus is available."
+    rating = _alumnus_rating(e)
+    cost = staff_cost(rating)
+    b = _business(save)
+    if b["cash"] < cost:
+        return False, "Bringing " + name + " aboard costs $" + str(cost) + "M - you have $" + str(b["cash"]) + "M."
+    b["cash"] = round(b["cash"] - cost, 1)
+    fp = e.get("former_player") or {}
+    save.setdefault("staff", {})[role] = {
+        "name": name, "rating": rating,
+        "age": min(64, 34 + int(fp.get("seasons", 6) or 6)),
+        "former_player": fp, "alumnus_hire": True,
+        "ped": {"label": "Franchise legend" if e.get("your_alum") else "Former player",
+                "tree": "Front office", "mentor": "the game itself", "experience": 0,
+                "rep": max(40, min(92, 40 + int(fp.get("peak", 70) or 70) // 2)),
+                "stops": [{"team": "Player", "role": str(fp.get("pos", "")), "years": int(fp.get("seasons", 0) or 0)}],
+                "pros": 0, "playoffs": 0, "rings": 0}}
+    add_person_stint(save, name, _ALUMNI_SLOTS[role], current_team(save).get("full", "your club"),
+                     note="hired into your front office", milestone=bool(e.get("your_alum")))
+    _tl(save, save.get("season", 1), "staff", "\U0001F91D",
+        name + " joins your front office as " + _ALUMNI_SLOTS[role],
+        ("A player you once had is back in the building." if e.get("your_alum")
+         else "A respected former player joins your staff."))
+    write_save(save)
+    return True, name + " hired as " + _ALUMNI_SLOTS[role] + " (" + str(rating) + " OVR) for $" + str(cost) + "M."
 
 
 def run_coaching_carousel(save, rng):
@@ -4663,6 +4895,7 @@ def load_save(user_id):
             changed = ensure_team_histories(save) or changed
             changed = ensure_player_identities(save) or changed
             changed = ensure_ai_staffs(save) or changed
+            changed = ensure_ai_executives(save) or changed
             changed = ensure_city_economics(save) or changed
             changed = ensure_team_cultures(save) or changed
             changed = ensure_world_systems(save) or changed

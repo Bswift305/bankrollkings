@@ -1239,6 +1239,28 @@
     </div>
     {% endfor %}
   </div>
+  {% if alumni_market is defined and alumni_market %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">🤝 Bring a Legend into Your Front Office</div>
+    <p class="fk-muted" style="margin:4px 0 10px">Retired greats — your own alumni and the league's Hall of Famers — can be hired into your Head Scout, Analytics, or Medical chair. They carry a rating from their career, real locker-room weight, and it becomes part of their story.</p>
+    <div style="display:grid; gap:6px;">
+      {% for a in alumni_market %}
+      <div style="display:flex; align-items:center; gap:10px; justify-content:space-between; background:rgba(3,10,16,.5); border:1px solid rgba(74,212,240,.14); border-radius:9px; padding:7px 10px; flex-wrap:wrap;">
+        <span style="font-size:12.5px;"><span class="fk-ovr">{{ a.rating }}</span> <b>{{ a.name }}</b>
+          {% if a.alum %}<span class="fk-tag fk-tag-hc">Your alum</span>{% endif %}{% if a.hof %}<span class="fk-tag" style="color:#f5c860">HOF</span>{% endif %}
+          <small class="fk-muted">· former {{ a.pos }} · now {{ a.doing }}</small></span>
+        <span style="display:flex; gap:6px;">
+          {% for role, label in [('head_scout','Scout'), ('head_analytics','Analytics'), ('head_medical','Medical')] %}
+          <form method="post" action="{{ url_for('franchise_hire_alumnus') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ a.name }}"><input type="hidden" name="role" value="{{ role }}">
+            <button class="fk-btn fk-btn-ghost fk-btn-sm">→ {{ label }}</button></form>
+          {% endfor %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== ALMANAC ===================== #}
@@ -1566,6 +1588,30 @@
       </div>
       {% endfor %}
     </div>
+  </div>
+  {% endif %}
+
+  {% if exec_view is defined and exec_view %}
+  {% if exec_view.commissioner %}
+  <div class="fk-champbar" style="margin-top:12px">⚖ League Commissioner: <strong>{{ exec_view.commissioner.name }}</strong> <small class="fk-muted">— since S{{ exec_view.commissioner.since }}</small></div>
+  {% endif %}
+  {% if exec_view.log %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">🧭 Executive Carousel — front-office moves</div>
+    <div style="display:grid; gap:4px;">
+      {% for m in exec_view.log %}
+      <div class="fk-muted" style="font-size:12px;"><b style="color:#e8f4fb">{{ m.scope }}</b> {{ m.role }}: <span style="color:#7dffb0">{{ m.name }}</span> <small>— {{ m.why }}</small></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">The League's Front Offices — who's running each club</div>
+    <table class="fk-table"><thead><tr><th>Team</th><th>General Manager</th></tr></thead><tbody>
+      {% for r in exec_view.rows %}
+      <tr class="{% if r.you %}fk-you{% endif %}"><td><b>{{ r.team }}</b>{% if r.you %} ◄ you{% endif %}</td><td>{{ r.gm }}</td></tr>
+      {% endfor %}
+    </tbody></table>
   </div>
   {% endif %}
 
