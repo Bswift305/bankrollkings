@@ -751,7 +751,26 @@
   </div>
   {% endif %}
   {% else %}
-  <div class="fk-card"><p class="fk-muted">The Command Center opens once your season kicks off — set your weekly plan, then run the week.</p></div>
+  <div class="fk-card fk-cc-locked">
+    <div class="fk-card-h">{{ icon('flag') }}Command Center — locked until Season {{ save.season }} kicks off</div>
+    {% if unemployed %}
+      <p class="fk-muted">You're between jobs right now. The Command Center is your weekly game-day cockpit — it opens once you're hired and the season is underway.</p>
+      <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub') }}">→ Choose your next job on the Dashboard</a>
+    {% elif last_outcome and last_outcome.offers %}
+      <p class="fk-muted">Season {{ save.season - 1 }} is in the books and clubs are calling. Settle your GM future first — take a new job or stay put — then work the offseason and kick off Season {{ save.season }}. The Command Center opens the moment the season starts.</p>
+      <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub') }}">→ Settle your {{ last_outcome.offers|length }} job offer{{ 's' if last_outcome.offers|length != 1 }} on the Dashboard</a>
+    {% elif save.offseason_mode %}
+      <p class="fk-muted">You're in the offseason. Build your roster — staff, re-signings, free agency, the draft, camp and the 53-man cut — then kick off Season {{ save.season }}. That's when the Command Center opens for weekly planning.</p>
+      <form method="post" action="{{ url_for('franchise_offseason_begin') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="fk-btn fk-btn-go">▶ Begin Offseason — build for Season {{ save.season }}</button></form>
+    {% elif draft_pending %}
+      <p class="fk-muted">The rookie draft is open. Make your picks, wrap the offseason, and kick off Season {{ save.season }} — then the Command Center opens.</p>
+      <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub', tab='draft') }}">● Rookie Draft is open — make your picks</a>
+    {% else %}
+      <p class="fk-muted">Season {{ save.season }} is ready to run. Kick it off from the Dashboard and the Command Center opens — set your weekly plan, then run each week.</p>
+      <a class="fk-btn fk-btn-go fk-btn-link" href="{{ url_for('franchise_hub') }}">→ Kick off Season {{ save.season }} on the Dashboard</a>
+    {% endif %}
+  </div>
   {% endif %}
   {% endif %}
 
