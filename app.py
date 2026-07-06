@@ -29305,6 +29305,7 @@ def _franchise_view(save):
         'hall_of_fame': save.get('hall_of_fame'),
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
+        'playoff_run': save.get('playoff_run'),
         'news': save.get('news'),
         'evolution_notes': save.get('evolution_notes') or [],
         'broadcast': fk.broadcast(save),

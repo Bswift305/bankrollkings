@@ -359,6 +359,25 @@
     </div>
     {% endif %}
 
+    {% if playoff_run and playoff_run.made %}{% set pr = playoff_run %}
+    <div class="fk-card" style="border-color:rgba(245,200,96,.35);">
+      <div class="fk-card-h">🏟 Postseason run — Season {{ pr.season }} <span style="float:right;font-size:12px;color:#f5c860;font-weight:700">#{{ pr.seed }} seed · {{ pr.conf }}</span></div>
+      <div class="fk-outcome-rec" style="font-size:15px; margin:2px 0 8px; color:{{ '#7dffb0' if 'Champions' in pr.result else '#ffd27d' }};">{{ pr.result }}</div>
+      {% if pr.rounds %}
+      <div class="fk-gloscroll"><table class="fk-table"><tbody>
+        {% for g in pr.rounds %}
+        <tr><td style="color:#9fe9ff; font-weight:700">{{ g.round }}</td>
+          <td>vs {{ g.opp }}</td>
+          <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }} {{ g.us }}–{{ g.them }}</b></td></tr>
+        {% endfor %}
+      </tbody></table></div>
+      {% else %}
+      <p class="fk-muted">You earned a first-round bye and your run started later in the bracket.</p>
+      {% endif %}
+      <div class="fk-champ" style="margin-top:8px">🏆 Champion: {{ pr.champion }}</div>
+    </div>
+    {% endif %}
+
     {% if game_log %}
     <div class="fk-card">
       <div class="fk-card-h">{{ icon('ball') }}Last season — game log</div>

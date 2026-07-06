@@ -988,6 +988,64 @@ def _run_playoffs(rng, seeds, powers):
     return teams[0]
 
 
+def _conf_bracket(rng, seeds, powers, uid, run, names):
+    """Run one conference's single-elim bracket, recording every game the user
+    plays (round name, opponent, score, result). Returns the conference champ."""
+    teams = seeds[:]
+    while len(teams) > 1:
+        teams.sort(key=lambda t: seeds.index(t))
+        byes, active = [], teams[:]
+        if len(active) % 2 == 1:
+            byes, active = [active[0]], active[1:]
+        pairs, i, j = [], 0, len(active) - 1
+        while i < j:
+            pairs.append((active[i], active[j])); i += 1; j -= 1
+        remaining = len(byes) + len(pairs)
+        rname = ("Conference Championship" if remaining == 1 else
+                 "Divisional Round" if remaining == 2 else "Wild Card")
+        winners = []
+        for a, b in pairs:
+            w = a if _sim_game(rng, powers[a], powers[b]) else b
+            l = b if w == a else a
+            winners.append(w)
+            if uid in (a, b):
+                opp = b if uid == a else a
+                won = w == uid
+                ws, ls = _score_line(rng, powers[w], powers[l])
+                run["rounds"].append({"round": rname, "opp": names.get(opp, "?"),
+                                      "us": (ws if won else ls), "them": (ls if won else ws),
+                                      "won": won})
+        teams = byes + winners
+    return teams[0]
+
+
+def _run_postseason(save, rng, standings, powers):
+    """Full postseason: two conference brackets + the BRK Championship. Records
+    the user's path in `run`. Returns (champion, conf_champs, playoff_ids, run)."""
+    uid = save["current_team_id"]
+    names = {t["id"]: t["full"] for t in save["teams"]}
+    playoff_ids, conf_champs = set(), []
+    run = {"made": False, "seed": None, "conf": None, "rounds": []}
+    for conf in CONFERENCES:
+        seeds = [t["id"] for t in standings if t["conference"] == conf][:playoff_seeds(save)]
+        playoff_ids.update(seeds)
+        if uid in seeds:
+            run.update(made=True, seed=seeds.index(uid) + 1, conf=conf)
+        conf_champs.append(_conf_bracket(rng, seeds, powers, uid, run, names))
+    a, b = conf_champs[0], conf_champs[1]
+    champ = a if _sim_game(rng, powers[a], powers[b]) else b
+    loser = b if champ == a else a
+    if uid in (a, b):
+        opp = b if uid == a else a
+        won = champ == uid
+        ws, ls = _score_line(rng, powers[champ], powers[loser])
+        run["rounds"].append({"round": "BRK Championship", "opp": names.get(opp, "?"),
+                              "us": (ws if won else ls), "them": (ls if won else ws), "won": won})
+    return champ, conf_champs, playoff_ids, run
+
+
+
+
 TRADE_DEADLINE_SOLO = 9
 
 
@@ -2167,18 +2225,23 @@ def _finalize_season(save):
     _archive_season(save["teams"], save["season"])
 
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
-    conf_champs, playoff_ids = [], set()
-    for conf in CONFERENCES:
-        seeds = [t["id"] for t in standings if t["conference"] == conf][:playoff_seeds(save)]
-        playoff_ids.update(seeds)
-        conf_champs.append(_run_playoffs(rng, seeds, powers))
-    champion = (conf_champs[0] if _sim_game(rng, powers[conf_champs[0]], powers[conf_champs[1]])
-                else conf_champs[1])
+    champion, conf_champs, playoff_ids, _run = _run_postseason(save, rng, standings, powers)
     _record_champion_bench(save, teams[champion])
 
     uid = save["current_team_id"]
     rec = dict(teams[uid]["record"])
     made_playoffs, won_title = uid in playoff_ids, champion == uid
+    if _run["made"]:
+        _last = _run["rounds"][-1] if _run["rounds"] else None
+        _run["result"] = ("BRK Champions \U0001F3C6" if won_title else
+                          "Runner-up \u2014 lost the BRK Championship"
+                          if _last and _last["round"] == "BRK Championship" else
+                          ("Eliminated in the " + _last["round"]) if _last else "Made the playoffs")
+        _run["champion"] = teams[champion]["full"]
+        _run["season"] = save["season"]
+        save["playoff_run"] = _run
+    else:
+        save.pop("playoff_run", None)
     _evaluate_owner_directive(save, rec, made_playoffs)
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
     outcome["season"] = save["season"]
