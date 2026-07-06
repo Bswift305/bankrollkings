@@ -368,7 +368,7 @@
         <tr class="{{ 'fk-glbest' if g.best }}">
           <td style="color:#7f93a0">Wk {{ g.week }}</td>
           <td>{{ 'vs' if g.home else '@' }} {{ g.opp }}</td>
-          <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}</b></td>
+          <td><b class="{{ 'fk-glw' if g.won else 'fk-gll' }}">{{ 'W' if g.won else 'L' }}{% if g.us is defined and g.us is not none %} {{ g.us }}–{{ g.them }}{% endif %}</b></td>
           <td>{% if g.star %}⭐ {{ g.star.pos }} <a href="{{ url_for('franchise_player', pid=g.star.pid) }}" style="color:#9fe9ff;text-decoration:none">{{ g.star.name }}</a> · {{ g.star.line }}{% endif %}</td>
         </tr>
         {% endfor %}
