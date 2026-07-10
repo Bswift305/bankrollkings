@@ -494,7 +494,7 @@
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
     {% endif %}
     {% if nego_fa %}
-      <p class="os-sub"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR) · agent {{ nego_fa.agent.personality if nego_fa.agent }} · asking ${{ '%.1f'|format(nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}M/yr</p>
+      <p class="os-sub"><strong>{{ nego_fa.pos }} {{ nego_fa.name }}</strong> ({{ nego_fa.overall }} OVR · age {{ nego_fa.age }}) · agent {{ nego_fa.agent.personality if nego_fa.agent }} · asking ${{ '%.1f'|format(nego_fa.demand.aav if nego_fa.demand else nego_fa.contract.aav) }}M/yr</p>
       {% set ctr = last_nego.counter if last_nego and last_nego.ok and last_nego.status == 'countered' and last_nego.id == nego_fa.id else none %}
       {% if ctr %}
       <div class="os-counter">
@@ -514,9 +514,10 @@
       </form>
       <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to free agents</a></p>
     {% else %}
-      <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>OVR</th><th>Fit</th><th>Scout</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
+      <div class="os-tscroll"><table class="os-table"><thead><tr><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Last season</th><th>Fit</th><th>Scout</th><th>Agent</th><th>Asking</th><th></th></tr></thead><tbody>
       {% for p in free_agents %}
-        <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
+        <tr><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.style %}<small style="display:block;color:#7f93a0">{{ p.style }}</small>{% endif %}</td><td>{{ p.pos }}</td><td>{{ p.age }}</td><td>{{ p.overall }}</td>
+          <td style="white-space:nowrap;">{% if p.last_line %}<span style="color:#cfe3ee">{{ p.last_line }}</span>{% else %}<span style="color:#5f7280" title="No pro tape — young or unproven free agent">no pro tape</span>{% endif %}</td>
           <td>{% if p.fit_pct %}<span class="os-fit os-fit-{{ 'hi' if p.fit_pct >= 80 else 'mid' if p.fit_pct >= 60 else 'lo' }}">{{ p.fit }}</span>{% else %}<span style="color:#5f7280">—</span>{% endif %}</td>
           <td>{% if p.scout %}<span class="os-fit os-fit-{{ 'hi' if p.scout_tier=='hi' else 'lo' if p.scout_tier=='lo' else 'mid' }}">{{ p.scout }}</span>{% endif %}</td><td>{{ p.agent.personality if p.agent else '—' }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M{% if p.demand and p.demand.get('ask0') and p.demand.ask0 > p.demand.aav %} <small style="color:#7dffb0; display:block;">▼ was ${{ '%.1f'|format(p.demand.ask0) }}M</small>{% endif %}</td>

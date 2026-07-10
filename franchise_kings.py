@@ -539,6 +539,63 @@ def _gen_fa_pool(rng, n=40, season=1, seen=None):
     return pool
 
 
+def _synth_season_stats(rng, p):
+    """A believable prior-season line for a veteran free agent, scaled to his
+    overall/age — so the market shows how he played last year. Returns None for
+    positions with no natural box line (OL)."""
+    o = int(p.get("overall", 70) or 70)
+    pos, age = p.get("pos"), int(p.get("age", 27) or 27)
+    d = max(0, o - 60)
+    agef = 0.9 if age >= 32 else (1.05 if 25 <= age <= 29 else 1.0)
+    j = lambda lo, hi: rng.uniform(lo, hi)
+    g = rng.randint(13, 17)
+    if pos == "QB":
+        return {"g": g, "pass_yd": int((2600 + d * 95) * agef * j(0.9, 1.12)),
+                "pass_td": max(6, int((12 + d * 1.05) * agef * j(0.85, 1.2))),
+                "int": max(3, int((15 - d * 0.32) * j(0.7, 1.25))), "syn": 1}
+    if pos == "RB":
+        rec = int((18 + d * 1.1) * j(0.7, 1.2))
+        return {"g": g, "rush_yd": int((520 + d * 42) * agef * j(0.8, 1.2)),
+                "rush_td": max(1, int((3 + d * 0.34) * agef * j(0.7, 1.3))),
+                "rec": rec, "rec_yd": rec * 8, "syn": 1}
+    if pos in ("WR", "TE"):
+        rec = max(8, int(((30 if pos == "WR" else 22) + d * 2.0) * agef * j(0.75, 1.2)))
+        ypc = j(11, 15) if pos == "WR" else j(9, 12)
+        return {"g": g, "rec": rec, "rec_yd": int(rec * ypc),
+                "rec_td": max(1, int((2 + d * 0.32) * j(0.7, 1.35))), "syn": 1}
+    if pos in ("DL", "LB"):
+        return {"g": g, "sack": round(max(0.0, (1.5 + d * 0.30) * agef * j(0.6, 1.4)), 1),
+                "tackle": int((32 + d * 1.6) * j(0.8, 1.2)), "syn": 1}
+    if pos in ("CB", "S"):
+        return {"g": g, "def_int": max(0, int((1 + d * 0.12) * j(0.5, 1.6))),
+                "pd": max(1, int((5 + d * 0.45) * j(0.7, 1.3))),
+                "tackle": int((38 + d * 1.3) * j(0.8, 1.2)), "syn": 1}
+    if pos == "K":
+        fgm = max(10, int((17 + d * 0.5) * j(0.8, 1.15)))
+        return {"g": g, "fgm": fgm, "fga": fgm + rng.randint(2, 6),
+                "pts": fgm * 3 + rng.randint(15, 45), "syn": 1}
+    return None                                    # OL etc. — no natural box line
+
+
+def ensure_fa_prior_stats(save):
+    """Back-fill a prior-season line onto veteran free agents so you can see how
+    they played last year. Idempotent — skips anyone who already has stats (a real
+    line, e.g. a player you let walk) or is flagged unproven. Returns changed."""
+    changed = False
+    for p in save.get("free_agents", []):
+        if not isinstance(p, dict) or p.get("stats") or p.get("_no_tape"):
+            continue
+        if int(p.get("age", 27) or 27) < 23:
+            p["_no_tape"] = 1                       # too young for a real pro year
+            changed = True
+            continue
+        rng = _rng(sum(ord(c) for c in str(p.get("id", ""))) + int(save.get("season", 1)))
+        line = _synth_season_stats(rng, p)
+        p["stats" if line else "_no_tape"] = line if line else 1
+        changed = True
+    return changed
+
+
 def _all_generated_players(save):
     for team in save.get("teams", []):
         for p in team.get("roster", []):
@@ -5587,6 +5644,7 @@ def load_save(user_id):
         if save:
             changed = ensure_staff_profiles(save)
             changed = ensure_staff_contracts(save) or changed
+            changed = ensure_fa_prior_stats(save) or changed
             changed = ensure_team_histories(save) or changed
             changed = ensure_player_identities(save) or changed
             changed = ensure_ai_staffs(save) or changed

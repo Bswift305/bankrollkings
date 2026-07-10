@@ -29574,7 +29574,8 @@ def franchise_offseason():
         ctx.update(free_agents=[dict(p, fit=fk.tactical_fit(save, p)['label'],
                                      fit_pct=fk.tactical_fit(save, p)['pct'],
                                      scout=fk.scout_report(save, p)['rec'],
-                                     scout_tier=fk.scout_report(save, p)['tier'])
+                                     scout_tier=fk.scout_report(save, p)['tier'],
+                                     last_line=fk.stat_line(p))
                                 for p in sorted(save.get('free_agents', []),
                                                 key=lambda p: -p['overall'])[:30]],
                    last_nego=save.get('last_nego'),
