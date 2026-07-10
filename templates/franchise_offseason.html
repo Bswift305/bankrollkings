@@ -416,6 +416,9 @@
   {% elif stage == 'resign' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('pen') }}Re-Sign Your Own</div>
+    {% if expiring %}
+    <div class="os-li" style="border-left:3px solid #ffd873; background:rgba(245,200,96,.08); padding:8px 12px; margin-bottom:8px; color:#ffe6a6;">⚠ These {{ expiring|length }} deal{{ 's' if expiring|length != 1 }} are up. <b>Anyone you don't re-sign walks to free agency the moment you continue</b> — they leave your roster and join the FA pool.</div>
+    {% endif %}
     {% if last_nego %}{% set nstat = last_nego.get('status', '') %}<div class="os-nego os-nego-{{ 'yes' if nstat == 'accepted' else 'mid' if nstat == 'countered' else 'no' }}"><strong>{{ nstat|upper or 'NO DEAL' }}</strong> — {{ last_nego.msg }}</div>{% endif %}
     {% if last_nego and last_nego.context and last_nego.context.reasons %}
     <div class="os-nego-tags">{% for r in last_nego.context.reasons %}<span>{{ r }}</span>{% endfor %}</div>
@@ -464,6 +467,9 @@
   {% elif stage == 'free_agency' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('swap') }}Free Agency — Day {{ fa_day }} of {{ fa_days_max }} <span class="os-cap">Cap ${{ '%.0f'|format(cap_used) }}M / ${{ '%.0f'|format(cap_total) }}M</span></div>
+    {% if walked %}
+    <div class="os-li" style="border-left:3px solid #ff9a9a; background:rgba(255,154,154,.07); padding:8px 12px; margin-bottom:8px; color:#ffc2c2;">🚪 Walked in free agency (not re-signed): {% for w in walked %}<b>{{ w.pos }} {{ w.name }}</b> ({{ w.ovr }}){{ ', ' if not loop.last }}{% endfor %}. They're in the pool below — you can still chase them at market price.</div>
+    {% endif %}
     {% if fa_msg %}<div class="os-li" style="border-left:3px solid {{ '#7dffb0' if fa_ok == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if fa_ok == '1' else '#ff9a9a' }};">{{ fa_msg }}</div>{% endif %}
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
       {% if fa_day < fa_days_max %}

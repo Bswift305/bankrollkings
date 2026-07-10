@@ -29582,6 +29582,7 @@ def franchise_offseason():
                    cap_used=fk.cap_used(team), cap_total=fk.cap_total(save),
                    fa_day=int(save['offseason'].get('fa_day', 1) or 1), fa_days_max=fk.FA_DAYS,
                    fa_log=save['offseason'].get('fa_log', []),
+                   walked=save['offseason'].get('walked', []),
                    fa_msg=request.args.get('fa_msg', ''), fa_ok=request.args.get('fa_ok', ''))
     elif stage == 'draft':
         if not save.get('draft_pending') and not save['offseason'].get('drafted'):

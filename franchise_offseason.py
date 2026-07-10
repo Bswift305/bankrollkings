@@ -217,6 +217,8 @@ def advance_stage(save):
     i = STAGE_KEYS.index(cur)
     if cur == "recap" and save.get("league_vote"):
         fk.resolve_league_vote(save, "abstain")   # skipped the meeting = abstained
+    if cur == "resign":
+        settle_expiring(save)                # unresigned expiring players walk to FA
     if cur == "cuts":
         _finalize_camp(save)                 # AI cuts to 53 + safety-trim the user
     if i + 1 < len(STAGE_KEYS):
@@ -301,6 +303,34 @@ def let_walk(save, player_id):
 def resign(save, player_id, years, aav):
     """Re-sign one of your expiring players (reuses the agent negotiation)."""
     return fk.negotiate(save, player_id, years, aav)
+
+
+def settle_expiring(save):
+    """Leaving the Re-Sign stage: anyone still on an expired deal (0 years) walks
+    to free agency — you chose not to keep him. Weak teams bank a comp pick per
+    walk. Records who left so the next stage can show it."""
+    team = fk.current_team(save)
+    walked = []
+    for p in list(team["roster"]):
+        if p.get("contract", {}).get("years", 1) <= 0:
+            team["roster"] = [x for x in team["roster"] if x["id"] != p["id"]]
+            for key in ("on_block", "trade_request", "trade_reason"):
+                p.pop(key, None)
+            save.setdefault("free_agents", []).append(p)
+            walked.append({"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"]})
+            sc = my_scenario(save)
+            if (sc or {}).get("comp_picks", 0) > 0:
+                save["offseason"].setdefault("comp_pick_credit", 0)
+                save["offseason"]["comp_pick_credit"] += 1
+    save["offseason"]["walked"] = walked
+    if walked:
+        fk._tl(save, save.get("season", 1), "roster", "\U0001F6AA",
+               "%d player%s walked in free agency" % (len(walked), "" if len(walked) == 1 else "s"),
+               ", ".join("%s %s" % (w["pos"], w["name"]) for w in walked[:8])
+               + (" and more" if len(walked) > 8 else "")
+               + " left because you didn't re-sign them.")
+    fk.write_save(save)
+    return walked
 
 
 # --------------------------------------------------------------------------- #
