@@ -29184,7 +29184,7 @@ def _trade_view(save, team_id):
         'block_list': sorted(fk.blocked_players(save), key=lambda p: -p['overall']),
         'wants_out': sorted(fk.wants_out_players(save), key=lambda p: -p['overall']),
         'trades_open': fk.solo_trades_open(save),
-        'pick_shop': save.get('pick_shop'),
+        'pick_shop': fk.annotated_pick_shop(save),
         'last_trade': save.get('last_trade'),
     }
 
@@ -29628,7 +29628,7 @@ def franchise_offseason():
                              key=lambda x: -x['tval']),
             'blocked': fk.blocked_players(save),
             'wants_out': fk.wants_out_players(save),
-            'pick_shop': save.get('pick_shop'),
+            'pick_shop': fk.annotated_pick_shop(save),
             'restructure': sorted([{'id': p['id'], 'name': p['name'], 'pos': p['pos'],
                                     'aav': p['contract']['aav'], 'years': p['contract']['years'],
                                     'relief': round(p['contract']['aav'] * 0.4, 1)}

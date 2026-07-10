@@ -1039,7 +1039,7 @@
         {% for o in ps.offers %}
         <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="accept"><input type="hidden" name="offer_id" value="{{ o.id }}">
-          <span><b>{{ o.team }}</b> — {% for pk in o.picks %}R{{ pk.round }}{{ ' + ' if not loop.last }}{% endfor %} in the season-{{ o.season }} draft · package value {{ o.total }} · grade <b>{{ o.grade }}</b></span>
+          <span><b>{{ o.team }}</b> — {% for pk in o.picks %}R{{ pk.round }}{% if pk.ov is defined %} <span style="color:#9fe9ff; font-weight:600">(proj #{{ pk.ov }})</span>{% endif %}{{ ' + ' if not loop.last }}{% endfor %} in the season-{{ o.season }} draft · package value {{ o.total }} · grade <b>{{ o.grade }}</b>{% if o.pir is defined %}<small style="display:block; color:#8fa3b0; margin-top:2px;">📉 {{ o.team }} project ~#{{ o.pir }} in the order — a <b style="color:#cfe3ee">{{ o.tier }}</b> pick in each round (from current power; real slot is set by where they finish)</small>{% endif %}</span>
           <button class="fk-btn fk-btn-sm">Accept</button>
         </form>
         {% endfor %}

@@ -8321,6 +8321,37 @@ def cancel_pick_shop(save):
     return True, "You pulled him off the pick market."
 
 
+def draft_order_projection(save):
+    """Projected pick slot (1..n) for every club in a FUTURE draft, from current
+    power — the weakest team is projected to pick first. The real order is set by
+    where clubs actually finish; this is the read you trade on today."""
+    teams = save.get("teams", [])
+    order = sorted(teams, key=lambda t: (power_rating(t), t.get("full", "")))
+    return {t["id"]: i + 1 for i, t in enumerate(order)}, len(teams)
+
+
+def _round_tier(pir, n):
+    third = max(1, round(n / 3.0))
+    return "early" if pir <= third else "late" if pir > n - third else "mid"
+
+
+def annotated_pick_shop(save):
+    """save['pick_shop'] with each offered pick tagged with its PROJECTED draft
+    slot: the offering club's own pick, so its position is that club's projected
+    finish. Lets you tell an early-2nd from a late-2nd before you accept."""
+    shop = save.get("pick_shop")
+    if not shop:
+        return None
+    slot_by_team, n = draft_order_projection(save)
+    offers = []
+    for o in shop.get("offers", []):
+        pir = slot_by_team.get(o.get("team_id"), (n + 1) // 2)
+        picks = [dict(pk, pir=pir, ov=(pk["round"] - 1) * n + pir,
+                      tier=_round_tier(pir, n)) for pk in o.get("picks", [])]
+        offers.append(dict(o, picks=picks, pir=pir, tier=_round_tier(pir, n)))
+    return dict(shop, offers=offers, teams_n=n)
+
+
 def propose_trade(save, give_id, get_id):
     user = current_team(save)
     give = next((p for p in user["roster"] if p["id"] == give_id), None)
