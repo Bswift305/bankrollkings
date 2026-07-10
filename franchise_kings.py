@@ -3640,7 +3640,7 @@ def run_coaching_carousel(save, rng):
             role = rng.choice(_AI_STAFF_ROLES)
             c = staff.get(role)
             if isinstance(c, dict):
-                pool.append(dict(c, ex_role=role))
+                pool.append(dict(c, ex_role=role, fired_by=t["full"]))
                 log.append({"team": t["full"], "role": _AI_ROLE_LABEL[role],
                             "out": c["name"], "in": "", "why": "fired after a lost season"})
                 staff[role] = None
@@ -4103,6 +4103,264 @@ def generate_staff_market(rng):
     return {role: [_gen_staff(rng, role) for _ in range(4)] for role, _, _ in STAFF_ROLES}
 
 
+# --------------------------------------------------------------------------- #
+# STAFF CONTRACTS, CAP, A REAL FREE-AGENT MARKET, AND POACHING
+# Coaches are on the books now: a yearly salary against a staff cap and a term
+# that runs down each offseason. When a deal expires he hits the open market;
+# your hire screen is that market -- the actual coaches shaken loose by the
+# league carousel (fired, contracts up, retired players), not invented names.
+# And you can pry an employed coordinator out of a rival building for a premium.
+# --------------------------------------------------------------------------- #
+STAFF_CAP_BY_MARKET = {"Large": 66.0, "Mid": 58.0, "Small": 52.0}
+
+
+def staff_salary(rating):
+    """Annual salary ($M/yr) a coach of this rating commands."""
+    return round(0.4 + int(rating or 50) * 0.075, 1)
+
+
+def staff_cap(save):
+    return round(STAFF_CAP_BY_MARKET.get(current_team(save).get("market"), 58.0), 1)
+
+
+def staff_committed(save):
+    tot = 0.0
+    for c in (save.get("staff") or {}).values():
+        if isinstance(c, dict):
+            con = c.get("contract") or {}
+            tot += float(con.get("salary", staff_salary(c.get("rating", 55))))
+    return round(tot, 1)
+
+
+def staff_cap_room(save):
+    return round(staff_cap(save) - staff_committed(save), 1)
+
+
+def staff_cap_view(save):
+    cap, used = staff_cap(save), staff_committed(save)
+    return {"cap": cap, "used": used, "room": round(cap - used, 1),
+            "pct": min(100, round(used / cap * 100)) if cap else 0}
+
+
+def _staff_family(role):
+    if role in ("off_coord", "qb_coach", "oline_coach"):
+        return "off"
+    if role in ("def_coord", "db_coach"):
+        return "def"
+    return role
+
+
+def _pool_fits_role(e, role):
+    """Can this shaken-loose coach credibly fill your open chair?"""
+    ex = e.get("ex_role") or ("head_coach" if e.get("former_player") else "off_coord")
+    if _staff_family(ex) == _staff_family(role):
+        return True
+    if role == "head_coach" and ex in ("off_coord", "def_coord"):
+        return True
+    if ex == "head_coach" and role in ("off_coord", "def_coord"):
+        return True
+    return False
+
+
+def _avail_reason(base):
+    """Why is this man on the market? -> (short reason, where he's from)."""
+    if base.get("expired_from"):
+        return "contract expired", base["expired_from"]
+    if base.get("fired_by"):
+        return "fired", base["fired_by"]
+    if base.get("ex_user"):
+        return "you moved on", "your former staff"
+    if base.get("former_player"):
+        return "retired player", "new to coaching"
+    return "free agent", ""
+
+
+def _prep_candidate(save, rng, role, base, fa):
+    c = dict(base)
+    if role in ("head_coach", "off_coord", "def_coord"):
+        c = _fit_role(c, role, rng)
+    elif _staff_family(base.get("ex_role") or role) != _staff_family(role):
+        c.pop("system", None)
+        c.pop("playbook", None)
+    for k in ("expired_from", "fired_by", "ex_user", "ex_role", "roster_fit"):
+        c.pop(k, None)
+    c["id"] = "s%d" % rng.randint(100000, 999999)
+    _backfill_staff_entry(save, role, c)
+    c["role"] = role
+    c["rating"] = int(c.get("rating", 55) or 55)
+    c["ask"] = staff_salary(c["rating"])
+    c["term"] = rng.randint(2, 4)
+    reason, frm = _avail_reason(base) if fa else ("up-and-comer", "first big job")
+    c["avail"], c["from"], c["fa"] = reason, frm, bool(fa)
+    return c
+
+
+def build_staff_market(save, rng):
+    """The hire screen: real free agents from the league carousel that fit each
+    chair, topped up with up-and-comers so every role has options."""
+    pool = [e for e in (save.get("coach_pool") or []) if isinstance(e, dict)]
+    market = {}
+    for role, _, _ in STAFF_ROLES:
+        cands, used = [], []
+        for e in pool:
+            if len(cands) >= 4:
+                break
+            if _pool_fits_role(e, role):
+                cands.append(_prep_candidate(save, rng, role, e, fa=True))
+                used.append(id(e))
+        while len(cands) < 4:
+            cands.append(_prep_candidate(save, rng, role, _gen_staff(rng, role), fa=False))
+        cands.sort(key=lambda c: c.get("rating", 0), reverse=True)
+        market[role] = cands
+    return market
+
+
+def _remove_from_pool(save, cand):
+    pool = save.get("coach_pool")
+    if not isinstance(pool, list):
+        return
+    name = (cand or {}).get("name")
+    if name:
+        save["coach_pool"] = [e for e in pool
+                              if not (isinstance(e, dict) and e.get("name") == name)]
+
+
+def ensure_staff_contracts(save):
+    """Backfill contracts on hired staff and upgrade a pre-contract staff market
+    to the FA-aware one. Idempotent; returns True if anything changed."""
+    changed = False
+    for role, c in (save.get("staff") or {}).items():
+        if isinstance(c, dict) and not isinstance(c.get("contract"), dict):
+            rng = _staff_rng(save, "contract", role, c.get("name", ""))
+            c["contract"] = {"years": rng.randint(2, 3),
+                             "salary": staff_salary(c.get("rating", 55))}
+            changed = True
+    mk = save.get("staff_market")
+    stale = (not isinstance(mk, dict) or not mk
+             or any(isinstance(cd, dict) and "ask" not in cd
+                    for cands in mk.values() for cd in (cands or [])))
+    if stale:
+        save["staff_market"] = build_staff_market(
+            save, _staff_rng(save, "market", save.get("season", 1)))
+        changed = True
+    return changed
+
+
+def employed_coach_targets(save, role):
+    """Rival coordinators/HCs you could try to poach into this chair."""
+    if role not in ("head_coach", "off_coord", "def_coord"):
+        return []
+    uid = save.get("current_team_id")
+    want = (["head_coach", "off_coord", "def_coord"] if role == "head_coach" else [role])
+    out = []
+    for t in save.get("teams", []):
+        if t["id"] == uid:
+            continue
+        st = t.get("staff") or {}
+        for tr in want:
+            c = st.get(tr)
+            if not isinstance(c, dict):
+                continue
+            rating = int(c.get("rating", 55) or 55)
+            if rating < 58:
+                continue
+            out.append({"team_id": t["id"], "team": t["full"], "their_role": tr,
+                        "role_label": _AI_ROLE_LABEL.get(tr, tr), "name": c.get("name", ""),
+                        "rating": rating, "salary": round(staff_salary(rating) * 1.25, 1),
+                        "system": c.get("system"),
+                        "promo": role == "head_coach" and tr in ("off_coord", "def_coord")})
+    out.sort(key=lambda x: x["rating"], reverse=True)
+    return out[:8]
+
+
+def poach_coach(save, role, team_id, their_role):
+    """Try to pry an employed rival coach into your open chair. He can say no;
+    if he comes, you pay a premium salary + a one-time fee and the rival reloads."""
+    if role not in ("head_coach", "off_coord", "def_coord"):
+        return False, "You can only poach a rival's head coach or coordinator."
+    if save.get("staff", {}).get(role):
+        return False, "That chair is filled - fire him first to open it up."
+    t = next((x for x in save.get("teams", []) if x["id"] == team_id), None)
+    if not t:
+        return False, "That club is not in your league."
+    st = t.setdefault("staff", {})
+    c = st.get(their_role)
+    if not isinstance(c, dict):
+        return False, "He is no longer with that club."
+    rating = int(c.get("rating", 55) or 55)
+    salary = round(staff_salary(rating) * 1.25, 1)         # premium to pry him loose
+    room = staff_cap_room(save)
+    if salary > room + 0.05:
+        return False, ("Prying %s loose runs $%.1fM/yr and you have $%.1fM of staff-cap room."
+                       % (c.get("name", "him"), salary, room))
+    fee = round(salary * 0.8, 1)
+    b = _business(save)
+    if b["cash"] < fee:
+        return False, "The poaching fee is $%.1fM - you have $%.1fM cash." % (fee, b["cash"])
+    rng = _staff_rng(save, "poach", team_id, their_role, c.get("name", ""),
+                     save.get("season", 1), len(save.get("timeline", []) or []))
+    order = {s["id"]: i for i, s in enumerate(save.get("standings_cache", []))}
+    n = max(8, len(order) or len(save.get("teams", [])))
+    rank = order.get(team_id, n // 2)
+    p = 0.55
+    if role == "head_coach" and their_role in ("off_coord", "def_coord"):
+        p += 0.25                                          # a promotion tempts
+    if rank < n // 3:
+        p -= 0.22                                          # leaving a winner is hard
+    if rank >= n - 6:
+        p += 0.12                                          # jump a sinking ship
+    p += min(0.15, (save.get("gm", {}).get("reputation", 50) - 50) * 0.006)
+    if rng.random() >= max(0.1, min(0.9, p)):
+        _tl(save, save.get("season", 1), "staff", "\U0001F6AB",
+            "%s turns you down" % c.get("name", "The coach"),
+            "%s stays with the %s. A better situation - or a bigger offer - might change his mind."
+            % (c.get("name", "He"), t["full"]))
+        write_save(save)
+        return False, "%s turned it down - he's staying with the %s." % (c.get("name", "He"), t["full"])
+    b["cash"] = round(b["cash"] - fee, 1)
+    hire = _fit_role(dict(c), role, rng)
+    hire.pop("id", None)
+    _backfill_staff_entry(save, role, hire)
+    years = rng.randint(3, 4)
+    entry = {"name": hire.get("name", ""), "rating": rating,
+             "contract": {"years": years, "salary": salary}}
+    for k in ("philosophy", "system", "style", "ped", "age", "former_player", "playbook",
+              "ideology", "versatility", "temperament", "specialties", "struggles_with"):
+        if k in hire:
+            entry[k] = hire[k]
+    save.setdefault("staff", {})[role] = entry
+    st[their_role] = _gen_ai_coach(rng, their_role)        # the rival scrambles to reload
+    _tl(save, save.get("season", 1), "staff", "\U0001F3A3",
+        "Poached %s from the %s" % (entry["name"], t["full"]),
+        "You pried their %s out of the building - $%.1fM/yr for %dyr, plus a $%.1fM fee."
+        % (_AI_ROLE_LABEL.get(their_role, their_role), salary, years, fee))
+    write_save(save)
+    return True, "Got him. %s is your new %s - $%.1fM/yr for %dyr." % (
+        entry["name"], _ROLE_LABELS.get(role, role), salary, years)
+
+
+def resign_staff(save, role, years=3):
+    """Extend a coach before his deal runs out. Salary resets to his market rate
+    now -- a raise if he's grown."""
+    c = save.get("staff", {}).get(role)
+    if not isinstance(c, dict):
+        return False, "No one to re-sign there."
+    years = max(1, min(5, int(years or 3)))
+    salary = staff_salary(c.get("rating", 55))
+    cur = float((c.get("contract") or {}).get("salary", salary))
+    room = staff_cap_room(save) + cur                      # his old deal frees up
+    if salary > room + 0.05:
+        return False, "His new deal is $%.1fM/yr; you'd have only $%.1fM of room." % (salary, round(room, 1))
+    c["contract"] = {"years": years, "salary": salary}
+    _tl(save, save.get("season", 1), "staff", "✍️",
+        "Re-signed %s" % c.get("name", ""),
+        "%s stays as your %s - $%.1fM/yr for %dyr." % (
+            c.get("name", ""), _ROLE_LABELS.get(role, role), salary, years))
+    write_save(save)
+    return True, "%s re-signed - $%.1fM/yr for %dyr." % (c.get("name", ""), salary, years)
+
+
+
 def _sr(staff, role):
     return staff.get(role, {}).get("rating", _STAFF_BASE)
 
@@ -4325,25 +4583,34 @@ def hire_staff(save, role, candidate_id):
     cand = next((c for c in market.get(role, []) if c["id"] == candidate_id), None)
     if not cand:
         return False, "That candidate is no longer available."
-    cost = staff_cost(cand["rating"])
+    salary = float(cand.get("ask") or staff_salary(cand.get("rating", 55)))
+    room = staff_cap_room(save)
+    if salary > room + 0.05:
+        return False, ("Signing %s costs $%.1fM/yr and you have $%.1fM of staff-cap room. "
+                       "Open a chair or move money first." % (cand["name"], salary, room))
+    fee = round(salary * 0.5, 1)
     b = _business(save)
-    if b["cash"] < cost:
-        return False, f"Hiring {cand['name']} costs ${cost}M - you have ${b['cash']}M."
-    b["cash"] = round(b["cash"] - cost, 1)
-    entry = {"name": cand["name"], "rating": cand["rating"]}
+    if b["cash"] < fee:
+        return False, "The signing bonus is $%.1fM - you have $%.1fM cash." % (fee, b["cash"])
+    b["cash"] = round(b["cash"] - fee, 1)
+    years = int(cand.get("term") or 3)
+    entry = {"name": cand["name"], "rating": cand["rating"],
+             "contract": {"years": years, "salary": salary}}
     for k in ("philosophy", "system", "style", "ped", "age", "former_player", "playbook",
               "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in cand:
             entry[k] = cand[k]
     save.setdefault("staff", {})[role] = entry
     market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
+    _remove_from_pool(save, cand)
     write_save(save)
-    return True, f"Hired {cand['name']} ({cand['rating']} OVR) for ${cost}M."
+    return True, "Signed %s (%s OVR) - $%.1fM/yr for %dyr." % (cand["name"], cand["rating"], salary, years)
 
 
 def fire_staff(save, role):
     c = save.get("staff", {}).pop(role, None)
     if isinstance(c, dict):
+        c.pop("contract", None)
         save.setdefault("coach_pool", []).append(dict(c, ex_user=True, ex_role=role))
     write_save(save)
     return True
@@ -4446,6 +4713,28 @@ def develop_staff(save, rng):
          "name": c.get("name", ""), "age": c.get("age")}
         for role, c in retired
     ]
+    expired = []
+    for role, c in list(staff.items()):
+        if not isinstance(c, dict):
+            continue
+        con = c.get("contract")
+        if not isinstance(con, dict):
+            c["contract"] = {"years": rng.randint(2, 3), "salary": staff_salary(c.get("rating", 55))}
+            continue
+        con["years"] = int(con.get("years", 2) or 2) - 1
+        if con["years"] <= 0:
+            expired.append((role, c))
+    club = current_team(save).get("full", "your club")
+    for role, c in expired:
+        staff.pop(role, None)
+        c.pop("contract", None)
+        save.setdefault("coach_pool", []).append(dict(c, ex_role=role, ex_user=True, expired_from=club))
+        _tl(save, save.get("season", 1), "staff", "📄",
+            "%s %s's contract is up" % (_ROLE_LABELS.get(role, role), c.get("name", "")),
+            "His deal expired and he hit the open market. Re-sign a coach in his last year to keep him.")
+    save["staff_contract_expiries"] = [
+        {"role": role, "label": _ROLE_LABELS.get(role, role), "name": c.get("name", "")}
+        for role, c in expired]
     _maybe_poach_staff(save, rng, winner)
 
 
@@ -4975,7 +5264,7 @@ def start_draft(save):
     acc = max(20, min(94, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"] + scout_bonus))
     for p in cls:
         _scout(rng, p, acc)
-    save["staff_market"] = generate_staff_market(rng)   # fresh candidates each offseason
+    save["staff_market"] = build_staff_market(save, rng)   # the real market: fired coaches, expired deals, up-and-comers
     inject_player_coaches(save, rng)   # this year's retired stars can enter the market
     order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
     n = len(order)
@@ -5284,6 +5573,7 @@ def load_save(user_id):
         # same for teams created before franchise histories.
         if save:
             changed = ensure_staff_profiles(save)
+            changed = ensure_staff_contracts(save) or changed
             changed = ensure_team_histories(save) or changed
             changed = ensure_player_identities(save) or changed
             changed = ensure_ai_staffs(save) or changed
@@ -5334,7 +5624,7 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
         "standings_cache": [],
         "last_champion": "",
         "staff": {},
-        "staff_market": generate_staff_market(_rng(seed + 999)),
+        "staff_market": {},
         "business": {"cash": 95.0, "fan_happiness": 50, "stadium": 1, "facility": 1,
                      "facilities": {"training": 1, "medical": 1, "analytics": 1, "fan_experience": 1},
                      "ticket": "normal"},
@@ -5342,6 +5632,7 @@ def create_save(user_id, gm_name, background, philosophy="Balanced", seed=None):
     }
     _set_expectation(save)
     generate_front_office_issues(save)
+    save["staff_market"] = build_staff_market(save, _rng(seed + 999))
     ensure_player_portraits(save)
     write_save(save)
     return save

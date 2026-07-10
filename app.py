@@ -29369,6 +29369,9 @@ def franchise_hub():
         view['alumni_market'] = fk.alumni_front_office_market(save)
         view['sim_depth'] = bool(save.get('sim_depth'))
         view['attr_edge'] = fk.attr_scheme_edge(save) if save.get('sim_depth') else 0.0
+        view['staff_cap'] = fk.staff_cap_view(save)
+        view['poach_targets'] = {r: fk.employed_coach_targets(save, r)
+                                 for r in ('off_coord', 'def_coord')}
     elif tab == 'roster':
         team = fk.current_team(save)
         groups = []
@@ -30173,6 +30176,30 @@ def franchise_hire():
     if save:
         ok, msg = fk.hire_staff(save, str(request.form.get('role', '')).strip(),
                                 str(request.form.get('candidate_id', '')).strip())
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
+
+
+@app.route('/franchise/poach-coach', methods=['POST'])
+def franchise_poach_coach():
+    _, save = _franchise_save()
+    if save:
+        ok, msg = fk.poach_coach(save, str(request.form.get('role', '')).strip(),
+                                 str(request.form.get('team_id', '')).strip(),
+                                 str(request.form.get('their_role', '')).strip())
+        return _staff_action_redirect(save, ok, msg)
+    return _staff_action_redirect(save)
+
+
+@app.route('/franchise/resign-staff', methods=['POST'])
+def franchise_resign_staff():
+    _, save = _franchise_save()
+    if save:
+        try:
+            years = int(request.form.get('years', 3))
+        except (TypeError, ValueError):
+            years = 3
+        ok, msg = fk.resign_staff(save, str(request.form.get('role', '')).strip(), years)
         return _staff_action_redirect(save, ok, msg)
     return _staff_action_redirect(save)
 
