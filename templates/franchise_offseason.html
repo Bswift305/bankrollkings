@@ -309,7 +309,13 @@
   <div class="os-card">
     <div class="os-ch">{{ icon('users') }}Build Your Staff — before anything else</div>
     <p class="os-sub">Your coordinators shape the scheme, your scouts shape the draft, your medical and conditioning staff keep the roster standing. Hire the room now — every evaluation that follows runs through these people.</p>
-    <p class="os-sub">Operating cash: <b style="color:#f5c860">${{ cash }}M</b> — this is your front-office budget, separate from the player salary cap. A new GM starts with enough to staff every role with quality hires; what's left funds stadium and facility upgrades, and it refills each season from ticket revenue (bigger markets and winning teams earn more). Hires have no refund, so pick names that fit your plan.</p>
+    <p class="os-sub">Coaches sign for an <b>annual salary against a staff budget</b> (set by your market), plus a small signing bonus from operating cash (<b style="color:#f5c860">${{ cash }}M</b>). Every deal has a term — when it runs out, that coach hits the open market, so re-sign the ones you want to keep before their final year. This market is the real one: the coaches shaken loose across the league (fired, contracts expired, retired players), each tagged with why he's available.</p>
+    {% if staff_cap is defined and staff_cap %}
+    <div class="os-staffcap">
+      <div class="os-staffcap-top"><span>🧾 Staff budget</span><span><b>${{ '%.1f'|format(staff_cap.used) }}M</b> / ${{ '%.1f'|format(staff_cap.cap) }}M · <b style="color:{{ '#7dffb0' if staff_cap.room >= 6 else '#ff9a9a' if staff_cap.room < 0.5 else '#f5c860' }}">${{ '%.1f'|format(staff_cap.room) }}M room</b></span></div>
+      <div class="os-staffcap-bar"><span style="width:{{ staff_cap.pct }}%; background:{{ '#ff6b6b' if staff_cap.pct >= 92 else '#f5c860' if staff_cap.pct >= 78 else '#4ad4f0' }};"></span></div>
+    </div>
+    {% endif %}
     {% if hire_msg %}
     <div class="os-li" style="border-left:3px solid {{ '#7dffb0' if hire_ok == '1' else '#ff9a9a' }}; padding-left:10px; color:{{ '#7dffb0' if hire_ok == '1' else '#ff9a9a' }};">{{ hire_msg }}</div>
     {% endif %}
@@ -337,6 +343,13 @@
           {% if staff[role].system %}<small>· {{ staff[role].system }}</small>{% endif %}
           {% if staff[role].philosophy %}<small>· {{ staff[role].philosophy }}</small>{% endif %}
           {% if staff[role].ped %}<small class="os-pedline">{{ staff[role].ped.label }} · {{ staff[role].ped.tree }}</small>{% endif %}
+          {% if staff[role].contract %}{% set con = staff[role].contract %}
+          <span class="os-contract {{ 'os-contract-end' if con.years <= 1 else '' }}">${{ '%.1f'|format(con.salary) }}M/yr · {{ con.years }}yr{{ ' left' if con.years > 1 else ' — final yr' }}</span>
+          {% if con.years <= 1 %}
+          <form method="post" action="{{ url_for('franchise_resign_staff') }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="years" value="3">
+            <button class="os-btn os-btn-xs">Re-sign 3yr</button></form>
+          {% endif %}{% endif %}
           <form method="post" action="{{ url_for('franchise_fire') }}" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="role" value="{{ role }}">
             <button class="os-btn os-btn-ghost os-btn-xs">Fire</button></form>
@@ -347,12 +360,26 @@
           <form method="post" action="{{ url_for('franchise_hire') }}" class="os-cand">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="candidate_id" value="{{ c.id }}">
-            <span class="os-candmain"><span class="os-ovrchip">{{ c.rating }}</span> {{ c.name }}{% if c.age %} · {{ c.age }}y{% endif %}{% if c.former_player %} <b style="color:#f5c860">Former {{ c.former_player.pos }}{% if c.former_player.hof %} · HOF{% endif %}</b>{% endif %}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}
+            <span class="os-candmain"><span class="os-ovrchip">{{ c.rating }}</span> {{ c.name }}{% if c.age %} · {{ c.age }}y{% endif %}{% if c.avail is defined %} <span class="os-avail os-avail-{{ 'fa' if c.fa else 'new' }}">{{ c.avail }}{% if c['from'] %} · {{ c['from'] }}{% endif %}</span>{% endif %}{% if c.former_player %} <b style="color:#f5c860">Former {{ c.former_player.pos }}{% if c.former_player.hof %} · HOF{% endif %}</b>{% endif %}{% if c.system %} · <em>{{ c.system }}</em>{% endif %}{% if c.philosophy %} · {{ c.philosophy }}{% endif %}
               {% if c.ped %}<small class="os-pedline">{{ c.ped.label }} · {{ c.ped.tree }} · {{ c.ped.experience }}yr</small>{% endif %}
             </span>
-            <button class="os-btn os-btn-xs">Hire ${{ staff_cost(c.rating) }}M</button></form>
+            <button class="os-btn os-btn-xs">Sign{% if c.ask is defined %} ${{ '%.1f'|format(c.ask) }}M/yr · {{ c.term }}yr{% endif %}</button></form>
           {% endfor %}
         </div>
+        {% if poach_targets is defined and poach_targets.get(role) %}
+        <details class="os-poachbox">
+          <summary>🎣 Poach an employed coordinator from a rival <small>— a premium, and he can say no</small></summary>
+          <div class="os-staffcands" style="margin-top:8px;">
+            {% for tg in poach_targets[role] %}
+            <form method="post" action="{{ url_for('franchise_poach_coach') }}" class="os-cand">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="role" value="{{ role }}"><input type="hidden" name="team_id" value="{{ tg.team_id }}"><input type="hidden" name="their_role" value="{{ tg.their_role }}">
+              <span class="os-candmain"><span class="os-ovrchip">{{ tg.rating }}</span> {{ tg.name }} <span class="os-avail os-avail-employed">{{ tg.role_label }}, {{ tg.team }}</span>{% if tg.system %} · <em>{{ tg.system }}</em>{% endif %}</span>
+              <button class="os-btn os-btn-ghost os-btn-xs">Make a run · ${{ '%.1f'|format(tg.salary) }}M/yr</button></form>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
         {% endif %}
       </div>
       {% endfor %}
@@ -727,6 +754,18 @@
   .os-candmain { color:#cfe3ee; font-size:12px; line-height:1.45; }
   .os-ovrchip { display:inline-block; min-width:26px; text-align:center; background:rgba(74,212,240,.16); color:#9fe9ff; border-radius:6px; font-weight:800; font-size:11.5px; padding:2px 4px; }
   .os-pedline { display:block; font-size:10.5px; margin-top:2px; }
+  .os-staffcap { margin:8px 0 4px; padding:8px 11px; background:rgba(74,212,240,.05); border:1px solid rgba(74,212,240,.18); border-radius:10px; }
+  .os-staffcap-top { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; flex-wrap:wrap; color:#cfe3ee; }
+  .os-staffcap-bar { height:7px; border-radius:5px; background:rgba(145,168,184,.16); overflow:hidden; margin-top:6px; }
+  .os-staffcap-bar span { display:block; height:100%; border-radius:5px; transition:width .3s; }
+  .os-contract { display:inline-block; font-size:10.5px; font-weight:800; color:#9fe9ff; background:rgba(74,212,240,.12); border:1px solid rgba(74,212,240,.34); border-radius:6px; padding:1px 6px; margin-left:4px; }
+  .os-contract-end { color:#ffd873; background:rgba(245,200,96,.14); border-color:rgba(245,200,96,.5); }
+  .os-avail { display:inline-block; font-size:10px; font-weight:700; border-radius:6px; padding:1px 6px; background:rgba(145,168,184,.16); border:1px solid rgba(145,168,184,.34); color:#c2cfd8; }
+  .os-avail-fa { color:#9fffc4; background:rgba(125,255,176,.12); border-color:rgba(125,255,176,.4); }
+  .os-avail-new { color:#c7b3ff; background:rgba(159,150,255,.12); border-color:rgba(159,150,255,.36); }
+  .os-avail-employed { color:#ffb3b3; background:rgba(255,154,154,.12); border-color:rgba(255,154,154,.4); }
+  .os-poachbox { margin-top:8px; border-top:1px dashed rgba(145,168,184,.2); padding-top:8px; }
+  .os-poachbox summary { cursor:pointer; font-size:12px; color:#ffb3b3; font-weight:700; } .os-poachbox summary small { color:#8fa3b0; font-weight:400; }
   @media (max-width:700px) { .os-staffrow { grid-template-columns:1fr; } }
   .os-rostercard { border-color:rgba(74,212,240,.32); }
   .os-rosterhead { cursor:pointer; font-family:var(--font-display); color:#fff; font-size:14px; list-style:none; }

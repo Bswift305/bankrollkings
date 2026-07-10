@@ -29555,6 +29555,9 @@ def franchise_offseason():
         ctx.update(staff=save.get('staff', {}), staff_market=save.get('staff_market', {}),
                    staff_roles=fk.STAFF_ROLES, staff_bonus=fk.staff_bonus(save),
                    staff_cost=fk.staff_cost,
+                   staff_cap=fk.staff_cap_view(save),
+                   poach_targets={r: fk.employed_coach_targets(save, r)
+                                  for r in ('off_coord', 'def_coord')},
                    cash=save.get('business', {}).get('cash', 0),
                    hire_msg=request.args.get('hire_msg', ''),
                    hire_ok=request.args.get('hire_ok', ''))
