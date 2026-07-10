@@ -4111,7 +4111,7 @@ def generate_staff_market(rng):
 # league carousel (fired, contracts up, retired players), not invented names.
 # And you can pry an employed coordinator out of a rival building for a premium.
 # --------------------------------------------------------------------------- #
-STAFF_CAP_BY_MARKET = {"Large": 66.0, "Mid": 58.0, "Small": 52.0}
+STAFF_CAP_BY_MARKET = {"Large": 88.0, "Mid": 78.0, "Small": 70.0}
 
 
 def staff_salary(rating):
@@ -4278,8 +4278,6 @@ def poach_coach(save, role, team_id, their_role):
     if he comes, you pay a premium salary + a one-time fee and the rival reloads."""
     if role not in ("head_coach", "off_coord", "def_coord"):
         return False, "You can only poach a rival's head coach or coordinator."
-    if save.get("staff", {}).get(role):
-        return False, "That chair is filled - fire him first to open it up."
     t = next((x for x in save.get("teams", []) if x["id"] == team_id), None)
     if not t:
         return False, "That club is not in your league."
@@ -4289,10 +4287,13 @@ def poach_coach(save, role, team_id, their_role):
         return False, "He is no longer with that club."
     rating = int(c.get("rating", 55) or 55)
     salary = round(staff_salary(rating) * 1.25, 1)         # premium to pry him loose
-    room = staff_cap_room(save)
+    incumbent = save.get("staff", {}).get(role)            # poaching into a filled chair replaces him
+    freed = (float((incumbent.get("contract") or {}).get("salary", staff_salary(incumbent.get("rating", 55))))
+             if isinstance(incumbent, dict) else 0.0)
+    room = staff_cap_room(save) + freed
     if salary > room + 0.05:
-        return False, ("Prying %s loose runs $%.1fM/yr and you have $%.1fM of staff-cap room."
-                       % (c.get("name", "him"), salary, room))
+        return False, ("Prying %s loose runs $%.1fM/yr and you'd have $%.1fM of staff-cap room."
+                       % (c.get("name", "him"), salary, round(room, 1)))
     fee = round(salary * 0.8, 1)
     b = _business(save)
     if b["cash"] < fee:
@@ -4328,6 +4329,10 @@ def poach_coach(save, role, team_id, their_role):
               "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in hire:
             entry[k] = hire[k]
+    if isinstance(incumbent, dict):                        # the man you replace hits the market
+        inc = dict(incumbent)
+        inc.pop("contract", None)
+        save.setdefault("coach_pool", []).append(dict(inc, ex_user=True, ex_role=role))
     save.setdefault("staff", {})[role] = entry
     st[their_role] = _gen_ai_coach(rng, their_role)        # the rival scrambles to reload
     _tl(save, save.get("season", 1), "staff", "\U0001F3A3",
@@ -4584,10 +4589,13 @@ def hire_staff(save, role, candidate_id):
     if not cand:
         return False, "That candidate is no longer available."
     salary = float(cand.get("ask") or staff_salary(cand.get("rating", 55)))
-    room = staff_cap_room(save)
+    incumbent = save.get("staff", {}).get(role)                # replacing frees his salary
+    freed = (float((incumbent.get("contract") or {}).get("salary", staff_salary(incumbent.get("rating", 55))))
+             if isinstance(incumbent, dict) else 0.0)
+    room = staff_cap_room(save) + freed
     if salary > room + 0.05:
-        return False, ("Signing %s costs $%.1fM/yr and you have $%.1fM of staff-cap room. "
-                       "Open a chair or move money first." % (cand["name"], salary, room))
+        return False, ("Signing %s costs $%.1fM/yr and you'd have $%.1fM of staff-cap room. "
+                       "Free up a chair or move money first." % (cand["name"], salary, round(room, 1)))
     fee = round(salary * 0.5, 1)
     b = _business(save)
     if b["cash"] < fee:
@@ -4600,11 +4608,16 @@ def hire_staff(save, role, candidate_id):
               "ideology", "versatility", "temperament", "specialties", "struggles_with"):
         if k in cand:
             entry[k] = cand[k]
+    if isinstance(incumbent, dict):                            # the man you replace hits the market
+        inc = dict(incumbent)
+        inc.pop("contract", None)
+        save.setdefault("coach_pool", []).append(dict(inc, ex_user=True, ex_role=role))
     save.setdefault("staff", {})[role] = entry
     market[role] = [c for c in market.get(role, []) if c["id"] != candidate_id]
     _remove_from_pool(save, cand)
     write_save(save)
-    return True, "Signed %s (%s OVR) - $%.1fM/yr for %dyr." % (cand["name"], cand["rating"], salary, years)
+    tail = (" (replacing %s)" % incumbent.get("name", "")) if isinstance(incumbent, dict) else ""
+    return True, "Signed %s (%s OVR) - $%.1fM/yr for %dyr%s." % (cand["name"], cand["rating"], salary, years, tail)
 
 
 def fire_staff(save, role):

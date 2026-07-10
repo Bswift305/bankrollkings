@@ -354,7 +354,8 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="role" value="{{ role }}">
             <button class="os-btn os-btn-ghost os-btn-xs">Fire</button></form>
         </div>
-        {% else %}
+        {% endif %}
+        {% if staff.get(role) %}<details class="os-replacebox"><summary>🔁 Replace {{ staff[role].name }} — see the open market</summary>{% endif %}
         <div class="os-staffcands">
           {% for c in staff_market.get(role, []) %}
           <form method="post" action="{{ url_for('franchise_hire') }}" class="os-cand">
@@ -380,7 +381,7 @@
           </div>
         </details>
         {% endif %}
-        {% endif %}
+        {% if staff.get(role) %}</details>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -764,6 +765,8 @@
   .os-avail-fa { color:#9fffc4; background:rgba(125,255,176,.12); border-color:rgba(125,255,176,.4); }
   .os-avail-new { color:#c7b3ff; background:rgba(159,150,255,.12); border-color:rgba(159,150,255,.36); }
   .os-avail-employed { color:#ffb3b3; background:rgba(255,154,154,.12); border-color:rgba(255,154,154,.4); }
+  .os-replacebox { margin-top:6px; }
+  .os-replacebox > summary { cursor:pointer; font-size:12px; color:#9fe9ff; font-weight:700; margin-bottom:6px; }
   .os-poachbox { margin-top:8px; border-top:1px dashed rgba(145,168,184,.2); padding-top:8px; }
   .os-poachbox summary { cursor:pointer; font-size:12px; color:#ffb3b3; font-weight:700; } .os-poachbox summary small { color:#8fa3b0; font-weight:400; }
   @media (max-width:700px) { .os-staffrow { grid-template-columns:1fr; } }

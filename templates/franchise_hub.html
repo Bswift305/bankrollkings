@@ -1364,7 +1364,8 @@
           </div>
           {% endif %}
         </div>
-      {% else %}
+      {% endif %}
+      {% if staff.get(role) %}<details class="fk-replacebox"><summary>🔁 Replace {{ staff[role].name }} — see the open market</summary>{% endif %}
         <div class="fk-staffcands">
           {% for c in staff_market.get(role, []) %}
           <form method="post" action="{{ url_for('franchise_hire') }}" class="fk-cand">
@@ -1391,7 +1392,7 @@
           </div>
         </details>
         {% endif %}
-      {% endif %}
+      {% if staff.get(role) %}</details>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -2197,6 +2198,8 @@
   .fk-avail-fa { background:rgba(125,255,176,.12); border-color:rgba(125,255,176,.4); color:#9fffc4; }
   .fk-avail-new { background:rgba(159,150,255,.12); border-color:rgba(159,150,255,.36); color:#c7b3ff; }
   .fk-avail-employed { background:rgba(255,154,154,.12); border-color:rgba(255,154,154,.4); color:#ffb3b3; }
+  .fk-replacebox { margin-top:8px; }
+  .fk-replacebox > summary { cursor:pointer; font-size:12.5px; color:#9fe9ff; font-weight:700; margin-bottom:8px; }
   .fk-poachbox { margin-top:8px; border-top:1px dashed rgba(145,168,184,.2); padding-top:8px; }
   .fk-poachbox summary { cursor:pointer; font-size:12.5px; color:#ffb3b3; font-weight:700; } .fk-poachbox summary small { color:#8fa3b0; font-weight:400; }
   .fk-poachbox .fk-staffcands { margin-top:8px; }
