@@ -29620,7 +29620,7 @@ def franchise_offseason():
         team = fk.current_team(save)
         ctx.update(team=team, power=fk.power_rating(team), ready=fo.ready_to_kick(save),
                    camp_count=fo.camp_count(save), final=fo.ROSTER_FINAL)
-    if stage in ('resign', 'free_agency'):    # the roster-shaping stages carry the trade desk
+    if stage in ('resign', 'free_agency', 'cuts'):    # the roster-shaping stages carry the trade desk
         ctx['trade_desk'] = {
             'roster': sorted([{'id': p['id'], 'name': p['name'], 'pos': p['pos'],
                                'ovr': p['overall'], 'tval': fk.trade_value(p),

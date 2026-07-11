@@ -654,7 +654,7 @@
   {% elif stage == 'cuts' %}
   <div class="os-card">
     <div class="os-ch">{{ icon('users') }}Cut Day — down to 53 <span class="os-cap os-{{ 'over' if camp_count > final else 'ok' }}">{{ camp_count }} / {{ final }}</span></div>
-    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit. <b style="color:#ff9a9a">Cuts aren't free anymore:</b> a player's guarantees hit your cap as dead money for the season{% if dead_total %} — you're already carrying <b style="color:#ff9a9a">${{ dead_total }}M dead</b>{% endif %}.</p>
+    <p class="os-sub">{% if camp_count > final %}You're <strong>{{ camp_count - final }}</strong> over the limit — cut down to {{ final }}.{% else %}You're at the limit. Lock it in.{% endif %} Stashing a player on the practice squad ({{ ps_count }}/{{ ps_max }} used) keeps him in the building and off the 53 — the smart move for camp standouts you can't fit. <b style="color:#ff9a9a">Cuts aren't free anymore:</b> a player's guarantees hit your cap as dead money for the season{% if dead_total %} — you're already carrying <b style="color:#ff9a9a">${{ dead_total }}M dead</b>{% endif %}. <b style="color:#9fe9ff">Don't want to eat the dead money?</b> Hit <b>Trade</b> on a man to shop him for draft picks — he comes off the roster and you get value back. Offers land in the Trade Desk below.</p>
     <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>Age</th><th>OVR</th><th>Fit</th><th>Camp</th><th></th></tr></thead><tbody>
     {% for p in roster %}
       {% set ct = camp_tags.get(p.id) if camp_tags is defined else none %}
@@ -665,11 +665,13 @@
           {% if sv %}<div style="margin-top:3px"><span class="os-traj os-traj-{{ 'rising' if sv.q >= 1.0 else 'declining' if sv.q <= -0.6 else 'steady' }}">{{ sv.verdict }}</span></div>{% endif %}
           {% if not ct and not sv %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form>
+        <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><button class="os-mini os-mini-trade" name="action" value="shop">Trade</button></form>
         {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}
         {% if p.dead and p.dead >= 0.3 %}<small style="display:block; color:#ff9a9a; font-size:10px;">cut = ${{ '%.1f'|format(p.dead) }}M dead</small>{% endif %}</td></tr>
     {% endfor %}
     </tbody></table></div>
   </div>
+  {{ trade_desk_card() }}
   {{ advance('Lock my 53 →') }}
 
   {# ---------------- KICKOFF ---------------- #}
@@ -849,6 +851,7 @@
   .os-mini { color:#4ad4f0; text-decoration:none; font-size:12px; font-weight:700; }
   .os-mini-btn { border:1px solid rgba(74,212,240,.5); background:rgba(74,212,240,.12); border-radius:6px; padding:4px 9px; cursor:pointer; }
   .os-mini-cut { border:1px solid rgba(255,122,122,.45); background:rgba(255,122,122,.12); color:#ff9a9a; border-radius:6px; padding:4px 9px; cursor:pointer; font-weight:800; font-size:11px; }
+  .os-mini-trade { border:1px solid rgba(74,212,240,.5); background:rgba(74,212,240,.12); color:#4ad4f0; border-radius:6px; padding:4px 9px; cursor:pointer; font-weight:800; font-size:11px; }
   .os-offer { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; } .os-offer label { flex:1; min-width:90px; color:#b7c6d0; font-size:12px; } .os-offer button { flex-basis:100%; }
   .fkl-input { width:100%; box-sizing:border-box; background:rgba(3,8,12,.8); border:1px solid rgba(74,212,240,.25); border-radius:8px; color:#fff; padding:9px 10px; font-size:14px; }
   .os-nego { padding:9px 12px; border-radius:9px; margin-bottom:10px; font-size:13px; color:var(--text2,#c2cfd8); border:1px solid rgba(145,168,184,.2); }
