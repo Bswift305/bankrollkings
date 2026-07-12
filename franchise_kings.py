@@ -1830,6 +1830,9 @@ def game_plan_report(save):
             "off_opts": opts(OFF_IDENTITIES, def_tags, wo.get("off_identity")),
             "def_opts": opts(DEF_IDENTITIES, off_tags, wo.get("def_identity")),
             "reco": reco, "edge": identity_edge(save), "warn": warn, "install": install_status(save),
+            "friction": ("You keep overriding your coordinators — staff trust is slipping."
+                         if max(save.get("coach_friction", {}).get("off", 0),
+                                save.get("coach_friction", {}).get("def", 0)) >= 3 else None),
             "off_set": wo.get("off_identity"), "def_set": wo.get("def_identity")}
 
 
@@ -1885,6 +1888,24 @@ def _bump_familiarity(save):
     fam = save.setdefault("familiarity", {})
     for k in selected_plays(save):
         fam[k] = min(8, fam.get(k, 0) + 1)
+
+
+def _check_coach_friction(save):
+    """Overriding the coordinators' recommended identity week after week wears on
+    staff trust — a frustrated coordinator is likelier to walk in the carousel."""
+    reco = coordinator_reco(save)
+    if not reco:
+        return
+    wo = save.get("weekly_ops", {})
+    fr = save.setdefault("coach_friction", {"off": 0, "def": 0})
+    for side in ("off", "def"):
+        chosen = wo.get(side + "_identity")
+        if chosen and chosen != reco[side]["id"]:
+            fr[side] += 1
+            if fr[side] >= 3 and fr[side] % 3 == 0:
+                save["staff_trust"] = max(10, save.get("staff_trust", 60) - 3)
+        else:
+            fr[side] = 0
 
 
 # Concept/scheme installation — a new coordinator's system takes weeks to learn.
@@ -2703,6 +2724,7 @@ def sim_week(save):
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
     apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
     _bump_identity_streak(save)                         # self-scouting: track identity repetition
+    _check_coach_friction(save)                         # overriding coordinators erodes staff trust
     _advance_install(save)                              # scheme installation countdown
     powers[uid], out = _user_inseason_power(save, week, powers[uid])
     out_ids = {p["id"] for p in out}
