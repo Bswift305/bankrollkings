@@ -611,6 +611,8 @@ PUBLIC_ENDPOINTS = {
     'franchise_sim_week',
     'franchise_game',
     'franchise_playoff_game',
+    'franchise_halftime',
+    'franchise_halftime_pick',
     'franchise_weekly',
     'franchise_agenda',
     'franchise_live_toggle',
@@ -29471,6 +29473,11 @@ def franchise_retire():
 def franchise_sim_week():
     _, save = _franchise_save()
     if save and save.get('inseason'):
+        # Big games pause at the half for an adjustment — unless one is already made.
+        if not save.get('halftime_choice') and not save.get('halftime') and fk._is_important_game(save):
+            fk.build_halftime(save)
+            fk.write_save(save)
+            return redirect(url_for('franchise_halftime'))
         played_week = (save.get('inseason') or {}).get('week')
         fk.sim_week(save)
         save.pop('away_recap', None)
@@ -29478,6 +29485,32 @@ def franchise_sim_week():
             fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
         fk.write_save(save)
         # Show the post-game recap for the game just played (skip on a bye week).
+        if (save.get('last_game') or {}).get('week') == played_week:
+            return redirect(url_for('franchise_game'))
+    return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/halftime')
+def franchise_halftime():
+    _, save = _franchise_save()
+    if not save or not save.get('halftime'):
+        return redirect(url_for('franchise_hub', tab='command'))
+    team = fk.current_team(save)
+    return render_template('franchise_halftime.html', save=save, hf=save['halftime'], team=team,
+                           hero_team=team, colors=fk.team_colors(team['full']), accent=fk.team_accent(team['full']))
+
+
+@app.route('/franchise/halftime', methods=['POST'])
+def franchise_halftime_pick():
+    _, save = _franchise_save()
+    if save and save.get('halftime') and save.get('inseason'):
+        fk.resolve_halftime(save, str(request.form.get('choice', '')).strip())
+        played_week = save['inseason']['week']
+        fk.sim_week(save)                              # halftime_choice is set, so the sim proceeds
+        save.pop('away_recap', None)
+        if save.get('inseason'):
+            fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
+        fk.write_save(save)
         if (save.get('last_game') or {}).get('week') == played_week:
             return redirect(url_for('franchise_game'))
     return redirect(url_for('franchise_hub'))

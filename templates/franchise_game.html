@@ -46,6 +46,15 @@
     {% endif %}
   </div>
 
+  {% if recap.halftime %}{% set h = recap.halftime %}
+  <div class="pg-ht">
+    🏟 <b>Halftime {{ h.hf_us }}–{{ h.hf_them }}</b> → you called <b style="color:#ffd873">{{ h.label }}</b>.
+    {% if h.comeback %}<span style="color:#7dffb0">A second-half comeback — it worked.</span>
+    {% elif h.collapse %}<span style="color:#ff9a9a">You couldn't hold it.</span>
+    {% else %}Final {{ h.final_us }}–{{ h.final_them }}.{% endif %}
+  </div>
+  {% endif %}
+
   {% if recap.signatures %}
   <div class="pg-sig">
     {% for s in recap.signatures %}
@@ -223,6 +232,8 @@
   .pg-sig-row b { color:#fff; } .pg-sig-row span { color:#e8d9a8; }
   .pg-plan { font-size:12.5px; padding:3px 0; line-height:1.4; }
   .pg-plan-worked { color:#9fe9c0; } .pg-plan-backfired { color:#ffb3b3; } .pg-plan-mixed, .pg-plan-neutral { color:#c2cfd8; }
+  .pg-ht { margin-bottom:16px; background:rgba(245,200,96,.1); border:1px solid rgba(245,200,96,.34); border-radius:10px; padding:10px 14px; font-size:13.5px; color:#e8dccb; }
+  .pg-ht b { color:#fff; }
   .pg-tag { display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:2px 7px; margin:2px 3px 0 0; }
   .pg-tag-red { background:rgba(255,122,122,.12); border:1px solid rgba(255,122,122,.34); color:#ff9a9a; }
   .pg-tag-amber { background:rgba(255,196,120,.12); border:1px solid rgba(255,196,120,.32); color:#ffd089; }

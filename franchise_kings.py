@@ -1840,6 +1840,90 @@ def game_plan_report(save):
             "off_set": wo.get("off_identity"), "def_set": wo.get("def_identity")}
 
 
+# --------------------------------------------------------------------------- #
+# Halftime adjustments — the in-game decision. Big games (a rival, a coin-flip
+# on the line) pause at the half: you see the score and what they're doing, then
+# pick an adjustment. The right call (matched to their tendency and your
+# personnel) swings the second half. Manual Sim Week only.
+# --------------------------------------------------------------------------- #
+HALFTIME_OPTIONS = {
+    "deep_shots": {"label": "Take deep shots", "desc": "Attack the top of their coverage.", "need": "weak_secondary", "concept": "deep"},
+    "pound_rock": {"label": "Pound the rock", "desc": "Lean on the run, shorten the game.", "need": "weak_run_d", "concept": "run"},
+    "bring_pressure": {"label": "Dial up pressure", "desc": "Send heat, force a mistake.", "need": "weak_ol", "concept": "rush"},
+    "spread_out": {"label": "Spread them out", "desc": "Empty sets, get your playmakers space.", "need": "blitz_heavy", "concept": "quick"},
+    "ball_control": {"label": "Protect the ball", "desc": "Ball control and field position — don't beat yourself.", "need": None, "concept": "safe"},
+}
+
+
+def _halftime_option_edge(save, opp_tags, opt):
+    e = 0.1                                             # any decisive halftime call is worth a little
+    if opt["need"] and opt["need"] in opp_tags:
+        e += 0.4                                        # it targets a real weakness
+    team = current_team(save)
+    c = opt["concept"]
+    if c == "deep" and _unit_ovr(team, "WR", 2) >= 76:
+        e += 0.2
+    elif c == "run" and _unit_ovr(team, "RB", 1) >= 76:
+        e += 0.2
+    elif c == "rush" and _unit_ovr(team, "DL", 4) >= 76:
+        e += 0.2
+    elif c == "quick" and _unit_ovr(team, "QB", 1) >= 76:
+        e += 0.15
+    return round(min(0.7, e), 2)
+
+
+def _is_important_game(save):
+    if not save.get("inseason"):
+        return False
+    if matchup_tags(save):
+        return True
+    bl = betting_line(save)
+    return bool(bl and abs(bl["spread"]) <= 5)
+
+
+def build_halftime(save):
+    """Freeze a plausible first half and the adjustment menu for an important game."""
+    iz = save.get("inseason")
+    week = iz["week"]
+    mp = _matchup_powers(save, week)
+    if not mp:
+        return None
+    ln = _line_from_powers(mp["home_power"], mp["away_power"], mp["user_home"], save["seed"] + week * 31 + 9)
+    exp_us = (ln["total"] - ln["spread"]) / 2.0
+    exp_them = (ln["total"] + ln["spread"]) / 2.0
+    rng = _rng(save["seed"] + week * 7 + 31)
+    hf_us = max(0, int(round(exp_us * 0.45 + rng.randint(-3, 4))))
+    hf_them = max(0, int(round(exp_them * 0.45 + rng.randint(-3, 4))))
+    opp = mp["opp"]
+    tends = opponent_tendencies(opp)
+    all_tags = [t["tag"] for t in tends]
+    read = next((t["text"] for t in tends if t["side"] == "def"),
+                next((t["text"] for t in tends), "They're playing you straight up."))
+    options = sorted(({"key": k, "label": o["label"], "desc": o["desc"],
+                       "edge": _halftime_option_edge(save, all_tags, o)}
+                      for k, o in HALFTIME_OPTIONS.items()), key=lambda o: -o["edge"])[:4]
+    save["halftime"] = {"opp_short": opp.get("name", opp["full"]), "hf_us": hf_us, "hf_them": hf_them,
+                        "situation": ("trailing" if hf_us < hf_them else "leading" if hf_us > hf_them else "tied"),
+                        "read": read, "options": options, "week": week}
+    return save["halftime"]
+
+
+def resolve_halftime(save, choice):
+    hf = save.get("halftime")
+    if not hf:
+        return False
+    opt = next((o for o in hf["options"] if o["key"] == choice), hf["options"][0])
+    save["halftime_choice"] = {"key": opt["key"], "label": opt["label"], "edge": opt["edge"],
+                               "hf_us": hf["hf_us"], "hf_them": hf["hf_them"]}
+    save.pop("halftime", None)
+    write_save(save)
+    return True
+
+
+def halftime_edge(save):
+    return (save.get("halftime_choice") or {}).get("edge", 0.0)
+
+
 def _evaluate_game_plan(save, opp, us, them):
     """Postgame verdict on how your weekly identities fared against their tendencies."""
     wo = save.get("weekly_ops", {})
@@ -1973,6 +2057,7 @@ def weekly_edge(save):
     e += identity_edge(save)                                   # weekly game plan vs opponent tendencies
     e += install_edge(save)                                    # a freshly-installed scheme is a step slow
     e += snap_edge(save)                                       # workhorse RB / rookie-vs-vet snaps
+    e += halftime_edge(save)                                   # your halftime adjustment's second-half swing
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -2842,6 +2927,12 @@ def sim_week(save):
             save["last_game"]["signatures"] = _record_signatures(
                 save, mine, week, win == uid, abs(_us - _them))
             save["last_game"]["plan_eval"] = _evaluate_game_plan(save, opp, _us, _them)
+            hc = save.pop("halftime_choice", None)          # a halftime adjustment was made this game
+            if hc:
+                save["last_game"]["halftime"] = {
+                    **hc, "final_us": _us, "final_them": _them,
+                    "comeback": hc["hf_us"] < hc["hf_them"] and win == uid,
+                    "collapse": hc["hf_us"] > hc["hf_them"] and win != uid}
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
