@@ -29951,6 +29951,8 @@ def franchise_negotiate():
     pid = str(request.form.get('player_id', '')).strip()
     if save:
         fk.negotiate(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
+    if request.form.get('from_player'):
+        return redirect(url_for('franchise_player', pid=pid))
     return redirect(url_for('franchise_hub', tab='front-office', fa=pid))
 
 
