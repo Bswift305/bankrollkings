@@ -305,6 +305,36 @@ def resign(save, player_id, years, aav):
     return fk.negotiate(save, player_id, years, aav)
 
 
+def _tag_salary(save, p, kind):
+    mkt = fk._market_aav(p)
+    return round(max(mkt * (1.2 if kind == "franchise" else 1.0), mkt + 2.0), 1)
+
+
+def apply_tag(save, player_id, kind="franchise"):
+    """Franchise/transition tag: a 1-year deal at a premium salary that keeps an
+    expiring player off the market. One franchise and one transition tag a year."""
+    if kind not in ("franchise", "transition"):
+        return False, "Unknown tag."
+    os_ = save.setdefault("offseason", {})
+    used = os_.setdefault("tags_used", {})
+    if used.get(kind):
+        return False, f"You've already used your {kind} tag this offseason."
+    team = fk.current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == player_id), None)
+    if not p or p.get("contract", {}).get("years", 1) > 0:
+        return False, "Only an expiring player can be tagged."
+    sal = _tag_salary(save, p, kind)
+    if fk.cap_used(team) - (p.get("contract", {}).get("aav", 0) or 0) + sal > fk.cap_total(save):
+        return False, f"The ${sal}M tag would put you over the cap — clear room first."
+    p["contract"] = {"years": 1, "aav": sal, "guaranteed": sal}
+    p["tagged"] = kind
+    used[kind] = player_id
+    fk._tl(save, save.get("season", 1), "roster", "\U0001F3F7",
+           f"{kind.title()}-tagged {p['pos']} {p['name']}", f"One year, ${sal}M guaranteed — he's not going anywhere.")
+    fk.write_save(save)
+    return True, f"{p['name']} {kind}-tagged: 1 year, ${sal}M."
+
+
 def settle_expiring(save):
     """Leaving the Re-Sign stage: anyone still on an expired deal (0 years) walks
     to free agency — you chose not to keep him. Weak teams bank a comp pick per

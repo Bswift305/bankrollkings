@@ -29664,6 +29664,7 @@ def franchise_offseason():
         exp = fo.expiring_players(save)
         pid = str(request.args.get('p', '')).strip()
         ctx.update(expiring=[_league_avatar(p) for p in exp], last_nego=save.get('last_nego'),
+                   tags_used=(save.get('offseason') or {}).get('tags_used', {}),
                    nego_p=next((p for p in exp if p['id'] == pid), None) if pid else None)
     elif stage == 'free_agency':
         team = fk.current_team(save)
@@ -29791,6 +29792,9 @@ def franchise_offseason_resign():
     if save and fo.offseason_active(save):
         if request.form.get('walk'):
             fo.let_walk(save, pid)
+            return redirect(url_for('franchise_offseason'))
+        if request.form.get('tag') in ('franchise', 'transition'):
+            fo.apply_tag(save, pid, request.form.get('tag'))
             return redirect(url_for('franchise_offseason'))
         fo.resign(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
     return redirect(url_for('franchise_offseason', p=pid))

@@ -451,11 +451,15 @@
       <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to expiring list</a></p>
     {% else %}
       <p class="os-sub">{{ expiring|length }} expiring contract{{ 's' if expiring|length != 1 }}. Re-sign your core or let them walk.</p>
+      <p class="os-sub" style="margin:0 0 6px">Can't reach a deal on a key man? <b>Tag</b> him — a 1-year deal at a premium that keeps him off the market. One franchise + one transition tag a year.</p>
       <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>OVR</th><th>Wants</th><th></th></tr></thead><tbody>
       {% for p in expiring %}
         <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
-          <td><a class="os-mini" href="{{ url_for('franchise_offseason', p=p.id) }}">Negotiate</a></td></tr>
+          <td style="white-space:nowrap"><a class="os-mini" href="{{ url_for('franchise_offseason', p=p.id) }}">Negotiate</a>
+            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="franchise"><button class="os-mini os-mini-trade" {{ 'disabled' if tags_used and tags_used.franchise }}>🏷 Franchise</button></form>
+            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="transition"><button class="os-mini" {{ 'disabled' if tags_used and tags_used.transition }}>Transition</button></form>
+          </td></tr>
       {% endfor %}
       </tbody></table></div>
     {% endif %}
