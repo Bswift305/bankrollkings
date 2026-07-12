@@ -1269,6 +1269,8 @@ def _game_perf(team, points, won, rng, out_ids=(), record=True):
         if qb_car:
             line += f" · {qb_car} car, {qb_rush_yd} yd" + (f", {qb_rush_td} TD" if qb_rush_td else "")
         perf.append({"name": qb["name"], "pos": "QB", "pid": qb["id"], "line": line,
+                     "g": {"pass_yd": pass_yd, "pass_td": n_pass_td, "pass_cmp": comp, "pass_att": att,
+                           "int": intc, "rush_yd": qb_rush_yd, "rush_td": qb_rush_td},
                      "score": pass_yd * 0.04 + n_pass_td * 4 - intc * 2 + qb_rush_yd * 0.06 + qb_rush_td * 6})
 
     # ---- Emit RBs ----
@@ -1281,6 +1283,8 @@ def _game_perf(team, points, won, rng, out_ids=(), record=True):
         if rc:
             line += f" · {rc} rec, {rcy} yd" + (f", {rct} TD" if rct else "")
         perf.append({"name": rb["name"], "pos": "RB", "pid": rb["id"], "line": line,
+                     "g": {"rush_yd": rb_yd[i], "rush_td": rtd, "rush_car": rb_car[i],
+                           "rec": rc, "rec_yd": rcy, "rec_td": rct},
                      "score": rb_yd[i] * 0.06 + rtd * 6 + rcy * 0.06 + rct * 6})
 
     # ---- Emit WR / TE ----
@@ -1288,6 +1292,7 @@ def _game_perf(team, points, won, rng, out_ids=(), record=True):
         rc, rcy, rct = recv.get(c["id"], (0, 0, 0))
         add(c, {"g": 1, "rec": rc, "rec_yd": rcy, "rec_td": rct})
         perf.append({"name": c["name"], "pos": c["pos"], "pid": c["id"],
+                     "g": {"rec": rc, "rec_yd": rcy, "rec_td": rct},
                      "line": f"{rc} rec, {rcy} yd, {rct} TD", "score": rcy * 0.06 + rct * 6 + rc * 0.4})
 
     # ---- Defense ----
@@ -1298,6 +1303,7 @@ def _game_perf(team, points, won, rng, out_ids=(), record=True):
         add(d, {"g": 1, "sack": sk, "tackle": tk})
         if sk >= 1.5:
             perf.append({"name": d["name"], "pos": d["pos"], "pid": d["id"],
+                         "g": {"sack": sk, "tackle": tk},
                          "line": f"{sk} sacks, {tk} tkl", "score": sk * 5 + tk * 0.3})
     for d in by_pos.get("CB", [])[:3] + by_pos.get("S", [])[:2]:
         o = d["overall"]
@@ -1943,7 +1949,7 @@ def _score_line(rng, win_power, lose_power):
 
 def _game_box(perf, n=5):
     """The top contributors from one team's game (skill + notable defense), best first."""
-    return [{"name": x["name"], "pos": x["pos"], "pid": x.get("pid"), "line": x["line"]}
+    return [{"name": x["name"], "pos": x["pos"], "pid": x.get("pid"), "line": x["line"], "g": x.get("g")}
             for x in sorted(perf, key=lambda x: -x.get("score", 0))[:n]]
 
 
@@ -2049,6 +2055,79 @@ def _grade_line(save, week, home_power, away_power, user_home, us, them, won):
     return {"spread": ln["spread"], "total": ln["total"], "moneyline": ln["moneyline"],
             "cover": cover, "cover_margin": cover_margin, "ou": ou, "total_actual": total_actual,
             "was_dog": was_dog, "upset": upset, "choke": choke}
+
+
+# --------------------------------------------------------------------------- #
+# Player props — O/U lines on YOUR guys, projected by Monte-Carlo-ing the same
+# stat engine the game runs on (so the number is honest) and graded off the box
+# score the game produced. Rounds out the book: game line, quant desk, props.
+# --------------------------------------------------------------------------- #
+PROP_DEFS = [
+    {"key": "qb_pass_yd", "pos": "QB", "stat": "pass_yd", "unit": "pass yds", "step": 5},
+    {"key": "qb_pass_td", "pos": "QB", "stat": "pass_td", "unit": "pass TD", "step": 0},
+    {"key": "rb_rush_yd", "pos": "RB", "stat": "rush_yd", "unit": "rush yds", "step": 5},
+    {"key": "wr_rec_yd", "pos": "WR", "stat": "rec_yd", "unit": "rec yds", "step": 5},
+]
+
+
+def _prop_line(mean, step):
+    if step == 0:                                  # TD-type: half-point just under the mean
+        return max(0.5, round(mean) - 0.5)
+    return max(step - 0.5, round(mean / step) * step - 0.5)
+
+
+def player_props(save, sims=120):
+    """O/U lines for your key starters this week, from a Monte-Carlo of the stat
+    engine at the game's expected pace."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    week = iz["week"]
+    mp = _matchup_powers(save, week)
+    if not mp:
+        return None                                # bye week
+    team = current_team(save)
+    targets = []                                   # (prop def, the starter it tracks)
+    for pdef in PROP_DEFS:
+        pl = pos_depth(team, pdef["pos"])
+        if pl:
+            targets.append((pdef, pl[0]))
+    if not targets:
+        return None
+    samples = {pdef["key"]: [] for pdef, _ in targets}
+    hp, ap, uh = mp["home_power"], mp["away_power"], mp["user_home"]
+    rng = _rng(save["seed"] + week * 6151 + 88)
+    for _ in range(sims):
+        home_win = _sim_game(rng, hp, ap)
+        wp, lp = (hp, ap) if home_win else (ap, hp)
+        ws, ls = _score_line(rng, wp, lp)
+        hpts, apts = (ws, ls) if home_win else (ls, ws)
+        upts, opts = (hpts, apts) if uh else (apts, hpts)
+        perf, _ = _game_perf(team, upts, upts > opts, rng, record=False)
+        by_pid = {x["pid"]: (x.get("g") or {}) for x in perf}
+        for pdef, pl in targets:
+            samples[pdef["key"]].append(by_pid.get(pl["id"], {}).get(pdef["stat"], 0))
+    props = []
+    for pdef, pl in targets:
+        vals = samples[pdef["key"]]
+        mean = sum(vals) / len(vals) if vals else 0
+        props.append({"key": pdef["key"], "pid": pl["id"], "name": pl["name"], "pos": pdef["pos"],
+                      "stat": pdef["stat"], "unit": pdef["unit"], "line": _prop_line(mean, pdef["step"]),
+                      "proj": round(mean, 1)})
+    return {"props": props, "opp_short": mp["opp"].get("name", mp["opp"]["full"]), "week": week}
+
+
+def grade_props(save, my_box):
+    """Grade this week's props against the box score the game produced."""
+    pp = player_props(save)
+    if not pp:
+        return None
+    by_pid = {b["pid"]: (b.get("g") or {}) for b in (my_box or [])}
+    out = []
+    for pr in pp["props"]:
+        actual = by_pid.get(pr["pid"], {}).get(pr["stat"], 0)
+        out.append(dict(pr, actual=actual, result="over" if actual > pr["line"] else "under"))
+    return out
 
 
 def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather, round_name=None):
@@ -2157,6 +2236,7 @@ def sim_week(save):
                 "weather": weather, "key_moment": km,
                 "my_box": _game_box(mine), "opp_box": _game_box(theirs),
                 "my_summary": my_sum, "opp_summary": opp_sum, "line": line_result,
+                "props": grade_props(save, mine),
                 "injuries": list(iz.get("injuries", [])), "incidents": list(iz.get("incidents", [])),
                 "news": _compose_game_story(rng, win == uid, _us, _them,
                                             my_team.get("name", my_team["full"]),

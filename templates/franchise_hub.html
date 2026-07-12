@@ -765,6 +765,31 @@
   </style>
   {% endif %}
 
+  {% if command_center.props and command_center.props.props %}{% set pp = command_center.props %}
+  <div class="fk-card fk-props">
+    <div class="fk-card-h">🎯 Player Props <span class="fk-props-vs">vs {{ pp.opp_short }}</span></div>
+    <div class="fk-props-list">
+      {% for p in pp.props %}
+      <div class="fk-prop">
+        <a class="fk-prop-name" href="{{ url_for('franchise_player', pid=p.pid) }}">{{ p.pos }} {{ p.name }}</a>
+        <span class="fk-prop-line"><b>O/U {{ '%g'|format(p.line) }}</b> {{ p.unit }}</span>
+        <span class="fk-prop-proj">proj {{ '%g'|format(p.proj) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="fk-ccblurb">Projections from the same stat engine the game runs on. Featured plays and a sharper game plan push your guys' numbers up.</p>
+  </div>
+  <style>
+    .fk-props-vs { float:right; font-size:12px; color:#8fa3b0; font-weight:700; }
+    .fk-props-list { display:grid; gap:6px; }
+    .fk-prop { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-top:1px solid rgba(143,163,176,.12); }
+    .fk-prop:first-child { border-top:0; }
+    .fk-prop-name { flex:1; color:#9fe9ff; text-decoration:none; font-weight:700; font-size:13px; }
+    .fk-prop-line { color:#e8f4fb; font-size:13px; } .fk-prop-line b { color:#fff; }
+    .fk-prop-proj { color:#8fa3b0; font-size:11px; white-space:nowrap; }
+  </style>
+  {% endif %}
+
   {% if command_center.agenda %}
   <div class="fk-card fk-agenda">
     <div class="fk-card-h">{{ icon('users') }}On your desk <span class="fk-agcount">{{ command_center.agenda|length }}</span></div>

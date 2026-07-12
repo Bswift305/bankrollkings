@@ -97,6 +97,17 @@
       </div>
     </div>
     {% endif %}
+    {% if recap.props %}
+    <div class="pg-note">
+      <div class="pg-note-h">🎯 Player props</div>
+      {% for p in recap.props %}
+      <div class="pg-prop">
+        <span class="pg-prop-name">{{ p.pos }} {{ p.name }}</span>
+        <span class="pg-prop-res">{{ '%g'|format(p.actual) }} / {{ '%g'|format(p.line) }} {% if p.result == 'over' %}<span style="color:#7dffb0">OVER</span>{% else %}<span style="color:#ff9a9a">under</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if recap.key_moment %}
     <div class="pg-note">
       <div class="pg-note-h">🎯 Sideline call</div>
@@ -190,6 +201,8 @@
   .pg-note-h { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:#8fa3b0; font-weight:800; margin-bottom:6px; }
   .pg-note-sub { color:#8fa3b0; font-size:12px; margin-top:3px; line-height:1.45; }
   .pg-edge { color:#7dffb0; font-weight:700; font-size:12px; }
+  .pg-prop { display:flex; justify-content:space-between; gap:8px; font-size:12.5px; padding:2px 0; }
+  .pg-prop-name { color:#cfe3ee; } .pg-prop-res { color:#9fb0bc; white-space:nowrap; }
   .pg-tag { display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:2px 7px; margin:2px 3px 0 0; }
   .pg-tag-red { background:rgba(255,122,122,.12); border:1px solid rgba(255,122,122,.34); color:#ff9a9a; }
   .pg-tag-amber { background:rgba(255,196,120,.12); border:1px solid rgba(255,196,120,.32); color:#ffd089; }
