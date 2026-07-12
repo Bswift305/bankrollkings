@@ -1704,6 +1704,44 @@ def _score_line(rng, win_power, lose_power):
     return base + margin, base
 
 
+def _game_box(perf, n=5):
+    """The top contributors from one team's game (skill + notable defense), best first."""
+    return [{"name": x["name"], "pos": x["pos"], "pid": x.get("pid"), "line": x["line"]}
+            for x in sorted(perf, key=lambda x: -x.get("score", 0))[:n]]
+
+
+def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather):
+    """A short SportsDesk writeup of one game: a headline, a dek, and a body that
+    threads the result, the star line, the sideline call, and the weather. `weather`
+    is the game_weather() dict (or None)."""
+    margin = abs(us - them)
+    close = margin <= 3
+    blowout = margin >= 21
+    cond = (weather or {}).get("condition", "")
+    rough = cond in ("Snow", "Rain", "Wind")
+    if won:
+        verb = rng.choice(["hold off", "outlast", "handle", "grind past", "roll past", "take down"])
+        head = f"{my_name} {verb} {opp_name}, {us}–{them}"
+        lead = ("survived a one-score win" if close else "cruised in a lopsided win" if blowout
+                else "picked up a win")
+        dek = ("A win the film room will enjoy — they finished the close one." if close
+               else "A statement afternoon." if blowout else "A win is a win; the ledger ticks up.")
+    else:
+        verb = rng.choice(["fall to", "drop one to", "get edged by", "come up short against", "lose to"])
+        head = f"{my_name} {verb} {opp_name}, {them}–{us}"
+        lead = ("dropped a heartbreaker" if close else "were run out in a lopsided loss" if blowout
+                else "lost a tough one")
+        dek = "A result the film room won't enjoy — the margins were the story."
+    body = f"{my_name} {lead}, {us}–{them}."
+    if star:
+        body += f" {star['pos']} {star['name']} carried the load — {star['line']}."
+    if key_call and key_call != "Balanced":
+        body += f" The staff leaned on a “{key_call}” approach in the swing moments."
+    if rough:
+        body += f" {cond} framed the afternoon."
+    return {"headline": head, "dek": dek, "story": body}
+
+
 def sim_week(save):
     iz = save.get("inseason")
     if not iz:
@@ -1734,17 +1772,46 @@ def sim_week(save):
         if uid in (g["home"], g["away"]):
             opp = teams[g["away"] if g["home"] == uid else g["home"]]
             mine = ph if g["home"] == uid else pa
+            theirs = pa if g["home"] == uid else ph
             st = max(mine, key=lambda x: x["score"]) if mine else None
             _ws, _ls = _score_line(rng, powers.get(win, 60.0), powers.get(lose, 60.0))
             _us, _them = (_ws, _ls) if win == uid else (_ls, _ws)
+            km = key_moment_summary(save)
+            star = {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
                               "us": _us, "them": _them, "weather": weather,
-                              "key_moment": key_moment_summary(save),
-                              "star": {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None,
+                              "key_moment": km,
+                              "star": star,
                               "_score": st["score"] if st else 0})
+            # Rich single-game recap for the post-game page (both box scores + a story).
+            my_team = teams[uid]
+            save["last_game"] = {
+                "season": save.get("season", 1), "week": week,
+                "won": win == uid, "us": _us, "them": _them,
+                "home": g["home"] == uid, "opp": opp["full"], "opp_short": opp.get("name", opp["full"]),
+                "my_team": my_team["full"], "my_short": my_team.get("name", my_team["full"]),
+                "weather": weather, "key_moment": km,
+                "my_box": _game_box(mine), "opp_box": _game_box(theirs),
+                "injuries": list(iz.get("injuries", [])), "incidents": list(iz.get("incidents", [])),
+                "news": _compose_game_story(rng, win == uid, _us, _them,
+                                            my_team.get("name", my_team["full"]),
+                                            opp.get("name", opp["full"]), star,
+                                            km.get("call", "Balanced"), weather),
+            }
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
+    # Season context for the post-game page: record + where this result leaves you.
+    if save.get("last_game"):
+        mt = current_team(save)
+        rec = mt.get("record", {"w": 0, "l": 0})
+        div_rows = [s for s in save["standings_cache"]
+                    if s["div"] == mt["division"] and s["conf"] == mt["conference"]]
+        place = next((i + 1 for i, s in enumerate(div_rows) if s["id"] == uid), None)
+        save["last_game"]["context"] = {
+            "record": f"{rec.get('w', 0)}-{rec.get('l', 0)}",
+            "division": mt["division"], "conference": mt["conference"],
+            "div_place": place, "div_size": len(div_rows)}
     _update_power_rank(save)        # GridIron Network week-over-week movement
     offer_chance = 0.75 if any(p.get("on_block") for p in current_team(save)["roster"]) else 0.4
     deadline = int(save.get("league_rules", {}).get("trade_deadline_week", TRADE_DEADLINE_SOLO) or TRADE_DEADLINE_SOLO)

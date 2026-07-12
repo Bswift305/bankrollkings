@@ -609,6 +609,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_new',
     'franchise_sim',
     'franchise_sim_week',
+    'franchise_game',
     'franchise_weekly',
     'franchise_agenda',
     'franchise_live_toggle',
@@ -29457,12 +29458,31 @@ def franchise_retire():
 def franchise_sim_week():
     _, save = _franchise_save()
     if save and save.get('inseason'):
+        played_week = (save.get('inseason') or {}).get('week')
         fk.sim_week(save)
         save.pop('away_recap', None)
         if save.get('inseason'):
             fk.reset_live_clock(save, datetime.now(timezone.utc).timestamp())
         fk.write_save(save)
+        # Show the post-game recap for the game just played (skip on a bye week).
+        if (save.get('last_game') or {}).get('week') == played_week:
+            return redirect(url_for('franchise_game'))
     return redirect(url_for('franchise_hub'))
+
+
+@app.route('/franchise/game')
+def franchise_game():
+    _, save = _franchise_save()
+    if not save:
+        return redirect(url_for('franchise_new'))
+    recap = save.get('last_game')
+    if not recap:
+        return redirect(url_for('franchise_hub'))
+    team = fk.current_team(save)
+    return render_template('franchise_game.html',
+                           save=save, recap=recap, team=team, hero_team=team,
+                           colors=fk.team_colors(team['full']), accent=fk.team_accent(team['full']),
+                           season=save.get('season', 1), season_over=not save.get('inseason'))
 
 
 @app.route('/franchise/agenda', methods=['POST'])
