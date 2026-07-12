@@ -191,6 +191,36 @@
   </div>
   {% endif %}
 
+  {% if prospect and scouting is defined and scouting %}{% set sc = scouting %}
+  <div class="fp-card">
+    <div class="fp-h">🔬 Scouting report <span style="float:right;font-size:12px;color:#8fa3b0">confidence: <b class="fp-conf-{{ sc.conf_label|lower }}">{{ sc.conf_label }}</b></span></div>
+    <div class="fp-rows">
+      <div><span>Grade range</span><b>{{ sc.grade_lo }}–{{ sc.grade_hi }}</b></div>
+      <div><span>Ceiling range</span><b>{{ sc.pot_lo }}–{{ sc.pot_hi }}</b></div>
+      <div><span>Medical</span><b style="color:{{ '#7dffb0' if sc.medical == 'Clean' else '#ff9a9a' if sc.medical == 'Red flag' else '#ffd873' if sc.medical == 'Minor concern' else '#8fa3b0' }}">{{ sc.medical }}</b></div>
+      <div><span>Character</span><b style="color:{{ '#9fe9ff' if sc.character not in ('Not yet interviewed',) else '#8fa3b0' }}">{{ sc.character }}</b></div>
+    </div>
+    <div class="fp-scoutbar"><span style="width:{{ sc.conf }}%"></span></div>
+    <p class="fp-muted" style="margin:8px 0 6px">You have <b style="color:#9fe9ff">{{ sc.points }}</b> scouting point{{ 's' if sc.points != 1 }} for this class. Spend them to narrow his range and resolve the flags — great scouting tightens the read, it never guarantees a hit.</p>
+    <div class="fp-scoutacts">
+      {% for a in sc.actions %}
+      <form method="post" action="{{ url_for('franchise_scout_prospect') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="action" value="{{ a.key }}">
+        <button class="fp-scoutbtn" {{ 'disabled' if not a.afford }} title="{{ a.note }}">{{ a.label }} <b>({{ a.cost }})</b></button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  <style>
+    .fp-conf-high { color:#7dffb0; } .fp-conf-medium { color:#ffd873; } .fp-conf-low { color:#ffb37a; } .fp-conf-raw { color:#ff9a9a; }
+    .fp-scoutbar { height:6px; background:rgba(143,163,176,.2); border-radius:4px; overflow:hidden; margin-top:4px; }
+    .fp-scoutbar span { display:block; height:100%; background:linear-gradient(90deg,#4ad4f0,#7dffb0); }
+    .fp-scoutacts { display:flex; flex-wrap:wrap; gap:6px; }
+    .fp-scoutbtn { border:1px solid rgba(74,212,240,.35); background:rgba(11,24,34,.5); color:#cfe3ee; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .fp-scoutbtn:disabled { opacity:.4; cursor:not-allowed; }
+  </style>
+  {% endif %}
+
   {% if prospect %}
   <div class="fp-card"><div class="fp-h">🎓 Draft prospect</div>
     <p class="fp-muted">Hasn't taken a pro snap yet — grade him on draft day. His scouted numbers tighten toward his true rating as your scouting improves.</p></div>

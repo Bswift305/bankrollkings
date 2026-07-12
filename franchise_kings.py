@@ -6485,6 +6485,70 @@ def _scout(rng, p, accuracy):
     return p
 
 
+# --------------------------------------------------------------------------- #
+# Scouting uncertainty — a prospect isn't a known number, he's a RANGE with a
+# confidence. You spend a limited pool of scouting points (film, pro days,
+# private workouts, interviews, medicals) to narrow the range and resolve the
+# flags. Great scouting tightens the read; it never eliminates the bust.
+# --------------------------------------------------------------------------- #
+PROSPECT_SCOUT_ACTIONS = {
+    "film": {"label": "Study more film", "conf": 12, "cost": 1, "note": "Tightens the projection."},
+    "proday": {"label": "Attend his pro day", "conf": 16, "cost": 1, "note": "Confirms the athletic traits."},
+    "workout": {"label": "Private workout", "conf": 24, "cost": 2, "note": "The clearest read — but it costs."},
+    "interview": {"label": "Interview him", "conf": 10, "cost": 1, "note": "Reveals character & football IQ.", "reveal": "personality"},
+    "medical": {"label": "Medical recheck", "conf": 8, "cost": 1, "note": "Resolves the medical flag.", "reveal": "medical"},
+}
+
+
+def _conf_label(c):
+    return "High" if c >= 75 else "Medium" if c >= 52 else "Low" if c >= 32 else "Raw"
+
+
+def prospect_scouting_view(save, p):
+    """The uncertainty-aware read on a prospect: grade/ceiling as ranges that tighten
+    with confidence, plus resolved-or-not medical and character."""
+    conf = int(p.get("conf", 35))
+    spread = max(2, round((100 - conf) / 9.0))
+    grade = int(p.get("grade", p.get("true_ovr", 65)))
+    pot = int(p.get("pot_grade", grade))
+    draft = save.get("draft") or {}
+    return {
+        "conf": conf, "conf_label": _conf_label(conf),
+        "grade_lo": max(40, grade - spread), "grade_hi": min(99, grade + spread),
+        "pot_lo": max(grade, pot - spread), "pot_hi": min(99, pot + spread),
+        "medical": p.get("medical_scouted") or "Unresolved",
+        "character": p.get("personality") if p.get("interviewed") else "Not yet interviewed",
+        "points": int(draft.get("scout_points", 0)),
+        "actions": [dict(a, key=k, afford=int(draft.get("scout_points", 0)) >= a["cost"])
+                    for k, a in PROSPECT_SCOUT_ACTIONS.items()],
+    }
+
+
+def scout_prospect(save, pid, action):
+    """Spend scouting points to narrow a prospect's range (and resolve his flags)."""
+    draft = save.get("draft")
+    if not draft or not save.get("draft_pending"):
+        return False, "The draft board isn't open right now."
+    act = PROSPECT_SCOUT_ACTIONS.get(action)
+    if not act:
+        return False, "Unknown scouting action."
+    if int(draft.get("scout_points", 0)) < act["cost"]:
+        return False, "You're out of scouting points for this class."
+    p = next((x for x in draft.get("class", []) if x["id"] == pid), None)
+    if not p:
+        return False, "Prospect not found on the board."
+    draft["scout_points"] = int(draft.get("scout_points", 0)) - act["cost"]
+    p["conf"] = min(96, int(p.get("conf", 35)) + act["conf"])
+    rng = _rng(save["seed"] + sum(ord(c) for c in pid) + p["conf"])
+    _scout(rng, p, 22 + p["conf"] * 0.72)              # higher confidence -> grade converges toward true
+    if act.get("reveal") == "medical":
+        p["medical_scouted"] = p.get("medical_true", "Clean")
+    if act.get("reveal") == "personality":
+        p["interviewed"] = True
+    write_save(save)
+    return True, f"{act['label']} — {p['name']}'s read is clearer ({int(draft['scout_points'])} scouting points left)."
+
+
 def _make_rookie(p):
     aav = round(max(0.7, max(0, p["true_ovr"] - 55) ** 1.6 / 26.0), 1)
     return {"id": "p" + p["id"][1:], "name": p["name"], "pos": p["pos"], "age": p["age"],
@@ -6630,6 +6694,8 @@ def start_draft(save):
     acc = max(20, min(94, save["gm"]["ratings"].get("drafting", 50) + staff_bonus(save)["scouting"] + scout_bonus))
     for p in cls:
         _scout(rng, p, acc)
+        p["conf"] = max(22, min(52, int(acc) - 14))    # your baseline read before you dig in
+        p["medical_true"] = rng.choice(["Clean"] * 7 + ["Minor concern"] * 2 + ["Red flag"])
     save["staff_market"] = build_staff_market(save, rng)   # the real market: fired coaches, expired deals, up-and-comers
     inject_player_coaches(save, rng)   # this year's retired stars can enter the market
     order = [s["id"] for s in reversed(save.get("standings_cache", []))] or [t["id"] for t in save["teams"]]
@@ -6650,7 +6716,8 @@ def start_draft(save):
     save["pick_swaps"] = [sw for sw in save.get("pick_swaps", []) if sw.get("season") != season]
     save["draft"] = {"class": cls, "picks": picks, "order": order,
                      "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": [],
-                     "pro_days": 3}   # private-workout visits your scouts can burn
+                     "pro_days": 3,   # private-workout visits your scouts can burn
+                     "scout_points": 6 + (2 if scout_bonus else 0)}   # narrow prospects' ranges pre-draft
     ensure_player_portraits(save)
     save["draft_pending"] = True
     _draft_advance(save)

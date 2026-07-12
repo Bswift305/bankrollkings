@@ -635,6 +635,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_player',
     'franchise_league_player',
     'franchise_prospect',
+    'franchise_scout_prospect',
     'franchise_league_prospect',
     'franchise_assist',
     'franchise_offseason',
@@ -30154,8 +30155,18 @@ def franchise_prospect(pid):
     prof['human_fit'] = fk.human_development_fit(save, prof['p'])
     prof['scoutrep'] = fk.scout_report(save, prof['p'])
     prof['dev_outlook'] = _dev_outlook(save, prof.get('r1', 0), prof.get('r2', 0))
+    prof['scouting'] = fk.prospect_scouting_view(save, prof['p'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='draft'),
                            current_user=current_user, **prof)
+
+
+@app.route('/franchise/scout-prospect', methods=['POST'])
+def franchise_scout_prospect():
+    _, save = _franchise_save()
+    pid = str(request.form.get('pid', '')).strip()
+    if save:
+        fk.scout_prospect(save, pid, str(request.form.get('action', '')).strip())
+    return redirect(url_for('franchise_prospect', pid=pid))
 
 
 @app.route('/franchise/league/<lid>/prospect/<pid>')
