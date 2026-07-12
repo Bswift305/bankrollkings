@@ -105,6 +105,13 @@
       </div>
     </div>
     {% endif %}
+    {% if recap.plan_eval %}{% set pe = recap.plan_eval %}
+    <div class="pg-note">
+      <div class="pg-note-h">🧠 Game-plan report</div>
+      {% if pe.off %}<div class="pg-plan pg-plan-{{ pe.off.verdict }}">{{ '✅' if pe.off.verdict == 'worked' else '⚠️' if pe.off.verdict == 'backfired' else '➖' }} {{ pe.off.text }}</div>{% endif %}
+      {% if pe.def %}<div class="pg-plan pg-plan-{{ pe.def.verdict }}">{{ '✅' if pe.def.verdict == 'worked' else '⚠️' if pe.def.verdict == 'backfired' else '➖' }} {{ pe.def.text }}</div>{% endif %}
+    </div>
+    {% endif %}
     {% if recap.props %}
     <div class="pg-note">
       <div class="pg-note-h">📺 Prop watch</div>
@@ -214,6 +221,8 @@
   .pg-sig { margin-bottom:16px; display:grid; gap:6px; }
   .pg-sig-row { background:rgba(245,200,96,.1); border:1px solid rgba(245,200,96,.4); border-radius:10px; padding:9px 13px; font-size:13.5px; color:#ffe6a6; }
   .pg-sig-row b { color:#fff; } .pg-sig-row span { color:#e8d9a8; }
+  .pg-plan { font-size:12.5px; padding:3px 0; line-height:1.4; }
+  .pg-plan-worked { color:#9fe9c0; } .pg-plan-backfired { color:#ffb3b3; } .pg-plan-mixed, .pg-plan-neutral { color:#c2cfd8; }
   .pg-tag { display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:2px 7px; margin:2px 3px 0 0; }
   .pg-tag-red { background:rgba(255,122,122,.12); border:1px solid rgba(255,122,122,.34); color:#ff9a9a; }
   .pg-tag-amber { background:rgba(255,196,120,.12); border:1px solid rgba(255,196,120,.32); color:#ffd089; }

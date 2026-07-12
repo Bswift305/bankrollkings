@@ -1831,6 +1831,40 @@ def game_plan_report(save):
             "off_set": wo.get("off_identity"), "def_set": wo.get("def_identity")}
 
 
+def _evaluate_game_plan(save, opp, us, them):
+    """Postgame verdict on how your weekly identities fared against their tendencies."""
+    wo = save.get("weekly_ops", {})
+    tends = opponent_tendencies(opp)
+    def_tags = [x["tag"] for x in tends if x["side"] == "def"]
+    off_tags = [x["tag"] for x in tends if x["side"] == "off"]
+    out = {}
+    oid = OFF_IDENTITIES.get(wo.get("off_identity"))
+    if oid:
+        e = _identity_edge_for(oid, def_tags)
+        if e > 0 and us >= 27:
+            v, txt = "worked", f"Your {oid['label']} plan hit — you found the matchup and put up {us}."
+        elif e > 0:
+            v, txt = "mixed", f"The {oid['label']} matchup was there, but {us} points says execution lagged."
+        elif e < 0:
+            v, txt = "backfired", f"{oid['label']} played into their strength — a grind for {us}."
+        else:
+            v, txt = "neutral", f"{oid['label']} was a wash against their looks ({us} points)."
+        out["off"] = {"label": oid["label"], "verdict": v, "text": txt}
+    did = DEF_IDENTITIES.get(wo.get("def_identity"))
+    if did:
+        e = _identity_edge_for(did, off_tags)
+        if e > 0 and them <= 20:
+            v, txt = "worked", f"Your {did['label']} plan smothered them — just {them} allowed."
+        elif e > 0:
+            v, txt = "mixed", f"{did['label']} was the right idea, but {them} still got through."
+        elif e < 0:
+            v, txt = "backfired", f"{did['label']} left you exposed — they hung {them}."
+        else:
+            v, txt = "neutral", f"{did['label']} traded blows ({them} allowed)."
+        out["def"] = {"label": did["label"], "verdict": v, "text": txt}
+    return out or None
+
+
 def _bump_identity_streak(save):
     """Track how many weeks in a row each identity has been used (for self-scouting)."""
     wo = save.get("weekly_ops", {})
@@ -2664,6 +2698,7 @@ def sim_week(save):
             _log_player_games(save, mine, week)     # feed the storyline/streak detector
             save["last_game"]["signatures"] = _record_signatures(
                 save, mine, week, win == uid, abs(_us - _them))
+            save["last_game"]["plan_eval"] = _evaluate_game_plan(save, opp, _us, _them)
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
