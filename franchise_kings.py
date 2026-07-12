@@ -1129,74 +1129,166 @@ def _distribute(total, weights, rng):
     return out
 
 
-def _game_perf(team, won, rng, out_ids=()):
-    """Generate ONE game's box-score lines for a team's contributors, add them to
-    running season totals, and return the skill/defense standouts (for game stars)."""
+def _assign_scores(n, caps, weights, rng):
+    """Hand out `n` scores (TDs) one at a time to weighted buckets, never giving a
+    bucket more than its `cap` (a man can't score more TDs than he had touches).
+    Returns a per-bucket count; sums to n as long as the caps allow."""
+    got = [0] * len(caps)
+    for _ in range(n):
+        elig = [i for i in range(len(caps)) if got[i] < caps[i]]
+        if not elig:
+            break
+        wsum = sum(max(1, weights[i]) for i in elig)
+        pick, acc = rng.random() * wsum, 0.0
+        for i in elig:
+            acc += max(1, weights[i])
+            if pick <= acc:
+                got[i] += 1
+                break
+    return got
+
+
+def _score_breakdown(points, rng):
+    """Reconstruct a plausible scoring summary that sums EXACTLY to `points`:
+    touchdowns (6) + successful PATs (1) + two-point conversions (2) + field goals
+    (3). This is what makes the box score add up to the final on the scoreboard."""
+    if points <= 0:
+        return {"td": 0, "fg": 0, "xp": 0, "two": 0}
+    cands = []
+    for td in range(0, points // 6 + 1):
+        rem = points - 6 * td
+        for fg in range(0, min(6, rem // 3) + 1):   # more than ~5 FGs in a game is unheard of
+            E = rem - 3 * fg                        # extra points still to place on the TDs
+            if 0 <= E <= 2 * td:
+                two = max(0, E - td)                # TDs forced to a 2-pt conversion
+                miss = max(0, td - E)               # TDs with no extra point (missed/none)
+                # Prefer ~7 pts/TD, few FGs, and mostly ordinary PATs (2-pt tries and
+                # missed extra points are both rare).
+                w = (math.exp(-abs(td - points / 7.0)) * (0.45 ** max(0, fg - 2))
+                     * (0.3 ** two) * (0.32 ** miss))
+                if td == 0 and points >= 9:
+                    w *= 0.1                        # all-field-goal games are rare
+                cands.append((w, td, fg, E))
+    if not cands:                                  # unreachable for realistic scores
+        return {"td": 0, "fg": points // 3, "xp": 0, "two": 0}
+    tot = sum(c[0] for c in cands)
+    pick, acc, td, fg, E = rng.random() * tot, 0.0, 0, 0, 0
+    for w, t, f, e in cands:
+        acc += w
+        if pick <= acc:
+            td, fg, E = t, f, e
+            break
+    two = max(0, E - td)                            # 2-pt tries only when parity needs them
+    return {"td": td, "fg": fg, "xp": max(0, E - 2 * two), "two": two}
+
+
+def _game_perf(team, points, won, rng, out_ids=()):
+    """Generate ONE game's box score for a team so it RECONSTRUCTS the final score:
+    the touchdowns and field goals add up to `points`, the QB's passing equals his
+    receivers' catches, and player archetypes (a dual-threat QB, a bell-cow back,
+    the receiving corps) decide who produces. Adds to season totals; returns
+    (standouts-for-game-stars, team summary that the recap displays)."""
     by_pos = {pos: [p for p in pos_depth(team, pos) if p["id"] not in out_ids] for pos in ROSTER}
-    wb = 1.1 if won else 0.92
+    wb = 1.08 if won else 0.94
     perf = []
 
-    # --- QB: the passing totals every catch has to add up to ---
-    qb = (by_pos.get("QB", []) or [None])[0]
-    att = comp = pass_yd = pass_td = intc = 0
-    if qb:
-        o = qb["overall"]
-        att = rng.randint(26, 40)
-        comp = int(att * min(0.74, 0.55 + (o - 55) * 0.0035))
-        pass_yd = int(comp * rng.uniform(6.4, 9.2) * wb)
-        pass_td = max(0, int(pass_yd / 150 * wb + rng.random()))
-        intc = rng.randint(0, 2) if rng.random() < 0.5 else 0
+    plan = _score_breakdown(points, rng)               # TDs + FGs + PATs that sum to `points`
+    n_td, n_fg = plan["td"], plan["fg"]
+    vol = 0.85 + 0.30 * (points / 24.0)                # a high-scoring day = more plays & yards
 
-    # --- Receiving corps: hand the QB's completions/yards/TDs out so the box reconciles.
-    # Target share leans on depth slot + talent; RBs are shorter check-downs (lower ypc). ---
+    qb = (by_pos.get("QB", []) or [None])[0]
     wrs = by_pos.get("WR", [])[:3]
     tes = by_pos.get("TE", [])[:1]
     rbs = by_pos.get("RB", [])[:2]
-    corps = []          # [player, target_weight, ypc_weight]
+    qb_mobile = bool(qb and qb.get("style") in ("Dual Threat", "RPO Specialist"))
+    rb_best = max([r["overall"] for r in rbs], default=62)
+
+    # --- Split the offensive TDs into ground vs air by personnel & archetype ---
+    rush_share = 0.33 + (0.15 if qb_mobile else 0.0) + max(-0.08, min(0.12, (rb_best - 72) * 0.006))
+    n_rush_td = max(0, min(n_td, int(round(n_td * rush_share))))
+    n_pass_td = n_td - n_rush_td
+
+    # --- QB passing line: volume + yards scale with the scoring; comps cover the TDs ---
+    att = comp = pass_yd = intc = 0
+    if qb:
+        o = qb["overall"]
+        att = int(rng.randint(24, 40) * (0.92 + 0.14 * (points / 24.0)))
+        comp = min(att, max(n_pass_td, int(att * min(0.72, 0.53 + (o - 55) * 0.0035))))
+        pass_yd = int(comp * rng.uniform(6.6, 9.4) * vol * wb)
+        intc = rng.randint(0, 2) if rng.random() < (0.4 if won else 0.6) else 0
+
+    # --- QB rushing: a genuine dual-threat contribution ---
+    qb_car = qb_rush_yd = 0
+    if qb_mobile:
+        qb_car = rng.randint(4, 10)
+        qb_rush_yd = int(qb_car * rng.uniform(4.6, 7.8) * wb)
+    elif qb and rng.random() < 0.5:
+        qb_car = rng.randint(1, 4)
+        qb_rush_yd = int(qb_car * rng.uniform(1.5, 4.5))
+
+    # --- Distribute the QB's catches/yards/TDs across the receiving corps ---
+    corps = []                                         # [player, target_weight, ypc_weight]
     for idx, w in enumerate(wrs):
         slot = (3.0, 2.1, 1.3)[idx] if idx < 3 else 1.0
-        corps.append([w, slot * (1 + (w["overall"] - 65) * 0.004), 1.2])
+        corps.append([w, slot * (1 + (w["overall"] - 65) * 0.005), 1.2])
     for t in tes:
-        corps.append([t, 1.5 * (1 + (t["overall"] - 65) * 0.004), 1.0])
+        corps.append([t, 1.6 * (1 + (t["overall"] - 65) * 0.005), 1.0])
     for idx, r in enumerate(rbs):
-        corps.append([r, (1.1 if idx == 0 else 0.5), 0.55])
+        corps.append([r, (1.2 if idx == 0 else 0.5), 0.55])
     recs = _distribute(comp, [c[1] for c in corps], rng)
     ryds = _distribute(pass_yd, [recs[i] * corps[i][2] for i in range(len(corps))], rng)
-    rtds = [0] * len(corps)
-    for _ in range(pass_td):                       # a TD can't exceed a man's catches
-        elig = [i for i in range(len(corps)) if recs[i] > rtds[i]]
-        if not elig:
-            break
-        wsum = sum(max(1, ryds[i]) for i in elig)
-        pick, acc = rng.random() * wsum, 0.0
-        for i in elig:
-            acc += max(1, ryds[i])
-            if pick <= acc:
-                rtds[i] += 1
-                break
-    recv = {corps[i][0]["id"]: (recs[i], ryds[i], rtds[i]) for i in range(len(corps))}
+    rec_td = _assign_scores(n_pass_td, recs, ryds, rng)     # capped at catches, weighted by yards
+    recv = {corps[i][0]["id"]: (recs[i], ryds[i], rec_td[i]) for i in range(len(corps))}
 
-    if qb:
-        _add_stats(qb, {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": pass_yd, "pass_td": pass_td, "int": intc})
-        perf.append({"name": qb["name"], "pos": "QB", "pid": qb["id"],
-                     "line": f"{comp}/{att}, {pass_yd} yd, {pass_td} TD" + (f", {intc} INT" if intc else ""),
-                     "score": pass_yd * 0.04 + pass_td * 4 - intc * 2})
+    # --- Rushing yards, then the ground TDs across RBs (+ a mobile QB) ---
+    rb_car, rb_yd = [], []
     for i, rb in enumerate(rbs):
         o = rb["overall"]
-        car = int(rng.randint(8, 22) * (1.0 if i == 0 else 0.5) * (1 + (o - 65) * 0.004))
-        yd = int(car * rng.uniform(3.2, 6.2) * wb)
-        td = max(0, int(yd / 60 * wb + rng.random() * 0.5))
+        car = max(1, int(rng.randint(9, 20) * (1.0 if i == 0 else 0.5) * (1 + (o - 65) * 0.005) * vol))
+        rb_car.append(car)
+        rb_yd.append(int(car * rng.uniform(3.4, 5.6) * wb))
+    runners = [rb["id"] for rb in rbs] + ([qb["id"]] if (qb and qb_car) else [])
+    run_caps = list(rb_car) + ([qb_car] if (qb and qb_car) else [])
+    run_wts = [rb_yd[i] + 5 for i in range(len(rbs))] + \
+              ([(qb_rush_yd + 8) * (1.5 if qb_mobile else 0.4)] if (qb and qb_car) else [])
+    ground_td = _assign_scores(n_rush_td, run_caps, run_wts, rng)
+    rush_td_by = {runners[k]: ground_td[k] for k in range(len(runners))}
+
+    total_rush_yd = qb_rush_yd + sum(rb_yd)
+
+    # ---- Emit QB ----
+    if qb:
+        qb_rush_td = rush_td_by.get(qb["id"], 0)
+        stat = {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": pass_yd, "pass_td": n_pass_td, "int": intc}
+        if qb_car:
+            stat.update(rush_car=qb_car, rush_yd=qb_rush_yd, rush_td=qb_rush_td)
+        _add_stats(qb, stat)
+        line = f"{comp}/{att}, {pass_yd} yd, {n_pass_td} TD" + (f", {intc} INT" if intc else "")
+        if qb_car:
+            line += f" · {qb_car} car, {qb_rush_yd} yd" + (f", {qb_rush_td} TD" if qb_rush_td else "")
+        perf.append({"name": qb["name"], "pos": "QB", "pid": qb["id"], "line": line,
+                     "score": pass_yd * 0.04 + n_pass_td * 4 - intc * 2 + qb_rush_yd * 0.06 + qb_rush_td * 6})
+
+    # ---- Emit RBs ----
+    for i, rb in enumerate(rbs):
         rc, rcy, rct = recv.get(rb["id"], (0, 0, 0))
-        _add_stats(rb, {"g": 1, "rush_car": car, "rush_yd": yd, "rush_td": td,
+        rtd = rush_td_by.get(rb["id"], 0)
+        _add_stats(rb, {"g": 1, "rush_car": rb_car[i], "rush_yd": rb_yd[i], "rush_td": rtd,
                         "rec": rc, "rec_yd": rcy, "rec_td": rct})
-        line = f"{car} car, {yd} yd, {td} TD" + (f" · {rc} rec, {rcy} yd" if rc else "")
-        perf.append({"name": rb["name"], "pos": "RB", "pid": rb["id"],
-                     "line": line, "score": yd * 0.06 + td * 6 + rcy * 0.06 + rct * 6})
+        line = f"{rb_car[i]} car, {rb_yd[i]} yd, {rtd} TD"
+        if rc:
+            line += f" · {rc} rec, {rcy} yd" + (f", {rct} TD" if rct else "")
+        perf.append({"name": rb["name"], "pos": "RB", "pid": rb["id"], "line": line,
+                     "score": rb_yd[i] * 0.06 + rtd * 6 + rcy * 0.06 + rct * 6})
+
+    # ---- Emit WR / TE ----
     for c in wrs + tes:
         rc, rcy, rct = recv.get(c["id"], (0, 0, 0))
         _add_stats(c, {"g": 1, "rec": rc, "rec_yd": rcy, "rec_td": rct})
         perf.append({"name": c["name"], "pos": c["pos"], "pid": c["id"],
                      "line": f"{rc} rec, {rcy} yd, {rct} TD", "score": rcy * 0.06 + rct * 6 + rc * 0.4})
+
+    # ---- Defense ----
     for d in by_pos.get("DL", [])[:4] + by_pos.get("LB", [])[:3]:
         o = d["overall"]
         sk = round(max(0.0, (o - 66) * 0.02) + (rng.random() * 1.2 if rng.random() < 0.4 else 0.0), 1)
@@ -1209,10 +1301,15 @@ def _game_perf(team, won, rng, out_ids=()):
         o = d["overall"]
         di = 1 if rng.random() < max(0, (o - 72) * 0.02) else 0
         _add_stats(d, {"g": 1, "tackle": rng.randint(1, 6), "def_int": di, "pd": 1 if rng.random() < 0.3 else 0})
-    for k in by_pos.get("K", [])[:1]:
-        fgm = rng.randint(0, 4) if rng.random() < 0.6 else rng.randint(0, 2)
-        _add_stats(k, {"g": 1, "fgm": fgm, "fga": fgm + (1 if rng.random() < 0.3 else 0), "pts": fgm * 3 + rng.randint(0, 4)})
-    return perf
+
+    # ---- Kicker: field goals + PATs reconstruct the kicking points exactly ----
+    for kx in by_pos.get("K", [])[:1]:
+        _add_stats(kx, {"g": 1, "fgm": n_fg, "fga": n_fg + (1 if rng.random() < 0.18 else 0),
+                        "xpm": plan["xp"], "pts": n_fg * 3 + plan["xp"]})
+
+    summary = {"td": n_td, "fg": n_fg, "two": plan["two"], "pass_yd": pass_yd,
+               "rush_yd": total_rush_yd, "total_yd": pass_yd + total_rush_yd, "points": points}
+    return perf, summary
 
 
 # --------------------------------------------------------------------------- #
@@ -1817,15 +1914,19 @@ def sim_week(save):
         win, lose = (g["home"], g["away"]) if home_win else (g["away"], g["home"])
         teams[win]["record"]["w"] += 1
         teams[lose]["record"]["l"] += 1
-        ph = _game_perf(teams[g["home"]], win == g["home"], rng, out_ids if g["home"] == uid else ())
-        pa = _game_perf(teams[g["away"]], win == g["away"], rng, out_ids if g["away"] == uid else ())
+        # One score line drives BOTH the scoreboard and the box score, so they agree.
+        ws, ls = _score_line(rng, powers.get(win, 60.0), powers.get(lose, 60.0))
+        home_pts, away_pts = (ws, ls) if win == g["home"] else (ls, ws)
+        ph, ph_sum = _game_perf(teams[g["home"]], home_pts, home_win, rng, out_ids if g["home"] == uid else ())
+        pa, pa_sum = _game_perf(teams[g["away"]], away_pts, not home_win, rng, out_ids if g["away"] == uid else ())
         if uid in (g["home"], g["away"]):
             opp = teams[g["away"] if g["home"] == uid else g["home"]]
             mine = ph if g["home"] == uid else pa
             theirs = pa if g["home"] == uid else ph
+            my_sum = ph_sum if g["home"] == uid else pa_sum
+            opp_sum = pa_sum if g["home"] == uid else ph_sum
             st = max(mine, key=lambda x: x["score"]) if mine else None
-            _ws, _ls = _score_line(rng, powers.get(win, 60.0), powers.get(lose, 60.0))
-            _us, _them = (_ws, _ls) if win == uid else (_ls, _ws)
+            _us, _them = (home_pts, away_pts) if g["home"] == uid else (away_pts, home_pts)
             km = key_moment_summary(save)
             star = {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
@@ -1842,6 +1943,7 @@ def sim_week(save):
                 "my_team": my_team["full"], "my_short": my_team.get("name", my_team["full"]),
                 "weather": weather, "key_moment": km,
                 "my_box": _game_box(mine), "opp_box": _game_box(theirs),
+                "my_summary": my_sum, "opp_summary": opp_sum,
                 "injuries": list(iz.get("injuries", [])), "incidents": list(iz.get("incidents", [])),
                 "news": _compose_game_story(rng, win == uid, _us, _them,
                                             my_team.get("name", my_team["full"]),
@@ -7811,7 +7913,10 @@ def game_line(p, won, rng):
 def stat_line(p):
     s = p.get("stats") or {}
     if s.get("pass_yd"):
-        return f"{s['pass_yd']:,} yd, {s['pass_td']} TD, {s['int']} INT"
+        line = f"{s['pass_yd']:,} yd, {s['pass_td']} TD, {s['int']} INT"
+        if s.get("rush_yd", 0) >= 150:                 # a dual-threat QB's legs matter
+            line += f" · {s['rush_yd']:,} rush yd, {s.get('rush_td', 0)} rush TD"
+        return line
     if s.get("rush_yd"):
         return f"{s['rush_yd']:,} rush yd, {s['rush_td']} TD"
     if s.get("rec_yd"):
