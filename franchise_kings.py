@@ -1112,6 +1112,23 @@ def _add_stats(p, d):
         s[k] = round(s.get(k, 0) + v, 1) if isinstance(v, float) else s.get(k, 0) + v
 
 
+def _distribute(total, weights, rng):
+    """Split an integer `total` across buckets in proportion to `weights`, with the
+    result guaranteed to sum back to `total` (leftover from rounding goes to the
+    biggest fractional shares). Used to make a QB's passing line add up exactly to
+    his receivers' catches, yards and TDs."""
+    n = len(weights)
+    tw = sum(weights)
+    if total <= 0 or tw <= 0 or n == 0:
+        return [0] * n
+    raw = [total * (w / tw) for w in weights]
+    out = [int(x) for x in raw]
+    order = sorted(range(n), key=lambda i: raw[i] - int(raw[i]), reverse=True)
+    for j in range(total - sum(out)):
+        out[order[j % n]] += 1
+    return out
+
+
 def _game_perf(team, won, rng, out_ids=()):
     """Generate ONE game's box-score lines for a team's contributors, add them to
     running season totals, and return the skill/defense standouts (for game stars)."""
@@ -1119,34 +1136,67 @@ def _game_perf(team, won, rng, out_ids=()):
     wb = 1.1 if won else 0.92
     perf = []
 
-    for qb in by_pos.get("QB", [])[:1]:
+    # --- QB: the passing totals every catch has to add up to ---
+    qb = (by_pos.get("QB", []) or [None])[0]
+    att = comp = pass_yd = pass_td = intc = 0
+    if qb:
         o = qb["overall"]
         att = rng.randint(26, 40)
         comp = int(att * min(0.74, 0.55 + (o - 55) * 0.0035))
-        yd = int(comp * rng.uniform(6.4, 9.2) * wb)
-        td = max(0, int(yd / 150 * wb + rng.random()))
+        pass_yd = int(comp * rng.uniform(6.4, 9.2) * wb)
+        pass_td = max(0, int(pass_yd / 150 * wb + rng.random()))
         intc = rng.randint(0, 2) if rng.random() < 0.5 else 0
-        _add_stats(qb, {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": yd, "pass_td": td, "int": intc})
+
+    # --- Receiving corps: hand the QB's completions/yards/TDs out so the box reconciles.
+    # Target share leans on depth slot + talent; RBs are shorter check-downs (lower ypc). ---
+    wrs = by_pos.get("WR", [])[:3]
+    tes = by_pos.get("TE", [])[:1]
+    rbs = by_pos.get("RB", [])[:2]
+    corps = []          # [player, target_weight, ypc_weight]
+    for idx, w in enumerate(wrs):
+        slot = (3.0, 2.1, 1.3)[idx] if idx < 3 else 1.0
+        corps.append([w, slot * (1 + (w["overall"] - 65) * 0.004), 1.2])
+    for t in tes:
+        corps.append([t, 1.5 * (1 + (t["overall"] - 65) * 0.004), 1.0])
+    for idx, r in enumerate(rbs):
+        corps.append([r, (1.1 if idx == 0 else 0.5), 0.55])
+    recs = _distribute(comp, [c[1] for c in corps], rng)
+    ryds = _distribute(pass_yd, [recs[i] * corps[i][2] for i in range(len(corps))], rng)
+    rtds = [0] * len(corps)
+    for _ in range(pass_td):                       # a TD can't exceed a man's catches
+        elig = [i for i in range(len(corps)) if recs[i] > rtds[i]]
+        if not elig:
+            break
+        wsum = sum(max(1, ryds[i]) for i in elig)
+        pick, acc = rng.random() * wsum, 0.0
+        for i in elig:
+            acc += max(1, ryds[i])
+            if pick <= acc:
+                rtds[i] += 1
+                break
+    recv = {corps[i][0]["id"]: (recs[i], ryds[i], rtds[i]) for i in range(len(corps))}
+
+    if qb:
+        _add_stats(qb, {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": pass_yd, "pass_td": pass_td, "int": intc})
         perf.append({"name": qb["name"], "pos": "QB", "pid": qb["id"],
-                     "line": f"{comp}/{att}, {yd} yd, {td} TD" + (f", {intc} INT" if intc else ""),
-                     "score": yd * 0.04 + td * 4 - intc * 2})
-    for i, rb in enumerate(by_pos.get("RB", [])[:2]):
+                     "line": f"{comp}/{att}, {pass_yd} yd, {pass_td} TD" + (f", {intc} INT" if intc else ""),
+                     "score": pass_yd * 0.04 + pass_td * 4 - intc * 2})
+    for i, rb in enumerate(rbs):
         o = rb["overall"]
         car = int(rng.randint(8, 22) * (1.0 if i == 0 else 0.5) * (1 + (o - 65) * 0.004))
         yd = int(car * rng.uniform(3.2, 6.2) * wb)
         td = max(0, int(yd / 60 * wb + rng.random() * 0.5))
-        catches = int(rng.randint(1, 5) * (1.0 if i == 0 else 0.6))
-        _add_stats(rb, {"g": 1, "rush_car": car, "rush_yd": yd, "rush_td": td, "rec": catches, "rec_yd": catches * 8})
+        rc, rcy, rct = recv.get(rb["id"], (0, 0, 0))
+        _add_stats(rb, {"g": 1, "rush_car": car, "rush_yd": yd, "rush_td": td,
+                        "rec": rc, "rec_yd": rcy, "rec_td": rct})
+        line = f"{car} car, {yd} yd, {td} TD" + (f" · {rc} rec, {rcy} yd" if rc else "")
         perf.append({"name": rb["name"], "pos": "RB", "pid": rb["id"],
-                     "line": f"{car} car, {yd} yd, {td} TD", "score": yd * 0.06 + td * 6})
-    for c in by_pos.get("WR", [])[:3] + by_pos.get("TE", [])[:1]:
-        o = c["overall"]
-        catches = rng.randint(2, 9)
-        yd = int(catches * rng.uniform(9, 17) * (1 + (o - 65) * 0.004) * wb)
-        td = max(0, int(yd / 70 * wb))
-        _add_stats(c, {"g": 1, "rec": catches, "rec_yd": yd, "rec_td": td})
+                     "line": line, "score": yd * 0.06 + td * 6 + rcy * 0.06 + rct * 6})
+    for c in wrs + tes:
+        rc, rcy, rct = recv.get(c["id"], (0, 0, 0))
+        _add_stats(c, {"g": 1, "rec": rc, "rec_yd": rcy, "rec_td": rct})
         perf.append({"name": c["name"], "pos": c["pos"], "pid": c["id"],
-                     "line": f"{catches} rec, {yd} yd, {td} TD", "score": yd * 0.06 + td * 6 + catches * 0.4})
+                     "line": f"{rc} rec, {rcy} yd, {rct} TD", "score": rcy * 0.06 + rct * 6 + rc * 0.4})
     for d in by_pos.get("DL", [])[:4] + by_pos.get("LB", [])[:3]:
         o = d["overall"]
         sk = round(max(0.0, (o - 66) * 0.02) + (rng.random() * 1.2 if rng.random() < 0.4 else 0.0), 1)
