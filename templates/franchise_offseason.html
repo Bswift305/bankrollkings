@@ -453,15 +453,23 @@
       <p><a class="os-link" href="{{ url_for('franchise_offseason') }}">← back to expiring list</a></p>
     {% else %}
       <p class="os-sub">{{ expiring|length }} expiring contract{{ 's' if expiring|length != 1 }}. Re-sign your core or let them walk.</p>
-      <p class="os-sub" style="margin:0 0 6px">Can't reach a deal on a key man? <b>Tag</b> him — a 1-year deal at a premium that keeps him off the market. One franchise + one transition tag a year.</p>
+      <p class="os-sub" style="margin:0 0 6px">Can't reach a deal on a key man? <b>Tag</b> him to <b>keep</b> him one more year (this does <b>not</b> release him). <b>Franchise</b> = keep at a premium; <b>Transition</b> = keep cheaper. One of each a year.</p>
+      {% if tagged %}
+      <div class="os-li" style="border-left:3px solid #7dffb0; background:rgba(125,255,176,.08); padding:8px 12px; margin-bottom:8px;">
+        🏷 <b>Tagged this offseason (kept):</b>
+        {% for t in tagged %}<span style="margin-left:6px">{{ t.pos }} {{ t.name }} <small style="color:#8fa3b0">({{ t.tagged }}, ${{ '%.1f'|format(t.contract.aav) }}M)</small>
+          <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ t.id }}"><input type="hidden" name="untag" value="1"><button class="os-mini os-mini-cut">Undo tag</button></form>
+        </span>{% endfor %}
+      </div>
+      {% endif %}
       <div class="os-tscroll"><table class="os-table"><thead><tr><th></th><th>Player</th><th>Pos</th><th>OVR</th><th>Wants</th><th></th></tr></thead><tbody>
       {% for p in expiring %}
         <tr><td><span class="fkl-av fkl-av-{{ p.grp }}">{{ p.ini }}</span></td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td><td>{{ p.pos }}</td><td>{{ p.overall }}</td>
           <td>${{ '%.1f'|format(p.demand.aav if p.demand else p.contract.aav) }}M</td>
           <td style="white-space:nowrap"><a class="os-mini" href="{{ url_for('franchise_offseason', p=p.id) }}">Negotiate</a>
             {% if p.age and p.age <= 25 %}<form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="rfa" value="1"><button class="os-mini" title="Restricted FA: cheap 1-year tender, keep his rights">RFA Tender</button></form>{% endif %}
-            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="franchise"><button class="os-mini os-mini-trade" {{ 'disabled' if tags_used and tags_used.franchise }}>🏷 Franchise</button></form>
-            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="transition"><button class="os-mini" {{ 'disabled' if tags_used and tags_used.transition }}>Transition</button></form>
+            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="franchise"><button class="os-mini os-mini-trade" title="KEEP him 1 year at a premium salary" {{ 'disabled' if tags_used and tags_used.franchise }}>🏷 Franchise (keep)</button></form>
+            <form method="post" action="{{ url_for('franchise_offseason_resign') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="tag" value="transition"><button class="os-mini" title="KEEP him 1 year at market value (cheaper than franchise)" {{ 'disabled' if tags_used and tags_used.transition }}>🏷 Transition (keep)</button></form>
           </td></tr>
       {% endfor %}
       </tbody></table></div>

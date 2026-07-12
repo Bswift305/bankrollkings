@@ -344,13 +344,33 @@ def apply_tag(save, player_id, kind="franchise"):
     sal = _tag_salary(save, p, kind)
     if fk.cap_used(team) - (p.get("contract", {}).get("aav", 0) or 0) + sal > fk.cap_total(save):
         return False, f"The ${sal}M tag would put you over the cap — clear room first."
+    p["pre_tag_contract"] = dict(p.get("contract") or {})    # so a mistaken tag can be undone
     p["contract"] = {"years": 1, "aav": sal, "guaranteed": sal}
     p["tagged"] = kind
     used[kind] = player_id
     fk._tl(save, save.get("season", 1), "roster", "\U0001F3F7",
            f"{kind.title()}-tagged {p['pos']} {p['name']}", f"One year, ${sal}M guaranteed — he's not going anywhere.")
     fk.write_save(save)
-    return True, f"{p['name']} {kind}-tagged: 1 year, ${sal}M."
+    return True, f"{p['name']} {kind}-tagged (kept 1 year at ${sal}M)."
+
+
+def remove_tag(save, player_id):
+    """Undo a tag — restore the player to his prior (expiring) state and free the slot."""
+    team = fk.current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == player_id), None)
+    if not p or not p.get("tagged"):
+        return False, "He isn't tagged."
+    kind = p.pop("tagged")
+    p["contract"] = p.pop("pre_tag_contract", None) or {"years": 0, "aav": round(fk._market_aav(p), 1), "guaranteed": 0}
+    used = save.get("offseason", {}).get("tags_used", {})
+    if used.get(kind) == player_id:
+        used.pop(kind, None)
+    fk.write_save(save)
+    return True, f"Removed the {kind} tag from {p['name']} — he's back to an expiring deal (decide again)."
+
+
+def tagged_players(save):
+    return [p for p in fk.current_team(save)["roster"] if p.get("tagged")]
 
 
 def settle_expiring(save):
