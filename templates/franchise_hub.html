@@ -1192,13 +1192,14 @@
   </div>
 
   <div class="fk-card" style="margin-top:12px">
-    <div class="fk-card-h">{{ icon('users') }}Practice Squad <span style="float:right;font-size:11px;color:#7f93a0">{{ practice_squad|length }}/12 · develops, no cap hit</span></div>
+    <div class="fk-card-h">{{ icon('users') }}Practice Squad <span style="float:right;font-size:11px;color:#7f93a0">{{ practice_squad|length }}/12 · develops, no cap hit · protect up to 2 from poaching</span></div>
     <table class="fk-table"><tbody>
       {% for p in practice_squad %}
       <tr><td>{% if p.portrait_url %}<img class="fk-avimg" src="{{ p.portrait_url }}" alt="{{ p.name }} portrait">{% else %}<span class="fk-av fk-av-{{ p.grp }}">{{ p.ini }}</span>{% endif %}</td>
-        <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td>
+        <td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a>{% if p.protected %} <span title="Protected from poaching">🛡</span>{% endif %}</td>
         <td class="fk-pos">{{ p.pos }}</td><td>{{ p.age }}</td><td class="fk-ovr">{{ p.overall }}</td><td>{{ p.potential }}<small style="color:#7f93a0"> pot</small></td>
-        <td><form method="post" action="{{ url_for('franchise_promote') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-psbtn">↑ Promote</button></form></td></tr>
+        <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_protect_ps') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><button class="fk-psbtn" title="Protect from poaching">{{ '🛡 Protected' if p.protected else 'Protect' }}</button></form>
+        <form method="post" action="{{ url_for('franchise_promote') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="fk-psbtn">↑ Promote</button></form></td></tr>
       {% else %}
       <tr><td colspan="7" style="color:#7f93a0;padding:8px">Practice squad is empty — demote a young player to develop him here.</td></tr>
       {% endfor %}

@@ -629,6 +629,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_avatar_remove',
     'franchise_extend',
     'franchise_promote',
+    'franchise_protect_ps',
     'franchise_set_role',
     'franchise_demote',
     'franchise_player',
@@ -30187,6 +30188,14 @@ def franchise_demote():
     _, save = _franchise_save()
     if save:
         fk.demote_player(save, str(request.form.get('player_id', '')).strip())
+    return redirect(url_for('franchise_hub', tab='roster'))
+
+
+@app.route('/franchise/protect-ps', methods=['POST'])
+def franchise_protect_ps():
+    _, save = _franchise_save()
+    if save:
+        fk.protect_ps(save, str(request.form.get('pid', '')).strip())
     return redirect(url_for('franchise_hub', tab='roster'))
 
 

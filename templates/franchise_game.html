@@ -145,6 +145,7 @@
       {% for i in recap.injuries %}<div><span class="pg-tag pg-tag-red">{{ i.pos }} {{ i.name }} · {{ i.weeks }}w</span></div>{% endfor %}
       {% else %}<div class="pg-note-sub">Everyone walked off the field. Clean bill.</div>{% endif %}
       {% if recap.incidents %}<div style="margin-top:6px">{% for i in recap.incidents %}<span class="pg-tag pg-tag-amber">{{ i.pos }} {{ i.name }}{% if i.label %} · {{ i.label }}{% endif %}</span> {% endfor %}</div>{% endif %}
+      {% if recap.ps_poached %}<div style="margin-top:6px">{% for i in recap.ps_poached %}<span class="pg-tag pg-tag-amber">📤 {{ i.pos }} {{ i.name }} poached by {{ i.to }}</span> {% endfor %}</div>{% endif %}
     </div>
     {% if recap.context %}
     <div class="pg-note">

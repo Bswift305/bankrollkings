@@ -2866,6 +2866,7 @@ def sim_week(save):
     uid = save["current_team_id"]
     iz["injuries"] = _roll_week_injuries(save, week, rng)
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
+    iz["ps_poached"] = _roll_ps_poaching(save, week, rng)   # rivals raid your practice squad
     apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
     apply_snap_morale(save)                             # usage: bell-cow / committee / rookie snaps
     _bump_identity_streak(save)                         # self-scouting: track identity repetition
@@ -2917,6 +2918,7 @@ def sim_week(save):
                 "my_summary": my_sum, "opp_summary": opp_sum, "line": line_result,
                 "props": grade_props(save, mine),
                 "injuries": list(iz.get("injuries", [])), "incidents": list(iz.get("incidents", [])),
+                "ps_poached": list(iz.get("ps_poached", [])),
                 "news": _compose_game_story(rng, win == uid, _us, _them,
                                             my_team.get("name", my_team["full"]),
                                             opp.get("name", opp["full"]), star,
@@ -9468,6 +9470,46 @@ def demote_player(save, pid):
     team.setdefault("practice_squad", []).append(p)
     write_save(save)
     return True
+
+
+PS_PROTECT_MAX = 2
+
+
+def protect_ps(save, pid):
+    """Toggle poaching protection on a practice-squad player (at most PS_PROTECT_MAX)."""
+    ps = current_team(save).get("practice_squad", [])
+    p = next((x for x in ps if x["id"] == pid), None)
+    if not p:
+        return False, "Not on your practice squad."
+    if p.get("protected"):
+        p.pop("protected", None)
+        write_save(save)
+        return True, f"{p['name']} is no longer protected."
+    if sum(1 for x in ps if x.get("protected")) >= PS_PROTECT_MAX:
+        return False, f"You can protect at most {PS_PROTECT_MAX} practice-squad players."
+    p["protected"] = True
+    write_save(save)
+    return True, f"{p['name']} is protected from poaching."
+
+
+def _roll_ps_poaching(save, week, rng):
+    """Rivals raid your unprotected practice squad — the better the player, the more
+    likely he's signed away to a rival's active roster."""
+    team = current_team(save)
+    poached = []
+    for p in list(team.get("practice_squad", [])):
+        if p.get("protected") or p.get("overall", 60) < 68:
+            continue
+        if rng.random() < min(0.25, (p["overall"] - 66) * 0.02):
+            club = rng.choice([t for t in save["teams"] if t["id"] != team["id"]])
+            team["practice_squad"] = [x for x in team["practice_squad"] if x["id"] != p["id"]]
+            p.pop("practice", None)
+            club["roster"].append(p)
+            poached.append({"name": p["name"], "pos": p["pos"], "ovr": p["overall"], "to": club.get("name", club["full"])})
+            _tl(save, save.get("season", 1), "poached", "📤",
+                f"Lost {p['pos']} {p['name']} to a poach",
+                f"{club['full']} signed him off your practice squad in Week {week}.")
+    return poached
 
 
 def run_training_camp(save, final=53):
