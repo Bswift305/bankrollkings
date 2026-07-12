@@ -1376,6 +1376,10 @@ def set_weekly_plan(save, **fields):
         wo["off_identity"] = fields["off_identity"]
     if fields.get("def_identity") in DEF_IDENTITIES:   # weekly defensive identity
         wo["def_identity"] = fields["def_identity"]
+    if fields.get("rb_usage") in SNAP_RB:              # snap plan
+        wo["rb_usage"] = fields["rb_usage"]
+    if fields.get("rookie_snaps") in SNAP_ROOKIE:
+        wo["rookie_snaps"] = fields["rookie_snaps"]
     write_save(save)
     return wo
 
@@ -1968,15 +1972,70 @@ def weekly_edge(save):
     e += revenge_edge(save)                                    # a revenge/rivalry game fires the room up
     e += identity_edge(save)                                   # weekly game plan vs opponent tendencies
     e += install_edge(save)                                    # a freshly-installed scheme is a step slow
+    e += snap_edge(save)                                       # workhorse RB / rookie-vs-vet snaps
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
 
 
+# --------------------------------------------------------------------------- #
+# Snap plan — broad usage decisions with real tradeoffs. Riding your bell-cow
+# back squeezes out production but wears him down; a committee keeps the room
+# fresh and happy. Giving rookies snaps develops them (and they love it) at a
+# small cost on Sundays; playing the vets buys a little edge now.
+# --------------------------------------------------------------------------- #
+SNAP_RB = {
+    "Workhorse": {"edge": 0.2, "inj": 1.12, "blurb": "Feed your bell-cow — more production, more wear."},
+    "Committee": {"edge": 0.0, "inj": 0.95, "blurb": "Spread the carries — fresh legs, a happy room, less pop."},
+}
+SNAP_ROOKIE = {
+    "Develop": {"edge": -0.15, "blurb": "Play the kids — they grow and love the snaps, at a small cost now."},
+    "Win Now": {"edge": 0.15, "blurb": "Ride the veterans — a little sharper today, less growth for the young."},
+}
+
+
+def snap_plan(save):
+    wo = save.get("weekly_ops", {})
+    return {"rb_usage": wo.get("rb_usage", "Committee"), "rookie_snaps": wo.get("rookie_snaps", "Win Now"),
+            "rb_opts": SNAP_RB, "rookie_opts": SNAP_ROOKIE}
+
+
+def snap_edge(save):
+    wo = save.get("weekly_ops", {})
+    e = SNAP_ROOKIE.get(wo.get("rookie_snaps", "Win Now"), {}).get("edge", 0.0)
+    if wo.get("rb_usage") == "Workhorse":
+        rb = pos_depth(current_team(save), "RB")[:1]
+        if rb and rb[0]["overall"] >= 75:                  # only worth it with a real bell-cow
+            e += SNAP_RB["Workhorse"]["edge"]
+    return round(e, 2)
+
+
+def apply_snap_morale(save):
+    """Weekly morale from usage: a fed bell-cow (and buried backup), and young guys
+    who are getting developmental snaps."""
+    wo = save.get("weekly_ops", {})
+    team = current_team(save)
+    if wo.get("rb_usage") == "Workhorse":
+        rbs = pos_depth(team, "RB")
+        if rbs:
+            _nudge(save, rbs[0]["id"], morale=1, conf=1)
+        if len(rbs) > 1:
+            _nudge(save, rbs[1]["id"], morale=-1)
+    elif wo.get("rb_usage") == "Committee":
+        rbs = pos_depth(team, "RB")
+        if len(rbs) > 1:
+            _nudge(save, rbs[1]["id"], morale=1)
+    if wo.get("rookie_snaps") == "Develop":
+        for p in team["roster"]:
+            if p.get("age", 30) <= 23:
+                _nudge(save, p["id"], morale=1)
+
+
 def weekly_injury_factor(save):
     wo = save.get("weekly_ops", {})
     return (PRACTICE_INTENSITY.get(wo.get("intensity", "Balanced"), {}).get("inj", 1.0)
-            * MEDICAL_POLICY.get(wo.get("medical", "Balanced"), {}).get("inj", 1.0))
+            * MEDICAL_POLICY.get(wo.get("medical", "Balanced"), {}).get("inj", 1.0)
+            * SNAP_RB.get(wo.get("rb_usage", "Committee"), {}).get("inj", 1.0))
 
 
 def _roll_week_injuries(save, week, rng):
@@ -2723,6 +2782,7 @@ def sim_week(save):
     iz["injuries"] = _roll_week_injuries(save, week, rng)
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
     apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
+    apply_snap_morale(save)                             # usage: bell-cow / committee / rookie snaps
     _bump_identity_streak(save)                         # self-scouting: track identity repetition
     _check_coach_friction(save)                         # overriding coordinators erodes staff trust
     _advance_install(save)                              # scheme installation countdown
@@ -3645,6 +3705,8 @@ def _advance_year(save):
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
             if my and p["pos"] in mentor_pos and p.get("age", 30) <= 24 and p.get("role") != "mentor":
                 bonus += 1                                                    # a mentor accelerates the kid
+            if my and save.get("weekly_ops", {}).get("rookie_snaps") == "Develop" and p.get("age", 30) <= 23:
+                bonus += 1                                                    # a season of developmental snaps
             if my and save.get("weekly_ops", {}).get("focus") == "Rookie Development" and p.get("age", 30) <= 24:
                 bonus += 1                                                    # a season of rookie reps
             started = p.pop("rep_starter", False) if my else False

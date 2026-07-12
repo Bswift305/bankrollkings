@@ -1039,6 +1039,37 @@
   </style>
   {% endif %}
 
+  {% if command_center.snap_plan %}{% set sp = command_center.snap_plan %}
+  <div class="fk-card fk-ccgroup">
+    <div class="fk-card-h">🔁 Snap Plan</div>
+    <div class="fk-snap-row">
+      <div class="fk-snap-lbl">Running backs</div>
+      <div class="fk-ccopts">
+        {% for k, o in sp.rb_opts.items() %}
+        <form method="post" action="{{ url_for('franchise_weekly') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="rb_usage" value="{{ k }}">
+          <button class="fk-ccbtn {{ 'on' if sp.rb_usage == k }}" title="{{ o.blurb }}">{{ k }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      <p class="fk-ccblurb">{{ sp.rb_opts[sp.rb_usage].blurb }}</p>
+    </div>
+    <div class="fk-snap-row">
+      <div class="fk-snap-lbl">Young players</div>
+      <div class="fk-ccopts">
+        {% for k, o in sp.rookie_opts.items() %}
+        <form method="post" action="{{ url_for('franchise_weekly') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="rookie_snaps" value="{{ k }}">
+          <button class="fk-ccbtn {{ 'on' if sp.rookie_snaps == k }}" title="{{ o.blurb }}">{{ k }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      <p class="fk-ccblurb">{{ sp.rookie_opts[sp.rookie_snaps].blurb }}</p>
+    </div>
+  </div>
+  <style>.fk-snap-row { margin-bottom:8px; } .fk-snap-lbl { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--accent,#4ad4f0); font-weight:800; margin-bottom:5px; }</style>
+  {% endif %}
+
   {% if inseason_injuries %}
   <div class="fk-card">
     <div class="fk-card-h">{{ icon('alert') }}Injury report</div>

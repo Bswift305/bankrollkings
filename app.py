@@ -29154,6 +29154,7 @@ def _command_center(save):
         'conditions': fk.weather_plan_report(save),
         'matchup_tags': fk.matchup_tags(save),
         'game_plan': fk.game_plan_report(save),
+        'snap_plan': fk.snap_plan(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
@@ -29535,6 +29536,8 @@ def franchise_weekly():
                            scout=request.form.get('scout'), key_moment=request.form.get('key_moment'),
                            off_identity=request.form.get('off_identity'),
                            def_identity=request.form.get('def_identity'),
+                           rb_usage=request.form.get('rb_usage'),
+                           rookie_snaps=request.form.get('rookie_snaps'),
                            plays=plays)
     return redirect(url_for('franchise_hub', tab='command'))
 
