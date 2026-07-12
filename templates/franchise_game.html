@@ -121,6 +121,12 @@
       {% if pe.def %}<div class="pg-plan pg-plan-{{ pe.def.verdict }}">{{ '✅' if pe.def.verdict == 'worked' else '⚠️' if pe.def.verdict == 'backfired' else '➖' }} {{ pe.def.text }}</div>{% endif %}
     </div>
     {% endif %}
+    {% if recap.opening %}
+    <div class="pg-note">
+      <div class="pg-note-h">📜 Opening script</div>
+      {% for o in recap.opening %}<div class="pg-plan pg-plan-{{ 'worked' if o.worked else 'backfired' }}">{{ '✅' if o.worked else '⚠️' }} {{ o.label }} — {{ 'moved the ball' if o.worked else 'they were ready' }}</div>{% endfor %}
+    </div>
+    {% endif %}
     {% if recap.props %}
     <div class="pg-note">
       <div class="pg-note-h">📺 Prop watch</div>

@@ -1070,6 +1070,21 @@
   <style>.fk-snap-row { margin-bottom:8px; } .fk-snap-lbl { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--accent,#4ad4f0); font-weight:800; margin-bottom:5px; }</style>
   {% endif %}
 
+  {% if command_center.opening %}{% set op = command_center.opening %}
+  <div class="fk-card fk-ccgroup">
+    <div class="fk-card-h">📜 Opening Script <span style="float:right;font-size:11px;color:#7f93a0">{{ op.selected|length }}/{{ op.max }} · first 15 plays</span></div>
+    <form method="post" action="{{ url_for('franchise_weekly') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="form" value="script">
+      <div class="fk-plays">
+        {% for o in op.opts %}
+        <label class="fk-play {{ 'on' if o.on }}"><span class="fk-play-top"><input type="checkbox" name="opening_script" value="{{ o.key }}" {{ 'checked' if o.on }}><span class="fk-play-name">{{ o.label }}</span></span><span class="fk-play-blurb">{{ o.note }}</span></label>
+        {% endfor %}
+      </div>
+      <button class="fk-btn fk-btn-go" style="margin-top:8px">Save opening script</button>
+    </form>
+  </div>
+  {% endif %}
+
   {% if inseason_injuries %}
   <div class="fk-card">
     <div class="fk-card-h">{{ icon('alert') }}Injury report</div>

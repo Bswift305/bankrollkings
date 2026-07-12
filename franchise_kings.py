@@ -1380,6 +1380,8 @@ def set_weekly_plan(save, **fields):
         wo["rb_usage"] = fields["rb_usage"]
     if fields.get("rookie_snaps") in SNAP_ROOKIE:
         wo["rookie_snaps"] = fields["rookie_snaps"]
+    if fields.get("opening_script") is not None:       # first-15-plays intentions (capped)
+        wo["opening_script"] = [k for k in fields["opening_script"] if k in OPENING_SCRIPT][:OPENING_SCRIPT_MAX]
     write_save(save)
     return wo
 
@@ -1641,6 +1643,64 @@ def matchup_tags(save):
 
 def revenge_edge(save):
     return (matchup_tags(save) or {}).get("edge", 0.0)
+
+
+# --------------------------------------------------------------------------- #
+# Opening script — your intentions for the first 15 plays. A small early edge,
+# and a postgame read on whether the defense was ready for it.
+# --------------------------------------------------------------------------- #
+OPENING_SCRIPT_MAX = 3
+OPENING_SCRIPT = {
+    "test_corners": {"label": "Test their cornerbacks", "fit": "weak_secondary", "note": "Attack the WRs early."},
+    "establish_run": {"label": "Establish the run", "fit": "weak_run_d", "note": "Set the tone on the ground."},
+    "feature_te": {"label": "Get the TE involved", "fit": "soft_zone", "note": "Work the middle of the field."},
+    "protect_ol": {"label": "Protect the line", "fit": "blitz_heavy", "note": "Quick throws, extra protection early."},
+    "play_fast": {"label": "Play fast", "fit": None, "note": "Tempo to keep them on their heels."},
+    "conservative": {"label": "Start conservatively", "fit": None, "note": "Feel them out, protect the ball."},
+}
+
+
+def selected_script(save):
+    return [k for k in (save.get("weekly_ops", {}).get("opening_script") or []) if k in OPENING_SCRIPT][:OPENING_SCRIPT_MAX]
+
+
+def _opp_all_tags(save):
+    iz = save.get("inseason")
+    if not iz:
+        return []
+    uid = save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == iz["week"] and uid in (x["home"], x["away"])), None)
+    if not g:
+        return []
+    opp = next(t for t in save["teams"] if t["id"] == (g["away"] if g["home"] == uid else g["home"]))
+    return [t["tag"] for t in opponent_tendencies(opp)]
+
+
+def opening_script_edge(save):
+    tags = _opp_all_tags(save)
+    e = sum(0.08 for k in selected_script(save)
+            if OPENING_SCRIPT[k]["fit"] and OPENING_SCRIPT[k]["fit"] in tags)
+    return round(min(0.24, e), 2)
+
+
+def opening_report(save):
+    """Postgame read: which scripted intentions the defense was (or wasn't) ready for."""
+    tags = _opp_all_tags(save)
+    out = []
+    for k in selected_script(save):
+        spec = OPENING_SCRIPT[k]
+        worked = spec["fit"] is None or spec["fit"] in tags
+        out.append({"label": spec["label"], "worked": worked})
+    return out or None
+
+
+def opening_script_report(save):
+    """For the Command Center picker."""
+    sel = set(selected_script(save))
+    return {"max": OPENING_SCRIPT_MAX, "selected": list(sel),
+            "opts": [{"key": k, "label": v["label"], "note": v["note"], "on": k in sel}
+                     for k, v in OPENING_SCRIPT.items()]}
 
 
 # --------------------------------------------------------------------------- #
@@ -2058,6 +2118,7 @@ def weekly_edge(save):
     e += install_edge(save)                                    # a freshly-installed scheme is a step slow
     e += snap_edge(save)                                       # workhorse RB / rookie-vs-vet snaps
     e += halftime_edge(save)                                   # your halftime adjustment's second-half swing
+    e += opening_script_edge(save)                             # first-15-plays intentions that fit
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -2929,6 +2990,7 @@ def sim_week(save):
             save["last_game"]["signatures"] = _record_signatures(
                 save, mine, week, win == uid, abs(_us - _them))
             save["last_game"]["plan_eval"] = _evaluate_game_plan(save, opp, _us, _them)
+            save["last_game"]["opening"] = opening_report(save)
             hc = save.pop("halftime_choice", None)          # a halftime adjustment was made this game
             if hc:
                 save["last_game"]["halftime"] = {

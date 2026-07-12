@@ -29159,6 +29159,7 @@ def _command_center(save):
         'matchup_tags': fk.matchup_tags(save),
         'game_plan': fk.game_plan_report(save),
         'snap_plan': fk.snap_plan(save),
+        'opening': fk.opening_script_report(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
@@ -29565,7 +29566,8 @@ def franchise_weekly():
         # Only touch featured plays when the plays form is the one submitted, so the
         # single-select buttons don't wipe the selection.
         plays = request.form.getlist('plays') if request.form.get('form') == 'plays' else None
-        fk.set_weekly_plan(save,
+        script = request.form.getlist('opening_script') if request.form.get('form') == 'script' else None
+        fk.set_weekly_plan(save, opening_script=script,
                            intensity=request.form.get('intensity'), focus=request.form.get('focus'),
                            medical=request.form.get('medical'), game_plan=request.form.get('game_plan'),
                            scout=request.form.get('scout'), key_moment=request.form.get('key_moment'),
