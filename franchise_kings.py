@@ -2281,6 +2281,60 @@ def grade_props(save, my_box):
     return out
 
 
+def _signature_tags(box_entry, won, close):
+    """The headline feats in one player's game, if it rises to a signature line."""
+    g = box_entry.get("g") or {}
+    pos = box_entry.get("pos")
+    tags = []
+    if pos == "QB":
+        if g.get("pass_yd", 0) >= 350:
+            tags.append(f"{g['pass_yd']} passing yards")
+        if g.get("pass_td", 0) >= 4:
+            tags.append(f"{g['pass_td']} passing TDs")
+        if g.get("rush_yd", 0) >= 60 and g.get("pass_yd", 0) >= 220:
+            tags.append(f"{g['pass_yd'] + g['rush_yd']} total yards")
+    elif pos == "RB":
+        if g.get("rush_yd", 0) >= 150:
+            tags.append(f"{g['rush_yd']} rushing yards")
+        if g.get("rush_td", 0) >= 3:
+            tags.append(f"{g['rush_td']} rushing TDs")
+    elif pos in ("WR", "TE"):
+        if g.get("rec_yd", 0) >= 150:
+            tags.append(f"{g['rec_yd']} receiving yards")
+        if g.get("rec_td", 0) >= 3:
+            tags.append(f"{g['rec_td']} receiving TDs")
+    tds = g.get("pass_td", 0) + g.get("rush_td", 0) + g.get("rec_td", 0)
+    if tds >= 4 and not tags:
+        tags.append(f"{tds} total touchdowns")
+    return tags
+
+
+def _record_signatures(save, perf, week, won, margin):
+    """Detect signature games from the box score and mint them into the career
+    timeline (and a per-player counter that feeds the legacy/HOF case)."""
+    close = won and margin <= 8
+    sigs = []
+    for b in sorted(perf, key=lambda x: -x.get("score", 0)):
+        if b.get("pos") not in ("QB", "RB", "WR", "TE"):
+            continue
+        tags = _signature_tags(b, won, close)
+        if tags:
+            sigs.append({"pid": b.get("pid"), "name": b["name"], "pos": b["pos"],
+                         "line": b["line"], "note": ", ".join(tags)})
+    sigs = sigs[:2]
+    ids = {s["pid"] for s in sigs}
+    for t in save["teams"]:
+        for p in t["roster"]:
+            if p["id"] in ids:
+                p["signature_games"] = p.get("signature_games", 0) + 1
+    for s in sigs:
+        _tl(save, save.get("season", 1), "signature", "⭐",
+            f"{s['pos']} {s['name']}: a signature game",
+            f"{s['note']} in Week {week}." + (" In a game they had to have." if close else ""),
+            pid=s["pid"])
+    return sigs
+
+
 def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather, round_name=None):
     """A short SportsDesk writeup of one game: a headline, a dek, and a body that
     threads the result, the star line, the sideline call, and the weather. `weather`
@@ -2395,6 +2449,8 @@ def sim_week(save):
                                             km.get("call", "Balanced"), weather),
             }
             _log_player_games(save, mine, week)     # feed the storyline/streak detector
+            save["last_game"]["signatures"] = _record_signatures(
+                save, mine, week, win == uid, abs(_us - _them))
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
