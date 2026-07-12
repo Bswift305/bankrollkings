@@ -1364,6 +1364,8 @@ def set_weekly_plan(save, **fields):
         v = fields.get(key)
         if v is not None and v in table:
             wo[key] = v
+    if fields.get("plays") is not None:                # multi-select featured plays (capped)
+        wo["plays"] = [k for k in fields["plays"] if k in FEATURED_PLAYS][:FEATURED_PLAYS_MAX]
     write_save(save)
     return wo
 
@@ -1391,12 +1393,98 @@ def key_moment_summary(save):
     return {"call": call, "edge": key_moment_edge(save), "blurb": spec.get("blurb", "")}
 
 
+# --------------------------------------------------------------------------- #
+# Featured plays — your PLAYBOOK for the week. Pick the concepts you'll lean on;
+# each one rewards you when your PERSONNEL fits it (a real fit lever that sits on
+# TOP of the coordinator's scheme) and lifts the featured player's morale (the
+# ball is locker-room currency). Forcing a concept your roster doesn't fit is a
+# small negative — square pegs don't run it well.
+# --------------------------------------------------------------------------- #
+FEATURED_PLAYS_MAX = 3
+FEATURED_PLAYS = {
+    "vertical":     {"label": "Vertical Shots", "pos": "WR", "n": 2, "styles": ("Deep Threat",),
+                     "support": ("QB", ("Pocket Passer", "Dual Threat")),
+                     "blurb": "Take the top off — deep threats and a QB who'll let it rip."},
+    "quick_game":   {"label": "Quick Game", "pos": "WR", "n": 2, "styles": ("Slot", "Possession"),
+                     "blurb": "Rhythm and timing — slot and possession targets."},
+    "ground":       {"label": "Ground & Pound", "pos": "RB", "n": 1, "styles": ("Power Back", "Every-Down"),
+                     "support": ("OL", ("Power",)),
+                     "blurb": "Impose your will — a power back behind a mauling line."},
+    "outside_zone": {"label": "Outside Zone", "pos": "RB", "n": 1, "styles": ("Scat Back", "Every-Down"),
+                     "support": ("OL", ("Zone",)),
+                     "blurb": "Get to the edge — a quick back on zone blocking."},
+    "qb_runs":      {"label": "Designed QB Runs", "pos": "QB", "n": 1, "styles": ("Dual Threat", "RPO Specialist"),
+                     "blurb": "Add a runner — put a mobile QB in the run game."},
+    "feature_te":   {"label": "Feature the TE", "pos": "TE", "n": 1, "styles": ("Move TE",),
+                     "blurb": "Hunt matchups — a receiving TE up the seam."},
+    "back_pass":    {"label": "Back in the Pass Game", "pos": "RB", "n": 1, "styles": ("Scat Back",),
+                     "blurb": "Get your back the ball — screens and check-downs."},
+}
+
+
+def play_fit(save, key):
+    """How well the roster fits one featured play: a 0-100 personnel fit, a bounded
+    power edge, and the players it showcases (whose morale it lifts)."""
+    spec = FEATURED_PLAYS.get(key)
+    if not spec:
+        return None
+    team = current_team(save)
+    featured = pos_depth(team, spec["pos"])[:spec.get("n", 1)]
+    if not featured:
+        return {"key": key, "label": spec["label"], "blurb": spec["blurb"], "pos": spec["pos"],
+                "pct": 0, "edge": 0.0, "strong": False, "featured": []}
+    pct = sum(1 for p in featured if p.get("style") in spec["styles"]) / len(featured)
+    sup = spec.get("support")                          # a supporting group (OL for a run, QB for shots)
+    if sup:
+        sp = pos_depth(team, sup[0])[:3]
+        if sp:
+            pct = pct * 0.75 + (sum(1 for p in sp if p.get("style") in sup[1]) / len(sp)) * 0.25
+    edge = round(max(-0.25, min(0.6, pct - 0.4)), 2)   # strong fit +0.6, poor fit a slight negative
+    return {"key": key, "label": spec["label"], "blurb": spec["blurb"], "pos": spec["pos"],
+            "pct": int(round(pct * 100)), "edge": edge, "strong": pct >= 0.6,
+            "featured": [{"id": p["id"], "name": p["name"], "pos": p["pos"],
+                          "style": p.get("style", ""), "fits": p.get("style") in spec["styles"]}
+                         for p in featured]}
+
+
+def selected_plays(save):
+    return [k for k in (save.get("weekly_ops", {}).get("plays") or []) if k in FEATURED_PLAYS]
+
+
+def featured_plays_edge(save):
+    """Net weekly power edge from your featured plays' personnel fit (bounded)."""
+    tot = sum((play_fit(save, k) or {}).get("edge", 0.0) for k in selected_plays(save))
+    return round(max(-0.5, min(1.2, tot)), 2)
+
+
+def featured_plays_report(save):
+    """Every featured play with its fit + selection state, for the Command Center."""
+    sel = set(selected_plays(save))
+    plays = []
+    for k in FEATURED_PLAYS:
+        f = play_fit(save, k)
+        if f:
+            f["on"] = k in sel
+            plays.append(f)
+    return {"plays": plays, "selected": list(sel), "max": FEATURED_PLAYS_MAX, "edge": featured_plays_edge(save)}
+
+
+def apply_featured_play_morale(save):
+    """Featuring a player in the game plan lifts his morale/confidence that week —
+    more when he actually fits the concept. Bounded by the normal 99 cap."""
+    for k in selected_plays(save):
+        f = play_fit(save, k)
+        for pl in (f or {}).get("featured", []):
+            _nudge(save, pl["id"], morale=2 if pl["fits"] else 1, conf=1 if pl["fits"] else 0)
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
     e = PRACTICE_INTENSITY.get(wo.get("intensity", "Balanced"), {}).get("edge", 0.0)
     e += GAME_PLANS.get(wo.get("game_plan", "Balanced"), {}).get("edge", 0.0)
     e += key_moment_edge(save)
+    e += featured_plays_edge(save)                              # featured plays that fit your personnel
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -1920,6 +2008,7 @@ def sim_week(save):
     uid = save["current_team_id"]
     iz["injuries"] = _roll_week_injuries(save, week, rng)
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
+    apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
     powers[uid], out = _user_inseason_power(save, week, powers[uid])
     out_ids = {p["id"] for p in out}
     for g in save["schedule"]:

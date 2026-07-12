@@ -29146,6 +29146,7 @@ def _command_center(save):
         'agenda': save.get('agenda', []),
         'agenda_log': save.get('agenda_log', [])[:4],
         'locker': fk.locker_room(save),
+        'playbook': fk.featured_plays_report(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
@@ -29516,10 +29517,14 @@ def franchise_agenda():
 def franchise_weekly():
     _, save = _franchise_save()
     if save:
+        # Only touch featured plays when the plays form is the one submitted, so the
+        # single-select buttons don't wipe the selection.
+        plays = request.form.getlist('plays') if request.form.get('form') == 'plays' else None
         fk.set_weekly_plan(save,
                            intensity=request.form.get('intensity'), focus=request.form.get('focus'),
                            medical=request.form.get('medical'), game_plan=request.form.get('game_plan'),
-                           scout=request.form.get('scout'), key_moment=request.form.get('key_moment'))
+                           scout=request.form.get('scout'), key_moment=request.form.get('key_moment'),
+                           plays=plays)
     return redirect(url_for('franchise_hub', tab='command'))
 
 
