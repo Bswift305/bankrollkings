@@ -787,6 +787,7 @@
       </div>
     </div>
     {% if gp.warn %}<div class="fk-gp-warn">⚠️ {{ gp.warn }}</div>{% endif %}
+    {% if gp.install %}{% for i in gp.install %}<div class="fk-gp-warn">🛠 New {{ i.side }} scheme still installing — {{ i.weeks }} week{{ 's' if i.weeks != 1 }} until the room has it down.</div>{% endfor %}{% endif %}
     <div class="fk-gp-pick">
       <div class="fk-gp-h">Offensive identity{% if gp.reco and gp.reco.off %} <span class="fk-gp-reco">🎧 OC wants {{ gp.reco.off.label }}{% if gp.reco.off.reason %} — {{ gp.reco.off.reason }}{% endif %}</span>{% endif %}</div>
       <div class="fk-gp-opts">
@@ -1005,7 +1006,7 @@
         <label class="fk-play {{ 'on' if p.on }}">
           <span class="fk-play-top">
             <input type="checkbox" name="plays" value="{{ p.key }}" {{ 'checked' if p.on }}>
-            <span class="fk-play-name">{{ p.label }}</span>
+            <span class="fk-play-name">{{ p.label }}{% if p.reps and p.reps >= 3 %} <small style="color:#7dffb0">· drilled {{ p.reps }}×</small>{% endif %}</span>
             <span class="fk-play-fit fk-play-{{ 'hi' if p.pct >= 60 else 'mid' if p.pct >= 35 else 'lo' }}">{{ p.pct }}% fit · {{ '%+.2f'|format(p.edge) }}</span>
           </span>
           <span class="fk-play-blurb">{{ p.blurb }}</span>

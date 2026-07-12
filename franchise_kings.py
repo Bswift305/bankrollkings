@@ -1449,9 +1449,11 @@ def play_fit(save, key):
         sp = pos_depth(team, sup[0])[:3]
         if sp:
             pct = pct * 0.75 + (sum(1 for p in sp if p.get("style") in sup[1]) / len(sp)) * 0.25
-    edge = round(max(-0.25, min(0.6, pct - 0.4)), 2)   # strong fit +0.6, poor fit a slight negative
+    reps = (save.get("familiarity") or {}).get(key, 0)
+    fam = round(min(0.15, reps * 0.02), 2)             # a well-drilled concept gets more reliable
+    edge = round(max(-0.25, min(0.6, pct - 0.4)) + fam, 2)
     return {"key": key, "label": spec["label"], "blurb": spec["blurb"], "pos": spec["pos"],
-            "pct": int(round(pct * 100)), "edge": edge, "strong": pct >= 0.6,
+            "pct": int(round(pct * 100)), "edge": edge, "strong": pct >= 0.6, "reps": reps, "fam": fam,
             "featured": [{"id": p["id"], "name": p["name"], "pos": p["pos"],
                           "style": p.get("style", ""), "fits": p.get("style") in spec["styles"]}
                          for p in featured]}
@@ -1827,7 +1829,7 @@ def game_plan_report(save):
             "def_tendencies": [x for x in tends if x["side"] == "def"],
             "off_opts": opts(OFF_IDENTITIES, def_tags, wo.get("off_identity")),
             "def_opts": opts(DEF_IDENTITIES, off_tags, wo.get("def_identity")),
-            "reco": reco, "edge": identity_edge(save), "warn": warn,
+            "reco": reco, "edge": identity_edge(save), "warn": warn, "install": install_status(save),
             "off_set": wo.get("off_identity"), "def_set": wo.get("def_identity")}
 
 
@@ -1878,6 +1880,62 @@ def _bump_identity_streak(save):
             st[side] = {"id": cur, "count": 1}
 
 
+def _bump_familiarity(save):
+    """Reps in the concepts you actually called this week (they get more reliable)."""
+    fam = save.setdefault("familiarity", {})
+    for k in selected_plays(save):
+        fam[k] = min(8, fam.get(k, 0) + 1)
+
+
+# Concept/scheme installation — a new coordinator's system takes weeks to learn.
+_SCHEME_INSTALL_WEEKS = 4
+
+
+def _team_scheme_sides(save):
+    s = save.get("staff", {})
+    return {"off": (s.get("off_coord") or {}).get("system"),
+            "def": (s.get("def_coord") or {}).get("system")}
+
+
+def _advance_install(save):
+    """Track scheme installation: a changed coordinator system runs an install
+    countdown (shorter for offense with a savvy veteran QB) during which the plan
+    is a step slow. Self-initializes to the current scheme with no penalty."""
+    cur = _team_scheme_sides(save)
+    inst = save.setdefault("installed_scheme", {})
+    weeks = save.setdefault("install_weeks", {})
+    for side in ("off", "def"):
+        if side not in inst:                           # first run: learn current scheme, no penalty
+            inst[side], weeks[side] = cur[side], 0
+            continue
+        if cur[side] != inst[side]:
+            if weeks.get(side, 0) <= 0:                 # a new scheme just arrived — start install
+                base = _SCHEME_INSTALL_WEEKS
+                if side == "off":
+                    qb = pos_depth(current_team(save), "QB")[:1]
+                    if qb and qb[0].get("age", 25) >= 28 and qb[0]["overall"] >= 78:
+                        base = 2                        # a veteran QB accelerates the install
+                weeks[side] = base
+            weeks[side] -= 1
+            if weeks[side] <= 0:                        # install complete
+                inst[side], weeks[side] = cur[side], 0
+
+
+def install_edge(save):
+    weeks = save.get("install_weeks", {})
+    return round((-0.4 if weeks.get("off", 0) > 0 else 0.0) + (-0.3 if weeks.get("def", 0) > 0 else 0.0), 2)
+
+
+def install_status(save):
+    weeks = save.get("install_weeks", {})
+    out = []
+    if weeks.get("off", 0) > 0:
+        out.append({"side": "offense", "weeks": weeks["off"]})
+    if weeks.get("def", 0) > 0:
+        out.append({"side": "defense", "weeks": weeks["def"]})
+    return out
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
@@ -1888,6 +1946,7 @@ def weekly_edge(save):
     e += weather_plan_edge(save)                               # forecast vs your concepts
     e += revenge_edge(save)                                    # a revenge/rivalry game fires the room up
     e += identity_edge(save)                                   # weekly game plan vs opponent tendencies
+    e += install_edge(save)                                    # a freshly-installed scheme is a step slow
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -2644,6 +2703,7 @@ def sim_week(save):
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
     apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
     _bump_identity_streak(save)                         # self-scouting: track identity repetition
+    _advance_install(save)                              # scheme installation countdown
     powers[uid], out = _user_inseason_power(save, week, powers[uid])
     out_ids = {p["id"] for p in out}
     for g in save["schedule"]:
@@ -2696,6 +2756,7 @@ def sim_week(save):
                                             km.get("call", "Balanced"), weather),
             }
             _log_player_games(save, mine, week)     # feed the storyline/streak detector
+            _bump_familiarity(save)                 # reps in the concepts you called
             save["last_game"]["signatures"] = _record_signatures(
                 save, mine, week, win == uid, abs(_us - _them))
             save["last_game"]["plan_eval"] = _evaluate_game_plan(save, opp, _us, _them)
