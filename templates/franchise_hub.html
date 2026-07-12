@@ -773,6 +773,60 @@
   </style>
   {% endif %}
 
+  {% if command_center.game_plan %}{% set gp = command_center.game_plan %}
+  <div class="fk-card fk-gp">
+    <div class="fk-card-h">🧠 Weekly Game Plan — vs {{ gp.opp_short }}{% if gp.edge %} <span class="fk-gp-edge {{ 'fk-glw' if gp.edge > 0 else 'fk-gll' }}">{{ '%+.2f'|format(gp.edge) }} power</span>{% endif %}</div>
+    <div class="fk-gp-scout">
+      <div class="fk-gp-col">
+        <div class="fk-gp-h">🔎 Their offense</div>
+        {% for t in gp.off_tendencies %}<div class="fk-gp-tend">{{ t.text }}</div>{% else %}<div class="fk-gp-tend fk-muted">Balanced — no clear tell.</div>{% endfor %}
+      </div>
+      <div class="fk-gp-col">
+        <div class="fk-gp-h">🔎 Their defense</div>
+        {% for t in gp.def_tendencies %}<div class="fk-gp-tend">{{ t.text }}</div>{% else %}<div class="fk-gp-tend fk-muted">Balanced — no clear tell.</div>{% endfor %}
+      </div>
+    </div>
+    {% if gp.warn %}<div class="fk-gp-warn">⚠️ {{ gp.warn }}</div>{% endif %}
+    <div class="fk-gp-pick">
+      <div class="fk-gp-h">Offensive identity{% if gp.reco and gp.reco.off %} <span class="fk-gp-reco">🎧 OC wants {{ gp.reco.off.label }}{% if gp.reco.off.reason %} — {{ gp.reco.off.reason }}{% endif %}</span>{% endif %}</div>
+      <div class="fk-gp-opts">
+        {% for o in gp.off_opts %}
+        <form method="post" action="{{ url_for('franchise_weekly') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="off_identity" value="{{ o.key }}">
+          <button class="fk-gp-btn fk-gp-{{ o.fit }} {{ 'on' if o.on }}" title="{{ o.blurb }}">{{ o.label }} <b>{{ '%+g'|format(o.edge) }}</b></button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="fk-gp-pick">
+      <div class="fk-gp-h">Defensive identity{% if gp.reco and gp.reco.def %} <span class="fk-gp-reco">🎧 DC wants {{ gp.reco.def.label }}{% if gp.reco.def.reason %} — {{ gp.reco.def.reason }}{% endif %}</span>{% endif %}</div>
+      <div class="fk-gp-opts">
+        {% for o in gp.def_opts %}
+        <form method="post" action="{{ url_for('franchise_weekly') }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="def_identity" value="{{ o.key }}">
+          <button class="fk-gp-btn fk-gp-{{ o.fit }} {{ 'on' if o.on }}" title="{{ o.blurb }}">{{ o.label }} <b>{{ '%+g'|format(o.edge) }}</b></button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    <p class="fk-ccblurb">Pick the identity that counters what they do — <span style="color:#7dffb0">green</span> exploits a tendency, <span style="color:#ff9a9a">red</span> plays into their strength. Lean on the same call too long and they'll sit on it.</p>
+  </div>
+  <style>
+    .fk-gp-edge { float:right; font-size:12px; font-weight:800; }
+    .fk-gp-scout { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:8px; }
+    .fk-gp-h { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--accent,#4ad4f0); font-weight:800; margin:6px 0 5px; }
+    .fk-gp-tend { font-size:12.5px; color:#dce8ef; padding:2px 0; }
+    .fk-gp-reco { text-transform:none; letter-spacing:0; color:#ffd873; font-weight:600; font-size:11.5px; }
+    .fk-gp-warn { background:rgba(255,122,122,.1); border:1px solid rgba(255,122,122,.34); color:#ffb3b3; border-radius:8px; padding:7px 10px; font-size:12.5px; margin-bottom:8px; }
+    .fk-gp-opts { display:flex; flex-wrap:wrap; gap:6px; }
+    .fk-gp-btn { border:1px solid rgba(143,163,176,.3); background:rgba(11,24,34,.5); color:#cfe3ee; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .fk-gp-btn b { font-weight:800; }
+    .fk-gp-btn.on { outline:2px solid var(--accent,#4ad4f0); }
+    .fk-gp-good b { color:#7dffb0; } .fk-gp-bad b { color:#ff9a9a; } .fk-gp-neutral b { color:#9fb0bc; }
+    @media (max-width:480px){ .fk-gp-scout { grid-template-columns:1fr; } }
+  </style>
+  {% endif %}
+
   {% if command_center.line %}{% set bl = command_center.line %}
   <div class="fk-card fk-line">
     <div class="fk-card-h">📊 The Line — Week {{ bl.week }} <span class="fk-line-badge">{{ 'HOME' if bl.home else 'AWAY' }} vs {{ bl.opp_short }}</span></div>

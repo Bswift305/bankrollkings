@@ -1372,6 +1372,10 @@ def set_weekly_plan(save, **fields):
             wo[key] = v
     if fields.get("plays") is not None:                # multi-select featured plays (capped)
         wo["plays"] = [k for k in fields["plays"] if k in FEATURED_PLAYS][:FEATURED_PLAYS_MAX]
+    if fields.get("off_identity") in OFF_IDENTITIES:   # weekly offensive identity
+        wo["off_identity"] = fields["off_identity"]
+    if fields.get("def_identity") in DEF_IDENTITIES:   # weekly defensive identity
+        wo["def_identity"] = fields["def_identity"]
     write_save(save)
     return wo
 
@@ -1633,6 +1637,213 @@ def revenge_edge(save):
     return (matchup_tags(save) or {}).get("edge", 0.0)
 
 
+# --------------------------------------------------------------------------- #
+# THE WEEKLY GAME PLAN — the football chess match. We scout the opponent's
+# tendencies, you pick an offensive and defensive IDENTITY for the week, and the
+# plan pays off (or backfires) based on how it counters what they do. Your
+# coordinators recommend; you can follow or override. Repeat the same identity
+# too often and they start sitting on it.
+# --------------------------------------------------------------------------- #
+def _unit_ovr(team, pos, n):
+    d = pos_depth(team, pos)[:n]
+    return round(sum(p["overall"] for p in d) / len(d), 1) if d else 60.0
+
+
+def opponent_tendencies(opp):
+    """What this opponent does — offensive traits you must defend, defensive traits
+    you can attack. Each carries a `tag` used by the counters matrix."""
+    staff = opp.get("staff", {})
+    off_sys = (staff.get("off_coord") or {}).get("system")
+    def_sys = (staff.get("def_coord") or {}).get("system")
+    qb = pos_depth(opp, "QB")[:1]
+    qb_style = qb[0].get("style") if qb else None
+    wr, ol, rb = _unit_ovr(opp, "WR", 3), _unit_ovr(opp, "OL", 5), _unit_ovr(opp, "RB", 2)
+    dl, lb = _unit_ovr(opp, "DL", 4), _unit_ovr(opp, "LB", 3)
+    sec = round((_unit_ovr(opp, "CB", 3) + _unit_ovr(opp, "S", 2)) / 2, 1)
+    t = []
+    if qb_style in ("Dual Threat", "RPO Specialist"):
+        t.append({"side": "off", "tag": "mobile_qb", "text": "Mobile QB — he extends plays and scrambles."})
+    if wr >= 76:
+        t.append({"side": "off", "tag": "star_wr", "text": "Dangerous WR corps — their WR1 is a matchup problem."})
+    if ol <= 70:
+        t.append({"side": "off", "tag": "weak_ol", "text": "Shaky pass protection — pressure gets home."})
+    if rb >= 75 and rb >= wr:
+        t.append({"side": "off", "tag": "run_heavy", "text": "Run-first offense — they lean on the ground game."})
+    if off_sys in ("Air Raid", "Spread"):
+        t.append({"side": "off", "tag": "deep_pass", "text": "Vertical passing attack — they take deep shots."})
+    elif off_sys == "West Coast":
+        t.append({"side": "off", "tag": "quick_game", "text": "Quick rhythm passing — timing throws underneath."})
+    if def_sys == "Blitz Heavy" or lb >= 77:
+        t.append({"side": "def", "tag": "blitz_heavy", "text": "Heavy blitz looks, especially on third down."})
+    if dl >= 77:
+        t.append({"side": "def", "tag": "strong_pass_rush", "text": "Fearsome front — they win with four."})
+    if dl >= 75 and lb >= 74:
+        t.append({"side": "def", "tag": "strong_run_d", "text": "Stout run defense — hard to run on."})
+    elif dl <= 70:
+        t.append({"side": "def", "tag": "weak_run_d", "text": "Soft run front — the run is there."})
+    if sec <= 71:
+        t.append({"side": "def", "tag": "weak_secondary", "text": "Vulnerable secondary — the deep ball is open."})
+    elif sec >= 77:
+        t.append({"side": "def", "tag": "strong_pass_d", "text": "Lockdown secondary — tough to throw deep."})
+    if def_sys == "Cover 3 Zone":
+        t.append({"side": "def", "tag": "soft_zone", "text": "Zone-heavy — soft spots sit underneath."})
+    return t
+
+
+OFF_IDENTITIES = {
+    "establish_run": {"label": "Establish the Run", "strong": ["blitz_heavy", "weak_run_d"], "weak": ["strong_run_d"],
+                      "blurb": "Pound it, control the game, punish the blitz."},
+    "quick_pass": {"label": "Quick Passing Attack", "strong": ["blitz_heavy", "strong_pass_rush"], "weak": ["soft_zone"],
+                   "blurb": "Get it out fast — beat pressure before it arrives."},
+    "attack_deep": {"label": "Attack Downfield", "strong": ["weak_secondary", "soft_zone"], "weak": ["strong_pass_d", "strong_pass_rush"],
+                    "blurb": "Take your shots and stress the top of the coverage."},
+    "control_clock": {"label": "Control the Clock", "strong": ["weak_run_d"], "weak": ["strong_run_d"],
+                      "blurb": "Long drives, keep their offense on the bench."},
+    "feature_star": {"label": "Feature the Star", "strong": ["soft_zone", "weak_secondary"], "weak": ["strong_pass_d"],
+                     "blurb": "Force-feed your best weapon the ball."},
+    "protect_qb": {"label": "Protect the Quarterback", "strong": ["blitz_heavy", "strong_pass_rush"], "weak": [],
+                   "blurb": "Max protect and chip — keep him clean."},
+    "spread": {"label": "Spread Them Out", "strong": ["strong_run_d", "blitz_heavy"], "weak": ["strong_pass_d"],
+               "blurb": "Empty the box, create space, throw underneath."},
+}
+DEF_IDENTITIES = {
+    "stop_run": {"label": "Stop the Run", "strong": ["run_heavy"], "weak": ["deep_pass", "star_wr"],
+                 "blurb": "Load the box, make them one-dimensional."},
+    "pressure_qb": {"label": "Pressure the Quarterback", "strong": ["weak_ol", "deep_pass"], "weak": ["quick_game", "mobile_qb"],
+                    "blurb": "Send heat, force mistakes — but it's a gamble."},
+    "keep_in_front": {"label": "Keep Everything in Front", "strong": ["deep_pass", "star_wr"], "weak": ["run_heavy", "quick_game"],
+                      "blurb": "No big plays; make them earn every yard."},
+    "takeaway_wr1": {"label": "Take Away Their WR1", "strong": ["star_wr"], "weak": ["run_heavy"],
+                     "blurb": "Bracket their best guy, dare the others."},
+    "disguise": {"label": "Disguise Coverage", "strong": ["quick_game", "deep_pass"], "weak": ["run_heavy"],
+                 "blurb": "Confuse the read, bait the throw."},
+    "force_outside": {"label": "Force Them Outside", "strong": ["run_heavy", "mobile_qb"], "weak": ["quick_game"],
+                      "blurb": "Set hard edges, funnel everything to the sideline."},
+    "contain_qb": {"label": "Contain the Mobile QB", "strong": ["mobile_qb"], "weak": ["star_wr"],
+                   "blurb": "Rush lanes and a spy — make him a passer."},
+}
+
+
+def _identity_edge_for(idef, opp_tags):
+    e = 0.0
+    for tag in opp_tags:
+        if tag in idef.get("strong", []):
+            e += 0.35
+        elif tag in idef.get("weak", []):
+            e -= 0.35
+    return e
+
+
+def identity_edge(save):
+    """Net power swing from your weekly identities vs the opponent's tendencies,
+    minus a penalty for leaning on the same identity week after week."""
+    iz = save.get("inseason")
+    if not iz:
+        return 0.0
+    uid = save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == iz["week"] and uid in (x["home"], x["away"])), None)
+    if not g:
+        return 0.0
+    opp = next(t for t in save["teams"] if t["id"] == (g["away"] if g["home"] == uid else g["home"]))
+    tends = opponent_tendencies(opp)
+    def_tags = [x["tag"] for x in tends if x["side"] == "def"]
+    off_tags = [x["tag"] for x in tends if x["side"] == "off"]
+    wo = save.get("weekly_ops", {})
+    e = 0.0
+    oid = OFF_IDENTITIES.get(wo.get("off_identity"))
+    did = DEF_IDENTITIES.get(wo.get("def_identity"))
+    if oid:
+        e += _identity_edge_for(oid, def_tags)
+    if did:
+        e += _identity_edge_for(did, off_tags)
+    streak = save.get("identity_streak", {})
+    for side in ("off", "def"):
+        s = streak.get(side)
+        if s and s.get("id") == wo.get(side + "_identity") and s.get("count", 0) >= 3:
+            e -= 0.3                                            # they're sitting on your tell
+    return round(max(-1.2, min(1.4, e)), 2)
+
+
+def coordinator_reco(save, opp=None):
+    """What your OC/DC would call: the identity that best counters the opponent."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    uid = save["current_team_id"]
+    if opp is None:
+        g = next((x for x in save.get("schedule", [])
+                  if x["week"] == iz["week"] and uid in (x["home"], x["away"])), None)
+        if not g:
+            return None
+        opp = next(t for t in save["teams"] if t["id"] == (g["away"] if g["home"] == uid else g["home"]))
+    tends = opponent_tendencies(opp)
+    def_tags = [x["tag"] for x in tends if x["side"] == "def"]
+    off_tags = [x["tag"] for x in tends if x["side"] == "off"]
+
+    def best(cat, tags):
+        scored = sorted(((_identity_edge_for(d, tags), k, d) for k, d in cat.items()), key=lambda x: -x[0])
+        top = scored[0]
+        reason = next((x["text"] for x in tends
+                       if x["tag"] in top[2].get("strong", []) and x["side"] == ("def" if cat is OFF_IDENTITIES else "off")), "")
+        return {"id": top[1], "label": top[2]["label"], "reason": reason}
+    return {"off": best(OFF_IDENTITIES, def_tags), "def": best(DEF_IDENTITIES, off_tags)}
+
+
+def game_plan_report(save):
+    """Everything the Command Center needs: scouting report, identity pickers with
+    live edges, the coordinators' picks, the plan's net edge, and a self-scout warning."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    uid = save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == iz["week"] and uid in (x["home"], x["away"])), None)
+    if not g:
+        return None
+    opp = next(t for t in save["teams"] if t["id"] == (g["away"] if g["home"] == uid else g["home"]))
+    tends = opponent_tendencies(opp)
+    def_tags = [x["tag"] for x in tends if x["side"] == "def"]
+    off_tags = [x["tag"] for x in tends if x["side"] == "off"]
+    wo = save.get("weekly_ops", {})
+    reco = coordinator_reco(save, opp)
+
+    def opts(cat, tags, cur):
+        out = []
+        for k, d in cat.items():
+            e = _identity_edge_for(d, tags)
+            out.append({"key": k, "label": d["label"], "blurb": d["blurb"], "edge": round(e, 2),
+                        "on": k == cur, "fit": "good" if e >= 0.3 else "bad" if e <= -0.3 else "neutral"})
+        return sorted(out, key=lambda x: -x["edge"])
+    warn = None
+    streak = save.get("identity_streak", {})
+    for side, label in (("off", "offensive"), ("def", "defensive")):
+        s = streak.get(side)
+        if s and s.get("id") == wo.get(side + "_identity") and s.get("count", 0) >= 3:
+            nm = (OFF_IDENTITIES if side == "off" else DEF_IDENTITIES).get(s["id"], {}).get("label", "")
+            warn = f"You've run {nm} {s['count']} weeks straight — opponents are sitting on it."
+    return {"opp_short": opp.get("name", opp["full"]),
+            "off_tendencies": [x for x in tends if x["side"] == "off"],
+            "def_tendencies": [x for x in tends if x["side"] == "def"],
+            "off_opts": opts(OFF_IDENTITIES, def_tags, wo.get("off_identity")),
+            "def_opts": opts(DEF_IDENTITIES, off_tags, wo.get("def_identity")),
+            "reco": reco, "edge": identity_edge(save), "warn": warn,
+            "off_set": wo.get("off_identity"), "def_set": wo.get("def_identity")}
+
+
+def _bump_identity_streak(save):
+    """Track how many weeks in a row each identity has been used (for self-scouting)."""
+    wo = save.get("weekly_ops", {})
+    st = save.setdefault("identity_streak", {})
+    for side in ("off", "def"):
+        cur = wo.get(side + "_identity")
+        s = st.get(side)
+        if cur and s and s.get("id") == cur:
+            s["count"] = s.get("count", 1) + 1
+        elif cur:
+            st[side] = {"id": cur, "count": 1}
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
@@ -1642,6 +1853,7 @@ def weekly_edge(save):
     e += featured_plays_edge(save)                              # featured plays that fit your personnel
     e += weather_plan_edge(save)                               # forecast vs your concepts
     e += revenge_edge(save)                                    # a revenge/rivalry game fires the room up
+    e += identity_edge(save)                                   # weekly game plan vs opponent tendencies
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -2397,6 +2609,7 @@ def sim_week(save):
     iz["injuries"] = _roll_week_injuries(save, week, rng)
     iz["incidents"] = _roll_offfield(save, week, rng)   # off-field drama (suspensions dock power below)
     apply_featured_play_morale(save)                    # featuring your guys this week lifts their morale
+    _bump_identity_streak(save)                         # self-scouting: track identity repetition
     powers[uid], out = _user_inseason_power(save, week, powers[uid])
     out_ids = {p["id"] for p in out}
     for g in save["schedule"]:
