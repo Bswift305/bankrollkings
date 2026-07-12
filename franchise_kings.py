@@ -906,6 +906,64 @@ def add_void_years(save, pid):
     return True, f"Void years added to {p['name']}: ${relief}M/yr freed now, ${c['void_dead']}M in void money owed when the deal ends."
 
 
+def pickup_option(save, pid):
+    """Team option: on a young player in his last year, pick up a controlled extra
+    season at ~90% of his current AAV — cheap cost certainty before he can walk."""
+    p = next((x for x in current_team(save)["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He isn't on your roster."
+    c = p.get("contract") or {}
+    if int(c.get("years", 0) or 0) != 1:
+        return False, "The option is only there in the final year of a deal."
+    if p.get("age", 30) > 26:
+        return False, "Team options are on young players only."
+    if c.get("option_used"):
+        return False, "You've already exercised his option."
+    sal = round((c.get("aav", 0) or 0) * 0.92, 1)
+    c["years"] = 2
+    c["aav"] = sal
+    c["option_used"] = True
+    write_save(save)
+    return True, f"Picked up {p['name']}'s option — one more controlled year at ${sal}M."
+
+
+def add_incentive(save, pid):
+    """Attach a performance incentive: a bonus he earns with a healthy, productive
+    season. Paid as a cap charge the following year (and a morale bump) if he hits."""
+    p = next((x for x in current_team(save)["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He isn't on your roster."
+    c = p.get("contract") or {}
+    if int(c.get("years", 0) or 0) < 1:
+        return False, "Add incentives to a player under contract."
+    if c.get("incentive"):
+        return False, "His deal already carries an incentive."
+    amt = round(max(0.5, (c.get("aav", 0) or 0) * 0.15), 1)
+    c["incentive"] = {"amount": amt, "hit": False}
+    write_save(save)
+    return True, f"Incentive added to {p['name']}: ${amt}M if he stays healthy and produces — cheap now, a cap bill next year if he earns it."
+
+
+def _settle_incentives(save):
+    """Season end: pay out earned incentives (productive, healthy season) as a
+    next-year cap charge plus a morale bump; clear the rest."""
+    team = current_team(save)
+    for p in team["roster"]:
+        inc = (p.get("contract") or {}).get("incentive")
+        if not inc:
+            continue
+        s = p.get("stats") or {}
+        games = s.get("g", 0)
+        produced = _skill_prod(p) >= 55 or s.get("sack", 0) >= 6 or s.get("def_int", 0) >= 3
+        if games >= 12 and produced:
+            team.setdefault("dead_cap_entries", []).append(
+                {"name": p["name"], "pos": p["pos"], "amount": inc["amount"], "seasons_left": 2})
+            p["morale"] = min(99, p.get("morale", 70) + 4)
+            _tl(save, save.get("season", 1), "contract", "\U0001F4B0",
+                f"{p['pos']} {p['name']} hit his incentive", f"${inc['amount']}M earned — it lands on next year's cap.")
+        p["contract"].pop("incentive", None)
+
+
 def restructure_contract(save, pid):
     """Convert salary into guaranteed bonus: ~40% of his AAV becomes cap room
     for every remaining year — but the money is now guaranteed, so the
@@ -3607,6 +3665,7 @@ def _begin_postseason(save):
     save["all_pro"] = all_pro_team(save["teams"])
     update_records(save, save["teams"], save["season"])
     _archive_season(save["teams"], save["season"])
+    _settle_incentives(save)                              # pay out earned contract incentives
 
     gl = (save.get("inseason") or {}).get("log", [])
     if gl:

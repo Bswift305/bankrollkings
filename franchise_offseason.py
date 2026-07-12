@@ -305,6 +305,24 @@ def resign(save, player_id, years, aav):
     return fk.negotiate(save, player_id, years, aav)
 
 
+def rfa_tender(save, player_id):
+    """Restricted free agent: a young (≤25) expiring player can be tendered a 1-year
+    qualifying deal at market — you keep his rights cheaply, no tag burned."""
+    team = fk.current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == player_id), None)
+    if not p or p.get("contract", {}).get("years", 1) > 0:
+        return False, "Only an expiring player can be tendered."
+    if p.get("age", 30) > 25:
+        return False, "Only players 25 or younger are restricted — tag or re-sign the vets."
+    sal = round(fk._market_aav(p), 1)
+    if fk.cap_used(team) - (p.get("contract", {}).get("aav", 0) or 0) + sal > fk.cap_total(save):
+        return False, "Not enough cap room for the tender."
+    p["contract"] = {"years": 1, "aav": sal, "guaranteed": round(sal * 0.5, 1)}
+    p["rfa_tendered"] = True
+    fk.write_save(save)
+    return True, f"{p['name']} tendered as an RFA: 1 year, ${sal}M — his rights are yours."
+
+
 def _tag_salary(save, p, kind):
     mkt = fk._market_aav(p)
     return round(max(mkt * (1.2 if kind == "franchise" else 1.0), mkt + 2.0), 1)

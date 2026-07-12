@@ -143,7 +143,18 @@
         <div><span>AAV</span><b>${{ '%.1f'|format(p.contract.aav) }}M</b></div>
         <div><span>Guaranteed</span><b>${{ '%.1f'|format(p.contract.guaranteed|default(0)) }}M</b></div>
         <div><span>Trade value</span><b>{{ '%.0f'|format(value) }}</b></div>
+        {% if p.contract.incentive %}<div><span>Incentive</span><b style="color:#ffd873">${{ '%.1f'|format(p.contract.incentive.amount) }}M if he produces</b></div>{% endif %}
       </div>
+      {% if is_own is defined and is_own %}
+      <div class="fp-ctools">
+        {% if p.contract.years == 1 and p.age <= 26 and not p.contract.option_used %}
+        <form method="post" action="{{ url_for('franchise_restructure') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="from_player" value="1"><input type="hidden" name="option" value="1"><button class="fp-rolebtn" title="Pick up a controlled extra year at ~90% AAV">Pick up option year</button></form>
+        {% endif %}
+        {% if not p.contract.incentive %}
+        <form method="post" action="{{ url_for('franchise_restructure') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="from_player" value="1"><input type="hidden" name="incentive" value="1"><button class="fp-rolebtn" title="Add a performance incentive — cheap now, a cap bill if he earns it">Add incentive</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
     {% else %}
     <div class="fp-card">
@@ -181,6 +192,7 @@
     .fp-rolebtn { border:1px solid rgba(143,163,176,.3); background:rgba(11,24,34,.5); color:#cfe3ee; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:600; }
     .fp-rolebtn.on { outline:2px solid #4ad4f0; color:#fff; }
     .fp-rolebtn-clear { color:#ff9a9a; border-color:rgba(255,122,122,.35); }
+    .fp-ctools { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   </style>
   {% endif %}
 

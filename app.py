@@ -29796,6 +29796,9 @@ def franchise_offseason_resign():
         if request.form.get('tag') in ('franchise', 'transition'):
             fo.apply_tag(save, pid, request.form.get('tag'))
             return redirect(url_for('franchise_offseason'))
+        if request.form.get('rfa') == '1':
+            fo.rfa_tender(save, pid)
+            return redirect(url_for('franchise_offseason'))
         fo.resign(save, pid, request.form.get('years', 1), request.form.get('aav', 0))
     return redirect(url_for('franchise_offseason', p=pid))
 
@@ -30459,8 +30462,14 @@ def franchise_restructure():
         pid = str(request.form.get('pid', '')).strip()
         if request.form.get('void') == '1':
             ok, msg = fk.add_void_years(save, pid)
+        elif request.form.get('option') == '1':
+            ok, msg = fk.pickup_option(save, pid)
+        elif request.form.get('incentive') == '1':
+            ok, msg = fk.add_incentive(save, pid)
         else:
             ok, msg = fk.restructure_contract(save, pid)
+        if request.form.get('from_player') and pid:
+            return redirect(url_for('franchise_player', pid=pid))
         if save.get('offseason'):
             return redirect(url_for('franchise_offseason', block_ok='1' if ok else '0', block_msg=msg))
         return redirect(url_for('franchise_hub', tab='front-office',
