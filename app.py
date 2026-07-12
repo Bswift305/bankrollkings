@@ -630,6 +630,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_extend',
     'franchise_promote',
     'franchise_protect_ps',
+    'franchise_ir',
     'franchise_set_role',
     'franchise_demote',
     'franchise_player',
@@ -29160,6 +29161,7 @@ def _command_center(save):
         'game_plan': fk.game_plan_report(save),
         'snap_plan': fk.snap_plan(save),
         'opening': fk.opening_script_report(save),
+        'ir_candidates': fk.ir_candidates(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},
@@ -29256,6 +29258,7 @@ def _franchise_view(save):
         'roster_order': [_avatar(p) for pos in fk.ROSTER for p in by_pos.get(pos, [])],
         'practice_squad': [_avatar(p) for p in sorted(fk.ensure_practice_squad(save),
                                                       key=lambda x: -x['overall'])],
+        'ir_list': fk.ir_list(save),
         'free_agents': [dict(p, fit=fk.tactical_fit(save, p)['label'],
                              fit_pct=fk.tactical_fit(save, p)['pct'],
                              scout=fk.scout_report(save, p)['rec'],
@@ -30210,6 +30213,18 @@ def franchise_protect_ps():
     if save:
         fk.protect_ps(save, str(request.form.get('pid', '')).strip())
     return redirect(url_for('franchise_hub', tab='roster'))
+
+
+@app.route('/franchise/ir', methods=['POST'])
+def franchise_ir():
+    _, save = _franchise_save()
+    if save:
+        pid = str(request.form.get('pid', '')).strip()
+        if request.form.get('action') == 'activate':
+            fk.activate_from_ir(save, pid)
+        else:
+            fk.place_on_ir(save, pid, request.form.get('season_ending') != '1')
+    return redirect(url_for('franchise_hub', tab=request.form.get('tab', 'roster')))
 
 
 @app.route('/franchise/extend', methods=['POST'])

@@ -1091,6 +1091,21 @@
     <div class="fk-draftlog">{% for i in inseason_injuries %}<span class="fk-tag">{{ i.pos }} {{ i.name }} · out {{ i.weeks }}w</span>{% endfor %}</div>
   </div>
   {% endif %}
+
+  {% if command_center.ir_candidates %}
+  <div class="fk-card">
+    <div class="fk-card-h">🏥 IR candidates <small class="fk-muted">— long-term injuries you can stash to free a roster spot</small></div>
+    {% for i in command_center.ir_candidates %}
+    <div class="fk-away-line" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span>{{ i.pos }} {{ i.name }} <small class="fk-muted">· out ~{{ i.weeks }}w</small></span>
+      <span style="white-space:nowrap">
+        <form method="post" action="{{ url_for('franchise_ir') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ i.id }}"><input type="hidden" name="tab" value="command"><button class="fk-psbtn">→ IR (return)</button></form>
+        <form method="post" action="{{ url_for('franchise_ir') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ i.id }}"><input type="hidden" name="season_ending" value="1"><input type="hidden" name="tab" value="command"><button class="fk-psbtn">→ IR (season)</button></form>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% else %}
   <div class="fk-card fk-cc-locked">
     <div class="fk-card-h">{{ icon('flag') }}Command Center — locked until Season {{ save.season }} kicks off</div>
@@ -1225,6 +1240,20 @@
       <button class="fk-btn fk-btn-sm">↓ Demote to PS</button>
     </form>
   </div>
+
+  {% if ir_list %}
+  <div class="fk-card" style="margin-top:12px">
+    <div class="fk-card-h">🏥 Injured Reserve <span style="float:right;font-size:11px;color:#7f93a0">out of the active count</span></div>
+    <table class="fk-table"><tbody>
+      {% for p in ir_list %}
+      <tr><td class="fk-pos">{{ p.pos }}</td><td><a href="{{ url_for('franchise_player', pid=p.id) }}" style="color:#9fe9ff;text-decoration:none">{{ p.name }}</a></td>
+        <td class="fk-ovr">{{ p.ovr }}</td>
+        <td>{% if p.return %}<span style="color:#ffd873">return-designated</span>{% else %}<span class="fk-muted">season-ending</span>{% endif %}</td>
+        <td>{% if p.eligible %}<form method="post" action="{{ url_for('franchise_ir') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="action" value="activate"><button class="fk-psbtn">↑ Activate</button></form>{% elif p.return %}<span class="fk-muted" style="font-size:11px">not yet eligible</span>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table>
+  </div>
+  {% endif %}
   {% endif %}
 
   {# ===================== FRONT OFFICE ===================== #}

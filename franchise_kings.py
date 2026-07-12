@@ -3697,6 +3697,11 @@ def _finalize_after_postseason(save):
     save.pop("inseason", None)
     save.pop("postseason", None)                   # the playoff run is over; card lives on playoff_run
     save.pop("pgl", None)                           # per-player game log resets for the new season
+    for t in save["teams"]:                         # IR guys heal and rejoin the roster for next year
+        for p in t.pop("ir", []):
+            for k in ("ir_week", "ir_return", "out_until"):
+                p.pop(k, None)
+            t["roster"].append(p)
     for t in save["teams"]:
         for p in t["roster"]:
             p.pop("out_until", None)
@@ -9599,6 +9604,61 @@ def demote_player(save, pid):
     team.setdefault("practice_squad", []).append(p)
     write_save(save)
     return True
+
+
+IR_MIN_WEEKS = 4
+
+
+def ir_candidates(save):
+    """Currently-injured active players with a long absence — IR candidates."""
+    iz = save.get("inseason") or {}
+    week = iz.get("week", 1)
+    return [{"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"],
+             "weeks": p.get("out_until", 0) - week + 1}
+            for p in current_team(save)["roster"]
+            if p.get("out_until", 0) >= week + IR_MIN_WEEKS - 1]
+
+
+def place_on_ir(save, pid, return_desig=True):
+    team = current_team(save)
+    p = next((x for x in team["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He isn't on your active roster."
+    week = (save.get("inseason") or {}).get("week", 1)
+    team["roster"] = [x for x in team["roster"] if x["id"] != pid]
+    p["ir_week"], p["ir_return"] = week, bool(return_desig)
+    team.setdefault("ir", []).append(p)
+    write_save(save)
+    return True, (f"{p['name']} placed on IR — return-designated, eligible in {IR_MIN_WEEKS} weeks."
+                  if return_desig else f"{p['name']} placed on season-ending IR.")
+
+
+def activate_from_ir(save, pid):
+    team = current_team(save)
+    p = next((x for x in team.get("ir", []) if x["id"] == pid), None)
+    if not p:
+        return False, "He isn't on IR."
+    if not p.get("ir_return"):
+        return False, "He was placed on season-ending IR — he's back next season."
+    week = (save.get("inseason") or {}).get("week", 1)
+    left = IR_MIN_WEEKS - (week - p.get("ir_week", 0))
+    if left > 0:
+        return False, f"Must sit at least {IR_MIN_WEEKS} games — {left} to go."
+    team["ir"] = [x for x in team["ir"] if x["id"] != pid]
+    for k in ("ir_week", "ir_return", "out_until"):
+        p.pop(k, None)
+    team["roster"].append(p)
+    write_save(save)
+    return True, f"{p['name']} activated from IR."
+
+
+def ir_list(save):
+    team = current_team(save)
+    week = (save.get("inseason") or {}).get("week", 1)
+    return [{"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"],
+             "return": bool(p.get("ir_return")),
+             "eligible": bool(p.get("ir_return")) and (week - p.get("ir_week", 0) >= IR_MIN_WEEKS)}
+            for p in team.get("ir", [])]
 
 
 PS_PROTECT_MAX = 2
