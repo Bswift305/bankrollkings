@@ -29148,6 +29148,7 @@ def _command_center(save):
         'locker': fk.locker_room(save),
         'playbook': fk.featured_plays_report(save),
         'line': fk.betting_line(save),
+        'quant': fk.quant_desk(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},

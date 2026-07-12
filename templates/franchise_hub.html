@@ -729,6 +729,42 @@
   </style>
   {% endif %}
 
+  {% if command_center.quant and command_center.quant.proj %}{% set q = command_center.quant %}
+  <div class="fk-card fk-quant">
+    <div class="fk-card-h">📈 GridIron Quant Desk
+      {% if q.rank %}<span class="fk-q-rank">#{{ q.rank }} of {{ q.league_size }}
+        {%- if q.rank_delta > 0 %} <span class="fk-glw">▲{{ q.rank_delta }}</span>{% elif q.rank_delta < 0 %} <span class="fk-gll">▼{{ -q.rank_delta }}</span>{% else %} <span class="fk-q-flat">—</span>{% endif %}</span>{% endif %}
+    </div>
+    <div class="fk-q-hero">
+      <div class="fk-q-odds">
+        <div class="fk-q-oddsnum fk-q-{{ 'hi' if q.proj.playoff_odds >= 60 else 'mid' if q.proj.playoff_odds >= 30 else 'lo' }}">{{ q.proj.playoff_odds }}%</div>
+        <div class="fk-q-oddslbl">playoff odds</div>
+      </div>
+      <div class="fk-q-facts">
+        <div><span>Projected finish</span><b>{{ q.record }} → {{ q.proj.proj_wins }} wins</b></div>
+        <div><span>Most likely seed</span><b>{% if q.proj.likely_seed %}#{{ q.proj.likely_seed }} in conf{% else %}outside the field{% endif %}</b></div>
+        <div><span>Division title</span><b>{{ q.proj.div_odds }}%</b></div>
+        <div><span>Power</span><b>{{ q.power }} <small class="fk-muted">(lg avg {{ q.league_avg }})</small></b></div>
+      </div>
+    </div>
+    <p class="fk-ccblurb">Odds from simulating your remaining {{ q.proj.games_left }} games 160× through the game model. Remaining schedule strength <b>{{ q.sos }}</b> —
+      {% if q.sos_vs_avg >= 1.5 %}<span class="fk-gll">{{ q.sos_vs_avg }} tougher than average</span>{% elif q.sos_vs_avg <= -1.5 %}<span class="fk-glw">{{ -q.sos_vs_avg }} easier than average</span>{% else %}about league-average{% endif %}.</p>
+  </div>
+  <style>
+    .fk-q-rank { float:right; font-size:12px; font-weight:800; color:#cfe3ee; }
+    .fk-q-flat { color:#7f93a0; }
+    .fk-q-hero { display:flex; align-items:center; gap:16px; margin:4px 0 2px; flex-wrap:wrap; }
+    .fk-q-odds { text-align:center; flex:0 0 auto; }
+    .fk-q-oddsnum { font-family:var(--font-display, inherit); font-size:40px; font-weight:800; line-height:1; }
+    .fk-q-hi { color:#7dffb0; } .fk-q-mid { color:#ffd873; } .fk-q-lo { color:#ff9a9a; }
+    .fk-q-oddslbl { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fa3b0; margin-top:3px; }
+    .fk-q-facts { flex:1; min-width:220px; display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; }
+    .fk-q-facts span { display:block; font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:#8fa3b0; }
+    .fk-q-facts b { color:#e8f4fb; font-size:13.5px; }
+    @media (max-width:480px){ .fk-q-facts { grid-template-columns:1fr; } }
+  </style>
+  {% endif %}
+
   {% if command_center.agenda %}
   <div class="fk-card fk-agenda">
     <div class="fk-card-h">{{ icon('users') }}On your desk <span class="fk-agcount">{{ command_center.agenda|length }}</span></div>

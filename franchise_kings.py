@@ -7074,6 +7074,83 @@ def analytics(save):
 
 
 # --------------------------------------------------------------------------- #
+# GridIron Quant Desk — the numbers guys, applied to YOUR team. Honest playoff
+# odds by Monte-Carlo-ing the rest of the season through the real game model,
+# plus your power rank + week-over-week movement and remaining strength of
+# schedule. Leans into the Data Mode identity of the platform.
+# --------------------------------------------------------------------------- #
+def playoff_projection(save, sims=160):
+    """Simulate the remaining schedule many times to get real playoff odds, a
+    projected win total, most-likely seed, and division-title odds."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    week = iz["week"]
+    uid = save["current_team_id"]
+    teams = {t["id"]: t for t in save["teams"]}
+    staff_pw = staff_bonus(save)["power"]
+    pw = {tid: power_rating(t) + (staff_pw if tid == uid else ai_coach_edge(t))
+          for tid, t in teams.items()}
+    base_wins = {tid: teams[tid]["record"]["w"] for tid in teams}
+    remaining = [g for g in save["schedule"] if g["week"] >= week]
+    conf_of = {tid: t["conference"] for tid, t in teams.items()}
+    div_of = {tid: (t["conference"], t["division"]) for tid, t in teams.items()}
+    my_conf, my_div = conf_of[uid], div_of[uid]
+    conf_ids = [tid for tid in teams if conf_of[tid] == my_conf]
+    div_ids = [tid for tid in teams if div_of[tid] == my_div]
+    seeds = playoff_seeds(save)
+    rng = _rng(save["seed"] + week * 104729 + 55)
+    made = seed_sum = win_sum = div_made = 0
+    seed_counts = {}
+    for _ in range(sims):
+        wins = dict(base_wins)
+        for g in remaining:
+            h, a = g["home"], g["away"]
+            if _sim_game(rng, pw[h], pw[a]):
+                wins[h] += 1
+            else:
+                wins[a] += 1
+        win_sum += wins[uid]
+        seed = sorted(conf_ids, key=lambda t: (wins[t], pw[t]), reverse=True).index(uid) + 1
+        if seed <= seeds:
+            made += 1
+            seed_sum += seed
+            seed_counts[seed] = seed_counts.get(seed, 0) + 1
+        if sorted(div_ids, key=lambda t: (wins[t], pw[t]), reverse=True)[0] == uid:
+            div_made += 1
+    return {"playoff_odds": round(100 * made / sims), "proj_wins": round(win_sum / sims, 1),
+            "proj_seed": round(seed_sum / made) if made else None,
+            "likely_seed": max(seed_counts, key=seed_counts.get) if seed_counts else None,
+            "div_odds": round(100 * div_made / sims),
+            "games_left": len([g for g in remaining if uid in (g["home"], g["away"])])}
+
+
+def quant_desk(save):
+    """The weekly analytics panel: playoff odds, projected finish, power rank +
+    movement, and how tough your remaining schedule is."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    uid = save["current_team_id"]
+    team = current_team(save)
+    tmap = {t["id"]: t for t in save["teams"]}
+    rank = save.get("power_rank", {}).get(uid)
+    prev = save.get("power_rank_prev", {}).get(uid)
+    delta = (prev - rank) if (rank and prev) else 0        # +ve = climbed the board
+    powers = [power_rating(t) for t in save["teams"]]
+    league_avg = sum(powers) / len(powers)
+    week = iz["week"]
+    rem_opps = [(g["away"] if g["home"] == uid else g["home"])
+                for g in save["schedule"] if g["week"] >= week and uid in (g["home"], g["away"])]
+    sos = round(sum(power_rating(tmap[o]) for o in rem_opps) / len(rem_opps), 1) if rem_opps else 0.0
+    rec = team["record"]
+    return {"rank": rank, "rank_delta": delta, "league_size": len(save["teams"]),
+            "power": round(power_rating(team) + staff_bonus(save)["power"], 1),
+            "league_avg": round(league_avg, 1), "record": f"{rec['w']}-{rec['l']}",
+            "proj": playoff_projection(save), "sos": sos, "sos_vs_avg": round(sos - league_avg, 1)}
+
+
+# --------------------------------------------------------------------------- #
 # Business / stadium / budget - revenue funds staff + facility investment
 # --------------------------------------------------------------------------- #
 MARKET_MULT = {"Small": 0.85, "Mid": 1.0, "Large": 1.3}
