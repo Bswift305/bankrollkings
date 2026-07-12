@@ -1572,6 +1572,67 @@ def weather_plan_report(save):
             "temp": temp, "edge": weather_plan_edge(save), "notes": notes}
 
 
+# --------------------------------------------------------------------------- #
+# Revenge & reunion games — the living history bites. Facing the team that ended
+# your season, a club that blew you out, a division rival, or your own traded-away
+# player fires the room up. The statistical nudge is small on purpose; the story
+# is the point.
+# --------------------------------------------------------------------------- #
+def matchup_tags(save):
+    """Narrative tags for your upcoming game, from the franchise's own history."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    week, uid = iz["week"], save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == week and uid in (x["home"], x["away"])), None)
+    if not g:
+        return None
+    teams = {t["id"]: t for t in save["teams"]}
+    opp_id = g["away"] if g["home"] == uid else g["home"]
+    opp, my = teams[opp_id], teams[uid]
+    opp_name, opp_short = opp["full"], opp.get("name", opp["full"])
+    tags = []
+    pr = save.get("playoff_run") or {}                          # last season's playoff path
+    for r in pr.get("rounds", []):
+        if r.get("opp_id") == opp_id:
+            if not r.get("won"):
+                tags.append({"icon": "🔥", "kind": "playoff_revenge", "edge": 0.4,
+                             "head": "They ended your season",
+                             "sub": f"{opp_short} knocked you out in the {r['round']} last year, {r['them']}–{r['us']}. Get it back."})
+            else:
+                tags.append({"icon": "🏆", "kind": "playoff_rematch", "edge": 0.1,
+                             "head": "Playoff rematch",
+                             "sub": f"You bounced {opp_short} in the {r['round']} last year — they remember."})
+            break
+    for entry in (save.get("game_log") or []):                  # last season, regular season
+        if entry.get("opp") == opp_name and entry.get("us") is not None:
+            if not entry.get("won"):
+                marg = entry["them"] - entry["us"]
+                if marg >= 14:
+                    tags.append({"icon": "😤", "kind": "payback", "edge": 0.3, "head": "Payback game",
+                                 "sub": f"{opp_short} hung {entry['them']}–{entry['us']} on you last season. Return the favor."})
+                else:
+                    tags.append({"icon": "🎯", "kind": "loss", "edge": 0.2, "head": "Unfinished business",
+                                 "sub": f"{opp_short} beat you {entry['them']}–{entry['us']} last season."})
+            break
+    ex = [p for p in opp["roster"] if p.get("ex_team") == uid]  # your traded-away guy is back
+    if ex:
+        pl = max(ex, key=lambda p: p["overall"])
+        tags.append({"icon": "🔄", "kind": "reunion", "edge": 0.15, "head": "Reunion game",
+                     "sub": f"Your old {pl['pos']} {pl['name']} lines up for {opp_short} now."})
+    if my["division"] == opp["division"] and my["conference"] == opp["conference"]:
+        tags.append({"icon": "⚔️", "kind": "division", "edge": 0.1, "head": "Division rival",
+                     "sub": f"{my['division']} pride — these swing the race."})
+    if not tags:
+        return None
+    return {"tags": tags[:3], "edge": round(min(0.5, sum(t["edge"] for t in tags)), 2), "opp": opp_short}
+
+
+def revenge_edge(save):
+    return (matchup_tags(save) or {}).get("edge", 0.0)
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
@@ -1580,6 +1641,7 @@ def weekly_edge(save):
     e += key_moment_edge(save)
     e += featured_plays_edge(save)                              # featured plays that fit your personnel
     e += weather_plan_edge(save)                               # forecast vs your concepts
+    e += revenge_edge(save)                                    # a revenge/rivalry game fires the room up
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)
@@ -9222,6 +9284,7 @@ def accept_pick_offer(save, offer_id):
     team["roster"] = [x for x in team["roster"] if x["id"] != p["id"]]
     for key in ("on_block", "trade_request", "trade_reason"):
         p.pop(key, None)
+    p["ex_team"], p["ex_team_name"] = team["id"], team["full"]   # for reunion-game story
     ai["roster"].append(p)
     uid = team["id"]
     for pk in off["picks"]:
@@ -9315,6 +9378,8 @@ def propose_trade(save, give_id, get_id):
         result["accepted"] = False
         result["msg"] = f"{target['full']} would do it, but {get['name']}'s contract puts you over the cap."
     else:
+        give["ex_team"], give["ex_team_name"] = user["id"], user["full"]   # reunion-game story
+        get.pop("ex_team", None); get.pop("ex_team_name", None)            # he's home now
         user["roster"] = [p for p in user["roster"] if p["id"] != give_id] + [get]
         target["roster"] = [p for p in target["roster"] if p["id"] != get_id] + [give]
         result["accepted"] = True

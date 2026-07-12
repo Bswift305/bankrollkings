@@ -29151,6 +29151,7 @@ def _command_center(save):
         'quant': fk.quant_desk(save),
         'props': fk.player_props(save),
         'conditions': fk.weather_plan_report(save),
+        'matchup_tags': fk.matchup_tags(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},

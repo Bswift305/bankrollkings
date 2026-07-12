@@ -758,6 +758,21 @@
     </form>
   </div>
 
+  {% if command_center.matchup_tags %}{% set mt = command_center.matchup_tags %}
+  <div class="fk-card fk-mt">
+    <div class="fk-card-h">🎬 This week means more{% if mt.edge %} <span class="fk-mt-edge fk-glw">+{{ '%g'|format(mt.edge) }} the room's fired up</span>{% endif %}</div>
+    {% for t in mt.tags %}
+    <div class="fk-mt-tag fk-mt-{{ t.kind }}"><span class="fk-mt-ico">{{ t.icon }}</span><span><b>{{ t.head }}</b> — {{ t.sub }}</span></div>
+    {% endfor %}
+  </div>
+  <style>
+    .fk-mt { border:1px solid rgba(255,154,60,.4); background:linear-gradient(135deg,rgba(40,24,10,.5),rgba(20,14,8,.6)); }
+    .fk-mt-edge { float:right; font-size:11px; font-weight:800; }
+    .fk-mt-tag { display:flex; gap:9px; align-items:flex-start; padding:6px 0; font-size:13px; color:#e8dccb; }
+    .fk-mt-ico { font-size:17px; flex:0 0 auto; } .fk-mt-tag b { color:#fff; }
+  </style>
+  {% endif %}
+
   {% if command_center.line %}{% set bl = command_center.line %}
   <div class="fk-card fk-line">
     <div class="fk-card-h">📊 The Line — Week {{ bl.week }} <span class="fk-line-badge">{{ 'HOME' if bl.home else 'AWAY' }} vs {{ bl.opp_short }}</span></div>
