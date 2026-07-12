@@ -1069,7 +1069,7 @@ def _conf_bracket(rng, seeds, powers, uid, run, names):
                 opp = b if uid == a else a
                 won = w == uid
                 ws, ls = _score_line(rng, powers[w], powers[l])
-                run["rounds"].append({"round": rname, "opp": names.get(opp, "?"),
+                run["rounds"].append({"round": rname, "opp": names.get(opp, "?"), "opp_id": opp,
                                       "us": (ws if won else ls), "them": (ls if won else ws),
                                       "won": won})
         teams = byes + winners
@@ -1096,7 +1096,7 @@ def _run_postseason(save, rng, standings, powers):
         opp = b if uid == a else a
         won = champ == uid
         ws, ls = _score_line(rng, powers[champ], powers[loser])
-        run["rounds"].append({"round": "BRK Championship", "opp": names.get(opp, "?"),
+        run["rounds"].append({"round": "BRK Championship", "opp": names.get(opp, "?"), "opp_id": opp,
                               "us": (ws if won else ls), "them": (ls if won else ws), "won": won})
     return champ, conf_champs, playoff_ids, run
 
@@ -1182,14 +1182,16 @@ def _score_breakdown(points, rng):
     return {"td": td, "fg": fg, "xp": max(0, E - 2 * two), "two": two}
 
 
-def _game_perf(team, points, won, rng, out_ids=()):
+def _game_perf(team, points, won, rng, out_ids=(), record=True):
     """Generate ONE game's box score for a team so it RECONSTRUCTS the final score:
     the touchdowns and field goals add up to `points`, the QB's passing equals his
     receivers' catches, and player archetypes (a dual-threat QB, a bell-cow back,
-    the receiving corps) decide who produces. Adds to season totals; returns
-    (standouts-for-game-stars, team summary that the recap displays)."""
+    the receiving corps) decide who produces. With record=True adds to season
+    totals (playoff games pass record=False so they don't skew season leaders);
+    returns (standouts-for-game-stars, team summary that the recap displays)."""
     by_pos = {pos: [p for p in pos_depth(team, pos) if p["id"] not in out_ids] for pos in ROSTER}
     wb = 1.08 if won else 0.94
+    add = _add_stats if record else (lambda *a, **k: None)
     perf = []
 
     plan = _score_breakdown(points, rng)               # TDs + FGs + PATs that sum to `points`
@@ -1262,7 +1264,7 @@ def _game_perf(team, points, won, rng, out_ids=()):
         stat = {"g": 1, "pass_att": att, "pass_cmp": comp, "pass_yd": pass_yd, "pass_td": n_pass_td, "int": intc}
         if qb_car:
             stat.update(rush_car=qb_car, rush_yd=qb_rush_yd, rush_td=qb_rush_td)
-        _add_stats(qb, stat)
+        add(qb, stat)
         line = f"{comp}/{att}, {pass_yd} yd, {n_pass_td} TD" + (f", {intc} INT" if intc else "")
         if qb_car:
             line += f" · {qb_car} car, {qb_rush_yd} yd" + (f", {qb_rush_td} TD" if qb_rush_td else "")
@@ -1273,7 +1275,7 @@ def _game_perf(team, points, won, rng, out_ids=()):
     for i, rb in enumerate(rbs):
         rc, rcy, rct = recv.get(rb["id"], (0, 0, 0))
         rtd = rush_td_by.get(rb["id"], 0)
-        _add_stats(rb, {"g": 1, "rush_car": rb_car[i], "rush_yd": rb_yd[i], "rush_td": rtd,
+        add(rb, {"g": 1, "rush_car": rb_car[i], "rush_yd": rb_yd[i], "rush_td": rtd,
                         "rec": rc, "rec_yd": rcy, "rec_td": rct})
         line = f"{rb_car[i]} car, {rb_yd[i]} yd, {rtd} TD"
         if rc:
@@ -1284,7 +1286,7 @@ def _game_perf(team, points, won, rng, out_ids=()):
     # ---- Emit WR / TE ----
     for c in wrs + tes:
         rc, rcy, rct = recv.get(c["id"], (0, 0, 0))
-        _add_stats(c, {"g": 1, "rec": rc, "rec_yd": rcy, "rec_td": rct})
+        add(c, {"g": 1, "rec": rc, "rec_yd": rcy, "rec_td": rct})
         perf.append({"name": c["name"], "pos": c["pos"], "pid": c["id"],
                      "line": f"{rc} rec, {rcy} yd, {rct} TD", "score": rcy * 0.06 + rct * 6 + rc * 0.4})
 
@@ -1293,19 +1295,19 @@ def _game_perf(team, points, won, rng, out_ids=()):
         o = d["overall"]
         sk = round(max(0.0, (o - 66) * 0.02) + (rng.random() * 1.2 if rng.random() < 0.4 else 0.0), 1)
         tk = rng.randint(1, 6)
-        _add_stats(d, {"g": 1, "sack": sk, "tackle": tk})
+        add(d, {"g": 1, "sack": sk, "tackle": tk})
         if sk >= 1.5:
             perf.append({"name": d["name"], "pos": d["pos"], "pid": d["id"],
                          "line": f"{sk} sacks, {tk} tkl", "score": sk * 5 + tk * 0.3})
     for d in by_pos.get("CB", [])[:3] + by_pos.get("S", [])[:2]:
         o = d["overall"]
         di = 1 if rng.random() < max(0, (o - 72) * 0.02) else 0
-        _add_stats(d, {"g": 1, "tackle": rng.randint(1, 6), "def_int": di, "pd": 1 if rng.random() < 0.3 else 0})
+        add(d, {"g": 1, "tackle": rng.randint(1, 6), "def_int": di, "pd": 1 if rng.random() < 0.3 else 0})
 
     # ---- Kicker: field goals + PATs reconstruct the kicking points exactly ----
     for kx in by_pos.get("K", [])[:1]:
-        _add_stats(kx, {"g": 1, "fgm": n_fg, "fga": n_fg + (1 if rng.random() < 0.18 else 0),
-                        "xpm": plan["xp"], "pts": n_fg * 3 + plan["xp"]})
+        add(kx, {"g": 1, "fgm": n_fg, "fga": n_fg + (1 if rng.random() < 0.18 else 0),
+                 "xpm": plan["xp"], "pts": n_fg * 3 + plan["xp"]})
 
     summary = {"td": n_td, "fg": n_fg, "two": plan["two"], "pass_yd": pass_yd,
                "rush_yd": total_rush_yd, "total_yd": pass_yd + total_rush_yd, "points": points}
@@ -1857,15 +1859,31 @@ def _game_box(perf, n=5):
             for x in sorted(perf, key=lambda x: -x.get("score", 0))[:n]]
 
 
-def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather):
+def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather, round_name=None):
     """A short SportsDesk writeup of one game: a headline, a dek, and a body that
     threads the result, the star line, the sideline call, and the weather. `weather`
-    is the game_weather() dict (or None)."""
+    is the game_weather() dict (or None). `round_name` set = a playoff game."""
     margin = abs(us - them)
     close = margin <= 3
     blowout = margin >= 21
     cond = (weather or {}).get("condition", "")
     rough = cond in ("Snow", "Rain", "Wind")
+    if round_name:                                     # playoff framing
+        title = round_name == "BRK Championship"
+        if won:
+            head = (f"{my_name} are {'BRK CHAMPIONS' if title else 'moving on'} — {us}–{them} over {opp_name}"
+                    if title else f"{my_name} advance past {opp_name}, {us}–{them}")
+            dek = ("They lifted the trophy." if title else f"On to the next round of the playoffs.")
+        else:
+            head = f"{my_name} fall to {opp_name}, {them}–{us} — season over"
+            dek = ("A title-game defeat ends it." if title
+                   else f"The {round_name} is where the run ends.")
+        body = f"In the {round_name}, {my_name} {'took down' if won else 'were eliminated by'} {opp_name}, {us}–{them}."
+        if star:
+            body += f" {star['pos']} {star['name']} led the way — {star['line']}."
+        if key_call and key_call != "Balanced":
+            body += f" The staff rode a “{key_call}” plan when it mattered."
+        return {"headline": head, "dek": dek, "story": body}
     if won:
         verb = rng.choice(["hold off", "outlast", "handle", "grind past", "roll past", "take down"])
         head = f"{my_name} {verb} {opp_name}, {us}–{them}"
@@ -1973,7 +1991,7 @@ def sim_week(save):
     generate_weekly_agenda(save, week + 1, rng)   # next week's staff/player decisions land
     iz["week"] = week + 1
     if iz["week"] > REG_GAMES:
-        _finalize_season(save)
+        _begin_postseason(save)     # into the playoffs — played round by round, not auto-resolved
     else:
         write_save(save)
     return save
@@ -2488,7 +2506,39 @@ def _log_season_milestones(save, outcome):
                 r.get("summary", "A legend hangs them up."))
 
 
-def _finalize_season(save):
+def _build_playoff_recap(save, my, opp, r, rng):
+    """A full post-game recap for one of the user's playoff games (same shape the
+    weekly recap page reads), built from the recorded round result. Box scores are
+    generated with record=False so the playoffs don't skew regular-season leaders."""
+    won, us, them, rnd = r["won"], r["us"], r["them"], r["round"]
+    mine, my_sum = _game_perf(my, us, won, rng, record=False)
+    theirs, opp_sum = (_game_perf(opp, them, not won, rng, record=False) if opp else ([], {}))
+    st = max(mine, key=lambda x: x["score"]) if mine else None
+    star = {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None
+    km = key_moment_summary(save)
+    opp_full = opp["full"] if opp else r.get("opp", "?")
+    opp_short = (opp.get("name", opp["full"]) if opp else r.get("opp", "?"))
+    stakes = ("Win it all." if rnd == "BRK Championship" else "Win and advance." if won
+              else "Win or your season is over.")
+    return {
+        "season": save.get("season", 1), "week": None, "round": rnd, "playoff": True,
+        "won": won, "us": us, "them": them, "home": True,
+        "opp": opp_full, "opp_short": opp_short,
+        "my_team": my["full"], "my_short": my.get("name", my["full"]),
+        "weather": None, "key_moment": km,
+        "my_box": _game_box(mine), "opp_box": _game_box(theirs),
+        "my_summary": my_sum, "opp_summary": opp_sum,
+        "injuries": [], "incidents": [],
+        "context": {"stakes": stakes, "round": rnd},
+        "news": _compose_game_story(rng, won, us, them, my.get("name", my["full"]),
+                                    opp_short, star, km.get("call", "Balanced"), None, round_name=rnd),
+    }
+
+
+def _begin_postseason(save):
+    """The regular season is over. Freeze the season's awards, run the bracket, and
+    (if the user made it) queue their playoff games to be PLAYED one at a time
+    through the recap page instead of resolving invisibly."""
     rng = _rng(save["seed"] + save["season"] * 1000 + 991)
     teams = {t["id"]: t for t in save["teams"]}
     powers = {tid: power_rating(t)
@@ -2500,8 +2550,67 @@ def _finalize_season(save):
     update_records(save, save["teams"], save["season"])
     _archive_season(save["teams"], save["season"])
 
+    gl = (save.get("inseason") or {}).get("log", [])
+    if gl:
+        best = max(gl, key=lambda x: x.get("_score", 0))
+        for g in gl:
+            g["best"] = g is best
+            g.pop("_score", None)
+    save["game_log"] = gl
+
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
-    champion, conf_champs, playoff_ids, _run = _run_postseason(save, rng, standings, powers)
+    champion, conf_champs, playoff_ids, run = _run_postseason(save, rng, standings, powers)
+
+    uid = save["current_team_id"]
+    queue = []
+    if run.get("made"):
+        my = teams[uid]
+        for r in run["rounds"]:
+            queue.append(_build_playoff_recap(save, my, teams.get(r.get("opp_id")), r, rng))
+    save["postseason"] = {
+        "active": bool(queue), "made": run.get("made", False),
+        "queue": queue, "idx": 0,
+        "champion": champion, "conf_champs": conf_champs,
+        "playoff_ids": sorted(playoff_ids), "run": run,
+        "standings_ids": [t["id"] for t in standings], "season": save["season"],
+    }
+    save.pop("inseason", None)
+    if not queue:                                # missed the playoffs \u2014 nothing to play
+        return _finalize_after_postseason(save)
+    write_save(save)
+    return save
+
+
+def reveal_playoff_game(save):
+    """Reveal the next queued playoff game as `last_game` (the recap page renders it).
+    When the last one is shown, wrap the season into the offseason."""
+    ps = save.get("postseason") or {}
+    q = ps.get("queue", [])
+    i = ps.get("idx", 0)
+    if not ps.get("active") or i >= len(q):
+        return False
+    save["last_game"] = q[i]
+    ps["idx"] = i + 1
+    if ps["idx"] >= len(q):
+        ps["active"] = False
+        _finalize_after_postseason(save)
+    else:
+        write_save(save)
+    return True
+
+
+def _finalize_after_postseason(save):
+    ps = save.get("postseason") or {}
+    teams = {t["id"]: t for t in save["teams"]}
+    powers = {tid: power_rating(t)
+              + (ai_coach_edge(t) if tid != save["current_team_id"] else 0.0)
+              for tid, t in teams.items()}
+    champion = ps.get("champion")
+    conf_champs = ps.get("conf_champs", [])
+    playoff_ids = set(ps.get("playoff_ids", []))
+    _run = ps.get("run", {"made": False, "rounds": []})
+    standings = [teams[i] for i in ps.get("standings_ids", []) if i in teams] or \
+        sorted(save["teams"], key=lambda t: (t["record"]["w"], powers[t["id"]]), reverse=True)
     _record_champion_bench(save, teams[champion])
 
     uid = save["current_team_id"]
@@ -2514,7 +2623,7 @@ def _finalize_season(save):
                           if _last and _last["round"] == "BRK Championship" else
                           ("Eliminated in the " + _last["round"]) if _last else "Made the playoffs")
         _run["champion"] = teams[champion]["full"]
-        _run["season"] = save["season"]
+        _run["season"] = ps.get("season", save["season"])
         save["playoff_run"] = _run
     else:
         save.pop("playoff_run", None)
@@ -2522,14 +2631,6 @@ def _finalize_season(save):
     outcome = _evaluate_gm(save, rec, made_playoffs, won_title, teams[champion]["full"])
     outcome["season"] = save["season"]
     _apply_finance(save, rec, won_title)
-
-    gl = (save.get("inseason") or {}).get("log", [])
-    if gl:
-        best = max(gl, key=lambda x: x.get("_score", 0))
-        for g in gl:
-            g["best"] = g is best
-            g.pop("_score", None)
-    save["game_log"] = gl
 
     # League Almanac ledger — the season goes into the book forever.
     runner_up = conf_champs[1] if champion == conf_champs[0] else conf_champs[0]
@@ -2565,6 +2666,7 @@ def _finalize_season(save):
     _check_holdouts(save)
     generate_news(save)
     save.pop("inseason", None)
+    save.pop("postseason", None)                   # the playoff run is over; card lives on playoff_run
     for t in save["teams"]:
         for p in t["roster"]:
             p.pop("out_until", None)
@@ -2584,6 +2686,8 @@ def sim_season(save):
     while save.get("inseason") and guard < REG_GAMES + 2:
         sim_week(save)
         guard += 1
+    while (save.get("postseason") or {}).get("active"):    # auto-play the playoffs for sim-to-end
+        reveal_playoff_game(save)
     return save, save.get("last_outcome")
 
 

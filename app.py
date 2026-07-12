@@ -610,6 +610,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_sim',
     'franchise_sim_week',
     'franchise_game',
+    'franchise_playoff_game',
     'franchise_weekly',
     'franchise_agenda',
     'franchise_live_toggle',
@@ -29307,6 +29308,7 @@ def _franchise_view(save):
         'retirements': save.get('retirements'),
         'game_log': save.get('game_log'),
         'playoff_run': save.get('playoff_run'),
+        'postseason': save.get('postseason'),
         'news': save.get('news'),
         'evolution_notes': save.get('evolution_notes') or [],
         'broadcast': fk.broadcast(save),
@@ -29470,6 +29472,15 @@ def franchise_sim_week():
     return redirect(url_for('franchise_hub'))
 
 
+@app.route('/franchise/playoff-game', methods=['POST'])
+def franchise_playoff_game():
+    _, save = _franchise_save()
+    if save and (save.get('postseason') or {}).get('active'):
+        if fk.reveal_playoff_game(save):
+            return redirect(url_for('franchise_game'))
+    return redirect(url_for('franchise_hub'))
+
+
 @app.route('/franchise/game')
 def franchise_game():
     _, save = _franchise_save()
@@ -29479,10 +29490,17 @@ def franchise_game():
     if not recap:
         return redirect(url_for('franchise_hub'))
     team = fk.current_team(save)
+    # Is there another playoff game queued after this one?
+    ps = save.get('postseason') or {}
+    playoff_next, next_round = False, None
+    if ps.get('active') and ps.get('idx', 0) < len(ps.get('queue', [])):
+        playoff_next = True
+        next_round = ps['queue'][ps['idx']].get('round')
     return render_template('franchise_game.html',
                            save=save, recap=recap, team=team, hero_team=team,
                            colors=fk.team_colors(team['full']), accent=fk.team_accent(team['full']),
-                           season=save.get('season', 1), season_over=not save.get('inseason'))
+                           season=save.get('season', 1), season_over=not save.get('inseason'),
+                           playoff_next=playoff_next, next_round=next_round)
 
 
 @app.route('/franchise/agenda', methods=['POST'])

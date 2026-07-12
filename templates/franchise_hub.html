@@ -39,6 +39,18 @@
   {# ===================== DASHBOARD ===================== #}
   {% if tab == 'dashboard' %}
 
+  {% if postseason and postseason.active and postseason.idx < postseason.queue|length %}
+  {% set pg = postseason.queue[postseason.idx] %}
+  <div class="fk-card" style="border:1px solid rgba(255,216,115,.5); background:linear-gradient(135deg,rgba(40,28,8,.6),rgba(20,14,6,.7));">
+    <div class="fk-card-h" style="color:#ffd873">🏟 The Playoffs — {{ pg.round }}</div>
+    <p class="fk-muted" style="margin:2px 0 10px">You're in the postseason. Play it out one round at a time — every game is a full recap, just like the regular season. {% if postseason.idx > 0 %}Win and you advance; lose and your season ends.{% else %}Win or go home.{% endif %}</p>
+    <form method="post" action="{{ url_for('franchise_playoff_game') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="fk-btn fk-btn-go" style="background:linear-gradient(135deg,#ffd873,#ff9a3c);color:#2a1400">▶ Play the {{ pg.round }} →</button>
+    </form>
+  </div>
+  {% endif %}
+
   {% if alerts %}
   <div class="fk-card fk-inbox">
     <div class="fk-card-h">{{ icon('alert') }}Inbox <span class="fk-inbox-n">{{ alerts|length }}</span></div>

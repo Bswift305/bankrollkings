@@ -8,7 +8,11 @@
 {% from "_fk_icons.html" import icon %}
 <section class="pg-wrap" style="--team:{{ colors.primary }};--team2:{{ colors.secondary }};--accent:{{ accent }}">
 
+  {% if recap.round %}
+  <div class="pg-kicker pg-kicker-po">🏟 SEASON {{ recap.season }} · PLAYOFFS · {{ recap.round|upper }} · FINAL</div>
+  {% else %}
   <div class="pg-kicker">SEASON {{ recap.season }} · WEEK {{ recap.week }} · FINAL{% if recap.weather and recap.weather.label %} · {{ recap.weather.label }}{% endif %}</div>
+  {% endif %}
 
   {# ---------------- SCOREBOARD ---------------- #}
   <div class="pg-scoreboard pg-{{ 'w' if recap.won else 'l' }}">
@@ -98,18 +102,33 @@
     </div>
     {% if recap.context %}
     <div class="pg-note">
-      <div class="pg-note-h">📊 Where it leaves you</div>
+      <div class="pg-note-h">{{ '🏟 The stakes' if recap.playoff else '📊 Where it leaves you' }}</div>
+      {% if recap.playoff %}
+      <div><b>{{ recap.round }}</b></div>
+      {% if recap.context.stakes %}<div class="pg-note-sub">{{ recap.context.stakes }}</div>{% endif %}
+      {% else %}
       <div>Record <b>{{ recap.context.record }}</b></div>
       {% if recap.context.div_place %}<div class="pg-note-sub">{{ recap.context.div_place }} of {{ recap.context.div_size }} in the {{ recap.context.division }}</div>{% endif %}
+      {% endif %}
     </div>
     {% endif %}
   </div>
 
   {# ---------------- CONTINUE ---------------- #}
-  {% if season_over %}
+  {% if playoff_next %}
+  <div class="pg-final">🏟 {{ 'You advance!' if recap.won else '' }} The <b>{{ next_round }}</b> is next.</div>
+  <form method="post" action="{{ url_for('franchise_playoff_game') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="pg-btn pg-btn-po">▶ Play the {{ next_round }} →</button>
+  </form>
+  {% else %}
+  {% if recap.playoff and season_over %}
+  <div class="pg-final">{{ '🏆 You won it all. Your owner’s review is waiting.' if recap.won else '🏁 Your season ends here. Your owner’s review is waiting.' }}</div>
+  {% elif season_over %}
   <div class="pg-final">🏁 That was the regular-season finale. Your owner's review is waiting.</div>
   {% endif %}
   <a class="pg-btn" href="{{ url_for('franchise_hub') }}">{{ 'See the season wrap-up →' if season_over else 'Continue to the hub →' }}</a>
+  {% endif %}
 
 </section>
 <style>
@@ -168,6 +187,8 @@
   .pg-btn { display:block; text-align:center; text-decoration:none; padding:13px; border-radius:11px; font-weight:800; font-size:15px;
     color:#04121a; background:linear-gradient(135deg, var(--accent,#4ad4f0), #7dffb0); }
   .pg-btn:hover { filter:brightness(1.06); }
+  .pg-btn-po { width:100%; border:0; cursor:pointer; font-family:inherit; background:linear-gradient(135deg,#ffd873,#ff9a3c); color:#2a1400; }
+  .pg-kicker-po { color:#ffd873; }
 
   @media (max-width:560px) {
     .pg-boxes { grid-template-columns:1fr; }
