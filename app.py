@@ -627,6 +627,7 @@ PUBLIC_ENDPOINTS = {
     'franchise_avatar_remove',
     'franchise_extend',
     'franchise_promote',
+    'franchise_set_role',
     'franchise_demote',
     'franchise_player',
     'franchise_league_player',
@@ -30055,8 +30056,20 @@ def franchise_player(pid):
     prof['fit'] = fk.tactical_fit(save, prof['p'])
     prof['human_fit'] = fk.human_development_fit(save, prof['p'])
     prof['scoutrep'] = fk.scout_report(save, prof['p'])
+    prof['roles'] = fk.PLAYER_ROLES
+    prof['cur_role'] = prof['p'].get('role')
+    prof['is_own'] = any(x['id'] == pid for x in fk.current_team(save)['roster'])
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
+
+
+@app.route('/franchise/set-role', methods=['POST'])
+def franchise_set_role():
+    _, save = _franchise_save()
+    pid = str(request.form.get('pid', '')).strip()
+    if save:
+        fk.set_player_role(save, pid, str(request.form.get('role', '')).strip())
+    return redirect(url_for('franchise_player', pid=pid))
 
 
 @app.route('/franchise/league/<lid>/player/<pid>')

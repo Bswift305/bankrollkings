@@ -3635,6 +3635,7 @@ def _advance_year(save):
         entries = [dict(e, seasons_left=int(e.get("seasons_left", 1)) - 1)
                    for e in t.get("dead_cap_entries", [])]
         t["dead_cap_entries"] = [e for e in entries if e["seasons_left"] > 0]
+    mentor_pos = {p["pos"] for p in current_team(save)["roster"] if p.get("role") == "mentor"}
     breakouts, unlocks, evolution = [], [], []
     for t in save["teams"]:
         my = t["id"] == uid
@@ -3642,6 +3643,8 @@ def _advance_year(save):
             pre_ovr = p["overall"]
             pre_pot = p["potential"]
             bonus = (dev + position_coach_dev(save, p["pos"])) if my else 0   # position coaches
+            if my and p["pos"] in mentor_pos and p.get("age", 30) <= 24 and p.get("role") != "mentor":
+                bonus += 1                                                    # a mentor accelerates the kid
             if my and save.get("weekly_ops", {}).get("focus") == "Rookie Development" and p.get("age", 30) <= 24:
                 bonus += 1                                                    # a season of rookie reps
             started = p.pop("rep_starter", False) if my else False
@@ -7666,7 +7669,58 @@ def _apply_role_friction(save):
     for p in current_team(save)["roster"]:
         if p["id"] in by_id:
             p["morale"] = max(15, p.get("morale", 70) - 8)
+    _apply_role_expectations(save)
     return flagged
+
+
+# --------------------------------------------------------------------------- #
+# PLAYER ROLES — a title beyond the depth chart that sets an expectation. A guy
+# labeled a Starter who loses his job sours; a Mentor accepts the bench and
+# develops a young teammate; role players are content in their niche.
+# --------------------------------------------------------------------------- #
+PLAYER_ROLES = {
+    "cornerstone": {"label": "Franchise Cornerstone", "expects": 0, "content": False, "leader": True,
+                    "blurb": "The face of the franchise — expects to start and be built around."},
+    "captain": {"label": "Captain", "expects": 1, "content": False, "leader": True,
+                "blurb": "A locker-room leader who expects to play."},
+    "starter": {"label": "Starter", "expects": 1, "content": False,
+                "blurb": "Expects a starting job and sours if he loses it."},
+    "rotational": {"label": "Rotational Player", "expects": 3, "content": True,
+                   "blurb": "Happy in a rotation — no starter's ego."},
+    "specialist": {"label": "Specialist", "expects": 99, "content": True,
+                   "blurb": "A situational role player, content with his niche."},
+    "mentor": {"label": "Mentor", "expects": 99, "content": True, "mentor": True,
+               "blurb": "Accepts fewer snaps to develop a young teammate."},
+    "bridge": {"label": "Bridge Starter", "expects": 1, "content": True,
+               "blurb": "A stopgap starter who knows he's keeping the seat warm."},
+    "prospect": {"label": "Developmental Prospect", "expects": 99, "content": True,
+                 "blurb": "A project — wants developmental snaps, patient on the bench."},
+}
+
+
+def set_player_role(save, pid, role):
+    for p in current_team(save)["roster"]:
+        if p["id"] == pid:
+            if role in PLAYER_ROLES:
+                p["role"] = role
+            elif role in ("", "none"):
+                p.pop("role", None)
+            else:
+                return False, "Unknown role."
+            write_save(save)
+            return True, f"{p['name']} is now your {PLAYER_ROLES.get(role, {}).get('label', 'role player') if role in PLAYER_ROLES else 'unassigned'}."
+    return False, "Player not found."
+
+
+def _apply_role_expectations(save):
+    """Yearly: a Starter/Cornerstone buried on the depth chart loses morale; content
+    roles don't mind the bench."""
+    team = current_team(save)
+    for pos in ROSTER:
+        for slot, p in enumerate(pos_depth(team, pos)):
+            role = PLAYER_ROLES.get(p.get("role"))
+            if role and not role.get("content") and slot > role.get("expects", 99):
+                p["morale"] = max(15, p.get("morale", 70) - 7)   # his role expectation was broken
 
 
 def analytics(save):

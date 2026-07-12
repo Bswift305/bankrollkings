@@ -157,6 +157,33 @@
     {% endif %}
   </div>
 
+  {% if is_own is defined and is_own and not prospect and roles is defined %}
+  <div class="fp-card">
+    <div class="fp-h">🎽 Locker-room role{% if cur_role and roles[cur_role] %} — <span style="color:#9fe9ff">{{ roles[cur_role].label }}</span>{% endif %}</div>
+    <p class="fp-muted" style="margin:2px 0 10px">A role sets an expectation. A Cornerstone or Starter who loses his job sours; a Mentor accepts fewer snaps and develops a young teammate at his position; role players are content in their niche.</p>
+    <div class="fp-roles">
+      {% for key, r in roles.items() %}
+      <form method="post" action="{{ url_for('franchise_set_role') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="role" value="{{ key }}">
+        <button class="fp-rolebtn {{ 'on' if cur_role == key }}" title="{{ r.blurb }}">{{ r.label }}</button>
+      </form>
+      {% endfor %}
+      {% if cur_role %}
+      <form method="post" action="{{ url_for('franchise_set_role') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><input type="hidden" name="role" value="none">
+        <button class="fp-rolebtn fp-rolebtn-clear">Clear role</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <style>
+    .fp-roles { display:flex; flex-wrap:wrap; gap:6px; }
+    .fp-rolebtn { border:1px solid rgba(143,163,176,.3); background:rgba(11,24,34,.5); color:#cfe3ee; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .fp-rolebtn.on { outline:2px solid #4ad4f0; color:#fff; }
+    .fp-rolebtn-clear { color:#ff9a9a; border-color:rgba(255,122,122,.35); }
+  </style>
+  {% endif %}
+
   {% if prospect and dev_outlook is defined and dev_outlook %}
   <div class="fp-card fp-outlook fp-outlook-{{ dev_outlook.tier }}">
     <div class="fp-h">🏋 Can your staff develop him?</div>
