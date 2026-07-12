@@ -6810,6 +6810,19 @@ def start_draft(save):
                 pk["owner"] = sw["to"]
                 break
     save["pick_swaps"] = [sw for sw in save.get("pick_swaps", []) if sw.get("season") != season]
+    # Compensatory picks — awarded for net free-agent losses (credits banked when
+    # your guys walked). They're bonus selections at the end of rounds 4-7.
+    credit = int((save.get("offseason") or {}).get("comp_pick_credit", 0) or 0)
+    comp_n = min(4, credit)
+    if comp_n:
+        uid = save["current_team_id"]
+        for i in range(comp_n):
+            picks.append({"r": min(7, 4 + i), "pir": 99, "ov": len(picks) + 1,
+                          "owner": uid, "orig": uid, "comp": True})
+        save["offseason"]["comp_pick_credit"] = 0
+        _tl(save, season, "draft", "\U0001F39F",
+            f"Awarded {comp_n} compensatory pick{'s' if comp_n != 1 else ''}",
+            "Net free-agent losses paid off in extra draft capital.")
     save["draft"] = {"class": cls, "picks": picks, "order": order,
                      "rounds": DRAFT_ROUNDS, "ptr": 0, "user_log": [], "offers": [],
                      "pro_days": 3,   # private-workout visits your scouts can burn
