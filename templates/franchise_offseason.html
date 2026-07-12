@@ -75,7 +75,9 @@
         {% endfor %}
       </select>
       <button class="os-btn os-btn-xs">Restructure</button>
+      <button class="os-btn os-btn-ghost os-btn-xs" name="void" value="1" title="Push ~35% into void years for more relief now — but it all hits as dead money when the deal ends.">Add void years</button>
     </form>
+    <p class="os-sub" style="margin:6px 0 0">Void years free even more cap now by pushing money into fake future years — but every dollar accelerates as dead money the moment the deal ends or you cut him. Cap flexibility today, a bill tomorrow.</p>
   </div>
   {% endif %}
   <p class="os-sub" style="margin-top:8px">Shopping for picks pays out in draft capital when that draft opens. Blocked players draw extra player-for-player offers during the season — and being shopped stings morale either way.</p>
@@ -669,6 +671,7 @@
           {% if sv %}<div style="margin-top:3px"><span class="os-traj os-traj-{{ 'rising' if sv.q >= 1.0 else 'declining' if sv.q <= -0.6 else 'steady' }}">{{ sv.verdict }}</span></div>{% endif %}
           {% if not ct and not sv %}<span style="color:#5f7280">—</span>{% endif %}</td>
         <td style="white-space:nowrap"><form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini os-mini-cut">Cut</button></form>
+        {% if p.dead and p.dead >= 1.0 %}<form method="post" action="{{ url_for('franchise_offseason_cut') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><input type="hidden" name="june1" value="1"><button class="os-mini os-mini-cut" title="Split the dead money over two seasons">Cut (June 1)</button></form>{% endif %}
         <form method="post" action="{{ url_for('franchise_shop_picks') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="pid" value="{{ p.id }}"><button class="os-mini os-mini-trade" name="action" value="shop">Trade</button></form>
         {% if ps_count < ps_max %}<form method="post" action="{{ url_for('franchise_offseason_stash') }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="player_id" value="{{ p.id }}"><button class="os-mini">→ PS</button></form>{% endif %}
         {% if p.dead and p.dead >= 0.3 %}<small style="display:block; color:#ff9a9a; font-size:10px;">cut = ${{ '%.1f'|format(p.dead) }}M dead</small>{% endif %}</td></tr>

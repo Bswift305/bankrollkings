@@ -29870,7 +29870,8 @@ def franchise_offseason_draft():
 def franchise_offseason_cut():
     _, save = _franchise_save()
     if save and fo.offseason_active(save):
-        fo.cut_player(save, str(request.form.get('player_id', '')).strip())
+        fo.cut_player(save, str(request.form.get('player_id', '')).strip(),
+                      june1=request.form.get('june1') == '1')
     return redirect(url_for('franchise_offseason'))
 
 
@@ -30455,7 +30456,11 @@ def franchise_philosophy():
 def franchise_restructure():
     _, save = _franchise_save()
     if save:
-        ok, msg = fk.restructure_contract(save, str(request.form.get('pid', '')).strip())
+        pid = str(request.form.get('pid', '')).strip()
+        if request.form.get('void') == '1':
+            ok, msg = fk.add_void_years(save, pid)
+        else:
+            ok, msg = fk.restructure_contract(save, pid)
         if save.get('offseason'):
             return redirect(url_for('franchise_offseason', block_ok='1' if ok else '0', block_msg=msg))
         return redirect(url_for('franchise_hub', tab='front-office',

@@ -346,6 +346,10 @@ def settle_expiring(save):
             team["roster"] = [x for x in team["roster"] if x["id"] != p["id"]]
             for key in ("on_block", "trade_request", "trade_reason"):
                 p.pop(key, None)
+            void = p.get("contract", {}).get("void_dead", 0) or 0     # void money accelerates when he walks
+            if void >= 0.3:
+                team.setdefault("dead_cap_entries", []).append(
+                    {"name": p["name"], "pos": p["pos"], "amount": round(void, 1), "seasons_left": 1})
             save.setdefault("free_agents", []).append(p)
             walked.append({"id": p["id"], "name": p["name"], "pos": p["pos"], "ovr": p["overall"]})
             sc = my_scenario(save)
@@ -377,13 +381,13 @@ def camp_count(save):
     return len(fk.current_team(save)["roster"])
 
 
-def cut_player(save, player_id):
+def cut_player(save, player_id, june1=False):
     team = fk.current_team(save)
     p = next((x for x in team["roster"] if x["id"] == player_id), None)
     if not p:
         return False
     team["roster"] = [x for x in team["roster"] if x["id"] != player_id]
-    fk.charge_dead_money(team, p)     # his guarantees stay on your cap this year
+    fk.charge_dead_money(team, p, june1=june1)   # guarantees stay; June 1 splits them over two years
     save.setdefault("free_agents", []).append(p)
     fk.write_save(save)
     return True

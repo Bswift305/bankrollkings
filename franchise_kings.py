@@ -867,14 +867,43 @@ def team_dead_cap(team):
     return round(sum(e.get("amount", 0) for e in team.get("dead_cap_entries", [])), 1)
 
 
-def charge_dead_money(team, p):
-    """Cutting a man doesn't erase his guarantees — the shell hits this year's
-    cap as dead money (cleared when the season closes)."""
-    amt = cut_penalty(p)
-    if amt >= 0.3:
-        team.setdefault("dead_cap_entries", []).append(
-            {"name": p["name"], "pos": p["pos"], "amount": amt, "seasons_left": 1})
+def charge_dead_money(team, p, june1=False):
+    """Cutting a man doesn't erase his guarantees — the shell hits the cap as dead
+    money. A June 1 designation splits it over two seasons (relief now, pain later);
+    any void-year money left on the deal accelerates onto the books immediately."""
+    amt = cut_penalty(p) + (p.get("contract", {}).get("void_dead", 0) or 0)
+    if amt < 0.3:
+        return amt
+    entries = team.setdefault("dead_cap_entries", [])
+    if june1:
+        half = round(amt / 2.0, 1)
+        entries.append({"name": p["name"], "pos": p["pos"], "amount": half, "seasons_left": 1})
+        entries.append({"name": p["name"], "pos": p["pos"], "amount": round(amt - half, 1), "seasons_left": 2})
+    else:
+        entries.append({"name": p["name"], "pos": p["pos"], "amount": round(amt, 1), "seasons_left": 1})
     return amt
+
+
+def add_void_years(save, pid):
+    """Void years: push ~35% of a deal's guaranteed money into fake future years for
+    cap relief NOW — but that money becomes dead money the moment the deal ends or
+    you cut him. Once per player per season."""
+    p = next((x for x in current_team(save)["roster"] if x["id"] == pid), None)
+    if not p:
+        return False, "He isn't on your roster."
+    c = p.get("contract") or {}
+    if c.get("voided_season") == save.get("season"):
+        return False, "You already added void years to his deal this season."
+    if int(c.get("years", 0) or 0) < 2:
+        return False, "Need 2+ years left to spread money into void years."
+    relief = round((c.get("aav", 0) or 0) * 0.35, 1)
+    if relief < 0.5:
+        return False, "Not enough salary to make void years worthwhile."
+    c["aav"] = round(c["aav"] - relief, 1)
+    c["void_dead"] = round((c.get("void_dead", 0) or 0) + relief * c["years"], 1)
+    c["voided_season"] = save.get("season")
+    write_save(save)
+    return True, f"Void years added to {p['name']}: ${relief}M/yr freed now, ${c['void_dead']}M in void money owed when the deal ends."
 
 
 def restructure_contract(save, pid):
