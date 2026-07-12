@@ -2295,6 +2295,7 @@ def _user_inseason_power(save, week, base_power):
     sb = staff_bonus(save)
     p = (base_power + sb["power"] + sb["scheme"] + sb["playbook"]["edge"]
          + sb["special_teams"] + atmosphere(save)["home_edge"] + attr_scheme_edge(save))
+    p += scheme_fit_edge(save)                                  # starters' scheme fit (square pegs vs coached-up)
     p += weekly_edge(save)                                      # Command Center: practice + game plan
     p += package_edge(save)                                     # Situational packages matching the weekly plan
     p -= sum(2.5 for x in current_team(save)["roster"] if x.get("holdout"))
@@ -4003,6 +4004,7 @@ def _advance_year(save):
     save["breakouts"] = breakouts
     save["ceiling_unlocks"] = unlocks
     save["evolution_notes"] = evolution[:8]
+    _acclimate_players(save, rng)          # miscast players learn the scheme (coached up)
     for p in current_team(save).get("practice_squad", []):    # PS develops too
         p["age"] += 1
         _develop(p, rng, dev)
@@ -5498,7 +5500,7 @@ def tactical_fit(save, p):
     else:
         pct = base - (20 if lean else 8)
         label = "Square peg" if lean else "Off-scheme"
-    result = {"pct": max(25, min(99, pct)), "label": label, "scheme": scheme, "style": style}
+    result = {"pct": max(25, min(99, pct)), "label": label, "raw_label": label, "scheme": scheme, "style": style}
     if save.get("sim_depth"):
         keys = SCHEME_KEY_ATTRS.get(scheme, {}).get(pos)
         if keys:
@@ -5506,7 +5508,33 @@ def tactical_fit(save, p):
             if adj:
                 result["pct"] = max(20, min(99, result["pct"] + adj))
                 result["attr_adj"] = adj
+    # Coaching up — a miscast player who has LEARNED this scheme plays past his
+    # style. Acclimation (built over seasons by the right coach) softens the hit.
+    if label in ("Square peg", "Off-scheme"):
+        acc = int((p.get("acclimation") or {}).get(scheme, 0))
+        result["acclimation"] = acc
+        if acc >= 10:
+            target = base + 6                          # a coached-up guy plays like a good fit
+            result["pct"] = max(25, min(99, round(result["pct"] + (target - result["pct"]) * min(1.0, acc / 100.0))))
+            result["label"] = "Coached up" if acc >= 85 else (label + " · learning" if acc >= 40 else label)
     return result
+
+
+def scheme_fit_edge(save):
+    """A small, bounded team-power swing from how well your STARTERS fit the
+    installed scheme — square pegs drag Sundays, ideal fits lift them. Because
+    tactical_fit already folds in acclimation, coaching a square peg up literally
+    recovers this power on the field."""
+    if not any(_team_schemes(save)):
+        return 0.0
+    devs = []
+    for p in _starters(current_team(save)):
+        f = tactical_fit(save, p)
+        if f.get("pct") is not None:
+            devs.append(f["pct"] - 62)
+    if not devs:
+        return 0.0
+    return round(max(-1.5, min(1.5, (sum(devs) / len(devs)) * 0.06)), 2)
 
 
 def scheme_value(save, p):
@@ -6023,6 +6051,62 @@ def human_development_fit(save, p):
     return {"score": score, "label": label, "notes": notes[:4],
             "coach": (coach or {}).get("name", ""), "coach_style": coach_style or "",
             "motivation": motivation, "learning": learning, "coach_pref": pref}
+
+
+def scheme_acclimation(save, p):
+    """How far this player has come learning the CURRENT scheme despite not being a
+    natural fit — a 0-100 progress, the coach shaping him, and how fast he's growing.
+    Anyone can be coached up; the right coach just gets there."""
+    fit = tactical_fit(save, p)
+    scheme = fit.get("scheme")
+    if not scheme or fit.get("raw_label") not in ("Square peg", "Off-scheme"):
+        return None
+    env = human_development_fit(save, p)
+    coach = _position_coach(save, p.get("pos")) or _team_coordinator(save, p.get("pos"))
+    rate = max(0, round((env["score"] - 45) * 0.7 + (3 if p.get("age", 30) <= 24 else 0), 1))
+    return {"scheme": scheme, "pct": int((p.get("acclimation") or {}).get(scheme, 0)),
+            "rate": rate, "coach": (coach or {}).get("name", "—"), "env": env["score"],
+            "note": ("the right coach — he's coming along fast" if rate >= 10
+                     else "learning slowly — the right position coach would speed it up" if rate > 0
+                     else "no one's coaching him up — he needs the right voice")}
+
+
+def _team_coordinator(save, pos):
+    st = save.get("staff", {})
+    return st.get("off_coord") if pos in OFFENSE_POS else st.get("def_coord")
+
+
+def _acclimate_players(save, rng):
+    """Yearly: miscast players learn the scheme they're being coached in. Growth is
+    driven by how well the coaching environment fits THIS player. Cross the line and
+    the coach who did it gets the credit."""
+    team = current_team(save)
+    season = save.get("season", 1)
+    for p in team["roster"]:
+        fit = tactical_fit(save, p)
+        scheme = fit.get("scheme")
+        if not scheme or fit.get("raw_label") not in ("Square peg", "Off-scheme"):
+            continue
+        acc = p.setdefault("acclimation", {})
+        cur = int(acc.get(scheme, 0))
+        if cur >= 100:
+            continue
+        env = human_development_fit(save, p)["score"]
+        gain = max(0, (env - 45) * 0.7) + (3 if p.get("age", 30) <= 24 else 0)
+        gain = int(round(gain + rng.random()))
+        if gain <= 0:
+            continue
+        new = min(100, cur + gain)
+        acc[scheme] = new
+        if cur < 70 <= new:                            # coached-up milestone — credit the coach
+            coach = _position_coach(save, p["pos"]) or _team_coordinator(save, p["pos"]) or {}
+            nm = coach.get("name", "the staff")
+            if isinstance(coach, dict) and coach.get("rating"):
+                coach["rating"] = min(99, int(coach["rating"]) + 1)
+                coach["coached_up"] = int(coach.get("coached_up", 0)) + 1
+            _tl(save, season, "staff", "\U0001F393",
+                f"{p['pos']} {p['name']} has been coached up",
+                f"Once a square peg in the {scheme}, he's learned it — {nm} deserves the credit.")
 
 
 def coach_roster_fit(save, coach):

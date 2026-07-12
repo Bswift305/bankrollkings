@@ -30114,6 +30114,7 @@ def franchise_player(pid):
     prof['roles'] = fk.PLAYER_ROLES
     prof['cur_role'] = prof['p'].get('role')
     prof['is_own'] = any(x['id'] == pid for x in fk.current_team(save)['roster'])
+    prof['acclimation'] = fk.scheme_acclimation(save, prof['p']) if prof['is_own'] else None
     return render_template('franchise_player.html', back=url_for('franchise_hub', tab='roster'),
                            current_user=current_user, **prof)
 
