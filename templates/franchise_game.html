@@ -86,6 +86,17 @@
 
   {# ---------------- KEY MOMENTS + INJURIES + CONTEXT ---------------- #}
   <div class="pg-notes">
+    {% if recap.line %}{% set bl = recap.line %}
+    <div class="pg-note">
+      <div class="pg-note-h">📊 Against the line</div>
+      <div>Closing <b>You {{ '%+g'|format(bl.spread) }}</b> · O/U {{ bl.total }}</div>
+      <div class="pg-note-sub">
+        {% if bl.cover == 'cover' %}<span style="color:#7dffb0">✅ Covered</span>{% elif bl.cover == 'push' %}➖ Push{% else %}<span style="color:#ff9a9a">❌ Didn't cover</span>{% endif %}
+        · {{ 'Over' if bl.ou == 'over' else 'Under' if bl.ou == 'under' else 'Push' }} ({{ bl.total_actual }})
+        {% if bl.upset %} · <span style="color:#7dffb0">🔥 upset win</span>{% elif bl.choke %} · <span style="color:#ff9a9a">💀 blew it as a favorite</span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
     {% if recap.key_moment %}
     <div class="pg-note">
       <div class="pg-note-h">🎯 Sideline call</div>

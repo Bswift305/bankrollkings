@@ -29147,6 +29147,7 @@ def _command_center(save):
         'agenda_log': save.get('agenda_log', [])[:4],
         'locker': fk.locker_room(save),
         'playbook': fk.featured_plays_report(save),
+        'line': fk.betting_line(save),
         'groups': [
             {'key': 'intensity', 'title': 'Practice Intensity', 'opts': opts(fk.PRACTICE_INTENSITY, wo.get('intensity'))},
             {'key': 'focus', 'title': 'Practice Focus', 'opts': opts(fk.PRACTICE_FOCUS, wo.get('focus'))},

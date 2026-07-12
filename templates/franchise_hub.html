@@ -703,6 +703,32 @@
     </form>
   </div>
 
+  {% if command_center.line %}{% set bl = command_center.line %}
+  <div class="fk-card fk-line">
+    <div class="fk-card-h">📊 The Line — Week {{ bl.week }} <span class="fk-line-badge">{{ 'HOME' if bl.home else 'AWAY' }} vs {{ bl.opp_short }}</span></div>
+    <div class="fk-line-row">
+      <div class="fk-line-cell"><span>Spread</span><b class="{{ 'fk-glw' if bl.favored else 'fk-gll' }}">You {{ '%+g'|format(bl.spread) }}</b></div>
+      <div class="fk-line-cell"><span>Total</span><b>O/U {{ bl.total }}</b></div>
+      <div class="fk-line-cell"><span>Moneyline</span><b>{{ '%+d'|format(bl.moneyline) }}</b></div>
+      <div class="fk-line-cell"><span>Win prob</span><b>{{ (bl.win_pct * 100)|round|int }}%</b></div>
+    </div>
+    <p class="fk-ccblurb">{% if bl.favored %}You're favored by <b>{{ '%g'|format(-bl.spread) }}</b>.{% else %}You're a <b>{{ '%g'|format(bl.spread) }}-point underdog</b> — spring it and the fans notice.{% endif %} The number reflects your roster, health, weather and <b>this week's game plan</b> — sharpen the plan and watch it move.</p>
+    {% if bl.ats and (bl.ats.cover or bl.ats.no) %}{% set a = bl.ats %}
+    <div class="fk-line-ats">Season ATS <b>{{ a.cover or 0 }}–{{ a.no or 0 }}{% if a.push %}–{{ a.push }}{% endif %}</b> · O/U <b>{{ a.over or 0 }}–{{ a.under or 0 }}</b>{% if a.dog_wins %} · <span class="fk-glw">{{ a.dog_wins }} upset{{ 's' if a.dog_wins != 1 }}</span>{% endif %}{% if a.fav_losses %} · <span class="fk-gll">{{ a.fav_losses }} choke{{ 's' if a.fav_losses != 1 }}</span>{% endif %}</div>
+    {% endif %}
+  </div>
+  <style>
+    .fk-line-badge { float:right; font-size:11px; font-weight:800; color:#8fa3b0; }
+    .fk-line-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:4px 0 6px; }
+    .fk-line-cell { background:rgba(11,24,34,.5); border:1px solid rgba(74,212,240,.18); border-radius:9px; padding:8px; text-align:center; }
+    .fk-line-cell span { display:block; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:#8fa3b0; margin-bottom:3px; }
+    .fk-line-cell b { font-size:17px; color:#fff; font-family:var(--font-display, inherit); }
+    .fk-line-ats { margin-top:8px; font-size:12px; color:#b7c6d0; }
+    .fk-line-ats b { color:#e8f4fb; }
+    @media (max-width:480px){ .fk-line-row { grid-template-columns:repeat(2,1fr); } }
+  </style>
+  {% endif %}
+
   {% if command_center.agenda %}
   <div class="fk-card fk-agenda">
     <div class="fk-card-h">{{ icon('users') }}On your desk <span class="fk-agcount">{{ command_center.agenda|length }}</span></div>

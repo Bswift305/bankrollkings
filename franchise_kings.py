@@ -1947,6 +1947,110 @@ def _game_box(perf, n=5):
             for x in sorted(perf, key=lambda x: -x.get("score", 0))[:n]]
 
 
+# --------------------------------------------------------------------------- #
+# The house line — Bankroll Kings IS a sportsbook, so every franchise game gets a
+# real number. We Monte-Carlo the ACTUAL game model (the same _sim_game +
+# _score_line the week runs on) so the line is honest: a spread, a total, and a
+# moneyline that move with your power — including whatever your weekly game plan
+# adds. The realized game can still beat or miss the number, exactly like Sunday.
+# --------------------------------------------------------------------------- #
+def _american_ml(p):
+    p = max(0.03, min(0.97, p))
+    if p >= 0.5:
+        return -int(round((100 * p / (1 - p)) / 5.0) * 5)     # favorite lays juice
+    return int(round((100 * (1 - p) / p) / 5.0) * 5)          # underdog plus-money
+
+
+def _round_half(x):
+    return round(x * 2) / 2.0
+
+
+def _line_from_powers(home_power, away_power, user_home, seed, sims=600):
+    """Expected spread (user perspective, negative = favored), total, and win
+    probability from a Monte-Carlo of the real game model."""
+    rng = _rng(seed)
+    m_sum = t_sum = wins = 0.0
+    for _ in range(sims):
+        home_win = _sim_game(rng, home_power, away_power)
+        wp, lp = (home_power, away_power) if home_win else (away_power, home_power)
+        ws, ls = _score_line(rng, wp, lp)
+        hp, ap = (ws, ls) if home_win else (ls, ws)
+        up, op = (hp, ap) if user_home else (ap, hp)
+        m_sum += up - op
+        t_sum += up + op
+        wins += 1 if up > op else 0
+    win_pct = wins / sims
+    spread = -_round_half(m_sum / sims)
+    if spread == 0:
+        spread = -0.5 if win_pct >= 0.5 else 0.5
+    return {"spread": spread, "total": _round_half(t_sum / sims),
+            "win_pct": round(win_pct, 3), "moneyline": _american_ml(win_pct)}
+
+
+def _matchup_powers(save, week):
+    """(home_power, away_power, meta) for the user's game this week, computed the
+    same way sim_week does — so the line reflects your plan, injuries and weather."""
+    uid = save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == week and uid in (x["home"], x["away"])), None)
+    if not g:
+        return None
+    teams = {t["id"]: t for t in save["teams"]}
+    opp_id = g["away"] if g["home"] == uid else g["home"]
+    weather = game_weather(save, g["home"], week)
+    user_home = g["home"] == uid
+    u_pow, _out = _user_inseason_power(save, week, power_rating(teams[uid]))
+    o_pow = power_rating(teams[opp_id]) + ai_coach_edge(teams[opp_id])
+    home_power = (u_pow if user_home else o_pow) + weather_power_adjust(teams[g["home"]], weather)
+    away_power = (o_pow if user_home else u_pow) + weather_power_adjust(teams[g["away"]], weather)
+    return {"home_power": home_power, "away_power": away_power, "user_home": user_home,
+            "opp": teams[opp_id], "weather": weather}
+
+
+def betting_line(save):
+    """The sportsbook line on your upcoming game, for the Command Center."""
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    week = iz["week"]
+    mp = _matchup_powers(save, week)
+    if not mp:
+        return None                                          # bye week
+    ln = _line_from_powers(mp["home_power"], mp["away_power"], mp["user_home"],
+                           save["seed"] + week * 7919 + 4242)
+    return {"week": week, "opp": mp["opp"]["full"], "opp_short": mp["opp"].get("name", mp["opp"]["full"]),
+            "home": mp["user_home"], "spread": ln["spread"], "total": ln["total"],
+            "moneyline": ln["moneyline"], "win_pct": ln["win_pct"], "favored": ln["spread"] < 0,
+            "ats": save.get("ats", {})}
+
+
+def _grade_line(save, week, home_power, away_power, user_home, us, them, won):
+    """Grade the closing line against the result, update the season ATS ledger, and
+    return the line result to hang on the recap."""
+    ln = _line_from_powers(home_power, away_power, user_home, save["seed"] + week * 7919 + 4242)
+    margin = us - them
+    cover_margin = round(margin + ln["spread"], 1)             # >0 = covered
+    cover = "push" if cover_margin == 0 else ("cover" if cover_margin > 0 else "no")
+    total_actual = us + them
+    ou = "push" if total_actual == ln["total"] else ("over" if total_actual > ln["total"] else "under")
+    was_dog = ln["spread"] > 0
+    upset = was_dog and won
+    choke = ln["spread"] <= -6.5 and not won
+    ats = save.setdefault("ats", {"cover": 0, "no": 0, "push": 0,
+                                  "over": 0, "under": 0, "ou_push": 0, "dog_wins": 0, "fav_losses": 0})
+    ats[cover] = ats.get(cover, 0) + 1
+    ats["ou_push" if ou == "push" else ou] = ats.get("ou_push" if ou == "push" else ou, 0) + 1
+    if upset:
+        ats["dog_wins"] = ats.get("dog_wins", 0) + 1
+        save["gm"]["fan_support"] = min(100, save["gm"].get("fan_support", 50) + 2)
+    if choke:
+        ats["fav_losses"] = ats.get("fav_losses", 0) + 1
+        save["gm"]["fan_support"] = max(0, save["gm"].get("fan_support", 50) - 2)
+    return {"spread": ln["spread"], "total": ln["total"], "moneyline": ln["moneyline"],
+            "cover": cover, "cover_margin": cover_margin, "ou": ou, "total_actual": total_actual,
+            "was_dog": was_dog, "upset": upset, "choke": choke}
+
+
 def _compose_game_story(rng, won, us, them, my_name, opp_name, star, key_call, weather, round_name=None):
     """A short SportsDesk writeup of one game: a headline, a dek, and a body that
     threads the result, the star line, the sideline call, and the weather. `weather`
@@ -2036,6 +2140,8 @@ def sim_week(save):
             _us, _them = (home_pts, away_pts) if g["home"] == uid else (away_pts, home_pts)
             km = key_moment_summary(save)
             star = {k: st[k] for k in ("name", "pos", "line", "pid")} if st else None
+            line_result = _grade_line(save, week, home_power, away_power, g["home"] == uid,
+                                      _us, _them, win == uid)
             iz["log"].append({"week": week, "opp": opp["full"], "home": g["home"] == uid, "won": win == uid,
                               "us": _us, "them": _them, "weather": weather,
                               "key_moment": km,
@@ -2050,7 +2156,7 @@ def sim_week(save):
                 "my_team": my_team["full"], "my_short": my_team.get("name", my_team["full"]),
                 "weather": weather, "key_moment": km,
                 "my_box": _game_box(mine), "opp_box": _game_box(theirs),
-                "my_summary": my_sum, "opp_summary": opp_sum,
+                "my_summary": my_sum, "opp_summary": opp_sum, "line": line_result,
                 "injuries": list(iz.get("injuries", [])), "incidents": list(iz.get("incidents", [])),
                 "news": _compose_game_story(rng, win == uid, _us, _them,
                                             my_team.get("name", my_team["full"]),
