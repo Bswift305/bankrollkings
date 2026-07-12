@@ -1484,6 +1484,94 @@ def apply_featured_play_morale(save):
             _nudge(save, pl["id"], morale=2 if pl["fits"] else 1, conf=1 if pl["fits"] else 0)
 
 
+# --------------------------------------------------------------------------- #
+# Weather ↔ game plan. The sky doesn't just shave a flat rating — it changes
+# which CONCEPTS work. Wind kills deep shots and long field goals, rain and snow
+# reward the run and punish the deep ball, heat wears everyone down. Your chosen
+# featured plays + game plan meet the forecast, and the Command Center warns you
+# before you lock it in.
+# --------------------------------------------------------------------------- #
+_PLAY_WX_CAT = {"vertical": "deep_pass", "quick_game": "short_pass", "back_pass": "short_pass",
+                "feature_te": "short_pass", "ground": "run_power", "outside_zone": "run_finesse",
+                "qb_runs": "qb_run"}
+
+
+def _upcoming_game_weather(save):
+    iz = save.get("inseason")
+    if not iz:
+        return None
+    week, uid = iz["week"], save["current_team_id"]
+    g = next((x for x in save.get("schedule", [])
+              if x["week"] == week and uid in (x["home"], x["away"])), None)
+    return game_weather(save, g["home"], week) if g else None
+
+
+def _wx_play_delta(cond, windy, cat):
+    d = 0.0
+    if cat == "deep_pass":
+        d -= 0.4 if windy else 0.0
+        d -= 0.25 if cond == "Rain" else 0.35 if cond == "Snow" else 0.0
+    elif cat == "short_pass":
+        d -= 0.1 if windy else 0.0
+        d -= 0.15 if cond == "Rain" else 0.2 if cond == "Snow" else 0.0
+    elif cat == "run_power":
+        d += 0.3 if cond == "Snow" else 0.15 if cond == "Rain" else 0.0
+        d += 0.1 if windy else 0.0
+    elif cat == "run_finesse":
+        d += 0.1 if cond in ("Snow", "Rain") else 0.0
+    elif cat == "qb_run":
+        d -= 0.1 if cond == "Rain" else 0.15 if cond == "Snow" else 0.0
+    return d
+
+
+def weather_plan_edge(save):
+    """Net power swing from how this week's forecast meets your plan (bounded)."""
+    wx = _upcoming_game_weather(save)
+    if not wx or wx["condition"] == "Indoor":
+        return 0.0
+    cond, wind, temp = wx["condition"], wx.get("wind", 0), wx.get("temp", 70)
+    windy = wind >= 15
+    e = sum(_wx_play_delta(cond, windy, _PLAY_WX_CAT.get(k, "")) for k in selected_plays(save))
+    plan = save.get("weekly_ops", {}).get("game_plan", "Balanced")
+    if windy or cond in ("Rain", "Snow"):
+        e += -0.3 if plan == "Aggressive" else 0.15 if plan in ("Conservative", "Protect the Unit") else 0.0
+    if temp >= 90:
+        e -= 0.1                                                 # heat wears down the big guys
+    return round(max(-1.0, min(0.6, e)), 2)
+
+
+def weather_plan_report(save):
+    """Forecast + how it meets your plan, with pre-lock warnings for the Command
+    Center. None on a bye; a dome is flagged as a non-factor."""
+    wx = _upcoming_game_weather(save)
+    if not wx:
+        return None
+    cond, wind, temp = wx["condition"], wx.get("wind", 0), wx.get("temp", 70)
+    if cond == "Indoor":
+        return {"dome": True, "label": wx.get("label", "Dome"), "edge": 0.0, "notes": []}
+    windy = wind >= 15
+    sel = set(selected_plays(save))
+    notes = []
+    if windy:
+        if "vertical" in sel:
+            notes.append({"lvl": "warn", "text": f"{wind} mph wind — Vertical Shots lose their juice downfield."})
+        else:
+            notes.append({"lvl": "info", "text": f"{wind} mph wind favors the run and quick game; long field goals get dicey."})
+    if cond == "Rain":
+        notes.append({"lvl": "warn", "text": "Rain — expect fumbles and sloppy routes; ball security and the run matter."})
+    if cond == "Snow":
+        if "ground" in sel or "outside_zone" in sel:
+            notes.append({"lvl": "good", "text": "Snow — power football weather. Your ground plan fits."})
+        else:
+            notes.append({"lvl": "warn", "text": "Snow — the deep ball dies; lean on the run."})
+    if temp >= 90:
+        notes.append({"lvl": "info", "text": f"{temp}°F — heat wears down the big men late; watch your fronts."})
+    if save.get("weekly_ops", {}).get("game_plan") == "Aggressive" and (windy or cond in ("Rain", "Snow")):
+        notes.append({"lvl": "warn", "text": "An Aggressive downfield plan is risky in this weather."})
+    return {"dome": False, "label": wx.get("label", cond), "condition": cond, "wind": wind,
+            "temp": temp, "edge": weather_plan_edge(save), "notes": notes}
+
+
 def weekly_edge(save):
     """The standing weekly plan's net power edge this Sunday."""
     wo = save.get("weekly_ops", {})
@@ -1491,6 +1579,7 @@ def weekly_edge(save):
     e += GAME_PLANS.get(wo.get("game_plan", "Balanced"), {}).get("edge", 0.0)
     e += key_moment_edge(save)
     e += featured_plays_edge(save)                              # featured plays that fit your personnel
+    e += weather_plan_edge(save)                               # forecast vs your concepts
     if wo.get("scout") == "Opponent":
         e += 0.5
     return round(e, 2)

@@ -784,6 +784,31 @@
   </style>
   {% endif %}
 
+  {% if command_center.conditions %}{% set wx = command_center.conditions %}
+  <div class="fk-card fk-wx">
+    <div class="fk-card-h">🌦 Game Conditions <span class="fk-wx-label">{{ wx.label }}{% if not wx.dome and wx.edge %} · <b class="{{ 'fk-glw' if wx.edge > 0 else 'fk-gll' }}">{{ '%+.2f'|format(wx.edge) }} power</b>{% endif %}</span></div>
+    {% if wx.dome %}
+    <p class="fk-ccblurb">Indoors — weather is a non-factor this week. Call it however you like.</p>
+    {% elif wx.notes %}
+    <div class="fk-wx-notes">
+      {% for n in wx.notes %}
+      <div class="fk-wx-note fk-wx-{{ n.lvl }}">{{ '⚠️' if n.lvl == 'warn' else '✅' if n.lvl == 'good' else 'ℹ️' }} {{ n.text }}</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="fk-ccblurb">Clear and calm — no weather impact on the plan.</p>
+    {% endif %}
+  </div>
+  <style>
+    .fk-wx-label { float:right; font-size:12px; color:#b7c6d0; font-weight:700; }
+    .fk-wx-notes { display:grid; gap:6px; }
+    .fk-wx-note { font-size:12.5px; border-radius:8px; padding:7px 10px; line-height:1.4; }
+    .fk-wx-warn { background:rgba(255,122,122,.1); border:1px solid rgba(255,122,122,.32); color:#ffb3b3; }
+    .fk-wx-good { background:rgba(125,255,176,.1); border:1px solid rgba(125,255,176,.34); color:#9fe9c0; }
+    .fk-wx-info { background:rgba(145,168,184,.1); border:1px solid rgba(145,168,184,.28); color:#c2cfd8; }
+  </style>
+  {% endif %}
+
   {% if command_center.quant and command_center.quant.proj %}{% set q = command_center.quant %}
   <div class="fk-card fk-quant">
     <div class="fk-card-h">📈 GridIron Quant Desk
