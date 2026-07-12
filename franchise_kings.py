@@ -2243,6 +2243,7 @@ def sim_week(save):
                                             opp.get("name", opp["full"]), star,
                                             km.get("call", "Balanced"), weather),
             }
+            _log_player_games(save, mine, week)     # feed the storyline/streak detector
     standings = sorted(save["teams"], key=lambda t: (t["record"]["w"], powers.get(t["id"], 0)), reverse=True)
     save["standings_cache"] = [{"id": t["id"], "full": t["full"], "conf": t["conference"],
                                "div": t["division"], "w": t["record"]["w"], "l": t["record"]["l"]} for t in standings]
@@ -2942,6 +2943,7 @@ def _finalize_after_postseason(save):
     generate_news(save)
     save.pop("inseason", None)
     save.pop("postseason", None)                   # the playoff run is over; card lives on playoff_run
+    save.pop("pgl", None)                           # per-player game log resets for the new season
     for t in save["teams"]:
         for p in t["roster"]:
             p.pop("out_until", None)
@@ -8009,6 +8011,106 @@ def stat_mvp(teams):
                 best, score = {"name": p["name"], "pos": p["pos"], "team": t["full"],
                                "ovr": p["overall"], "line": stat_line(p)}, v
     return best
+
+
+# --------------------------------------------------------------------------- #
+# The world reacts — a LIVE awards race and box-score storylines from the stats
+# the season is actually producing (not just an end-of-year recap). Cheap, and
+# it gives the in-season week real personality.
+# --------------------------------------------------------------------------- #
+def _mvp_score(s):
+    return (s.get("pass_yd", 0) * 0.04 + s.get("pass_td", 0) * 4 - s.get("int", 0) * 2
+            + s.get("rush_yd", 0) * 0.05 + s.get("rush_td", 0) * 6
+            + s.get("rec_yd", 0) * 0.05 + s.get("rec_td", 0) * 6 + s.get("sack", 0) * 4)
+
+
+def awards_race(save):
+    """The live MVP ladder + statistical leaders, mid-season, from real totals."""
+    if not save.get("inseason"):
+        return None
+    uid = save["current_team_id"]
+    teams = save["teams"]
+    if not any(p.get("stats") for t in teams for p in t["roster"]):
+        return None
+    ladder = sorted(((_mvp_score(p.get("stats") or {}), p, t) for t in teams for p in t["roster"]
+                     if p.get("stats")), key=lambda x: -x[0])
+    mvp = [{"rank": i + 1, "name": p["name"], "pos": p["pos"], "team": t.get("name", t["full"]),
+            "line": stat_line(p), "you": t["id"] == uid, "pid": p["id"]}
+           for i, (v, p, t) in enumerate(ladder[:5])]
+    cats = [("Passing", "pass_yd"), ("Rushing", "rush_yd"), ("Receiving", "rec_yd"), ("Sacks", "sack")]
+    leaders = []
+    for label, key in cats:
+        rows = sorted([(p, t) for t in teams for p in t["roster"] if (p.get("stats") or {}).get(key)],
+                      key=lambda x: -x[0]["stats"][key])[:3]
+        if rows:
+            leaders.append({"label": label, "rows": [
+                {"name": p["name"], "pos": p["pos"], "team": t.get("name", t["full"]),
+                 "val": p["stats"][key], "you": t["id"] == uid, "pid": p["id"]} for p, t in rows]})
+    return {"mvp": mvp, "leaders": leaders, "week": save["inseason"]["week"]}
+
+
+def _skill_prod(p):
+    s = p.get("stats") or {}
+    return (s.get("pass_yd", 0) * 0.04 + s.get("pass_td", 0) * 4 + s.get("rush_yd", 0) * 0.06
+            + s.get("rush_td", 0) * 6 + s.get("rec_yd", 0) * 0.06 + s.get("rec_td", 0) * 6)
+
+
+def team_storylines(save):
+    """Box-score storylines about YOUR team: a big game, a WR1 controversy, a TD
+    streak, a young breakout. Each carries a pid so the UI can link the player."""
+    if not save.get("inseason"):
+        return []
+    team = current_team(save)
+    stories = []
+    lg = save.get("last_game") or {}
+    box = lg.get("my_box") or []
+    if box:                                            # 1) hot hand — a big last game
+        top = box[0]
+        g = top.get("g") or {}
+        tds = g.get("pass_td", 0) + g.get("rush_td", 0) + g.get("rec_td", 0)
+        if g.get("pass_yd", 0) >= 300 or g.get("rush_yd", 0) >= 110 or g.get("rec_yd", 0) >= 110 or tds >= 3:
+            stories.append({"icon": "🔥", "kind": "hot", "pid": top.get("pid"),
+                            "head": f"{top['pos']} {top['name']} went off", "sub": top["line"]})
+    wrs = sorted([p for p in team["roster"] if p["pos"] == "WR" and (p.get("stats") or {}).get("rec_yd")],
+                 key=lambda p: -p["stats"]["rec_yd"])
+    if len(wrs) >= 2:                                  # 2) WR1 controversy
+        w1, w2 = wrs[0], wrs[1]
+        y1, y2 = w1["stats"]["rec_yd"], w2["stats"]["rec_yd"]
+        if y1 >= 250 and y2 >= 0.9 * y1:
+            stories.append({"icon": "📣", "kind": "wr", "pid": w2["id"],
+                            "head": "A WR1 question in the room",
+                            "sub": f"{w2['name']} ({y2} yds) is right on {w1['name']} ({y1}) — who's the go-to guy?"})
+    pgl = save.get("pgl") or {}                        # 3) TD streak
+    for p in team["roster"]:
+        recent = (pgl.get(p["id"]) or [])[-3:]
+        if len(recent) >= 3 and all((g.get("rush_td", 0) + g.get("rec_td", 0) + g.get("pass_td", 0)) > 0
+                                    for g in recent):
+            stories.append({"icon": "⚡", "kind": "streak", "pid": p["id"],
+                            "head": f"{p['pos']} {p['name']}: TD in {len(recent)} straight",
+                            "sub": "He's finding the end zone every week."})
+            break
+    young = sorted([p for p in team["roster"] if p.get("age", 30) <= 23 and _skill_prod(p) > 0],
+                   key=lambda p: -_skill_prod(p))
+    if young and _skill_prod(young[0]) >= 55:          # 4) young breakout
+        yb = young[0]
+        stories.append({"icon": "🌟", "kind": "young", "pid": yb["id"],
+                        "head": f"{yb['pos']} {yb['name']} is breaking out",
+                        "sub": f"A {yb['age']}-year-old already producing: {stat_line(yb)}."})
+    return stories[:4]
+
+
+def _log_player_games(save, perf, week):
+    """Append each skill player's single-game line to the per-player game log
+    (last 6 games) so storylines can spot streaks and trends."""
+    pgl = save.setdefault("pgl", {})
+    for b in perf:
+        g = b.get("g")
+        if not g or b.get("pos") not in ("QB", "RB", "WR", "TE"):
+            continue
+        lst = pgl.setdefault(b["pid"], [])
+        lst.append({"wk": week, **{k: g.get(k, 0) for k in
+                    ("pass_yd", "pass_td", "rush_yd", "rush_td", "rec", "rec_yd", "rec_td")}})
+        del lst[:-6]
 
 
 # --------------------------------------------------------------------------- #

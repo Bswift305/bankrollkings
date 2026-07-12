@@ -80,6 +80,61 @@
   </div>
   {% endif %}
 
+  {% if storylines %}
+  <div class="fk-card fk-story">
+    <div class="fk-card-h">📰 Around your team</div>
+    {% for s in storylines %}
+    <a class="fk-story-row" {% if s.pid %}href="{{ url_for('franchise_player', pid=s.pid) }}"{% endif %}>
+      <span class="fk-story-ico">{{ s.icon }}</span>
+      <span class="fk-story-txt"><b>{{ s.head }}</b><span>{{ s.sub }}</span></span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if awards and awards.mvp %}{% set aw = awards %}
+  <div class="fk-card fk-awards">
+    <div class="fk-card-h">🏆 Awards Race <span class="fk-aw-wk">through Week {{ aw.week - 1 }}</span></div>
+    <div class="fk-aw-mvp">
+      <div class="fk-aw-h">MVP Ladder</div>
+      {% for m in aw.mvp %}
+      <a class="fk-aw-row {{ 'fk-aw-you' if m.you }}" {% if m.pid %}href="{{ url_for('franchise_player', pid=m.pid) }}"{% endif %}>
+        <span class="fk-aw-rank">{{ m.rank }}</span>
+        <span class="fk-aw-name">{{ m.pos }} {{ m.name }} <small>{{ m.team }}{% if m.you %} · YOU{% endif %}</small></span>
+        <span class="fk-aw-line">{{ m.line }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% if aw.leaders %}
+    <div class="fk-aw-leaders">
+      {% for c in aw.leaders %}
+      <div class="fk-aw-cat">
+        <div class="fk-aw-catlbl">{{ c.label }}</div>
+        {% for r in c.rows %}<div class="fk-aw-lrow {{ 'fk-aw-you' if r.you }}"><span>{{ r.pos }} {{ r.name }}</span><b>{{ '{:,}'.format(r.val) if r.val is integer else r.val }}</b></div>{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <style>
+    .fk-story-row { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid rgba(143,163,176,.12); text-decoration:none; }
+    .fk-story-row:first-of-type { border-top:0; }
+    .fk-story-ico { font-size:18px; flex:0 0 auto; }
+    .fk-story-txt b { display:block; color:#e8f4fb; font-size:13.5px; } .fk-story-txt span { color:#9fb0bc; font-size:12px; }
+    .fk-aw-wk { float:right; font-size:11px; color:#8fa3b0; font-weight:700; }
+    .fk-aw-h, .fk-aw-catlbl { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent,#4ad4f0); font-weight:800; margin-bottom:5px; }
+    .fk-aw-row { display:flex; align-items:baseline; gap:9px; padding:4px 0; text-decoration:none; }
+    .fk-aw-rank { flex:0 0 18px; text-align:center; font-weight:800; color:#8fa3b0; font-size:12px; }
+    .fk-aw-name { flex:1; color:#e8f4fb; font-size:13px; font-weight:600; } .fk-aw-name small { color:#8fa3b0; font-weight:400; }
+    .fk-aw-line { color:#9fb0bc; font-size:11.5px; white-space:nowrap; }
+    .fk-aw-you { background:rgba(74,212,240,.08); border-radius:6px; }
+    .fk-aw-leaders { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:12px; padding-top:10px; border-top:1px dashed rgba(143,163,176,.2); }
+    .fk-aw-lrow { display:flex; justify-content:space-between; font-size:12px; color:#c2cfd8; padding:2px 4px; border-radius:5px; }
+    .fk-aw-lrow b { color:#fff; }
+    @media (max-width:480px){ .fk-aw-leaders { grid-template-columns:1fr; } }
+  </style>
+  {% endif %}
+
   <div class="fk-card fk-gmcard">
     <div class="fk-gmpic">
       {% if avatar_url %}<img src="{{ avatar_url }}" alt="GM photo">
@@ -767,17 +822,16 @@
 
   {% if command_center.props and command_center.props.props %}{% set pp = command_center.props %}
   <div class="fk-card fk-props">
-    <div class="fk-card-h">🎯 Player Props <span class="fk-props-vs">vs {{ pp.opp_short }}</span></div>
+    <div class="fk-card-h">📺 Media Prop Watch <span class="fk-props-vs">vs {{ pp.opp_short }}</span></div>
     <div class="fk-props-list">
       {% for p in pp.props %}
       <div class="fk-prop">
         <a class="fk-prop-name" href="{{ url_for('franchise_player', pid=p.pid) }}">{{ p.pos }} {{ p.name }}</a>
-        <span class="fk-prop-line"><b>O/U {{ '%g'|format(p.line) }}</b> {{ p.unit }}</span>
-        <span class="fk-prop-proj">proj {{ '%g'|format(p.proj) }}</span>
+        <span class="fk-prop-line"><b>{{ '%g'|format(p.line) }}</b> projected {{ p.unit }}</span>
       </div>
       {% endfor %}
     </div>
-    <p class="fk-ccblurb">Projections from the same stat engine the game runs on. Featured plays and a sharper game plan push your guys' numbers up.</p>
+    <p class="fk-ccblurb">The desk's projections for your key guys, from the same stat engine the game runs on. Featured plays and a sharper game plan push these up — the recap shows who beat their number.</p>
   </div>
   <style>
     .fk-props-vs { float:right; font-size:12px; color:#8fa3b0; font-weight:700; }

@@ -29313,6 +29313,8 @@ def _franchise_view(save):
         'game_log': save.get('game_log'),
         'playoff_run': save.get('playoff_run'),
         'postseason': save.get('postseason'),
+        'awards': fk.awards_race(save),
+        'storylines': fk.team_storylines(save),
         'news': save.get('news'),
         'evolution_notes': save.get('evolution_notes') or [],
         'broadcast': fk.broadcast(save),

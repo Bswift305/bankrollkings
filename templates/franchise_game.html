@@ -99,11 +99,11 @@
     {% endif %}
     {% if recap.props %}
     <div class="pg-note">
-      <div class="pg-note-h">🎯 Player props</div>
+      <div class="pg-note-h">📺 Prop watch</div>
       {% for p in recap.props %}
       <div class="pg-prop">
         <span class="pg-prop-name">{{ p.pos }} {{ p.name }}</span>
-        <span class="pg-prop-res">{{ '%g'|format(p.actual) }} / {{ '%g'|format(p.line) }} {% if p.result == 'over' %}<span style="color:#7dffb0">OVER</span>{% else %}<span style="color:#ff9a9a">under</span>{% endif %}</span>
+        <span class="pg-prop-res">{{ '%g'|format(p.actual) }} vs {{ '%g'|format(p.line) }} proj {% if p.result == 'over' %}<span style="color:#7dffb0">✅ beat</span>{% else %}<span style="color:#9fb0bc">short</span>{% endif %}</span>
       </div>
       {% endfor %}
     </div>
