@@ -28709,6 +28709,28 @@ FANTASY_SCORING_SYSTEMS = {
     'yahoo': {'label': 'Yahoo', 'weights': {'PTS': 1.0, 'REB': 1.2, 'AST': 1.5, 'STL': 3.0, 'BLK': 3.0, 'TOV': -1.0}, 'dd_bonus': False},
 }
 FANTASY_DEFAULT_SCORING = 'dk'
+
+# Season-long football scoring. Weights are per-stat multipliers on the NFL
+# gamelog columns (PassYd/PassTD/PassInt/RushYd/RushTD/Rec/RecYd/RecTD). The
+# three formats differ ONLY in the per-reception weight (1 / 0.5 / 0).
+_NFL_BASE_WEIGHTS = {'PassYd': 0.04, 'PassTD': 4.0, 'PassInt': -2.0,
+                     'RushYd': 0.1, 'RushTD': 6.0, 'RecYd': 0.1, 'RecTD': 6.0}
+FOOTBALL_SCORING_SYSTEMS = {
+    'ppr': {'label': 'PPR', 'weights': {**_NFL_BASE_WEIGHTS, 'Rec': 1.0}},
+    'half_ppr': {'label': 'Half-PPR', 'weights': {**_NFL_BASE_WEIGHTS, 'Rec': 0.5}},
+    'standard': {'label': 'Standard', 'weights': {**_NFL_BASE_WEIGHTS, 'Rec': 0.0}},
+}
+FOOTBALL_DEFAULT_SCORING = 'ppr'
+
+
+def _fantasy_scoring_systems(sport_key):
+    return FOOTBALL_SCORING_SYSTEMS if sport_key == 'nfl' else FANTASY_SCORING_SYSTEMS
+
+
+def _fantasy_default_scoring(sport_key):
+    return FOOTBALL_DEFAULT_SCORING if sport_key == 'nfl' else FANTASY_DEFAULT_SCORING
+
+
 FANTASY_SIM_DRAWS = 2000
 FANTASY_CONTEXT_SHIFT_CAP = 15.0  # max +/- % the live context layer may move a sim
 FANTASY_MATCHUP_SHIFT_CAP = 6.0   # max +/- % the opponent-defense layer may move a sim
@@ -28795,20 +28817,33 @@ def _fantasy_points_nba(frame, scoring=FANTASY_DEFAULT_SCORING):
     return fp
 
 
-def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
+def _fantasy_points_nfl(frame, scoring=FOOTBALL_DEFAULT_SCORING):
+    """Football fantasy points per gamelog row under the chosen scoring format."""
+    system = FOOTBALL_SCORING_SYSTEMS.get(scoring, FOOTBALL_SCORING_SYSTEMS[FOOTBALL_DEFAULT_SCORING])
+    fp = pd.Series(0.0, index=frame.index)
+    for col, weight in system['weights'].items():
+        fp = fp + pd.to_numeric(frame.get(col, 0), errors='coerce').fillna(0) * weight
+    return fp
+
+
+def _build_fantasy_projection_rows(sport_key, scoring=None):
     if sport_key == 'nba':
         logs = load_gamelogs()
+        scoring = scoring if scoring in FANTASY_SCORING_SYSTEMS else FANTASY_DEFAULT_SCORING
+        fp_series = lambda w: _fantasy_points_nba(w, scoring=scoring)
     elif sport_key == 'nfl':
-        # Football fantasy scoring needs the passing/rushing/receiving feed —
-        # rankings open automatically once NFL_GameLogs.csv has season data
-        # AND a football FP formula is added here.
-        return []
+        try:
+            logs = _load_cached_csv(DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv')
+        except Exception:
+            logs = None
+        scoring = scoring if scoring in FOOTBALL_SCORING_SYSTEMS else FOOTBALL_DEFAULT_SCORING
+        fp_series = lambda w: _fantasy_points_nfl(w, scoring=scoring)
     else:
         return []
     if logs is None or logs.empty or 'Player' not in logs.columns:
         return []
     working = logs.copy()
-    working['FP'] = _fantasy_points_nba(working, scoring=scoring)
+    working['FP'] = fp_series(working)
     working['DateParsed'] = pd.to_datetime(working.get('Date'), errors='coerce')
     working = working.sort_values('DateParsed')
     team_map = build_current_team_map(working)
@@ -28832,9 +28867,20 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
             for _, row in frame.iterrows()
         }
 
-    position_map = _player_column_map(DATA_DIR / 'rosters' / 'NBA_Rosters.csv', ['Position'])
-    advanced_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv', ['USG_PCT', 'TS_PCT', 'AST_PCT'])
-    tracking_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv', ['TOUCHES', 'DRIVES', 'AVG_SPEED', 'DIST_MILES'])
+    if sport_key == 'nfl':
+        # Position rides on the NFL gamelog itself (last logged spot per player);
+        # no advanced/tracking layer for football yet.
+        position_map = {}
+        if 'Position' in working.columns:
+            for name, grp in working.groupby('Player'):
+                pos = grp['Position'].dropna()
+                if not pos.empty:
+                    position_map[str(name).strip()] = {'Position': str(pos.iloc[-1]).strip()}
+        advanced_map, tracking_map = {}, {}
+    else:
+        position_map = _player_column_map(DATA_DIR / 'rosters' / 'NBA_Rosters.csv', ['Position'])
+        advanced_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv', ['USG_PCT', 'TS_PCT', 'AST_PCT'])
+        tracking_map = _player_column_map(DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv', ['TOUCHES', 'DRIVES', 'AVG_SPEED', 'DIST_MILES'])
 
     def _stat_round(mapping, player_name, column, digits=1, scale=1):
         value = _safe_float((mapping.get(player_name) or {}).get(column))
@@ -28863,7 +28909,8 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
         fp = group['FP']
         l5_avg = float(fp.tail(5).mean())
         avg = float(fp.mean())
-        minutes = pd.to_numeric(group.get('MIN'), errors='coerce').dropna()
+        minutes = (pd.to_numeric(group['MIN'], errors='coerce').dropna()
+                   if 'MIN' in group.columns else pd.Series(dtype=float))
 
         # Monte Carlo: simulate FANTASY_SIM_DRAWS games by resampling the
         # player's real logged games, weighted toward recent form. Drawing
@@ -28946,27 +28993,31 @@ def _build_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
     return rows
 
 
-def get_fantasy_projection_rows(sport_key, scoring=FANTASY_DEFAULT_SCORING):
+def get_fantasy_projection_rows(sport_key, scoring=None):
     paths = {'nba': DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv', 'nfl': DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv'}
     path = paths.get(sport_key)
     if path is None:
         return []
-    if scoring not in FANTASY_SCORING_SYSTEMS:
-        scoring = FANTASY_DEFAULT_SCORING
+    systems = _fantasy_scoring_systems(sport_key)
+    if scoring not in systems:
+        scoring = _fantasy_default_scoring(sport_key)
     # Version on EVERY input: gamelogs AND the injury-context files, so a
     # fresh injury report invalidates cached sims (see PROJECT_MAP §3).
-    version = _build_file_token(
-        path,
-        DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
-        DATA_DIR / 'injuries' / 'NBA_Injuries_Manual.csv',
-        DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
-        DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv',
-        DATA_DIR / 'injuries' / 'Teammate_Boosts.csv',
-        DATA_DIR / 'odds' / 'NBA_Odds.csv',
-        DATA_DIR / 'rosters' / 'NBA_Rosters.csv',
-        DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv',
-        DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv',
-    )
+    if sport_key == 'nfl':
+        version = _build_file_token(path, DATA_DIR / 'injuries' / 'NFL_Injuries.csv')
+    else:
+        version = _build_file_token(
+            path,
+            DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
+            DATA_DIR / 'injuries' / 'NBA_Injuries_Manual.csv',
+            DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
+            DATA_DIR / 'injuries' / 'Active_Return_Impacts.csv',
+            DATA_DIR / 'injuries' / 'Teammate_Boosts.csv',
+            DATA_DIR / 'odds' / 'NBA_Odds.csv',
+            DATA_DIR / 'rosters' / 'NBA_Rosters.csv',
+            DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv',
+            DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv',
+        )
     return _get_disk_ttl_cached_value(
         f'fantasy_projections_{sport_key}_{scoring}_sim',
         6 * 3600,
@@ -29044,9 +29095,10 @@ def fantasy_league(league):
     current_user = get_current_user()
     if not current_user:
         return redirect(url_for('login', next=build_requested_path()))
-    scoring = str(request.args.get('scoring', FANTASY_DEFAULT_SCORING)).strip().lower()
-    if scoring not in FANTASY_SCORING_SYSTEMS:
-        scoring = FANTASY_DEFAULT_SCORING
+    systems = _fantasy_scoring_systems(league_key)
+    scoring = str(request.args.get('scoring', _fantasy_default_scoring(league_key))).strip().lower()
+    if scoring not in systems:
+        scoring = _fantasy_default_scoring(league_key)
     projection_rows = get_fantasy_projection_rows(league_key, scoring=scoring)
     return render_template(
         'fantasy_league.html',
@@ -29057,7 +29109,7 @@ def fantasy_league(league):
         my_lineups=list_fantasy_lineups_for_user(current_user, sport_key=league_key),
         current_user=current_user,
         scoring=scoring,
-        scoring_options=[(key, system['label']) for key, system in FANTASY_SCORING_SYSTEMS.items()],
+        scoring_options=[(key, system['label']) for key, system in systems.items()],
     )
 
 

@@ -68,7 +68,7 @@
         </div>
         <div class="p-16">
             <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
-                <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life (big minutes lift points, rebounds, and assists together). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good night vs a bad night, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; DraftKings (incl. double-double bonuses), FanDuel, or Yahoo. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. The sims also react to tonight's situation: the live injury report (teammate out boosts a player's simulated games, a star returning suppresses them &mdash; the &plusmn;% chip next to a name, hover for the reason) and the matchup (when a player's team is on the odds board, <strong style="color: var(--text-bright);">Opp</strong> shows the opponent and whether that defense gives up more or less fantasy production than average &mdash; Soft / Neutral / Tough, shifting the sims a few %). All shifts combined are capped at &plusmn;15% so situation noise can't swamp real form. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
+                <strong style="color: var(--text-bright);">Proj</strong> is simulation-driven: we simulate 2,000 games per player by resampling their real logged games weighted toward recent form &mdash; drawing whole games keeps stats correlated the way they are in real life ({% if sport_key == 'nfl' %}a heavy workload lifts yards and touchdowns together{% else %}big minutes lift points, rebounds, and assists together{% endif %}). <strong style="color: var(--text-bright);">Ceiling/Floor</strong> are the 90th/10th percentile of those simulations (a good {% if sport_key == 'nfl' %}week{% else %}night{% endif %} vs a bad one, not all-time extremes), and <strong style="color: var(--text-bright);">Boom%</strong> is how often the sims land 20%+ above projection. Fantasy points follow the scoring style you pick &mdash; {% if sport_key == 'nfl' %}PPR, Half-PPR, or Standard{% else %}DraftKings (incl. double-double bonuses), FanDuel, or Yahoo{% endif %}. <strong style="color: var(--text-bright);">Avg</strong>/<strong style="color: var(--text-bright);">L5</strong> are the raw season and last-5 baselines; <strong style="color: var(--text-bright);">Trend</strong> is L5 minus Avg. The sims also react to tonight's situation: the live injury report (teammate out boosts a player's simulated games, a star returning suppresses them &mdash; the &plusmn;% chip next to a name, hover for the reason) and the matchup (when a player's team is on the odds board, <strong style="color: var(--text-bright);">Opp</strong> shows the opponent and whether that defense gives up more or less fantasy production than average &mdash; Soft / Neutral / Tough, shifting the sims a few %). All shifts combined are capped at &plusmn;15% so situation noise can't swamp real form. Columns marked <span class="badge" style="font-size:9px; padding:1px 6px;">SOON</span> land with the slate data feed: salaries, value (FP per $1K), and projected ownership.
             </div>
             {% if projection_rows %}
             <style>#fantasy-rankings-table.adv-hidden .col-adv { display: none; }</style>
@@ -76,7 +76,8 @@
                 <input type="search" id="fantasy-search" placeholder="Search player or team..." style="width: 240px; max-width: 100%;">
                 <label style="font-size:11px; color:var(--text-muted);">Pos</label>
                 <span id="fantasy-pos-filter" style="display:flex; gap:6px;">
-                    {% for pos_key, pos_label in [('', 'All'), ('G', 'Guards'), ('F', 'Forwards'), ('C', 'Centers')] %}
+                    {% set pos_chips = [('', 'All'), ('QB', 'QB'), ('RB', 'RB'), ('WR', 'WR'), ('TE', 'TE')] if sport_key == 'nfl' else [('', 'All'), ('G', 'Guards'), ('F', 'Forwards'), ('C', 'Centers')] %}
+                    {% for pos_key, pos_label in pos_chips %}
                     <button type="button" class="btn btn-sm {% if pos_key == '' %}btn-primary{% else %}btn-secondary{% endif %} fantasy-pos-btn" data-pos="{{ pos_key }}">{{ pos_label }}</button>
                     {% endfor %}
                 </span>
@@ -86,7 +87,7 @@
                     <option value="{{ key }}" {% if key == scoring %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <button type="button" class="btn btn-secondary btn-sm" id="fantasy-adv-toggle" title="Show usage / true shooting / assist rate (play-by-play) plus touches, drives, speed, and miles (optical player tracking)">Show PBP + Tracking</button>
+                {% if sport_key != 'nfl' %}<button type="button" class="btn btn-secondary btn-sm" id="fantasy-adv-toggle" title="Show usage / true shooting / assist rate (play-by-play) plus touches, drives, speed, and miles (optical player tracking)">Show PBP + Tracking</button>{% endif %}
             </div>
             <div class="table-scroll" style="max-height: 60vh;">
                 <table class="data-table adv-hidden" id="fantasy-rankings-table">
@@ -97,7 +98,7 @@
                             <th data-sort="team">Team</th>
                             <th data-sort="pos">Pos</th>
                             <th data-sort="games">GP</th>
-                            <th data-sort="minutes">Min (L10)</th>
+                            {% if sport_key != 'nfl' %}<th data-sort="minutes">Min (L10)</th>{% endif %}
                             <th data-sort="sim_proj" title="Mean of 2,000 simulated games, recency-weighted">Proj</th>
                             <th data-sort="fp_avg">Avg</th>
                             <th data-sort="fp_l5">L5</th>
@@ -134,7 +135,7 @@
                             <td>{{ row.team }}</td>
                             <td>{{ row.pos or '-' }}</td>
                             <td>{{ row.games }}</td>
-                            <td>{{ row.minutes if row.minutes is not none else '-' }}</td>
+                            {% if sport_key != 'nfl' %}<td>{{ row.minutes if row.minutes is not none else '-' }}</td>{% endif %}
                             <td><strong style="color: var(--text-bright);">{{ row.sim_proj }}</strong></td>
                             <td>{{ row.fp_avg }}</td>
                             <td>{{ row.fp_l5 }}</td>

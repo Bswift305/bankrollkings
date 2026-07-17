@@ -21,6 +21,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         ("Football line movement", _python("refresh_football_line_movement.py"), 600),
         ("Futures odds movement", _python("refresh_futures_odds.py"), 420),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
+        # Rebuild the per-game NFL fantasy gamelog from the historical/current
+        # player-stats extracts (preseason baselines on last season; converges as
+        # the year plays out). Cheap; keeps NFL fantasy rankings fresh.
+        ("NFL fantasy gamelogs", _python("build_nfl_gamelogs.py"), 180),
     ]
     if "mlb" in sports:
         steps.append(("MLB daily refresh", _python("refresh_mlb_daily.py"), 900))
