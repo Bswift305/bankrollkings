@@ -11,7 +11,10 @@ ROUTES = (
     ("/sports/nfl/game-lines?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
     ("/sports/nfl/totals?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
     ("/sports/nfl/trends?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
-    ("/sports/nfl/props?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
+    # Props is the shared screener (props.html), not a method board — assert the
+    # markers it actually renders (board decision columns), mirroring the NBA
+    # check. The method-board markers above only exist on football_method_board.html.
+    ("/sports/nfl/props?postseason=1", ("Market", "Confidence", "Player")),
 )
 
 

@@ -905,6 +905,18 @@
     </div>
     <div class="table-scroll-hint">Scroll left to right to see the full prop breakdown.</div>
 </div>
+{% else %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">Prop Analysis</div>
+        <span class="badge">No active props</span>
+    </div>
+    <div class="p-16" style="color: var(--text-muted); font-size: 13px; line-height: 1.6;">
+        No live prop lines for this player right now — the board is quiet (offseason or between slates).
+        <strong style="color: var(--text-bright);">Why it matters:</strong> the moment the market posts his lines, this
+        section breaks down each prop's hit rate, streak, market gate, and verdict — and explains <strong>why it ranked where it did</strong>.
+    </div>
+</div>
 {% endif %}
 
 {% if trend_profiles %}
