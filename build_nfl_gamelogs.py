@@ -57,7 +57,8 @@ def _week_to_date(season, week):
 def build():
     files = sorted(glob.glob(os.path.join(HIST, "NFL_PlayerStats_*.csv")))
     if not files:
-        raise SystemExit("No NFL_PlayerStats_*.csv found in data/historical/")
+        print("build_nfl_gamelogs: no NFL_PlayerStats_*.csv source — skipping (nothing to rebuild).")
+        return
 
     # Position map from EVERY year that carries positions (older files do; the
     # 2025 extract does not) — player -> most-common position group.
