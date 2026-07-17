@@ -192,7 +192,22 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 - College hoops (ncaamb/ncaawb): real live data. The Command Center hub and the themed
   pre-season shells for Props/Market/Trends/Parlay are all built (see §4); what remains is
   wiring actual college data/boards when the season tips off.
-- **NFL Fantasy build plan (for season approach — agreed 2026-06-10).** Build order:
+- **NFL Fantasy — LIVE (2026-07-17).** Real PPR/Half-PPR/Standard rankings now render.
+  `FOOTBALL_SCORING_SYSTEMS` + `_fantasy_points_nfl` + a sport-aware
+  `_build_fantasy_projection_rows`/`get_fantasy_projection_rows`/`fantasy_league`
+  route + sport-aware `fantasy_league.html` (QB/RB/WR/TE chips, no NBA
+  minutes/PBP/tracking on football). Data: `build_nfl_gamelogs.py` builds
+  `data/gamelogs/NFL_GameLogs.csv` from `data/historical/NFL_PlayerStats_<yr>.csv`
+  (last 3 seasons; normalizes the 2025 extract's abbreviated names back to full via
+  team; resolves position), wired into `run_daily.py` `_active_refresh_steps`.
+  Preseason baseline = last seasons; recency weighting converges as 2026 games land.
+  **STILL OPEN:** the SOURCE `NFL_PlayerStats_<yr>.csv` is built LOCALLY (from pbp)
+  and is gitignored — I one-time scp'd 2023-25 to prod. For IN-SEASON freshness,
+  a current-season `NFL_PlayerStats_2026.csv` must flow to prod (wire
+  `build_nfl_player_stats_from_pbp.py` for the current season into the prod
+  football refresh) so the daily gamelog rebuild has fresh input; today it's static
+  off 2023-25. Calibration benchmark vs FantasyPros (old step 4) still not built.
+- **(historical) NFL Fantasy build plan (for season approach — agreed 2026-06-10).** Build order:
   1. Scoring formats: add PPR / Half-PPR / Standard to `FANTASY_SCORING_SYSTEMS` (season-long
      NFL equivalent of the DK/FD/Yahoo switcher; same pattern, football weights).
   2. Football FP formula in `_build_fantasy_projection_rows` once `NFL_GameLogs.csv` has
