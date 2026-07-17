@@ -28738,10 +28738,15 @@ FANTASY_MATCHUP_SHIFT_CAP = 6.0   # max +/- % the opponent-defense layer may mov
 
 def _load_fantasy_upcoming_opponents(sport_key):
     """{team_abbr: opponent_abbr} for teams with a game on the current odds
-    board — lets the sim apply tonight's matchup and fill the Opp column."""
-    if sport_key != 'nba':
+    board — lets the sim apply this week's matchup and fill the Opp column."""
+    if sport_key == 'nba':
+        path = DATA_DIR / 'odds' / 'NBA_Odds.csv'
+        abbr = lambda row, side: TEAM_NAME_TO_ABBR.get(str(row.get(side + 'Full') or row.get(side) or '').strip())
+    elif sport_key == 'nfl':
+        path = DATA_DIR / 'odds' / 'NFL_Odds.csv'   # NFL odds already carry team abbreviations
+        abbr = lambda row, side: str(row.get(side) or '').strip().upper() or None
+    else:
         return {}
-    path = DATA_DIR / 'odds' / 'NBA_Odds.csv'
     if not path.exists():
         return {}
     odds = _load_cached_csv(path)
@@ -28749,8 +28754,7 @@ def _load_fantasy_upcoming_opponents(sport_key):
         return {}
     opponents = {}
     for _, row in odds.iterrows():
-        away = TEAM_NAME_TO_ABBR.get(str(row.get('AwayFull') or row.get('Away') or '').strip())
-        home = TEAM_NAME_TO_ABBR.get(str(row.get('HomeFull') or row.get('Home') or '').strip())
+        away, home = abbr(row, 'Away'), abbr(row, 'Home')
         if away and home:
             opponents[away] = home
             opponents[home] = away
@@ -28765,6 +28769,27 @@ def _build_fantasy_context_maps(sport_key):
     by sample size, and capped."""
     boost_map = {}
     return_map = {}
+    if sport_key == 'nfl':
+        # Football has a raw injury report but no derived beneficiary model, so we
+        # SUPPRESS injured players (they miss games) rather than fabricate boosts.
+        try:
+            inj = _load_cached_csv(DATA_DIR / 'injuries' / 'NFL_Injuries.csv')
+        except Exception:
+            inj = None
+        if inj is not None and not inj.empty and {'Player', 'Status'}.issubset(inj.columns):
+            # Only GENUINE absences move season-long value. "Questionable" is a
+            # game-time coin flip (and the offseason feed defaults ~everyone to it),
+            # so it is deliberately excluded — Doubtful and worse only.
+            severity = [('OUT', 15.0), ('INJURED RESERVE', 15.0), ('IR', 15.0), ('PUP', 15.0),
+                        ('SUSPEND', 15.0), ('DOUBTFUL', 10.0)]
+            for _, r in inj.iterrows():
+                name = str(r.get('Player') or '').strip()
+                status = str(r.get('Status') or '').strip().upper()
+                pct = next((v for k, v in severity if k in status), 0.0)
+                if name and pct:
+                    return_map[name.lower()] = {'pct': pct, 'returning': status.title(),
+                                                'note': f"-{pct:.0f}% ({str(r.get('Status') or '').strip()})"}
+        return boost_map, return_map
     if sport_key != 'nba':
         return boost_map, return_map
     try:
@@ -28934,7 +28959,8 @@ def _build_fantasy_projection_rows(sport_key, scoring=None):
         suppression = return_map.get(player_key)
         if suppression:
             context_shift -= suppression['pct']
-            context_notes.append(f"-{suppression['pct']:.0f}% if {suppression['returning']} returns")
+            context_notes.append(suppression.get('note')
+                                 or f"-{suppression['pct']:.0f}% if {suppression['returning']} returns")
         context_shift = max(-FANTASY_CONTEXT_SHIFT_CAP, min(FANTASY_CONTEXT_SHIFT_CAP, context_shift))
 
         # Matchup layer: if the player's team has a game on the odds board,
@@ -29004,7 +29030,8 @@ def get_fantasy_projection_rows(sport_key, scoring=None):
     # Version on EVERY input: gamelogs AND the injury-context files, so a
     # fresh injury report invalidates cached sims (see PROJECT_MAP §3).
     if sport_key == 'nfl':
-        version = _build_file_token(path, DATA_DIR / 'injuries' / 'NFL_Injuries.csv')
+        version = _build_file_token(path, DATA_DIR / 'injuries' / 'NFL_Injuries.csv',
+                                    DATA_DIR / 'odds' / 'NFL_Odds.csv')
     else:
         version = _build_file_token(
             path,
