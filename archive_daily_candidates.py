@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+from season_utils import active_sports
+
 from app import (
     app,
     CANDIDATE_ARCHIVE_PATH,
@@ -57,6 +59,21 @@ def archive_routes():
 
 
 def archive_trends():
+    # The trend board is built from historical gamelogs, so it keeps producing
+    # rows in the offseason -- but with no slate those picks reference games that
+    # will never be played, so they sit Pending forever. That archived 120
+    # unresolvable NBA rows EVERY day (3,608 stuck Pending by 2026-07-18 against
+    # only 163 genuinely graded), swamping the real record and making the NBA
+    # track record unreadable.
+    #
+    # active_sports() treats a sport as in-season when its props file has at
+    # least one data row, so this re-enables itself automatically when the
+    # season returns. Only ARCHIVING is gated -- the trend board stays available
+    # as an offseason research surface over last season's logs.
+    if 'NBA' not in active_sports():
+        print("archive_trends: NBA has no live props (offseason) - skipping trend archive.")
+        return 0
+
     logs = load_gamelogs()
     props = load_props()
     snapshot = load_player_snapshot()
