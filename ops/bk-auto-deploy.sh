@@ -54,12 +54,20 @@ if ! sudo systemctl restart "$SERVICE"; then
 fi
 
 # Confirm it actually came back up rather than assuming the restart worked.
-for _ in $(seq 1 10); do
-    sleep 2
+#
+# curl already prints 000 itself when it cannot connect, so `|| echo 000` would
+# APPEND a second 000 -- yielding "000000", which is != 000 and would report a
+# false green on a service that never came back. Assign on failure instead.
+#
+# The window is generous because gunicorn runs with preload_app plus a prewarm:
+# it routinely needs longer than a few seconds before it answers, and a probe
+# that gives up early would flag a healthy deploy as failed.
+for _ in $(seq 1 20); do
+    sleep 3
     STATE=$(systemctl is-active "$SERVICE")
     [ "$STATE" = active ] || continue
-    CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" || echo 000)
-    if [ "$CODE" != 000 ]; then
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" 2>/dev/null) || CODE=000
+    if [ -n "$CODE" ] && [ "$CODE" != 000 ]; then
         echo "deployed $(git rev-parse --short HEAD) | service: $STATE | probe: HTTP $CODE"
         exit 0
     fi
