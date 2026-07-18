@@ -48,6 +48,13 @@ def confidence_band(value) -> str:
     if pd.isna(score):
         return "Unknown"
     score = float(score)
+    # Floor matters: without it every sub-60 confidence -- including a prop the
+    # model correctly rated 0.5% -- was labelled "50-60" and therefore judged
+    # against a 55% expected hit rate. That manufactured ~-49% "gaps" and
+    # [LYING BUCKETS] verdicts for markets the model was rating correctly (MLB
+    # home-run / stolen-base OVERs carry 0.5%-15% confidence by design).
+    if score < 50:
+        return "Below 50"
     if score < 60:
         return "50-60"
     if score < 70:
@@ -196,10 +203,30 @@ def resolved_only(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["OutcomeState"].isin(["Hit", "Miss"])].copy()
 
 
+def bucket_expected_rate(df: pd.DataFrame, config: CalibrationConfig, conf_band: str) -> float | None:
+    """The rate this bucket's rows were actually predicted to hit.
+
+    Calibration means comparing the model's OWN predicted probabilities against
+    the observed frequency, so the expected rate is the mean of the rows'
+    confidence values. The previous behaviour -- taking the single most common
+    confidence band and using its midpoint -- silently mis-scored every bucket
+    whose rows span more than one band, because one midpoint stood in for props
+    rated anywhere from 0.5% to 59%.
+
+    Falls back to the band midpoint only when the confidence column is absent.
+    """
+    column = config.confidence_source_column
+    if column in df.columns:
+        confidence = pd.to_numeric(df[column], errors="coerce").dropna()
+        if not confidence.empty:
+            return float(confidence.mean()) / 100.0
+    return expected_hit_rate(conf_band)
+
+
 def summarize_bucket(df: pd.DataFrame, label: str, config: CalibrationConfig) -> BucketResult:
     sample_size = int(len(df))
     conf_band = str(df["ConfidenceBand"].mode().iloc[0]) if "ConfidenceBand" in df.columns and not df.empty else "Unknown"
-    expected_rate = expected_hit_rate(conf_band)
+    expected_rate = bucket_expected_rate(df, config, conf_band)
     actual_rate = float(df["OutcomeState"].eq("Hit").mean()) if sample_size else None
     classification, recommendation, gap = classify_bucket(label, sample_size, actual_rate, expected_rate, config.recommendation_fn)
     return BucketResult("", label, sample_size, expected_rate, actual_rate, gap, classification, recommendation)

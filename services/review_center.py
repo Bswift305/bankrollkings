@@ -1946,6 +1946,13 @@ def expected_hit_rate_from_confidence(confidence: float) -> float | None:
     if pd.isna(confidence):
         return None
     value = float(confidence)
+    # Floor: without it every sub-55 confidence collapsed to a 52.5% expectation,
+    # so a long shot the model correctly rated 0.5% (MLB home-run / stolen-base
+    # OVERs live at 0.5%-15% by design) was scored against a coin-flip and read
+    # as underperformance. Below the lowest band a prop's own stated confidence
+    # IS its expected hit rate; bands above 50 keep their established midpoints.
+    if value < 50:
+        return round(value, 1)
     if value < 55:
         return 52.5
     if value < 60:
