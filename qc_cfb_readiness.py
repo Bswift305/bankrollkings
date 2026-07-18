@@ -18,7 +18,12 @@ ROUTES = (
     ("/sports/ncaaf/game-lines?postseason=1", ("Current Team Signals", "Top Returning Teams")),
     ("/sports/ncaaf/totals?postseason=1", ("Top Returning Teams", "Current Team Signals")),
     ("/sports/ncaaf/trends?postseason=1", ("Current Team Signals", "Top Returning Teams")),
-    ("/sports/ncaaf/props?postseason=1", ("Optional Props", "Current Team Signals")),
+    # Props is the shared screener (props.html via render_props_screener_page),
+    # not the method board — assert the board decision columns it actually renders,
+    # mirroring the nfl_visual_trust check. The method-board markers ("Optional
+    # Props", "Current Team Signals") only exist on football_method_board.html,
+    # which serves ncaaf game-lines/totals/trends but NOT props.
+    ("/sports/ncaaf/props?postseason=1", ("Market", "Confidence", "Player")),
 )
 
 
