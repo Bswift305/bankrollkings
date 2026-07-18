@@ -13,11 +13,27 @@ from qc_platform_routes import _ensure_qc_user
 from services.qc_tracking import append_qc_run_log
 
 
+# A CFB method board renders one of two equally-honest states depending on
+# whether the market has posted lines for the slate yet:
+#   * preseason  -> the current-season framework (returning production, team
+#                   signals) because there is no board to show;
+#   * live slate -> the actual game board (market columns + "<Method> Slate").
+# Assert EITHER, so a board that has correctly flipped to live market data does
+# not read as a failure. This bites in July: prod has real odds (books post Week
+# 1 lines early) and renders live, while a dev box with an empty NCAAF_Odds.csv
+# stays preseason. Trends has no live-slate mode today but carries the same
+# markers so it stays correct if that changes.
+_PRESEASON_MARKERS = ("Current Team Signals", "Top Returning Teams")
+_LIVE_BOARD_MARKERS = ("Matchups", "Book Source")
+
 ROUTES = (
     ("/sports/ncaaf?postseason=1", ("Roster Coverage", "Top Returning Teams")),
-    ("/sports/ncaaf/game-lines?postseason=1", ("Current Team Signals", "Top Returning Teams")),
-    ("/sports/ncaaf/totals?postseason=1", ("Top Returning Teams", "Current Team Signals")),
-    ("/sports/ncaaf/trends?postseason=1", ("Current Team Signals", "Top Returning Teams")),
+    ("/sports/ncaaf/game-lines?postseason=1",
+     _PRESEASON_MARKERS + _LIVE_BOARD_MARKERS + ("Game Lines Slate",)),
+    ("/sports/ncaaf/totals?postseason=1",
+     _PRESEASON_MARKERS + _LIVE_BOARD_MARKERS + ("Totals Slate",)),
+    ("/sports/ncaaf/trends?postseason=1",
+     _PRESEASON_MARKERS + _LIVE_BOARD_MARKERS),
     # Props is the shared screener (props.html via render_props_screener_page),
     # not the method board — assert the board decision columns it actually renders,
     # mirroring the nfl_visual_trust check. The method-board markers ("Optional
