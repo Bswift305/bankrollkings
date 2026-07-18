@@ -26,7 +26,32 @@ unrelated to this app.
 
 ## 2. Deploy to production
 
-No CI/CD. Manual:
+**Deploy = `git push origin master`. That is the whole procedure.**
+
+The server polls for you: `bk-deploy.timer` runs `/usr/local/bin/bk-auto-deploy.sh`
+every 2 minutes, which fetches `origin/master` and — only when it has moved —
+does `git pull --ff-only` + `systemctl restart bankrollkings`, then probes the app
+to confirm it came back up. Nothing happens on a tick with no new commits.
+
+Watch a deploy land:
+```bash
+journalctl -u bk-deploy.service -n 20 --no-pager     # or -f to follow
+```
+
+Why this exists: SSH is IP-allowlisted in the security group, and a churning
+egress IP (hotel wifi / cellular) silently blocks port 22 — which repeatedly
+stranded pushed commits undeployed. Pulling instead of pushing removes SSH from
+the deploy path entirely.
+
+The script lives at `/usr/local/bin/bk-auto-deploy.sh`, deliberately **outside**
+the repo (bash reads scripts incrementally, so a pull rewriting the running
+script could splice old and new lines). Version-controlled reference copy plus
+the unit files are in `ops/`; after editing, reinstall with:
+```bash
+sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh
+```
+
+Manual deploy (only needed if the timer is stopped, or to skip the ≤2min wait):
 
 ```bash
 git push origin master
@@ -34,6 +59,10 @@ ssh -i ~/.ssh/bankroll-key.pem ubuntu@32.195.123.245
 cd /opt/bankrollkings && git pull origin master
 sudo systemctl restart bankrollkings        # NOT reload
 ```
+
+A failed tick (network blip, diverged tree) exits non-zero and leaves the service
+running on the old commit — it never half-deploys, and the timer retries on the
+next tick rather than disabling itself.
 
 **LESSON (cost us hours):** gunicorn runs with `preload_app=True`, so `systemctl reload`
 (a HUP) does **NOT** reliably pick up `app.py` **or** template changes — new workers fork

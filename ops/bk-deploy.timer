@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll for new Bankroll Kings commits every 2 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=bk-deploy.service
+
+[Install]
+WantedBy=timers.target

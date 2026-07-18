@@ -1,0 +1,12 @@
+[Unit]
+Description=Bankroll Kings auto-deploy (poll origin/master, pull + restart on change)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+ExecStart=/usr/local/bin/bk-auto-deploy.sh
+# A failed tick (network blip, diverged tree) must not disable the timer.
+SuccessExitStatus=0 1
