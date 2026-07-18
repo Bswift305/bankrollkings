@@ -25,6 +25,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.
         ("NFL fantasy gamelogs", _python("build_nfl_gamelogs.py"), 180),
+        # College football roster/stats/returning-production/portal + player master.
+        # This lived only in batch/REFRESH_FOOTBALL_DATA.bat (Windows dev box), so
+        # prod had a valid CFBD_API_KEY but no refresh path and every NCAAF data
+        # file was missing. Self-skips when CFBD_API_KEY is absent.
+        ("CFB data refresh", _python("refresh_cfb_data.py"), 2400),
     ]
     if "mlb" in sports:
         steps.append(("MLB daily refresh", _python("refresh_mlb_daily.py"), 900))
