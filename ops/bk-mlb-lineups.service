@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh MLB lineups and re-archive MLB curated picks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+# Lineups post progressively before first pitch, so bk-daily's 13:00 UTC (09:00 ET)
+# run is too early for most slates. Re-fetch, then re-archive: the candidate
+# archive dedupes on SnapshotDate+Method+Player+Stat+Direction+Line (keep=last),
+# so repeat runs update the day's picks rather than duplicating them.
+ExecStart=/opt/bankrollkings/venv/bin/python fetch_mlb_lineups.py
+ExecStart=/opt/bankrollkings/venv/bin/python archive_daily_candidates.py --sports mlb --skip-routes
+# A single bad tick must not disable the chain.
+SuccessExitStatus=0 1

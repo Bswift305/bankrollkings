@@ -2326,7 +2326,49 @@ def load_mlb_props():
     dedupe_cols = [col for col in ['Player', 'Stat', 'MarketKey', 'Line', 'Game', 'Book'] if col in combined.columns]
     if dedupe_cols:
         combined = combined.drop_duplicates(subset=dedupe_cols, keep='last')
+    combined = _attach_mlb_lineup_status(combined)
     return combined.reset_index(drop=True)
+
+
+def _attach_mlb_lineup_status(props):
+    """Join confirmed lineups / probable starters onto MLB prop rows.
+
+    `classify_mlb_lineup_gate()` reads LineupStatus / BattingOrder off the prop
+    row, but the props feed is an ODDS feed and carries neither, so every batter
+    prop fell through to a permanent "LINEUP PENDING" -- which downgraded every
+    MLB curated pick to CONFLICTED/PASS and, because archiving requires a PLAY
+    verdict, left MLB with essentially no graded track record.
+
+    Joined on (Player, Game) rather than Player alone: names repeat across the
+    league, and a wrong team's batting order is worse than no lineup at all.
+    Missing rows keep their existing pending behavior, which stays correct for
+    games whose lineups have not been posted yet.
+    """
+    path = DATA_DIR / 'lineups' / 'MLB_Lineups.csv'
+    if props.empty or not path.exists() or 'Player' not in props.columns:
+        return props
+    lineups = _load_cached_csv(path)
+    if lineups.empty or 'Player' not in lineups.columns:
+        return props
+
+    lineups = lineups.copy()
+    # Props label a game "Away@Home"; the lineup rows carry Team/Opponent plus the
+    # side, so rebuild the same key from whichever side the row belongs to.
+    side = lineups.get('Side', pd.Series('', index=lineups.index)).astype(str).str.strip().str.lower()
+    team = lineups.get('Team', pd.Series('', index=lineups.index)).astype(str).str.strip()
+    opponent = lineups.get('Opponent', pd.Series('', index=lineups.index)).astype(str).str.strip()
+    lineups['_game'] = np.where(side.eq('home'), opponent + '@' + team, team + '@' + opponent)
+    lineups['_player'] = lineups['Player'].astype(str).str.strip().str.lower()
+    keep = ['_player', '_game', 'LineupStatus', 'BattingOrder']
+    lineups = lineups[[col for col in keep if col in lineups.columns]].drop_duplicates(
+        subset=['_player', '_game'], keep='last'
+    )
+
+    merged = props.copy()
+    merged['_player'] = merged['Player'].astype(str).str.strip().str.lower()
+    merged['_game'] = merged.get('Game', pd.Series('', index=merged.index)).astype(str).str.strip()
+    merged = merged.merge(lineups, on=['_player', '_game'], how='left')
+    return merged.drop(columns=['_player', '_game'], errors='ignore')
 
 
 def load_nfl_props():
@@ -4895,6 +4937,9 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
     cache_version = _build_file_token(
         DATA_DIR / 'props' / 'MLB_Props.csv',
         DATA_DIR / 'props' / 'MLB_Props_Fallback.csv',
+        # Lineups gate the play verdict, so a refreshed lineup file MUST bust this
+        # cache or the board keeps serving pre-lineup "PENDING" verdicts all day.
+        DATA_DIR / 'lineups' / 'MLB_Lineups.csv',
         DATA_DIR / 'odds' / 'MLB_Odds.csv',
         DATA_DIR / 'schedules' / 'MLB_Schedule.csv',
         DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
@@ -5293,6 +5338,9 @@ def build_mlb_method_board(method_key, props_df, odds_df, schedule_df, gamelogs=
     cache_version = _build_file_token(
         DATA_DIR / 'props' / 'MLB_Props.csv',
         DATA_DIR / 'props' / 'MLB_Props_Fallback.csv',
+        # Lineups gate the play verdict, so a refreshed lineup file MUST bust this
+        # cache or the board keeps serving pre-lineup "PENDING" verdicts all day.
+        DATA_DIR / 'lineups' / 'MLB_Lineups.csv',
         DATA_DIR / 'odds' / 'MLB_Odds.csv',
         DATA_DIR / 'schedules' / 'MLB_Schedule.csv',
         DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',

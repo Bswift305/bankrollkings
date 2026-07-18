@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly MLB lineup refresh + curated-pick archive (lineup posting window)
+
+[Timer]
+# 15:00-02:00 UTC = 11:00-22:00 ET: covers lineups posting for afternoon slates
+# through the end of west-coast games.
+OnCalendar=*-*-* 15,16,17,18,19,20,21,22,23,00,01,02:25:00
+Persistent=true
+AccuracySec=1min
+Unit=bk-mlb-lineups.service
+
+[Install]
+WantedBy=timers.target

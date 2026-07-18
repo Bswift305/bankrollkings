@@ -25,6 +25,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.
         ("NFL fantasy gamelogs", _python("build_nfl_gamelogs.py"), 180),
+        # Confirmed MLB lineups. Without these every batter prop is stuck on
+        # "LINEUP PENDING", which downgrades the verdict and blocks archiving.
+        # This run is early for most slates (see bk-mlb-lineups.timer, which
+        # re-fetches and re-archives through the afternoon as lineups post).
+        ("MLB lineups", _python("fetch_mlb_lineups.py"), 180),
         # College football roster/stats/returning-production/portal + player master.
         # This lived only in batch/REFRESH_FOOTBALL_DATA.bat (Windows dev box), so
         # prod had a valid CFBD_API_KEY but no refresh path and every NCAAF data
