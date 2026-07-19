@@ -5244,6 +5244,32 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
             verdict_note = 'The market lean is still light here, so this reads more like a lean than a true play.'
             guardrail_tags.append('LIGHT EDGE')
 
+        # Long-shot overs are the most expensive thing on the board, and this is a
+        # property of the PRICE, not of market structure -- so it is applied
+        # additively rather than in the verdict chain above. Every qualifying row
+        # here is already caught by ONE SIDED (extreme overs rarely have an under
+        # price posted), which would have made this unreachable as an elif.
+        #
+        # Measured across 171,476 graded MLB + WNBA props at real prices, OVER ROI
+        # by implied probability is monotonic:
+        #     <15%  -40.9%   15-25%  -20.4%   35-45%  -11.4%   70%+  -6.5%
+        # The EDGE is near-constant (-2.6 to -4.8 points) in every band. What changes
+        # is what that edge COSTS: a miss forfeits a full unit while the win pays back
+        # only a fraction of one, so the same small mispricing is six times more
+        # expensive at long odds. Unders run -1.6% to -3.2% and are nowhere near this.
+        over_implied = _longshot_over_implied(market_price) if direction == 'OVER' else None
+        if over_implied is not None and float(over_implied) < 0.25:
+            implied_pct = float(over_implied) * 100
+            cost_note = '-41%' if implied_pct < 15 else '-20%'
+            if play_verdict == 'PLAY':
+                play_verdict = 'CONFLICTED'
+            if not verdict_note:
+                verdict_note = (
+                    f'Long-shot over at roughly {implied_pct:.0f}% implied. Overs priced this '
+                    f'long returned about {cost_note} per bet in the graded record.'
+                )
+            guardrail_tags.append('LONGSHOT OVER')
+
         lineup_gate = classify_mlb_lineup_gate(stat, primary_row)
         if lineup_gate.get('status') == 'PENDING':
             if play_verdict == 'PLAY':
@@ -22193,6 +22219,20 @@ def american_odds_to_implied_prob(american_odds):
     if odds > 0:
         return round(100 / (odds + 100), 4)
     return round(abs(odds) / (abs(odds) + 100), 4)
+
+
+def _longshot_over_implied(american_odds):
+    """Implied probability as a 0-1 fraction, or None if it cannot be read.
+
+    Wraps american_odds_to_implied_prob for the board guardrails, which run over
+    raw feed values that may be blank, non-numeric or a sentinel. Never raises:
+    a guardrail that throws would take down the whole board render, and the
+    correct behaviour for an unreadable price is simply "no opinion".
+    """
+    try:
+        return american_odds_to_implied_prob(american_odds)
+    except (TypeError, ValueError):
+        return None
 
 
 def prob_to_american_odds(probability):
