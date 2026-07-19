@@ -9671,6 +9671,9 @@ def load_candidate_archive():
         # Trend signals: what the boards filter on and what we point at users.
         'StreakLen', 'ConsistencyIndex', 'Follow3Rate', 'Follow5Rate', 'ActiveStreaks',
         'PatternHits', 'PatternWindow',
+        # Streak attribution: the candidate reasons a run continues.
+        'Follow3Chances', 'Follow5Chances', 'AvgGap', 'MarketRate', 'TrendScore',
+        'FloorHitRate', 'ConsistencyLabel', 'LongestRun',
         'Avg', 'WeightedOverRate', 'WeightedUnderRate', 'MarketPrice', 'CurrentLine',
         'OpenLine', 'CloseLine', 'BetLine', 'OpenPrice', 'ClosePrice', 'BetPrice',
         'LineMove', 'ClvLine', 'ClvPricePct', 'MarketGapPct', 'MarketViewLabel', 'MarketViewNote',
@@ -10656,6 +10659,35 @@ def archive_trend_candidates(rows, postseason_only=False, sample_mode='current',
             'Follow3Rate': row.get('follow_3_rate'),
             'Follow5Rate': row.get('follow_5_rate'),
             'ActiveStreaks': row.get('active_streaks'),
+            # WHY the streak might continue, as data rather than prose. A streak
+            # is not an edge by itself -- graded WNBA picks show 4-of-5 patterns
+            # hitting WORSE than 3-of-5 -- so what matters is whether there is a
+            # durable reason behind it. These are the candidate reasons:
+            #
+            #   Follow*Chances  sample size behind the follow-through rate. A
+            #                   rate with 0 chances is noise, and the board emits
+            #                   exactly that (follow_3_rate=None, chances=0), so
+            #                   storing the rate WITHOUT this would mislead.
+            #   AvgGap          margin the player clears/misses the line by.
+            #                   Clearing by 4.2 is durable; by 0.3 is a coin flip
+            #                   wearing a streak's clothes.
+            #   MarketRate      the book's own rate on the same side, so we can
+            #                   separate "player is hot" from "already priced in".
+            #   TrendScore/FloorHitRate/ConsistencyLabel  the engine's own reads.
+            'Follow3Chances': row.get('follow_3_chances'),
+            'Follow5Chances': row.get('follow_5_chances'),
+            'AvgGap': (row.get('over_avg_gap')
+                       if str(row.get('current_run_side', '')).strip().lower() == 'over'
+                       else row.get('under_avg_gap')),
+            'MarketRate': (row.get('market_over_rate')
+                           if str(row.get('current_run_side', '')).strip().lower() == 'over'
+                           else row.get('market_under_rate')),
+            'TrendScore': row.get('trend_score'),
+            'FloorHitRate': row.get('floor_hit_rate'),
+            'ConsistencyLabel': row.get('consistency_label'),
+            'LongestRun': (row.get('over_longest')
+                           if str(row.get('current_run_side', '')).strip().lower() == 'over'
+                           else row.get('under_longest')),
             'Avg': row.get('avg'),
             'WeightedOverRate': row.get('market_over_rate') if row.get('market_over_rate') is not None else row.get('over_rate'),
             'WeightedUnderRate': row.get('market_under_rate') if row.get('market_under_rate') is not None else row.get('under_rate'),
