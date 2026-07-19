@@ -4118,6 +4118,43 @@ MLB_STAT_COLUMN_MAP = {
 }
 
 
+# Football prop stat -> gamelog column. Without this, grading looked up the raw
+# prop name ("REC YDS") against gamelog columns ("RecYd"), never matched, and
+# left every football pick Pending forever -- archiving worked, grading silently
+# did not. NBA needs no map only because its prop stats already ARE its gamelog
+# column names (PTS/REB/AST), which is why the gap went unnoticed.
+#
+# Keys are UPPERCASE because archive_method_candidates upper-cases Stat on write.
+# Source of truth for the names is MARKET_STAT_MAP in fetch_player_props.py;
+# columns come from build_nfl_gamelogs.py.
+FOOTBALL_STAT_COLUMN_MAP = {
+    'PASS YDS': 'PassYd',
+    'PASSING YARDS': 'PassYd',
+    'PASS_YDS': 'PassYd',
+    'PASS TDS': 'PassTD',
+    'PASSING TDS': 'PassTD',
+    'PASS_TDS': 'PassTD',
+    'INTERCEPTIONS': 'PassInt',
+    'PASS INTERCEPTIONS': 'PassInt',
+    'RUSH YDS': 'RushYd',
+    'RUSHING YARDS': 'RushYd',
+    'RUSH_YDS': 'RushYd',
+    'RUSH TDS': 'RushTD',
+    'RUSHING TDS': 'RushTD',
+    'RECEPTIONS': 'Rec',
+    'REC YDS': 'RecYd',
+    'RECEIVING YARDS': 'RecYd',
+    'REC_YDS': 'RecYd',
+    'REC TDS': 'RecTD',
+    'RECEIVING TDS': 'RecTD',
+    'TARGETS': 'Targets',
+}
+# Markets with no gamelog equivalent are deliberately absent rather than mapped
+# to a lookalike column: "Pass Completions", "Rush Att" and "Anytime TD" have no
+# counterpart in the NFL gamelog, so those picks stay ungraded (and now Void)
+# instead of being scored against the wrong stat.
+
+
 def load_mlb_all_prop_results():
     path = DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv'
     if path.exists():
@@ -11293,6 +11330,11 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
             return combined_key
         if sport_key == 'MLB':
             return MLB_STAT_COLUMN_MAP.get(stat_key) or MLB_STAT_COLUMN_MAP.get(combined_key) or stat_key
+        if sport_key in {'NFL', 'NCAAF'}:
+            upper = stat_key.upper()
+            return (FOOTBALL_STAT_COLUMN_MAP.get(upper)
+                    or FOOTBALL_STAT_COLUMN_MAP.get(str(combined_key or '').upper())
+                    or stat_key)
         return stat_key
 
     for idx, row in graded.iterrows():
