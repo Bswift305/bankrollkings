@@ -9668,6 +9668,9 @@ def load_candidate_archive():
         # returns df[default_columns], so a column missing HERE is silently
         # dropped on read even though archive_method_candidates wrote it.
         'ModelProb', 'SimProb', 'MarketProb', 'LeanGap', 'PlayVerdict', 'LineupStatus',
+        # Trend signals: what the boards filter on and what we point at users.
+        'StreakLen', 'ConsistencyIndex', 'Follow3Rate', 'Follow5Rate', 'ActiveStreaks',
+        'PatternHits', 'PatternWindow',
         'Avg', 'WeightedOverRate', 'WeightedUnderRate', 'MarketPrice', 'CurrentLine',
         'OpenLine', 'CloseLine', 'BetLine', 'OpenPrice', 'ClosePrice', 'BetPrice',
         'LineMove', 'ClvLine', 'ClvPricePct', 'MarketGapPct', 'MarketViewLabel', 'MarketViewNote',
@@ -10450,6 +10453,30 @@ def write_all_prop_results_snapshot_for_sport(sport='NBA', archive_df=None, game
     return snapshot
 
 
+def _parse_pattern_counts(reason):
+    """Recover (hits, window) from a generated baseline reason.
+
+    Strength of a trend -- "stayed below the line in 4 of the last 5" -- was only
+    ever written into a sentence, so it could not be measured. It matters: across
+    938 graded WNBA trend picks, 3-of-5 patterns hit 64.2% while the
+    stronger-LOOKING 4-of-5 hit just 52.0% (break-even is 52.4%), and on OVERs
+    4-of-5 hit 41.8%. That reversal is invisible while the counts live in prose.
+
+    Parsed rather than plumbed through because the strings are machine-generated
+    and deterministic, and the formatter is called from several places.
+    """
+    text = str(reason or '')
+    window = re.search(r'last (\d+) games', text)
+    hits = re.search(r'in (\d+) of them', text)
+    if hits and window:
+        return int(hits.group(1)), int(window.group(1))
+    every = re.search(r'in all of the last (\d+) games', text)
+    if every:
+        count = int(every.group(1))
+        return count, count
+    return None, None
+
+
 def archive_method_candidates(method_name, picks, postseason_only=False, sample_mode='current', snapshot_date=None, max_rows=80, sport='NBA'):
     method_name = str(method_name or '').strip()
     if not method_name or not picks:
@@ -10490,6 +10517,9 @@ def archive_method_candidates(method_name, picks, postseason_only=False, sample_
             'LeanGap': prop.get('lean_gap'),
             'PlayVerdict': prop.get('play_verdict'),
             'LineupStatus': prop.get('lineup_status'),
+            # Trend strength as numbers, not prose -- see _parse_pattern_counts.
+            'PatternHits': _parse_pattern_counts(prop.get('baseline_reason'))[0],
+            'PatternWindow': _parse_pattern_counts(prop.get('baseline_reason'))[1],
             'Avg': prop.get('avg'),
             'WeightedOverRate': prop.get('weighted_over_rate'),
             'WeightedUnderRate': prop.get('weighted_under_rate'),
@@ -10615,6 +10645,17 @@ def archive_trend_candidates(rows, postseason_only=False, sample_mode='current',
             'Line': row.get('line'),
             'Confidence': row.get('consistency_index'),
             'RawConfidence': row.get('consistency_index'),
+            # The trend signals themselves. These are what the board FILTERS on
+            # (min_current_run, min_consistency) and what we point at users as
+            # the reason to take a pick -- but they were only ever written into
+            # free text ("3+ follow 62%"), so their predictive power could not be
+            # measured. Persisting them numerically is what lets us say which
+            # trends actually work, per sport, instead of assuming.
+            'StreakLen': row.get('current_run_len'),
+            'ConsistencyIndex': row.get('consistency_index'),
+            'Follow3Rate': row.get('follow_3_rate'),
+            'Follow5Rate': row.get('follow_5_rate'),
+            'ActiveStreaks': row.get('active_streaks'),
             'Avg': row.get('avg'),
             'WeightedOverRate': row.get('market_over_rate') if row.get('market_over_rate') is not None else row.get('over_rate'),
             'WeightedUnderRate': row.get('market_under_rate') if row.get('market_under_rate') is not None else row.get('under_rate'),
