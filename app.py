@@ -11209,6 +11209,12 @@ def attach_active_simulation_insights_to_rows(rows, sport='NBA'):
     return enriched
 
 
+# How long a pick may sit Pending before it is treated as unresolvable. Real
+# games grade within days, so this is deliberately generous -- it only catches
+# picks whose game never happened or whose player never appeared.
+UNRESOLVABLE_PICK_DAYS = 14
+
+
 def grade_candidate_archive_rows(archive_df, gamelog_map=None):
     if archive_df is None or archive_df.empty:
         return pd.DataFrame()
@@ -11306,6 +11312,26 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
         graded.at[idx, 'ResultDate'] = next_game['Date'].strftime('%Y-%m-%d') if pd.notna(next_game['Date']) else ''
         graded.at[idx, 'ResultValue'] = round(float(value), 1)
         graded.at[idx, 'DaysToResult'] = int((next_game['Date'] - snapshot_date).days) if pd.notna(next_game['Date']) else np.nan
+
+    # A pick is only legitimately Pending while its game is still ahead of it.
+    # Once a snapshot is older than the window with no game ever matched, it can
+    # never resolve -- the player did not play, or no game was scheduled at all --
+    # and leaving it Pending forever silently corrupts the record. NBA carried
+    # 3,608 such rows against 175 genuinely graded (22:1), which made its track
+    # record unreadable; ~82% of even in-season trend picks never resolved,
+    # because that board archives players who are not on the slate that night.
+    #
+    # This lives inside grading on purpose: the results snapshot is REBUILT from
+    # the candidate archive on every run, so voiding the CSV directly would be
+    # silently undone on the next pass. Void is inert downstream -- every
+    # consumer filters positively on Hit/Miss/Push/Pending.
+    stale_cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=UNRESOLVABLE_PICK_DAYS)
+    unresolvable = (
+        graded['OutcomeState'].eq('Pending')
+        & graded['SnapshotDate'].notna()
+        & (graded['SnapshotDate'] < stale_cutoff)
+    )
+    graded.loc[unresolvable, 'OutcomeState'] = 'Void'
 
     return graded
 
