@@ -12454,6 +12454,22 @@ def analyze_saved_parlay_ticket(picks, live_lookup=None, postseason_only=False, 
 
     if direction_counts['OVER'] and direction_counts['UNDER']:
         strengths.append('The mix of overs and unders reduces one-direction board risk.')
+    elif leg_count >= 2 and not direction_counts['UNDER']:
+        # An all-over ticket is the worst pattern found in the graded record.
+        # Backtested on 167k MLB props with real lines and prices, all-over
+        # parlays returned -22% (2 legs) to -61% (5 legs) OUT-OF-SAMPLE, and the
+        # loss scaled with leg count; unders on identical streak logic ran near
+        # break-even. WNBA singles point the same way (-7.0% over vs -4.8% under).
+        #
+        # Deliberately a warning, not a grade penalty: the measurement is MLB and
+        # WNBA, and this builder is NBA-centric, so the honest move is to hand the
+        # user the number rather than silently re-rank a build on evidence from
+        # another sport.
+        warnings.append(
+            f'All {leg_count} legs are overs. In graded MLB props, all-over parlays lost '
+            f'22% to 61% per ticket depending on leg count, with the loss growing as legs '
+            f'are added. Mixing in unders is the single cheapest fix.'
+        )
 
     grade = 'C'
     grade_color = 'var(--accent-copper)'
