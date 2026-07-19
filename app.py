@@ -9626,6 +9626,10 @@ def load_candidate_archive():
     default_columns = [
         'SnapshotDate', 'SavedAt', 'Sport', 'Method', 'PostseasonOnly', 'SampleMode',
         'Player', 'Team', 'Stat', 'Direction', 'Line', 'Confidence', 'RawConfidence',
+        # Decision drivers. This list is a projection -- load_candidate_archive
+        # returns df[default_columns], so a column missing HERE is silently
+        # dropped on read even though archive_method_candidates wrote it.
+        'ModelProb', 'SimProb', 'MarketProb', 'LeanGap', 'PlayVerdict', 'LineupStatus',
         'Avg', 'WeightedOverRate', 'WeightedUnderRate', 'MarketPrice', 'CurrentLine',
         'OpenLine', 'CloseLine', 'BetLine', 'OpenPrice', 'ClosePrice', 'BetPrice',
         'LineMove', 'ClvLine', 'ClvPricePct', 'MarketGapPct', 'MarketViewLabel', 'MarketViewNote',
@@ -10435,6 +10439,19 @@ def archive_method_candidates(method_name, picks, postseason_only=False, sample_
             'Line': prop.get('line'),
             'Confidence': prop.get('confidence'),
             'RawConfidence': prop.get('raw_confidence'),
+            # The values that actually drive the pick. Without these the archive
+            # records WHAT was picked but not WHY, so a later investigation has to
+            # infer the mechanism from source instead of measuring it -- which is
+            # how a market-implied probability got mistaken for model confidence.
+            # ModelProb/SimProb are the model's own estimates, kept separate from
+            # MarketProb so model calibration can finally be measured against
+            # outcomes rather than against the sportsbook's price.
+            'ModelProb': prop.get('model_prob'),
+            'SimProb': prop.get('sim_prob'),
+            'MarketProb': prop.get('market_prob'),
+            'LeanGap': prop.get('lean_gap'),
+            'PlayVerdict': prop.get('play_verdict'),
+            'LineupStatus': prop.get('lineup_status'),
             'Avg': prop.get('avg'),
             'WeightedOverRate': prop.get('weighted_over_rate'),
             'WeightedUnderRate': prop.get('weighted_under_rate'),
@@ -10658,6 +10675,15 @@ def archive_wnba_method_candidates(method_name, rows, postseason_only=False, sam
             'line': row.get('line'),
             'confidence': row.get('market_confidence'),
             'raw_confidence': row.get('market_prob'),
+            # Same drivers as the MLB path: WNBA has the healthiest track record
+            # (60-62% across curated methods), so it is the most useful place to
+            # be able to separate model estimate from market price after the fact.
+            'model_prob': row.get('calibrated_sim_hit_probability'),
+            'sim_prob': row.get('sim_hit_probability'),
+            'market_prob': row.get('market_prob'),
+            'lean_gap': row.get('lean_gap') if row.get('lean_gap') is not None else row.get('edge_pct'),
+            'play_verdict': row.get('play_verdict'),
+            'lineup_status': row.get('lineup_gate_status'),
             'avg': '',
             'weighted_over_rate': row.get('over_rate'),
             'weighted_under_rate': row.get('under_rate'),
@@ -10766,6 +10792,20 @@ def archive_mlb_method_candidates(method_name, rows, postseason_only=False, samp
             'line': row.get('line'),
             'confidence': row.get('method_score') if row.get('method_score') is not None else row.get('market_confidence'),
             'raw_confidence': row.get('market_confidence'),
+            # Persist the drivers, not just the outcome. market_prob and lean_gap
+            # are the two values archiving itself gates on, and the simulation
+            # probabilities are the model's own estimate -- distinct from the
+            # market price, which is what makes model calibration measurable.
+            # lineup_status records whether the lineup gate was actually
+            # satisfied, so the fix that unblocked MLB archiving stays verifiable.
+            'model_prob': row.get('calibrated_sim_hit_probability'),
+            'sim_prob': row.get('sim_hit_probability'),
+            'market_prob': row.get('market_prob'),
+            'lean_gap': row.get('lean_gap'),
+            'play_verdict': row.get('play_verdict'),
+            'lineup_status': row.get('lineup_gate_status'),
+            # MLB board rows carry no per-player average; left blank rather than
+            # filled with a lookalike field.
             'avg': '',
             'weighted_over_rate': row.get('over_rate'),
             'weighted_under_rate': row.get('under_rate'),
