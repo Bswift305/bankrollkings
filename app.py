@@ -22,6 +22,7 @@ import pickle
 import re
 import secrets
 import threading
+import season_utils
 import franchise_kings as fk
 import franchise_league as fl
 import franchise_offseason as fo
@@ -17569,6 +17570,27 @@ def get_current_playoff_focus_label():
 def get_focus_mode_labels(postseason_only):
     today = sports_today_date()
     playoff_bracket_lock = datetime(2026, 4, 18).date()
+    # Once the season ends there is no "current" playoff stage, but the bracket
+    # data keeps reporting the last one it saw -- so the board went on announcing
+    # "NBA Finals Props" for weeks after the Finals were over (props.html renders
+    # this label directly as the board title). Fall back to an honest offseason
+    # label instead. active_sports() treats a sport as live when its props file
+    # has at least one data row, so the real labels return automatically at tipoff
+    # without a date to maintain.
+    # Deliberately falls back to the neutral regular-mode labels rather than
+    # asserting an "Offseason" label: this dict is injected GLOBALLY, so an
+    # NBA-specific claim leaks onto in-season MLB/WNBA boards (the same
+    # cross-sport leak already noted where props screener label_overrides are
+    # built). Neutral labels are wrong on no board; "NBA Finals" was wrong on
+    # every board, all summer.
+    if 'NBA' not in season_utils.active_sports():
+        return {
+            'focus_mode_label': '20-Team Field',
+            'focus_mode_short': 'Field',
+            'focus_mode_description': 'Regular-mode view across the full league and season data.',
+            'regular_mode_label': 'Regular Mode',
+            'focus_team_count': len(POSTSEASON_TEAMS),
+        }
     if postseason_only:
         if today < playoff_bracket_lock:
             return {
