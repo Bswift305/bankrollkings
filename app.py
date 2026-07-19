@@ -23,6 +23,7 @@ import re
 import secrets
 import threading
 import season_utils
+import sport_registry
 import franchise_kings as fk
 import franchise_league as fl
 import franchise_offseason as fo
@@ -11328,12 +11329,21 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
         combined_key = normalize_combined_prop_key(stat_key)
         if combined_key in COMBINED_PROP_COMPONENTS.get(sport_key, {}):
             return combined_key
-        if sport_key == 'MLB':
-            return MLB_STAT_COLUMN_MAP.get(stat_key) or MLB_STAT_COLUMN_MAP.get(combined_key) or stat_key
-        if sport_key in {'NFL', 'NCAAF'}:
+        # Which map a sport uses is declared in sport_registry, not branched on
+        # here, so adding a sport is a registry entry rather than another elif --
+        # and qc_sport_registry fails loudly when a sport that NEEDS a map has
+        # none. A missing map is invisible at runtime: grading just looks up the
+        # raw prop name, never matches a column, and leaves every pick Pending,
+        # which is exactly how football went a whole build cycle ungraded.
+        map_name = sport_registry.stat_map_name(sport_key)
+        mapping = globals().get(map_name) if map_name else None
+        if isinstance(mapping, dict) and mapping:
             upper = stat_key.upper()
-            return (FOOTBALL_STAT_COLUMN_MAP.get(upper)
-                    or FOOTBALL_STAT_COLUMN_MAP.get(str(combined_key or '').upper())
+            combined_upper = str(combined_key or '').upper()
+            return (mapping.get(stat_key)
+                    or mapping.get(upper)
+                    or mapping.get(combined_key)
+                    or mapping.get(combined_upper)
                     or stat_key)
         return stat_key
 
