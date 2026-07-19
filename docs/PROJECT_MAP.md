@@ -87,6 +87,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
    lock; concurrent requests get the stale memory/disk value (or wait if there's none) instead
    of every thread running the expensive builder at once. (Before this, a cold dashboard build
    could freeze the whole process for minutes — N threads all parsing gamelog CSVs.)
+
+   **⚠ A CODE-ONLY CHANGE TO A CACHED BUILDER IS INVISIBLE (2026-07-19).** The version token
+   covers *data files*, not source. Edit board logic, leave the CSVs alone, and the builder
+   keeps serving the pre-edit rows for the full 12h TTL — the change looks broken when it is
+   actually fine. This cost three rounds of debugging on the `LONGSHOT OVER` guardrail: the
+   code was correct the whole time. **When verifying a change to `build_*_prop_board` /
+   `build_*_method_board`, first `rm -f data/cache/*<sport>_prop_board*` (and on prod, restart
+   after), or pass a fresh `cache_namespace=`.** Same applies after deploying such a change:
+   clear the prod cache or users see the old board until the TTL expires.
 3. **Service worker** (`static/service-worker.js`) — caches `/static/css/`, `/static/logos/`,
    brand assets. Self-updating now (bumps `BK_CACHE` shell-vN, `controllerchange` auto-reload).
    Bump the version on shell-asset changes.
@@ -203,11 +212,83 @@ cache for those with `?v=...` and/or a service-worker version bump.
 
 ---
 
+## 6b. Adding a sport — start at the registry (2026-07-19)
+
+**`sport_registry.py`** declares every sport's parts: props/gamelog/schedule/odds loaders, the
+loader **grading** uses, stat-column map, archive gates, QC prefix, calibrator. Data only, no
+`app` import, so `app.py` imports it without a cycle. **`qc_sport_registry.py` runs first in
+`run_all_scorecards.py` and FAILS when a sport is missing a part.**
+
+Two fields carry what a grep cannot:
+- **`identity_ok`** — NBA/WNBA legitimately need no stat map (their prop stats already ARE their
+  gamelog column names). `stat_column_map=None` with `identity_ok=False` is a **failure**.
+- **`requires_play_verdict`** — MLB/WNBA gate archiving on `play_verdict=='PLAY'`; football does
+  not. A verdict that can never be `PLAY` silently zeroes out archiving.
+
+Irregularities it records: **NBA uses unprefixed loaders** (`load_props`, `load_schedule`,
+`load_gamelogs`, `load_game_market_odds`); **NBA grading uses `load_nba_review_gamelogs`**
+(includes playoffs) not `load_gamelogs` (regular season only); **NCAAF's QC/calibrator use the
+`cfb` prefix**, so grepping "ncaaf" misses them.
+
+Why it exists: two season-costing bugs were both "this sport is missing a part the others have" —
+football had no stat map so nothing graded, and MLB's lineup gate could never be satisfied so
+nothing archived. Neither showed up in the UI.
+
+**Soccer will need more than a registry entry** — the archivers and graders assume OVER/UNDER,
+and 3-way/draw markets break that assumption.
+
+### Candidate archive columns (what a pick records)
+
+Beyond the pick itself, rows now persist the drivers, so model quality is measurable after the
+fact rather than inferred from source:
+`ModelProb` `SimProb` `MarketProb` `LeanGap` `PlayVerdict` `LineupStatus`
+`PatternHits` `PatternWindow` `StreakLen` `ConsistencyIndex` `Follow3Rate` `Follow5Rate`
+`Follow3Chances` `Follow5Chances` `ActiveStreaks` `AvgGap` `MarketRate` `TrendScore`
+`FloorHitRate` `ConsistencyLabel` `LongestRun`
+
+**`load_candidate_archive()` ends in `return df[default_columns]`** — a column missing from that
+list is silently dropped on read even after it is written. Add there too.
+
+---
+
 ## 7. Timezone
 
 Game commence times come from providers in UTC. Convert to **fixed US/Eastern** via
 `services/timeutils.py` (`to_eastern_datetime_str` / `to_eastern_date_str`) — NOT a bare
 `.astimezone()` (that uses the process's ambient zone and lands games on the wrong day).
+
+---
+
+## 7b. Betting guardrails — what the graded record actually supports (2026-07-19)
+
+Backtested on **171,476 graded MLB + WNBA props** at real lines and real prices. Full study and
+method caveats in memory: `project_market_efficiency_findings`.
+
+**Every predictive factor tested is already in the price.** Streak depth, opponent defence,
+venue, rest, line movement and expected plate appearances all move the hit rate hard — and the
+market's implied probability moves with them, leaving the edge flat at roughly the vig. Streaks
+are REAL (NBA streak≥3 continues +15.1 points above base over 122,888 obs, rolling line, no
+lookahead); the market simply knows. **Do not sell streak depth as an edge.**
+
+What survives, and what is now enforced in code:
+1. **`LONGSHOT OVER` guardrail** (`build_mlb_prop_board`) — overs under 25% implied. OVER ROI by
+   implied band is monotonic: `<15% → -40.9%`, `15-25% → -20.4%`, `70%+ → -6.5%`. The *edge* is
+   near-constant (-2.6 to -4.8) in every band; what changes is what a miss costs at long odds.
+2. **All-over parlay warning** (`analyze_saved_parlay`) — all-over tickets returned **-22% (2
+   legs) to -61% (5 legs) out-of-sample**, loss scaling with leg count. Warning only, not a grade
+   penalty: the evidence is MLB/WNBA and the builder is NBA-centric.
+3. **`SINGLE BOOK` → CONFLICTED** — already existed and is correct. Across the full prop
+   population, 1 book returns -15.2% vs -3.9% at 5 books.
+4. **Prefer UNDER** — -0.6% vs -6.3% on identical streak logic.
+
+Deliberately NOT built: the same longshot guardrail on WNBA (verified inert — 2 of 5,773 graded
+WNBA overs fall under 25% implied, because WNBA offers no rare-event markets). Football is the
+real target for it (Anytime TD), but `build_football_live_prop_board` has no verdict/guardrail
+fields yet and props are 0 rows until the season starts.
+
+**Method rule learned the hard way: out-of-sample or it does not count.** Four streak-parlay
+rules looked bulletproof in-sample (lower CI bounds +8.3 to +17.8) and every one reversed to
+significantly negative out-of-sample. A 3-leg parlay showed +63% ROI at n=21 and -29% at n=2,861.
 
 ---
 
