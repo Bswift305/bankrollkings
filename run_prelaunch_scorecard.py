@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import argparse
+import json
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +26,86 @@ from services.qc_tracking import append_qc_run_log
 
 
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "Prelaunch_Scorecard.csv"
+
+# Each section runs in its own process. Running all twelve in one interpreter
+# accumulated every sport's boards, gamelogs and caches at once and peaked around
+# 850 MB RSS -- above earlyoom's threshold on this box, which SIGTERM'd the run
+# before it printed a single line. The suite then read "no output" as a crash and
+# reported FAIL, so prelaunch verification was silently dead while the code was
+# fine. Per-section processes cap peak memory at the largest single section and
+# reclaim it in between.
+SECTION_RUNNERS = {
+    "platform_routes": lambda: run_platform_routes(tier="fast"),
+    "source_audit": run_source_audit,
+    "nba_injuries": run_nba_injuries,
+    "nba_contradictions": run_nba_contradictions,
+    "nfl_injuries": run_nfl_injuries,
+    "nfl_contradictions": run_nfl_contradictions,
+    "wnba_injuries": run_wnba_injuries,
+    "mlb_injuries": run_mlb_injuries,
+    "cfb_injuries": run_cfb_injuries,
+    "checkout_qc": run_checkout_qc,
+    "wnba_readiness": run_wnba_readiness,
+    "cfb_readiness": run_cfb_readiness,
+}
+
+SECTION_TIMEOUT_SECONDS = 420
+
+
+def _incomplete_report(key: str, reason: str) -> dict:
+    """Stand-in for a section that could not run.
+
+    Deliberately NOT zero-filled. A section that did not execute is unverified,
+    not passing -- zeros would read as a clean result and hide exactly the
+    failure this split exists to fix. `_incomplete` is surfaced as its own FAIL
+    row in the scorecard.
+    """
+    return {
+        "failure_count": 0,
+        "warning_count": 0,
+        "notes": f"{key} did not complete: {reason}",
+        "failures": [],
+        "warnings": [],
+        "clean": False,
+        "_incomplete": True,
+        "_reason": reason,
+    }
+
+
+def _run_section_in_subprocess(key: str) -> dict:
+    """Run one section in a fresh interpreter and return its report dict."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--section", key],
+            capture_output=True,
+            text=True,
+            timeout=SECTION_TIMEOUT_SECONDS,
+            cwd=str(BASE_DIR),
+        )
+    except subprocess.TimeoutExpired:
+        return _incomplete_report(key, f"timed out after {SECTION_TIMEOUT_SECONDS}s")
+    except Exception as exc:                                  # pragma: no cover
+        return _incomplete_report(key, f"could not start ({type(exc).__name__})")
+
+    if proc.returncode == -15 or proc.returncode == 143:
+        # SIGTERM. On this box that is earlyoom reclaiming memory, not a code bug.
+        return _incomplete_report(key, "killed by SIGTERM (out-of-memory reaper)")
+    if proc.returncode != 0:
+        tail = (proc.stderr or "").strip().splitlines()
+        return _incomplete_report(key, f"exit {proc.returncode}: {tail[-1][:120] if tail else 'no stderr'}")
+
+    for line in reversed((proc.stdout or "").splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return _incomplete_report(key, "no JSON payload on stdout")
+
+
+def _collect_sections() -> dict:
+    return {key: _run_section_in_subprocess(key) for key in SECTION_RUNNERS}
 
 
 def _resolved_count(path: Path) -> tuple[int, int]:
@@ -131,18 +215,28 @@ def _rollback_status() -> tuple[str, str]:
 def build_scorecard() -> dict:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    route_report = run_platform_routes(tier="fast")
-    nba_source_report = run_source_audit()
-    nba_injury_report = run_nba_injuries()
-    nba_contradiction_report = run_nba_contradictions()
-    nfl_injury_report = run_nfl_injuries()
-    nfl_contradiction_report = run_nfl_contradictions()
-    wnba_injury_report = run_wnba_injuries()
-    mlb_injury_report = run_mlb_injuries()
-    cfb_injury_report = run_cfb_injuries()
-    checkout_report = run_checkout_qc()
-    wnba_report = run_wnba_readiness()
-    cfb_report = run_cfb_readiness()
+    collected = _collect_sections()
+    route_report = collected["platform_routes"]
+    nba_source_report = collected["source_audit"]
+    nba_injury_report = collected["nba_injuries"]
+    nba_contradiction_report = collected["nba_contradictions"]
+    nfl_injury_report = collected["nfl_injuries"]
+    nfl_contradiction_report = collected["nfl_contradictions"]
+    wnba_injury_report = collected["wnba_injuries"]
+    mlb_injury_report = collected["mlb_injuries"]
+    cfb_injury_report = collected["cfb_injuries"]
+    checkout_report = collected["checkout_qc"]
+    wnba_report = collected["wnba_readiness"]
+    cfb_report = collected["cfb_readiness"]
+
+    # Some downstream sections read keys the QC modules always provide but an
+    # incomplete stand-in may not; keep access total so one dead section cannot
+    # take down the whole report.
+    for _key, _rep in collected.items():
+        _rep.setdefault("failure_count", 0)
+        _rep.setdefault("warning_count", 0)
+        _rep.setdefault("notes", "")
+        _rep.setdefault("failures", [])
 
     sections: list[dict] = []
     active = _active_sports()
@@ -253,6 +347,25 @@ def build_scorecard() -> dict:
         "Reason": rollback_reason,
     })
 
+    # A section that could not run is unverified, which is not the same as clean.
+    # Report it explicitly so a dead section can never be mistaken for a pass.
+    incomplete = [key for key, rep in collected.items() if rep.get("_incomplete")]
+    if incomplete:
+        sections.append({
+            "Section": "Scorecard Completeness",
+            "Status": "FAIL",
+            "Reason": (
+                f"{len(incomplete)} of {len(collected)} section(s) did not run: "
+                + "; ".join(f"{k} ({collected[k].get('_reason', 'unknown')})" for k in incomplete)
+            ),
+        })
+    else:
+        sections.append({
+            "Section": "Scorecard Completeness",
+            "Status": "PASS",
+            "Reason": f"All {len(collected)} sections ran in isolated processes.",
+        })
+
     fail_count = sum(1 for row in sections if row["Status"] == "FAIL")
     watch_count = sum(1 for row in sections if row["Status"] == "WATCH")
     go_live = fail_count == 0 and watch_count < 3
@@ -277,7 +390,31 @@ def build_scorecard() -> dict:
     return report
 
 
+def _run_single_section(key: str) -> int:
+    """Child-process entry point: run one section, print its report as JSON.
+
+    Printed as a single JSON line on stdout so the parent can pick it out of any
+    incidental logging the QC modules emit. default=str keeps numpy/pandas
+    scalars from breaking serialisation.
+    """
+    runner = SECTION_RUNNERS.get(key)
+    if runner is None:
+        print(f"unknown section: {key}", file=sys.stderr)
+        return 2
+    report = runner()
+    print(json.dumps(report, default=str))
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Bankroll Kings prelaunch scorecard.")
+    parser.add_argument("--section", choices=sorted(SECTION_RUNNERS), default=None,
+                        help="Run a single section and emit its report as JSON (used internally "
+                             "to keep each section in its own process).")
+    args = parser.parse_args()
+    if args.section:
+        return _run_single_section(args.section)
+
     report = build_scorecard()
     print("=" * 60)
     print("BANKROLL KINGS PRELAUNCH SCORECARD")
