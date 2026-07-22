@@ -182,7 +182,13 @@ def write_notes(summary: pd.DataFrame, scored: pd.DataFrame) -> None:
         f"Overall actual hit rate: {pct(overall)}",
         "",
         "Key read:",
-        "The first NFL formula family is separating usable buckets from weak buckets. PropScore and simulation probability have the cleanest shape so far, while raw historical confidence is still too flat around 50-60%.",
+        "WARNING: PropScore's clean quintile shape is IN-SAMPLE LEAKAGE, not signal. "
+        "UsageStability scores each row with the player's own all-time hit rate (which "
+        "includes that row's outcome), and it carries the bulk of PropScore's variance. "
+        "In a proper season holdout (train 2024, test 2025) the relationship INVERTS: "
+        "the highest-prior-hit-rate players hit LESS and lose MORE the next year "
+        "(2024/2025 hit-rate correlation -0.09). Run validate_nfl_prop_score_oos.py. "
+        "Do not read the buckets below as evidence of an exploitable edge.",
         "",
         "Simulation calibration:",
     ]
@@ -216,7 +222,10 @@ def write_notes(summary: pd.DataFrame, scored: pd.DataFrame) -> None:
     lines += [
         "",
         "Recommended next formula adjustments:",
-        "- Keep PropScore as the main NFL player-prop promotion score. The 25+ band is materially stronger than the full field.",
+        "- DO NOT promote on PropScore's 25+ band. Its strength is leakage (see Key read); "
+        "out-of-sample that band is the WORST, not the strongest. Remove UsageStability's "
+        "dependence on the outcome-derived profile hit rate before PropScore gates any live "
+        "selection, then re-validate the remaining pre-game features out-of-sample.",
         "- Treat simulation probability 70+ as a lab-grade signal, not yet an auto-bet. It matched actual rate well on backfill.",
         "- Cap or demote Rush Attempts OVER until usage and game-script logic are strengthened.",
         "- Demote HOLD market-gate rows by default; the historical HOLD bucket is materially weak.",
