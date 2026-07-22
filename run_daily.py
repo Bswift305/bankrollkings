@@ -19,6 +19,13 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
     steps: list[tuple[str, list[str], int]] = [
         ("All-sport injuries", _python("refresh_all_sport_injuries.py"), 300),
         ("Football line movement", _python("refresh_football_line_movement.py"), 600),
+        # Player props for NFL + NCAAF. The line-movement step above fetches GAME
+        # LINES; this fetches player PROPS, which previously lived only in the
+        # Windows batch and so never ran on prod. Self-gating and cheap in the
+        # offseason (no games within 7 days -> one empty events call); activates
+        # automatically once games come within a week. Without it, football has a
+        # working board/archive/grader but no prop feed to act on.
+        ("Football player props", _python("refresh_football_props.py"), 900),
         ("Futures odds movement", _python("refresh_futures_odds.py"), 420),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
