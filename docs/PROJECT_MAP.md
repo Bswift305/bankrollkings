@@ -22,6 +22,33 @@ on prod = prod's own refresh jobs, not your local edits.)
 Also note: `:8080` on the local box is **EnterpriseDB Postgres PEM** (a DB console),
 unrelated to this app.
 
+### The prod box — fixed size, does NOT auto-scale (2026-07-22)
+
+`i-08d2fd818875381dd`, **t3.medium** (2 vCPU, **4 GB RAM**), us-east-1. This is a
+fixed instance — nothing about it grows on its own. RAM and disk stay put until
+someone deliberately resizes (a stop/start for the instance type; an online EBS
+grow for disk). "It scales up when I need it" is not true here — that's for
+managed services, not a plain EC2 box.
+
+- **RAM is the real ceiling and it is tight.** Two gunicorn workers idle at
+  ~2.35 GB, leaving ~1.2 GB. **`earlyoom` is active and SIGTERMs any process when
+  available memory drops below 12%.** That is not a bug — it is the same reaper
+  from the Jul 1-4 outage, still armed. A heavy batch job (~850 MB) run alongside
+  live traffic tips it over. Symptom: a process dies with **exit 143** and no
+  output. If a job "fails with no output", suspect earlyoom before a code bug:
+  `sudo journalctl -u <unit> --since -10min | grep -i sigterm`. The fix for a
+  heavy job is to split it into per-section subprocesses (see prelaunch scorecard
+  in §6), not to touch earlyoom.
+- **Disk is NOT a concern.** Two volumes: root `/` is a 7 GB OS disk at ~82%
+  (system packages/logs, basically static), but **all app data lives on a SEPARATE
+  50 GB volume mounted at `/opt/bankrollkings`, only ~3% used.** The archive
+  growing to 226k rows is on the 50 GB volume — years of runway. Do not measure
+  data growth with `df /`; use `df /opt/bankrollkings`.
+- **Speed:** warm responses are ~5-10 ms; the box is CPU-idle and swap is parked
+  (not thrashing). The only slow path is the ~8 s cold-cache rebuild on the first
+  request after idle — a prewarm concern, NOT a RAM/CPU one. A bigger instance
+  would buy headroom for launch traffic, not speed.
+
 ---
 
 ## 2. Deploy to production
@@ -210,6 +237,32 @@ cache for those with `?v=...` and/or a service-worker version bump.
   + scorecards (`run_all_scorecards.py`) + `generate_run_status.py` → `Run_Status.json`
   ("Daily Engine Health"). Use `--skip-refresh` to run just analysis+status on already-fresh data.
 
+### ⚠ Football / CFB data flows on prod ONLY through run_daily steps (2026-07-19..22)
+
+The football + CFB fetchers historically lived only in `batch/REFRESH_FOOTBALL_DATA.bat`,
+which runs on the **Windows box, not the server**. Anything not explicitly added to
+`run_daily.py` simply never runs on prod. That gap cost real time twice. Now wired
+into `run_daily`'s always-on football steps:
+- **Game lines** — `refresh_football_line_movement.py` (NFL + NCAAF, `fetch_*_game_lines`).
+- **Player props** — `refresh_football_props.py` (NFL + NCAAF, `--days 7`). Self-gating:
+  in the offseason the shared fetcher lists events, finds none in 7 days, and no-ops in
+  ~1 s with no quota spent; it starts pulling real props automatically once games come
+  within a week. Skips cleanly without `ODDS_API_KEY`.
+- **CFB roster/stats/portal/master** — `refresh_cfb_data.py` (derives season years,
+  self-skips without `CFBD_API_KEY`).
+When adding any new sport's feed, the rule is: **add it to `run_daily.py` or it will
+not run on prod** — the batch file is dev-only.
+
+### Prelaunch scorecard runs each section in its own process (2026-07-22)
+
+`run_prelaunch_scorecard.py` builds its 12 sections via `--section <key>` subprocesses,
+not in one interpreter. In one process it peaked ~850 MB and earlyoom (§1) killed it
+before it printed a line — `run_all_scorecards` then read "no output" as FAIL, so
+prelaunch verification was silently dead while the code was fine. Per-section processes
+cap peak memory. A section that cannot run yields an **incomplete** report (never
+zero-filled — zeros would read as a pass) and surfaces as a "Scorecard Completeness"
+FAIL naming what did not run.
+
 ---
 
 ## 6b. Adding a sport — start at the registry (2026-07-19)
@@ -294,6 +347,14 @@ significantly negative out-of-sample. A 3-leg parlay showed +63% ROI at n=21 and
 
 ## 8. Open items / not-built-yet
 
+- **NFL/CFB betting — pipeline-complete, waiting on the season (2026-07-22).** Grading
+  (football stat map), archiving (dry-run 24/24), game lines and player props (§6) are all
+  wired and self-gating on prod. The only wait is external: the Odds API posts NFL player
+  props ~early Aug (preseason) → early Sep (Week 1). Two things to FINISH once props flow
+  (cannot verify against an empty feed): (1) a **`LONGSHOT OVER` guardrail for football** —
+  `build_football_live_prop_board` has no verdict/guardrail fields yet, and Anytime TD
+  (+300..+900) is where the rule earns its keep; (2) confirm **`NFL_FeaturedResults.csv`**
+  archiving populates when real games resolve (the 99 scorecard flags it missing off-season).
 - Parlay floor-reliability for football: the pipeline is fully multi-sport
   (`build_floor_play_index.py` merges all five sports' AllPropResults; buckets group by Sport;
   saved tickets carry a `Sport` column — legacy rows default NBA), but NFL/CFB have no logged
