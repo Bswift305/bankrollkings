@@ -5261,14 +5261,26 @@ def build_mlb_prop_board(props_df, odds_df, schedule_df, gamelogs=None, date_fil
         if over_implied is not None and float(over_implied) < 0.25:
             implied_pct = float(over_implied) * 100
             cost_note = '-41%' if implied_pct < 15 else '-20%'
+            # A +18000 home run rounds to "0% implied", which reads as broken.
+            implied_label = 'under 1%' if implied_pct < 1 else f'{implied_pct:.0f}%'
             if play_verdict == 'PLAY':
                 play_verdict = 'CONFLICTED'
-            if not verdict_note:
-                verdict_note = (
-                    f'Long-shot over at roughly {implied_pct:.0f}% implied. Overs priced this '
-                    f'long returned about {cost_note} per bet in the graded record.'
-                )
-            guardrail_tags.append('LONGSHOT OVER')
+            # These rows are ~always also ONE SIDED (a +900 over rarely has an
+            # under posted), and that branch runs first -- so without overriding,
+            # the LONGSHOT note is suppressed and the tag lands 3rd, past the
+            # board's [:2] slice, i.e. invisible. Worse, the ONE SIDED note says
+            # "treat as price discovery until an under price is available", which
+            # invites the user to keep eyeing a bet that returned -20% to -41%.
+            # The long-shot framing is the actionable one for these rows, so it
+            # takes precedence: PREPEND the tag (into the visible slice) and let
+            # its note win.
+            verdict_note = (
+                f'Long-shot over at roughly {implied_label} implied. Overs priced this '
+                f'long returned about {cost_note} per bet in the graded record, so this is one '
+                f'to avoid rather than wait on.'
+            )
+            if 'LONGSHOT OVER' not in guardrail_tags:
+                guardrail_tags.insert(0, 'LONGSHOT OVER')
 
         lineup_gate = classify_mlb_lineup_gate(stat, primary_row)
         if lineup_gate.get('status') == 'PENDING':
