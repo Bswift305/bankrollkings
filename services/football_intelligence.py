@@ -333,6 +333,7 @@ def build_ncaaf_current_season_context(
             'portal_moves': [],
             'plain_english_cards': [],
             'team_signals': [],
+            'team_signals_all': [],
             'coverage_summary': {},
             'coverage_alert': None,
             'matchup_verdict_cards': [],
@@ -495,8 +496,12 @@ def build_ncaaf_current_season_context(
         ).reset_index()
         grouped = grouped.fillna(0)
         grouped['returning_offense'] = grouped['pass_yds'] + grouped['rush_yds'] + grouped['rec_yds']
-        grouped = grouped.sort_values(['returning_offense', 'tackles'], ascending=False).head(18)
-        for _, row in grouped.iterrows():
+        # Keep the FULL sorted frame: it feeds signal_rows -> the live game-line
+        # matchup map, which must cover every team, not a top-N. The .head(18) here
+        # was a display cap for team_rollups that doubled as the modeling universe,
+        # so only 18 teams could ever be enriched. Cap the DISPLAY loop only.
+        grouped = grouped.sort_values(['returning_offense', 'tackles'], ascending=False)
+        for _, row in grouped.head(18).iterrows():
             team_rollups.append({
                 'team': row.get('CurrentTeam', ''),
                 'players': int(row.get('players', 0) or 0),
@@ -616,7 +621,14 @@ def build_ncaaf_current_season_context(
                 'note': "Without clear returning defensive volume, don't overrate preseason defensive assumptions.",
             })
 
+    # team_signals_all is the COMPLETE per-team signal set used to enrich the live
+    # game-line board's matchup context. team_signals is the 12-team shortlist the
+    # command-center UI displays. These were the same object, capped at .head(12),
+    # so only 12 teams' games ever received roster/continuity context and every
+    # other matchup quietly got none despite the data existing. Build the full set,
+    # then slice for the UI.
     team_signals = []
+    team_signals_all = []
     if not signal_rows.empty:
         signal_profiles = {}
         for _, row in signal_rows.iterrows():
@@ -629,7 +641,7 @@ def build_ncaaf_current_season_context(
         signal_sorted = signal_rows.sort_values(
             ['SignalScore', 'ReturningProduction', 'pass_yds', 'tackles'],
             ascending=[False, False, False, False],
-        ).head(12)
+        )
         for _, row in signal_sorted.iterrows():
             tags = []
             if bool(row.get('HighContinuityFlag', False)):
@@ -643,7 +655,7 @@ def build_ncaaf_current_season_context(
             if int(row.get('PortalNet', 0)) >= 3:
                 tags.append('Portal adds')
             profile = signal_profiles.get(str(row.get('Team', '') or '').strip(), {})
-            team_signals.append({
+            team_signals_all.append({
                 'team': row.get('Team', ''),
                 'conference': _clean_display_text(row.get('Conference', '')),
                 'returning_production': round(float(row.get('ReturningProduction', 0) or 0), 3),
@@ -656,6 +668,7 @@ def build_ncaaf_current_season_context(
                 'signal_note': profile.get('note', ''),
                 'verdict': profile.get('verdict', 'Balanced continuity read'),
             })
+        team_signals = team_signals_all[:12]
 
     matchup_verdict_cards = []
     if not signal_rows.empty:
@@ -722,6 +735,7 @@ def build_ncaaf_current_season_context(
         'portal_moves': portal_moves,
         'plain_english_cards': plain_english_cards,
         'team_signals': team_signals,
+        'team_signals_all': team_signals_all,
         'coverage_summary': coverage_summary,
         'coverage_alert': coverage_alert,
         'matchup_verdict_cards': matchup_verdict_cards,

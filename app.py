@@ -6286,8 +6286,12 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all'):
 
 def build_ncaaf_team_signal_map():
     context = build_ncaaf_current_season_context()
+    # Use the COMPLETE signal set, not the 12-team UI shortlist -- otherwise only
+    # 12 teams' games get matchup enrichment. Fall back to the shortlist for older
+    # contexts that predate team_signals_all.
+    signals = context.get('team_signals_all') or context.get('team_signals') or []
     return build_ncaaf_team_signal_map_service(
-        context.get('team_signals') or [],
+        signals,
         normalize_ncaaf_team_name,
     )
 
