@@ -255,27 +255,61 @@ def build_ncaaf_player_master(
         portal_working['OriginTeam'] = portal_working['OriginTeam'].apply(normalize_team_name)
         if {'Rating', 'Stars'}.issubset(portal_working.columns):
             portal_working = portal_working.sort_values(['Rating', 'Stars'], ascending=False, na_position='last')
-        portal_lookup = (
-            portal_working[['NameKey', 'PositionGroup', 'DestinationTeam', 'OriginTeam']]
-            .drop_duplicates(subset=['NameKey', 'PositionGroup', 'DestinationTeam'], keep='first')
-        )
+        # A portal player's roster CurrentTeam can equal EITHER the team they left
+        # (OriginTeam) or the team they joined (DestinationTeam), depending on
+        # whether the roster feed is pre- or post-move. The old join matched only
+        # CurrentTeam == DestinationTeam AND PositionGroup, which hit 3 of ~4,200
+        # players -- the roster we have is 2025 (pre-move), so a transfer's
+        # CurrentTeam is their ORIGIN, not destination. Match (name, team) against
+        # BOTH sides, and carry the true OriginTeam through for LastSeasonTeam.
+        # Position is dropped from the key: (name, team) is already specific, and
+        # requiring a position-group match cost most of the hits.
+        _po = portal_working[portal_working['OriginTeam'].astype(str).str.strip() != '']
+        _pd = portal_working[portal_working['DestinationTeam'].astype(str).str.strip() != '']
+        portal_lookup = pd.concat([
+            _po[['NameKey', 'OriginTeam']].assign(MatchTeam=_po['OriginTeam'], PortalOrigin=_po['OriginTeam']),
+            _pd[['NameKey', 'OriginTeam']].assign(MatchTeam=_pd['DestinationTeam'], PortalOrigin=_pd['OriginTeam']),
+        ], ignore_index=True)[['NameKey', 'MatchTeam', 'PortalOrigin']]
+        portal_lookup = portal_lookup[portal_lookup['MatchTeam'].astype(str).str.strip() != '']
+        portal_lookup = portal_lookup.drop_duplicates(subset=['NameKey', 'MatchTeam'], keep='first')
         master = master.merge(
             portal_lookup,
-            left_on=['NameKey', 'PositionGroup', 'CurrentTeam'],
-            right_on=['NameKey', 'PositionGroup', 'DestinationTeam'],
+            left_on=['NameKey', 'CurrentTeam'],
+            right_on=['NameKey', 'MatchTeam'],
             how='left',
         )
-        portal_origin = master['OriginTeam'].fillna('').astype(str).str.strip()
-        missing_last_team = master['LastSeasonTeam'].astype(str).str.strip() == ''
+        portal_origin = master['PortalOrigin'].fillna('').astype(str).str.strip()
+        # LastSeasonTeam frequently arrives as the literal string "nan" (a
+        # stringified NaN), which is neither empty nor a real team. That broke
+        # BOTH the portal backfill below (the == '' test never matched) and the
+        # TransferFlag comparison, so only ~3 of ~4,200 portal players were ever
+        # flagged as transfers. Normalise nan-like values to empty first.
+        last_team = master['LastSeasonTeam'].astype(str).str.strip()
+        last_team = last_team.where(~last_team.str.lower().isin(['nan', 'none', 'null']), '')
+        master['LastSeasonTeam'] = last_team
+        missing_last_team = master['LastSeasonTeam'] == ''
         mask = missing_last_team & (portal_origin != '')
         master.loc[mask, 'LastSeasonTeam'] = portal_origin[mask]
-        master = master.drop(columns=['DestinationTeam', 'OriginTeam'], errors='ignore')
+        # A direct portal hit -- the player landed at CurrentTeam per the portal
+        # feed -- is a confirmed transfer on its own. LastSeasonTeam alone never
+        # captured transfers (it only ever held the same team or "nan"), so the
+        # portal match must drive the flag, not just backfill LastSeasonTeam.
+        master['_PortalTransfer'] = portal_origin != ''
+        master = master.drop(columns=['MatchTeam', 'PortalOrigin', 'DestinationTeam', 'OriginTeam'], errors='ignore')
+    else:
+        master['_PortalTransfer'] = False
 
+    _last_team = master['LastSeasonTeam'].astype(str).str.strip()
+    master['LastSeasonTeam'] = _last_team.where(~_last_team.str.lower().isin(['nan', 'none', 'null']), '')
     master['TransferFlag'] = (
-        (master['LastSeasonTeam'].astype(str).str.strip() != '') &
-        (master['CurrentTeam'].astype(str).str.strip() != '') &
-        (master['LastSeasonTeam'].astype(str).str.strip() != master['CurrentTeam'].astype(str).str.strip())
+        master['_PortalTransfer'].astype(bool)
+        | (
+            (master['LastSeasonTeam'].astype(str).str.strip() != '') &
+            (master['CurrentTeam'].astype(str).str.strip() != '') &
+            (master['LastSeasonTeam'].astype(str).str.strip() != master['CurrentTeam'].astype(str).str.strip())
+        )
     )
+    master = master.drop(columns=['_PortalTransfer'], errors='ignore')
     master = master.drop(
         columns=[
             'FallbackJoinKey_Name', 'FallbackJoinKey_NamePos', 'ResolvedHistoryJoinKey',
