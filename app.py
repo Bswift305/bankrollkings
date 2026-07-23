@@ -22126,10 +22126,21 @@ def build_matchup_decision_cards(matchup_props):
 def sports_today_ts():
     """'Today' for schedule/game-date buckets, as a normalized pd.Timestamp.
 
-    Schedule rows are dated in the server's timezone (UTC), so anchor 'today' to
-    server-local time to stay consistent with how games are dated in the schedule.
+    Anchored to US/Eastern (the league clock), NOT the server timezone. Board game
+    dates are Eastern calendar dates (via services.timeutils.to_eastern_date_str),
+    so on a UTC-timezone server datetime.now() rolls to the next day after ~8pm ET
+    while those games are still "today" in Eastern. That silently emptied every
+    today-filtered board through the evening/overnight and stopped curated archiving
+    (which builds with date_filter='today') -- e.g. at 02:40 UTC the server read
+    'today' as Jul 23 while the live slate was Jul 22 ET, so 0 rows matched.
+    A US-timezone dev box happened to agree with Eastern and never saw this; prod
+    (UTC) did. Anchoring to Eastern keeps 'today' aligned with the games on both.
     """
-    return pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
+    try:
+        from zoneinfo import ZoneInfo
+        return pd.Timestamp(datetime.now(ZoneInfo('America/New_York')).strftime('%Y-%m-%d'))
+    except Exception:  # pragma: no cover - missing tzdata; fall back to ambient zone
+        return pd.Timestamp(datetime.now().strftime('%Y-%m-%d'))
 
 
 def sports_today_date():
