@@ -10435,7 +10435,19 @@ def build_featured_results_snapshot_for_sport(sport='NBA', archive_df=None, game
         sport_archive['Method'].astype(str).str.upper() == 'FEATURED TOP PLAY'
     ].copy()
     if featured.empty:
-        featured = sport_archive.copy()
+        # Fall back to the CURATED methods, never the whole archive. MLB has no
+        # 'Featured Top Play' rows (its curated methods are Floor Plays / Market
+        # Edge / Trends), so the old `= sport_archive.copy()` pulled in ~206k rows,
+        # 99% of them generic Available Props. That (a) made the "featured results"
+        # snapshot 92% market noise and its calibration count meaningless, and
+        # (b) graded the entire archive at ~1.5 GB RSS, which earlyoom kills during
+        # the daily run -- so the featured file silently stopped advancing (16+
+        # days stale) while every daily refresh reported [FAIL]. Curated-only is a
+        # few hundred rows: honest content and a snapshot small enough to build.
+        curated_methods = {'FLOOR PLAYS', 'MARKET EDGE', 'TRENDS', 'MATCHUP TOP PROPS', 'PROPS'}
+        featured = sport_archive[
+            sport_archive['Method'].astype(str).str.upper().isin(curated_methods)
+        ].copy()
     if featured.empty:
         return pd.DataFrame()
 
