@@ -53,6 +53,42 @@ def _refresh_reliability_status() -> tuple[str, str]:
     return "WATCH", f"MLB refresh artifact is aging ({latest.name}, {age_hours:.1f}h old)."
 
 
+def _newest_snapshot(path, sport: str | None = None):
+    """Newest SnapshotDate in a tracking CSV, optionally filtered to one sport."""
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception:
+        return None
+    if sport and "Sport" in df.columns:
+        df = df[df["Sport"].astype(str).str.upper() == sport.upper()]
+    if "SnapshotDate" not in df.columns or df.empty:
+        return None
+    dates = pd.to_datetime(df["SnapshotDate"], errors="coerce").dropna()
+    return dates.max() if not dates.empty else None
+
+
+def _featured_freshness(featured_path, candidate_path, max_lag_days: int = 3) -> tuple[str, str]:
+    """Featured results must stay within max_lag_days of the candidate archive.
+
+    Comparing the two rather than 'now' is season-robust: in the offseason both
+    stop advancing together, so the lag stays ~0 and there is no false WATCH.
+    """
+    featured = _newest_snapshot(featured_path)
+    candidate = _newest_snapshot(candidate_path, sport="MLB")
+    if featured is None:
+        return "WATCH", "MLB featured results carry no readable SnapshotDate to verify freshness."
+    if candidate is None:
+        return "PASS", f"MLB featured results present (newest {featured.date()}); no candidate archive to compare."
+    lag = (candidate - featured).days
+    if lag > max_lag_days:
+        return "WATCH", (
+            f"MLB featured results are STALE: newest {featured.date()} is {lag} days behind the "
+            f"candidate archive ({candidate.date()}). The featured/grading snapshot pipeline is not "
+            f"keeping pace -- existence is not completeness."
+        )
+    return "PASS", f"MLB featured results are current (newest {featured.date()}, {max(lag,0)}d behind archive)."
+
+
 def _recent_qc_repeatability() -> tuple[str, str]:
     path = BASE_DIR / "data" / "tracking" / "QC_Run_Log.csv"
     if not path.exists():
@@ -188,16 +224,29 @@ def build_scorecard() -> dict:
         "Reason": visual_report.get("notes", "MLB visual trust QC unavailable."),
     })
 
+    featured_path = BASE_DIR / "data" / "tracking" / "MLB_FeaturedResults.csv"
+    candidate_path = BASE_DIR / "data" / "tracking" / "NBA_CandidateArchive.csv"
     archive_paths = [
         BASE_DIR / "refresh_mlb_featured_results.py",
-        BASE_DIR / "data" / "tracking" / "MLB_FeaturedResults.csv",
-        BASE_DIR / "data" / "tracking" / "NBA_CandidateArchive.csv",
+        featured_path,
+        candidate_path,
     ]
     missing = [path.name for path in archive_paths if not path.exists()]
+    if missing:
+        archive_status = "FAIL"
+        archive_reason = "Missing archive artifacts: " + ", ".join(missing)
+    else:
+        # Existence is not completeness. The featured-results snapshot must keep
+        # pace with the candidate archive it is built from; comparing the two is
+        # season-robust (in the offseason both go quiet together, so no false
+        # alarm). A 7-16 day lag while the archive is current -- as seen in review
+        # -- means the featured/grading snapshot pipeline stalled, and a stale
+        # archive must not read as "complete".
+        archive_status, archive_reason = _featured_freshness(featured_path, candidate_path)
     sections.append({
         "Section": "Archive And Replay Completeness",
-        "Status": "FAIL" if missing else "PASS",
-        "Reason": "Missing archive artifacts: " + ", ".join(missing) if missing else "MLB suggestion surfaces are archive-capable.",
+        "Status": archive_status,
+        "Reason": archive_reason,
     })
 
     calibration_status = "PASS" if resolved >= 50 else "WATCH"
