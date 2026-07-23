@@ -53,14 +53,25 @@ def _refresh_reliability_status() -> tuple[str, str]:
     return "WATCH", f"MLB refresh artifact is aging ({latest.name}, {age_hours:.1f}h old)."
 
 
-def _newest_snapshot(path, sport: str | None = None):
-    """Newest SnapshotDate in a tracking CSV, optionally filtered to one sport."""
+# The featured snapshot is curated-only (Floor Plays / Market Edge / Trends /
+# Featured Top Play / etc.), NOT generic Available Props. So freshness must be
+# judged against the CURATED rows in the candidate archive -- comparing to the
+# full archive (which gets daily Available Props) would flag the featured file as
+# stale even when it is perfectly current with every curated pick.
+_CURATED_METHODS = {"FEATURED TOP PLAY", "FLOOR PLAYS", "MARKET EDGE", "TRENDS", "MATCHUP TOP PROPS", "PROPS"}
+
+
+def _newest_snapshot(path, sport: str | None = None, curated_only: bool = False):
+    """Newest SnapshotDate in a tracking CSV, optionally filtered to one sport
+    and to the curated methods."""
     try:
         df = pd.read_csv(path, low_memory=False)
     except Exception:
         return None
     if sport and "Sport" in df.columns:
         df = df[df["Sport"].astype(str).str.upper() == sport.upper()]
+    if curated_only and "Method" in df.columns:
+        df = df[df["Method"].astype(str).str.upper().isin(_CURATED_METHODS)]
     if "SnapshotDate" not in df.columns or df.empty:
         return None
     dates = pd.to_datetime(df["SnapshotDate"], errors="coerce").dropna()
@@ -74,7 +85,7 @@ def _featured_freshness(featured_path, candidate_path, max_lag_days: int = 3) ->
     stop advancing together, so the lag stays ~0 and there is no false WATCH.
     """
     featured = _newest_snapshot(featured_path)
-    candidate = _newest_snapshot(candidate_path, sport="MLB")
+    candidate = _newest_snapshot(candidate_path, sport="MLB", curated_only=True)
     if featured is None:
         return "WATCH", "MLB featured results carry no readable SnapshotDate to verify freshness."
     if candidate is None:
