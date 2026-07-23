@@ -2,6 +2,34 @@
 
 NCAAF is a sides/totals product first. Player props are optional support, not the primary formula surface.
 
+> ## ⚠ The historical EdgeScore backtest is temporally contaminated — do not cite it as validation (2026-07-22)
+>
+> `calculate_ncaaf_edge_score.py` scores **2025 games** using inputs that did not
+> exist before those games were played:
+> - `NCAAF_TeamRankings_2025_TeamStats.csv` — **full-season** 2025 stats, applied to
+>   every week including Week 1 (i.e. scoring a September game with December's stats).
+> - `NCAAF_TransferPortal.csv` — **Year=2026** portal moves, i.e. transfers that
+>   happened *after* the 2025 season.
+> - Current roster / player-master — the 2026 offseason state.
+>
+> The in-sample result (EdgeScore quintiles separate cover rate ~41% → ~57%, and the
+> reviewer's finer buckets went to ~87%) therefore is **not** a valid backtest. It
+> is impossible to say how much of that separation is real vs leakage with the
+> current data: there is only ONE season (2025, weeks 1-12), the stat inputs are
+> full-season aggregates, and there is no recorded price for ROI. An empirical
+> early-vs-late-week leak test was inconclusive (underpowered at ~90 rows/quintile).
+>
+> This is the same failure class as NFL PropScore (`validate_nfl_prop_score_oos.py`),
+> where a clean two-season holdout showed the in-sample edge INVERTED. NCAAF cannot
+> even be tested that cleanly yet.
+>
+> **A valid backtest requires point-in-time inputs**: team stats through week W-1
+> only, portal/roster state as of the 2025 season (not 2026), returning production as
+> of 2025 preseason. That means re-fetching season-stamped historical data from CFBD.
+> Until then: EdgeScore is a research prototype, its historical hit rates are not
+> evidence, and it must not gate live selection. It is not wired into the live board
+> today, which is correct.
+
 ## Data Responsibilities
 
 CFBD:
