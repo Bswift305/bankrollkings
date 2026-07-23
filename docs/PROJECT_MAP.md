@@ -310,6 +310,17 @@ Game commence times come from providers in UTC. Convert to **fixed US/Eastern** 
 `services/timeutils.py` (`to_eastern_datetime_str` / `to_eastern_date_str`) — NOT a bare
 `.astimezone()` (that uses the process's ambient zone and lands games on the wrong day).
 
+**"Today" must also be Eastern (2026-07-23).** `sports_today_ts()` / `sports_today_date()`
+anchor the date-filter's notion of "today" to **America/New_York**, not `datetime.now()`.
+Board game dates are Eastern calendar dates, so on the **UTC prod server** a plain
+`datetime.now()` rolls to the next day at 8pm ET / 00:00 UTC while that evening's slate is
+still "today" in Eastern — so `date_filter='today'` matched **zero** games every
+evening/overnight. That silently emptied the live board AND starved curated archiving
+(`archive_daily_candidates` builds with `date_filter='today'` and runs hourly through
+02:00 UTC), which is why MLB's curated track record flatlined. **A US-timezone dev box
+agrees with Eastern and never reproduces this — it is prod-only.** Any new "today"/"is this
+game today" logic must anchor to Eastern, never `datetime.now()`.
+
 ---
 
 ## 7b. Betting guardrails — what the graded record actually supports (2026-07-19)
