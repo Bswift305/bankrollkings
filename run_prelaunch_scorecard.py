@@ -277,10 +277,17 @@ def build_scorecard() -> dict:
         f"NBA warnings={nba_contradiction_report['warning_count']}, failures={nba_contradiction_report['failure_count']}; "
         f"NFL warnings={nfl_contradiction_report['warning_count']}, failures={nfl_contradiction_report['failure_count']}."
     )
+    # A contradiction check that evaluated zero plays did not verify integrity --
+    # its zero failure count is vacuous. Only count it as a clean PASS when it
+    # actually had plays to check; otherwise WATCH.
+    both_unverified = bool(nba_contradiction_report.get("unverified")) and bool(nfl_contradiction_report.get("unverified"))
     if nba_contradiction_report["failure_count"] > 0 or nfl_contradiction_report["failure_count"] > 0:
         integrity_status = "FAIL"
     elif nba_contradiction_report["warning_count"] > 0 or nfl_contradiction_report["warning_count"] > 0:
         integrity_status = "WATCH"
+    elif both_unverified:
+        integrity_status = "WATCH"
+        integrity_reason += " Both sports evaluated 0 plays (offseason) -- integrity is UNVERIFIED, not clean."
     sections.append({
         "Section": "Suggestion Integrity",
         "Status": integrity_status,

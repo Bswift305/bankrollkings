@@ -131,7 +131,11 @@ def run_qc(persist=True, fast: bool = False) -> dict:
     }
     if persist:
         update_warning_history("mlb_contradictions", report["warnings"], report["failures"], report["checked_at"])
-        append_qc_run_log("mlb_contradictions", report)
+        # Zero plays means nothing was evaluated -- the absence of failures is not
+    # evidence of clean suggestion integrity. Flag it so scorecards can treat
+    # it as N/A rather than a vacuous PASS (offseason boards hit this).
+    report["unverified"] = int(report.get("featured_prop_count") or 0) == 0
+    append_qc_run_log("mlb_contradictions", report)
     return report
 
 
@@ -155,7 +159,10 @@ def main() -> int:
     print(f"Passes: {report['pass_count']}")
     print(f"Warnings: {report['warning_count']}")
     print(f"Failures: {report['failure_count']}")
-    print(f"Clean: {report['clean']}")
+    if report.get("unverified"):
+        print("Status: UNVERIFIED (0 plays evaluated -- absence of failures is not evidence)")
+    else:
+        print(f"Clean: {report['clean']}")
     print(report["notes"])
     print()
 
