@@ -8,6 +8,7 @@ from app import (
     build_today_hub_context,
     build_matchup_lens_hub_context,
 )
+from qc_platform_routes import _ensure_qc_user
 
 
 EXPECTED_SPORT_KEYS = {"nba", "wnba", "mlb", "nfl", "cfb", "ncaamb", "ncaawb"}
@@ -43,6 +44,12 @@ def run_qc() -> dict:
     checks.append("matchup_coverage")
 
     client = app.test_client()
+    # The /tools/* routes are gated; without an authenticated QC session all nine
+    # 401 and report as route failures the routes do not actually have.
+    qc_user = _ensure_qc_user("sharp")
+    with client.session_transaction() as sess:
+        sess["user_id"] = qc_user["user_id"]
+        sess["user_email"] = qc_user["email"]
     smoke_paths = [
         "/tools/today",
         "/tools/matchup-lens",

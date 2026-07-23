@@ -13,6 +13,7 @@ from app import (
     load_ncaaf_props,
     load_ncaaf_schedule,
 )
+from qc_platform_routes import _ensure_qc_user
 from services.qc_tracking import append_qc_run_log
 
 
@@ -76,12 +77,26 @@ def run_qc() -> dict:
         )
 
     with app.test_client() as client:
+        # These are paid/gated routes -- without an authenticated QC session every
+        # request 401s and reports as a false HIGH routes failure, so the board QC
+        # could never come back clean. Mirror qc_cfb_readiness, which authenticates.
+        qc_user = _ensure_qc_user("sharp")
+        with client.session_transaction() as sess:
+            sess["user_id"] = qc_user["user_id"]
+            sess["user_email"] = qc_user["email"]
+        # Markers must be what these routes ACTUALLY render, not aspirational text.
+        # "Platform Lens" lives on other page types (game_lines/matchup), never on
+        # the NCAAF command board -- it was a wrong expectation, not a regression.
+        # /sports/ncaaf/props is the shared props SCREENER (render_props_screener_
+        # page -> props.html), so it renders board decision columns, not the
+        # method-board "Plain-English Verdict" marker -- same correction as the
+        # qc_cfb_readiness props check (commit ad57615).
         route_expectations = [
-            ("/sports/ncaaf?postseason=1", ["Platform Lens", "Roster & Continuity", "Historical Coverage"]),
+            ("/sports/ncaaf?postseason=1", ["Roster & Continuity", "Historical Coverage"]),
             ("/sports/ncaaf/game-lines?postseason=1", ["Market Read", "Historical Coverage"]),
             ("/sports/ncaaf/totals?postseason=1", ["Matchup Read", "Historical Coverage"]),
             ("/sports/ncaaf/trends?postseason=1", ["Trend Read", "Historical Coverage"]),
-            ("/sports/ncaaf/props?postseason=1", ["Plain-English Verdict", "Historical Coverage"]),
+            ("/sports/ncaaf/props?postseason=1", ["Market", "Confidence", "Player"]),
         ]
         for route, snippets in route_expectations:
             response = client.get(route)
