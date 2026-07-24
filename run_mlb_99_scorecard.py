@@ -178,25 +178,43 @@ def build_scorecard() -> dict:
         context_status = "WATCH"
         context_reason = "MLB game context is empty; weather, umpire, and ballpark tags are not live."
     else:
-        missing_weather = "Temperature" not in context_df.columns or context_df["Temperature"].fillna("").astype(str).str.strip().eq("").all()
-        missing_umpires = "Umpire" not in context_df.columns or context_df["Umpire"].fillna("").astype(str).str.strip().eq("").all()
-        missing_ballpark = "Ballpark" not in context_df.columns or context_df["Ballpark"].fillna("").astype(str).str.strip().eq("").any()
+        # Grade each context component by COVERAGE FRACTION, not all-or-nothing.
+        # The old ".eq('').all()" test only flagged a component when EVERY row was
+        # empty, so 2 of 15 games having an umpire read as fully live. Umpire and
+        # weather feeds fill in progressively (evening assignments pending), so a
+        # component counts as live only when it covers a majority of games, and the
+        # actual fraction is always shown.
+        total = len(context_df)
+
+        def _filled(col):
+            if col not in context_df.columns:
+                return 0
+            return int(context_df[col].fillna("").astype(str).str.strip().ne("").sum())
+
+        bp_n, wx_n, ump_n = _filled("Ballpark"), _filled("Temperature"), _filled("Umpire")
+        CONTEXT_MIN = 0.5  # a component must cover >=50% of games to count as live
+        missing_ballpark = bp_n < total  # ballparks are static; any gap is a real fail
+        thin_weather = wx_n < total * CONTEXT_MIN
+        thin_umpires = ump_n < total * CONTEXT_MIN
         if missing_ballpark:
             context_status = "FAIL"
-        elif missing_weather or missing_umpires:
+        elif thin_weather or thin_umpires:
             context_status = "WATCH"
         else:
             context_status = "PASS"
-        missing_bits = []
-        if missing_weather:
-            missing_bits.append("weather")
-        if missing_umpires:
-            missing_bits.append("umpires")
+        context_reason = (
+            f"{total} game context row(s): ballparks {bp_n}/{total}, "
+            f"weather {wx_n}/{total}, umpires {ump_n}/{total}."
+        )
+        thin_bits = []
         if missing_ballpark:
-            missing_bits.append("ballparks")
-        context_reason = f"{len(context_df)} game context row(s) loaded."
-        if missing_bits:
-            context_reason += " Missing: " + ", ".join(missing_bits) + "."
+            thin_bits.append(f"ballparks {bp_n}/{total}")
+        if thin_weather:
+            thin_bits.append(f"weather {wx_n}/{total}")
+        if thin_umpires:
+            thin_bits.append(f"umpires {ump_n}/{total}")
+        if thin_bits:
+            context_reason += " Thin coverage (graded, not assumed live): " + ", ".join(thin_bits) + "."
     sections.append({
         "Section": "Game Context Intelligence",
         "Status": context_status,

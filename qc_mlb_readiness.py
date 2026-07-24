@@ -87,12 +87,23 @@ def run_qc(skip_routes: bool = False) -> dict:
     if context_df.empty:
         warnings.append("MLB game context is empty; weather, umpire, and ballpark tags are not fully active.")
     else:
+        # Grade weather/umpire context by COVERAGE FRACTION, not all-or-nothing.
+        # ".eq('').all()" only fired when every game was blank, so 2/15 umpires read
+        # as fully connected. Report the actual fraction and advise when it is thin.
+        total = len(context_df)
+
+        def _filled(col):
+            if col not in context_df.columns:
+                return 0
+            return int(context_df[col].fillna("").astype(str).str.strip().ne("").sum())
+
         if "Ballpark" in context_df.columns and context_df["Ballpark"].fillna("").astype(str).str.strip().eq("").any():
             warnings.append("MLB game context has games missing ballpark labels.")
-        if "Temperature" in context_df.columns and context_df["Temperature"].fillna("").astype(str).str.strip().eq("").all():
-            advisories.append("Weather feed is not connected yet; ballpark/run-environment context is still available.")
-        if "Umpire" in context_df.columns and context_df["Umpire"].fillna("").astype(str).str.strip().eq("").all():
-            advisories.append("Umpire assignments are not connected yet; pitcher/K context runs without zone adjustment.")
+        wx_n, ump_n = _filled("Temperature"), _filled("Umpire")
+        if total and wx_n < total * 0.5:
+            advisories.append(f"Weather coverage is thin ({wx_n}/{total} games); run-environment context is still available where present.")
+        if total and ump_n < total * 0.5:
+            advisories.append(f"Umpire coverage is thin ({ump_n}/{total} games); pitcher/K zone adjustment runs only where an assignment is confirmed.")
 
     injury_report = run_mlb_injury_qc(persist=False)
     if injury_report.get("failure_count", 0) > 0:
