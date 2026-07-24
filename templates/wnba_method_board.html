@@ -18,6 +18,12 @@
     </div>
 </div>
 
+{% if refresh_meta.warning %}
+<div class="parlay-surface-soft" style="padding: 12px; margin-bottom: 16px; color: var(--warning); font-weight: 700;">
+    {{ refresh_meta.warning }}
+</div>
+{% endif %}
+
 <div class="card mb-24">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         <a href="/sports/wnba/market-edge?date={{ date_filter }}{% if stat_filter %}&stat={{ stat_filter|urlencode }}{% endif %}{% if direction_filter %}&direction={{ direction_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}" class="btn {% if method_key == 'market_edge' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Market Edge</a>
