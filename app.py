@@ -11556,9 +11556,32 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
     return graded
 
 
+def _archive_roi_for_resolved(resolved_group):
+    """ROI% (mean profit per 1-unit stake) over resolved rows that carry a usable
+    American price in MarketPrice. Hit -> +payout, Miss -> -1u. Pushes are already
+    excluded because `resolved` is Hit/Miss only. Returns (roi_pct, priced_count).
+
+    Why this exists: hit rate alone is misleading -- a book of -250 favorites can hit
+    70% and still lose money, while a book of +150 dogs can hit 45% and win. ROI is the
+    honest scoreboard. Only some archived rows carry a price, so `priced_count` is
+    surfaced separately and must never be assumed equal to the resolved count.
+    """
+    if resolved_group is None or resolved_group.empty or 'MarketPrice' not in resolved_group.columns:
+        return None, 0
+    price = pd.to_numeric(resolved_group['MarketPrice'], errors='coerce')
+    mask = price.notna() & (price.abs() >= 100) & (price.abs() < 100000)
+    if not bool(mask.any()):
+        return None, 0
+    p = price[mask].to_numpy(dtype=float)
+    win_profit = np.where(p < 0, 100.0 / np.abs(p), p / 100.0)
+    hit = resolved_group.loc[mask, 'OutcomeState'].eq('Hit').to_numpy()
+    profit = np.where(hit, win_profit, -1.0)
+    return round(float(profit.mean()) * 100, 1), int(mask.sum())
+
+
 def summarize_candidate_archive(graded_df):
     summary = {
-        'totals': {'candidates': 0, 'hits': 0, 'misses': 0, 'pushes': 0, 'pending': 0, 'hit_rate': None},
+        'totals': {'candidates': 0, 'hits': 0, 'misses': 0, 'pushes': 0, 'pending': 0, 'hit_rate': None, 'roi': None, 'priced_resolved': 0},
         'by_sport': [],
         'by_method': [],
         'by_stat': [],
@@ -11577,6 +11600,9 @@ def summarize_candidate_archive(graded_df):
     resolved = df[df['OutcomeState'].isin(['Hit', 'Miss'])].copy()
     if not resolved.empty:
         summary['totals']['hit_rate'] = round((resolved['OutcomeState'].eq('Hit').sum() / len(resolved)) * 100, 1)
+        roi, priced = _archive_roi_for_resolved(resolved)
+        summary['totals']['roi'] = roi
+        summary['totals']['priced_resolved'] = priced
 
     if 'Sport' in df.columns:
         for sport, group in df.groupby('Sport'):
@@ -11584,6 +11610,7 @@ def summarize_candidate_archive(graded_df):
             hit_rate = None
             if not resolved_group.empty:
                 hit_rate = round((resolved_group['OutcomeState'].eq('Hit').sum() / len(resolved_group)) * 100, 1)
+            roi, priced = _archive_roi_for_resolved(resolved_group)
             summary['by_sport'].append({
                 'sport': sport,
                 'candidates': int(len(group)),
@@ -11591,6 +11618,8 @@ def summarize_candidate_archive(graded_df):
                 'hits': int((group['OutcomeState'] == 'Hit').sum()),
                 'misses': int((group['OutcomeState'] == 'Miss').sum()),
                 'hit_rate': hit_rate,
+                'roi': roi,
+                'priced': priced,
             })
 
     for method, group in df.groupby('Method'):
@@ -11598,6 +11627,7 @@ def summarize_candidate_archive(graded_df):
         hit_rate = None
         if not resolved_group.empty:
             hit_rate = round((resolved_group['OutcomeState'].eq('Hit').sum() / len(resolved_group)) * 100, 1)
+        roi, priced = _archive_roi_for_resolved(resolved_group)
         summary['by_method'].append({
             'method': method,
             'candidates': int(len(group)),
@@ -11605,17 +11635,22 @@ def summarize_candidate_archive(graded_df):
             'hits': int((group['OutcomeState'] == 'Hit').sum()),
             'misses': int((group['OutcomeState'] == 'Miss').sum()),
             'hit_rate': hit_rate,
+            'roi': roi,
+            'priced': priced,
         })
 
     for stat, group in df.groupby('Stat'):
         resolved_group = group[group['OutcomeState'].isin(['Hit', 'Miss'])].copy()
         if resolved_group.empty:
             continue
+        roi, priced = _archive_roi_for_resolved(resolved_group)
         summary['by_stat'].append({
             'stat': stat,
             'resolved': int(len(resolved_group)),
             'hits': int((resolved_group['OutcomeState'] == 'Hit').sum()),
             'hit_rate': round((resolved_group['OutcomeState'].eq('Hit').sum() / len(resolved_group)) * 100, 1),
+            'roi': roi,
+            'priced': priced,
         })
 
     if 'MarketMoveBucket' in df.columns:

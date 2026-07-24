@@ -165,6 +165,11 @@
         <div class="stat-note">{{ summary.totals.hits }} hits / {{ summary.totals.misses }} misses</div>
     </div>
     <div class="stat-card">
+        <div class="page-kicker">Resolved ROI</div>
+        <div class="stat-value" style="color:{% if summary.totals.roi is not none and summary.totals.roi < 0 %}var(--danger){% elif summary.totals.roi is not none %}var(--success){% else %}var(--text-bright){% endif %};">{% if summary.totals.roi is not none %}{{ '%+.1f'|format(summary.totals.roi) }}%{% else %}-{% endif %}</div>
+        <div class="stat-note">{% if summary.totals.priced_resolved %}per 1u at pick price, {{ summary.totals.priced_resolved }} priced{% else %}no priced picks yet{% endif %}</div>
+    </div>
+    <div class="stat-card">
         <div class="page-kicker">Pending</div>
         <div class="stat-value">{{ summary.totals.pending }}</div>
         <div class="stat-note">still waiting on next game</div>
@@ -809,6 +814,7 @@
                         <th>Resolved</th>
                         <th>Hits</th>
                         <th>Hit %</th>
+                        <th>ROI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -818,6 +824,7 @@
                         <td>{{ row.resolved }}</td>
                         <td>{{ row.hits }}</td>
                         <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                        <td>{% if row.roi is not none %}<span style="color:{% if row.roi < 0 %}var(--danger){% else %}var(--success){% endif %}; font-weight:700;">{{ '%+.1f'|format(row.roi) }}%</span><span style="color:var(--text-muted); font-size:11px;"> ({{ row.priced }})</span>{% else %}<span style="color:var(--text-muted);">no price</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -843,6 +850,7 @@
                         <th>Resolved</th>
                         <th>Hits</th>
                         <th>Hit %</th>
+                        <th>ROI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -852,6 +860,7 @@
                         <td>{{ row.resolved }}</td>
                         <td>{{ row.hits }}</td>
                         <td>{% if row.hit_rate is not none %}{{ row.hit_rate }}%{% else %}-{% endif %}</td>
+                        <td>{% if row.roi is not none %}<span style="color:{% if row.roi < 0 %}var(--danger){% else %}var(--success){% endif %}; font-weight:700;">{{ '%+.1f'|format(row.roi) }}%</span><span style="color:var(--text-muted); font-size:11px;"> ({{ row.priced }})</span>{% else %}<span style="color:var(--text-muted);">no price</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -877,6 +886,7 @@
                         <th>Resolved</th>
                         <th>Hits</th>
                         <th>Hit %</th>
+                        <th>ROI</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -886,6 +896,7 @@
                         <td>{{ row.resolved }}</td>
                         <td>{{ row.hits }}</td>
                         <td>{{ row.hit_rate }}%</td>
+                        <td>{% if row.roi is not none %}<span style="color:{% if row.roi < 0 %}var(--danger){% else %}var(--success){% endif %}; font-weight:700;">{{ '%+.1f'|format(row.roi) }}%</span><span style="color:var(--text-muted); font-size:11px;"> ({{ row.priced }})</span>{% else %}<span style="color:var(--text-muted);">no price</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
