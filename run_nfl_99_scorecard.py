@@ -1,3 +1,21 @@
+"""NFL 99% readiness scorecard.
+
+Design rule (2026-07, from a dev review): this scorecard MUST separate
+INFRASTRUCTURE readiness from LIVE readiness.
+
+- Infrastructure = pipes exist, QC runs clean, surfaces are archive-capable, the
+  historical formula lab is populated. This can be true in the offseason.
+- Live readiness = real, resolved, LIVE featured results exist in enough volume to
+  prove the board's calibration on games it actually served.
+
+The historical formula lab (`NFL_AllPropResults_Scored.csv`) is BACKTEST data and is
+in-sample/leaked (see `validate_nfl_prop_score_oos.py`: PropScore inverts out of
+sample). It may demonstrate that the plumbing runs, but it is NOT a live track record
+and must never substitute for live evidence in the headline verdict. So the decision
+can only read "NFL 99% READY" when live resolved rows clear `LIVE_READY_MIN_RESOLVED`;
+with clean infrastructure but no live season yet, it reads
+"INFRASTRUCTURE READY - LIVE SEASON PENDING" -- honest, not green.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -16,6 +34,10 @@ from services.qc_tracking import append_qc_run_log
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_99_Scorecard.csv"
 FEATURED_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NFL_FeaturedResults.csv"
 SCORED_RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NFL_AllPropResults_Scored.csv"
+
+# Minimum LIVE resolved featured rows before the board's calibration is considered
+# proven on games it actually served. Backfill/backtest rows do not count toward this.
+LIVE_READY_MIN_RESOLVED = 50
 
 
 def _load_featured_results() -> pd.DataFrame:
@@ -99,7 +121,11 @@ def build_scorecard() -> dict:
     )
     if source_status == "FAIL" and backfill_resolved >= 1000:
         source_status = "WATCH"
-        source_reason += f" Historical formula lab is populated with {backfill_resolved:,} resolved backfill rows, so live-prop absence is an offseason/data-availability watch rather than a formula blocker."
+        source_reason += (
+            f" Historical formula lab holds {backfill_resolved:,} resolved backfill rows"
+            " (in-sample backtest data, NOT a live record), so live-prop absence is an"
+            " offseason/data-availability watch rather than a formula blocker."
+        )
     sections.append({
         "Section": "Source Truth Accuracy",
         "Status": source_status,
@@ -107,17 +133,25 @@ def build_scorecard() -> dict:
     })
 
     integrity_status = "PASS"
+    integrity_reason = (
+        f"NFL contradiction QC failures={contradiction_report.get('failure_count', 0)}, "
+        f"warnings={contradiction_report.get('warning_count', 0)}."
+    )
     if contradiction_report.get("failure_count", 0) > 0:
         integrity_status = "FAIL"
+    elif contradiction_report.get("unverified"):
+        # 0 featured plays evaluated -> absence of contradictions is not evidence.
+        integrity_status = "WATCH"
+        integrity_reason = (
+            "NFL contradiction QC evaluated 0 featured plays (offseason/no live board), "
+            "so a clean result is UNVERIFIED, not proof of integrity."
+        )
     elif contradiction_report.get("warning_count", 0) > 0:
         integrity_status = "WATCH"
     sections.append({
         "Section": "Suggestion Integrity",
         "Status": integrity_status,
-        "Reason": (
-            f"NFL contradiction QC failures={contradiction_report.get('failure_count', 0)}, "
-            f"warnings={contradiction_report.get('warning_count', 0)}."
-        ),
+        "Reason": integrity_reason,
     })
 
     injury_status = "PASS"
@@ -149,11 +183,18 @@ def build_scorecard() -> dict:
         "Reason": "Missing archive artifacts: " + ", ".join(missing) if missing else "NFL suggestion surfaces are archive-capable.",
     })
 
-    calibration_status = "PASS" if (resolved >= 50 or backfill_resolved >= 1000) else "WATCH"
+    # Calibration maturity is a claim about the LIVE board. Backfill/backtest volume
+    # does not count -- it is in-sample and cannot prove live calibration.
+    calibration_status = "PASS" if resolved >= LIVE_READY_MIN_RESOLVED else "WATCH"
     sections.append({
         "Section": "Calibration Maturity",
         "Status": calibration_status,
-        "Reason": f"NFL featured results currently have {resolved} resolved rows and {pending} pending rows. Historical formula lab has {backfill_resolved:,} resolved rows and {backfill_pending:,} pending rows.",
+        "Reason": (
+            f"NFL LIVE featured results have {resolved} resolved / {pending} pending rows "
+            f"(need >= {LIVE_READY_MIN_RESOLVED} live to prove calibration). "
+            f"The historical formula lab holds {backfill_resolved:,} resolved / {backfill_pending:,} "
+            f"pending rows, but that is in-sample backtest data and is NOT a live track record."
+        ),
     })
 
     repeatability_status, repeatability_reason = _recent_qc_repeatability()
@@ -163,19 +204,40 @@ def build_scorecard() -> dict:
         "Reason": repeatability_reason,
     })
 
+    # Formula tuning must be driven by LIVE resolved evidence. Tuning the live formula
+    # on the in-sample lab is exactly the leakage validate_nfl_prop_score_oos.py proved.
+    learning_ready = resolved >= LIVE_READY_MIN_RESOLVED
     sections.append({
         "Section": "Formula Learning",
-        "Status": "PASS" if (resolved >= 50 or backfill_resolved >= 1000) else "WATCH",
+        "Status": "PASS" if learning_ready else "WATCH",
         "Reason": (
-            "NFL calibration has enough resolved evidence to inform formula changes."
-            if (resolved >= 50 or backfill_resolved >= 1000)
-            else "NFL logging/reporting are in place, but resolved evidence is still too thin for confident tuning."
+            "NFL live calibration has enough resolved evidence to inform formula changes."
+            if learning_ready
+            else (
+                f"NFL logging/reporting are in place, but only {resolved} LIVE resolved rows exist; "
+                f"the {backfill_resolved:,}-row historical lab is in-sample and must not be used to "
+                f"tune the live formula."
+            )
         ),
     })
 
     fail_count = sum(1 for row in sections if row["Status"] == "FAIL")
     watch_count = sum(1 for row in sections if row["Status"] == "WATCH")
-    decision = "NFL 99% READY" if fail_count == 0 and watch_count <= 2 else "NOT 99% YET"
+
+    # The headline splits INFRASTRUCTURE from LIVE readiness. "99% READY" is a claim
+    # the live product is proven, so it requires live resolved evidence; it can never
+    # be reached on backfill alone. Order matters: a real FAIL blocks everything; then
+    # thin live evidence caps the verdict at infrastructure-ready; only with live
+    # evidence AND a clean board do we claim 99% ready.
+    live_ready = resolved >= LIVE_READY_MIN_RESOLVED
+    if fail_count > 0:
+        decision = "NOT 99% YET"
+    elif not live_ready:
+        decision = "INFRASTRUCTURE READY - LIVE SEASON PENDING"
+    elif watch_count <= 2:
+        decision = "NFL 99% READY"
+    else:
+        decision = "NOT 99% YET"
 
     df = pd.DataFrame(sections)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +249,14 @@ def build_scorecard() -> dict:
         "pass_count": sum(1 for row in sections if row["Status"] == "PASS"),
         "warning_count": watch_count,
         "failure_count": fail_count,
-        "notes": f"NFL 99 score: WATCH={watch_count} | FAIL={fail_count}",
+        "live_resolved": resolved,
+        "backfill_resolved": backfill_resolved,
+        "live_ready": live_ready,
+        "notes": (
+            f"NFL 99 score: {decision} | live_resolved={resolved} "
+            f"(need >= {LIVE_READY_MIN_RESOLVED}) | backfill={backfill_resolved:,} (in-sample) | "
+            f"WATCH={watch_count} | FAIL={fail_count}"
+        ),
         "rows": sections,
         "output_path": str(OUTPUT_PATH),
     }
@@ -212,6 +281,10 @@ def main() -> int:
     print("=" * 60)
     print(f"Checked at: {report['checked_at']}")
     print(f"Decision: {report['decision']}")
+    print(
+        f"Live readiness: {report['live_resolved']} live resolved "
+        f"(need >= {LIVE_READY_MIN_RESOLVED}) | backfill {report['backfill_resolved']:,} rows are in-sample, not live"
+    )
     print(f"PASS: {report['pass_count']}")
     print(f"WATCH: {report['warning_count']}")
     print(f"FAIL: {report['failure_count']}")
