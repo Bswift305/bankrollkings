@@ -191,6 +191,16 @@ cache for those with `?v=...` and/or a service-worker version bump.
     long parlay, same-player, stat/side concentration, longshot concentration, single-sport,
     missing pricing — plus naive combined implied prob (labeled "assumes independence").
     Honest language: cross-sport = "lower shared-event concentration", NOT "uncorrelated".
+  - **Game Context** `/tools/game-context` (`game_context_tool`, all_access; toolbar item
+    after Ticket Check). Per-matchup context with an availability STATE per field
+    (Verified/Partial/Pending/Stale/Unavailable/N/A) so missing context never reads as
+    neutral. `build_game_context_context`: MLB per-game board from `MLB_GameContext.csv` +
+    `MLB_Lineups.csv` (both full team names — clean join) → Lineup / Weather / Park /
+    Officials; plus a cross-sport coverage matrix (Injuries/Market feed-level per sport).
+    KEY: the umpire feed returns a paywall placeholder ("XX Free account required...") —
+    `_gc_umpire_state` detects it and reports Officials **Unavailable**, not present.
+    Everything is a QuickTool now (7 live): Slate Pulse, Best Lines, Risk Radar, Ticket
+    Check, Game Context, Track Record, Injury Report. Market Movers + Model-vs-Market deferred.
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across

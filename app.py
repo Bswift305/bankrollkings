@@ -702,6 +702,7 @@ PRO_ENDPOINTS = {
     'track_record_tool',
     'risk_radar_tool',
     'ticket_check_tool',
+    'game_context_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1427,6 +1428,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'best_lines', 'label': 'Best Lines', 'href': '/tools/best-lines'},
         {'key': 'risk_radar', 'label': 'Risk Radar', 'href': '/tools/risk-radar'},
         {'key': 'ticket_check', 'label': 'Ticket Check', 'href': '/tools/ticket-check'},
+        {'key': 'game_context', 'label': 'Game Context', 'href': '/tools/game-context'},
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
@@ -17849,6 +17851,120 @@ def build_risk_radar_context(league_filter='', flag_filter='', page=1, per_page=
         'page': page,
         'page_count': page_count,
         'per_page': per_page,
+    }
+
+
+def _gc_umpire_state(value):
+    """Officials state. The MLB context feed writes a paywall placeholder ('XX Free
+    account required...') or '-' when no real assignment is available -- treat those as
+    Unavailable, not present. This is exactly the 'missing context looks present' trap."""
+    v = str(value or '').strip()
+    low = v.lower()
+    if not v or v in {'-', '--'} or 'free account' in low or low.startswith('xx') or low in {'tbd', 'pending', 'nan'}:
+        return 'unavailable', 'Not connected'
+    return 'verified', v
+
+
+def build_game_context_context():
+    """Per-matchup context board: which contextual inputs are actually verified for each
+    game, so missing context is never mistaken for neutral context. MLB (in-season) gets
+    the full read from MLB_GameContext + MLB_Lineups (both keyed on full team names, a
+    clean join); a cross-sport strip shows which context feeds each sport even has."""
+    games = []
+    context_updated = ''
+    ctx_stale = False
+    try:
+        ctx = _load_cached_csv(DATA_DIR / 'context' / 'MLB_GameContext.csv', default=pd.DataFrame())
+    except Exception:
+        ctx = pd.DataFrame()
+
+    # lineup status per team (CONFIRMED / PROBABLE), joined on full team name
+    lineup_status = {}
+    try:
+        lu = _load_cached_csv(DATA_DIR / 'lineups' / 'MLB_Lineups.csv', default=pd.DataFrame())
+        if lu is not None and not lu.empty and {'Team', 'LineupStatus'}.issubset(lu.columns):
+            for team, grp in lu.groupby('Team'):
+                statuses = set(grp['LineupStatus'].fillna('').astype(str).str.upper())
+                lineup_status[str(team).strip()] = 'CONFIRMED' if 'CONFIRMED' in statuses else ('PROBABLE' if 'PROBABLE' in statuses else '')
+    except Exception:
+        lineup_status = {}
+
+    if ctx is not None and not ctx.empty and {'Away', 'Home'}.issubset(ctx.columns):
+        if 'LastUpdated' in ctx.columns:
+            updates = pd.to_datetime(ctx['LastUpdated'], errors='coerce').dropna()
+            if not updates.empty:
+                latest = updates.max()
+                context_updated = latest.strftime('%b %d, %I:%M %p')
+                try:
+                    ctx_stale = (pd.Timestamp.now() - latest) > pd.Timedelta(hours=12)
+                except Exception:
+                    ctx_stale = False
+        for _, row in ctx.iterrows():
+            away = str(row.get('Away') or '').strip()
+            home = str(row.get('Home') or '').strip()
+            if not away or not home:
+                continue
+            # Weather
+            temp = pd.to_numeric(pd.Series([row.get('Temperature')]), errors='coerce').iloc[0]
+            wind = pd.to_numeric(pd.Series([row.get('WindMph')]), errors='coerce').iloc[0]
+            if pd.notna(temp):
+                bits = [f'{temp:.0f}°F']
+                if pd.notna(wind):
+                    bits.append(f'{wind:.0f}mph {str(row.get("WindDirection") or "").strip()}'.strip())
+                weather = ('stale' if ctx_stale else 'verified', ' · '.join(bits))
+            else:
+                weather = ('unavailable', 'No forecast')
+            # Park
+            park_name = str(row.get('Ballpark') or '').strip()
+            park = ('verified', park_name) if park_name else ('unavailable', 'Unknown')
+            # Officials
+            officials = _gc_umpire_state(row.get('Umpire'))
+            # Lineup (both teams)
+            a_ln, h_ln = lineup_status.get(away, ''), lineup_status.get(home, '')
+            if a_ln == 'CONFIRMED' and h_ln == 'CONFIRMED':
+                lineup = ('verified', 'Both confirmed')
+            elif a_ln or h_ln:
+                confirmed = [t for t, s in ((away, a_ln), (home, h_ln)) if s == 'CONFIRMED']
+                lineup = ('partial', (f'{len(confirmed)}/2 confirmed' if confirmed else 'Probable only'))
+            else:
+                lineup = ('pending', 'Not posted')
+            games.append({
+                'matchup': f'{away} @ {home}',
+                'lineup': {'state': lineup[0], 'value': lineup[1]},
+                'weather': {'state': weather[0], 'value': weather[1]},
+                'park': {'state': park[0], 'value': park[1]},
+                'officials': {'state': officials[0], 'value': officials[1]},
+            })
+
+    # Cross-sport availability strip: which context feeds each sport even carries.
+    sports = []
+    for key, label, _loader in _BEST_LINE_SPECS:
+        try:
+            inj_n = int(len(load_sport_injuries(key)))
+        except Exception:
+            inj_n = 0
+        try:
+            markets = _slate_count_games(_load_line_movement_current(key))
+        except Exception:
+            markets = 0
+        if key == 'mlb':
+            fields = {'Injuries': 'verified' if inj_n else 'unavailable', 'Market': 'verified' if markets else 'unavailable',
+                      'Lineup': 'verified', 'Weather': 'stale' if ctx_stale else 'verified', 'Park': 'verified', 'Officials': 'unavailable'}
+        elif key in ('nba', 'wnba'):
+            fields = {'Injuries': 'verified' if inj_n else 'unavailable', 'Market': 'verified' if markets else 'unavailable',
+                      'Lineup': 'na', 'Weather': 'na', 'Park': 'na', 'Officials': 'na'}
+        else:  # nfl / ncaaf
+            fields = {'Injuries': 'verified' if inj_n else 'unavailable', 'Market': 'verified' if markets else 'unavailable',
+                      'Lineup': 'na', 'Weather': 'unavailable', 'Park': 'na', 'Officials': 'na'}
+        sports.append({'key': key, 'label': label, 'injuries': inj_n, 'markets': markets, 'fields': fields})
+
+    return {
+        'games': games,
+        'game_count': len(games),
+        'context_updated': context_updated,
+        'context_stale': ctx_stale,
+        'sports': sports,
+        'field_order': ['Injuries', 'Market', 'Lineup', 'Weather', 'Park', 'Officials'],
     }
 
 
@@ -38093,6 +38209,12 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/game-context')
+def game_context_tool():
+    """Quick Tool: per-matchup context with an honest availability state per field."""
+    return render_template('game_context.html', **build_game_context_context())
 
 
 @app.route('/tools/ticket-check')

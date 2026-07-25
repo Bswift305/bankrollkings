@@ -1,0 +1,101 @@
+{% set active_page = 'game_context' %}
+{% extends "bk_base.html" %}
+{% block title %}Game Context - Bankroll Kings{% endblock %}
+
+{% set state_label = {'verified':'Verified','partial':'Partial','pending':'Pending','stale':'Stale','unavailable':'Unavailable','na':'N/A'} %}
+{% macro badge(state) %}<span class="gc-badge gc-{{ state }}">{{ state_label[state] }}</span>{% endmacro %}
+{% macro cell(field) %}<div class="gc-cell">{{ badge(field.state) }}{% if field.value %}<div class="gc-val">{{ field.value }}</div>{% endif %}</div>{% endmacro %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Game <span class="accent">Context</span></h1>
+        <div class="page-subtitle">Which contextual inputs are actually verified for each matchup &mdash; so missing context reads as missing, never as neutral. Context depth differs by sport, and this shows it plainly.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/slate-pulse" class="btn btn-secondary btn-sm">Slate Pulse</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header"><div class="card-title">Context Coverage by Sport</div></div>
+    <div class="table-shell">
+        <table class="data-table gc-matrix">
+            <thead>
+                <tr><th>Sport</th>{% for f in field_order %}<th>{{ f }}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+                {% for s in sports %}
+                <tr>
+                    <td><span class="gc-sport">{{ s.label }}</span></td>
+                    {% for f in field_order %}<td>{{ badge(s.fields[f]) }}</td>{% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="p-16 gc-note">Injuries and Market are read at the feed level (available / not). Lineup, Weather, Park and Officials are game-level and today exist only for MLB. <strong>N/A</strong> means the field doesn&rsquo;t apply to that sport (indoor, no venue effect); <strong>Unavailable</strong> means it could apply but no feed is connected.</div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">MLB Matchup Context</div>
+        {% if context_updated %}<div class="gc-updated">context updated {{ context_updated }}{% if context_stale %} · <span style="color:var(--danger);">stale</span>{% endif %}</div>{% endif %}
+    </div>
+    {% if games %}
+    <div class="table-shell">
+        <table class="data-table" id="gc-table">
+            <thead>
+                <tr>
+                    <th>Matchup</th>
+                    <th>Lineup</th>
+                    <th>Weather</th>
+                    <th>Park</th>
+                    <th>Officials</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in games %}
+                <tr>
+                    <td class="gc-matchup">{{ g.matchup }}</td>
+                    <td>{{ cell(g.lineup) }}</td>
+                    <td>{{ cell(g.weather) }}</td>
+                    <td>{{ cell(g.park) }}</td>
+                    <td>{{ cell(g.officials) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:28px;">
+        <div class="empty-state-title">No MLB games with context right now</div>
+        <div class="empty-state-copy">The per-game board fills from the MLB context feed on game days. Other sports&rsquo; coverage is in the strip above.</div>
+    </div>
+    {% endif %}
+    <div class="p-16 gc-disclaimer">
+        <strong>How to read this:</strong> <em>Verified</em> = the value is present in a live feed. <em>Pending / Partial</em> = expected but not fully posted (e.g. lineups before a game). <em>Stale</em> = present but old. <em>Unavailable</em> = it could apply but no feed is connected &mdash; note the umpire feed currently returns a paywall placeholder, so Officials reads Unavailable rather than pretending an assignment exists. <em>N/A</em> = the field doesn&rsquo;t apply to that sport. A blank field is not a neutral one.
+    </div>
+</div>
+
+<style>
+    .gc-badge { font-size:10.5px; font-weight:800; letter-spacing:.02em; border-radius:999px; padding:2px 9px; white-space:nowrap; border:1px solid var(--border); }
+    .gc-verified { color:var(--success); border-color:rgba(46,160,90,.4); background:rgba(46,160,90,.1); }
+    .gc-partial, .gc-pending { color:#e8833a; border-color:rgba(232,131,58,.4); background:rgba(232,131,58,.08); }
+    .gc-stale { color:var(--danger); border-color:rgba(220,80,60,.4); background:rgba(220,80,60,.08); }
+    .gc-unavailable { color:var(--danger); border-color:rgba(220,80,60,.3); }
+    .gc-na { color:var(--text-muted); opacity:.7; }
+    .gc-sport { font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text-bright); border:1px solid var(--border); border-radius:6px; padding:2px 8px; }
+    .gc-matrix th, .gc-matrix td { text-align:center; }
+    .gc-matrix th:first-child, .gc-matrix td:first-child { text-align:left; }
+    .gc-cell { display:flex; flex-direction:column; gap:3px; align-items:flex-start; }
+    .gc-val { color:var(--text-muted); font-size:11px; }
+    .gc-matchup { font-weight:700; color:var(--text-bright); }
+    .gc-updated { font-size:12px; color:var(--text-muted); }
+    .gc-note { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.55; }
+    .gc-note strong { color:var(--text-bright); }
+    .gc-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .gc-disclaimer strong { color:var(--text-bright); } .gc-disclaimer em { color:var(--text-bright); font-style:normal; font-weight:600; }
+</style>
+{% endblock %}
