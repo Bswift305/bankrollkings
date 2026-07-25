@@ -1,4 +1,5 @@
 import argparse
+import gc
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -235,7 +236,9 @@ def archive_wnba():
     odds = load_wnba_game_market_odds()
     schedule = load_wnba_schedule()
     gamelogs = load_wnba_gamelogs()
-    counts = {}
+    # Same pattern as archive_mlb: build the boards (needs gamelogs), then free the
+    # heavy frames before the archive concat+dedup phase.
+    built = []
     for method_key, method_name in [('market_edge', 'Market Edge'), ('floor_plays', 'Floor Plays'), ('trends', 'Trends')]:
         rows = build_wnba_method_board(
             method_key,
@@ -248,6 +251,11 @@ def archive_wnba():
             direction_filter='all',
             search_query='',
         )
+        built.append((method_key, method_name, rows))
+    del gamelogs, props, odds, schedule
+    gc.collect()
+    counts = {}
+    for method_key, method_name, rows in built:
         counts[method_name] = archive_wnba_method_candidates(
             method_name,
             rows,
@@ -264,7 +272,11 @@ def archive_mlb():
     odds = load_mlb_game_market_odds()
     schedule = load_mlb_schedule()
     gamelogs = load_mlb_gamelogs()
-    counts = {}
+    # Build every board first (this is what needs the heavy gamelogs), then free
+    # gamelogs/props BEFORE the archive concat+dedup phase, which loads the full
+    # 214k-row archive and holds several copies. Keeping the ~300MB gamelogs frame
+    # alive through that phase is what pushed peak RSS over the OOM line.
+    built = []
     for method_key, method_name in [('market_edge', 'Market Edge'), ('floor_plays', 'Floor Plays'), ('trends', 'Trends')]:
         rows = build_mlb_method_board(
             method_key,
@@ -277,6 +289,11 @@ def archive_mlb():
             direction_filter='all',
             search_query='',
         )
+        built.append((method_key, method_name, rows))
+    del gamelogs, props, odds, schedule
+    gc.collect()
+    counts = {}
+    for method_key, method_name, rows in built:
         counts[method_name] = archive_mlb_method_candidates(
             method_name,
             rows,
@@ -319,11 +336,18 @@ def archive_football():
 
 
 def archive_row_count():
+    # Diagnostic-only (the "Archive rows: before -> after" line). This used to
+    # pd.read_csv the whole 214k-row archive into a DataFrame twice per run just
+    # to len() it -- ~400-600MB transient each on a box with ~1.6GB of headroom.
+    # Count newlines in fixed-size binary chunks instead: negligible memory.
+    # Rows with embedded newlines in text fields make this an approximation, but
+    # the before/after DELTA (what we actually report) stays consistent.
     if not CANDIDATE_ARCHIVE_PATH.exists():
         return 0
     try:
-        df = pd.read_csv(CANDIDATE_ARCHIVE_PATH)
-        return int(len(df))
+        with open(CANDIDATE_ARCHIVE_PATH, 'rb') as fh:
+            newlines = sum(chunk.count(b'\n') for chunk in iter(lambda: fh.read(1 << 20), b''))
+        return max(newlines - 1, 0)  # minus the header row
     except Exception:
         return 0
 
@@ -341,11 +365,19 @@ def main():
     sports = _parse_sports(args.sports)
     before = archive_row_count()
     statuses = [] if args.skip_routes else archive_routes()
+    # Collect between phases so one phase's transient copies (board frames, the
+    # archive concat/dedup temporaries) are released before the next phase peaks,
+    # keeping max RSS to the largest single phase rather than their sum.
     available_written = archive_available_props(sports)
+    gc.collect()
     trend_written = archive_trends() if 'NBA' in sports else 0
+    gc.collect()
     wnba_written = archive_wnba() if 'WNBA' in sports else {}
+    gc.collect()
     mlb_written = archive_mlb() if 'MLB' in sports else {}
+    gc.collect()
     football_written = archive_football() if {'NFL', 'NCAAF'} & sports else {}
+    gc.collect()
     after = archive_row_count()
 
     print("BANKROLL KINGS - Archive Daily Candidates")
