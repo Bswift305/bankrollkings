@@ -184,6 +184,13 @@ cache for those with `?v=...` and/or a service-worker version bump.
     score" (per user: sports don't share equivalent evidence). NOTE: a "line disagreement"
     and "one-sided" flag were built then DROPPED — grouping alt lines (HR 0.5/1.5/2.5) by
     (Player,Stat,Game) made them misread one book's alternate lines as book disagreement.
+  - **Ticket Check** `/tools/ticket-check` (`ticket_check_tool`, all_access; toolbar item
+    after Risk Radar). Paste a multi-sport parlay (GET `legs`, one/line `Sport | Player |
+    Stat | Over/Under | Odds`, lenient parse). `build_ticket_check_context` returns
+    STRUCTURAL warnings (not EV): injury exposure (legs vs all injury feeds), all-OVER,
+    long parlay, same-player, stat/side concentration, longshot concentration, single-sport,
+    missing pricing — plus naive combined implied prob (labeled "assumes independence").
+    Honest language: cross-sport = "lower shared-event concentration", NOT "uncorrelated".
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across

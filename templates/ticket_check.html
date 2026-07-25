@@ -1,0 +1,139 @@
+{% set active_page = 'ticket_check' %}
+{% extends "bk_base.html" %}
+{% block title %}Ticket Check - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Ticket <span class="accent">Check</span></h1>
+        <div class="page-subtitle">Paste a multi-sport parlay and get its structural warnings &mdash; concentration, all-over, longshots, injured legs. It diagnoses how the ticket is built, not whether it will win.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/risk-radar" class="btn btn-secondary btn-sm">Risk Radar</a>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <form class="p-16" method="get" action="/tools/ticket-check">
+        <div class="control-label" style="margin-bottom:8px;">Your legs &mdash; one per line: <code>Sport | Player | Stat | Over/Under | Odds</code></div>
+        <textarea name="legs" class="tc-input" rows="6" placeholder="MLB | Aaron Judge | Home Runs | Over | +150
+NBA | Anthony Edwards | Points | Under | -110
+NFL | CeeDee Lamb | Rec Yds | Over | -115">{{ raw_legs }}</textarea>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+            <button type="submit" class="btn btn-primary btn-sm">Check Ticket</button>
+            <a href="/tools/ticket-check" class="btn btn-secondary btn-sm">Clear</a>
+            <span class="tc-hint">Trailing fields are optional &mdash; a bare player name still parses.</span>
+        </div>
+    </form>
+</div>
+
+{% if legs %}
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Legs</div>
+        <div class="stat-value">{{ leg_count }}</div>
+        <div class="stat-note">{{ over_count }} over &middot; {{ leg_count - over_count }} other</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Sports</div>
+        <div class="stat-value">{{ sport_count if sport_count else '—' }}</div>
+        <div class="stat-note">{% if sport_count > 1 %}spread across sports{% else %}single sport{% endif %}</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Combined Implied</div>
+        <div class="stat-value">{% if combined_implied is not none %}{{ combined_implied }}%{% else %}&mdash;{% endif %}</div>
+        <div class="stat-note">{% if combined_implied is not none %}naive product &middot; assumes independence{% else %}price a leg to compute{% endif %}</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Warnings</div>
+        <div class="stat-value" style="color:{% if warnings %}var(--warning){% else %}var(--success){% endif %};">{{ warnings|length }}</div>
+        <div class="stat-note">structural flags</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header"><div class="card-title">Construction Warnings</div></div>
+    {% if warnings %}
+    <div class="p-16 tc-warn-list">
+        {% for w in warnings %}
+        <div class="tc-warn tc-tone-{{ w.tone }}">
+            <span class="tc-warn-kind">{{ w.kind }}</span>
+            <span class="tc-warn-msg">{{ w.message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-16 tc-clean">No structural warnings on this build &mdash; that says the construction is clean, not that it will win.</div>
+    {% endif %}
+
+    <div class="table-shell">
+        <table class="data-table" id="tc-table">
+            <thead>
+                <tr>
+                    <th>Sport</th>
+                    <th>Player / Market</th>
+                    <th>Side</th>
+                    <th style="text-align:right;">Odds</th>
+                    <th style="text-align:right;">Implied</th>
+                    <th>Leg flags</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in legs %}
+                <tr>
+                    <td>{% if l.sport %}<span class="tc-sport">{{ l.sport }}</span>{% else %}<span class="tc-meta">?</span>{% endif %}</td>
+                    <td><div class="tc-player">{{ l.player or '—' }}</div>{% if l.stat %}<div class="tc-meta">{{ l.stat }}</div>{% endif %}</td>
+                    <td>{% if l.direction %}<span class="tc-side tc-side-{{ l.direction|lower }}">{{ l.direction }}</span>{% else %}<span class="tc-meta">—</span>{% endif %}</td>
+                    <td style="text-align:right;">{% if l.odds is not none %}{{ '%+d'|format(l.odds) }}{% else %}<span class="tc-meta">—</span>{% endif %}</td>
+                    <td style="text-align:right;">{% if l.implied is not none %}{{ l.implied }}%{% else %}<span class="tc-meta">—</span>{% endif %}</td>
+                    <td>
+                        {% for f in l.flags %}<span class="tc-chip tc-chip-{{ f|replace(' ','-') }}">{% if f == 'injury' and l.injury %}injury: {{ l.injury[1] }}{% else %}{{ f }}{% endif %}</span>{% endfor %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="p-16 tc-disclaimer">
+        <strong>How to read this:</strong> This is a construction diagnosis, not a bet rating. <em>Combined Implied</em> is the naive product of each leg&rsquo;s price and assumes the legs are independent &mdash; correlated legs (same game, same player) move together, so the true number differs. Spreading across sports gives <em>lower shared-event concentration</em>, which is not the same as statistical independence. Nothing here promises positive expected value.
+    </div>
+</div>
+{% elif has_input %}
+<div class="card mb-24"><div class="empty-state" style="padding:28px;">
+    <div class="empty-state-title">Couldn&rsquo;t read any legs</div>
+    <div class="empty-state-copy">Put one leg per line using <code>Sport | Player | Stat | Over/Under | Odds</code>. Even <code>Aaron Judge</code> on its own works.</div>
+</div></div>
+{% else %}
+<div class="card mb-24"><div class="empty-state" style="padding:28px;">
+    <div class="empty-state-title">Paste a ticket above to check it</div>
+    <div class="empty-state-copy">You&rsquo;ll get warnings for all-over builds, repeated players, longshot stacks, injured legs, and thin diversification &mdash; plus the naive combined odds.</div>
+</div></div>
+{% endif %}
+
+<style>
+    .tc-input { width:100%; background:var(--surface, rgba(255,255,255,.02)); color:var(--text-bright); border:1px solid var(--border); border-radius:10px; padding:12px; font-size:13px; font-family:ui-monospace,Menlo,Consolas,monospace; line-height:1.6; resize:vertical; }
+    .tc-input::placeholder { color:var(--text-muted); }
+    .tc-hint { color:var(--text-muted); font-size:12px; }
+    .control-label code, .empty-state-copy code { color:var(--accent); font-size:12px; }
+    .tc-warn-list { display:flex; flex-direction:column; gap:8px; }
+    .tc-warn { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; padding:10px 12px; border:1px solid var(--border); border-radius:8px; border-left-width:3px; }
+    .tc-warn-kind { font-weight:800; font-size:12px; white-space:nowrap; }
+    .tc-warn-msg { color:var(--text-muted); font-size:12.5px; line-height:1.5; }
+    .tc-tone-danger { border-left-color:var(--danger); } .tc-tone-danger .tc-warn-kind { color:var(--danger); }
+    .tc-tone-warn { border-left-color:#e8833a; } .tc-tone-warn .tc-warn-kind { color:#e8833a; }
+    .tc-tone-muted { border-left-color:var(--border); } .tc-tone-muted .tc-warn-kind { color:var(--text-muted); }
+    .tc-clean { color:var(--success); font-size:13px; }
+    .tc-sport { font-size:11px; font-weight:700; color:var(--text-muted); border:1px solid var(--border); border-radius:6px; padding:2px 7px; }
+    .tc-player { font-weight:700; color:var(--text-bright); }
+    .tc-meta { color:var(--text-muted); font-size:11px; }
+    .tc-side { font-size:11px; font-weight:800; border-radius:999px; padding:2px 9px; }
+    .tc-side-over { color:#4db889; background:rgba(77,184,137,.12); border:1px solid rgba(77,184,137,.35); }
+    .tc-side-under { color:#64a7e8; background:rgba(100,167,232,.12); border:1px solid rgba(100,167,232,.35); }
+    .tc-chip { font-size:10.5px; font-weight:700; border-radius:999px; padding:2px 8px; margin-right:4px; border:1px solid var(--border); color:var(--text-muted); }
+    .tc-chip-injury { color:var(--danger); border-color:rgba(220,80,60,.4); background:rgba(220,80,60,.08); }
+    .tc-chip-longshot { color:#e8833a; border-color:rgba(232,131,58,.4); background:rgba(232,131,58,.08); }
+    .tc-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .tc-disclaimer strong { color:var(--text-bright); } .tc-disclaimer em { color:var(--text-bright); font-style:normal; font-weight:600; }
+</style>
+{% endblock %}

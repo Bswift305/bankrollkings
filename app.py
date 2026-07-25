@@ -701,6 +701,7 @@ PRO_ENDPOINTS = {
     'best_lines_tool',
     'track_record_tool',
     'risk_radar_tool',
+    'ticket_check_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1425,6 +1426,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'slate', 'label': 'Slate Pulse', 'href': '/tools/slate-pulse'},
         {'key': 'best_lines', 'label': 'Best Lines', 'href': '/tools/best-lines'},
         {'key': 'risk_radar', 'label': 'Risk Radar', 'href': '/tools/risk-radar'},
+        {'key': 'ticket_check', 'label': 'Ticket Check', 'href': '/tools/ticket-check'},
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
@@ -17847,6 +17849,144 @@ def build_risk_radar_context(league_filter='', flag_filter='', page=1, per_page=
         'page': page,
         'page_count': page_count,
         'per_page': per_page,
+    }
+
+
+def _all_injured_lookup():
+    """player-name(lower) -> (league label, status) across every sport's injury feed,
+    for Out/Doubtful/Questionable only. Powers the ticket's injury-exposure check."""
+    injured = {}
+    for key, label, _loader in _BEST_LINE_SPECS:
+        try:
+            inj = load_sport_injuries(key)
+        except Exception:
+            continue
+        if inj is None or inj.empty or 'Player' not in inj.columns:
+            continue
+        for _, ir in inj.iterrows():
+            _, bucket = _injury_severity_bucket(str(ir.get('Status') or ''))
+            if bucket in ('Out', 'Doubtful', 'Questionable'):
+                nm = str(ir.get('Player') or '').strip().lower()
+                if nm:
+                    injured[nm] = (label, str(ir.get('Status') or '').strip() or bucket)
+    return injured
+
+
+def _parse_ticket_legs(raw):
+    """Lenient parse of pasted legs, one per line, pipe-delimited:
+    `Sport | Player | Stat | Over/Under | Odds` (trailing fields optional)."""
+    legs = []
+    for line in str(raw or '').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split('|')]
+        sport = player = stat = direction = odds_raw = ''
+        if len(parts) >= 5:
+            sport, player, stat, direction, odds_raw = parts[0], parts[1], parts[2], parts[3], parts[4]
+        elif len(parts) == 4:
+            player, stat, direction, odds_raw = parts
+        elif len(parts) == 3:
+            player, stat, direction = parts
+        elif len(parts) == 2:
+            player, stat = parts
+        else:
+            player = parts[0]
+        du = direction.upper()
+        direction = 'OVER' if du.startswith('O') else ('UNDER' if du.startswith('U') else '')
+        odds = None
+        match = re.search(r'[+-]?\d{2,5}', odds_raw)
+        if match:
+            try:
+                odds = int(match.group())
+            except ValueError:
+                odds = None
+        implied = american_odds_to_implied_prob(odds) if odds is not None else None
+        legs.append({'raw': line, 'sport': sport.upper(), 'player': player, 'stat': stat,
+                     'direction': direction, 'odds': odds,
+                     'implied': round(implied * 100, 1) if implied is not None else None,
+                     '_implied': implied, 'flags': [], 'injury': None})
+    return legs
+
+
+def build_ticket_check_context(raw_legs=''):
+    """Structural diagnosis of a pasted multi-sport ticket. Flags construction risk
+    (concentration, all-over, longshots, injured legs) -- NOT expected value. Cross-sport
+    legs are lower shared-event concentration, which is not the same as independence."""
+    raw_legs = str(raw_legs or '')
+    legs = _parse_ticket_legs(raw_legs)
+    if not legs:
+        return {'legs': [], 'warnings': [], 'has_input': bool(raw_legs.strip()),
+                'raw_legs': raw_legs, 'leg_count': 0, 'combined_implied': None,
+                'sport_count': 0, 'over_count': 0}
+
+    injured = _get_ttl_cached_value('ticket_injured', 300, _all_injured_lookup)
+    n = len(legs)
+    player_counts, statdir_counts = {}, {}
+    for leg in legs:
+        if leg['odds'] is None:
+            leg['flags'].append('no price')
+        if leg['_implied'] is not None and leg['_implied'] < 0.25:
+            leg['flags'].append('longshot')
+        if not leg['direction']:
+            leg['flags'].append('no side')
+        key = leg['player'].strip().lower()
+        if key and key in injured:
+            leg['injury'] = injured[key]
+            leg['flags'].append('injury')
+        if key:
+            player_counts[key] = player_counts.get(key, 0) + 1
+        if leg['stat'].strip():
+            sk = (leg['stat'].strip().lower(), leg['direction'])
+            statdir_counts[sk] = statdir_counts.get(sk, 0) + 1
+
+    warnings = []
+    over_count = sum(1 for leg in legs if leg['direction'] == 'OVER')
+    sports = {leg['sport'] for leg in legs if leg['sport']}
+    longshots = sum(1 for leg in legs if leg['_implied'] is not None and leg['_implied'] < 0.25)
+    missing = sum(1 for leg in legs if leg['odds'] is None)
+    injured_legs = sum(1 for leg in legs if leg['injury'])
+    dup_players = [p for p, c in player_counts.items() if c >= 2]
+
+    def warn(kind, tone, msg):
+        warnings.append({'kind': kind, 'tone': tone, 'message': msg})
+
+    if injured_legs:
+        warn('Injury exposure', 'danger', f'{injured_legs} leg(s) are on players listed Out/Doubtful/Questionable — verify availability before locking this in.')
+    if n >= 3 and over_count == n:
+        warn('All-OVER ticket', 'danger', 'Every leg is an OVER. All-over tickets are the worst-performing structure in our graded record — mix in some unders or floors.')
+    if n >= 8:
+        warn('Long parlay', 'warn', f'{n} legs. Each added leg multiplies variance; long parlays rarely clear over time.')
+    if dup_players:
+        warn('Same player repeated', 'warn', f'{len(dup_players)} player appears in multiple legs — those legs rise and fall together, so they are not diversifying.')
+    if any(c >= 3 for c in statdir_counts.values()):
+        warn('Stat/side concentration', 'warn', '3+ legs share the same stat and side — little variety in what has to happen.')
+    if longshots >= 2:
+        warn('Longshot concentration', 'warn', f'{longshots} legs each imply under 25%. A couple of longshots sink most parlays.')
+    if n >= 3 and len(sports) <= 1:
+        warn('Single sport', 'muted', 'All legs are one sport (or unlabeled). Spreading across sports lowers shared-event concentration — though that is not the same as statistical independence.')
+    if missing:
+        warn('Missing pricing', 'muted', f'{missing} leg(s) have no price entered, so the combined number below is incomplete.')
+
+    combined_implied = None
+    priced = [leg['_implied'] for leg in legs if leg['_implied'] is not None]
+    if priced and len(priced) == n:
+        product = 1.0
+        for p in priced:
+            product *= p
+        combined_implied = round(product * 100, 2)
+
+    for leg in legs:
+        leg.pop('_implied', None)
+    return {
+        'legs': legs,
+        'warnings': warnings,
+        'has_input': True,
+        'raw_legs': raw_legs,
+        'leg_count': n,
+        'over_count': over_count,
+        'sport_count': len(sports),
+        'combined_implied': combined_implied,
     }
 
 
@@ -37953,6 +38093,12 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/ticket-check')
+def ticket_check_tool():
+    """Quick Tool: paste a multi-sport ticket, get structural construction warnings."""
+    return render_template('ticket_check.html', **build_ticket_check_context(request.args.get('legs', '')))
 
 
 @app.route('/tools/risk-radar')
