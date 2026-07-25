@@ -17209,6 +17209,38 @@ def build_injury_report_context():
     the multi-league Injury Report quick tool. Uses load_sport_injuries (already
     normalized to Player/Team/Status/Reason/Updated), tags each row with its
     league and a severity bucket, and precomputes the filter option lists."""
+    # NBA-only "how the team plays when this player is absent" splits, from the
+    # existing with/without boost engine (Active_Boost_Plays). Keyed by the injured
+    # player's name; the strongest few beneficiaries per player are attached to that
+    # player's injury row so a bettor sees the downstream effect inline.
+    boost_lookup = {}
+    try:
+        active_boosts = load_active_boosts()
+    except Exception:
+        active_boosts = None
+    if active_boosts is not None and not active_boosts.empty and 'Key_Player_Out' in active_boosts.columns:
+        def _boost_num(value):
+            try:
+                return round(float(value), 1)
+            except (TypeError, ValueError):
+                return None
+        for _, boost in active_boosts.iterrows():
+            out_player = str(boost.get('Key_Player_Out') or '').strip()
+            if not out_player:
+                continue
+            boost_lookup.setdefault(out_player.lower(), []).append({
+                'beneficiary': str(boost.get('Beneficiary') or '').strip(),
+                'stat': str(boost.get('Stat') or '').strip(),
+                'avg_with': _boost_num(boost.get('Avg_With')),
+                'avg_without': _boost_num(boost.get('Avg_Without')),
+                'boost_pct': _boost_num(boost.get('Boost_Pct')),
+                'games_without': _boost_num(boost.get('Games_Without')),
+            })
+        for out_player in boost_lookup:
+            boost_lookup[out_player] = sorted(
+                boost_lookup[out_player], key=lambda item: (item['boost_pct'] or 0), reverse=True
+            )[:4]
+
     rows = []
     league_counts = {}
     for key, label in INJURY_REPORT_LEAGUES:
@@ -17235,6 +17267,7 @@ def build_injury_report_context():
                 'severity': severity,
                 'reason': str(record.get('Reason') or '').strip(),
                 'updated': str(record.get('Updated') or '').strip(),
+                'boosts': boost_lookup.get(player.lower(), []) if key == 'nba' else [],
             })
             count += 1
         if count:
@@ -17247,6 +17280,7 @@ def build_injury_report_context():
         'rows': rows,
         'total': len(rows),
         'out_count': sum(1 for row in rows if row['severity'] == 0),
+        'impact_count': sum(1 for row in rows if row['boosts']),
         'league_counts': league_counts,
         'leagues_present': [
             {'key': key, 'label': label, 'count': league_counts[label]}

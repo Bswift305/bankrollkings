@@ -26,6 +26,13 @@
         <div class="stat-value" style="color:var(--danger);">{{ out_count }}</div>
         <div class="stat-note">OUT / IL / IR</div>
     </div>
+    {% if impact_count %}
+    <div class="stat-card">
+        <div class="page-kicker">Role Shift</div>
+        <div class="stat-value" style="color:var(--success);">{{ impact_count }}</div>
+        <div class="stat-note">NBA &middot; tap &ldquo;impact&rdquo;</div>
+    </div>
+    {% endif %}
     {% for lg in leagues_present %}
     <div class="stat-card">
         <div class="page-kicker">{{ lg.label }}</div>
@@ -80,18 +87,41 @@
             </thead>
             <tbody>
                 {% for r in rows %}
-                <tr class="inj-row"
+                <tr class="inj-row{% if r.boosts %} inj-has-impact{% endif %}"
                     data-league="{{ r.league }}"
                     data-bucket="{{ r.status_bucket }}"
                     data-team="{{ r.team }}"
                     data-search="{{ (r.player ~ ' ' ~ r.team ~ ' ' ~ r.reason)|lower }}">
                     <td><span class="inj-league">{{ r.league_label }}</span></td>
                     <td>{{ r.team or '—' }}</td>
-                    <td style="font-weight:600; color:var(--text-bright);">{{ r.player }}</td>
+                    <td style="font-weight:600; color:var(--text-bright);">
+                        {{ r.player }}
+                        {% if r.boosts %}<button type="button" class="inj-expand" aria-label="Show stats when this player is absent">&#9656; impact</button>{% endif %}
+                    </td>
                     <td><span class="inj-status inj-sev-{{ r.severity }}">{{ r.status or r.status_bucket }}</span></td>
                     <td class="inj-reason">{{ r.reason or '—' }}</td>
                     <td class="inj-updated">{{ r.updated or '—' }}</td>
                 </tr>
+                {% if r.boosts %}
+                <tr class="inj-boost-row inj-hidden">
+                    <td colspan="6">
+                        <div class="inj-boost-detail">
+                            <div class="inj-boost-head">When <strong>{{ r.player }}</strong> sits, teammates over recent games without them:</div>
+                            <div class="inj-boost-grid">
+                                {% for b in r.boosts %}
+                                <div class="inj-boost-item">
+                                    <span class="inj-boost-ben">{{ b.beneficiary }}</span>
+                                    <span class="inj-boost-stat">{{ b.stat }}</span>
+                                    <span class="inj-boost-nums"><strong>{{ b.avg_without }}</strong> <span class="muted">without</span> &middot; {{ b.avg_with }} <span class="muted">with</span></span>
+                                    {% if b.boost_pct is not none %}<span class="inj-boost-pct">+{{ b.boost_pct|round(0)|int }}%</span>{% endif %}
+                                    {% if b.games_without %}<span class="muted">&middot; {{ b.games_without|round(0)|int }} gm</span>{% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -132,6 +162,24 @@
     .inj-sev-3 { color:var(--text-muted); }
     .inj-reason, .inj-updated { color:var(--text-muted); font-size:12px; }
     #inj-table tbody tr.inj-hidden { display:none; }
+    .inj-expand {
+        margin-left:8px; border:1px solid var(--border); background:transparent; color:var(--accent);
+        border-radius:6px; padding:1px 8px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
+    }
+    .inj-expand:hover { border-color:var(--accent); background:rgba(255,255,255,.05); }
+    .inj-boost-row td { background:rgba(255,255,255,.02); border-top:none; }
+    .inj-boost-detail { padding:4px 2px 10px; }
+    .inj-boost-head { font-size:12px; color:var(--text-muted); margin-bottom:8px; }
+    .inj-boost-grid { display:flex; flex-direction:column; gap:7px; }
+    .inj-boost-item { display:flex; flex-wrap:wrap; align-items:baseline; gap:9px; font-size:13px; }
+    .inj-boost-ben { font-weight:700; color:var(--text-bright); min-width:130px; }
+    .inj-boost-stat {
+        font-size:11px; font-weight:700; color:var(--text-muted);
+        border:1px solid var(--border); border-radius:5px; padding:1px 6px;
+    }
+    .inj-boost-nums { color:var(--text-bright); }
+    .inj-boost-pct { color:var(--success); font-weight:700; }
+    .inj-boost-item .muted { color:var(--text-muted); font-size:11px; font-weight:400; }
 </style>
 
 <script>
@@ -152,6 +200,10 @@
                 && (!state.team || row.getAttribute('data-team') === state.team)
                 && (!q || row.getAttribute('data-search').indexOf(q) !== -1);
             row.classList.toggle('inj-hidden', !ok);
+            var boost = row.nextElementSibling;
+            if (boost && boost.classList.contains('inj-boost-row')) {
+                boost.classList.toggle('inj-hidden', !(ok && row.classList.contains('inj-expanded')));
+            }
             if (ok) { shown++; }
         });
         if (countEl) { countEl.textContent = shown; }
@@ -170,6 +222,18 @@
     });
     if (teamSel) { teamSel.addEventListener('change', function () { state.team = teamSel.value; apply(); }); }
     if (searchEl) { searchEl.addEventListener('input', function () { state.search = searchEl.value; apply(); }); }
+
+    document.querySelectorAll('.inj-expand').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var row = btn.closest('.inj-row');
+            var expanded = row.classList.toggle('inj-expanded');
+            var boost = row.nextElementSibling;
+            if (boost && boost.classList.contains('inj-boost-row')) {
+                boost.classList.toggle('inj-hidden', !expanded);
+            }
+            btn.innerHTML = expanded ? '▾ impact' : '▸ impact';
+        });
+    });
 
     var clearBtn = document.getElementById('inj-clear');
     if (clearBtn) {
