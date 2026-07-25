@@ -700,6 +700,7 @@ PRO_ENDPOINTS = {
     'slate_pulse_tool',
     'best_lines_tool',
     'track_record_tool',
+    'risk_radar_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1423,6 +1424,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
     items.extend([
         {'key': 'slate', 'label': 'Slate Pulse', 'href': '/tools/slate-pulse'},
         {'key': 'best_lines', 'label': 'Best Lines', 'href': '/tools/best-lines'},
+        {'key': 'risk_radar', 'label': 'Risk Radar', 'href': '/tools/risk-radar'},
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
@@ -17706,6 +17708,145 @@ def build_track_record_context(sport_filter='', method_filter='', direction_filt
         'min_sample': min_sample,
         'include_available': bool(include_available),
         'has_data': True,
+    }
+
+
+# Observable, per-market risk flags. Deliberately NO composite "risk score" -- different
+# sports don't share equivalent evidence, so we report verified warnings, not a number.
+# Only flags the current feed supports CLEANLY. Alternate lines (HR 0.5/1.5/2.5 for one
+# player) share a (Player,Stat,Game) key, which made a "line disagreement" flag misread
+# one book's alternate lines as books disagreeing, and dragged a median-based longshot
+# read off the real market -- so those were dropped rather than ship a misleading warning.
+_RISK_FLAG_META = {
+    'injury':        {'label': 'Injury',        'tone': 'danger'},
+    'longshot_over': {'label': 'Longshot OVER', 'tone': 'warn'},
+    'single_book':   {'label': 'Single book',   'tone': 'warn'},
+}
+
+
+def _build_risk_radar_snapshot():
+    """One row per current prop market that carries at least one OBSERVABLE warning.
+    Every flag traces to a feed value (book depth, price side, implied prob, line spread,
+    injury feed) -- no prediction, no composite score. Reuses the Best Lines prop loaders."""
+    rows = []
+    stale_feeds = []
+    for league, label, loader in _BEST_LINE_SPECS:
+        try:
+            props = loader()
+        except Exception:
+            props = pd.DataFrame()
+        meta = get_props_refresh_meta(props, max_age_hours=6)
+        if props is None or props.empty or not {'Player', 'Stat', 'Game', 'Book'}.issubset(props.columns):
+            continue
+        if meta.get('is_stale'):
+            stale_feeds.append({'label': label, 'age_hours': meta.get('age_hours')})
+
+        injured = {}
+        try:
+            inj = load_sport_injuries(league)
+            for _, ir in inj.iterrows():
+                _, bucket = _injury_severity_bucket(str(ir.get('Status') or ''))
+                if bucket in ('Out', 'Doubtful', 'Questionable'):
+                    nm = str(ir.get('Player') or '').strip().lower()
+                    if nm:
+                        injured[nm] = (str(ir.get('Status') or '').strip() or bucket, str(ir.get('Reason') or '').strip())
+        except Exception:
+            injured = {}
+
+        w = pd.DataFrame({
+            'player': props['Player'].fillna('').astype(str).str.strip(),
+            'stat': props['Stat'].fillna('').astype(str).str.strip(),
+            'game': props['Game'].fillna('').astype(str).str.strip(),
+            'book': props['Book'].fillna('').astype(str).str.strip(),
+        })
+        over = pd.to_numeric(props['OverOdds'], errors='coerce').to_numpy(dtype=float) if 'OverOdds' in props.columns else np.full(len(props), np.nan)
+        # Per-row OVER implied probability (guard the discarded np.where branch at +-100).
+        with np.errstate(divide='ignore', invalid='ignore'):
+            over_imp = np.where(np.isnan(over), np.nan,
+                                np.where(over > 0, 100.0 / (over + 100.0), (-over) / ((-over) + 100.0)))
+        w['over_imp'] = over_imp
+        w = w[w['book'].ne('') & w['player'].ne('') & w['stat'].ne('') & w['game'].ne('')]
+        if w.empty:
+            continue
+        # One market = a player-stat-game. book_count spans all its lines (whole-market
+        # depth); best_over_imp is the MOST-likely over across its lines (the easiest
+        # threshold) -- if even that is a longshot, the whole market is.
+        agg = w.groupby(['player', 'stat', 'game'], sort=False).agg(
+            book_count=('book', 'nunique'),
+            best_over_imp=('over_imp', 'max'),
+        ).reset_index()
+
+        for m in agg.to_dict('records'):
+            flags = []
+            bc = int(m['book_count'])
+            if bc < 2:
+                flags.append(('single_book', 'Only 1 book lists this market — no price to shop.'))
+            boi = m['best_over_imp']
+            if pd.notna(boi) and boi < 0.20:
+                flags.append(('longshot_over', f'Best OVER still only ~{boi * 100:.0f}% implied — longshot overs run historically overpriced.'))
+            pl = str(m['player']).lower()
+            if pl in injured:
+                st, reason = injured[pl]
+                flags.append(('injury', f'{m["player"]} is listed {st}{" — " + reason if reason else ""}.'))
+            if not flags:
+                continue
+            rows.append({
+                'league': league,
+                'league_label': label,
+                'player': m['player'],
+                'stat': m['stat'],
+                'game': m['game'],
+                'book_count': bc,
+                'flags': [{'key': k, 'label': _RISK_FLAG_META[k]['label'], 'tone': _RISK_FLAG_META[k]['tone'], 'evidence': ev} for k, ev in flags],
+                'flag_keys': [k for k, _ in flags],
+                'search': f'{label} {m["player"]} {m["stat"]} {m["game"]}'.lower(),
+            })
+    rows.sort(key=lambda r: (-len(r['flags']), r['league_label'], r['player'], r['stat']))
+    return rows, stale_feeds
+
+
+def build_risk_radar_context(league_filter='', flag_filter='', page=1, per_page=200):
+    """Aggregate observable per-market warnings across current prop feeds. Reports
+    'N verified warnings' by type -- never a single universal risk score."""
+    cached_rows, stale_feeds = _get_ttl_cached_value('risk_radar_markets', 120, _build_risk_radar_snapshot)
+    all_rows = list(cached_rows or [])
+    rows = all_rows
+    league_filter = str(league_filter or '').strip().lower()
+    flag_filter = str(flag_filter or '').strip()
+    if league_filter:
+        rows = [r for r in rows if r['league'] == league_filter]
+    if flag_filter in _RISK_FLAG_META:
+        rows = [r for r in rows if flag_filter in r['flag_keys']]
+
+    filtered_total = len(rows)
+    per_page = max(25, min(int(per_page or 200), 500))
+    page_count = max(1, (filtered_total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), page_count))
+    start = (page - 1) * per_page
+
+    flag_counts = []
+    for key, m in _RISK_FLAG_META.items():
+        count = sum(1 for r in all_rows if key in r['flag_keys'])
+        if count:
+            flag_counts.append({'key': key, 'label': m['label'], 'tone': m['tone'], 'count': count})
+    flag_counts.sort(key=lambda x: -x['count'])
+
+    return {
+        'rows': rows[start:start + per_page],
+        'total': len(all_rows),
+        'total_flags': sum(len(r['flags']) for r in all_rows),
+        'filtered_total': filtered_total,
+        'flag_counts': flag_counts,
+        'stale_feeds': [dict(item) for item in (stale_feeds or [])],
+        'leagues_present': [
+            {'key': key, 'label': label, 'count': sum(1 for r in all_rows if r['league'] == key)}
+            for key, label, _ in _BEST_LINE_SPECS if any(r['league'] == key for r in all_rows)
+        ],
+        'league_filter': league_filter,
+        'flag_filter': flag_filter,
+        'page': page,
+        'page_count': page_count,
+        'per_page': per_page,
     }
 
 
@@ -37812,6 +37953,19 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/risk-radar')
+def risk_radar_tool():
+    """Quick Tool: observable per-market risk flags across current prop feeds."""
+    return render_template(
+        'risk_radar.html',
+        **build_risk_radar_context(
+            league_filter=request.args.get('league', ''),
+            flag_filter=request.args.get('flag', ''),
+            page=_safe_int(request.args.get('page'), 1),
+        ),
+    )
 
 
 @app.route('/tools/track-record')

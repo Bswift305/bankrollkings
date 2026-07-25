@@ -1,0 +1,142 @@
+{% set active_page = 'risk_radar' %}
+{% extends "bk_base.html" %}
+{% block title %}Risk Radar - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Risk <span class="accent">Radar</span></h1>
+        <div class="page-subtitle">Observable warnings worth verifying before you bet &mdash; injuries, longshot overs, thin markets. Every flag traces to a feed value. No score, no ranking of picks.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/best-lines" class="btn btn-secondary btn-sm">Best Lines</a>
+        <a href="/tools/injury-report" class="btn btn-secondary btn-sm">Injury Report</a>
+    </div>
+</div>
+
+{% if stale_feeds %}
+<div class="rr-stale mb-24">
+    <strong>Stale feed:</strong>
+    {% for f in stale_feeds %}{{ f.label }}{% if f.age_hours is not none %} ({{ '%.0f'|format(f.age_hours) }}h old){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    &mdash; verify these prices before trusting them.
+</div>
+{% endif %}
+
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Flagged Markets</div>
+        <div class="stat-value">{{ '{:,}'.format(total) }}</div>
+        <div class="stat-note">{{ '{:,}'.format(total_flags) }} verified warnings</div>
+    </div>
+    {% for f in flag_counts %}
+    <a class="stat-card rr-count-card" href="/tools/risk-radar?flag={{ f.key }}{% if league_filter %}&league={{ league_filter }}{% endif %}">
+        <div class="page-kicker">{{ f.label }}</div>
+        <div class="stat-value rr-tone-{{ f.tone }}">{{ '{:,}'.format(f.count) }}</div>
+        <div class="stat-note">markets flagged</div>
+    </a>
+    {% endfor %}
+</div>
+
+<div class="card mb-24">
+    <form class="p-16 rr-filter-shell" method="get" action="/tools/risk-radar">
+        <div class="rr-filter-row">
+            <span class="control-label">League</span>
+            <select name="league" class="rr-input">
+                <option value="">All leagues</option>
+                {% for lg in leagues_present %}<option value="{{ lg.key }}" {% if league_filter == lg.key %}selected{% endif %}>{{ lg.label }} ({{ lg.count }})</option>{% endfor %}
+            </select>
+            <span class="control-label">Warning</span>
+            <select name="flag" class="rr-input">
+                <option value="">All warnings</option>
+                {% for f in flag_counts %}<option value="{{ f.key }}" {% if flag_filter == f.key %}selected{% endif %}>{{ f.label }} ({{ f.count }})</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="/tools/risk-radar" class="btn btn-secondary btn-sm">Clear</a>
+            <span class="badge badge-accent" style="margin-left:auto;">{{ '{:,}'.format(filtered_total) }} shown</span>
+        </div>
+    </form>
+
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table" id="rr-table">
+            <thead>
+                <tr>
+                    <th>League</th>
+                    <th>Market</th>
+                    <th>Warnings &amp; evidence</th>
+                    <th style="text-align:right;">Books</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="rr-row">
+                    <td><span class="rr-league">{{ r.league_label }}</span></td>
+                    <td>
+                        <div class="rr-player">{{ r.player }}</div>
+                        <div class="rr-meta">{{ r.stat }} &middot; {{ r.game }}</div>
+                    </td>
+                    <td>
+                        <div class="rr-flags">
+                            {% for f in r.flags %}<span class="rr-chip rr-tone-{{ f.tone }}">{{ f.label }}</span>{% endfor %}
+                        </div>
+                        <div class="rr-evidence">
+                            {% for f in r.flags %}<div class="rr-ev"><span class="rr-ev-dot rr-tone-{{ f.tone }}">&bull;</span> {{ f.evidence }}</div>{% endfor %}
+                        </div>
+                    </td>
+                    <td style="text-align:right;">{{ r.book_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_count > 1 %}
+    <div class="p-16 rr-pagination">
+        {% if page > 1 %}<a class="btn btn-secondary btn-sm" href="{{ url_for('risk_radar_tool', league=league_filter, flag=flag_filter, page=page-1) }}">&larr; Previous</a>{% endif %}
+        <span>Page {{ page }} of {{ page_count }} &middot; {{ '{:,}'.format(filtered_total) }} flagged markets</span>
+        {% if page < page_count %}<a class="btn btn-secondary btn-sm" href="{{ url_for('risk_radar_tool', league=league_filter, flag=flag_filter, page=page+1) }}">Next &rarr;</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state" style="padding:28px;">
+        {% if total %}
+        <div class="empty-state-title">No markets match this filter</div>
+        <div class="empty-state-copy">Clear the filter to see all flagged markets.</div>
+        {% else %}
+        <div class="empty-state-title">No warnings on the board right now</div>
+        <div class="empty-state-copy">Nothing in the current feeds trips a verified flag. This fills as live props post.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-16 rr-disclaimer">
+        <strong>How to read this:</strong> Each flag is a fact from the feed, not a prediction. <em>Injury</em> = the player is listed Out/Doubtful/Questionable. <em>Longshot OVER</em> = even the easiest over implies under 20% (historically overpriced). <em>Single book</em> = only one book lists the market, so there's nothing to shop. This is a verification checklist, not a risk score &mdash; different sports don&rsquo;t share equivalent evidence, so we count warnings rather than invent a number.
+    </div>
+</div>
+
+<style>
+    .rr-stale { border:1px solid rgba(220,80,60,.4); border-left:3px solid var(--danger); border-radius:8px; padding:12px 14px; font-size:13px; color:var(--text-muted); background:rgba(220,80,60,.06); }
+    .rr-stale strong { color:var(--danger); }
+    .rr-count-card { text-decoration:none; display:block; transition:border-color .12s ease; }
+    .rr-count-card:hover { border-color:var(--accent); }
+    .rr-filter-shell { border-bottom:1px solid var(--border); }
+    .rr-filter-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .rr-input { background:var(--surface, transparent); color:var(--text-bright); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:13px; }
+    .rr-league { font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text-muted); border:1px solid var(--border); border-radius:6px; padding:2px 7px; }
+    .rr-player { font-weight:700; color:var(--text-bright); }
+    .rr-meta { color:var(--text-muted); font-size:11px; margin-top:2px; }
+    .rr-flags { display:flex; flex-wrap:wrap; gap:5px; }
+    .rr-chip { font-size:10.5px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; border:1px solid var(--border); }
+    .rr-evidence { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+    .rr-ev { font-size:11.5px; color:var(--text-muted); line-height:1.45; }
+    .rr-ev-dot { font-weight:900; }
+    .rr-tone-danger { color:var(--danger); border-color:rgba(220,80,60,.4); }
+    .rr-chip.rr-tone-danger { background:rgba(220,80,60,.1); }
+    .rr-tone-warn { color:#e8833a; border-color:rgba(232,131,58,.4); }
+    .rr-chip.rr-tone-warn { background:rgba(232,131,58,.1); }
+    .rr-tone-muted { color:var(--text-muted); }
+    .rr-pagination { border-top:1px solid var(--border); display:flex; align-items:center; justify-content:center; gap:14px; color:var(--text-muted); font-size:12px; }
+    .rr-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .rr-disclaimer strong { color:var(--text-bright); } .rr-disclaimer em { color:var(--text-bright); font-style:normal; font-weight:600; }
+</style>
+{% endblock %}

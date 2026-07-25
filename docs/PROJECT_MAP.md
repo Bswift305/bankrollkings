@@ -175,6 +175,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
     model conf. Ranked by sample size, never hit rate; small samples flagged. Exposes the
     core truth: curated methods hit 59-85% but mostly sit just BELOW break-even → ROI
     ~-2 to -5% (favorite skew). See [[project_market_efficiency_findings]].
+  - **Risk Radar** `/tools/risk-radar` (`risk_radar_tool`, all_access; toolbar item after
+    Best Lines). `_build_risk_radar_snapshot` (120s TTL, vectorized, reuses the Best Lines
+    prop loaders + injury bucketer + `american_odds_to_implied_prob`) flags each current
+    prop market with OBSERVABLE warnings only: **injury** (player Out/Doubtful/Questionable,
+    with the feed's reason), **longshot OVER** (best over still <20% implied), **single
+    book** (whole market on one book). Reports counts BY TYPE — never a composite "risk
+    score" (per user: sports don't share equivalent evidence). NOTE: a "line disagreement"
+    and "one-sided" flag were built then DROPPED — grouping alt lines (HR 0.5/1.5/2.5) by
+    (Player,Stat,Game) made them misread one book's alternate lines as book disagreement.
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
