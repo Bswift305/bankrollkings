@@ -645,6 +645,166 @@ def get_active_boost_plays():
     return active_boosts
 
 
+NFL_STAT_COLUMNS = ['RecYd', 'Rec', 'Targets', 'RushYd', 'PassYd']
+
+
+def _nfl_key_out_stats(position):
+    """Which beneficiary stats plausibly redistribute when a player of this position
+    is out, each as (stat, without_floor, with_floor). Gating by the injured player's
+    position kills spurious cross-position correlations (a WR being out does not cause
+    a RB to rush more); without_floor keeps the WITHOUT average a real bettable line;
+    with_floor keeps the baseline non-trivial so the percentage stays sane. QBs are
+    skipped as drivers -- a QB out usually suppresses everyone, not a clean 'boost'."""
+    pos = str(position or '').upper()
+    if pos in ('WR', 'TE'):
+        return [('RecYd', 30.0, 8.0), ('Rec', 3.0, 1.0), ('Targets', 4.0, 1.5)]
+    if pos == 'RB':
+        return [('RushYd', 30.0, 8.0), ('Rec', 2.5, 0.8), ('Targets', 3.0, 1.0)]
+    return []
+
+
+def calculate_nfl_teammate_boosts(gamelogs_path=None, seasons_back=2):
+    """How NFL teammates produce in games WITHOUT a given player, from gamelogs.
+
+    Mirrors calculate_teammate_boosts (NBA) but is position/stat-aware for football
+    and roster-coherent: absence is inferred from a missing (Team, Season, Week) row,
+    the analysis is restricted to the most recent `seasons_back` seasons and grouped
+    by (Team, Season) so cross-season roster churn doesn't mix teammates, and the
+    strongest split per (Key_Player_Out, Beneficiary, Stat) is kept.
+    """
+    print("\n" + "=" * 60)
+    print("  CALCULATING NFL TEAMMATE BOOSTS")
+    print("=" * 60)
+
+    if gamelogs_path is None:
+        gamelogs_path = DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv'
+    if not Path(gamelogs_path).exists():
+        print(f"  NFL game logs not found at {gamelogs_path}")
+        return pd.DataFrame()
+
+    logs = pd.read_csv(gamelogs_path)
+    needed = {'Player', 'Team', 'Season', 'Week'}
+    if logs.empty or not needed.issubset(set(logs.columns)):
+        print("  NFL game logs missing required columns")
+        return pd.DataFrame()
+
+    seasons = sorted(pd.to_numeric(logs['Season'], errors='coerce').dropna().unique())
+    if not seasons:
+        return pd.DataFrame()
+    keep = set(seasons[-seasons_back:])
+    logs = logs[pd.to_numeric(logs['Season'], errors='coerce').isin(keep)].copy()
+    for stat in NFL_STAT_COLUMNS:
+        if stat in logs.columns:
+            logs[stat] = pd.to_numeric(logs[stat], errors='coerce').fillna(0.0)
+    print(f"  Loaded {len(logs)} NFL log rows across seasons {sorted(keep)}")
+
+    boosts = []
+    for (team, season), team_logs in logs.groupby(['Team', 'Season']):
+        weeks = set(team_logs['Week'].unique())
+        if len(weeks) < 6:
+            continue
+        weeks_played = team_logs.groupby('Player')['Week'].nunique()
+        key_players = weeks_played[weeks_played >= 8].index.tolist()  # season regulars
+        for key_player in key_players:
+            key_logs = team_logs[team_logs['Player'] == key_player]
+            key_pos = key_logs['Position'].mode()
+            key_pos = key_pos.iloc[0] if not key_pos.empty else ''
+            relevant_stats = _nfl_key_out_stats(key_pos)
+            if not relevant_stats:
+                continue  # QB / other positions are not clean boost drivers
+            key_weeks = set(key_logs['Week'].unique())
+            if len(weeks - key_weeks) < 2:
+                continue
+            for other in team_logs['Player'].unique():
+                if other == key_player:
+                    continue
+                other_logs = team_logs[team_logs['Player'] == other]
+                if other_logs['Week'].nunique() < 4:
+                    continue
+                with_key = other_logs[other_logs['Week'].isin(key_weeks)]
+                without_key = other_logs[~other_logs['Week'].isin(key_weeks)]
+                if len(with_key) < 3 or len(without_key) < 2:
+                    continue
+                for stat, without_floor, with_floor in relevant_stats:
+                    if stat not in other_logs.columns:
+                        continue
+                    avg_with = with_key[stat].mean()
+                    avg_without = without_key[stat].mean()
+                    # WITHOUT must be a real bettable line; WITH must be a non-trivial
+                    # baseline so we don't manufacture a percentage off ~zero.
+                    if avg_without < without_floor or avg_with < with_floor:
+                        continue
+                    boost_pct = (avg_without - avg_with) / avg_with * 100
+                    if boost_pct >= 10:
+                        boosts.append({
+                            'Team': team,
+                            'Season': int(season),
+                            'Key_Player_Out': key_player,
+                            'Beneficiary': other,
+                            'Stat': stat,
+                            'Avg_With': round(avg_with, 1),
+                            'Avg_Without': round(avg_without, 1),
+                            'Boost_Pct': round(boost_pct, 1),
+                            'Games_Without': len(without_key),
+                            'Games_With': len(with_key),
+                        })
+
+    if not boosts:
+        print("  No significant NFL boosts found")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(boosts).sort_values('Boost_Pct', ascending=False)
+    # One row per (out player, beneficiary, stat) -- keep the strongest split.
+    df = df.drop_duplicates(subset=['Key_Player_Out', 'Beneficiary', 'Stat'], keep='first')
+    df.to_csv(INJURIES_DIR / 'NFL_Teammate_Boosts.csv', index=False)
+    print(f"  Found {len(df)} NFL boost splits -> NFL_Teammate_Boosts.csv")
+    return df
+
+
+def get_nfl_active_boost_plays():
+    """Match current NFL injuries (OUT / IR / DOUBTFUL) to NFL_Teammate_Boosts."""
+    inj_path = INJURIES_DIR / 'NFL_Injuries.csv'
+    boosts_path = INJURIES_DIR / 'NFL_Teammate_Boosts.csv'
+    if not inj_path.exists() or not boosts_path.exists():
+        print("  NFL injuries or boost data missing; skipping active NFL boosts")
+        return pd.DataFrame()
+    injuries = pd.read_csv(inj_path)
+    boosts = pd.read_csv(boosts_path)
+    if injuries.empty or boosts.empty or 'Player' not in injuries.columns:
+        return pd.DataFrame()
+    status = injuries['Status'].fillna('').astype(str).str.upper()
+    out_mask = status.str.contains('OUT') | status.str.contains('IR') | status.str.contains('DOUBT') \
+        | status.str.contains('PUP') | status.str.contains('NFI') | status.str.contains('SUSPEND')
+    out_df = injuries[out_mask][['Player', 'Team', 'Status', 'Reason']].rename(
+        columns={'Player': 'Key_Player_Out', 'Team': 'Injury_Team', 'Status': 'Injury_Status', 'Reason': 'Injury_Reason'}
+    )
+    if out_df.empty:
+        print("  No NFL players currently OUT/IR/DOUBTFUL")
+        return pd.DataFrame()
+    active = boosts.merge(out_df, on='Key_Player_Out', how='inner')
+    if active.empty:
+        print("  No NFL boost data for currently injured players")
+        return pd.DataFrame()
+    # Only splits from the player's CURRENT team -- a traded player's old-team
+    # teammates are the wrong context for "who benefits when he sits".
+    same_team = active['Team'].astype(str).str.upper().str.strip() \
+        == active['Injury_Team'].astype(str).str.upper().str.strip()
+    active = active[same_team].drop(columns=['Injury_Team'])
+    if active.empty:
+        print("  NFL boost splits exist only for players now on a different team; skipping")
+        return pd.DataFrame()
+    active = active.sort_values('Boost_Pct', ascending=False)
+    active.to_csv(INJURIES_DIR / 'NFL_Active_Boost_Plays.csv', index=False)
+    print(f"  Found {len(active)} active NFL boost plays -> NFL_Active_Boost_Plays.csv")
+    return active
+
+
+def run_nfl_boost_update():
+    """Standalone NFL boost refresh (safe to call from a scheduler)."""
+    calculate_nfl_teammate_boosts()
+    return get_nfl_active_boost_plays()
+
+
 def run_full_injury_update():
     """
     Run complete injury analysis pipeline.
@@ -668,10 +828,19 @@ def run_full_injury_update():
             boosts = pd.read_csv(boosts_path)
 
     active = get_active_boost_plays()
+
+    # NFL teammate boosts (gamelog-derived with/without splits) refresh here too so the
+    # multi-league Injury Report's NFL "impact" rows stay current alongside the NBA ones.
+    try:
+        nfl_active = run_nfl_boost_update()
+    except Exception as exc:
+        print(f"  NFL boost update skipped: {exc}")
+        nfl_active = pd.DataFrame()
+
     print("\n" + "=" * 60)
     print("  INJURY UPDATE COMPLETE!")
     print("=" * 60)
-    return {'injuries': injuries, 'boosts': boosts, 'active_plays': active}
+    return {'injuries': injuries, 'boosts': boosts, 'active_plays': active, 'nfl_active_plays': nfl_active}
 
 
 if __name__ == '__main__':
