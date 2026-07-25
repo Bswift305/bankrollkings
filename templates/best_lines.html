@@ -1,0 +1,205 @@
+{% set active_page = 'best_lines' %}
+{% extends "bk_base.html" %}
+{% block title %}Best Lines - Bankroll Kings{% endblock %}
+
+{% macro price(value) -%}
+    {%- if value is none -%}&mdash;
+    {%- elif value > 0 -%}+{{ value }}
+    {%- else -%}{{ value }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro line(value) -%}
+    {{- ('%.2f'|format(value)).rstrip('0').rstrip('.') if value is not none else '&mdash;'|safe -}}
+{%- endmacro %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Best <span class="accent">Lines</span></h1>
+        <div class="page-subtitle">Shop the current number and price across books. Observable offers only&mdash;not a model edge or bet recommendation.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/slate-pulse" class="btn btn-secondary btn-sm">Slate Pulse</a>
+        <a href="/tools/injury-report" class="btn btn-secondary btn-sm">Injury Report</a>
+    </div>
+</div>
+
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Offers Compared</div>
+        <div class="stat-value">{{ '{:,}'.format(total) }}</div>
+        <div class="stat-note">directional markets</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Multi-Book</div>
+        <div class="stat-value" style="color:var(--success);">{{ '{:,}'.format(multi_book_count) }}</div>
+        <div class="stat-note">real comparison available</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Line Disagreement</div>
+        <div class="stat-value">{{ '{:,}'.format(range_count) }}</div>
+        <div class="stat-note">books list different numbers</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Leagues Live</div>
+        <div class="stat-value">{{ leagues_present|length }}</div>
+        <div class="stat-note">with player props now</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <form class="p-16 best-filter-shell" method="get" action="/tools/best-lines">
+        <div class="best-filter-row">
+            <span class="control-label">League</span>
+            <select name="league" class="best-input">
+                <option value="">All leagues</option>
+                {% for league in leagues_present %}
+                <option value="{{ league.key }}" {% if league_filter == league.key %}selected{% endif %}>{{ league.label }} ({{ league.count }})</option>
+                {% endfor %}
+            </select>
+            <span class="control-label">Side</span>
+            <select name="direction" class="best-input">
+                <option value="">Both sides</option>
+                <option value="OVER" {% if direction_filter == 'OVER' %}selected{% endif %}>OVER</option>
+                <option value="UNDER" {% if direction_filter == 'UNDER' %}selected{% endif %}>UNDER</option>
+            </select>
+            <span class="control-label">Market</span>
+            <select name="stat" class="best-input">
+                <option value="">All markets</option>
+                {% for stat in stats %}<option value="{{ stat }}" {% if stat_filter == stat %}selected{% endif %}>{{ stat }}</option>{% endfor %}
+            </select>
+            <label class="best-check"><input name="multi" value="1" type="checkbox" {% if multi_only %}checked{% endif %}> Multi-book only</label>
+        </div>
+        <div class="best-filter-row">
+            <input name="q" value="{{ search_query }}" class="best-input best-search" type="search" placeholder="Search player, matchup, or market&hellip;" autocomplete="off">
+            <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+            <a href="/tools/best-lines" class="btn btn-secondary btn-sm">Clear</a>
+            <span class="badge badge-accent best-shown">{{ '{:,}'.format(filtered_total) }} match{{ 'es' if filtered_total != 1 }}</span>
+        </div>
+    </form>
+
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table" id="best-lines-table">
+            <thead>
+                <tr>
+                    <th>League</th>
+                    <th>Player / Market</th>
+                    <th>Side</th>
+                    <th>Best Number</th>
+                    <th>Best Price</th>
+                    <th>Depth</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="best-row{% if r.single_book %} best-thin{% endif %}{% if r.is_stale %} best-stale{% endif %}">
+                    <td><span class="best-league">{{ r.league_label }}</span></td>
+                    <td>
+                        <div class="best-player">{{ r.player }}</div>
+                        <div class="best-meta">{{ r.stat }} &middot; {{ r.game }}</div>
+                    </td>
+                    <td><span class="best-side best-side-{{ r.direction|lower }}">{{ r.direction }}</span></td>
+                    <td>
+                        <div class="best-offer">{{ line(r.best_number) }} <span>{{ r.best_number_book }}</span></div>
+                        <div class="best-meta">price {{ price(r.best_number_price) }}</div>
+                    </td>
+                    <td>
+                        <div class="best-offer">{{ price(r.best_price) }} <span>{{ r.best_price_book }}</span></div>
+                        <div class="best-meta">at {{ line(r.best_price_line) }}{% if r.best_price_line != r.best_number %} &middot; different number{% endif %}</div>
+                    </td>
+                    <td>
+                        {% if r.single_book %}
+                        <span class="best-depth best-depth-thin">1 book</span>
+                        <div class="best-meta">comparison unavailable</div>
+                        {% else %}
+                        <span class="best-depth">{{ r.book_count }} books</span>
+                        <div class="best-meta" title="{{ r.books|join(', ') }}">
+                            {% if r.line_range > 0 %}range {{ line(r.line_low) }}&ndash;{{ line(r.line_high) }}{% else %}same number{% endif %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="best-updated">{{ r.updated or '&mdash;'|safe }}</div>
+                        {% if r.is_stale %}<span class="best-stale-tag">STALE</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_count > 1 %}
+    <div class="p-16 best-pagination">
+        {% if page > 1 %}
+        <a class="btn btn-secondary btn-sm" href="{{ url_for('best_lines_tool', league=league_filter, direction=direction_filter, stat=stat_filter, q=search_query, multi='1' if multi_only else '', page=page-1) }}">&larr; Previous</a>
+        {% endif %}
+        <span>Page {{ page }} of {{ page_count }} &middot; {{ '{:,}'.format(filtered_total) }} matching offers</span>
+        {% if page < page_count %}
+        <a class="btn btn-secondary btn-sm" href="{{ url_for('best_lines_tool', league=league_filter, direction=direction_filter, stat=stat_filter, q=search_query, multi='1' if multi_only else '', page=page+1) }}">Next &rarr;</a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state" style="padding:28px;">
+        {% if total %}
+        <div class="empty-state-title">No offers match these filters</div>
+        <div class="empty-state-copy">Clear or broaden the filters to see the available player-prop comparisons.</div>
+        {% else %}
+        <div class="empty-state-title">No live player props to compare</div>
+        <div class="empty-state-copy">This tool fills automatically when books post player props. Slate Pulse still shows available game markets.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-16 best-disclaimer">
+        <strong>How to read this:</strong> Best Number is the easiest listed threshold&mdash;lower for OVER, higher for UNDER. Best Price is the largest American price and shows its attached line. A better number and better payout may be different books. Neither is a claim of positive expected value.
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="card-header">
+        <div class="card-title">League Feed State</div>
+    </div>
+    <div class="p-16 best-feed-grid">
+        {% for feed in feed_states %}
+        <div class="best-feed">
+            <span class="best-league">{{ feed.label }}</span>
+            <strong>{{ '{:,}'.format(feed.rows) if feed.rows else 'No live props' }}</strong>
+            <small>{% if feed.rows %}{{ feed.books }} book{{ 's' if feed.books != 1 }} &middot; {{ feed.updated }}{% else %}Off-slate or not posted{% endif %}</small>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+    .best-filter-shell { border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:12px; }
+    .best-filter-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .best-input { background:var(--surface, transparent); color:var(--text-bright); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:13px; }
+    .best-search { min-width:240px; flex:1 1 260px; }
+    .best-check { color:var(--text-muted); font-size:12px; display:flex; align-items:center; gap:6px; margin-left:5px; }
+    .best-shown { margin-left:auto; }
+    .best-league { font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text-muted); border:1px solid var(--border); border-radius:6px; padding:2px 7px; white-space:nowrap; }
+    .best-player { font-weight:700; color:var(--text-bright); }
+    .best-meta, .best-updated { color:var(--text-muted); font-size:11px; margin-top:3px; }
+    .best-offer { font-size:14px; font-weight:800; color:var(--text-bright); white-space:nowrap; }
+    .best-offer span { color:var(--accent); font-size:11px; font-weight:700; margin-left:4px; }
+    .best-side { font-size:11px; font-weight:800; border-radius:999px; padding:3px 9px; }
+    .best-side-over { color:#4db889; background:rgba(77,184,137,.12); border:1px solid rgba(77,184,137,.35); }
+    .best-side-under { color:#64a7e8; background:rgba(100,167,232,.12); border:1px solid rgba(100,167,232,.35); }
+    .best-depth { font-size:11px; font-weight:700; color:var(--success); }
+    .best-depth-thin { color:#e8833a; }
+    .best-stale-tag { display:inline-block; margin-top:4px; color:var(--danger); font-size:10px; font-weight:800; }
+    .best-row.best-thin { background:rgba(232,131,58,.025); }
+    .best-row.best-stale { opacity:.72; }
+    .best-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .best-disclaimer strong { color:var(--text-bright); }
+    .best-feed-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
+    .best-feed { border:1px solid var(--border); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px; }
+    .best-feed strong { color:var(--text-bright); font-size:14px; }
+    .best-feed small { color:var(--text-muted); }
+    .best-pagination { border-top:1px solid var(--border); display:flex; align-items:center; justify-content:center; gap:14px; color:var(--text-muted); font-size:12px; }
+</style>
+{% endblock %}

@@ -698,6 +698,7 @@ PRO_ENDPOINTS = {
     'method_hub',
     'injury_report_tool',
     'slate_pulse_tool',
+    'best_lines_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1420,6 +1421,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
 
     items.extend([
         {'key': 'slate', 'label': 'Slate Pulse', 'href': '/tools/slate-pulse'},
+        {'key': 'best_lines', 'label': 'Best Lines', 'href': '/tools/best-lines'},
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
@@ -17402,6 +17404,190 @@ def build_slate_pulse_context():
         'total_games': sum(r['games'] for r in rows),
         'total_props': sum(r['props'] for r in rows),
         'total_injuries': sum(r['injuries'] for r in rows),
+    }
+
+
+_BEST_LINE_SPECS = [
+    ('nba', 'NBA', load_props),
+    ('wnba', 'WNBA', load_wnba_props),
+    ('mlb', 'MLB', load_mlb_props),
+    ('nfl', 'NFL', load_nfl_props),
+    ('ncaaf', 'NCAAF', load_ncaaf_props),
+]
+
+
+def _build_best_lines_snapshot():
+    """Build the reusable factual offer snapshot before request-specific filters.
+
+    Vectorized: whole-frame groupby ops instead of a per-market Python loop. The
+    original loop took ~21s on the full MLB feed, which would freeze the single
+    gunicorn worker on every cache miss; this stays well under a second. Semantics are
+    unchanged -- best number is min line for OVER / max for UNDER (best price among the
+    books at that number); best price is the highest American price with its own line.
+    """
+    rows = []
+    feed_states = []
+    for league, label, loader in _BEST_LINE_SPECS:
+        try:
+            props = loader()
+        except Exception:
+            props = pd.DataFrame()
+        meta = get_props_refresh_meta(props, max_age_hours=6)
+        feed_states.append({
+            'key': league,
+            'label': label,
+            'rows': int(meta.get('row_count') or 0),
+            'books': int(meta.get('book_count') or 0),
+            'updated': str(meta.get('last_updated') or 'Unknown'),
+            'status': str(meta.get('status') or 'unavailable'),
+        })
+        if props is None or props.empty:
+            continue
+        if not {'Player', 'Stat', 'Game', 'Book'}.issubset(props.columns):
+            continue
+
+        w = pd.DataFrame({
+            'player': props['Player'].fillna('').astype(str).str.strip(),
+            'stat': props['Stat'].fillna('').astype(str).str.strip(),
+            'game': props['Game'].fillna('').astype(str).str.strip(),
+            'book': props['Book'].fillna('').astype(str).str.strip(),
+        })
+        line = pd.to_numeric(props['CurrentLine'] if 'CurrentLine' in props.columns else props.get('Line'), errors='coerce')
+        if 'Line' in props.columns:
+            line = line.fillna(pd.to_numeric(props['Line'], errors='coerce'))
+        w['line'] = line.values
+        w['updated'] = props['LastUpdated'].astype(str).values if 'LastUpdated' in props.columns else ''
+        w['over'] = pd.to_numeric(props['OverOdds'], errors='coerce').values if 'OverOdds' in props.columns else pd.NA
+        w['under'] = pd.to_numeric(props['UnderOdds'], errors='coerce').values if 'UnderOdds' in props.columns else pd.NA
+        w = w[w['book'].ne('') & w['player'].ne('') & w['stat'].ne('') & w['game'].ne('') & w['line'].notna()]
+        if w.empty:
+            continue
+        is_stale = bool(meta.get('is_stale'))
+        gkeys = ['player', 'stat', 'game']
+
+        for direction, price_col in (('OVER', 'over'), ('UNDER', 'under')):
+            if price_col not in w.columns:
+                continue
+            side = w[gkeys + ['line', 'book', 'updated', price_col]].rename(columns={price_col: 'price'})
+            side = side[side['price'].notna()]
+            if side.empty:
+                continue
+            grp = side.groupby(gkeys, sort=False)
+            best_num = grp['line'].transform('min' if direction == 'OVER' else 'max')
+            at_num = side[side['line'].eq(best_num)]
+            num_best = at_num.loc[at_num.groupby(gkeys, sort=False)['price'].idxmax(),
+                                  gkeys + ['line', 'book', 'price']].rename(
+                columns={'line': 'bn', 'book': 'bn_book', 'price': 'bn_price'})
+            price_best = side.loc[grp['price'].idxmax(),
+                                  gkeys + ['line', 'book', 'price']].rename(
+                columns={'line': 'bp_line', 'book': 'bp_book', 'price': 'bp_price'})
+            agg = grp.agg(
+                book_count=('book', 'nunique'),
+                line_low=('line', 'min'),
+                line_high=('line', 'max'),
+                updated=('updated', 'max'),
+                books=('book', lambda s: sorted(set(s))),
+            ).reset_index()
+            merged = agg.merge(num_best, on=gkeys).merge(price_best, on=gkeys)
+            for rec in merged.to_dict('records'):
+                bc = int(rec['book_count'])
+                ll = round(float(rec['line_low']), 2)
+                lh = round(float(rec['line_high']), 2)
+                rows.append({
+                    'league': league,
+                    'league_label': label,
+                    'player': rec['player'],
+                    'stat': rec['stat'],
+                    'game': rec['game'],
+                    'direction': direction,
+                    'best_number': round(float(rec['bn']), 2),
+                    'best_number_book': str(rec['bn_book']),
+                    'best_number_price': int(round(float(rec['bn_price']))),
+                    'best_price': int(round(float(rec['bp_price']))),
+                    'best_price_book': str(rec['bp_book']),
+                    'best_price_line': round(float(rec['bp_line']), 2),
+                    'book_count': bc,
+                    'books': list(rec['books']),
+                    'line_low': ll,
+                    'line_high': lh,
+                    'line_range': round(lh - ll, 2),
+                    'single_book': bc < 2,
+                    'is_stale': is_stale,
+                    'updated': str(rec['updated']) if rec['updated'] else '',
+                    'search': f"{label} {rec['player']} {rec['stat']} {rec['game']} {direction}".lower(),
+                })
+
+    rows.sort(key=lambda item: (
+        item['single_book'],
+        item['is_stale'],
+        item['league_label'],
+        item['game'],
+        item['player'],
+        item['stat'],
+        item['direction'],
+    ))
+    return rows, feed_states
+
+
+def build_best_lines_context(league_filter='', direction_filter='', stat_filter='', search_query='', multi_only=False, page=1, per_page=200):
+    """Cross-sport line shop built only from observable per-book prop offers.
+
+    "Best number" means the easiest listed threshold (lower for OVER, higher for
+    UNDER). "Best price" is the largest American price and always carries the
+    line attached to that exact offer. They are deliberately separate because a
+    better number and a better payout can be different books; this tool does not
+    claim either offer has positive expected value.
+    """
+    cached_rows, cached_feed_states = _get_ttl_cached_value(
+        'best_lines_snapshot',
+        60,
+        _build_best_lines_snapshot,
+    )
+    all_rows = list(cached_rows or [])
+    feed_states = [dict(item) for item in (cached_feed_states or [])]
+    rows = all_rows
+    league_filter = str(league_filter or '').strip().lower()
+    direction_filter = str(direction_filter or '').strip().upper()
+    stat_filter = str(stat_filter or '').strip()
+    search_query = str(search_query or '').strip().lower()
+    if league_filter:
+        rows = [row for row in rows if row['league'] == league_filter]
+    if direction_filter in {'OVER', 'UNDER'}:
+        rows = [row for row in rows if row['direction'] == direction_filter]
+    if stat_filter:
+        rows = [row for row in rows if row['stat'] == stat_filter]
+    if search_query:
+        rows = [row for row in rows if search_query in row['search']]
+    if multi_only:
+        rows = [row for row in rows if not row['single_book']]
+
+    filtered_total = len(rows)
+    per_page = max(25, min(int(per_page or 200), 500))
+    page_count = max(1, (filtered_total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), page_count))
+    start = (page - 1) * per_page
+    page_rows = rows[start:start + per_page]
+    return {
+        'rows': page_rows,
+        'total': len(all_rows),
+        'filtered_total': filtered_total,
+        'multi_book_count': sum(1 for row in all_rows if not row['single_book']),
+        'range_count': sum(1 for row in all_rows if row['line_range'] > 0),
+        'leagues_present': [
+            {'key': key, 'label': label, 'count': sum(1 for row in all_rows if row['league'] == key)}
+            for key, label, _ in _BEST_LINE_SPECS
+            if any(row['league'] == key for row in all_rows)
+        ],
+        'stats': sorted({row['stat'] for row in all_rows}),
+        'feed_states': feed_states,
+        'league_filter': league_filter,
+        'direction_filter': direction_filter,
+        'stat_filter': stat_filter,
+        'search_query': search_query,
+        'multi_only': bool(multi_only),
+        'page': page,
+        'page_count': page_count,
+        'per_page': per_page,
     }
 
 
@@ -37508,6 +37694,22 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/best-lines')
+def best_lines_tool():
+    """Quick Tool: compare observable prop lines and prices across books."""
+    return render_template(
+        'best_lines.html',
+        **build_best_lines_context(
+            league_filter=request.args.get('league', ''),
+            direction_filter=request.args.get('direction', ''),
+            stat_filter=request.args.get('stat', ''),
+            search_query=request.args.get('q', ''),
+            multi_only=request.args.get('multi', '') == '1',
+            page=_safe_int(request.args.get('page'), 1),
+        ),
+    )
 
 
 @app.route('/tools/injury-report')

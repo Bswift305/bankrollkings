@@ -157,6 +157,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
     2, after Command Center). `build_slate_pulse_context()` — one observational row per
     league: games w/ live markets, prop rows, books, injuries, feed freshness, state
     (Live/Partial/Stale/No slate). Aggregates existing loaders only; no prediction/ranking.
+  - **Best Lines** `/tools/best-lines` (`best_lines_tool`, all_access; toolbar item 3).
+    Cross-sport player-prop line shop. `_build_best_lines_snapshot()` (60s TTL cache,
+    VECTORIZED — a per-market Python loop took ~21s and would freeze the 1 worker; the
+    groupby version is ~0.5s) computes, per Player/Stat/Game/direction: Best Number (min
+    line for OVER / max for UNDER, best price among books at that number) and Best Price
+    (highest American price WITH its own attached line) — kept separate, never a "best
+    bet"/EV claim. Server-side league/direction/stat/search/multi-book filters + 200/page
+    pagination. Handoff spec: `docs/best_lines_quick_tool_handoff.md`. Market Movers stays
+    DEFERRED (line-movement snapshot depth is 1-2/game; nothing real to show yet).
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
