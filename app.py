@@ -697,6 +697,7 @@ PRO_ENDPOINTS = {
     'dashboard',
     'method_hub',
     'injury_report_tool',
+    'slate_pulse_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1411,8 +1412,6 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         query_sport = 'NCAAWB'
 
     sport_heat_map = f"/heat-map?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['hot_streaks']
-    sport_injuries = f"/injuries?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['injuries']
-
     items = [{
         'key': 'dashboard',
         'label': 'Command Center' if sport_key else 'Home',
@@ -1420,6 +1419,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
     }]
 
     items.extend([
+        {'key': 'slate', 'label': 'Slate Pulse', 'href': '/tools/slate-pulse'},
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
@@ -1429,7 +1429,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'derivatives', 'label': 'Derivatives', 'href': f"/derivatives?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['derivatives']},
         {'key': 'officiating', 'label': 'Officiating', 'href': f"/derivatives?sport={quote(query_sport, safe='')}#officiating" if query_sport else global_feature_href['officiating']},
         {'key': 'hot_streaks', 'label': 'Active Streaks', 'href': sport_heat_map},
-        {'key': 'injuries', 'label': 'Injuries', 'href': sport_injuries},
+        {'key': 'injuries', 'label': 'Injuries', 'href': '/tools/injury-report'},
         {'key': 'systems', 'label': 'Systems Lab', 'href': f"/systems-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['systems']},
         {'key': 'calibration_lab', 'label': 'Calibration', 'href': f"/calibration-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['calibration_lab']},
         {'key': 'missed', 'label': 'Missed Opps', 'href': f"/missed-opportunities?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['missed']},
@@ -17309,6 +17309,99 @@ def build_injury_report_context():
         ],
         'teams': sorted({row['team'] for row in rows if row['team']}),
         'buckets_present': [bucket for bucket in bucket_order if any(row['status_bucket'] == bucket for row in rows)],
+    }
+
+
+SLATE_PULSE_SPECS = [
+    ('nba', 'NBA', '/sports/nba', 'load_schedule', 'load_props', 'load_game_market_odds'),
+    ('wnba', 'WNBA', '/sports/wnba', 'load_wnba_schedule', 'load_wnba_props', 'load_wnba_game_market_odds'),
+    ('mlb', 'MLB', '/sports/mlb', 'load_mlb_schedule', 'load_mlb_props', 'load_mlb_game_market_odds'),
+    ('nfl', 'NFL', '/sports/nfl', 'load_nfl_schedule', 'load_nfl_props', 'load_nfl_game_market_odds'),
+    ('ncaaf', 'NCAAF', '/sports/ncaaf', 'load_ncaaf_schedule', 'load_ncaaf_props', 'load_ncaaf_game_market_odds'),
+]
+
+
+def _slate_count_games(odds_df):
+    """Distinct games with live game-market lines, robust to odds-file schema."""
+    if odds_df is None or odds_df.empty:
+        return 0
+    for col in ('Game', 'GameId', 'Matchup'):
+        if col in odds_df.columns:
+            return int(odds_df[col].astype(str).str.strip().replace('', pd.NA).dropna().nunique())
+    if 'Home' in odds_df.columns and 'Away' in odds_df.columns:
+        return int(odds_df[['Home', 'Away']].dropna().drop_duplicates().shape[0])
+    return int(len(odds_df))
+
+
+def _slate_state(games, lines, has_props, injuries, is_stale):
+    """Purely observational operational state -- no season inference, no ranking."""
+    if has_props and is_stale:
+        return 'stale', 'Props feed is stale — refresh before trusting lines.'
+    if (games or lines) and has_props:
+        return 'live', 'Games and player props are live.'
+    if (games or lines) and not has_props:
+        return 'partial', 'Game markets live · player props not offered yet.'
+    if has_props and not (games or lines):
+        return 'partial', 'Props posted · no game markets on the slate.'
+    if injuries:
+        return 'off', 'No live slate · injuries still tracked.'
+    return 'off', 'No live slate.'
+
+
+def build_slate_pulse_context():
+    """Slate Pulse quick tool: one honest, observational snapshot of what is live,
+    available, stale, or missing per league right now -- so a multi-sport bettor knows
+    where the trustworthy data is. Displays observed counts only; makes no prediction
+    and no cross-sport ranking."""
+    rows = []
+    for key, label, href, sched_name, props_name, odds_name in SLATE_PULSE_SPECS:
+        def _load(name):
+            fn = globals().get(name)
+            try:
+                return fn() if fn else pd.DataFrame()
+            except Exception:
+                return pd.DataFrame()
+
+        schedule_df = _load(sched_name)
+        try:
+            schedule_today = len(get_upcoming_games(schedule_df, days=2).get('today', []))
+        except Exception:
+            schedule_today = 0
+        props_df = _load(props_name)
+        meta = get_props_refresh_meta(props_df)
+        lines = _slate_count_games(_load(odds_name))
+        # Games with live game-market lines is the actionable count and more reliable than a
+        # possibly-stale schedule file; fall back to the schedule when no lines have posted.
+        games = max(lines, schedule_today)
+        try:
+            injuries = int(len(load_sport_injuries(key)))
+        except Exception:
+            injuries = 0
+        state, note = _slate_state(games, lines, meta.get('has_live_props'), injuries, meta.get('is_stale'))
+        rows.append({
+            'key': key,
+            'label': label,
+            'href': href,
+            'games': games,
+            'lines': lines,
+            'props': int(meta.get('row_count') or 0),
+            'books': int(meta.get('book_count') or 0),
+            'book_names': meta.get('books') or [],
+            'injuries': injuries,
+            'updated': meta.get('last_updated') or '—',
+            'age_hours': meta.get('age_hours'),
+            'is_stale': bool(meta.get('is_stale')),
+            'state': state,
+            'state_note': note,
+        })
+    order = {'live': 0, 'partial': 1, 'stale': 2, 'off': 3}
+    rows.sort(key=lambda r: (order.get(r['state'], 9), -r['props'], -r['games']))
+    return {
+        'rows': rows,
+        'live_count': sum(1 for r in rows if r['state'] == 'live'),
+        'total_games': sum(r['games'] for r in rows),
+        'total_props': sum(r['props'] for r in rows),
+        'total_injuries': sum(r['injuries'] for r in rows),
     }
 
 
@@ -37410,6 +37503,12 @@ def ops_dashboard():
         return make_response("Owner access required.", 403)
     context = build_ops_dashboard_context()
     return render_template('ops.html', **context)
+
+@app.route('/tools/slate-pulse')
+def slate_pulse_tool():
+    """Quick Tool: what's live, available, stale, or missing per league right now."""
+    return render_template('slate_pulse.html', **build_slate_pulse_context())
+
 
 @app.route('/tools/injury-report')
 def injury_report_tool():

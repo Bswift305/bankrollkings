@@ -1,0 +1,94 @@
+{% set active_page = 'slate' %}
+{% extends "bk_base.html" %}
+{% block title %}Slate Pulse - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Slate <span class="accent">Pulse</span></h1>
+        <div class="page-subtitle">What is live, available, stale, or missing right now — per league, at a glance. A read on where the trustworthy data is, not a pick.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/injury-report" class="btn btn-secondary btn-sm">Injury Report</a>
+    </div>
+</div>
+
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Live Sports</div>
+        <div class="stat-value" style="color:var(--success);">{{ live_count }}</div>
+        <div class="stat-note">games + props flowing</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Games On</div>
+        <div class="stat-value">{{ total_games }}</div>
+        <div class="stat-note">with live markets today</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Player Props</div>
+        <div class="stat-value">{{ '{:,}'.format(total_props) }}</div>
+        <div class="stat-note">priced rows across sports</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Injuries</div>
+        <div class="stat-value">{{ '{:,}'.format(total_injuries) }}</div>
+        <div class="stat-note"><a href="/tools/injury-report" style="color:var(--accent);">on the report &rsaquo;</a></div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <div class="table-shell">
+        <table class="data-table" id="slate-table">
+            <thead>
+                <tr>
+                    <th>League</th>
+                    <th style="text-align:right;">Games</th>
+                    <th style="text-align:right;">Props</th>
+                    <th style="text-align:right;">Books</th>
+                    <th style="text-align:right;">Injuries</th>
+                    <th>Feed</th>
+                    <th>State</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="slate-row slate-{{ r.state }}">
+                    <td>
+                        <a href="{{ r.href }}" class="slate-league">{{ r.label }}</a>
+                    </td>
+                    <td style="text-align:right;">{{ r.games if r.games else '—' }}</td>
+                    <td style="text-align:right;">{{ '{:,}'.format(r.props) if r.props else '—' }}</td>
+                    <td style="text-align:right;" {% if r.book_names %}title="{{ r.book_names|join(', ') }}"{% endif %}>{{ r.books if r.books else '—' }}</td>
+                    <td style="text-align:right;">{{ r.injuries if r.injuries else '—' }}</td>
+                    <td class="slate-feed">
+                        {% if r.updated and r.updated not in ('—', 'Unknown') %}{{ r.updated }}{% if r.age_hours is not none %} <span class="slate-age">· {{ '%.0f'|format(r.age_hours) }}h{% if r.is_stale %} stale{% endif %}</span>{% endif %}{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <span class="slate-pill slate-pill-{{ r.state }}">{{ {'live':'Live','partial':'Partial','stale':'Stale','off':'No slate'}[r.state] }}</span>
+                        <div class="slate-note">{{ r.state_note }}</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="p-16" style="border-top:1px solid var(--border); font-size:12px; color:var(--text-muted);">
+        Observed feed state only — counts are what the data actually shows, not a prediction. An empty league is off-slate, not broken.
+    </div>
+</div>
+
+<style>
+    .slate-league { font-weight:700; color:var(--text-bright); font-size:15px; }
+    .slate-league:hover { color:var(--accent); }
+    .slate-feed { color:var(--text-muted); font-size:12px; white-space:nowrap; }
+    .slate-age { color:var(--text-muted); }
+    .slate-note { color:var(--text-muted); font-size:11px; margin-top:3px; }
+    .slate-pill { font-size:11px; font-weight:700; letter-spacing:.02em; border-radius:999px; padding:3px 11px; white-space:nowrap; }
+    .slate-pill-live { background:rgba(46,160,90,.16); color:var(--success); border:1px solid rgba(46,160,90,.4); }
+    .slate-pill-partial { background:rgba(232,131,58,.14); color:#e8833a; border:1px solid rgba(232,131,58,.38); }
+    .slate-pill-stale { background:rgba(220,80,60,.14); color:var(--danger); border:1px solid rgba(220,80,60,.38); }
+    .slate-pill-off { background:transparent; color:var(--text-muted); border:1px solid var(--border); }
+    #slate-table tbody tr.slate-off .slate-league { color:var(--text-muted); }
+</style>
+{% endblock %}
