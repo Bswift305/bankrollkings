@@ -18,6 +18,7 @@ from services.qc_tracking import append_qc_run_log
 # (path, [any-of markers that prove the page rendered its own content, not an error/gate])
 ROUTES = [
     ("/tools/slate-pulse", ["Slate", "slate-table", "Live Sports"]),
+    ("/tools/market-movers", ["Market", "mm-disclaimer", "Movement depth"]),
     ("/tools/best-lines", ["Best", "best-lines-table", "Best Number"]),
     ("/tools/risk-radar", ["Risk", "rr-table", "verified warnings", "No warnings"]),
     ("/tools/ticket-check", ["Ticket", "Check Ticket", "Paste a ticket"]),
@@ -30,6 +31,7 @@ ROUTES = [
 LOGIC_PATHS = [
     "/tools/best-lines?league=mlb&direction=OVER&multi=1",
     "/tools/best-lines?page=2",
+    "/tools/market-movers?all=1&league=mlb",
     "/tools/risk-radar?flag=injury",
     "/tools/track-record?sport=MLB&min_sample=50",
     "/tools/ticket-check?legs=MLB%20%7C%20Aaron%20Judge%20%7C%20Home%20Runs%20%7C%20Over%20%7C%20%2B150",

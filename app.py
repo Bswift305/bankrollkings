@@ -698,6 +698,7 @@ PRO_ENDPOINTS = {
     'method_hub',
     'injury_report_tool',
     'slate_pulse_tool',
+    'market_movers_tool',
     'best_lines_tool',
     'track_record_tool',
     'risk_radar_tool',
@@ -1425,6 +1426,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
 
     items.extend([
         {'key': 'slate', 'label': 'Slate Pulse', 'href': '/tools/slate-pulse'},
+        {'key': 'market_movers', 'label': 'Market Movers', 'href': '/tools/market-movers'},
         {'key': 'best_lines', 'label': 'Best Lines', 'href': '/tools/best-lines'},
         {'key': 'risk_radar', 'label': 'Risk Radar', 'href': '/tools/risk-radar'},
         {'key': 'ticket_check', 'label': 'Ticket Check', 'href': '/tools/ticket-check'},
@@ -17412,6 +17414,138 @@ def build_slate_pulse_context():
         'total_games': sum(r['games'] for r in rows),
         'total_props': sum(r['props'] for r in rows),
         'total_injuries': sum(r['injuries'] for r in rows),
+    }
+
+
+_MARKET_MOVER_SPECS = [
+    ('mlb', 'MLB', '/sports/mlb'),
+    ('wnba', 'WNBA', '/sports/wnba'),
+    ('nfl', 'NFL', '/sports/nfl'),
+    ('ncaaf', 'NCAAF', '/sports/ncaaf'),
+]
+
+
+def _mm_eastern_today():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo('America/New_York')).strftime('%Y-%m-%d')
+    except Exception:
+        return datetime.now().strftime('%Y-%m-%d')
+
+
+def _mm_tier(spread_move, total_move):
+    """Observable move size, NOT 'sharp'/'steam' -- no ticket or handle data backs those."""
+    s = abs(spread_move or 0)
+    t = abs(total_move or 0)
+    if s >= 1.0 or t >= 1.5:
+        return 'major'
+    if s >= 0.5 or t >= 0.5:
+        return 'moderate'
+    return 'stable'
+
+
+def _build_market_movers_snapshot():
+    """Real open->current movement from the timestamped snapshot HISTORY: per (game, book)
+    take the earliest snapshot (open) and latest (current), then the CONSENSUS move is the
+    median of those per-book deltas across books. This isolates temporal movement from
+    book-to-book disagreement (each book's own line moving), the trap the current-file
+    version fell into. Upcoming games only. Fills in as the 4h capture accrues depth."""
+    today = _mm_eastern_today()
+    games = []
+    metrics = ['Spread', 'Total', 'HomeML']
+    for key, label, href in _MARKET_MOVER_SPECS:
+        prefix = _LINE_MOVE_FILE.get(key)
+        if not prefix:
+            continue
+        path = DATA_DIR / 'tracking' / f'{prefix}_LineMovementHistory.csv'
+        if not path.exists():
+            continue
+        cols = ['SnapshotAt', 'Date', 'Away', 'Home', 'GameID', 'Book'] + metrics
+        try:
+            df = pd.read_csv(path, usecols=lambda c: c in cols, low_memory=False)
+        except Exception:
+            continue
+        if df.empty or not {'GameID', 'Book', 'SnapshotAt', 'Away', 'Home'}.issubset(df.columns):
+            continue
+        if 'Date' in df.columns:
+            df = df[df['Date'].astype(str) >= today]
+        if df.empty:
+            continue
+        present = [m for m in metrics if m in df.columns]
+        for m in present:
+            df[m] = pd.to_numeric(df[m], errors='coerce')
+        df = df.sort_values('SnapshotAt')
+        gb = df.groupby(['GameID', 'Book'])
+        opens = gb[present].first()
+        curs = gb[present].last()
+        depth = gb['SnapshotAt'].nunique()
+        delta = curs - opens
+        delta_g = delta.groupby(level='GameID').median()
+        cur_g = curs.groupby(level='GameID').median()
+        depth_g = depth.groupby(level='GameID').max()
+        books_g = df.groupby('GameID')['Book'].nunique()
+        meta_g = df.groupby('GameID').agg(Away=('Away', 'first'), Home=('Home', 'first'), Date=('Date', 'first'))
+        for gid in delta_g.index:
+            d = delta_g.loc[gid]
+            c = cur_g.loc[gid]
+            snap_depth = int(depth_g.loc[gid])
+            sm = d.get('Spread') if 'Spread' in present else None
+            tm = d.get('Total') if 'Total' in present else None
+            mlm = d.get('HomeML') if 'HomeML' in present else None
+            spread_move = round(float(sm), 1) if sm is not None and pd.notna(sm) else None
+            total_move = round(float(tm), 1) if tm is not None and pd.notna(tm) else None
+            ml_move = int(round(float(mlm))) if mlm is not None and pd.notna(mlm) else None
+            sc = c.get('Spread') if 'Spread' in present else None
+            tc = c.get('Total') if 'Total' in present else None
+            tier = _mm_tier(spread_move, total_move) if snap_depth >= 2 else 'stable'
+            games.append({
+                'league': key, 'league_label': label, 'href': href,
+                'matchup': f"{str(meta_g.loc[gid, 'Away']).strip()} @ {str(meta_g.loc[gid, 'Home']).strip()}",
+                'date': str(meta_g.loc[gid, 'Date']),
+                'spread_cur': round(float(sc), 1) if sc is not None and pd.notna(sc) else None,
+                'spread_move': spread_move,
+                'total_cur': round(float(tc), 1) if tc is not None and pd.notna(tc) else None,
+                'total_move': total_move,
+                'ml_move': ml_move,
+                'books': int(books_g.loc[gid]),
+                'snapshots': snap_depth,
+                'tier': tier,
+                '_mag': max(abs(spread_move or 0), abs(total_move or 0) / 1.5),
+            })
+    tier_rank = {'major': 0, 'moderate': 1, 'stable': 2}
+    games.sort(key=lambda g: (tier_rank[g['tier']], -g['_mag']))
+    return games
+
+
+def build_market_movers_context(league_filter='', movers_only=True, page=1, per_page=100):
+    """What moved from open to current across game markets. Descriptive only -- movement
+    shows where the market went, it does not prove sharp action or predict an outcome."""
+    all_games = _get_ttl_cached_value('market_movers', 300, _build_market_movers_snapshot) or []
+    rows = list(all_games)
+    league_filter = str(league_filter or '').strip().lower()
+    if league_filter:
+        rows = [g for g in rows if g['league'] == league_filter]
+    if movers_only:
+        rows = [g for g in rows if g['tier'] in ('major', 'moderate')]
+    filtered_total = len(rows)
+    per_page = max(25, min(int(per_page or 100), 500))
+    page_count = max(1, (filtered_total + per_page - 1) // per_page)
+    page = max(1, min(int(page or 1), page_count))
+    start = (page - 1) * per_page
+    max_depth = max((g['snapshots'] for g in all_games), default=0)
+    return {
+        'rows': rows[start:start + per_page],
+        'total': len(all_games),
+        'mover_count': sum(1 for g in all_games if g['tier'] in ('major', 'moderate')),
+        'major_count': sum(1 for g in all_games if g['tier'] == 'major'),
+        'max_depth': max_depth,
+        'still_building': max_depth < 3,
+        'filtered_total': filtered_total,
+        'leagues_present': [{'key': k, 'label': l} for k, l, _ in _MARKET_MOVER_SPECS if any(g['league'] == k for g in all_games)],
+        'league_filter': league_filter,
+        'movers_only': bool(movers_only),
+        'page': page,
+        'page_count': page_count,
     }
 
 
@@ -38209,6 +38343,19 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/market-movers')
+def market_movers_tool():
+    """Quick Tool: what spreads/totals/moneylines moved from open to current."""
+    return render_template(
+        'market_movers.html',
+        **build_market_movers_context(
+            league_filter=request.args.get('league', ''),
+            movers_only=request.args.get('all', '') != '1',
+            page=_safe_int(request.args.get('page'), 1),
+        ),
+    )
 
 
 @app.route('/tools/game-context')

@@ -1,0 +1,133 @@
+{% set active_page = 'market_movers' %}
+{% extends "bk_base.html" %}
+{% block title %}Market Movers - Bankroll Kings{% endblock %}
+
+{% macro move(cur, mv, unit='') %}
+  {%- if cur is none -%}<span class="mm-muted">&mdash;</span>
+  {%- else -%}{{ cur }}{{ unit }}{% if mv is not none and mv != 0 %} <span class="mm-delta mm-{{ 'up' if mv > 0 else 'down' }}">{{ '%+g'|format(mv) }}</span>{% endif %}
+  {%- endif -%}
+{% endmacro %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Market <span class="accent">Movers</span></h1>
+        <div class="page-subtitle">What spreads, totals and moneylines moved from open to current. Movement shows where the market went &mdash; it doesn&rsquo;t prove sharp action or predict the outcome.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/slate-pulse" class="btn btn-secondary btn-sm">Slate Pulse</a>
+    </div>
+</div>
+
+{% if still_building %}
+<div class="mm-building mb-24">
+    <strong>Movement depth is still building.</strong> Line snapshots are now captured every 4 hours, so open&rarr;current reads sharpen over the next day or two as each game accrues more observations. Games with only one snapshot so far show as Stable, not moved.
+</div>
+{% endif %}
+
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Games Tracked</div>
+        <div class="stat-value">{{ total }}</div>
+        <div class="stat-note">upcoming, with line history</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Movers</div>
+        <div class="stat-value" style="color:{% if mover_count %}#e8833a{% else %}var(--text-muted){% endif %};">{{ mover_count }}</div>
+        <div class="stat-note">moderate or major</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Major Moves</div>
+        <div class="stat-value" style="color:{% if major_count %}var(--danger){% else %}var(--text-muted){% endif %};">{{ major_count }}</div>
+        <div class="stat-note">&ge;1 pt spread / &ge;1.5 total</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Snapshot Depth</div>
+        <div class="stat-value">{{ max_depth }}</div>
+        <div class="stat-note">observations on the deepest game</div>
+    </div>
+</div>
+
+<div class="card mb-24">
+    <form class="p-16 mm-filter" method="get" action="/tools/market-movers">
+        <span class="control-label">League</span>
+        <select name="league" class="mm-input">
+            <option value="">All leagues</option>
+            {% for lg in leagues_present %}<option value="{{ lg.key }}" {% if league_filter == lg.key %}selected{% endif %}>{{ lg.label }}</option>{% endfor %}
+        </select>
+        <label class="mm-check"><input name="all" value="1" type="checkbox" {% if not movers_only %}checked{% endif %}> Show all (incl. stable)</label>
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <a href="/tools/market-movers" class="btn btn-secondary btn-sm">Clear</a>
+        <span class="badge badge-accent" style="margin-left:auto;">{{ filtered_total }} shown</span>
+    </form>
+
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table" id="mm-table">
+            <thead>
+                <tr>
+                    <th>League</th>
+                    <th>Matchup</th>
+                    <th style="text-align:right;">Spread</th>
+                    <th style="text-align:right;">Total</th>
+                    <th style="text-align:right;">Home ML</th>
+                    <th style="text-align:right;">Books</th>
+                    <th>Move</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in rows %}
+                <tr>
+                    <td><span class="mm-league">{{ g.league_label }}</span></td>
+                    <td class="mm-matchup">{{ g.matchup }}</td>
+                    <td style="text-align:right;">{{ move(g.spread_cur, g.spread_move) }}</td>
+                    <td style="text-align:right;">{{ move(g.total_cur, g.total_move) }}</td>
+                    <td style="text-align:right;">{% if g.ml_move is not none and g.ml_move != 0 %}<span class="mm-delta mm-{{ 'up' if g.ml_move > 0 else 'down' }}">{{ '%+d'|format(g.ml_move) }}</span>{% else %}<span class="mm-muted">&mdash;</span>{% endif %}</td>
+                    <td style="text-align:right;">{{ g.books }}<div class="mm-sub">{{ g.snapshots }} snap</div></td>
+                    <td><span class="mm-pill mm-{{ g.tier }}">{{ {'major':'Major','moderate':'Moderate','stable':'Stable'}[g.tier] }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_count > 1 %}
+    <div class="p-16 mm-pagination">
+        {% if page > 1 %}<a class="btn btn-secondary btn-sm" href="{{ url_for('market_movers_tool', league=league_filter, all='1' if not movers_only else '', page=page-1) }}">&larr; Prev</a>{% endif %}
+        <span>Page {{ page }} of {{ page_count }}</span>
+        {% if page < page_count %}<a class="btn btn-secondary btn-sm" href="{{ url_for('market_movers_tool', league=league_filter, all='1' if not movers_only else '', page=page+1) }}">Next &rarr;</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state" style="padding:28px;">
+        <div class="empty-state-title">{% if movers_only and total %}No notable moves right now{% else %}No line history for upcoming games yet{% endif %}</div>
+        <div class="empty-state-copy">{% if movers_only and total %}Lines have held, or depth is still building. Tick &ldquo;Show all&rdquo; to see every tracked game including stable ones.{% else %}Snapshots capture every 4h; this fills once upcoming games are on the board with two or more observations.{% endif %}</div>
+    </div>
+    {% endif %}
+
+    <div class="p-16 mm-disclaimer">
+        <strong>How to read this:</strong> The consensus move is the median of each book&rsquo;s own open&rarr;current change &mdash; that isolates the line actually moving from books simply disagreeing. <em>Major / Moderate / Stable</em> describe the size of the move only. We do not label &ldquo;sharp money&rdquo; or &ldquo;steam&rdquo; &mdash; there is no ticket or handle data to support those claims, and a move does not predict the result.
+    </div>
+</div>
+
+<style>
+    .mm-building { border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.55; }
+    .mm-building strong { color:var(--text-bright); }
+    .mm-filter { border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .mm-input { background:var(--surface, transparent); color:var(--text-bright); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:13px; }
+    .mm-check { color:var(--text-muted); font-size:12px; display:flex; align-items:center; gap:6px; }
+    .mm-league { font-size:11px; font-weight:700; color:var(--text-muted); border:1px solid var(--border); border-radius:6px; padding:2px 7px; }
+    .mm-matchup { font-weight:700; color:var(--text-bright); }
+    .mm-muted { color:var(--text-muted); }
+    .mm-sub { color:var(--text-muted); font-size:10.5px; }
+    .mm-delta { font-weight:800; font-size:12px; }
+    .mm-up { color:var(--success); } .mm-down { color:#64a7e8; }
+    .mm-pill { font-size:11px; font-weight:800; border-radius:999px; padding:2px 10px; white-space:nowrap; border:1px solid var(--border); }
+    .mm-major { color:var(--danger); border-color:rgba(220,80,60,.4); background:rgba(220,80,60,.08); }
+    .mm-moderate { color:#e8833a; border-color:rgba(232,131,58,.4); background:rgba(232,131,58,.08); }
+    .mm-stable { color:var(--text-muted); }
+    .mm-pagination { border-top:1px solid var(--border); display:flex; align-items:center; justify-content:center; gap:14px; color:var(--text-muted); font-size:12px; }
+    .mm-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .mm-disclaimer strong { color:var(--text-bright); } .mm-disclaimer em { color:var(--text-bright); font-style:normal; font-weight:600; }
+</style>
+{% endblock %}
