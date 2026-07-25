@@ -150,14 +150,23 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Icon rail** (`.bk-rail`): narrow strip, hardcoded `/static/logos/leagues/*.svg`.
 - **Sport pages:** `/sports/nba|nfl|ncaaf|wnba|mlb` have explicit routes; everything else
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
-- **Quick Tools** (`/tools/*`, a growing product surface, 2026-07-25): cross-league
-  utilities that answer a NARROW, FACTUAL bettor question (per user direction: no
-  universal "best bets" ranking across incompatible models). In the workflow toolbar.
-  - **Slate Pulse** `/tools/slate-pulse` (`slate_pulse_tool`, all_access; toolbar item
-    2, after Command Center). `build_slate_pulse_context()` — one observational row per
+- **Quick Tools** (`/tools/*`, 2026-07-25): cross-league utilities that answer a NARROW,
+  FACTUAL bettor question (per user direction: no universal "best bets" ranking across
+  incompatible models; the "do not build" list — universal 1-100 score, sharp-money
+  tracker, lock, auto-EV list — stays unbuilt). **8 live, all `all_access`, all in the
+  workflow toolbar, all covered by `qc_quick_tools.py`** (15-check smoke test, logs to the
+  QC run log). Toolbar cluster after Command Center: **Slate Pulse · Market Movers · Best
+  Lines · Risk Radar · Ticket Check · Game Context**; plus **Track Record** (after Review
+  Center) and **Injury Report** (which the nav-rail Injuries icon also points at). Only
+  **Model-vs-Market (#8) is deferred** — model probabilities aren't captured consistently
+  cross-sport, a data-capture change not a build. Per-tool detail follows (loaders reused
+  across tools; all snapshot-cached and vectorized to stay well under a second on the 1
+  worker — the Best Lines lesson):
+  - **Slate Pulse** `/tools/slate-pulse` (`slate_pulse_tool`, all_access).
+    `build_slate_pulse_context()` — one observational row per
     league: games w/ live markets, prop rows, books, injuries, feed freshness, state
     (Live/Partial/Stale/No slate). Aggregates existing loaders only; no prediction/ranking.
-  - **Best Lines** `/tools/best-lines` (`best_lines_tool`, all_access; toolbar item 3).
+  - **Best Lines** `/tools/best-lines` (`best_lines_tool`, all_access).
     Cross-sport player-prop line shop. `_build_best_lines_snapshot()` (60s TTL cache,
     VECTORIZED — a per-market Python loop took ~21s and would freeze the 1 worker; the
     groupby version is ~0.5s) computes, per Player/Stat/Game/direction: Best Number (min
@@ -165,8 +174,8 @@ cache for those with `?v=...` and/or a service-worker version bump.
     (highest American price WITH its own attached line) — kept separate, never a "best
     bet"/EV claim. Server-side league/direction/stat/search/multi-book filters + 200/page
     pagination. Handoff spec: `docs/best_lines_quick_tool_handoff.md`.
-  - **Market Movers** `/tools/market-movers` (`market_movers_tool`, all_access; toolbar
-    item 2). Open→current game-line movement from the snapshot HISTORY (`*_LineMovementHistory`):
+  - **Market Movers** `/tools/market-movers` (`market_movers_tool`, all_access).
+    Open→current game-line movement from the snapshot HISTORY (`*_LineMovementHistory`):
     per (game,book) earliest=open / latest=current, consensus move = MEDIAN of per-book
     deltas (isolates the line moving from books disagreeing). NEAR-TERM only (next 3 days,
     so 'open' is recent not season-drift); extreme ML moves (|ML|>400) suppressed as noise.
@@ -207,11 +216,6 @@ cache for those with `?v=...` and/or a service-worker version bump.
     Officials; plus a cross-sport coverage matrix (Injuries/Market feed-level per sport).
     KEY: the umpire feed returns a paywall placeholder ("XX Free account required...") —
     `_gc_umpire_state` detects it and reports Officials **Unavailable**, not present.
-    **8 Quick Tools live:** Slate Pulse, Market Movers, Best Lines, Risk Radar, Ticket
-    Check, Game Context, Track Record, Injury Report — all covered by `qc_quick_tools.py`
-    (smoke test, 15 checks). Only Model-vs-Market (#8) deferred (model probs not captured
-    cross-sport). The user's "do not build" list (universal score, sharp-money, lock,
-    auto-EV) stays unbuilt.
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
@@ -326,6 +330,14 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Daily operator** (`run_daily.py`): runs refreshes + Edge Engine (`run_bk_edge_engine_pipeline.py`)
   + scorecards (`run_all_scorecards.py`) + `generate_run_status.py` → `Run_Status.json`
   ("Daily Engine Health"). Use `--skip-refresh` to run just analysis+status on already-fresh data.
+- **Intraday line-movement capture (2026-07-25):** `bk-linemove.timer` runs
+  `refresh_line_movement_snapshots.py` **every 4h** (00/04/08/12/16/20 UTC) — MLB + WNBA
+  game-line snapshots via the lightweight `fetch_*_game_lines` (no `app` import, memory-safe).
+  This is what makes **Market Movers** viable: the once/day capture in `run_daily` gave a
+  near-term game only 1-2 snapshots (no open→current movement); 4h capture accrues real depth.
+  Football stays daily (advance lines are weeks out, move slowly, accrue depth over that long
+  window). Units at `/etc/systemd/system/bk-linemove.{service,timer}` — **NOT in the repo**
+  (like the WEB_CONCURRENCY drop-in); recreate them if the box is rebuilt.
 
 ### ⚠ Football / CFB data flows on prod ONLY through run_daily steps (2026-07-19..22)
 
