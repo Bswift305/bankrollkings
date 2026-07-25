@@ -164,8 +164,16 @@ cache for those with `?v=...` and/or a service-worker version bump.
     line for OVER / max for UNDER, best price among books at that number) and Best Price
     (highest American price WITH its own attached line) — kept separate, never a "best
     bet"/EV claim. Server-side league/direction/stat/search/multi-book filters + 200/page
-    pagination. Handoff spec: `docs/best_lines_quick_tool_handoff.md`. Market Movers stays
-    DEFERRED (line-movement snapshot depth is 1-2/game; nothing real to show yet).
+    pagination. Handoff spec: `docs/best_lines_quick_tool_handoff.md`.
+  - **Market Movers** `/tools/market-movers` (`market_movers_tool`, all_access; toolbar
+    item 2). Open→current game-line movement from the snapshot HISTORY (`*_LineMovementHistory`):
+    per (game,book) earliest=open / latest=current, consensus move = MEDIAN of per-book
+    deltas (isolates the line moving from books disagreeing). NEAR-TERM only (next 3 days,
+    so 'open' is recent not season-drift); extreme ML moves (|ML|>400) suppressed as noise.
+    Tier Major/Moderate/Stable — NO "sharp"/"steam" labels. **UNLOCKED by making the
+    line-movement capture frequent:** `refresh_line_movement_snapshots.py` (MLB+WNBA game
+    lines) on `bk-linemove.timer` every 4h — the daily-only capture gave 1-2 snapshots/game
+    (no movement); 4h capture accrues real depth. "Still building" banner while depth < 6.
   - **Track Record** `/tools/track-record` (`track_record_tool`, all_access; toolbar item
     after Review Center). Bettor-facing curated record from `Floor_Play_Index.csv`
     (usecols, 600s TTL cache). FORWARD-CAPTURED only (SourceFile = *_AllPropResults; no
@@ -199,8 +207,11 @@ cache for those with `?v=...` and/or a service-worker version bump.
     Officials; plus a cross-sport coverage matrix (Injuries/Market feed-level per sport).
     KEY: the umpire feed returns a paywall placeholder ("XX Free account required...") —
     `_gc_umpire_state` detects it and reports Officials **Unavailable**, not present.
-    Everything is a QuickTool now (7 live): Slate Pulse, Best Lines, Risk Radar, Ticket
-    Check, Game Context, Track Record, Injury Report. Market Movers + Model-vs-Market deferred.
+    **8 Quick Tools live:** Slate Pulse, Market Movers, Best Lines, Risk Radar, Ticket
+    Check, Game Context, Track Record, Injury Report — all covered by `qc_quick_tools.py`
+    (smoke test, 15 checks). Only Model-vs-Market (#8) deferred (model probs not captured
+    cross-sport). The user's "do not build" list (universal score, sharp-money, lock,
+    auto-EV) stays unbuilt.
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
