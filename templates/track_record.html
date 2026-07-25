@@ -1,0 +1,149 @@
+{% set active_page = 'track_record' %}
+{% extends "bk_base.html" %}
+{% block title %}Track Record - Bankroll Kings{% endblock %}
+
+{% macro pct(v) -%}{% if v is none %}&mdash;{% else %}{{ v }}%{% endif %}{%- endmacro %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Track <span class="accent">Record</span></h1>
+        <div class="page-subtitle">How curated picks actually performed &mdash; at the price they were archived at. Hit rate is only half the story; ROI and the break-even bar are the rest.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/candidate-review" class="btn btn-secondary btn-sm">Full Review Center</a>
+    </div>
+</div>
+
+<div class="tr-note mb-24">
+    <strong>Forward-captured only.</strong> Every row here is a pick logged live and graded at its archived price &mdash; no backfilled or in-sample lab data is mixed in. Market-implied &ldquo;Available Props&rdquo; are excluded by default (that&rsquo;s the sportsbook, not the model).
+</div>
+
+{% if totals %}
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Independent Markets</div>
+        <div class="stat-value">{{ '{:,}'.format(totals.independent) }}</div>
+        <div class="stat-note">{{ '{:,}'.format(totals.resolved) }} directional evals (O/U de-duped)</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Hit Rate</div>
+        <div class="stat-value">{{ pct(totals.hit_rate) }}</div>
+        <div class="stat-note">{{ '{:,}'.format(totals.hits) }} W &middot; {{ '{:,}'.format(totals.misses) }} L</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Break-Even Needed</div>
+        <div class="stat-value" style="color:var(--text-muted);">{{ pct(totals.break_even) }}</div>
+        <div class="stat-note">bar to clear at these prices</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">ROI at Archived Price</div>
+        <div class="stat-value" style="color:{% if totals.roi is not none and totals.roi < 0 %}var(--danger){% elif totals.roi is not none %}var(--success){% else %}var(--text-bright){% endif %};">{% if totals.roi is not none %}{{ '%+.1f'|format(totals.roi) }}%{% else %}&mdash;{% endif %}</div>
+        <div class="stat-note">{% if totals.priced %}per 1u across {{ '{:,}'.format(totals.priced) }} priced{% else %}no priced rows{% endif %}</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+    <form class="p-16 tr-filter-shell" method="get" action="/tools/track-record">
+        <div class="tr-filter-row">
+            <span class="control-label">Sport</span>
+            <select name="sport" class="tr-input">
+                <option value="">All sports</option>
+                {% for s in sports_present %}<option value="{{ s }}" {% if sport_filter == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+            <span class="control-label">Method</span>
+            <select name="method" class="tr-input">
+                <option value="">All methods</option>
+                {% for m in methods_present %}<option value="{{ m }}" {% if method_filter == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+            </select>
+            <span class="control-label">Side</span>
+            <select name="direction" class="tr-input">
+                <option value="">Both</option>
+                <option value="OVER" {% if direction_filter == 'OVER' %}selected{% endif %}>OVER</option>
+                <option value="UNDER" {% if direction_filter == 'UNDER' %}selected{% endif %}>UNDER</option>
+            </select>
+            <span class="control-label">Min sample</span>
+            <input name="min_sample" value="{{ min_sample or '' }}" class="tr-input tr-num" type="number" min="0" placeholder="0">
+        </div>
+        <div class="tr-filter-row">
+            <label class="tr-check"><input name="available" value="1" type="checkbox" {% if include_available %}checked{% endif %}> Include market-implied &ldquo;Available Props&rdquo;</label>
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="/tools/track-record" class="btn btn-secondary btn-sm">Clear</a>
+        </div>
+    </form>
+
+    {% if rows %}
+    <div class="table-shell">
+        <table class="data-table" id="tr-table">
+            <thead>
+                <tr>
+                    <th>Sport</th>
+                    <th>Method</th>
+                    <th style="text-align:right;">Ind. Markets</th>
+                    <th style="text-align:right;">Record</th>
+                    <th style="text-align:right;">Hit %</th>
+                    <th style="text-align:right;">Break-Even</th>
+                    <th style="text-align:right;">ROI</th>
+                    <th>Read</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="tr-row{% if r.thin %} tr-thin{% endif %}">
+                    <td><span class="tr-sport">{{ r.sport }}</span></td>
+                    <td class="tr-method">{{ r.method }}{% if r.confidence is not none %}<div class="tr-sub">model conf {{ r.confidence }}%</div>{% endif %}</td>
+                    <td style="text-align:right;">{{ '{:,}'.format(r.independent) }}<div class="tr-sub">{{ '{:,}'.format(r.resolved) }} evals</div></td>
+                    <td style="text-align:right;">{{ r.hits }}&ndash;{{ r.misses }}</td>
+                    <td style="text-align:right; font-weight:700;">{{ pct(r.hit_rate) }}</td>
+                    <td style="text-align:right; color:var(--text-muted);">{{ pct(r.break_even) }}</td>
+                    <td style="text-align:right; font-weight:800; color:{% if r.roi is not none and r.roi < 0 %}var(--danger){% elif r.roi is not none %}var(--success){% else %}var(--text-muted){% endif %};">{% if r.roi is not none %}{{ '%+.1f'|format(r.roi) }}%{% else %}&mdash;{% endif %}</td>
+                    <td>
+                        {% if r.thin %}<span class="tr-tag tr-tag-warn">small sample</span>
+                        {% elif r.roi is none %}<span class="tr-tag">no price on file</span>
+                        {% elif r.hit_rate is not none and r.break_even is not none and r.hit_rate >= r.break_even %}<span class="tr-tag tr-tag-good">clears break-even</span>
+                        {% else %}<span class="tr-tag tr-tag-bad">below break-even</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:28px;">
+        {% if has_data %}
+        <div class="empty-state-title">No methods match these filters</div>
+        <div class="empty-state-copy">Lower the minimum sample or clear a filter. Some sports carry few graded curated picks.</div>
+        {% else %}
+        <div class="empty-state-title">No graded curated picks yet</div>
+        <div class="empty-state-copy">This fills as live picks resolve. Nothing here is backfilled.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-16 tr-disclaimer">
+        <strong>How to read this:</strong> <em>Independent Markets</em> counts each player-stat-game once (paired OVER/UNDER are not double-counted). <em>Break-Even</em> is the hit rate these prices require to profit &mdash; a hit rate below it loses money even when it looks high. <em>ROI</em> is per 1u at the archived price. Rows are ordered by sample size, never by hit rate. Small samples are flagged and prove nothing yet. None of this is a prediction or a claim of future edge.
+    </div>
+</div>
+
+<style>
+    .tr-note { border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.55; }
+    .tr-note strong { color:var(--text-bright); }
+    .tr-filter-shell { border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:12px; }
+    .tr-filter-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .tr-input { background:var(--surface, transparent); color:var(--text-bright); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:13px; }
+    .tr-num { width:90px; }
+    .tr-check { color:var(--text-muted); font-size:12px; display:flex; align-items:center; gap:6px; }
+    .tr-sport { font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text-muted); border:1px solid var(--border); border-radius:6px; padding:2px 7px; }
+    .tr-method { font-weight:700; color:var(--text-bright); }
+    .tr-sub { color:var(--text-muted); font-size:11px; font-weight:400; margin-top:2px; }
+    .tr-tag { font-size:10.5px; font-weight:700; border-radius:999px; padding:2px 8px; white-space:nowrap; border:1px solid var(--border); color:var(--text-muted); }
+    .tr-tag-good { color:var(--success); border-color:rgba(46,160,90,.4); background:rgba(46,160,90,.1); }
+    .tr-tag-bad { color:var(--danger); border-color:rgba(220,80,60,.36); background:rgba(220,80,60,.08); }
+    .tr-tag-warn { color:#e8833a; border-color:rgba(232,131,58,.38); background:rgba(232,131,58,.08); }
+    .tr-row.tr-thin { opacity:.82; }
+    .tr-disclaimer { border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.6; }
+    .tr-disclaimer strong { color:var(--text-bright); } .tr-disclaimer em { color:var(--text-bright); font-style:normal; font-weight:600; }
+</style>
+{% endblock %}

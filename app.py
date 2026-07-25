@@ -699,6 +699,7 @@ PRO_ENDPOINTS = {
     'injury_report_tool',
     'slate_pulse_tool',
     'best_lines_tool',
+    'track_record_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -1425,6 +1426,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
+        {'key': 'track_record', 'label': 'Track Record', 'href': '/tools/track-record'},
         {'key': 'market', 'label': 'Market', 'href': sport_market if sport_key else global_feature_href['market']},
         {'key': 'trends', 'label': 'Streak Patterns', 'href': sport_trends if sport_key else global_feature_href['trends']},
         {'key': 'tendencies', 'label': 'Tendencies', 'href': f"/tendencies?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['tendencies']},
@@ -17588,6 +17590,122 @@ def build_best_lines_context(league_filter='', direction_filter='', stat_filter=
         'page': page,
         'page_count': page_count,
         'per_page': per_page,
+    }
+
+
+_TRACK_RECORD_COLS = ['Sport', 'Method', 'Direction', 'Player', 'Stat', 'Matchup',
+                      'MarketPrice', 'OutcomeState', 'Confidence', 'BookCount']
+_TRACK_RECORD_MIN_SAMPLE = 50
+
+
+def _load_track_record_rows():
+    """Resolved (Hit/Miss) forward-captured rows from the graded floor-play index.
+    Memory-light (usecols); this source is entirely live results (no backfill lab)."""
+    path = DATA_DIR / 'tracking' / 'Floor_Play_Index.csv'
+    if not path.exists():
+        return pd.DataFrame(columns=_TRACK_RECORD_COLS)
+    try:
+        df = pd.read_csv(path, usecols=lambda c: c in _TRACK_RECORD_COLS, low_memory=False)
+    except Exception:
+        return pd.DataFrame(columns=_TRACK_RECORD_COLS)
+    if df.empty or 'OutcomeState' not in df.columns:
+        return pd.DataFrame(columns=_TRACK_RECORD_COLS)
+    df = df[df['OutcomeState'].isin(['Hit', 'Miss'])].copy()
+    df['Sport'] = df['Sport'].fillna('').astype(str).str.strip().str.upper()
+    df['Method'] = df['Method'].fillna('').astype(str).str.strip()
+    return df
+
+
+def _break_even_rate(prices):
+    """Mean break-even hit rate implied by the archived American prices (the bar the
+    method has to clear to be profitable). None if no usable price."""
+    p = pd.to_numeric(prices, errors='coerce')
+    p = p[(p.abs() >= 100) & (p.abs() < 100000)]
+    if p.empty:
+        return None
+    arr = p.to_numpy(dtype=float)
+    # np.where evaluates BOTH branches; the unselected one divides by zero at arr=+-100
+    # (its result is discarded, but it warns). Suppress, then keep only finite values.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        be = np.where(arr > 0, 100.0 / (arr + 100.0), (-arr) / ((-arr) + 100.0))
+    be = be[np.isfinite(be)]
+    if be.size == 0:
+        return None
+    return round(float(be.mean()) * 100, 1)
+
+
+def build_track_record_context(sport_filter='', method_filter='', direction_filter='',
+                               min_sample=0, include_available=False):
+    """Cross-sport, bettor-facing track record of FORWARD-CAPTURED curated picks, at the
+    price they were archived at. Honest by rule: independent markets dedupe paired
+    OVER/UNDER (not counted twice); ROI + break-even shown beside hit rate (never ranked
+    on hit rate alone); small samples flagged; the market-implied 'Available Props' rows
+    are excluded by default because they are the sportsbook, not the model.
+    """
+    df = _get_ttl_cached_value('track_record_rows', 600, _load_track_record_rows)
+    if df is None or df.empty:
+        return {'rows': [], 'totals': None, 'sports_present': [], 'methods_present': [],
+                'sport_filter': '', 'method_filter': '', 'direction_filter': '',
+                'min_sample': 0, 'include_available': bool(include_available), 'has_data': False}
+
+    work = df
+    if not include_available:
+        work = work[~work['Method'].str.contains('Available', case=False, na=False)]
+    sport_filter = str(sport_filter or '').strip().upper()
+    method_filter = str(method_filter or '').strip()
+    direction_filter = str(direction_filter or '').strip().upper()
+    if sport_filter:
+        work = work[work['Sport'] == sport_filter]
+    if method_filter:
+        work = work[work['Method'] == method_filter]
+    if direction_filter in {'OVER', 'UNDER'}:
+        work = work[work['Direction'].fillna('').astype(str).str.upper() == direction_filter]
+    try:
+        min_sample = max(0, int(min_sample or 0))
+    except (TypeError, ValueError):
+        min_sample = 0
+
+    def _summarize(group):
+        hits = int((group['OutcomeState'] == 'Hit').sum())
+        misses = int((group['OutcomeState'] == 'Miss').sum())
+        resolved = hits + misses
+        independent = int(group[['Player', 'Stat', 'Matchup']].astype(str).drop_duplicates().shape[0]) if {'Player', 'Stat', 'Matchup'}.issubset(group.columns) else resolved
+        roi, priced = _archive_roi_for_resolved(group)
+        be = _break_even_rate(group['MarketPrice']) if 'MarketPrice' in group.columns else None
+        conf = pd.to_numeric(group.get('Confidence'), errors='coerce').dropna()
+        return {
+            'hits': hits, 'misses': misses, 'resolved': resolved,
+            'independent': independent,
+            'hit_rate': round(hits / resolved * 100, 1) if resolved else None,
+            'roi': roi, 'priced': priced,
+            'break_even': be,
+            'confidence': round(float(conf.mean()), 1) if not conf.empty else None,
+            'thin': resolved < _TRACK_RECORD_MIN_SAMPLE,
+        }
+
+    rows = []
+    for (sport, method), group in work.groupby(['Sport', 'Method'], sort=False):
+        summ = _summarize(group)
+        if summ['resolved'] < min_sample:
+            continue
+        rows.append({'sport': sport, 'method': str(method), **summ})
+    # Rank by evidence weight (resolved), NOT by hit rate.
+    rows.sort(key=lambda r: -r['resolved'])
+
+    totals = _summarize(work) if not work.empty else None
+    sports_present = sorted({r['sport'] for r in rows})
+    methods_present = sorted({r['method'] for r in rows})
+    return {
+        'rows': rows,
+        'totals': totals,
+        'sports_present': sports_present,
+        'methods_present': methods_present,
+        'sport_filter': sport_filter,
+        'method_filter': method_filter,
+        'direction_filter': direction_filter,
+        'min_sample': min_sample,
+        'include_available': bool(include_available),
+        'has_data': True,
     }
 
 
@@ -37694,6 +37812,21 @@ def ops_dashboard():
 def slate_pulse_tool():
     """Quick Tool: what's live, available, stale, or missing per league right now."""
     return render_template('slate_pulse.html', **build_slate_pulse_context())
+
+
+@app.route('/tools/track-record')
+def track_record_tool():
+    """Quick Tool: forward-captured curated track record (hit rate + ROI + break-even)."""
+    return render_template(
+        'track_record.html',
+        **build_track_record_context(
+            sport_filter=request.args.get('sport', ''),
+            method_filter=request.args.get('method', ''),
+            direction_filter=request.args.get('direction', ''),
+            min_sample=_safe_int(request.args.get('min_sample'), 0),
+            include_available=request.args.get('available', '') == '1',
+        ),
+    )
 
 
 @app.route('/tools/best-lines')

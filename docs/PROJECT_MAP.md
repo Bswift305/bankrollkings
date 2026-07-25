@@ -166,6 +166,15 @@ cache for those with `?v=...` and/or a service-worker version bump.
     bet"/EV claim. Server-side league/direction/stat/search/multi-book filters + 200/page
     pagination. Handoff spec: `docs/best_lines_quick_tool_handoff.md`. Market Movers stays
     DEFERRED (line-movement snapshot depth is 1-2/game; nothing real to show yet).
+  - **Track Record** `/tools/track-record` (`track_record_tool`, all_access; toolbar item
+    after Review Center). Bettor-facing curated record from `Floor_Play_Index.csv`
+    (usecols, 600s TTL cache). FORWARD-CAPTURED only (SourceFile = *_AllPropResults; no
+    backfill), Available Props excluded by default. Per (Sport, Method): independent
+    markets (Player/Stat/Matchup — paired O/U de-duped, NOT double counted), record,
+    hit %, **break-even %** (the bar these prices need), ROI (reuses `_archive_roi_for_resolved`),
+    model conf. Ranked by sample size, never hit rate; small samples flagged. Exposes the
+    core truth: curated methods hit 59-85% but mostly sit just BELOW break-even → ROI
+    ~-2 to -5% (favorite skew). See [[project_market_efficiency_findings]].
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
