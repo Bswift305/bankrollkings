@@ -17550,7 +17550,9 @@ def build_market_movers_context(league_filter='', movers_only=True, page=1, per_
         'mover_count': sum(1 for g in all_games if g['tier'] in ('major', 'moderate')),
         'major_count': sum(1 for g in all_games if g['tier'] == 'major'),
         'max_depth': max_depth,
-        'still_building': max_depth < 3,
+        # Under a full day of 4h captures (~6 snapshots), the pre-game movement window
+        # isn't covered yet, so keep the "still building" note up.
+        'still_building': max_depth < 6,
         'filtered_total': filtered_total,
         'leagues_present': [{'key': k, 'label': l} for k, l, _ in _MARKET_MOVER_SPECS if any(g['league'] == k for g in all_games)],
         'league_filter': league_filter,
