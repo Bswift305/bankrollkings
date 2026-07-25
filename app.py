@@ -17425,12 +17425,17 @@ _MARKET_MOVER_SPECS = [
 ]
 
 
-def _mm_eastern_today():
+def _mm_date_window(days_ahead=3):
+    """(today, horizon) Eastern date strings. Market Movers is a NEAR-TERM tool: for a
+    game weeks out, 'open' would be months ago and the move would be season-long drift,
+    not the recent movement a bettor means. Restricting to the next few days keeps 'open'
+    genuinely recent and matches where the 4h capture is deepening (MLB/WNBA)."""
     try:
         from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo('America/New_York')).strftime('%Y-%m-%d')
+        today = datetime.now(ZoneInfo('America/New_York')).date()
     except Exception:
-        return datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().date()
+    return today.strftime('%Y-%m-%d'), (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
 
 
 def _mm_tier(spread_move, total_move):
@@ -17450,7 +17455,7 @@ def _build_market_movers_snapshot():
     median of those per-book deltas across books. This isolates temporal movement from
     book-to-book disagreement (each book's own line moving), the trap the current-file
     version fell into. Upcoming games only. Fills in as the 4h capture accrues depth."""
-    today = _mm_eastern_today()
+    today, horizon = _mm_date_window(days_ahead=3)
     games = []
     metrics = ['Spread', 'Total', 'HomeML']
     for key, label, href in _MARKET_MOVER_SPECS:
@@ -17468,7 +17473,8 @@ def _build_market_movers_snapshot():
         if df.empty or not {'GameID', 'Book', 'SnapshotAt', 'Away', 'Home'}.issubset(df.columns):
             continue
         if 'Date' in df.columns:
-            df = df[df['Date'].astype(str) >= today]
+            dates = df['Date'].astype(str)
+            df = df[(dates >= today) & (dates <= horizon)]  # near-term only
         if df.empty:
             continue
         present = [m for m in metrics if m in df.columns]
@@ -17494,9 +17500,14 @@ def _build_market_movers_snapshot():
             mlm = d.get('HomeML') if 'HomeML' in present else None
             spread_move = round(float(sm), 1) if sm is not None and pd.notna(sm) else None
             total_move = round(float(tm), 1) if tm is not None and pd.notna(tm) else None
-            ml_move = int(round(float(mlm))) if mlm is not None and pd.notna(mlm) else None
             sc = c.get('Spread') if 'Spread' in present else None
             tc = c.get('Total') if 'Total' in present else None
+            # ML move only where the number is meaningful. On extreme lines (|ML| > 400) a
+            # large cent-move barely changes the implied probability -- noise, so suppress it.
+            cur_ml = c.get('HomeML') if 'HomeML' in present else None
+            ml_move = None
+            if mlm is not None and pd.notna(mlm) and cur_ml is not None and pd.notna(cur_ml) and abs(float(cur_ml)) <= 400:
+                ml_move = int(round(float(mlm)))
             tier = _mm_tier(spread_move, total_move) if snap_depth >= 2 else 'stable'
             games.append({
                 'league': key, 'league_label': label, 'href': href,
