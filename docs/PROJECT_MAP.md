@@ -151,7 +151,12 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Sport pages:** `/sports/nba|nfl|ncaaf|wnba|mlb` have explicit routes; everything else
   (incl. `ncaamb`, `ncaawb`) hits the catch-all `/sports/<league>` → `under_construction.html`.
 - **Quick Tools** (`/tools/*`, a growing product surface, 2026-07-25): cross-league
-  utilities that answer a bettor question without drilling into each sport page.
+  utilities that answer a NARROW, FACTUAL bettor question (per user direction: no
+  universal "best bets" ranking across incompatible models). In the workflow toolbar.
+  - **Slate Pulse** `/tools/slate-pulse` (`slate_pulse_tool`, all_access; toolbar item
+    2, after Command Center). `build_slate_pulse_context()` — one observational row per
+    league: games w/ live markets, prop rows, books, injuries, feed freshness, state
+    (Live/Partial/Stale/No slate). Aggregates existing loaders only; no prediction/ranking.
   - **Injury Report** `/tools/injury-report` (`injury_report_tool`, all_access; the nav
     rail "Injuries" icon now points here, not the old `#injuries` sidebar anchor).
     `build_injury_report_context()` aggregates `load_sport_injuries(key)` across
