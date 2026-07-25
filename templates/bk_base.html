@@ -111,8 +111,8 @@
     <a href="{{ url_for('history') }}" class="bk-rail-icon {% if active_page == 'history' %}active{% endif %}" title="Analytics: result history and calibration reads">
       <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Analytics"><span class="tip"><strong>Analytics</strong><small>History, review, calibration</small></span>
     </a>
-    <a href="#injuries" class="bk-rail-icon {% if injury_count %}bk-pulse{% endif %}" title="Injuries: active injury checks and role flags">
-      <img src="/static/logos/leagues/injuries.svg" loading="lazy" alt="Injuries"><span class="tip"><strong>Injuries</strong><small>Active injury checks{% if injury_count %}: {{ injury_count }}{% endif %}</small></span>
+    <a href="/tools/injury-report" class="bk-rail-icon {% if active_page == 'injuries' %}active{% endif %} {% if injury_count %}bk-pulse{% endif %}" title="Injury Report: multi-league availability">
+      <img src="/static/logos/leagues/injuries.svg" loading="lazy" alt="Injuries"><span class="tip"><strong>Injury Report</strong><small>Multi-league availability{% if injury_count %}: {{ injury_count }}{% endif %}</small></span>
     </a>
     <div class="bk-rail-divider"></div>
     <a href="{{ url_for('settings') }}" class="bk-rail-icon {% if active_page == 'settings' %}active{% endif %}" title="Settings: account and platform preferences">

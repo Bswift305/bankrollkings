@@ -696,6 +696,7 @@ FREE_ENDPOINTS = {
 PRO_ENDPOINTS = {
     'dashboard',
     'method_hub',
+    'injury_report_tool',
     'matchup_lens',
     'nba_page',
     'nfl_page',
@@ -17173,6 +17174,87 @@ def load_sport_injuries(sport_key='nba'):
     injuries = injuries[injuries['Player'] != ''].copy()
     injuries = injuries.drop_duplicates(subset=['Player'], keep='last').reset_index(drop=True)
     return injuries
+
+
+INJURY_REPORT_LEAGUES = [
+    ('nba', 'NBA'),
+    ('wnba', 'WNBA'),
+    ('mlb', 'MLB'),
+    ('nfl', 'NFL'),
+    ('ncaaf', 'NCAAF'),
+]
+
+
+def _injury_severity_bucket(status):
+    """Collapse each league's free-text status into one of four bettor-facing
+    buckets (severity rank, label). Feeds row color, sort order, and the Status
+    filter. Tokenized so 'AVAILABLE'/'PROBABLE' don't get mis-read as 'IL'/OUT."""
+    s = str(status or '').upper()
+    tokens = [t for t in re.split(r'[^A-Z0-9]+', s) if t]
+    tset = set(tokens)
+    if 'DOUBTFUL' in tset:
+        return 1, 'Doubtful'
+    out_markers = {'OUT', 'IR', 'PUP', 'NFI', 'SUSPENDED', 'SUSPENSION'}
+    # MLB uses "10-Day IL" / "60-Day IL"; the 'IL' token is the tell.
+    if (tset & out_markers) or ('IL' in tset) or ('INJURED' in tset and 'RESERVE' in tset) or 'SEASON' in tset:
+        return 0, 'Out'
+    q_markers = {'QUESTIONABLE', 'GTD', 'DTD', 'PROBABLE'}
+    if (tset & q_markers) or 'DAY-TO-DAY' in s or 'DAY TO DAY' in s or ('GAME' in tset and 'TIME' in tset):
+        return 2, 'Questionable'
+    return 3, 'Other'
+
+
+def build_injury_report_context():
+    """Aggregate every league's current injuries into one filterable table for
+    the multi-league Injury Report quick tool. Uses load_sport_injuries (already
+    normalized to Player/Team/Status/Reason/Updated), tags each row with its
+    league and a severity bucket, and precomputes the filter option lists."""
+    rows = []
+    league_counts = {}
+    for key, label in INJURY_REPORT_LEAGUES:
+        try:
+            df = load_sport_injuries(key)
+        except Exception:
+            df = None
+        if df is None or df.empty:
+            continue
+        count = 0
+        for _, record in df.iterrows():
+            player = str(record.get('Player') or '').strip()
+            if not player:
+                continue
+            status = str(record.get('Status') or '').strip()
+            severity, bucket = _injury_severity_bucket(status)
+            rows.append({
+                'league': key,
+                'league_label': label,
+                'team': str(record.get('Team') or '').strip(),
+                'player': player,
+                'status': status,
+                'status_bucket': bucket,
+                'severity': severity,
+                'reason': str(record.get('Reason') or '').strip(),
+                'updated': str(record.get('Updated') or '').strip(),
+            })
+            count += 1
+        if count:
+            league_counts[label] = count
+
+    # Most severe first (Out -> Doubtful -> Questionable -> Other), then league/team/player.
+    rows.sort(key=lambda item: (item['severity'], item['league_label'], item['team'], item['player']))
+    bucket_order = ['Out', 'Doubtful', 'Questionable', 'Other']
+    return {
+        'rows': rows,
+        'total': len(rows),
+        'out_count': sum(1 for row in rows if row['severity'] == 0),
+        'league_counts': league_counts,
+        'leagues_present': [
+            {'key': key, 'label': label, 'count': league_counts[label]}
+            for key, label in INJURY_REPORT_LEAGUES if label in league_counts
+        ],
+        'teams': sorted({row['team'] for row in rows if row['team']}),
+        'buckets_present': [bucket for bucket in bucket_order if any(row['status_bucket'] == bucket for row in rows)],
+    }
 
 
 def build_injury_status_lookup(injuries_df=None):
@@ -37273,6 +37355,15 @@ def ops_dashboard():
         return make_response("Owner access required.", 403)
     context = build_ops_dashboard_context()
     return render_template('ops.html', **context)
+
+@app.route('/tools/injury-report')
+def injury_report_tool():
+    """Quick Tool: one filterable injury table across every active league, so a
+    bettor checking a few games' availability doesn't have to open each sport
+    page. Filtering is client-side (league / status / team / search)."""
+    context = build_injury_report_context()
+    return render_template('injury_report.html', **context)
+
 
 @app.route('/injuries')
 def injuries_page():

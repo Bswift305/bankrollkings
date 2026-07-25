@@ -1,0 +1,188 @@
+{% set active_page = 'injuries' %}
+{% extends "bk_base.html" %}
+{% block title %}Injury Report - Bankroll Kings{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Quick Tools</div>
+        <h1>Injury <span class="accent">Report</span></h1>
+        <div class="page-subtitle">Every league's availability in one place. Filter by league, status, team, or search a player &mdash; no need to open each sport.</div>
+    </div>
+    <div class="hero-actions">
+        <a href="/tools/today" class="btn btn-secondary btn-sm">All Quick Tools</a>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
+    <div class="stat-card">
+        <div class="page-kicker">Tracked</div>
+        <div class="stat-value">{{ total }}</div>
+        <div class="stat-note">across {{ leagues_present|length }} league{{ 's' if leagues_present|length != 1 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="page-kicker">Ruled Out</div>
+        <div class="stat-value" style="color:var(--danger);">{{ out_count }}</div>
+        <div class="stat-note">OUT / IL / IR</div>
+    </div>
+    {% for lg in leagues_present %}
+    <div class="stat-card">
+        <div class="page-kicker">{{ lg.label }}</div>
+        <div class="stat-value">{{ lg.count }}</div>
+        <div class="stat-note">on the report</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card mb-24">
+    <!-- Filter bar -->
+    <div class="p-16" style="border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:12px;">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            <span class="control-label">League</span>
+            <button class="inj-chip active" data-dim="league" data-value="">All</button>
+            {% for lg in leagues_present %}
+            <button class="inj-chip" data-dim="league" data-value="{{ lg.key }}">{{ lg.label }}</button>
+            {% endfor %}
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            <span class="control-label">Status</span>
+            <button class="inj-chip active" data-dim="bucket" data-value="">All</button>
+            {% for bucket in buckets_present %}
+            <button class="inj-chip" data-dim="bucket" data-value="{{ bucket }}">{{ bucket }}</button>
+            {% endfor %}
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+            <span class="control-label">Team</span>
+            <select id="inj-team" class="inj-select">
+                <option value="">All teams</option>
+                {% for team in teams %}
+                <option value="{{ team }}">{{ team }}</option>
+                {% endfor %}
+            </select>
+            <input id="inj-search" class="inj-search" type="search" placeholder="Search player, team, or reason&hellip;" autocomplete="off">
+            <button id="inj-clear" class="btn btn-secondary btn-sm" type="button">Clear</button>
+            <span class="badge badge-accent" style="margin-left:auto;"><span id="inj-count">{{ total }}</span> shown</span>
+        </div>
+    </div>
+
+    <div class="table-shell">
+        <table class="data-table" id="inj-table">
+            <thead>
+                <tr>
+                    <th>League</th>
+                    <th>Team</th>
+                    <th>Player</th>
+                    <th>Status</th>
+                    <th>Reason</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="inj-row"
+                    data-league="{{ r.league }}"
+                    data-bucket="{{ r.status_bucket }}"
+                    data-team="{{ r.team }}"
+                    data-search="{{ (r.player ~ ' ' ~ r.team ~ ' ' ~ r.reason)|lower }}">
+                    <td><span class="inj-league">{{ r.league_label }}</span></td>
+                    <td>{{ r.team or '—' }}</td>
+                    <td style="font-weight:600; color:var(--text-bright);">{{ r.player }}</td>
+                    <td><span class="inj-status inj-sev-{{ r.severity }}">{{ r.status or r.status_bucket }}</span></td>
+                    <td class="inj-reason">{{ r.reason or '—' }}</td>
+                    <td class="inj-updated">{{ r.updated or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div id="inj-empty" class="empty-state" style="display:none; padding:20px;">
+        <div class="empty-state-title">No injuries match these filters</div>
+        <div class="empty-state-copy">Widen the league, status, or team filter, or clear the search.</div>
+    </div>
+    {% if not rows %}
+    <div class="empty-state" style="padding:20px;">
+        <div class="empty-state-title">No injuries on the report right now</div>
+        <div class="empty-state-copy">Feeds refresh through the day; check back once slates fill in.</div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .inj-chip {
+        border:1px solid var(--border); background:transparent; color:var(--text-muted);
+        border-radius:999px; padding:5px 13px; font-size:12px; font-weight:600; cursor:pointer;
+        transition:all .12s ease;
+    }
+    .inj-chip:hover { color:var(--text-bright); border-color:var(--accent); }
+    .inj-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .inj-select, .inj-search {
+        background:var(--surface, transparent); color:var(--text-bright);
+        border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:13px;
+    }
+    .inj-search { min-width:220px; flex:1 1 220px; }
+    .inj-league {
+        font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text-muted);
+        border:1px solid var(--border); border-radius:6px; padding:2px 7px; white-space:nowrap;
+    }
+    .inj-status { font-weight:700; font-size:12px; }
+    .inj-sev-0 { color:var(--danger); }
+    .inj-sev-1 { color:#e8833a; }
+    .inj-sev-2 { color:var(--warning); }
+    .inj-sev-3 { color:var(--text-muted); }
+    .inj-reason, .inj-updated { color:var(--text-muted); font-size:12px; }
+    #inj-table tbody tr.inj-hidden { display:none; }
+</style>
+
+<script>
+(function () {
+    var state = { league: '', bucket: '', team: '', search: '' };
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#inj-table .inj-row'));
+    var countEl = document.getElementById('inj-count');
+    var emptyEl = document.getElementById('inj-empty');
+    var teamSel = document.getElementById('inj-team');
+    var searchEl = document.getElementById('inj-search');
+
+    function apply() {
+        var shown = 0;
+        var q = state.search.trim().toLowerCase();
+        rows.forEach(function (row) {
+            var ok = (!state.league || row.getAttribute('data-league') === state.league)
+                && (!state.bucket || row.getAttribute('data-bucket') === state.bucket)
+                && (!state.team || row.getAttribute('data-team') === state.team)
+                && (!q || row.getAttribute('data-search').indexOf(q) !== -1);
+            row.classList.toggle('inj-hidden', !ok);
+            if (ok) { shown++; }
+        });
+        if (countEl) { countEl.textContent = shown; }
+        if (emptyEl) { emptyEl.style.display = (shown === 0 && rows.length) ? 'block' : 'none'; }
+    }
+
+    document.querySelectorAll('.inj-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var dim = chip.getAttribute('data-dim');
+            state[dim] = chip.getAttribute('data-value');
+            document.querySelectorAll('.inj-chip[data-dim="' + dim + '"]').forEach(function (c) {
+                c.classList.toggle('active', c === chip);
+            });
+            apply();
+        });
+    });
+    if (teamSel) { teamSel.addEventListener('change', function () { state.team = teamSel.value; apply(); }); }
+    if (searchEl) { searchEl.addEventListener('input', function () { state.search = searchEl.value; apply(); }); }
+
+    var clearBtn = document.getElementById('inj-clear');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            state = { league: '', bucket: '', team: '', search: '' };
+            if (teamSel) { teamSel.value = ''; }
+            if (searchEl) { searchEl.value = ''; }
+            document.querySelectorAll('.inj-chip').forEach(function (c) {
+                c.classList.toggle('active', c.getAttribute('data-value') === '');
+            });
+            apply();
+        });
+    }
+})();
+</script>
+{% endblock %}
