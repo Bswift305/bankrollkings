@@ -828,19 +828,13 @@ def run_full_injury_update():
             boosts = pd.read_csv(boosts_path)
 
     active = get_active_boost_plays()
-
-    # NFL teammate boosts (gamelog-derived with/without splits) refresh here too so the
-    # multi-league Injury Report's NFL "impact" rows stay current alongside the NBA ones.
-    try:
-        nfl_active = run_nfl_boost_update()
-    except Exception as exc:
-        print(f"  NFL boost update skipped: {exc}")
-        nfl_active = pd.DataFrame()
-
+    # NFL teammate boosts are refreshed as their OWN step in refresh_all_sport_injuries.py,
+    # AFTER fetch_nfl_injuries.py -- so the active NFL boosts match the freshest NFL feed.
+    # (Running them here, during the NBA step, would match last cycle's NFL injuries.)
     print("\n" + "=" * 60)
     print("  INJURY UPDATE COMPLETE!")
     print("=" * 60)
-    return {'injuries': injuries, 'boosts': boosts, 'active_plays': active, 'nfl_active_plays': nfl_active}
+    return {'injuries': injuries, 'boosts': boosts, 'active_plays': active}
 
 
 if __name__ == '__main__':

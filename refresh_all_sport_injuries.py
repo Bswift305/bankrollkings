@@ -21,6 +21,9 @@ STEPS = [
     ("NFL injuries", [sys.executable, "fetch_nfl_injuries.py"]),
     ("MLB injuries", [sys.executable, "fetch_mlb_injuries.py"]),
     ("NCAAF injuries", [sys.executable, "fetch_ncaaf_injuries.py"]),
+    # Gamelog-derived NFL with/without "impact" splits for the Injury Report. Runs AFTER
+    # NFL injuries so the active splits match the freshest feed.
+    ("NFL teammate boosts", [sys.executable, "-c", "import fetch_injuries; fetch_injuries.run_nfl_boost_update()"]),
 ]
 
 
