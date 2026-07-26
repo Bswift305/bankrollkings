@@ -6,6 +6,10 @@
 {% block betslip %}{% endblock %}
 
 {% block content %}
+{# Preseason mode = no live markets are open yet (offseason/preseason). board.available
+   is NOT a reliable signal here -- NFL's board reports available=True from historical
+   top_plays even with zero live props -- so gate on the live-market feed instead. #}
+{% set preseason_mode = not (live_status and (live_status.has_live_props or live_status.has_live_games)) %}
 <div class="page-hero command-center-hero">
     <div class="command-center-hero-copy">
         {% if sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') %}
@@ -19,16 +23,88 @@
             <div class="page-subtitle">
                 {% if board.available %}
                 {{ sport_profile.summary }}
+                {% elif history_status and history_status.state in ['ready', 'partial'] %}
+                Preseason intelligence is active from historical performance, current roster context, and the football model. Live-market layers will join it when the new season opens.
                 {% else %}
-                {{ sport_title }} board data is not loaded yet.
+                {{ sport_title }} preseason data is still being assembled.
                 {% endif %}
             </div>
         </div>
     </div>
     <div class="hero-actions command-center-actions">
+        {% if preseason_mode %}
+        <a href="#preseason-intelligence" class="btn btn-primary btn-sm">Open Preseason Intelligence</a>
+        <a href="{{ url_for('free_sport_preview', sport_key=active_sport) }}" class="btn btn-secondary btn-sm">Preview Board</a>
+        {% else %}
         <a href="{{ url_for('free_sport_preview', sport_key=active_sport) }}" class="btn btn-primary btn-sm">Open Preview Board</a>
+        {% endif %}
     </div>
 </div>
+
+{% if preseason_mode %}
+<div id="preseason-intelligence" class="card mb-24 panel-glow" style="border-color:rgba(45,212,191,0.28);">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">{{ sport_title }} Preseason Intelligence</div>
+            <div class="cell-meta" style="margin-top:4px;">
+                {% if sport_title == 'NFL' %}
+                The system is prepared from prior-season player production, archived lines, historical results, current rosters, and calibrated football formulas.
+                {% else %}
+                The college preseason read combines historical team and market results with returning production, roster continuity, and transfer movement.
+                {% endif %}
+            </div>
+        </div>
+        <span class="badge {% if history_status and history_status.state in ['ready', 'partial'] %}badge-accent{% else %}badge{% endif %}">
+            {% if history_status and history_status.state == 'ready' %}Model Ready{% elif history_status and history_status.state == 'partial' %}Preseason Active{% else %}Building{% endif %}
+        </span>
+    </div>
+    {% if history_status and history_status.cards %}
+    <div class="grid-3 p-16" style="gap:12px;">
+        {% for card in history_status.cards %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">{{ card.label }}</div>
+            <div style="font-size:24px;font-weight:800;color:var(--accent);">{{ card.value }}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if sport_title == 'College Football' and current_season_context and current_season_context.cards %}
+    <div class="grid-3 p-16" style="gap:12px;{% if history_status and history_status.cards %}padding-top:0;{% endif %}">
+        {% for card in current_season_context.cards[:3] %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">{{ card.label }}</div>
+            <div style="font-size:24px;font-weight:800;color:var(--accent-copper);">{{ card.value }}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;">{{ card.note }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="p-16" style="padding-top:0;">
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div style="font-size:13px;color:var(--text-bright);font-weight:700;line-height:1.55;">
+                {% if sport_title == 'NFL' %}
+                Available now: preseason player and team outlooks, historical formula signals, fantasy distributions, role and injury context, and trend research.
+                {% else %}
+                Available now: returning-production leaders, transfer and roster signals, team continuity, historical side/total patterns, and matchup preparation.
+                {% endif %}
+            </div>
+            <div class="cell-meta" style="margin-top:6px;line-height:1.55;">
+                These are preseason model insights—not current sportsbook prices or a claim of verified {{ 2026 }} live-season results. Live lines and weekly recommendations activate separately when markets open.
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Explore Historical Signals</a>
+                {% if sport_title == 'NFL' %}
+                <a href="/fantasy/nfl" class="btn btn-secondary btn-sm">NFL Projections</a>
+                <a href="/nfl-formula-lab" class="btn btn-secondary btn-sm">Formula Lab</a>
+                {% else %}
+                <a href="#college-roster-continuity" class="btn btn-secondary btn-sm">Roster &amp; Continuity</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
@@ -152,7 +228,7 @@
 </div>
 
 {% if sport_title == 'College Football' and current_season_context %}
-<div class="card mb-24 panel-glow" style="border-color: {% if current_season_context.state == 'ready' %}rgba(45,212,191,0.22){% elif current_season_context.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+<div id="college-roster-continuity" class="card mb-24 panel-glow" style="border-color: {% if current_season_context.state == 'ready' %}rgba(45,212,191,0.22){% elif current_season_context.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
     <div class="card-header panel-header-gloss">
         <div class="card-title">Roster & Continuity</div>
         <span class="badge {% if current_season_context.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
@@ -377,29 +453,6 @@
 </div>
 {% endif %}
 
-{% if not board.available and history_status and history_status.cards %}
-<div class="card mb-24 panel-glow" style="border-color: {% if history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Historical Coverage</div>
-        <span class="badge {% if history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
-            {% if history_status.state == 'ready' %}Operational{% elif history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
-        </span>
-    </div>
-    <div class="grid-3 p-16" style="gap: 12px;">
-        {% for card in history_status.cards %}
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
-        </div>
-        {% endfor %}
-    </div>
-    <div class="p-16" style="padding-top: 0;">
-        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ history_status.note }}</div>
-    </div>
-</div>
-{% endif %}
-
 {% if board.available %}
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
@@ -439,29 +492,6 @@
         <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">{{ prop_role_note }}</div>
     </div>
 </div>
-
-{% if history_status and history_status.cards %}
-<div class="card mb-24 panel-glow" style="border-color: {% if history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Historical Coverage</div>
-        <span class="badge {% if history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
-            {% if history_status.state == 'ready' %}Operational{% elif history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
-        </span>
-    </div>
-    <div class="grid-3 p-16" style="gap: 12px;">
-        {% for card in history_status.cards %}
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--accent);">{{ card.value }}</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">{{ card.note }}</div>
-        </div>
-        {% endfor %}
-    </div>
-    <div class="p-16" style="padding-top: 0;">
-        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.55;">{{ history_status.note }}</div>
-    </div>
-</div>
-{% endif %}
 
 {% if market_groups %}
 <div class="card mb-24 panel-glow">
