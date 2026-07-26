@@ -1,0 +1,11 @@
+[Unit]
+Description=Bankroll Kings - fire the NFL game-day injury poll every 20 minutes (script self-gates)
+
+[Timer]
+# Every 20 minutes. The service self-gates to NFL game days + the pre-kick window,
+# so off-season / non-game-day ticks exit immediately having done nothing.
+OnCalendar=*-*-* *:00,20,40:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

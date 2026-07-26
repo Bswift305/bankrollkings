@@ -1,0 +1,13 @@
+[Unit]
+Description=Bankroll Kings - NFL game-day injury poll (self-gating to NFL game days)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+# poll_nfl_gameday_injuries.py no-ops unless there is an NFL game today and we are
+# inside the 10:00-23:59 ET game-day window, so this is safe to fire year-round.
+ExecStart=/opt/bankrollkings/venv/bin/python poll_nfl_gameday_injuries.py
