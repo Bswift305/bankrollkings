@@ -153,9 +153,11 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Quick Tools** (`/tools/*`, 2026-07-25): cross-league utilities that answer a NARROW,
   FACTUAL bettor question (per user direction: no universal "best bets" ranking across
   incompatible models; the "do not build" list — universal 1-100 score, sharp-money
-  tracker, lock, auto-EV list — stays unbuilt). **8 live, all `all_access`, all in the
-  workflow toolbar, all covered by `qc_quick_tools.py`** (15-check smoke test, logs to the
-  QC run log). Toolbar cluster after Command Center: **Slate Pulse · Market Movers · Best
+  tracker, lock, auto-EV list — stays unbuilt). **8 live, all `all_access`, all covered by
+  `qc_quick_tools.py`** (15-check smoke test, logs to the QC run log). Reachable from BOTH
+  the workflow toolbar AND a **"Quick Tools" section in the left sidebar** (emoji glyphs;
+  added to the `bk_base.html` sidebar block AND the `dashboard_overview.html` override so
+  it shows on the member dashboard too). Toolbar cluster after Command Center: **Slate Pulse · Market Movers · Best
   Lines · Risk Radar · Ticket Check · Game Context**; plus **Track Record** (after Review
   Center) and **Injury Report** (which the nav-rail Injuries icon also points at). Only
   **Model-vs-Market (#8) is deferred** — model probabilities aren't captured consistently
