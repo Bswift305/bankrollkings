@@ -27,6 +27,13 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # working board/archive/grader but no prop feed to act on.
         ("Football player props", _python("refresh_football_props.py"), 900),
         ("Futures odds movement", _python("refresh_futures_odds.py"), 420),
+        # NFL preseason game lines (separate Odds API sport key). Feeds the Preseason
+        # O/U Markets card; self-empties out of the ~Aug window. --days 30 spans the
+        # whole preseason; skip line-movement tracking (only the current O/U is shown).
+        ("NFL preseason lines", _python(
+            "fetch_game_lines.py", "--sport", "americanfootball_nfl_preseason",
+            "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "30",
+            "--skip-line-movement"), 180),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as

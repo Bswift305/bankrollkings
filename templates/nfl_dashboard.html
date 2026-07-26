@@ -134,7 +134,7 @@
                     {% for g in preseason_markets.game_totals %}
                     <tr style="border-top:1px solid rgba(255,255,255,0.06);">
                         <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">{{ g.date }}</td>
-                        <td style="padding:6px 8px;">{{ g.matchup }}</td>
+                        <td style="padding:6px 8px;">{{ g.matchup }}{% if g.tag %} <span class="badge badge-accent" style="font-size:10px;">{{ g.tag }}</span>{% endif %}</td>
                         <td style="padding:6px 8px;text-align:right;font-weight:800;color:var(--accent);">{{ '%.1f'|format(g.total) }}</td>
                         <td style="padding:6px 8px;text-align:right;">{% if g.spread is not none %}{{ '%+.1f'|format(g.spread) }}{% else %}&mdash;{% endif %}</td>
                     </tr>

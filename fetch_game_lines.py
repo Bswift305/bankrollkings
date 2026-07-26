@@ -46,6 +46,11 @@ SPORT_OUTPUTS = {
         "schedules": BASE_DIR / "data" / "schedules" / "NCAAF_Odds.csv",
         "schedule_alias": BASE_DIR / "data" / "schedules" / "NCAAF_Schedule.csv",
     },
+    "americanfootball_nfl_preseason": {
+        "odds": BASE_DIR / "data" / "odds" / "NFL_Preseason_Odds.csv",
+        "schedules": BASE_DIR / "data" / "schedules" / "NFL_Preseason_Odds.csv",
+        "schedule_alias": BASE_DIR / "data" / "schedules" / "NFL_Preseason_Schedule.csv",
+    },
     "baseball_mlb": {
         "odds": BASE_DIR / "data" / "odds" / "MLB_Odds.csv",
         "schedules": BASE_DIR / "data" / "schedules" / "MLB_Odds.csv",
@@ -59,6 +64,7 @@ SPORT_DEFAULT_MARKETS = {
     "basketball_nba": ["h2h", "spreads", "totals"],
     "basketball_wnba": ["h2h", "spreads", "totals"],
     "americanfootball_nfl": ["h2h", "spreads", "totals"],
+    "americanfootball_nfl_preseason": ["h2h", "spreads", "totals"],
     "americanfootball_ncaaf": ["h2h", "spreads", "totals"],
     "baseball_mlb": ["h2h", "spreads", "totals"],
 }
@@ -66,6 +72,7 @@ SPORT_TRACKING_PREFIX = {
     "basketball_nba": "NBA",
     "basketball_wnba": "WNBA",
     "americanfootball_nfl": "NFL",
+    "americanfootball_nfl_preseason": "NFL_Preseason",
     "americanfootball_ncaaf": "NCAAF",
     "baseball_mlb": "MLB",
 }

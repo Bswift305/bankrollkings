@@ -6482,25 +6482,37 @@ def build_football_preseason_markets(sport_key):
         odds, schedule = load_ncaaf_game_market_odds(), load_ncaaf_schedule()
     else:
         odds, schedule = load_nfl_game_market_odds(), load_nfl_schedule()
-    games = build_football_live_games(odds, schedule, date_filter='all')
-    game_totals = []
-    for game in games:
-        total = pd.to_numeric(game.get('total'), errors='coerce')
-        if pd.isna(total):
-            continue
-        spread = pd.to_numeric(game.get('spread'), errors='coerce')
-        game_totals.append({
-            'matchup': game.get('matchup'),
-            'away': game.get('away'),
-            'home': game.get('home'),
-            'date': game.get('date'),
-            'time': game.get('time'),
-            'total': float(total),
-            'spread': None if pd.isna(spread) else float(spread),
-            'over_odds': _format_american_price(game.get('over_odds')),
-            'under_odds': _format_american_price(game.get('under_odds')),
-            'book': game.get('book'),
-        })
+    def _game_total_rows(game_list, tag=''):
+        out = []
+        for game in game_list:
+            total = pd.to_numeric(game.get('total'), errors='coerce')
+            if pd.isna(total):
+                continue
+            spread = pd.to_numeric(game.get('spread'), errors='coerce')
+            out.append({
+                'matchup': game.get('matchup'),
+                'away': game.get('away'),
+                'home': game.get('home'),
+                'date': game.get('date'),
+                'time': game.get('time'),
+                'total': float(total),
+                'spread': None if pd.isna(spread) else float(spread),
+                'over_odds': _format_american_price(game.get('over_odds')),
+                'under_odds': _format_american_price(game.get('under_odds')),
+                'book': game.get('book'),
+                'tag': tag,
+            })
+        return out
+
+    game_totals = _game_total_rows(build_football_live_games(odds, schedule, date_filter='all'))
+    # NFL preseason games come from a separate Odds API key (americanfootball_nfl_preseason),
+    # fetched into NFL_Preseason_Odds.csv. They're the nearest real games in August, so fold
+    # them in (tagged) -- date sort puts them ahead of the September regular-season lines.
+    if sport_key == 'nfl':
+        preseason_odds = _load_cached_csv(DATA_DIR / 'odds' / 'NFL_Preseason_Odds.csv')
+        if preseason_odds is not None and not preseason_odds.empty:
+            preseason_games = build_football_live_games(preseason_odds, preseason_odds, date_filter='all')
+            game_totals += _game_total_rows(preseason_games, tag='Preseason')
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)
