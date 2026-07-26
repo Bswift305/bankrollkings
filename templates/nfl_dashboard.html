@@ -129,7 +129,7 @@
                         <th style="padding:6px 8px;text-align:right;">O/U Total</th>
                         <th style="padding:6px 8px;text-align:right;">Spread</th>
                         <th style="padding:6px 8px;text-align:right;">Our Model</th>
-                        <th style="padding:6px 8px;text-align:center;">Lean vs Vegas</th>
+                        <th style="padding:6px 8px;text-align:center;">vs Line</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -143,13 +143,13 @@
                         </td>
                         <td style="padding:6px 8px;text-align:right;">{% if g.spread is not none %}{{ '%+.1f'|format(g.spread) }}{% else %}&mdash;{% endif %}</td>
                         <td style="padding:6px 8px;text-align:right;">{% if g.model_total %}{{ '%.1f'|format(g.model_total) }}{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
-                        <td style="padding:6px 8px;text-align:center;white-space:nowrap;">{% if g.model_lean and g.model_lean != 'Aligned' %}<span class="badge" style="background:{% if g.model_lean == 'OVER' %}rgba(95,208,160,0.16);color:#5fd0a0{% else %}rgba(224,138,90,0.16);color:#e08a5a{% endif %};">{{ g.model_lean }} {{ '%+.1f'|format(g.model_edge) }}</span>{% elif g.model_lean == 'Aligned' %}<span class="cell-meta">Aligned</span>{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
+                        <td style="padding:6px 8px;text-align:center;white-space:nowrap;">{% if g.model_dir and g.model_dir != 'In line' %}<span class="cell-meta" style="color:var(--text-bright);" title="Scoring-context gap, not a bet signal">{{ '▲' if g.model_gap > 0 else '▼' }} {{ '%+.1f'|format(g.model_gap) }}</span>{% elif g.model_dir == 'In line' %}<span class="cell-meta">In line</span>{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <div class="cell-meta" style="margin-top:8px;line-height:1.55;"><strong>Our Model</strong> projects each total from last season's scoring environment (each team's points for and against, min 4 games) &mdash; an independent baseline to hold against the market, <strong>not a prediction or a proven edge</strong>. The market prices current rosters and injuries this baseline can't see, and our own graded study shows such signals are usually already in the number. A big gap often means a thin sample or a lopsided matchup, not free money. <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}">Open the full Game Lines board &rarr;</a></div>
+        <div class="cell-meta" style="margin-top:8px;line-height:1.55;"><strong>Our Model</strong> is a scoring-environment baseline from last season's points for/against (min 4 games). We <strong>backtested it walk-forward over 6,750 games (1999&ndash;2025): it does NOT beat the closing total</strong> (50&ndash;51% vs the 52.4% break-even; the market's number is more accurate than ours). So the &ldquo;vs Line&rdquo; gap is <strong>scoring context, not a bet signal</strong> &mdash; where it diverges, the market is usually pricing current info (rosters, injuries) the baseline can't see. <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}">Open the full Game Lines board &rarr;</a></div>
     </div>
     {% endif %}
     {% if preseason_markets.title_futures %}

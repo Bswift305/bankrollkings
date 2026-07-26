@@ -6641,10 +6641,14 @@ def build_football_preseason_markets(sport_key):
             if not away or not home:
                 continue
             model_total = round(((away['off'] + home['def']) / 2) + ((home['off'] + away['def']) / 2), 1)
-            edge = round(model_total - row['total'], 1)
+            gap = round(model_total - row['total'], 1)
             row['model_total'] = model_total
-            row['model_edge'] = edge
-            row['model_lean'] = 'OVER' if edge >= 2.5 else 'UNDER' if edge <= -2.5 else 'Aligned'
+            row['model_gap'] = gap
+            # Neutral direction only -- NOT a bet lean. A walk-forward backtest over
+            # 6,750 games (1999-2025) showed this projection does NOT beat the closing
+            # total (50-51% vs 52.4% break-even; the line's RMSE is lower than the
+            # model's). So this is scoring-environment CONTEXT, never an edge claim.
+            row['model_dir'] = 'Higher' if gap >= 2.5 else 'Lower' if gap <= -2.5 else 'In line'
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)
