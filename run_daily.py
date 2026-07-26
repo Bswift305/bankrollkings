@@ -18,6 +18,9 @@ def _python(script: str, *args: str) -> list[str]:
 def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
     steps: list[tuple[str, list[str], int]] = [
         ("All-sport injuries", _python("refresh_all_sport_injuries.py"), 300),
+        # Diff the fresh NFL injury feed against the prior snapshot to surface status
+        # transitions (Questionable -> Out, new injuries, clearances) -- a timing signal.
+        ("NFL injury change tracker", _python("track_nfl_injury_changes.py"), 120),
         ("Football line movement", _python("refresh_football_line_movement.py"), 600),
         # Player props for NFL + NCAAF. The line-movement step above fetches GAME
         # LINES; this fetches player PROPS, which previously lived only in the

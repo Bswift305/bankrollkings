@@ -207,6 +207,23 @@
         <div class="cell-meta" style="margin-top:8px;">How often each team's games went over vs under last season (min 6 games). Avg Pts = combined points scored; Avg Line = closing total. Historical tendency, not a prediction.</div>
     </div>
     {% endif %}
+    {% if preseason_markets.injury_changes %}
+    <div class="p-16" style="padding-top:0;">
+        <div class="page-kicker" style="margin-bottom:8px;">Roster Status Changes &mdash; timing signal</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+            {% for c in preseason_markets.injury_changes %}
+            <div class="parlay-surface-soft" style="padding:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <div>
+                    <span style="font-weight:700;">{{ c.player }}</span> <span class="cell-meta">{{ c.team }}</span>
+                    <div class="cell-meta" style="margin-top:2px;">{{ c.prev }} &rarr; {{ c.new }}</div>
+                </div>
+                <span class="badge" style="{% if c.direction == 'worse' %}background:rgba(224,138,90,0.18);color:#e08a5a{% else %}background:rgba(95,208,160,0.16);color:#5fd0a0{% endif %};white-space:nowrap;">{{ c.change_type }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="cell-meta" style="margin-top:8px;line-height:1.55;">Status transitions since the last feed update &mdash; a move to <strong>Out</strong> shifts totals and props before the market fully adjusts. A timing/awareness signal (surfaced fast), not a backtested edge.</div>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 {% endif %}

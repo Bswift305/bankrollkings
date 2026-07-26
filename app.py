@@ -6600,6 +6600,29 @@ def _nfl_game_wind_map():
     return wind_map
 
 
+def build_nfl_injury_changes(limit=15):
+    """Recent NFL injury status transitions from track_nfl_injury_changes.py.
+
+    Timing/awareness signal: a move to 'Out' (or a new injury) shifts the total and
+    props before the market fully adjusts. Rows are pre-ranked worse-first (ruled out
+    at the top). Not a backtested edge -- surfacing speed is the point.
+    """
+    df = _load_cached_csv(DATA_DIR / 'injuries' / 'NFL_Injury_Changes.csv')
+    if df is None or df.empty or not {'Player', 'ChangeType'}.issubset(df.columns):
+        return []
+    rows = []
+    for _, row in df.head(limit).iterrows():
+        rows.append({
+            'player': str(row.get('Player', '')).strip(),
+            'team': str(row.get('Team', '')).strip(),
+            'prev': str(row.get('PrevStatus', '')).strip(),
+            'new': str(row.get('NewStatus', '')).strip(),
+            'change_type': str(row.get('ChangeType', '')).strip(),
+            'direction': str(row.get('Direction', '')).strip(),
+        })
+    return rows
+
+
 def build_football_preseason_markets(sport_key):
     """O/U-focused preseason market snapshot for the football command center.
 
@@ -6686,6 +6709,7 @@ def build_football_preseason_markets(sport_key):
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)
+    injury_changes = build_nfl_injury_changes() if sport_key == 'nfl' else []
     return {
         'sport_key': sport_key,
         'game_totals': game_totals,
@@ -6693,7 +6717,8 @@ def build_football_preseason_markets(sport_key):
         'title_futures': title_futures,
         'title_future_count': len(title_futures),
         'ou_tendencies': ou_tendencies,
-        'has_any': bool(game_totals or title_futures or ou_tendencies.get('teams')),
+        'injury_changes': injury_changes,
+        'has_any': bool(game_totals or title_futures or ou_tendencies.get('teams') or injury_changes),
     }
 
 
