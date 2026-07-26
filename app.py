@@ -28668,6 +28668,7 @@ def nfl_page():
                 live_status=payload.get('live_status', {}),
                 refresh_meta=payload.get('refresh_meta', {}),
                 history_status=payload.get('history_status', {}),
+                preseason_markets=build_football_preseason_markets('nfl'),
             )
     sport_profile = get_sport_model_profile('nfl')
     market_groups = get_nfl_market_groups()
@@ -28708,6 +28709,7 @@ def nfl_page():
         live_status=live_status,
         refresh_meta=live_refresh_meta,
         history_status=runtime_bundle['history_status'],
+        preseason_markets=build_football_preseason_markets('nfl'),
     )
 
 
@@ -28775,6 +28777,7 @@ def ncaaf_page():
         refresh_meta=live_refresh_meta,
         current_season_context=current_season_context,
         history_status=build_football_history_status(build_football_history_lab('ncaaf')),
+        preseason_markets=build_football_preseason_markets('ncaaf'),
     )
 
 

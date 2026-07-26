@@ -108,6 +108,62 @@
         </div>
     </div>
 </div>
+{% if preseason_markets and preseason_markets.has_any %}
+<div class="card mb-24 panel-glow" style="border-color:rgba(45,212,191,0.22);">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">{{ sport_title }} Preseason O/U Markets</div>
+            <div class="cell-meta" style="margin-top:4px;">Over/unders the market has posted for the upcoming slate, plus championship futures. Game totals are live sportsbook numbers; title odds are consensus (median across books, vig-inclusive).</div>
+        </div>
+        <span class="badge badge-accent">{{ preseason_markets.game_total_count }} totals &middot; {{ preseason_markets.title_future_count }} futures</span>
+    </div>
+    {% if preseason_markets.game_totals %}
+    <div class="p-16">
+        <div class="page-kicker" style="margin-bottom:8px;">Upcoming Game Over/Unders</div>
+        <div style="overflow-x:auto;max-height:360px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                    <tr style="text-align:left;color:var(--text-muted);">
+                        <th style="padding:6px 8px;white-space:nowrap;">Date</th>
+                        <th style="padding:6px 8px;">Matchup</th>
+                        <th style="padding:6px 8px;text-align:right;">O/U Total</th>
+                        <th style="padding:6px 8px;text-align:right;">Spread</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in preseason_markets.game_totals %}
+                    <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+                        <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">{{ g.date }}</td>
+                        <td style="padding:6px 8px;">{{ g.matchup }}</td>
+                        <td style="padding:6px 8px;text-align:right;font-weight:800;color:var(--accent);">{{ '%.1f'|format(g.total) }}</td>
+                        <td style="padding:6px 8px;text-align:right;">{% if g.spread is not none %}{{ '%+.1f'|format(g.spread) }}{% else %}&mdash;{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="cell-meta" style="margin-top:8px;"><a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}">Open the full Game Lines board &rarr;</a></div>
+    </div>
+    {% endif %}
+    {% if preseason_markets.title_futures %}
+    <div class="p-16" style="padding-top:0;">
+        <div class="page-kicker" style="margin-bottom:8px;">{{ 'Super Bowl' if sport_title == 'NFL' else 'National Title' }} Futures &mdash; Who the Market Backs</div>
+        <div class="grid-3" style="gap:8px;">
+            {% for t in preseason_markets.title_futures %}
+            <div class="parlay-surface-soft" style="padding:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <div style="font-weight:700;line-height:1.3;">{{ t.team }}</div>
+                <div style="text-align:right;white-space:nowrap;">
+                    <div style="font-weight:800;color:var(--accent-copper);">{{ t.price_display }}</div>
+                    {% if t.implied %}<div class="cell-meta">{{ '%.0f'|format(t.implied * 100) }}%</div>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="cell-meta" style="margin-top:8px;">Consensus median price across books; implied % is vig-inclusive, not a true probability.</div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 {% endif %}
 
 <div class="card mb-24 panel-glow">
