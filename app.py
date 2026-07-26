@@ -6365,6 +6365,100 @@ def build_football_title_futures(sport_key, limit=12):
     return rows[:limit]
 
 
+def _finalize_ou_tendency_rows(agg):
+    rows = []
+    for team, a in agg.items():
+        decided = a['overs'] + a['unders']
+        rows.append({
+            'team': team,
+            'games': a['games'],
+            'overs': a['overs'],
+            'unders': a['unders'],
+            'pushes': a['pushes'],
+            'over_rate': (a['overs'] / decided) if decided else None,
+            'avg_total': (a['total_sum'] / a['games']) if a['games'] else None,
+            'avg_line': (a['line_sum'] / a['games']) if a['games'] else None,
+            'record_label': f"{a['overs']}-{a['unders']}" + (f"-{a['pushes']}" if a['pushes'] else ''),
+        })
+    # Most over-leaning teams first; teams with no decided games sink to the bottom.
+    rows.sort(key=lambda r: (r['over_rate'] if r['over_rate'] is not None else -1), reverse=True)
+    return rows
+
+
+def _nfl_ou_tendencies():
+    df = _load_cached_csv(DATA_DIR / 'historical' / 'NFL_Games_nfldata.csv')
+    needed = {'season', 'game_type', 'away_team', 'home_team', 'total', 'total_line'}
+    if df is None or df.empty or not needed.issubset(df.columns):
+        return {'season': None, 'teams': [], 'count': 0}
+    reg = df[df['game_type'].astype(str).str.upper() == 'REG'].copy()
+    for col in ('season', 'total', 'total_line'):
+        reg[col] = pd.to_numeric(reg[col], errors='coerce')
+    reg = reg.dropna(subset=['season', 'total', 'total_line'])
+    if reg.empty:
+        return {'season': None, 'teams': [], 'count': 0}
+    season = int(reg['season'].max())
+    reg = reg[reg['season'] == season]
+    agg = {}
+    for _, row in reg.iterrows():
+        diff = float(row['total']) - float(row['total_line'])
+        outcome = 'overs' if diff > 0 else 'unders' if diff < 0 else 'pushes'
+        for team in (str(row['away_team']).strip(), str(row['home_team']).strip()):
+            if not team:
+                continue
+            bucket = agg.setdefault(team, {'overs': 0, 'unders': 0, 'pushes': 0, 'total_sum': 0.0, 'line_sum': 0.0, 'games': 0})
+            bucket[outcome] += 1
+            bucket['games'] += 1
+            bucket['total_sum'] += float(row['total'])
+            bucket['line_sum'] += float(row['total_line'])
+    teams = _finalize_ou_tendency_rows(agg)
+    return {'season': season, 'teams': teams, 'count': len(teams)}
+
+
+def _ncaaf_ou_tendencies():
+    df = _load_cached_csv(DATA_DIR / 'historical' / 'NCAAF_GameLineResults_Scored.csv')
+    if df is None or df.empty or 'MarketType' not in df.columns:
+        return {'season': None, 'teams': [], 'count': 0}
+    tot = df[df['MarketType'].astype(str).str.upper() == 'TOTAL'].copy()
+    for col in ('Season', 'Line', 'ActualTotal'):
+        if col not in tot.columns:
+            return {'season': None, 'teams': [], 'count': 0}
+        tot[col] = pd.to_numeric(tot[col], errors='coerce')
+    tot = tot.dropna(subset=['Season', 'Line', 'ActualTotal'])
+    if tot.empty:
+        return {'season': None, 'teams': [], 'count': 0}
+    season = int(tot['Season'].max())
+    tot = tot[tot['Season'] == season]
+    # One row per team per game (a TOTAL market can carry both OVER and UNDER direction rows).
+    if 'Game' in tot.columns and 'Team' in tot.columns:
+        tot = tot.drop_duplicates(subset=['Game', 'Team'])
+    agg = {}
+    for _, row in tot.iterrows():
+        team = str(row.get('Team') or '').strip()
+        if not team:
+            continue
+        diff = float(row['ActualTotal']) - float(row['Line'])
+        outcome = 'overs' if diff > 0 else 'unders' if diff < 0 else 'pushes'
+        bucket = agg.setdefault(team, {'overs': 0, 'unders': 0, 'pushes': 0, 'total_sum': 0.0, 'line_sum': 0.0, 'games': 0})
+        bucket[outcome] += 1
+        bucket['games'] += 1
+        bucket['total_sum'] += float(row['ActualTotal'])
+        bucket['line_sum'] += float(row['Line'])
+    teams = _finalize_ou_tendency_rows(agg)
+    return {'season': season, 'teams': teams, 'count': len(teams)}
+
+
+def build_football_ou_tendencies(sport_key):
+    """Per-team over/under record from last completed season, from historical game
+    results with closing totals. NFL uses NFL_Games_nfldata.csv (total vs total_line);
+    NCAAF uses the graded TOTAL rows in NCAAF_GameLineResults_Scored.csv."""
+    sport_key = str(sport_key or '').strip().lower()
+    if sport_key == 'nfl':
+        return _nfl_ou_tendencies()
+    if sport_key == 'ncaaf':
+        return _ncaaf_ou_tendencies()
+    return {'season': None, 'teams': [], 'count': 0}
+
+
 def build_football_preseason_markets(sport_key):
     """O/U-focused preseason market snapshot for the football command center.
 
@@ -6399,13 +6493,15 @@ def build_football_preseason_markets(sport_key):
         })
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
+    ou_tendencies = build_football_ou_tendencies(sport_key)
     return {
         'sport_key': sport_key,
         'game_totals': game_totals,
         'game_total_count': len(game_totals),
         'title_futures': title_futures,
         'title_future_count': len(title_futures),
-        'has_any': bool(game_totals or title_futures),
+        'ou_tendencies': ou_tendencies,
+        'has_any': bool(game_totals or title_futures or ou_tendencies.get('teams')),
     }
 
 
