@@ -6415,7 +6415,7 @@ def _nfl_ou_tendencies():
 
 
 def _ncaaf_ou_tendencies():
-    df = _load_cached_csv(DATA_DIR / 'historical' / 'NCAAF_GameLineResults_Scored.csv')
+    df = _load_cached_csv(DATA_DIR / 'tracking' / 'NCAAF_GameLineResults_Scored.csv')
     if df is None or df.empty or 'MarketType' not in df.columns:
         return {'season': None, 'teams': [], 'count': 0}
     tot = df[df['MarketType'].astype(str).str.upper() == 'TOTAL'].copy()
