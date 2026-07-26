@@ -6469,6 +6469,37 @@ def build_football_ou_tendencies(sport_key):
     return {'season': None, 'teams': [], 'count': 0}
 
 
+def _football_total_move_map(sport_key):
+    """Per-game consensus total-line movement (open -> current) keyed by (away, home).
+
+    Consensus move = MEDIAN of per-book TotalMove, which isolates the line actually
+    moving from books simply disagreeing (same approach as the Market Movers tool).
+    """
+    prefix = {'nfl': 'NFL', 'ncaaf': 'NCAAF'}.get(str(sport_key or '').strip().lower())
+    if not prefix:
+        return {}
+    df = _load_cached_csv(DATA_DIR / 'tracking' / f'{prefix}_LineMovementCurrent.csv')
+    if df is None or df.empty or not {'Away', 'Home', 'TotalMove'}.issubset(df.columns):
+        return {}
+    df = df.copy()
+    for col in ('OpenTotal', 'CurrentTotal', 'TotalMove'):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    move_map = {}
+    for (away, home), grp in df.groupby(['Away', 'Home']):
+        moves = grp['TotalMove'].dropna()
+        if moves.empty:
+            continue
+        opens = grp['OpenTotal'].dropna() if 'OpenTotal' in grp.columns else pd.Series(dtype=float)
+        key = (str(away).strip().lower(), str(home).strip().lower())
+        move_map[key] = {
+            'total_move': round(float(moves.median()), 1),
+            'open_total': round(float(opens.median()), 1) if not opens.empty else None,
+            'books': int(grp['Book'].nunique()) if 'Book' in grp.columns else 0,
+        }
+    return move_map
+
+
 def build_football_preseason_markets(sport_key):
     """O/U-focused preseason market snapshot for the football command center.
 
@@ -6513,6 +6544,13 @@ def build_football_preseason_markets(sport_key):
         if preseason_odds is not None and not preseason_odds.empty:
             preseason_games = build_football_live_games(preseason_odds, preseason_odds, date_filter='all')
             game_totals += _game_total_rows(preseason_games, tag='Preseason')
+    # Attach consensus total-line movement (open -> current) to each regular-season game.
+    move_map = _football_total_move_map(sport_key)
+    if move_map:
+        for row in game_totals:
+            move = move_map.get((str(row.get('away') or '').strip().lower(), str(row.get('home') or '').strip().lower()))
+            row['total_move'] = move['total_move'] if move else None
+            row['open_total'] = move['open_total'] if move else None
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)

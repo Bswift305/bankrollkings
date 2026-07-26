@@ -135,7 +135,10 @@
                     <tr style="border-top:1px solid rgba(255,255,255,0.06);">
                         <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">{{ g.date }}</td>
                         <td style="padding:6px 8px;">{{ g.matchup }}{% if g.tag %} <span class="badge badge-accent" style="font-size:10px;">{{ g.tag }}</span>{% endif %}</td>
-                        <td style="padding:6px 8px;text-align:right;font-weight:800;color:var(--accent);">{{ '%.1f'|format(g.total) }}</td>
+                        <td style="padding:6px 8px;text-align:right;white-space:nowrap;">
+                            <span style="font-weight:800;color:var(--accent);">{{ '%.1f'|format(g.total) }}</span>
+                            {% if g.total_move %}<span style="font-size:11px;margin-left:4px;color:{% if g.total_move > 0 %}#5fd0a0{% else %}#e08a5a{% endif %};" title="Opened {{ g.open_total }}, now {{ '%.1f'|format(g.total) }}">{{ '▲' if g.total_move > 0 else '▼' }}{{ '%.1f'|format(g.total_move|abs) }}</span>{% endif %}
+                        </td>
                         <td style="padding:6px 8px;text-align:right;">{% if g.spread is not none %}{{ '%+.1f'|format(g.spread) }}{% else %}&mdash;{% endif %}</td>
                     </tr>
                     {% endfor %}
