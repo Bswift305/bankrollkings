@@ -6500,6 +6500,82 @@ def _football_total_move_map(sport_key):
     return move_map
 
 
+NFL_ABBR_TO_FULL = {
+    'ARI': 'Arizona Cardinals', 'ATL': 'Atlanta Falcons', 'BAL': 'Baltimore Ravens',
+    'BUF': 'Buffalo Bills', 'CAR': 'Carolina Panthers', 'CHI': 'Chicago Bears',
+    'CIN': 'Cincinnati Bengals', 'CLE': 'Cleveland Browns', 'DAL': 'Dallas Cowboys',
+    'DEN': 'Denver Broncos', 'DET': 'Detroit Lions', 'GB': 'Green Bay Packers',
+    'HOU': 'Houston Texans', 'IND': 'Indianapolis Colts', 'JAX': 'Jacksonville Jaguars',
+    'KC': 'Kansas City Chiefs', 'LA': 'Los Angeles Rams', 'LAC': 'Los Angeles Chargers',
+    'LV': 'Las Vegas Raiders', 'MIA': 'Miami Dolphins', 'MIN': 'Minnesota Vikings',
+    'NE': 'New England Patriots', 'NO': 'New Orleans Saints', 'NYG': 'New York Giants',
+    'NYJ': 'New York Jets', 'PHI': 'Philadelphia Eagles', 'PIT': 'Pittsburgh Steelers',
+    'SEA': 'Seattle Seahawks', 'SF': 'San Francisco 49ers', 'TB': 'Tampa Bay Buccaneers',
+    'TEN': 'Tennessee Titans', 'WAS': 'Washington Commanders',
+}
+
+
+def _football_team_scoring(sport_key):
+    """Per-team points-for (offense) and points-against (defense) from LAST completed
+    season's actual final scores -- independent of any current market line, so a
+    projected total built from it is a real check against Vegas, not a circular one.
+    Keyed by lowercased full team name so it joins the odds/game rows directly."""
+    sport_key = str(sport_key or '').strip().lower()
+    scoring = {}
+
+    def _accum(team, points_for, points_against):
+        bucket = scoring.setdefault(team, {'off_sum': 0.0, 'def_sum': 0.0, 'games': 0})
+        bucket['off_sum'] += float(points_for)
+        bucket['def_sum'] += float(points_against)
+        bucket['games'] += 1
+
+    if sport_key == 'nfl':
+        df = _load_cached_csv(DATA_DIR / 'historical' / 'NFL_Games_nfldata.csv')
+        if df is None or df.empty or not {'season', 'game_type', 'away_team', 'home_team', 'away_score', 'home_score'}.issubset(df.columns):
+            return {}
+        reg = df[df['game_type'].astype(str).str.upper() == 'REG'].copy()
+        for col in ('season', 'away_score', 'home_score'):
+            reg[col] = pd.to_numeric(reg[col], errors='coerce')
+        reg = reg.dropna(subset=['season', 'away_score', 'home_score'])
+        if reg.empty:
+            return {}
+        reg = reg[reg['season'] == int(reg['season'].max())]
+        for _, row in reg.iterrows():
+            away = NFL_ABBR_TO_FULL.get(str(row['away_team']).strip().upper())
+            home = NFL_ABBR_TO_FULL.get(str(row['home_team']).strip().upper())
+            if away:
+                _accum(away, row['away_score'], row['home_score'])
+            if home:
+                _accum(home, row['home_score'], row['away_score'])
+    elif sport_key == 'ncaaf':
+        df = _load_cached_csv(DATA_DIR / 'tracking' / 'NCAAF_GameLineResults_Scored.csv')
+        if df is None or df.empty or not {'Team', 'TeamScore', 'OpponentScore', 'Season', 'Game'}.issubset(df.columns):
+            return {}
+        sub = df.dropna(subset=['Team']).copy()
+        for col in ('Season', 'TeamScore', 'OpponentScore'):
+            sub[col] = pd.to_numeric(sub[col], errors='coerce')
+        sub = sub.dropna(subset=['Season', 'TeamScore', 'OpponentScore'])
+        if sub.empty:
+            return {}
+        sub = sub[sub['Season'] == int(sub['Season'].max())].drop_duplicates(subset=['Game', 'Team'])
+        for _, row in sub.iterrows():
+            team = str(row['Team']).strip()
+            if team and team.lower() != 'nan':
+                _accum(team, row['TeamScore'], row['OpponentScore'])
+    else:
+        return {}
+
+    out = {}
+    for team, bucket in scoring.items():
+        if bucket['games'] >= 4:  # need a real sample before projecting from it
+            out[team.lower()] = {
+                'off': bucket['off_sum'] / bucket['games'],
+                'def': bucket['def_sum'] / bucket['games'],
+                'games': bucket['games'],
+            }
+    return out
+
+
 def build_football_preseason_markets(sport_key):
     """O/U-focused preseason market snapshot for the football command center.
 
@@ -6551,6 +6627,24 @@ def build_football_preseason_markets(sport_key):
             move = move_map.get((str(row.get('away') or '').strip().lower(), str(row.get('home') or '').strip().lower()))
             row['total_move'] = move['total_move'] if move else None
             row['open_total'] = move['open_total'] if move else None
+    # Model vs Vegas: project each game's total from last season's scoring environment
+    # (away offense vs home defense, and vice versa), then flag where our number
+    # disagrees with the posted line. Skipped for preseason games -- starters play
+    # limited snaps, so a regular-season scoring model does not apply to them.
+    scoring = _football_team_scoring(sport_key)
+    if scoring:
+        for row in game_totals:
+            if row.get('tag') == 'Preseason':
+                continue
+            away = scoring.get(str(row.get('away') or '').strip().lower())
+            home = scoring.get(str(row.get('home') or '').strip().lower())
+            if not away or not home:
+                continue
+            model_total = round(((away['off'] + home['def']) / 2) + ((home['off'] + away['def']) / 2), 1)
+            edge = round(model_total - row['total'], 1)
+            row['model_total'] = model_total
+            row['model_edge'] = edge
+            row['model_lean'] = 'OVER' if edge >= 2.5 else 'UNDER' if edge <= -2.5 else 'Aligned'
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)
