@@ -7462,8 +7462,24 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
     prop_rows = int(len(live_props)) if live_props is not None else 0
     workbook_matchups = int(len((board or {}).get('games', []))) if isinstance(board, dict) else 0
     workbook_plays = int(len((board or {}).get('top_plays', []))) if isinstance(board, dict) else 0
-    has_live_games = bool(live_games)
+    # "Live" must mean a slate that is actually playable TODAY -- not merely that
+    # advance lines exist. Books post regular-season spreads/totals weeks to months
+    # early, so live_games (built with date_filter='all') is non-empty all offseason;
+    # counting that as live flipped football to state='live'/"Live Feed Ready" in July
+    # with zero games today and zero props. Gate has_live_games on games dated today
+    # (Eastern, matching build_football_live_games), and surface the advance count
+    # separately so those upcoming lines are still communicated -- honestly, as upcoming.
+    today = sports_today_ts()
+
+    def _game_is_today(game):
+        parsed = pd.to_datetime(str(game.get('date') or '').strip(), errors='coerce')
+        return pd.notna(parsed) and parsed.normalize() == today
+
+    todays_game_count = sum(1 for game in (live_games or []) if _game_is_today(game))
+    upcoming_games = len(live_games or [])
+    has_live_games = todays_game_count > 0
     has_live_props = bool(live_prop_rows)
+    has_upcoming_lines = upcoming_games > todays_game_count
     state = 'live' if has_live_games or has_live_props else 'waiting'
     state_label = 'Live Feed Ready' if state == 'live' else 'Workbook Mode'
     note = f'No live {sport_label} rows are loaded yet.'
@@ -7471,7 +7487,10 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
 
     if has_live_games or has_live_props:
         note = f'Live {sport_label} board data is loaded and ready.'
-        detail = f'{len(live_games)} live game rows and {len(live_prop_rows)} live prop rows are available.'
+        detail = f'{todays_game_count} game(s) scheduled today and {len(live_prop_rows)} live prop rows are available.'
+    elif has_upcoming_lines:
+        note = f'{sport_label} advance lines are posted; the live board opens on game day.'
+        detail = f'{upcoming_games} upcoming game(s) have lines loaded, but none are scheduled today.'
     elif schedule_rows or odds_rows or prop_rows:
         note = f'{sport_label} feed files exist, but the current window returned no live slate rows.'
         detail = f'Source rows loaded: schedule {schedule_rows}, odds {odds_rows}, props {prop_rows}.'
@@ -7483,11 +7502,12 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
         detail = 'This sport surface is structurally ready but waiting on first data.'
 
     return {
-        'games': len(live_games),
+        'games': todays_game_count,
         'props': len(live_prop_rows),
         'books': books,
         'has_live_games': has_live_games,
         'has_live_props': has_live_props,
+        'upcoming_games': upcoming_games,
         'schedule_rows': schedule_rows,
         'odds_rows': odds_rows,
         'prop_rows': prop_rows,

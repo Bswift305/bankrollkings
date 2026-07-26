@@ -126,8 +126,8 @@
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Games / Workbook</div>
-            <div style="font-size: 24px; font-weight: 800; color: var(--accent-copper);">{{ live_status.games or live_status.workbook_games or 0 }}</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Weekly prep should be organized game-by-game.</div>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent-copper);">{{ live_status.games or live_status.upcoming_games or 0 }}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">{% if live_status.games %}Weekly prep should be organized game-by-game.{% else %}Upcoming games with lines posted. Live board opens on game day.{% endif %}</div>
         </div>
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="page-kicker" style="margin-bottom: 6px;">Props Role</div>
