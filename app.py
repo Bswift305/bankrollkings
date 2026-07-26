@@ -6130,6 +6130,26 @@ def wnba_snapshot_has_invalid_matchups(payload):
     return False
 
 
+def _first_team_name(*values):
+    """First usable team name across the given candidates, NaN-safe.
+
+    `row.get('AwayFull') or row.get('Away')` looks right but is a trap: when a
+    column is absent after a concat its value is float('nan'), which is TRUTHY,
+    so the `or` returns the NaN instead of falling back to the abbreviation. That
+    stringified to 'nan' for every row and collapsed every game into a single
+    'nan@nan' key (observed: 75 NFL games -> 1). Skip None/NaN/'nan' explicitly.
+    """
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, float) and pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() != 'nan':
+            return text
+    return ''
+
+
 def build_live_game_lookup(odds_df, schedule_df):
     lookup = {}
     frames = [df for df in [odds_df, schedule_df] if df is not None and not df.empty]
@@ -6142,8 +6162,8 @@ def build_live_game_lookup(odds_df, schedule_df):
         merged = merged.drop_duplicates(subset=dedupe_cols, keep='first')
 
     for _, row in merged.iterrows():
-        away = str(row.get('AwayFull') or row.get('Away') or '').strip()
-        home = str(row.get('HomeFull') or row.get('Home') or '').strip()
+        away = _first_team_name(row.get('AwayFull'), row.get('Away'))
+        home = _first_team_name(row.get('HomeFull'), row.get('Home'))
         if not away or not home:
             continue
         game_key = f'{away}@{home}'
