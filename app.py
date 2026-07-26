@@ -6428,21 +6428,29 @@ def _ncaaf_ou_tendencies():
         return {'season': None, 'teams': [], 'count': 0}
     season = int(tot['Season'].max())
     tot = tot[tot['Season'] == season]
-    # One row per team per game (a TOTAL market can carry both OVER and UNDER direction rows).
-    if 'Game' in tot.columns and 'Team' in tot.columns:
-        tot = tot.drop_duplicates(subset=['Game', 'Team'])
+    # TOTAL rows are game-level: the per-team 'Team' column is blank and each game can
+    # carry both an OVER and an UNDER direction row. Collapse to one row per game, then
+    # attribute the game's O/U result to BOTH teams via HomeTeam/AwayTeam.
+    if 'Game' in tot.columns:
+        tot = tot.drop_duplicates(subset=['Game'])
+    if not {'HomeTeam', 'AwayTeam'}.issubset(tot.columns):
+        return {'season': season, 'teams': [], 'count': 0}
     agg = {}
     for _, row in tot.iterrows():
-        team = str(row.get('Team') or '').strip()
-        if not team:
-            continue
         diff = float(row['ActualTotal']) - float(row['Line'])
         outcome = 'overs' if diff > 0 else 'unders' if diff < 0 else 'pushes'
-        bucket = agg.setdefault(team, {'overs': 0, 'unders': 0, 'pushes': 0, 'total_sum': 0.0, 'line_sum': 0.0, 'games': 0})
-        bucket[outcome] += 1
-        bucket['games'] += 1
-        bucket['total_sum'] += float(row['ActualTotal'])
-        bucket['line_sum'] += float(row['Line'])
+        for col in ('HomeTeam', 'AwayTeam'):
+            value = row.get(col)
+            if isinstance(value, float) and pd.isna(value):
+                continue
+            team = str(value or '').strip()
+            if not team or team.lower() == 'nan':
+                continue
+            bucket = agg.setdefault(team, {'overs': 0, 'unders': 0, 'pushes': 0, 'total_sum': 0.0, 'line_sum': 0.0, 'games': 0})
+            bucket[outcome] += 1
+            bucket['games'] += 1
+            bucket['total_sum'] += float(row['ActualTotal'])
+            bucket['line_sum'] += float(row['Line'])
     teams = _finalize_ou_tendency_rows(agg)
     return {'season': season, 'teams': teams, 'count': len(teams)}
 
