@@ -6310,6 +6310,105 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all'):
     return rows
 
 
+# Championship-futures sport keys in The Odds API's outrights feed
+# (data/futures/Futures_Odds.csv). Team season WIN TOTALS are deliberately absent:
+# The Odds API exposes no win-totals market for football (verified 2026-07-26 against
+# /v4/sports -- only game odds, preseason, and championship outrights exist), so that
+# market cannot be sourced here without a new provider.
+FOOTBALL_TITLE_FUTURES_SPORTKEY = {
+    'nfl': 'americanfootball_nfl_super_bowl_winner',
+    'ncaaf': 'americanfootball_ncaaf_championship_winner',
+}
+
+
+def load_futures_odds():
+    """Championship/outright futures snapshot (data/futures/Futures_Odds.csv)."""
+    return _load_cached_csv(DATA_DIR / 'futures' / 'Futures_Odds.csv')
+
+
+def _format_american_price(value):
+    number = pd.to_numeric(value, errors='coerce')
+    if pd.isna(number):
+        return ''
+    number = int(round(float(number)))
+    return f'+{number}' if number > 0 else str(number)
+
+
+def build_football_title_futures(sport_key, limit=12):
+    """Per-team championship odds for a football sport, consensus across books.
+
+    Outright books quote each team separately with heavy overround, so we report the
+    MEDIAN American price per team (robust to one book's outlier) and sort by implied
+    probability -- favorites first. Implied % is vig-inclusive, not a true probability.
+    """
+    sport_key = str(sport_key or '').strip().lower()
+    target = FOOTBALL_TITLE_FUTURES_SPORTKEY.get(sport_key)
+    df = load_futures_odds()
+    if not target or df is None or df.empty or 'SportKey' not in df.columns:
+        return []
+    sub = df[df['SportKey'].astype(str) == target].copy()
+    if sub.empty or 'Outcome' not in sub.columns or 'Price' not in sub.columns:
+        return []
+    sub['PriceNum'] = pd.to_numeric(sub['Price'], errors='coerce')
+    sub = sub.dropna(subset=['PriceNum'])
+    rows = []
+    for team, grp in sub.groupby('Outcome'):
+        median_price = float(grp['PriceNum'].median())
+        rows.append({
+            'team': str(team).strip(),
+            'price': median_price,
+            'price_display': _format_american_price(median_price),
+            'implied': american_odds_to_implied_prob(median_price),
+            'books': int(grp['Book'].nunique()) if 'Book' in grp.columns else 0,
+        })
+    rows.sort(key=lambda item: -(item.get('implied') or 0))
+    return rows[:limit]
+
+
+def build_football_preseason_markets(sport_key):
+    """O/U-focused preseason market snapshot for the football command center.
+
+    Two market types we actually have off-season: (1) upcoming-game over/under totals
+    (game lines books post weeks early) and (2) championship title futures. Team win
+    totals and season-long player-prop O/U are NOT available from The Odds API and are
+    intentionally not faked here (see FOOTBALL_TITLE_FUTURES_SPORTKEY).
+    """
+    sport_key = str(sport_key or '').strip().lower()
+    if sport_key == 'ncaaf':
+        odds, schedule = load_ncaaf_game_market_odds(), load_ncaaf_schedule()
+    else:
+        odds, schedule = load_nfl_game_market_odds(), load_nfl_schedule()
+    games = build_football_live_games(odds, schedule, date_filter='all')
+    game_totals = []
+    for game in games:
+        total = pd.to_numeric(game.get('total'), errors='coerce')
+        if pd.isna(total):
+            continue
+        spread = pd.to_numeric(game.get('spread'), errors='coerce')
+        game_totals.append({
+            'matchup': game.get('matchup'),
+            'away': game.get('away'),
+            'home': game.get('home'),
+            'date': game.get('date'),
+            'time': game.get('time'),
+            'total': float(total),
+            'spread': None if pd.isna(spread) else float(spread),
+            'over_odds': _format_american_price(game.get('over_odds')),
+            'under_odds': _format_american_price(game.get('under_odds')),
+            'book': game.get('book'),
+        })
+    game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
+    title_futures = build_football_title_futures(sport_key)
+    return {
+        'sport_key': sport_key,
+        'game_totals': game_totals,
+        'game_total_count': len(game_totals),
+        'title_futures': title_futures,
+        'title_future_count': len(title_futures),
+        'has_any': bool(game_totals or title_futures),
+    }
+
+
 def build_ncaaf_team_signal_map():
     context = build_ncaaf_current_season_context()
     # Use the COMPLETE signal set, not the 12-team UI shortlist -- otherwise only
