@@ -162,6 +162,36 @@
         <div class="cell-meta" style="margin-top:8px;">Consensus median price across books; implied % is vig-inclusive, not a true probability.</div>
     </div>
     {% endif %}
+    {% if preseason_markets.ou_tendencies and preseason_markets.ou_tendencies.teams %}
+    <div class="p-16" style="padding-top:0;">
+        <div class="page-kicker" style="margin-bottom:8px;">Last Season O/U Tendencies ({{ preseason_markets.ou_tendencies.season }})</div>
+        <div style="overflow-x:auto;max-height:320px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                    <tr style="text-align:left;color:var(--text-muted);">
+                        <th style="padding:6px 8px;">Team</th>
+                        <th style="padding:6px 8px;text-align:center;">O/U Record</th>
+                        <th style="padding:6px 8px;text-align:right;">Over %</th>
+                        <th style="padding:6px 8px;text-align:right;">Avg Pts</th>
+                        <th style="padding:6px 8px;text-align:right;">Avg Line</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in preseason_markets.ou_tendencies.teams %}
+                    <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+                        <td style="padding:6px 8px;font-weight:700;">{{ r.team }}</td>
+                        <td style="padding:6px 8px;text-align:center;">{{ r.record_label }}</td>
+                        <td style="padding:6px 8px;text-align:right;font-weight:800;color:{% if r.over_rate is not none and r.over_rate >= 0.5 %}var(--accent){% else %}var(--accent-copper){% endif %};">{% if r.over_rate is not none %}{{ '%.0f'|format(r.over_rate * 100) }}%{% else %}&mdash;{% endif %}</td>
+                        <td style="padding:6px 8px;text-align:right;">{% if r.avg_total is not none %}{{ '%.1f'|format(r.avg_total) }}{% else %}&mdash;{% endif %}</td>
+                        <td style="padding:6px 8px;text-align:right;color:var(--text-muted);">{% if r.avg_line is not none %}{{ '%.1f'|format(r.avg_line) }}{% else %}&mdash;{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="cell-meta" style="margin-top:8px;">How often each team's games went over vs under last season (min 6 games). Avg Pts = combined points scored; Avg Line = closing total. Historical tendency, not a prediction.</div>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 {% endif %}
