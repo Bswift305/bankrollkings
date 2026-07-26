@@ -6,10 +6,14 @@
 {% block betslip %}{% endblock %}
 
 {% block content %}
-{# Preseason mode = no live markets are open yet (offseason/preseason). board.available
-   is NOT a reliable signal here -- NFL's board reports available=True from historical
-   top_plays even with zero live props -- so gate on the live-market feed instead. #}
-{% set preseason_mode = not (live_status and (live_status.has_live_props or live_status.has_live_games)) %}
+{# Preseason mode = no live PLAYER PROPS are posted yet (offseason/preseason). Gate on
+   props specifically, because the other "live" signals are unreliable off-season:
+   board.available reports True from historical top_plays (seen on NFL), and
+   live_status.has_live_games / state=='live' fire on phantom rows from the live-scores
+   feed even with zero real games (seen on prod). The football props fetcher self-gates
+   to empty until markets open, so has_live_props is the one signal that flips exactly
+   when a real live board should take over. #}
+{% set preseason_mode = not (live_status and live_status.has_live_props) %}
 <div class="page-hero command-center-hero">
     <div class="command-center-hero-copy">
         {% if sport_logo_url('nfl' if 'NFL' in sport_title else 'ncaaf') %}
