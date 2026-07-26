@@ -154,11 +154,13 @@ cache for those with `?v=...` and/or a service-worker version bump.
   FACTUAL bettor question (per user direction: no universal "best bets" ranking across
   incompatible models; the "do not build" list — universal 1-100 score, sharp-money
   tracker, lock, auto-EV list — stays unbuilt). **8 live, all `all_access`, all covered by
-  `qc_quick_tools.py`** (15-check smoke test, logs to the QC run log). Reachable from BOTH
-  the workflow toolbar AND a **"Quick Tools" section in the left sidebar** — with SVG
-  badge icons in `static/logos/nav/tools/*.svg` built to match the sport/settings set
-  (dark circle, cyan ring, bold cyan glyph). Added to the `bk_base.html` sidebar block AND
-  the `dashboard_overview.html` override so it shows on the member dashboard too. Toolbar cluster after Command Center: **Slate Pulse · Market Movers · Best
+  `qc_quick_tools.py`** (15-check smoke test, logs to the QC run log). Reachable ONLY from a
+  **"Quick Tools" section in the left sidebar** — deliberately NOT in the per-sport
+  workflow toolbar (their whole purpose is to keep that toolbar uncluttered; a first pass
+  wrongly added them to the toolbar and it was pulled back out). SVG badge icons in
+  `static/logos/nav/tools/*.svg` built to match the sport/settings set (dark circle, cyan
+  ring, bold cyan glyph). Added to the `bk_base.html` sidebar block AND the
+  `dashboard_overview.html` override so it shows on the member dashboard too. Toolbar cluster after Command Center: **Slate Pulse · Market Movers · Best
   Lines · Risk Radar · Ticket Check · Game Context**; plus **Track Record** (after Review
   Center) and **Injury Report** (which the nav-rail Injuries icon also points at). Only
   **Model-vs-Market (#8) is deferred** — model probabilities aren't captured consistently
