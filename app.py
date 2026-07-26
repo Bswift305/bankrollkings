@@ -6365,9 +6365,11 @@ def build_football_title_futures(sport_key, limit=12):
     return rows[:limit]
 
 
-def _finalize_ou_tendency_rows(agg):
+def _finalize_ou_tendency_rows(agg, min_games=1):
     rows = []
     for team, a in agg.items():
+        if a['games'] < min_games:
+            continue
         decided = a['overs'] + a['unders']
         rows.append({
             'team': team,
@@ -6410,7 +6412,7 @@ def _nfl_ou_tendencies():
             bucket['games'] += 1
             bucket['total_sum'] += float(row['total'])
             bucket['line_sum'] += float(row['total_line'])
-    teams = _finalize_ou_tendency_rows(agg)
+    teams = _finalize_ou_tendency_rows(agg, min_games=6)
     return {'season': season, 'teams': teams, 'count': len(teams)}
 
 
@@ -6451,7 +6453,7 @@ def _ncaaf_ou_tendencies():
             bucket['games'] += 1
             bucket['total_sum'] += float(row['ActualTotal'])
             bucket['line_sum'] += float(row['Line'])
-    teams = _finalize_ou_tendency_rows(agg)
+    teams = _finalize_ou_tendency_rows(agg, min_games=6)
     return {'season': season, 'teams': teams, 'count': len(teams)}
 
 
