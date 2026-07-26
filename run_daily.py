@@ -34,6 +34,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
             "fetch_game_lines.py", "--sport", "americanfootball_nfl_preseason",
             "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "30",
             "--skip-line-movement"), 180),
+        # Game-day wind forecast for upcoming OUTDOOR NFL games (Open-Meteo, no key).
+        # Powers the validated high-wind UNDER flag; self-empties out of the ~16-day
+        # forecast window and skips cleanly on any network error.
+        ("NFL game weather", _python("fetch_nfl_weather.py"), 180),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as

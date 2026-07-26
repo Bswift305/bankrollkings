@@ -136,7 +136,7 @@
                     {% for g in preseason_markets.game_totals %}
                     <tr style="border-top:1px solid rgba(255,255,255,0.06);">
                         <td style="padding:6px 8px;white-space:nowrap;color:var(--text-muted);">{{ g.date }}</td>
-                        <td style="padding:6px 8px;">{{ g.matchup }}{% if g.tag %} <span class="badge badge-accent" style="font-size:10px;">{{ g.tag }}</span>{% endif %}</td>
+                        <td style="padding:6px 8px;">{{ g.matchup }}{% if g.tag %} <span class="badge badge-accent" style="font-size:10px;">{{ g.tag }}</span>{% endif %}{% if g.wind_mph %} <span class="badge" style="font-size:10px;{% if g.high_wind %}background:rgba(224,138,90,0.18);color:#e08a5a{% else %}background:rgba(255,255,255,0.06);color:var(--text-muted){% endif %};" title="{% if g.high_wind %}High wind — backtested UNDER edge on totals{% else %}Forecast wind{% endif %}">&#128168; {{ g.wind_mph }} mph{% if g.high_wind %} &middot; UNDER{% endif %}</span>{% endif %}</td>
                         <td style="padding:6px 8px;text-align:right;white-space:nowrap;">
                             <span style="font-weight:800;color:var(--accent);">{{ '%.1f'|format(g.total) }}</span>
                             {% if g.total_move %}<span style="font-size:11px;margin-left:4px;color:{% if g.total_move > 0 %}#5fd0a0{% else %}#e08a5a{% endif %};" title="Opened {{ g.open_total }}, now {{ '%.1f'|format(g.total) }}">{{ '▲' if g.total_move > 0 else '▼' }}{{ '%.1f'|format(g.total_move|abs) }}</span>{% endif %}
@@ -151,6 +151,14 @@
         </div>
         <div class="cell-meta" style="margin-top:8px;line-height:1.55;"><strong>Our Model</strong> is a scoring-environment baseline from last season's points for/against (min 4 games). We <strong>backtested it walk-forward over 6,750 games (1999&ndash;2025): it does NOT beat the closing total</strong> (50&ndash;51% vs the 52.4% break-even; the market's number is more accurate than ours). So the &ldquo;vs Line&rdquo; gap is <strong>scoring context, not a bet signal</strong> &mdash; where it diverges, the market is usually pricing current info (rosters, injuries) the baseline can't see. <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}">Open the full Game Lines board &rarr;</a></div>
     </div>
+    {% if sport_title == 'NFL' %}
+    <div class="p-16" style="padding-top:0;">
+        <div class="parlay-surface-soft" style="padding:12px;border-left:3px solid #e08a5a;">
+            <div style="font-weight:800;color:var(--text-bright);">&#128168; Weather edge &mdash; the one signal the market underprices</div>
+            <div class="cell-meta" style="margin-top:6px;line-height:1.55;">Unlike the scoring model above, this one backtests <strong>positive</strong>: outdoor NFL games with <strong>15+ mph wind hit the UNDER ~55% (+5% ROI), and it holds out of sample</strong> (2020&ndash;25, walk-forward over 4,980 games). Outdoor games get a &#128168; wind flag above once game-week forecasts post (~16 days out); domes and retractables are excluded &mdash; no wind effect.</div>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
     {% if preseason_markets.title_futures %}
     <div class="p-16" style="padding-top:0;">

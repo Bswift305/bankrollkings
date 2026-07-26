@@ -6576,6 +6576,30 @@ def _football_team_scoring(sport_key):
     return out
 
 
+def _nfl_game_wind_map():
+    """{(date, home_lower): wind_mph} from NFL_GameWeather.csv (upcoming outdoor games).
+
+    Wind is the one football totals signal the market underprices (backtested: outdoor
+    15+ mph -> UNDER ~55%, +5% ROI out of sample), and it is a timing signal because
+    game-week forecasts update. Only outdoor stadiums are in the file.
+    """
+    df = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
+    if df is None or df.empty or not {'Date', 'HomeTeam', 'WindMph'}.issubset(df.columns):
+        return {}
+    df = df.copy()
+    df['WindMph'] = pd.to_numeric(df['WindMph'], errors='coerce')
+    gusts = pd.to_numeric(df['GustMph'], errors='coerce') if 'GustMph' in df.columns else None
+    wind_map = {}
+    for idx, row in df.iterrows():
+        date = str(row['Date']).strip()
+        home = str(row['HomeTeam']).strip().lower()
+        wind = row['WindMph']
+        if date and home and pd.notna(wind):
+            gust = float(gusts[idx]) if gusts is not None and pd.notna(gusts[idx]) else None
+            wind_map[(date, home)] = {'wind': float(wind), 'gust': gust}
+    return wind_map
+
+
 def build_football_preseason_markets(sport_key):
     """O/U-focused preseason market snapshot for the football command center.
 
@@ -6649,6 +6673,16 @@ def build_football_preseason_markets(sport_key):
             # total (50-51% vs 52.4% break-even; the line's RMSE is lower than the
             # model's). So this is scoring-environment CONTEXT, never an edge claim.
             row['model_dir'] = 'Higher' if gap >= 2.5 else 'Lower' if gap <= -2.5 else 'In line'
+    # Wind is the one validated football totals edge (outdoor 15+ mph -> UNDER ~55%,
+    # +5% ROI out of sample). Attach the game-day forecast for outdoor NFL games.
+    if sport_key == 'nfl':
+        wind_map = _nfl_game_wind_map()
+        if wind_map:
+            for row in game_totals:
+                wind = wind_map.get((str(row.get('date') or '').strip(), str(row.get('home') or '').strip().lower()))
+                if wind:
+                    row['wind_mph'] = int(round(wind['wind']))
+                    row['high_wind'] = wind['wind'] >= 15
     game_totals.sort(key=lambda row: (row.get('date') or '', row.get('matchup') or ''))
     title_futures = build_football_title_futures(sport_key)
     ou_tendencies = build_football_ou_tendencies(sport_key)
