@@ -24,7 +24,9 @@ unrelated to this app.
 
 ### The prod box — fixed size, does NOT auto-scale (2026-07-22)
 
-`i-08d2fd818875381dd`, **t3.medium** (2 vCPU, **4 GB RAM**), us-east-1. This is a
+`i-08d2fd818875381dd`, **t3.large** (2 vCPU, **8 GB RAM**), us-east-1 — **resized from
+t3.medium on 2026-07-26** to clear the earlyoom memory pressure (this is what flipped
+the prelaunch scorecard from NO-GO to **GO**). This is a
 fixed instance — nothing about it grows on its own. RAM and disk stay put until
 someone deliberately resizes (a stop/start for the instance type; an online EBS
 grow for disk). "It scales up when I need it" is not true here — that's for
@@ -36,15 +38,13 @@ managed services, not a plain EC2 box.
   live traffic tips it over. Symptom: a process dies with **exit 143** (or 15/TERM)
   and no output. If a job "fails with no output", suspect earlyoom before a code bug:
   `sudo journalctl -u <unit> --since -10min | grep -i sigterm`.
-- **⚠ Prod runs ONE gunicorn worker on purpose (2026-07-25), not a bug.** A systemd
-  drop-in **`/etc/systemd/system/bankrollkings.service.d/override.conf`** sets
-  `Environment=WEB_CONCURRENCY=1`. Two workers (~1.8 GB) plus the daily archiver
-  (~1.3 GB peak) were crossing the earlyoom line and killing the archiver on every
-  run (`bk-mlb-lineups` = signal 15, `bk-daily` = exit 1, 21 kills in a morning).
-  One worker (~1.4 GB) + the archiver now fits. Workers are threaded so IO concurrency
-  is unaffected; pre-launch traffic is ~zero. **REMOVE this drop-in when the box is
-  resized to t3.large before pre-season** (`rm` it → `daemon-reload` → `restart`), and
-  workers return to cpu_count. The resize is the real fix; this is the bridge.
+- **✅ One-worker stopgap REMOVED (2026-07-26, after the t3.large resize).** The
+  systemd drop-in `/etc/systemd/system/bankrollkings.service.d/override.conf` that
+  pinned `WEB_CONCURRENCY=1` is gone; workers are back to cpu_count (2). It existed
+  because on 4 GB, two workers (~1.8 GB) + the daily archiver (~1.3 GB peak) crossed
+  the earlyoom line and killed the archiver (21 kills in a morning). On 8 GB there is
+  now ~6 GB free with 2 workers running, so the archiver has ample headroom. earlyoom
+  is still armed (see above) but no longer triggered in normal operation.
 - **The daily archiver was also trimmed** (`archive_daily_candidates.py`, 2026-07-25):
   `archive_row_count()` counts newlines instead of loading the 214k-row CSV twice, and
   `archive_mlb`/`archive_wnba` free gamelogs before the archive concat/dedup phase. Peak
