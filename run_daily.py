@@ -17,6 +17,11 @@ def _python(script: str, *args: str) -> list[str]:
 
 def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
     steps: list[tuple[str, list[str], int]] = [
+        # Loud guard FIRST: a dead Odds API key (or broken fetch) is otherwise SILENT
+        # -- fetches preserve the last-good file, so the site serves stale lines for
+        # days. This fails the daily run visibly. (2026-08-08: the key had died on
+        # Jul 28 and nothing screamed for 11 days until someone checked by hand.)
+        ("Odds feed health", _python("qc_odds_feed.py"), 120),
         ("All-sport injuries", _python("refresh_all_sport_injuries.py"), 300),
         # Diff the fresh NFL injury feed against the prior snapshot to surface status
         # transitions (Questionable -> Out, new injuries, clearances) -- a timing signal.
@@ -30,6 +35,9 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # working board/archive/grader but no prop feed to act on.
         ("Football player props", _python("refresh_football_props.py"), 900),
         ("Futures odds movement", _python("refresh_futures_odds.py"), 420),
+        # True season-long team/player O/U markets (win totals and milestones).
+        # Provider-neutral and self-skipping until a licensed feed is configured.
+        ("Season-long markets", _python("refresh_season_markets.py"), 420),
         # NFL preseason game lines (separate Odds API sport key). Feeds the Preseason
         # O/U Markets card; self-empties out of the ~Aug window. --days 30 spans the
         # whole preseason; skip line-movement tracking (only the current O/U is shown).

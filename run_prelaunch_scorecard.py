@@ -11,6 +11,7 @@ import pandas as pd
 
 from app import BASE_DIR
 from qc_checkout_readiness import run_qc as run_checkout_qc
+from qc_odds_feed import run_qc as run_odds_feed_qc
 from qc_mlb_injuries import run_qc as run_mlb_injuries
 from qc_nba_contradictions import run_qc as run_nba_contradictions
 from qc_nba_injuries import run_qc as run_nba_injuries
@@ -36,6 +37,7 @@ OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "Prelaunch_Scorecard.csv"
 # reclaim it in between.
 SECTION_RUNNERS = {
     "platform_routes": lambda: run_platform_routes(tier="fast"),
+    "odds_feed": run_odds_feed_qc,
     "source_audit": run_source_audit,
     "nba_injuries": run_nba_injuries,
     "nba_contradictions": run_nba_contradictions,
@@ -217,6 +219,7 @@ def build_scorecard() -> dict:
 
     collected = _collect_sections()
     route_report = collected["platform_routes"]
+    odds_feed_report = collected["odds_feed"]
     nba_source_report = collected["source_audit"]
     nba_injury_report = collected["nba_injuries"]
     nba_contradiction_report = collected["nba_contradictions"]
@@ -255,7 +258,8 @@ def build_scorecard() -> dict:
     sections.append({
         "Section": "Data Freshness And Source Truth",
         "Status": "PASS" if (
-            nba_source_report["failure_count"] == 0
+            odds_feed_report["failure_count"] == 0
+            and nba_source_report["failure_count"] == 0
             and nba_injury_report["failure_count"] == 0
             and nfl_injury_report["failure_count"] == 0
             and wnba_injury_report["failure_count"] == 0
@@ -263,7 +267,7 @@ def build_scorecard() -> dict:
             and cfb_injury_report["failure_count"] == 0
         ) else "FAIL",
         "Reason": (
-            nba_source_report["notes"] + " | Injury feeds: "
+            "Odds feed: " + odds_feed_report["notes"] + " || " + nba_source_report["notes"] + " | Injury feeds: "
             f"NBA f={nba_injury_report['failure_count']}/w={nba_injury_report['warning_count']}, "
             f"NFL f={nfl_injury_report['failure_count']}/w={nfl_injury_report['warning_count']}, "
             f"WNBA f={wnba_injury_report['failure_count']}/w={wnba_injury_report['warning_count']}, "
