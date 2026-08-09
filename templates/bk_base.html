@@ -41,7 +41,10 @@
       <span class="bk-nav-toggle-bar"></span>
     </button>
     <a class="bk-topbar-brand" href="{{ url_for('dashboard') }}" aria-label="Bankroll Kings home">
-      <img class="bk-topbar-logo" src="{{ url_for('static', filename='brand-brk-lockup-white.webp') }}?v=brk3" alt="Bankroll Kings">
+      {# Temporary plain-text wordmark placeholder. The old chrome "BRK" lockup is
+         removed until a final logo is designed. To restore an image logo later, swap
+         this <span> back for: <img class="bk-topbar-logo" src="...new-logo..."> #}
+      <span class="bk-topbar-wordmark" style="font-size:19px;font-weight:800;letter-spacing:0.2px;color:#f4f7fb;white-space:nowrap;">Bankroll <span style="color:#2dd4bf;">Kings</span></span>
     </a>
 
     <div class="bk-header-ticker" aria-label="Live intelligence ticker" title="Hover to pause">
@@ -206,6 +209,9 @@
       </a>
       <a href="/tools/track-record" class="bk-sidebar-item {% if active_page == 'track_record' %}active{% endif %}">
         <span class="si-icon"><img src="/static/logos/nav/tools/track-record.svg" loading="lazy" alt=""></span><span class="si-name">Track Record</span>
+      </a>
+      <a href="/tools/season-markets" class="bk-sidebar-item {% if active_page == 'season_markets' %}active{% endif %}">
+        <span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Season Markets</span>
       </a>
       <a href="/tools/injury-report" class="bk-sidebar-item {% if active_page == 'injuries' %}active{% endif %}">
         <span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injury Report</span>

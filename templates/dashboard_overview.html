@@ -31,6 +31,7 @@
   <a href="/tools/ticket-check" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/ticket-check.svg" loading="lazy" alt=""></span><span class="si-name">Ticket Check</span></a>
   <a href="/tools/game-context" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/game-context.svg" loading="lazy" alt=""></span><span class="si-name">Game Context</span></a>
   <a href="/tools/track-record" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/track-record.svg" loading="lazy" alt=""></span><span class="si-name">Track Record</span></a>
+  <a href="/tools/season-markets" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Season Markets</span></a>
   <a href="/tools/injury-report" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injury Report</span></a>
 </div>
 
@@ -59,6 +60,89 @@
 {% set total_games = live_sports|sum(attribute='today_games') %}
 {% set total_props = live_sports|sum(attribute='props_rows') %}
 
+{% if public_tour %}
+{# ===== Landing hero — sports treatment (loud, color-coded, animated) ===== #}
+<style>
+  .bkx{--cy:#2dd4bf;--or:#ff7a1a;position:relative;overflow:hidden;border-radius:16px;background:#070b12;margin-bottom:20px;color:#f6f9fc;}
+  .bkx *{box-sizing:border-box;}
+  .bkx-cond{font-family:'Barlow Condensed','Arial Narrow',Impact,sans-serif;text-transform:uppercase;font-style:italic;font-weight:800;letter-spacing:.5px;}
+  .bkx-field{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 80% at 80% -10%,rgba(56,189,248,.16),transparent 55%),radial-gradient(90% 70% at 10% 118%,rgba(255,122,26,.13),transparent 55%);}
+  .bkx-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 52px,rgba(255,255,255,.02) 52px 53px);}
+  .bkx-beam{position:absolute;top:-40%;left:-30%;width:45%;height:190%;transform:rotate(14deg);background:linear-gradient(90deg,transparent,rgba(45,212,191,.15),transparent);filter:blur(8px);animation:bkx-sweep 7s linear infinite;pointer-events:none;}
+  @keyframes bkx-sweep{0%{left:-35%}100%{left:130%}}
+  .bkx-tick{position:relative;z-index:2;display:flex;align-items:center;gap:8px;background:#04070c;border-bottom:1px solid rgba(255,255,255,.06);padding:7px 0;overflow:hidden;}
+  .bkx-tick .live{flex:none;margin-left:16px;font-size:11px;font-weight:900;letter-spacing:1px;color:#04070c;background:var(--or);border-radius:5px;padding:3px 8px;box-shadow:0 0 14px rgba(255,122,26,.6);animation:bkx-blink 1.6s ease-in-out infinite;}
+  @keyframes bkx-blink{50%{opacity:.55}}
+  .bkx-tick .trk{display:flex;gap:34px;white-space:nowrap;font-size:12.5px;font-weight:600;color:#b7c7d7;animation:bkx-roll 26s linear infinite;padding-left:24px;}
+  .bkx-tick .trk b{color:var(--cy);}
+  @keyframes bkx-roll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  .bkx-hero{position:relative;z-index:2;padding:38px 30px 24px;}
+  .bkx-kick{display:inline-flex;gap:7px;align-items:center;font-size:11px;font-weight:900;letter-spacing:2.5px;color:var(--cy);border:1px solid rgba(45,212,191,.4);border-radius:999px;padding:5px 13px;text-transform:uppercase;margin-bottom:16px;}
+  .bkx-kick i{width:7px;height:7px;border-radius:50%;background:var(--or);box-shadow:0 0 10px var(--or);}
+  .bkx-h1{font-size:clamp(38px,6vw,64px);line-height:.92;margin:0 0 16px;}
+  .bkx-h1 .w{color:#fff;text-shadow:0 3px 30px rgba(0,0,0,.6);}
+  .bkx-h1 .cy{color:var(--cy);text-shadow:0 0 30px rgba(45,212,191,.55);}
+  .bkx-h1 .un{position:relative;display:inline-block;}
+  .bkx-h1 .un::after{content:"";position:absolute;left:0;bottom:2px;height:6px;width:100%;border-radius:3px;background:linear-gradient(90deg,var(--or),#ffb877);box-shadow:0 0 16px rgba(255,122,26,.7);transform-origin:left;animation:bkx-wipe 3.4s ease-in-out infinite;}
+  @keyframes bkx-wipe{0%,15%{transform:scaleX(0)}45%,72%,100%{transform:scaleX(1)}}
+  .bkx-sub{color:#93a6ba;font-size:15.5px;line-height:1.5;max-width:56ch;margin:0 0 22px;font-weight:500;}
+  .bkx-acts{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:24px;}
+  .bkx-btn{border-radius:11px;padding:14px 30px;letter-spacing:.6px;font-size:16px;text-decoration:none;display:inline-block;}
+  .bkx-p{background:linear-gradient(180deg,#33ecd5,#12b3a1);color:#03151a;box-shadow:0 8px 30px rgba(45,212,191,.5);animation:bkx-pulse 2.8s ease-in-out infinite;}
+  @keyframes bkx-pulse{50%{box-shadow:0 4px 12px rgba(45,212,191,.28)}}
+  .bkx-s{border:1.6px solid rgba(255,255,255,.24);color:#f6f9fc;}
+  .bkx-stats{display:flex;gap:10px;flex-wrap:wrap;}
+  .bkx-chip{font-size:12.5px;font-weight:700;color:#cfe0ee;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:9px 13px;}
+  .bkx-chip b{color:var(--or);}
+  .bkx-lgs{position:relative;z-index:2;display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:15px 30px;background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.06);}
+  .bkx-lgs .lbl{font-size:10.5px;font-weight:800;letter-spacing:1.8px;color:#6f8296;text-transform:uppercase;}
+  .bkx-tab{position:relative;font-size:22px;color:var(--c);opacity:.5;padding-bottom:7px;text-decoration:none;}
+  .bkx-tab.on{opacity:1;text-shadow:0 0 18px color-mix(in srgb,var(--c) 60%,transparent);}
+  .bkx-tab.on::after{content:"";position:absolute;left:0;bottom:0;height:3.5px;width:100%;border-radius:2px;background:var(--c);box-shadow:0 0 12px var(--c);}
+  .bkx-tab .lv{font-size:8px;font-weight:900;vertical-align:top;margin-left:3px;}
+  @media (max-width:640px){.bkx-hero{padding:26px 18px 18px;}.bkx-lgs{padding:14px 18px;gap:14px;}.bkx-tab{font-size:19px;}}
+  @media (prefers-reduced-motion:reduce){.bkx-beam,.bkx-tick .trk,.bkx-p,.bkx-tick .live,.bkx-h1 .un::after{animation:none;}}
+</style>
+{% set live_keys = sport_snapshots|selectattr('is_live')|map(attribute='key')|list %}
+{% set bkx_leagues = [
+  {'ab':'MLB','key':'mlb','c':'#ff5d64','href':'/sports/mlb?date=today'},
+  {'ab':'WNBA','key':'wnba','c':'#ff6fae','href':'/sports/wnba'},
+  {'ab':'NFL','key':'nfl','c':'#49d27d','href':'/sports/nfl'},
+  {'ab':'NBA','key':'nba','c':'#ffd16d','href':'/sports/nba'},
+  {'ab':'CFB','key':'ncaaf','c':'#267cff','href':'/sports/ncaaf'},
+  {'ab':'CBB','key':'ncaamb','c':'#2f8fff','href':'/sports/ncaamb'}
+] %}
+<section class="bkx">
+  <div class="bkx-field"></div><div class="bkx-grid"></div><div class="bkx-beam"></div>
+  <div class="bkx-tick">
+    <span class="live">&#9679; LIVE</span>
+    <div class="trk">
+      <span><b>MLB</b> {{ total_props | default(0) }} props live</span><span><b>WNBA</b> boards open</span><span><b>Line movement</b> tracked</span><span><b>Wind</b> edges flagged</span><span><b>178K</b> props graded</span><span><b>MLB</b> {{ total_props | default(0) }} props live</span><span><b>WNBA</b> boards open</span><span><b>Line movement</b> tracked</span><span><b>Wind</b> edges flagged</span><span><b>178K</b> props graded</span>
+    </div>
+  </div>
+  <div class="bkx-hero">
+    <div class="bkx-kick"><i></i>Prop Intelligence Platform</div>
+    <h1 class="bkx-h1 bkx-cond"><span class="w">Every prop has a story.</span><br><span class="cy">Read it </span><span class="w un">before you bet.</span></h1>
+    <p class="bkx-sub">Live prop context, line movement, book splits, officiating, and player reliability &mdash; the whole board decoded so you see which plays actually fit tonight.</p>
+    <div class="bkx-acts">
+      <a href="/signup?plan=free" class="bkx-btn bkx-p bkx-cond">Create Free Account</a>
+      <a href="/pricing" class="bkx-btn bkx-s bkx-cond">View Pricing</a>
+      <a href="/sports/mlb?date=today" class="bkx-btn bkx-s bkx-cond">Preview MLB</a>
+    </div>
+    <div class="bkx-stats">
+      <span class="bkx-chip"><b>178K+</b> props graded</span><span class="bkx-chip"><b>{{ live_sports|length }}</b> leagues live</span><span class="bkx-chip"><b>Line movement</b> + book splits</span><span class="bkx-chip"><b>Wind &amp; officiating</b> edges</span>
+    </div>
+  </div>
+  <div class="bkx-lgs">
+    <span class="lbl">Leagues</span>
+    {% for lg in bkx_leagues %}
+    <a href="{{ lg.href }}" class="bkx-tab bkx-cond {% if lg.key in live_keys %}on{% endif %}" style="--c:{{ lg.c }}">{{ lg.ab }}{% if lg.key in live_keys %}<span class="lv">&#9679;</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if not public_tour %}
 <div class="bk-page-header">
   <div style="display:flex; align-items:center; gap:14px;">
     <img src="/static/logos/leagues/home.png" alt="" style="width:48px; height:48px; flex:0 0 auto; object-fit:contain;">
@@ -73,6 +157,7 @@
     <div class="bk-stat-pill info"><span class="sp-label">Props</span><span class="sp-val">{{ total_props }}</span></div>
   </div>
 </div>
+{% endif %}
 
 <div class="bk-toolbar bk-command-toolbar">
   <span class="bk-toolbar-label">Open:</span>

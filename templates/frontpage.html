@@ -6,31 +6,104 @@
 {% block betslip %}{% endblock %}
 
 {% block content %}
-<section class="bk-public-hero">
-    <div class="bk-public-copy">
-        <img src="/static/brand-bk-logo.webp" alt="Bankroll Kings" class="bk-public-logo">
-        <div class="public-kicker">Betting intelligence for props, matchups, and market movement</div>
-        <h1>Every prop has a story. This is where you read it.</h1>
-        <p>
-            Bankroll Kings surfaces live prop context, game environment, line movement, book splits, and player reliability so you can see which plays actually fit tonight before you act on any of them.
-        </p>
-        <div class="public-actions">
-            {% if current_user %}
-            <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary">Open Dashboard</a>
-            {% else %}
-            <a href="/signup?plan=free" class="btn btn-primary">Create Free Account</a>
-            <a href="/pricing" class="btn btn-secondary">View Pricing</a>
-            {% endif %}
-            <a href="/sports/mlb?date=today" class="btn btn-secondary">Preview MLB</a>
-        </div>
-        <div class="public-chip-row">
-            <span class="micro-chip accent">Live prop boards</span>
-            <span class="micro-chip blue">Floor plays</span>
-            <span class="micro-chip copper">Market edge</span>
-            <span class="micro-chip soft">Player reliability</span>
-            <span class="micro-chip accent">Cross-sport mix</span>
-        </div>
+{# ===== Landing hero — sports treatment (loud, color-coded, animated) ===== #}
+<style>
+  .bkx{--cy:#2dd4bf;--or:#ff7a1a;position:relative;overflow:hidden;border-radius:16px;
+    background:#070b12;margin-bottom:20px;color:#f6f9fc;}
+  .bkx *{box-sizing:border-box;}
+  .bkx-cond{font-family:'Barlow Condensed','Arial Narrow',Impact,sans-serif;text-transform:uppercase;
+    font-style:italic;font-weight:800;letter-spacing:.5px;}
+  .bkx-field{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 80% at 80% -10%,rgba(56,189,248,.16),transparent 55%),
+      radial-gradient(90% 70% at 10% 118%,rgba(255,122,26,.13),transparent 55%);}
+  .bkx-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background:repeating-linear-gradient(115deg,transparent 0 52px,rgba(255,255,255,.02) 52px 53px);}
+  .bkx-beam{position:absolute;top:-40%;left:-30%;width:45%;height:190%;transform:rotate(14deg);
+    background:linear-gradient(90deg,transparent,rgba(45,212,191,.15),transparent);filter:blur(8px);
+    animation:bkx-sweep 7s linear infinite;pointer-events:none;}
+  @keyframes bkx-sweep{0%{left:-35%}100%{left:130%}}
+  .bkx-tick{position:relative;z-index:2;display:flex;align-items:center;gap:8px;background:#04070c;
+    border-bottom:1px solid rgba(255,255,255,.06);padding:7px 0;overflow:hidden;}
+  .bkx-tick .live{flex:none;margin-left:16px;font-size:11px;font-weight:900;letter-spacing:1px;color:#04070c;
+    background:var(--or);border-radius:5px;padding:3px 8px;box-shadow:0 0 14px rgba(255,122,26,.6);animation:bkx-blink 1.6s ease-in-out infinite;}
+  @keyframes bkx-blink{50%{opacity:.55}}
+  .bkx-tick .trk{display:flex;gap:34px;white-space:nowrap;font-size:12.5px;font-weight:600;color:#b7c7d7;
+    animation:bkx-roll 26s linear infinite;padding-left:24px;}
+  .bkx-tick .trk b{color:var(--cy);}
+  @keyframes bkx-roll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  .bkx-hero{position:relative;z-index:2;padding:38px 30px 24px;}
+  .bkx-kick{display:inline-flex;gap:7px;align-items:center;font-size:11px;font-weight:900;letter-spacing:2.5px;
+    color:var(--cy);border:1px solid rgba(45,212,191,.4);border-radius:999px;padding:5px 13px;text-transform:uppercase;margin-bottom:16px;}
+  .bkx-kick i{width:7px;height:7px;border-radius:50%;background:var(--or);box-shadow:0 0 10px var(--or);}
+  .bkx-h1{font-size:clamp(38px,6vw,64px);line-height:.92;margin:0 0 16px;}
+  .bkx-h1 .w{color:#fff;text-shadow:0 3px 30px rgba(0,0,0,.6);}
+  .bkx-h1 .cy{color:var(--cy);text-shadow:0 0 30px rgba(45,212,191,.55);}
+  .bkx-h1 .un{position:relative;display:inline-block;}
+  .bkx-h1 .un::after{content:"";position:absolute;left:0;bottom:2px;height:6px;width:100%;border-radius:3px;
+    background:linear-gradient(90deg,var(--or),#ffb877);box-shadow:0 0 16px rgba(255,122,26,.7);
+    transform-origin:left;animation:bkx-wipe 3.4s ease-in-out infinite;}
+  @keyframes bkx-wipe{0%,15%{transform:scaleX(0)}45%,72%,100%{transform:scaleX(1)}}
+  .bkx-sub{color:#93a6ba;font-size:15.5px;line-height:1.5;max-width:56ch;margin:0 0 22px;font-weight:500;}
+  .bkx-acts{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:24px;}
+  .bkx-btn{border-radius:11px;padding:14px 30px;letter-spacing:.6px;font-size:16px;text-decoration:none;display:inline-block;}
+  .bkx-p{background:linear-gradient(180deg,#33ecd5,#12b3a1);color:#03151a;box-shadow:0 8px 30px rgba(45,212,191,.5);animation:bkx-pulse 2.8s ease-in-out infinite;}
+  @keyframes bkx-pulse{50%{box-shadow:0 4px 12px rgba(45,212,191,.28)}}
+  .bkx-s{border:1.6px solid rgba(255,255,255,.24);color:#f6f9fc;}
+  .bkx-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+  .bkx-chip{font-size:12.5px;font-weight:700;color:#cfe0ee;background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:9px 13px;}
+  .bkx-chip b{color:var(--or);}
+  .bkx-lgs{position:relative;z-index:2;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+    padding:15px 30px;background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.06);}
+  .bkx-lgs .lbl{font-size:10.5px;font-weight:800;letter-spacing:1.8px;color:#6f8296;text-transform:uppercase;}
+  .bkx-tab{position:relative;font-size:22px;color:var(--c);opacity:.5;padding-bottom:7px;text-decoration:none;}
+  .bkx-tab.on{opacity:1;text-shadow:0 0 18px color-mix(in srgb,var(--c) 60%,transparent);}
+  .bkx-tab.on::after{content:"";position:absolute;left:0;bottom:0;height:3.5px;width:100%;border-radius:2px;background:var(--c);box-shadow:0 0 12px var(--c);}
+  .bkx-tab .lv{font-size:8px;font-weight:900;vertical-align:top;margin-left:3px;}
+  @media (max-width:640px){.bkx-hero{padding:26px 18px 18px;}.bkx-lgs{padding:14px 18px;gap:14px;}.bkx-tab{font-size:19px;}}
+  @media (prefers-reduced-motion:reduce){.bkx-beam,.bkx-tick .trk,.bkx-p,.bkx-tick .live,.bkx-h1 .un::after{animation:none;}}
+</style>
+
+{% set bkx_leagues = [
+  {'ab':'MLB','c':'#ff5d64','live':true,'href':'/sports/mlb?date=today'},
+  {'ab':'WNBA','c':'#ff6fae','live':true,'href':'/sports/wnba'},
+  {'ab':'NFL','c':'#49d27d','live':false,'href':'/sports/nfl'},
+  {'ab':'NBA','c':'#ffd16d','live':false,'href':'/sports/nba'},
+  {'ab':'CFB','c':'#267cff','live':false,'href':'/sports/ncaaf'},
+  {'ab':'CBB','c':'#2f8fff','live':false,'href':'/sports/ncaamb'}
+] %}
+
+<section class="bkx">
+  <div class="bkx-field"></div><div class="bkx-grid"></div><div class="bkx-beam"></div>
+  <div class="bkx-tick">
+    <span class="live">● LIVE</span>
+    <div class="trk">
+      <span><b>MLB</b> {{ mlb_count | default(7615) }} props live</span><span><b>WNBA</b> boards open</span><span><b>Line movement</b> tracked</span><span><b>Wind</b> edges flagged</span><span><b>178K</b> props graded</span><span><b>MLB</b> {{ mlb_count | default(7615) }} props live</span><span><b>WNBA</b> boards open</span><span><b>Line movement</b> tracked</span><span><b>Wind</b> edges flagged</span><span><b>178K</b> props graded</span>
     </div>
+  </div>
+  <div class="bkx-hero">
+    <div class="bkx-kick"><i></i>Prop Intelligence Platform</div>
+    <h1 class="bkx-h1 bkx-cond"><span class="w">Every prop has a story.</span><br><span class="cy">Read it </span><span class="w un">before you bet.</span></h1>
+    <p class="bkx-sub">Live prop context, line movement, book splits, officiating, and player reliability — the whole board decoded so you see which plays actually fit tonight.</p>
+    <div class="bkx-acts">
+      {% if current_user %}
+      <a href="/dashboard?postseason={{ 1 if postseason_only else 0 }}" class="bkx-btn bkx-p bkx-cond">Open Dashboard</a>
+      {% else %}
+      <a href="/signup?plan=free" class="bkx-btn bkx-p bkx-cond">Create Free Account</a>
+      <a href="/pricing" class="bkx-btn bkx-s bkx-cond">View Pricing</a>
+      {% endif %}
+      <a href="/sports/mlb?date=today" class="bkx-btn bkx-s bkx-cond">Preview MLB</a>
+    </div>
+    <div class="bkx-stats">
+      <span class="bkx-chip"><b>178K+</b> props graded</span><span class="bkx-chip"><b>5</b> leagues live</span><span class="bkx-chip"><b>Line movement</b> + book splits</span><span class="bkx-chip"><b>Wind &amp; officiating</b> edges</span>
+    </div>
+  </div>
+  <div class="bkx-lgs">
+    <span class="lbl">Leagues</span>
+    {% for lg in bkx_leagues %}
+    <a href="{{ lg.href }}" class="bkx-tab bkx-cond {% if lg.live %}on{% endif %}" style="--c:{{ lg.c }}">{{ lg.ab }}{% if lg.live %}<span class="lv">●</span>{% endif %}</a>
+    {% endfor %}
+  </div>
 </section>
 
 {% if streak_heat %}

@@ -34,6 +34,9 @@
     "description": "Sports betting intelligence — live prop context, game environment, market movement, and player reliability across NBA, MLB, WNBA, and football."
   }
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800&family=DM+Sans:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20260622-brand-system">
   <style>
     html,
@@ -141,8 +144,9 @@
   <div class="bk-public-shell">
     <header class="bk-public-topbar">
       <a class="bk-public-brand" href="{{ url_for('frontpage') }}">
-        <img src="/static/brand-bk-mark.webp?v=brand2" alt="Bankroll Kings" loading="eager">
-        <span>BANKROLL KINGS</span>
+        {# Chrome "BRK" mark removed until a final logo is designed; text wordmark
+           placeholder for now. Restore an <img> here when the new logo is ready. #}
+        <span>BANKROLL <span style="color:#2dd4bf;">KINGS</span></span>
       </a>
       <nav class="bk-public-nav" aria-label="Public navigation">
         {% if not current_user %}
