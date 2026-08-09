@@ -1,0 +1,123 @@
+{% set active_page = 'season_markets' %}
+{% extends "bk_base.html" %}
+{% block title %}Season Markets · Bankroll Kings{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero command-center-hero">
+  <div>
+    <div class="page-kicker">Cross-Sport Futures Intelligence</div>
+    <h1>Season <span class="accent">Markets</span></h1>
+    <div class="page-subtitle">Compare our season findings with consensus Vegas team and player O/U lines—without confusing disagreement with a proven betting edge.</div>
+  </div>
+</div>
+
+<div class="grid-3 mb-24" style="gap:12px;">
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker">Season Markets</div>
+    <div style="font-size:28px;font-weight:800;color:var(--accent);">{{ market_rows }}</div>
+    <div class="cell-meta">normalized team and player markets</div>
+  </div>
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker">Model Comparisons</div>
+    <div style="font-size:28px;font-weight:800;color:var(--accent-copper);">{{ comparison_rows }}</div>
+    <div class="cell-meta">markets with our projected value attached</div>
+  </div>
+  <div class="parlay-surface-soft" style="padding:14px;">
+    <div class="page-kicker">Sportsbooks</div>
+    <div style="font-size:28px;font-weight:800;color:var(--text-bright);">{{ books|length }}</div>
+    <div class="cell-meta">{{ books|join(', ') if books else 'Waiting on licensed feed' }}</div>
+  </div>
+</div>
+
+<div class="card mb-24 panel-glow">
+  <div class="card-header panel-header-gloss">
+    <div>
+      <div class="card-title">Market Coverage</div>
+      <div class="cell-meta" style="margin-top:4px;">{{ feed_note }}</div>
+    </div>
+    <span class="badge {% if feed_state == 'live' %}badge-accent{% endif %}">{{ 'Feed Active' if feed_state == 'live' else 'Feed Connection Required' }}</span>
+  </div>
+  <form method="get" class="p-16" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end;">
+    <label><span class="cell-meta">Sport</span>
+      <select name="sport">
+        <option value="">All sports</option>
+        {% for item in sports %}<option value="{{ item }}" {% if filter_state.sport == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><span class="cell-meta">Type</span>
+      <select name="type">
+        <option value="">Teams + players</option>
+        <option value="team" {% if filter_state.entity_type == 'team' %}selected{% endif %}>Teams</option>
+        <option value="player" {% if filter_state.entity_type == 'player' %}selected{% endif %}>Players</option>
+      </select>
+    </label>
+    <label><span class="cell-meta">Market</span>
+      <select name="market">
+        <option value="">All markets</option>
+        {% for item in markets %}<option value="{{ item }}" {% if filter_state.market == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+      </select>
+    </label>
+    <label style="flex:1;min-width:190px;"><span class="cell-meta">Search</span>
+      <input name="q" value="{{ filter_state.search }}" placeholder="Team, player, or market" style="width:100%;">
+    </label>
+    <button class="btn btn-primary btn-sm">Apply</button>
+    <a href="/tools/season-markets" class="btn btn-secondary btn-sm">Reset</a>
+  </form>
+</div>
+
+{% if rows %}
+<div class="card mb-24">
+  <div class="card-header">
+    <div class="card-title">Our Findings vs Vegas</div>
+    <span class="badge badge-accent">{{ rows|length }} shown</span>
+  </div>
+  <div class="table-shell">
+    <table class="data-table compact-board" id="season-markets-table">
+      <thead><tr>
+        <th>Sport</th><th>Team / Player</th><th>Season Market</th><th>Vegas Consensus</th>
+        <th>Best Prices</th><th>Our Projection</th><th>Difference</th><th>Coverage</th>
+      </tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><span class="badge">{{ row.sport }}</span><div class="cell-meta">{{ row.season }}</div></td>
+          <td><strong>{{ row.entity }}</strong>{% if row.team and row.team != row.entity %}<div class="cell-meta">{{ row.team }}</div>{% endif %}<div class="cell-meta">{{ row.entity_type|title }}</div></td>
+          <td>{{ row.market }}</td>
+          <td><strong>{{ row.consensus_line }}</strong><div class="cell-meta">Range {{ row.line_range }}</div></td>
+          <td><span style="color:var(--accent);">O {{ row.best_over_odds or '—' }}</span><br><span style="color:var(--accent-copper);">U {{ row.best_under_odds or '—' }}</span></td>
+          <td>{% if row.projected_value is not none %}<strong>{{ row.projected_value }}</strong><div class="cell-meta">{{ row.model_label or 'Bankroll Kings model' }}</div>{% else %}<span class="badge">Awaiting model</span>{% endif %}</td>
+          <td>
+            {% if row.gap is not none %}
+            <span class="badge {% if row.direction == 'In line' %}{% else %}badge-accent{% endif %}">{{ row.direction }} {{ '%+.2f'|format(row.gap) }}</span>
+            <div class="cell-meta">Context—not an automatic bet</div>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ row.book_count }} book{{ '' if row.book_count == 1 else 's' }}<div class="cell-meta">{{ row.latest_snapshot }}</div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card mb-24 panel-glow">
+  <div class="p-16">
+    <div class="card-title">The comparison engine is installed</div>
+    <p style="color:var(--text-muted);line-height:1.65;max-width:820px;">No season-long team or player O/U feed is populated yet. Once a licensed provider or normalized sportsbook export is connected, this page will automatically show consensus lines, best prices, our projection, the difference, book depth, and movement history across every supported sport.</p>
+    <div class="parlay-surface-soft" style="padding:12px;">
+      <div class="page-kicker">Supported now</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        {% for item in ['NFL','NCAAF','NBA','WNBA','MLB','NCAAMB','NCAAWB'] %}<span class="badge">{{ item }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-24">
+  <div class="p-16 cell-meta" style="line-height:1.65;">
+    Consensus is the median posted line across available books. Best Over/Under prices remain attached to their sportsbook observations. Model differences must be validated out of sample before they are described as an edge.
+  </div>
+</div>
+{% endblock %}

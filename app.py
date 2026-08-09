@@ -68,6 +68,7 @@ from services.review_center import (
 )
 from services.ngs_loader import build_ngs_player_context, build_ngs_prop_signal
 from services.statcast_loader import build_statcast_player_context, build_statcast_prop_signal
+from services.season_markets import build_season_market_context
 try:
     from openpyxl import load_workbook
 except Exception:
@@ -38856,6 +38857,27 @@ def track_record_tool():
             min_sample=_safe_int(request.args.get('min_sample'), 0),
             include_available=request.args.get('available', '') == '1',
         ),
+    )
+
+
+@app.route('/tools/season-markets')
+def season_markets_tool():
+    """Quick Tool: our season projections compared with sportsbook O/U markets."""
+    return render_template(
+        'season_markets.html',
+        **build_season_market_context(
+            BASE_DIR,
+            sport=request.args.get('sport', ''),
+            entity_type=request.args.get('type', ''),
+            market=request.args.get('market', ''),
+            search=request.args.get('q', ''),
+        ),
+        filter_state={
+            'sport': request.args.get('sport', '').strip().upper(),
+            'entity_type': request.args.get('type', '').strip().lower(),
+            'market': request.args.get('market', '').strip(),
+            'search': request.args.get('q', '').strip(),
+        },
     )
 
 

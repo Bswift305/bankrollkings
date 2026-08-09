@@ -24,6 +24,7 @@ ROUTES = [
     ("/tools/ticket-check", ["Ticket", "Check Ticket", "Paste a ticket"]),
     ("/tools/game-context", ["Game", "Context Coverage", "gc-matrix"]),
     ("/tools/track-record", ["Track", "Break-Even", "Forward-captured"]),
+    ("/tools/season-markets", ["Season Markets", "comparison engine is installed", "Our Findings vs Vegas"]),
     ("/tools/injury-report", ["Injury", "inj-table", "Injury Report"]),
 ]
 
@@ -34,6 +35,7 @@ LOGIC_PATHS = [
     "/tools/market-movers?all=1&league=mlb",
     "/tools/risk-radar?flag=injury",
     "/tools/track-record?sport=MLB&min_sample=50",
+    "/tools/season-markets?sport=NFL&type=team&market=Regular%20Season%20Wins",
     "/tools/ticket-check?legs=MLB%20%7C%20Aaron%20Judge%20%7C%20Home%20Runs%20%7C%20Over%20%7C%20%2B150",
 ]
 
