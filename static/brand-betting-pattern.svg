@@ -1,78 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" fill="none">
-  <!-- Faint drifting bet-slip / ticket motif: rounded slip + dashed perforation,
-       ticket ear-notches at the tear line, a few pick rows, and a check + odds stub. -->
-  <g opacity=".24" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- teal -->
-    <g transform="translate(64 64) rotate(-11)">
-      <rect width="148" height="66" rx="11" fill="#0f242b" stroke="#35c7bd" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#35c7bd" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#35c7bd" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#9df4ec" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#9df4ec" stroke-width="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="540" viewBox="0 0 960 540" fill="none">
+  <!-- Drifting sportsbook bet-slip motif: a tall printed ticket like the one you
+       get from the window — crowned header, perforated tear line, selection + odds
+       rows, stake/payout, and a barcode with a ticket number at the foot. -->
+  <defs>
+    <g id="bk-slip" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+      <!-- slip body -->
+      <rect x="1" y="1" width="90" height="150" rx="7" fill="#0b1519" stroke="currentColor" stroke-width="2"/>
+      <!-- header band -->
+      <path d="M1 8 a7 7 0 0 1 7 -7 h76 a7 7 0 0 1 7 7 v17 H1 Z" fill="currentColor" fill-opacity=".16" stroke="none"/>
+      <!-- crown mark -->
+      <path d="M10 19 v-8 l3.5 3 3.5 -5 3.5 5 3.5 -3 v8 Z" fill="currentColor" fill-opacity=".85" stroke="none"/>
+      <!-- book name lines -->
+      <path d="M26 11 h42 M26 18.5 h30" stroke-width="3" stroke-opacity=".5"/>
+      <!-- perforation / tear line -->
+      <line x1="4" y1="33" x2="88" y2="33" stroke-width="1.6" stroke-dasharray="2 4" stroke-opacity=".7"/>
+      <!-- selection rows: pick line + bold odds stub -->
+      <g stroke-width="3.4" stroke-opacity=".82">
+        <path d="M9 45 h44"/><path d="M65 45 h18"/>
+        <path d="M9 62 h50"/><path d="M65 62 h18"/>
+        <path d="M9 79 h37"/><path d="M65 79 h18"/>
+      </g>
+      <!-- thin detail sub-lines (team / market) -->
+      <g stroke-width="2" stroke-opacity=".38">
+        <path d="M9 51.5 h30"/><path d="M9 68.5 h35"/><path d="M9 85.5 h23"/>
+      </g>
+      <!-- divider -->
+      <line x1="9" y1="97" x2="83" y2="97" stroke-width="1.6" stroke-opacity=".45"/>
+      <!-- stake / to-win -->
+      <g stroke-width="3" stroke-opacity=".6">
+        <path d="M9 105 h20"/><path d="M60 105 h23"/>
+        <path d="M9 113 h28"/><path d="M66 113 h17"/>
+      </g>
+      <!-- barcode -->
+      <g stroke-opacity=".9">
+        <path d="M10 124 v17" stroke-width="2"/><path d="M14 124 v17" stroke-width="1"/>
+        <path d="M17.5 124 v17" stroke-width="3"/><path d="M22 124 v17" stroke-width="1"/>
+        <path d="M25 124 v17" stroke-width="2"/><path d="M29 124 v17" stroke-width="1"/>
+        <path d="M32.5 124 v17" stroke-width="3"/><path d="M37 124 v17" stroke-width="1"/>
+        <path d="M40 124 v17" stroke-width="2"/><path d="M44 124 v17" stroke-width="1"/>
+        <path d="M47.5 124 v17" stroke-width="3"/><path d="M52 124 v17" stroke-width="2"/>
+        <path d="M56 124 v17" stroke-width="1"/><path d="M59.5 124 v17" stroke-width="3"/>
+        <path d="M64 124 v17" stroke-width="1"/><path d="M67 124 v17" stroke-width="2"/>
+        <path d="M71 124 v17" stroke-width="1"/><path d="M74.5 124 v17" stroke-width="3"/>
+        <path d="M79 124 v17" stroke-width="1"/><path d="M82 124 v17" stroke-width="2"/>
+      </g>
+      <!-- ticket number -->
+      <path d="M10 147 h72" stroke-width="2" stroke-opacity=".32"/>
     </g>
-    <!-- gold -->
-    <g transform="translate(700 44) rotate(10)">
-      <rect width="148" height="66" rx="11" fill="#161c1c" stroke="#d6973a" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#d6973a" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#d6973a" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#35c7bd" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#ffd16d" stroke-width="3"/>
-    </g>
-    <!-- red, slightly smaller -->
-    <g transform="translate(452 98) rotate(-5) scale(0.84)">
-      <rect width="148" height="66" rx="11" fill="#102027" stroke="#ff6b7a" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#ff6b7a" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#ff6b7a" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#ff9aa5" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#ff9aa5" stroke-width="3"/>
-    </g>
-    <!-- teal -->
-    <g transform="translate(88 356) rotate(9)">
-      <rect width="148" height="66" rx="11" fill="#10242a" stroke="#35c7bd" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#35c7bd" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#35c7bd" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#9df4ec" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#9df4ec" stroke-width="3"/>
-    </g>
-    <!-- teal, slightly larger -->
-    <g transform="translate(648 326) rotate(-9) scale(1.06)">
-      <rect width="148" height="66" rx="11" fill="#181b1b" stroke="#35c7bd" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#35c7bd" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#35c7bd" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#9df4ec" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#9df4ec" stroke-width="3"/>
-    </g>
-    <!-- gold -->
-    <g transform="translate(326 382) rotate(4)">
-      <rect width="148" height="66" rx="11" fill="#111920" stroke="#d6973a" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#d6973a" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#d6973a" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#35c7bd" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#ffd16d" stroke-width="3"/>
-    </g>
-    <!-- gold, smaller -->
-    <g transform="translate(256 206) rotate(-13) scale(0.82)">
-      <rect width="148" height="66" rx="11" fill="#161c1c" stroke="#d6973a" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#d6973a" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#d6973a" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#35c7bd" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#ffd16d" stroke-width="3"/>
-    </g>
-    <!-- red -->
-    <g transform="translate(770 200) rotate(12)">
-      <rect width="148" height="66" rx="11" fill="#102027" stroke="#ff6b7a" stroke-width="2"/>
-      <line x1="104" y1="6" x2="104" y2="60" stroke="#ff6b7a" stroke-width="2" stroke-dasharray="3 5"/>
-      <path d="M99 0a5 5 0 0 0 10 0M99 66a5 5 0 0 1 10 0" stroke="#ff6b7a" stroke-width="2"/>
-      <path d="M16 18h54M16 32h70M16 46h36" stroke="#ff9aa5" stroke-width="3"/>
-      <path d="M115 23l6 7 13-15" stroke="#ffd16d" stroke-width="3"/>
-      <path d="M115 46h20" stroke="#ff9aa5" stroke-width="3"/>
-    </g>
+  </defs>
+
+  <g opacity=".5">
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#35c7bd" transform="translate(58 34) rotate(-9)"/>
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#d6973a" transform="translate(430 20) rotate(7)"/>
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#ff6b7a" transform="translate(792 40) rotate(10) scale(.92)"/>
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#d6973a" transform="translate(150 300) rotate(8) scale(.96)"/>
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#35c7bd" transform="translate(500 292) rotate(-6)"/>
+    <use xlink:href="#bk-slip" href="#bk-slip" color="#ff6b7a" transform="translate(818 296) rotate(11) scale(.9)"/>
   </g>
 </svg>
