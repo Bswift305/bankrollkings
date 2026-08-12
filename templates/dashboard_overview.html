@@ -159,6 +159,7 @@
 </div>
 {% endif %}
 
+{% if not public_tour %}
 <div class="bk-toolbar bk-command-toolbar">
   <span class="bk-toolbar-label">Open:</span>
   {% if not public_tour %}
@@ -178,13 +179,20 @@
   <div class="bk-toolbar-spacer"></div>
   <span class="bk-toolbar-count">{{ live_sports|length }} active boards</span>
 </div>
+{% endif %}
 
 <section class="bk-content bk-phase2-shell">
   <div class="bk-phase2-head compact">
     <div>
+      {% if public_tour %}
+      <div class="bk-dashboard-kicker">Everything included</div>
+      <h2>One membership, the full arsenal</h2>
+      <p>Live prop boards, correlation-graded parlays, market and line-movement reads, officiating and injury context, and a results-tracked review loop &mdash; across every sport we cover. No tiers, no upsells.</p>
+      {% else %}
       <div class="bk-dashboard-kicker">Platform Map</div>
       <h2>What each command does</h2>
       <p>Home is the all-sports member landing page. It shows what each sport has available, then sends users into that sport's Command Center.</p>
+      {% endif %}
     </div>
     {% if public_tour %}
     <a class="bk-open-btn" href="{{ url_for('signup', plan='free') }}">Create Free Account</a>
@@ -274,7 +282,7 @@
 </section>
 {% endif %}
 
-{% if phase2 %}
+{% if phase2 and not public_tour %}
 <section class="bk-content bk-phase2-shell">
   <div class="bk-phase2-head">
     <div>
@@ -380,7 +388,7 @@
 </section>
 {% endif %}
 
-{% if run_status and run_status.rows %}
+{% if run_status and run_status.rows and not public_tour %}
 <section class="bk-content bk-run-status-shell">
   <div class="bk-phase2-head compact">
     <div>
