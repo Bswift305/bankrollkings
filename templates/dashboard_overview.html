@@ -102,6 +102,10 @@
   .bkx-tab .lv{font-size:8px;font-weight:900;vertical-align:top;margin-left:3px;}
   @media (max-width:640px){.bkx-hero{padding:26px 18px 18px;}.bkx-lgs{padding:14px 18px;gap:14px;}.bkx-tab{font-size:19px;}}
   @media (prefers-reduced-motion:reduce){.bkx-beam,.bkx-tick .trk,.bkx-p,.bkx-tick .live,.bkx-h1 .un::after{animation:none;}}
+  /* Featured mascot: the full-body king stands on the right of the hero, masked
+     into the dark field; sits between the ticker and the league-tabs rows. */
+  .bkx-king{position:absolute;right:1.5%;top:44px;bottom:64px;width:44%;max-width:520px;z-index:1;pointer-events:none;background:url('/static/king-bankroll.webp') center bottom / contain no-repeat;filter:drop-shadow(0 0 30px rgba(45,212,191,.28));-webkit-mask-image:linear-gradient(90deg,transparent,#000 24%);mask-image:linear-gradient(90deg,transparent,#000 24%);}
+  @media (max-width:900px){.bkx-king{top:40px;bottom:40px;right:-12%;width:82%;max-width:none;opacity:.20;filter:none;-webkit-mask-image:linear-gradient(90deg,transparent,#000 58%);mask-image:linear-gradient(90deg,transparent,#000 58%);}}
 </style>
 {% set live_keys = sport_snapshots|selectattr('is_live')|map(attribute='key')|list %}
 {% set bkx_leagues = [
@@ -114,6 +118,7 @@
 ] %}
 <section class="bkx">
   <div class="bkx-field"></div><div class="bkx-grid"></div><div class="bkx-beam"></div>
+  <div class="bkx-king" aria-hidden="true"></div>
   <div class="bkx-tick">
     <span class="live">&#9679; LIVE</span>
     <div class="trk">

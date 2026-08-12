@@ -4,9 +4,11 @@
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
 {% block content %}
-{% include "_auth_mascot.html" %}
+{# Faded BRK watermark removed — the featured crown+lion mascot below (BRK cropped
+   out) is the single, clean mascot on this page. #}
 <section class="signup-shell">
     <div class="signup-copy">
+        <div class="signup-copy-text">
         <div class="page-kicker">Account Setup</div>
         <h1>Create your Bankroll Kings account.</h1>
         <p>Save tickets, keep review history, and unlock the whole platform with one membership — All Access, {{ all_access_tier.monthly_label }}. No tiers, no upsells.</p>
@@ -29,6 +31,7 @@
                 <span>The first {{ founder_promo.slots }} subscribers lock in {{ founder_promo.monthly_label }} for their entire first year — {{ founder_slots_remaining }} spots left.</span>
             </div>
             {% endif %}
+        </div>
         </div>
     </div>
 
@@ -111,11 +114,35 @@
     box-shadow: 0 20px 44px rgba(0,0,0,0.20);
     overflow: hidden;
 }
-.signup-copy {
-    min-height: 520px;
-    padding: 28px;
-    /* Mascot moved to the shared faded watermark (_auth_mascot.html). */
-    background: linear-gradient(135deg, rgba(13,28,39,0.96), rgba(7,15,22,0.98));
+/* Featured mascot: the full-body crowned-lion "Bankroll Kings" character fills the
+   copy panel and stands to the right; a left-to-right scrim keeps the copy legible.
+   Scoped under .bk-compat-content .signup-shell to out-specify bk-theme.css's
+   .bk-compat-content .signup-copy rule that forces this panel's background to
+   transparent (a plain .signup-shell scope only ties it and still loses). */
+.bk-compat-content .signup-shell .signup-copy {
+    position: relative;
+    min-height: 580px;
+    padding: 0;
+    background:
+        linear-gradient(90deg,
+            rgba(6,13,19,0.97) 0%,
+            rgba(6,13,19,0.90) 32%,
+            rgba(6,13,19,0.48) 50%,
+            rgba(6,13,19,0.08) 68%,
+            transparent 82%),
+        radial-gradient(90% 80% at 74% 44%, rgba(45,212,191,0.14), transparent 60%),
+        url('/static/king-bankroll.webp') 64% 32% / cover no-repeat,
+        #060d13 !important; /* beats bk-theme.css's .bk-compat-content transparent !important */
+}
+.signup-copy-text {
+    position: relative;
+    z-index: 2;
+    max-width: 54%;
+    min-height: 580px;
+    padding: 34px 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .signup-copy h1 {
     max-width: 560px;
@@ -263,9 +290,30 @@
     .signup-shell {
         grid-template-columns: 1fr;
     }
-    .signup-copy {
-        min-height: 0;
-        background: linear-gradient(180deg, rgba(4,10,14,0.82), rgba(4,10,14,0.98));
+    /* Mobile: king reads as a header band up top; copy drops below onto a
+       darkened lower band so nothing sits over his face. */
+    .bk-compat-content .signup-shell .signup-copy {
+        min-height: 420px;
+        background:
+            linear-gradient(180deg,
+                rgba(6,13,19,0.08) 0%,
+                rgba(6,13,19,0.24) 30%,
+                rgba(6,13,19,0.72) 52%,
+                rgba(6,13,19,0.96) 72%,
+                #060d13 100%),
+            url('/static/king-bankroll.webp') center 6% / cover no-repeat,
+            #060d13 !important;
+    }
+    .signup-copy-text {
+        max-width: 100%;
+        min-height: 420px;
+        justify-content: flex-start;
+        padding: 200px 20px 24px;
+    }
+    .signup-copy-text .page-kicker,
+    .signup-copy-text h1,
+    .signup-copy-text > p {
+        text-shadow: 0 2px 10px rgba(0,0,0,0.7);
     }
     .signup-copy h1 {
         font-size: 30px;

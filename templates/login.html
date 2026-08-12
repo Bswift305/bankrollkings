@@ -4,50 +4,259 @@
 {% block app_class %}no-slip{% endblock %}
 {% block betslip %}{% endblock %}
 {% block content %}
-{% include "_auth_mascot.html" %}
-<div class="container" style="max-width: 760px;">
-    <section class="page-hero">
-        <div class="page-hero-copy">
-            <span class="eyebrow">Accounts</span>
-            <h1 class="page-title">Sign In</h1>
-            <p class="page-subtitle">Sign in to load your saved tickets, bet review history, personal parlay records, and selected membership tier anywhere you open the site.</p>
+<section class="login-shell">
+    <div class="login-copy">
+        <div class="login-copy-text">
+            <div class="page-kicker">Welcome Back</div>
+            <h1>Sign in to Bankroll Kings.</h1>
+            <p>Load your saved tickets, bet-review history, and personal parlay records anywhere you open the site.</p>
+            <div class="login-benefits">
+                <div>
+                    <strong>Your record, everywhere</strong>
+                    <span>Saved tickets and history follow you across devices.</span>
+                </div>
+                <div>
+                    <strong>One membership, everything</strong>
+                    <span>Every sport, every board, every lab — no tiers.</span>
+                </div>
+            </div>
         </div>
-    </section>
+    </div>
 
-    <div class="board-shell">
-        <div class="board-header">
-            <div class="board-title">Your Bankroll Kings Account</div>
+    <div class="login-card">
+        <div class="card-header">
+            <div class="card-title">Your Bankroll Kings Account</div>
         </div>
-        <form method="post" style="padding: 18px; display: grid; gap: 14px;">
+        <form method="post" class="login-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="next" value="{{ next_url }}">
             {% if gate_notice %}
-            <div class="parlay-surface-soft" style="padding: 12px; color: var(--accent); font-weight: 700;">{{ gate_notice }}</div>
+            <div class="login-notice">{{ gate_notice }}</div>
             {% endif %}
             {% if error %}
-            <div class="parlay-surface-soft" style="padding: 12px; color: var(--danger); font-weight: 700;">{{ error }}</div>
+            <div class="login-notice error">{{ error }}</div>
             {% endif %}
-            <div>
-                <label for="loginEmail" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:6px;">Email</label>
-                <input id="loginEmail" name="email" type="email" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px;">
+
+            <label for="loginEmail">Email</label>
+            <input id="loginEmail" name="email" type="email" autocomplete="email" required>
+
+            <div class="login-pw-label">
+                <label for="loginPassword">Password</label>
+                <a href="/password-reset">Forgot password?</a>
             </div>
-            <div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
-                    <label for="loginPassword" style="font-size:11px; color:var(--text-muted);">Password</label>
-                    <a href="/password-reset" style="font-size:11px; color:var(--accent); text-decoration:underline;">Forgot password?</a>
-                </div>
-                <div style="position:relative; display:flex; align-items:center;">
-                    <input id="loginPassword" name="password" type="password" required style="width:100%; background: rgba(13,28,39,0.9); border: 1px solid rgba(166,233,229,0.18); color: var(--text-bright); border-radius: 10px; padding: 12px; padding-right:64px;">
-                    <button type="button" data-pw-target="loginPassword" aria-label="Show password" style="position:absolute; right:8px; background:transparent; border:0; color:var(--accent); font-size:11px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; cursor:pointer; padding:4px 6px;">Show</button>
-                </div>
+            <div class="pw-wrap">
+                <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+                <button type="button" class="pw-toggle" data-pw-target="loginPassword" aria-label="Show password">Show</button>
             </div>
-            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+
+            <div class="login-actions">
                 <button type="submit" class="btn btn-primary">Sign In</button>
                 <a href="/signup{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">Create Account</a>
                 <a href="/pricing{% if next_url_encoded %}?next={{ next_url_encoded }}{% endif %}" class="btn btn-secondary">View Pricing</a>
             </div>
-            <div style="color:var(--text-muted); font-size:11.5px;">🔒 Secure, encrypted connection.</div>
+            <div class="secure-note">🔒 Secure, encrypted connection.</div>
         </form>
     </div>
-</div>
+</section>
+
+<style>
+.login-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(360px, 0.72fr);
+    gap: 18px;
+    align-items: start;
+}
+.login-copy,
+.login-card {
+    border-radius: 16px;
+    border: 1px solid rgba(132,215,210,0.20);
+    background: linear-gradient(135deg, rgba(13,28,39,0.96), rgba(7,15,22,0.98));
+    box-shadow: 0 20px 44px rgba(0,0,0,0.20);
+    overflow: hidden;
+}
+/* Featured mascot: the full-body crowned-lion "Bankroll Kings" character fills the
+   copy panel and stands to the right; a left-to-right scrim keeps the copy legible.
+   Scoped under .bk-compat-content .login-shell to out-specify bk-theme.css's
+   .bk-compat-content transparent !important rule. */
+.bk-compat-content .login-shell .login-copy {
+    position: relative;
+    min-height: 520px;
+    padding: 0;
+    background:
+        linear-gradient(90deg,
+            rgba(6,13,19,0.97) 0%,
+            rgba(6,13,19,0.90) 32%,
+            rgba(6,13,19,0.48) 50%,
+            rgba(6,13,19,0.08) 68%,
+            transparent 82%),
+        radial-gradient(90% 80% at 74% 44%, rgba(45,212,191,0.14), transparent 60%),
+        url('/static/king-bankroll.webp') 64% 32% / cover no-repeat,
+        #060d13 !important;
+}
+.login-copy-text {
+    position: relative;
+    z-index: 2;
+    max-width: 54%;
+    min-height: 520px;
+    padding: 34px 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.login-copy h1 {
+    max-width: 520px;
+    margin: 0 0 10px;
+    font-size: 36px;
+    line-height: 1.07;
+}
+.login-copy p {
+    max-width: 480px;
+    margin: 0;
+    color: #b8c8d2;
+    font-size: 15px;
+    line-height: 1.55;
+}
+.login-benefits {
+    display: grid;
+    gap: 10px;
+    max-width: 440px;
+    margin-top: 22px;
+}
+.login-benefits div,
+.login-notice {
+    padding: 13px;
+    border-radius: 12px;
+    border: 1px solid rgba(132,215,210,0.16);
+    background: rgba(8,19,27,0.78);
+}
+.login-benefits strong,
+.login-notice strong {
+    display: block;
+    color: var(--text-bright);
+    margin-bottom: 5px;
+}
+.login-benefits span {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+.card-header {
+    padding: 16px 16px 0;
+}
+.card-title {
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    font-size: 13px;
+    color: var(--text-bright);
+}
+.login-form {
+    display: grid;
+    gap: 11px;
+    padding: 16px;
+}
+.login-form label {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+.login-form input {
+    width: 100%;
+    min-height: 42px;
+    border-radius: 10px;
+    border: 1px solid rgba(166,233,229,0.20);
+    background: rgba(8,19,27,0.96);
+    color: var(--text-bright);
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+}
+.login-form input:focus {
+    border-color: rgba(132,215,210,0.52);
+    box-shadow: 0 0 0 3px rgba(132,215,210,0.08);
+}
+.login-pw-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+.login-pw-label a {
+    font-size: 11px;
+    color: var(--accent);
+    text-decoration: underline;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+}
+.login-notice {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+}
+.login-notice.error {
+    color: var(--danger);
+}
+.login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    align-items: center;
+    margin-top: 4px;
+}
+.pw-wrap { position: relative; display: flex; align-items: center; }
+.pw-wrap input { padding-right: 64px; }
+.pw-toggle {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: 0;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 4px 6px;
+}
+.secure-note {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    margin-top: 2px;
+}
+@media (max-width: 900px) {
+    .login-shell {
+        grid-template-columns: 1fr;
+    }
+    /* Mobile: king reads as a header band up top; copy drops below onto a
+       darkened lower band so nothing sits over his face. */
+    .bk-compat-content .login-shell .login-copy {
+        min-height: 420px;
+        background:
+            linear-gradient(180deg,
+                rgba(6,13,19,0.08) 0%,
+                rgba(6,13,19,0.24) 30%,
+                rgba(6,13,19,0.72) 52%,
+                rgba(6,13,19,0.96) 72%,
+                #060d13 100%),
+            url('/static/king-bankroll.webp') center 6% / cover no-repeat,
+            #060d13 !important;
+    }
+    .login-copy-text {
+        max-width: 100%;
+        min-height: 420px;
+        justify-content: flex-start;
+        padding: 200px 20px 24px;
+    }
+    .login-copy-text .page-kicker,
+    .login-copy-text h1,
+    .login-copy-text > p {
+        text-shadow: 0 2px 10px rgba(0,0,0,0.7);
+    }
+    .login-copy h1 {
+        font-size: 28px;
+    }
+}
+</style>
 {% endblock %}
