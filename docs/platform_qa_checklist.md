@@ -25,8 +25,8 @@ Run the refresh commands for the sport first.
 cd "C:\Users\Decatur\OneDrive\Documents\Kings of Bankrolls"
 py -X utf8 refresh_playoff_results.py
 py -X utf8 refresh_playoff_player_logs.py
-py fetch_game_lines.py --bookmakers draftkings,caesars,fanduel,betmgm --days 5 --api-key 51234f049c2e262e299d9a78d1c0a829
-py fetch_player_props.py --bookmakers draftkings,caesars,fanduel,betmgm --days 5 --api-key 51234f049c2e262e299d9a78d1c0a829
+py fetch_game_lines.py --bookmakers draftkings,caesars,fanduel,betmgm --days 5 --api-key $env:ODDS_API_KEY
+py fetch_player_props.py --bookmakers draftkings,caesars,fanduel,betmgm --days 5 --api-key $env:ODDS_API_KEY
 ```
 
 ### Football closeout refresh
