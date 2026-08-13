@@ -12,6 +12,7 @@
   </div>
 </div>
 
+{% if market_rows %}
 <div class="grid-3 mb-24" style="gap:12px;">
   <div class="parlay-surface-soft" style="padding:14px;">
     <div class="page-kicker">Season Markets</div>
@@ -103,14 +104,8 @@
 {% else %}
 <div class="card mb-24 panel-glow">
   <div class="p-16">
-    <div class="card-title">The comparison engine is installed</div>
-    <p style="color:var(--text-muted);line-height:1.65;max-width:820px;">No season-long team or player O/U feed is populated yet. Once a licensed provider or normalized sportsbook export is connected, this page will automatically show consensus lines, best prices, our projection, the difference, book depth, and movement history across every supported sport.</p>
-    <div class="parlay-surface-soft" style="padding:12px;">
-      <div class="page-kicker">Supported now</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        {% for item in ['NFL','NCAAF','NBA','WNBA','MLB','NCAAMB','NCAAWB'] %}<span class="badge">{{ item }}</span>{% endfor %}
-      </div>
-    </div>
+    <div class="card-title">No markets match those filters</div>
+    <p style="color:var(--text-muted);line-height:1.65;max-width:820px;">Nothing lines up with the current sport, market, or search. <a href="/tools/season-markets">Reset the filters</a> to see the full board.</p>
   </div>
 </div>
 {% endif %}
@@ -120,4 +115,35 @@
     Consensus is the median posted line across available books. Best Over/Under prices remain attached to their sportsbook observations. Model differences must be validated out of sample before they are described as an edge.
   </div>
 </div>
+
+{% else %}
+{# ===== Coming soon: no season-market feed populated yet ===== #}
+<div class="card mb-24 panel-glow">
+  <div class="p-16">
+    <div class="page-kicker">Coming Soon</div>
+    <h2 style="margin:6px 0 12px;">Season Markets is coming soon.</h2>
+    <p style="color:var(--text-muted);line-height:1.65;max-width:860px;">
+      We're finalizing our licensed season-long odds feed. When it lands, this tool lines our
+      full-season projections up against the sportsbook consensus for <strong>team win totals</strong>
+      and <strong>player season totals</strong> — so you can see exactly where our numbers disagree with
+      Vegas, and by how much.
+    </p>
+    <div class="parlay-surface-soft" style="padding:12px;margin-top:14px;">
+      <div class="page-kicker">What you'll see</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <span class="badge">Vegas consensus line</span>
+        <span class="badge">Best over / under prices</span>
+        <span class="badge">Our projection</span>
+        <span class="badge">The gap — context, not a guaranteed edge</span>
+      </div>
+    </div>
+    <div class="parlay-surface-soft" style="padding:12px;margin-top:12px;">
+      <div class="page-kicker">Leagues at launch</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        {% for item in ['NFL','NCAAF','NBA','WNBA','MLB','NCAAMB','NCAAWB'] %}<span class="badge">{{ item }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
