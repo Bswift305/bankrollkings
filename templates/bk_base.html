@@ -299,11 +299,25 @@
   <main class="bk-main">
     {% block workflow_toolbar %}
     {% if top_nav_items %}
+    <style>
+      .bk-toolbar-divider{width:1px;align-self:stretch;min-height:20px;background:rgba(255,255,255,.14);margin:2px 6px;flex:0 0 auto;}
+      .bk-toolbar-label-sub{opacity:.55;font-size:11px;letter-spacing:.6px;text-transform:uppercase;}
+      .bk-btn.bk-btn-sub{opacity:.64;font-size:12px;padding-top:5px;padding-bottom:5px;}
+      .bk-btn.bk-btn-sub:hover,.bk-btn.bk-btn-sub.active{opacity:1;}
+    </style>
     <div class="bk-toolbar bk-command-toolbar bk-workflow-toolbar">
       <span class="bk-toolbar-label">{% if active_sport %}{{ active_sport|upper }}{% else %}Command{% endif %}:</span>
-      {% for item in top_nav_items %}
+      {% for item in top_nav_items if item.group == 'core' %}
       <a class="bk-btn {% if item.active %}active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
       {% endfor %}
+      {% set lab_items = top_nav_items | rejectattr('group', 'equalto', 'core') | list %}
+      {% if lab_items %}
+      <span class="bk-toolbar-divider" aria-hidden="true"></span>
+      <span class="bk-toolbar-label bk-toolbar-label-sub">Labs</span>
+      {% for item in lab_items %}
+      <a class="bk-btn bk-btn-sub {% if item.active %}active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+      {% endfor %}
+      {% endif %}
     </div>
     {% endif %}
     {% endblock workflow_toolbar %}

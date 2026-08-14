@@ -1431,7 +1431,7 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
         {'key': 'market', 'label': 'Market Edge', 'href': sport_market if sport_key else global_feature_href['market']},
         {'key': 'trends', 'label': 'Streak Patterns', 'href': sport_trends if sport_key else global_feature_href['trends']},
-        {'key': 'tendencies', 'label': 'Tendencies', 'href': f"/tendencies?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['tendencies']},
+        # 'tendencies' hidden from nav until its situational-split data is wired (scaffold page); re-add this line when live.
         {'key': 'derivatives', 'label': 'Alt Markets', 'href': f"/derivatives?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['derivatives']},
         {'key': 'officiating', 'label': 'Officiating', 'href': f"/derivatives?sport={quote(query_sport, safe='')}#officiating" if query_sport else global_feature_href['officiating']},
         {'key': 'hot_streaks', 'label': 'Hot Streaks', 'href': sport_heat_map},
@@ -1442,9 +1442,13 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'elite', 'label': 'Elite', 'href': f"/elite?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['elite']},
     ])
 
+    # Core = the everyday workflow; everything else is grouped under "Labs" in the
+    # command toolbar so a newcomer lands on the essentials, not 15 equal buttons.
+    core_keys = {'dashboard', 'props', 'parlay_builder', 'market', 'review', 'injuries'}
     active_key = 'dashboard' if str(active_page or '').strip() == 'home' else str(active_page or '').strip()
     for item in items:
         item['active'] = item['key'] == active_key
+        item['group'] = 'core' if item['key'] in core_keys else 'lab'
     if active_page in {'', None} and sport_key in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
         for item in items:
             if item['key'] == 'dashboard':
