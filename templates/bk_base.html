@@ -108,14 +108,14 @@
       <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Review Center"><span class="tip"><strong>Review Center</strong><small>Hit/miss and player profile analysis</small></span>
     </a>
     <div class="bk-rail-divider"></div>
-    <a href="{{ url_for('heat_map') }}" class="bk-rail-icon {% if active_page in ['heat_map', 'hot_streaks'] %}active{% endif %}" title="Streak Lab: heat and pattern views">
-      <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Streak Lab"><span class="tip"><strong>Streak Lab</strong><small>Heat and pattern views</small></span>
+    <a href="{{ url_for('heat_map') }}" class="bk-rail-icon {% if active_page in ['heat_map', 'hot_streaks'] %}active{% endif %}" title="Hot Streaks: today's hottest players and buckets">
+      <img src="/static/logos/leagues/game-lines.svg" loading="lazy" alt="Hot Streaks"><span class="tip"><strong>Hot Streaks</strong><small>Today's hottest players and buckets</small></span>
     </a>
-    <a href="{{ url_for('history') }}" class="bk-rail-icon {% if active_page == 'history' %}active{% endif %}" title="Analytics: result history and calibration reads">
-      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="Analytics"><span class="tip"><strong>Analytics</strong><small>History, review, calibration</small></span>
+    <a href="{{ url_for('history') }}" class="bk-rail-icon {% if active_page == 'history' %}active{% endif %}" title="History: your graded results and P&L">
+      <img src="/static/logos/leagues/review.svg" loading="lazy" alt="History"><span class="tip"><strong>History</strong><small>Your graded results and P&L</small></span>
     </a>
-    <a href="/tools/injury-report" class="bk-rail-icon {% if active_page == 'injuries' %}active{% endif %} {% if injury_count %}bk-pulse{% endif %}" title="Injury Report: multi-league availability">
-      <img src="/static/logos/leagues/injuries.svg" loading="lazy" alt="Injuries"><span class="tip"><strong>Injury Report</strong><small>Multi-league availability{% if injury_count %}: {{ injury_count }}{% endif %}</small></span>
+    <a href="/tools/injury-report" class="bk-rail-icon {% if active_page == 'injuries' %}active{% endif %} {% if injury_count %}bk-pulse{% endif %}" title="Injuries: multi-league availability">
+      <img src="/static/logos/leagues/injuries.svg" loading="lazy" alt="Injuries"><span class="tip"><strong>Injuries</strong><small>Multi-league availability{% if injury_count %}: {{ injury_count }}{% endif %}</small></span>
     </a>
     <div class="bk-rail-divider"></div>
     <a href="{{ url_for('settings') }}" class="bk-rail-icon {% if active_page == 'settings' %}active{% endif %}" title="Settings: account and platform preferences">
@@ -214,7 +214,7 @@
         <span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Season Markets</span>
       </a>
       <a href="/tools/injury-report" class="bk-sidebar-item {% if active_page == 'injuries' %}active{% endif %}">
-        <span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injury Report</span>
+        <span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injuries</span>
       </a>
     </div>
 

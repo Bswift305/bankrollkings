@@ -1429,16 +1429,16 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'props', 'label': 'Props', 'href': sport_props if sport_key else global_feature_href['props']},
         {'key': 'parlay_builder', 'label': 'Parlay Builder', 'href': f"/parlay?sport={query_sport.lower()}&sample=current" if query_sport else global_feature_href['parlay_builder']},
         {'key': 'review', 'label': 'Review Center', 'href': f"/candidate-review?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['review']},
-        {'key': 'market', 'label': 'Market', 'href': sport_market if sport_key else global_feature_href['market']},
+        {'key': 'market', 'label': 'Market Edge', 'href': sport_market if sport_key else global_feature_href['market']},
         {'key': 'trends', 'label': 'Streak Patterns', 'href': sport_trends if sport_key else global_feature_href['trends']},
         {'key': 'tendencies', 'label': 'Tendencies', 'href': f"/tendencies?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['tendencies']},
-        {'key': 'derivatives', 'label': 'Derivatives', 'href': f"/derivatives?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['derivatives']},
+        {'key': 'derivatives', 'label': 'Alt Markets', 'href': f"/derivatives?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['derivatives']},
         {'key': 'officiating', 'label': 'Officiating', 'href': f"/derivatives?sport={quote(query_sport, safe='')}#officiating" if query_sport else global_feature_href['officiating']},
-        {'key': 'hot_streaks', 'label': 'Active Streaks', 'href': sport_heat_map},
+        {'key': 'hot_streaks', 'label': 'Hot Streaks', 'href': sport_heat_map},
         {'key': 'injuries', 'label': 'Injuries', 'href': f"/injuries?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['injuries']},
         {'key': 'systems', 'label': 'Systems Lab', 'href': f"/systems-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['systems']},
         {'key': 'calibration_lab', 'label': 'Calibration', 'href': f"/calibration-lab?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['calibration_lab']},
-        {'key': 'missed', 'label': 'Missed Opps', 'href': f"/missed-opportunities?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['missed']},
+        {'key': 'missed', 'label': 'Missed Winners', 'href': f"/missed-opportunities?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['missed']},
         {'key': 'elite', 'label': 'Elite', 'href': f"/elite?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['elite']},
     ])
 
@@ -20653,7 +20653,7 @@ GLOBAL_FEATURE_PREVIEWS = {
     },
     'market': {
         'nav_key': 'market',
-        'title': 'Market Watch Preview',
+        'title': 'Market Edge Preview',
         'kicker': 'Line Intelligence Preview',
         'preview_heading': 'Sample Market Read',
         'preview_copy': 'See how book price, line movement, and market disagreement change whether a number is still worth touching.',
@@ -20683,7 +20683,7 @@ GLOBAL_FEATURE_PREVIEWS = {
     },
     'hot-streaks': {
         'nav_key': 'hot_streaks',
-        'title': 'Active Streaks Preview',
+        'title': 'Hot Streaks Preview',
         'kicker': 'Momentum Preview',
         'preview_heading': 'Sample Streak Check',
         'preview_copy': 'See how current streaks are filtered into today-only momentum instead of stale historical noise.',
@@ -20698,7 +20698,7 @@ GLOBAL_FEATURE_PREVIEWS = {
     },
     'injuries': {
         'nav_key': 'injuries',
-        'title': 'Injury Watch Preview',
+        'title': 'Injuries Preview',
         'kicker': 'Availability Preview',
         'preview_heading': 'Sample Injury Impact',
         'preview_copy': 'See how availability news turns into usage, minutes, target, matchup, and prop-board context.',
@@ -20743,7 +20743,7 @@ GLOBAL_FEATURE_PREVIEWS = {
     },
     'calibration': {
         'nav_key': 'calibration_lab',
-        'title': 'Calibration Lab Preview',
+        'title': 'Calibration Preview',
         'kicker': 'Model Discipline Preview',
         'subtitle': 'The calibration layer checks whether confidence bands, sport formulas, and simulation probabilities match real outcomes.',
         'primary_cta': 'Open calibration',

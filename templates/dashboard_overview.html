@@ -173,10 +173,10 @@
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='props') }}">Props</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">Parlay Builder</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='review') }}">Review Center</a>
-  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='market') }}">Market</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='market') }}">Market Edge</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='trends') }}">Streak Patterns</a>
   <a class="bk-btn" href="{{ url_for('tendencies') }}">Tendencies</a>
-  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='systems') }}">Derivatives</a>
+  <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='systems') }}">Systems Lab</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='officiating') }}">Officiating</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='hot-streaks') }}">Hot Streaks</a>
   <a class="bk-btn" href="{{ url_for('global_feature_preview', feature_key='injuries') }}">Injuries</a>
@@ -229,7 +229,7 @@
       <small>Review turns yesterday's outcomes into tomorrow's promotion and avoid signals.</small>
     </a>
     <a class="bk-phase2-card" href="{{ url_for('global_feature_preview', feature_key='market') }}">
-      <span class="bk-phase2-label">Market</span>
+      <span class="bk-phase2-label">Market Edge</span>
       <strong>Shop the number</strong>
       <em>Book split, movement, best price</em>
       <small>A good read can become a pass if the current line no longer supports it.</small>
@@ -325,7 +325,7 @@
     </a>
 
     <a class="bk-phase2-card" href="{{ url_for('candidate_review') }}#streak-heat">
-      <span class="bk-phase2-label">Hot Hands</span>
+      <span class="bk-phase2-label">Hot Streaks</span>
       <strong>{% if phase2.streak_heat %}{{ phase2.streak_heat[0].current_streak }}{% else %}0{% endif %}</strong>
       <em>Top streak</em>
       {% if phase2.streak_heat %}
