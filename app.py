@@ -10050,15 +10050,19 @@ def get_current_user():
         return None
 
     row = match.iloc[0].to_dict()
-    try:
-        bankroll_val = round(float(str(row.get('Bankroll', 0) or 0).replace(',', '')), 2)
-    except (TypeError, ValueError):
+    raw_bankroll = row.get('Bankroll', 0)
+    if pd.isna(raw_bankroll):  # blank cell for users who never set one -> 0, not NaN
         bankroll_val = 0.0
+    else:
+        try:
+            bankroll_val = round(max(float(str(raw_bankroll).replace(',', '')), 0.0), 2)
+        except (TypeError, ValueError):
+            bankroll_val = 0.0
     return {
         'user_id': row.get('UserId', ''),
         'display_name': row.get('DisplayName', ''),
         'email': row.get('Email', ''),
-        'bankroll': max(bankroll_val, 0.0),
+        'bankroll': bankroll_val,
         'plan': row.get('Plan', 'free'),
         'billing_cycle': row.get('BillingCycle', 'monthly'),
         'plan_status': row.get('PlanStatus', 'active'),
