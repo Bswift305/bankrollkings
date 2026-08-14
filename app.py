@@ -140,6 +140,16 @@ def _inject_csrf_token():
     return {'csrf_token': _get_csrf_token}
 
 
+@app.context_processor
+def _inject_user_bankroll():
+    # Top-bar bankroll pill: the signed-in user's OWN bankroll (starts at 0, set on
+    # the Account page). Injected globally so it reads identically on every page
+    # instead of the old per-route hardcoded demo value.
+    user = get_current_user()
+    amount = float(user.get('bankroll', 0) or 0) if user else 0.0
+    return {'user_bankroll': f"{amount:,.2f}"}
+
+
 @app.before_request
 def _csrf_protect():
     if request.method in CSRF_SAFE_METHODS:
@@ -10040,10 +10050,15 @@ def get_current_user():
         return None
 
     row = match.iloc[0].to_dict()
+    try:
+        bankroll_val = round(float(str(row.get('Bankroll', 0) or 0).replace(',', '')), 2)
+    except (TypeError, ValueError):
+        bankroll_val = 0.0
     return {
         'user_id': row.get('UserId', ''),
         'display_name': row.get('DisplayName', ''),
         'email': row.get('Email', ''),
+        'bankroll': max(bankroll_val, 0.0),
         'plan': row.get('Plan', 'free'),
         'billing_cycle': row.get('BillingCycle', 'monthly'),
         'plan_status': row.get('PlanStatus', 'active'),
@@ -36289,7 +36304,20 @@ def account():
         session.clear()
         return redirect(url_for('login', next='/account'))
 
-    if request.method == 'POST':
+    if request.method == 'POST' and request.form.get('form_action') == 'bankroll':
+        raw_amount = str(request.form.get('bankroll_amount', '')).replace(',', '').replace('$', '').strip()
+        try:
+            amount = max(0.0, round(float(raw_amount), 2))
+        except (TypeError, ValueError):
+            error = 'Enter a bankroll amount like 500 or 1250.50.'
+        else:
+            updated_user = dict(user)
+            updated_user['Bankroll'] = f"{amount:.2f}"
+            save_user(updated_user)
+            login_user(updated_user)
+            user = updated_user
+            message = 'Bankroll updated.'
+    elif request.method == 'POST':
         current_password = str(request.form.get('current_password', '')).strip()
         new_password = str(request.form.get('new_password', '')).strip()
         confirm_password = str(request.form.get('confirm_password', '')).strip()

@@ -75,9 +75,9 @@
         {{ active_formula.Sport }} {{ active_formula.Status }}
       </span>
       {% endif %}
-      <a class="bk-bankroll" href="{{ url_for('account') if current_user else url_for('signup') }}" title="Bankroll Counter: profile-level winnings, losses, and earnings tracker">
+      <a class="bk-bankroll" href="{{ url_for('account') if current_user else url_for('signup') }}" title="Your bankroll — click to set or adjust it">
         <div class="br-label">Bankroll</div>
-        <div class="br-amount">${{ bankroll | default('0.00') }}</div>
+        <div class="br-amount">${{ user_bankroll | default('0.00') }}</div>
       </a>
       {% if current_user %}
       <a class="bk-account-link" href="{{ url_for('account') }}">Account</a>
