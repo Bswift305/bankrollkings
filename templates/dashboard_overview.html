@@ -195,7 +195,7 @@
       {% else %}
       <div class="bk-dashboard-kicker">Platform Map</div>
       <h2>What each command does</h2>
-      <p>Home is the all-sports member landing page. It shows what each sport has available, then sends users into that sport's Command Center.</p>
+      <p><strong>New here?</strong> Start with <a href="{{ url_for('global_feature_preview', feature_key='props') }}" style="color:var(--accent);">Props</a> for tonight's board, or the <a href="{{ url_for('global_feature_preview', feature_key='parlay') }}" style="color:var(--accent);">Parlay Builder</a> to build a ticket. Everything below adds context — and picking a sport opens that sport's Command Center.</p>
       {% endif %}
     </div>
     {% if public_tour %}
