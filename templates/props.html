@@ -553,8 +553,12 @@
     </div>
     {% else %}
     <div class="empty-state">
-        <div class="empty-state-title">No props found</div>
-        <div class="empty-state-copy">This filter combination did not return any props. Try widening the date range, clearing a player/team filter, or switching between current-team and full-season sample.</div>
+        <div class="empty-state-title">No games in this window</div>
+        <div class="empty-state-copy">There may be no games scheduled for the selected day — common overnight or between slates. The full board still has props ready; open it below, or clear a player/team filter.</div>
+        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+            <a class="btn btn-primary btn-sm" href="{{ props_base_path }}?date=all">Show the full board</a>
+            <a class="btn btn-secondary btn-sm" href="{{ props_base_path }}">Reset filters</a>
+        </div>
     </div>
     {% endif %}
 </div>

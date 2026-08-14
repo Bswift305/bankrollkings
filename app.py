@@ -28858,6 +28858,20 @@ def global_feature_preview(feature_key):
     current_user = get_current_user()
     sport_access = get_user_sport_access(current_user) if current_user else set()
     all_sports_access = normalize_user_plan(current_user) in ALL_SPORT_PLAN_KEYS if current_user else False
+    # Members already own the boards -- present this page as a clean sport picker,
+    # not a "free preview / pay to unlock" upsell (which reads wrong once you've paid).
+    if all_sports_access or is_owner_user(current_user):
+        feature = {
+            **feature,
+            'title': str(feature.get('title', '')).replace(' Preview', ''),
+            'kicker': 'Cross-Sport Overview',
+            'subtitle': 'Pick a sport below to open its full board — everything is included with your membership.',
+            'steps': [
+                ('Compare sports first', 'See which leagues have the deepest board and strongest current reads right now.'),
+                ('Open a board', 'Click any sport to drill into full filters, player rows, and matchup detail — no unlock needed.'),
+                ('Keep context attached', 'Every read carries game, market, and reliability context with it.'),
+            ],
+        }
     sport_cards = []
     for sport in sport_snapshots:
         sport_key = str(sport.get('key') or '').strip().lower()
