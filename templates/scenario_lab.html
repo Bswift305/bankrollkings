@@ -1,0 +1,253 @@
+{% set active_page = 'scenario_lab' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Scenario Lab - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .sl-wrap{--sl-accent:#2f8fff;--sl-glow:rgba(47,143,255,.14);}
+  .sl-scope,.sl-tabs,.sl-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .sl-tabs{gap:6px;margin-bottom:4px;}
+  .sl-chip{cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    font:600 12.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.02em;padding:8px 13px;border-radius:999px;
+    text-transform:uppercase;transition:.14s;white-space:nowrap;}
+  .sl-chip:hover{color:var(--text);border-color:var(--sl-accent);}
+  .sl-chip.active{background:var(--sl-accent);border-color:var(--sl-accent);color:#04121f;box-shadow:0 0 0 3px var(--sl-glow);}
+  .sl-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .sl-tab:hover{color:var(--text);}
+  .sl-tab.active{color:var(--text);border-bottom-color:var(--sl-accent);}
+  .sl-label{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:6px;}
+  .sl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.sl-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:560px;}
+  .sl-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .sl-table th:first-child,.sl-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .sl-table th.sorted{color:var(--sl-accent);}
+  .sl-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .sl-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .sl-table tbody tr:hover td{background:rgba(47,143,255,.05);}
+  .sl-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .sl-pos{color:#49d27d;}.sl-neg{color:var(--danger);}
+  .sl-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .sl-scen-label{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0 2px;}
+  .sl-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;}
+  .sl-stat{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .sl-stat .k{font:600 12.5px/1.3 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .sl-stat .v{font:700 14px/1 ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .sl-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;
+    padding:9px 12px;font:700 13px ui-monospace,Consolas,monospace;min-width:150px;}
+  @media(max-width:640px){.sl-profile-grid{grid-template-columns:1fr;}.sl-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="sl-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Scenario <span class="accent">Lab</span></h1>
+    <div class="page-subtitle">Grade any player or team by situation &mdash; 3rd &amp; 10+, red zone, deep shots, per drive, pressure &mdash; from real snaps. This is the information haven: every number traces to a graded play.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/injury-report" class="btn btn-secondary btn-sm">All Quick Tools</a>
+  </div>
+</div>
+
+{% if not scenario_available %}
+  <div class="card p-16"><p class="sl-note">Scenario data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Plays Graded</div><div class="stat-value">{{ '{:,}'.format(scenario_meta.plays) }}</div><div class="stat-note">real nflverse snaps</div></div>
+  <div class="stat-card"><div class="page-kicker">Seasons</div><div class="stat-value">{{ scenario_meta.seasons }}</div><div class="stat-note">7 full years</div></div>
+  <div class="stat-card"><div class="page-kicker">Scenarios</div><div class="stat-value">Every main</div><div class="stat-note">players &amp; teams</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">from snaps, not vibes</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:14px;">
+    <div class="sl-scope">
+      <span class="sl-label">Span</span>
+      <span id="sl-scope-chips"></span>
+    </div>
+    <div class="sl-tabs" id="sl-tabs">
+      <button class="sl-tab active" data-tab="players">Players</button>
+      <button class="sl-tab" data-tab="teams">Team Rankings</button>
+      <button class="sl-tab" data-tab="profiles">Team Profiles</button>
+    </div>
+
+    <!-- Players controls -->
+    <div id="sl-c-players">
+      <div class="sl-chips" style="margin-bottom:10px;">
+        <span class="sl-label">Position</span>
+        <button class="sl-chip active" data-pos="qb">QB</button>
+        <button class="sl-chip" data-pos="rb">RB</button>
+        <button class="sl-chip" data-pos="wr">WR / TE</button>
+      </div>
+      <div class="sl-chips"><span class="sl-label">Situation</span><span id="sl-scen-chips"></span></div>
+    </div>
+
+    <!-- Team rankings controls -->
+    <div id="sl-c-teams" style="display:none;">
+      <div class="sl-chips"><span class="sl-label">Category</span><span id="sl-cat-chips"></span></div>
+    </div>
+
+    <!-- Team profile controls -->
+    <div id="sl-c-profiles" style="display:none;">
+      <div class="sl-chips">
+        <span class="sl-label">Team</span>
+        <select id="sl-team-select" class="sl-select"></select>
+        <button class="sl-chip active" data-side="off">Offense</button>
+        <button class="sl-chip" data-side="def">Defense</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="p-16">
+    <div id="sl-scen-title" class="sl-scen-label"></div>
+    <div class="sl-scroll" id="sl-body"></div>
+    <div class="sl-note" id="sl-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if scenario_available %}
+<script id="sl-data" type="application/json">{{ scenario_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('sl-data').textContent);
+  const S = {scope:'2025', tab:'players', pos:'qb', scen:'3rd-10plus',
+             cat:'third', team:null, side:'off', sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  const scope = () => DATA.scopes[S.scope];
+
+  // formatting per column fmt
+  function fmt(v, f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return (typeof v==='number'? v.toLocaleString(): v);
+    if(f==='pct')  return (v*100).toFixed(1)+'%';
+    if(f==='pctv') return v.toFixed(1)+'%';
+    if(f==='f1')   return v.toFixed(1);
+    if(f==='p1')   return (v>=0?'+':'')+v.toFixed(1);
+    if(f==='p2')   return (v>=0?'+':'')+v.toFixed(2);
+    if(f==='p3')   return (v>=0?'+':'')+v.toFixed(3);
+    return v;
+  }
+  const signed = f => (f==='p2'||f==='p3'||f==='p1');
+
+  function renderTable(board, opts){
+    opts = opts||{};
+    if(!board || !board.rows || !board.rows.length){ $('#sl-body').innerHTML='<p class="sl-note">Not enough graded snaps in this span to rank &mdash; try Career.</p>'; return; }
+    const cols = board.columns;
+    let rows = board.rows.map(r=>r.slice());
+    // rows arrive already ranked by their headline metric (server-side). Only
+    // re-sort once the user clicks a header, so the default view stays meaningful.
+    let sc = S.sortCol;
+    if(sc!==null && sc<cols.length){
+      rows.sort((a,b)=>{
+        let x=a[sc], y=b[sc];
+        if(x===null) return 1; if(y===null) return -1;
+        if(typeof x==='string') return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);
+      });
+    }
+    let h='<table class="sl-table"><thead><tr><th class="sl-rank">#</th>';
+    cols.forEach((c,i)=>{ h+='<th class="'+(i===sc?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>'; });
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="sl-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(signed(c.fmt) && typeof r[i]==='number') cls = r[i]>=0?'sl-pos':'sl-neg';
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#sl-body').innerHTML=h;
+    $('#sl-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{ const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;} else {S.sortCol=c;S.sortDir=-1;} draw(); };
+    });
+  }
+
+  function draw(){
+    const sc = scope();
+    if(S.tab==='players'){
+      const pack = sc.players[S.pos];
+      const scenMeta = pack.scenarios.find(x=>x.key===S.scen) || pack.scenarios[0];
+      S.scen = scenMeta.key;
+      $('#sl-scen-title').textContent = ({qb:'QB',rb:'RB',wr:'WR / TE'}[S.pos]) + ' — ' + scenMeta.label;
+      renderTable(pack.boards[S.scen]);
+      $('#sl-foot').innerHTML = 'Ranked by the headline metric &mdash; tap any column header to re-sort. Players below the sample floor for this span are excluded, not shown as leaders. Percent = share of qualifying plays.';
+    } else if(S.tab==='teams'){
+      const cat = sc.teamRankings.categories.find(x=>x.key===S.cat) || sc.teamRankings.categories[0];
+      S.cat = cat.key;
+      $('#sl-scen-title').textContent = cat.label;
+      renderTable(sc.teamRankings.boards[S.cat],{defaultSort:1});
+      $('#sl-foot').innerHTML = 'Per-drive and red-zone figures are trip/drive-level from real drive outcomes. Ranked by the headline metric &mdash; tap any column header to re-sort.';
+    } else {
+      const teams = Object.keys(sc.teamProfiles).sort();
+      if(!S.team || !sc.teamProfiles[S.team]) S.team = teams.includes('BUF')?'BUF':teams[0];
+      const stats = sc.teamProfiles[S.team][S.side] || [];
+      $('#sl-scen-title').textContent = S.team + ' — ' + (S.side==='off'?'Offense':'Defense');
+      let h='<div class="sl-profile-grid">';
+      stats.forEach(s=>{ h+='<div class="sl-stat"><span class="k">'+s[0]+'</span><span class="v">'+fmt(s[1],s[2])+'</span></div>'; });
+      h+='</div>';
+      $('#sl-body').innerHTML=h;
+      $('#sl-foot').innerHTML = 'Every figure computed from '+S.team+'’s real snaps in this span. Switch Offense / Defense above.';
+    }
+  }
+
+  // build chips
+  function chip(html, active, on){ const b=document.createElement('button'); b.className='sl-chip'+(active?' active':''); b.innerHTML=html; b.onclick=on; return b; }
+  function setActive(container, el){ container.querySelectorAll('.sl-chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); }
+
+  function buildScopeChips(){
+    const c=$('#sl-scope-chips'); c.innerHTML='';
+    (DATA.meta.scopeOrder||[['career','Career']]).forEach(([k,label])=>{
+      c.appendChild(chip(label, k===S.scope, e=>{ S.scope=k; setActive(c,e.currentTarget); S.sortCol=null; buildScenChips(); buildCatChips(); buildTeamSelect(); draw(); }));
+    });
+  }
+  function buildScenChips(){
+    const c=$('#sl-scen-chips'); c.innerHTML='';
+    scope().players[S.pos].scenarios.forEach(s=>{
+      c.appendChild(chip(s.label.replace(/\s*\(.*\)/,''), s.key===S.scen, e=>{ S.scen=s.key; S.sortCol=null; setActive(c,e.currentTarget); draw(); }));
+    });
+  }
+  function buildCatChips(){
+    const c=$('#sl-cat-chips'); c.innerHTML='';
+    scope().teamRankings.categories.forEach(cat=>{
+      c.appendChild(chip(cat.label, cat.key===S.cat, e=>{ S.cat=cat.key; S.sortCol=null; setActive(c,e.currentTarget); draw(); }));
+    });
+  }
+  function buildTeamSelect(){
+    const sel=$('#sl-team-select'); const teams=Object.keys(scope().teamProfiles).sort();
+    sel.innerHTML = teams.map(t=>'<option'+(t===S.team?' selected':'')+'>'+t+'</option>').join('');
+    sel.onchange=()=>{ S.team=sel.value; draw(); };
+  }
+
+  // position chips
+  document.querySelectorAll('#sl-c-players [data-pos]').forEach(b=>{
+    b.onclick=()=>{ document.querySelectorAll('#sl-c-players [data-pos]').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+      S.pos=b.dataset.pos; S.scen=scope().players[S.pos].scenarios[0].key; S.sortCol=null; buildScenChips(); draw(); };
+  });
+  // side chips
+  document.querySelectorAll('#sl-c-profiles [data-side]').forEach(b=>{
+    b.onclick=()=>{ document.querySelectorAll('#sl-c-profiles [data-side]').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.side=b.dataset.side; draw(); };
+  });
+  // tabs
+  document.querySelectorAll('#sl-tabs .sl-tab').forEach(t=>{
+    t.onclick=()=>{ document.querySelectorAll('#sl-tabs .sl-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.tab=t.dataset.tab; S.sortCol=null;
+      $('#sl-c-players').style.display = S.tab==='players'?'':'none';
+      $('#sl-c-teams').style.display   = S.tab==='teams'?'':'none';
+      $('#sl-c-profiles').style.display= S.tab==='profiles'?'':'none';
+      draw(); };
+  });
+
+  buildScopeChips(); buildScenChips(); buildCatChips(); buildTeamSelect(); draw();
+})();
+</script>
+{% endif %}
+{% endblock %}

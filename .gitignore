@@ -80,3 +80,6 @@ Thumbs.db
 
 # Franchise Kings user-uploaded GM photos (UGC, not source)
 static/franchise_avatars/
+
+# Local NFL play-by-play source (regenerable; prod serves the JSON export only)
+data/pbp/*.parquet

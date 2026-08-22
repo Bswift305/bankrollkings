@@ -718,6 +718,7 @@ PRO_ENDPOINTS = {
     'dashboard',
     'method_hub',
     'injury_report_tool',
+    'scenario_lab_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39142,6 +39143,41 @@ def injury_report_tool():
     page. Filtering is client-side (league / status / team / search)."""
     context = build_injury_report_context()
     return render_template('injury_report.html', **context)
+
+
+_SCENARIO_LAB_CACHE = {}
+
+def build_scenario_lab_context():
+    """Quick Tool: NFL Scenario Lab. Loads the precomputed situational-stats JSON
+    (players + teams graded by real play-by-play, 2019-2025) and hands it to the
+    page whole for instant client-side switching. The JSON is a fixed historical
+    export (data/scenarios/nfl_scenarios.json) built by
+    research/nfl_scenarios/build_scenario_export.py — no pandas/parquet at request
+    time, so it's memory-safe on prod. Cached in-process, keyed by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scenarios.json')
+    data = {'scopes': {}, 'meta': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _SCENARIO_LAB_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _SCENARIO_LAB_CACHE['data'] = json.load(fh)
+            _SCENARIO_LAB_CACHE['mtime'] = mtime
+        data = _SCENARIO_LAB_CACHE['data']
+    except (OSError, ValueError):
+        pass  # missing/corrupt export -> template shows an empty-state notice
+    meta = data.get('meta', {})
+    return {
+        'scenario_data': data,
+        'scenario_meta': meta,
+        'scenario_available': bool(data.get('scopes')),
+    }
+
+
+@app.route('/tools/scenario-lab')
+def scenario_lab_tool():
+    """Quick Tool: NFL Scenario Lab — grade any player or team by situation
+    (3rd & 10+, red zone, deep shots, per-drive, pressure, ...) from real snaps."""
+    return render_template('scenario_lab.html', **build_scenario_lab_context())
 
 
 @app.route('/injuries')
