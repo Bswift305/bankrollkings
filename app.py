@@ -540,6 +540,15 @@ COMP_ALL_ACCESS_EMAILS = {
     'cspurlock65@att.net',
 }
 
+# Free-trial invite system (in-person / QR handouts). A redeemable code grants All
+# Access for TRIAL_DEFAULT_DAYS with NO credit card, tracked entirely in-app via the
+# per-user TrialExpiresAt date — it self-expires to the paywall, no Stripe, no cron.
+# Codes live in data/tracking/Invite_Codes.csv:
+#   Code, Label, TrialDays, MaxRedemptions, TimesRedeemed, Active
+#   MaxRedemptions = 0  -> unlimited (the shared "flash the QR in person" code)
+#   MaxRedemptions = 1  -> a one-time code you hand to a single person
+TRIAL_DEFAULT_DAYS = 14
+
 # Absolute base URL used to build links inside transactional email (password
 # reset). Override with SITE_BASE_URL in .env if the domain changes.
 SITE_BASE_URL = (os.environ.get('SITE_BASE_URL', '') or 'https://bankrollkings.com').strip().rstrip('/')
@@ -608,6 +617,7 @@ PUBLIC_ENDPOINTS = {
     'pricing',
     'login',
     'signup',
+    'trial_redeem',
     'password_reset',
     'password_reset_confirm',
     'logout',
@@ -1206,6 +1216,39 @@ def normalize_plan_key(plan_key):
     return key if key in {'free', 'all_access'} else 'free'
 
 
+def trial_expiry_dt(user):
+    """Parse a user's TrialExpiresAt (accepts get_current_user() or raw-row shapes)."""
+    if not user:
+        return None
+    raw = str(user.get('trial_expires_at', '') or user.get('TrialExpiresAt', '') or '').strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError):
+        return None
+
+
+def trial_is_active(user):
+    exp = trial_expiry_dt(user)
+    return bool(exp) and datetime.now() < exp
+
+
+def trial_days_left(user):
+    exp = trial_expiry_dt(user)
+    if not exp:
+        return 0
+    secs = (exp - datetime.now()).total_seconds()
+    if secs <= 0:
+        return 0
+    import math
+    return max(1, math.ceil(secs / 86400.0))
+
+
 def normalize_user_plan(user):
     if not user:
         return 'free'
@@ -1217,6 +1260,10 @@ def normalize_user_plan(user):
         return 'all_access'
     is_admin = str(user.get('is_admin', '') or user.get('IsAdmin', '') or '').strip().lower() in {'1', '1.0', 'true', 'yes'}
     if is_admin:
+        return 'all_access'
+    # Active free trial (invite-code comp) unlocks All Access until TrialExpiresAt,
+    # then falls through to the normal status check below (-> 'free' = paywall).
+    if trial_is_active(user):
         return 'all_access'
     status = str(user.get('plan_status', 'selected') or 'selected').strip().lower()
     if status not in ACTIVE_PLAN_STATUSES:
@@ -9886,7 +9933,7 @@ def load_saved_parlays():
 
 def load_users():
     path = DATA_DIR / 'tracking' / 'NBA_Users.csv'
-    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId', 'ResetTokenHash', 'ResetTokenExpiry', 'AcceptedTermsAt', 'IsFounder', 'FounderOffer', 'FounderActivatedAt']
+    default_columns = ['UserId', 'DisplayName', 'Email', 'PasswordHash', 'Plan', 'BillingCycle', 'PlanStatus', 'Role', 'IsAdmin', 'CreatedAt', 'PlanSelectedAt', 'StripeCustomerId', 'ResetTokenHash', 'ResetTokenExpiry', 'AcceptedTermsAt', 'IsFounder', 'FounderOffer', 'FounderActivatedAt', 'TrialExpiresAt', 'TrialInviteCode']
     if not path.exists():
         return pd.DataFrame(columns=default_columns)
 
@@ -10070,6 +10117,8 @@ def get_current_user():
         'is_admin': str(row.get('IsAdmin', '')).strip().lower() in {'1', '1.0', 'true', 'yes'},
         'is_founder': str(row.get('IsFounder', '')).strip().lower() in {'1', '1.0', 'true', 'yes'},
         'founder_offer': str(row.get('FounderOffer', '')).strip() == '1',
+        'trial_expires_at': row.get('TrialExpiresAt', ''),
+        'trial_invite_code': row.get('TrialInviteCode', ''),
     }
 
 
@@ -10236,7 +10285,7 @@ def replace_candidate_archive(df):
             DATAFRAME_CACHE.pop(cache_key, None)
 
 
-def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None, stripe_customer_id=None, founder_offer=None):
+def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, plan_status=None, role=None, is_admin=None, stripe_customer_id=None, founder_offer=None, trial_expires_at=None, trial_invite_code=None):
     users = load_users()
     if users.empty:
         return None
@@ -10268,6 +10317,14 @@ def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, 
         users.at[idx, 'StripeCustomerId'] = str(stripe_customer_id).strip()
     if founder_offer is not None:
         users.at[idx, 'FounderOffer'] = '1' if bool(founder_offer) else ''
+    if trial_expires_at is not None:
+        if 'TrialExpiresAt' not in users.columns:
+            users['TrialExpiresAt'] = ''
+        users.at[idx, 'TrialExpiresAt'] = str(trial_expires_at or '').strip()
+    if trial_invite_code is not None:
+        if 'TrialInviteCode' not in users.columns:
+            users['TrialInviteCode'] = ''
+        users.at[idx, 'TrialInviteCode'] = str(trial_invite_code or '').strip()
     # Founder promotion chokepoint: a membership turning active while a founder
     # offer is reserved consumes the slot permanently (IsFounder survives later
     # cancellations — the first 100 are grandfathered, slots are not recycled).
@@ -10287,6 +10344,100 @@ def update_user_membership(user_id='', email='', plan=None, billing_cycle=None, 
         if cache_key[0] == resolved:
             DATAFRAME_CACHE.pop(cache_key, None)
     return find_user_by_email(email) if email else users.loc[idx].to_dict()
+
+
+# ---- Free-trial invite codes -------------------------------------------------
+INVITE_CODE_COLUMNS = ['Code', 'Label', 'TrialDays', 'MaxRedemptions', 'TimesRedeemed', 'Active']
+
+
+def _to_int(value, default=0):
+    try:
+        return int(float(str(value).strip()))
+    except (ValueError, TypeError):
+        return default
+
+
+def normalize_invite_code(code):
+    return str(code or '').strip().upper()
+
+
+def load_invite_codes():
+    path = DATA_DIR / 'tracking' / 'Invite_Codes.csv'
+    if not path.exists():
+        return pd.DataFrame(columns=INVITE_CODE_COLUMNS)
+    df = _load_cached_csv(path, default=pd.DataFrame(columns=INVITE_CODE_COLUMNS))
+    if df is None or df.empty:
+        return pd.DataFrame(columns=INVITE_CODE_COLUMNS)
+    for column in INVITE_CODE_COLUMNS:
+        if column not in df.columns:
+            df[column] = ''
+    for column in INVITE_CODE_COLUMNS:
+        df[column] = df[column].fillna('').astype(str)
+    return df[INVITE_CODE_COLUMNS]
+
+
+def get_invite_code(code):
+    code = normalize_invite_code(code)
+    if not code:
+        return None
+    df = load_invite_codes()
+    if df.empty:
+        return None
+    match = df[df['Code'].astype(str).str.strip().str.upper() == code]
+    if match.empty:
+        return None
+    return match.iloc[0].to_dict()
+
+
+def invite_code_redeemable(row):
+    """A code is redeemable if Active and under its redemption cap (0 = unlimited)."""
+    if not row:
+        return False
+    if str(row.get('Active', '1')).strip().lower() in {'0', '', 'false', 'no'}:
+        return False
+    max_redemptions = _to_int(row.get('MaxRedemptions', 0), 0)
+    used = _to_int(row.get('TimesRedeemed', 0), 0)
+    return max_redemptions == 0 or used < max_redemptions
+
+
+def trial_grant_for_code(row):
+    """Return (days, iso_expiry_string) for a code's trial length."""
+    days = _to_int((row or {}).get('TrialDays', TRIAL_DEFAULT_DAYS), TRIAL_DEFAULT_DAYS) or TRIAL_DEFAULT_DAYS
+    expires = (datetime.now() + timedelta(days=days)).isoformat(timespec='seconds')
+    return days, expires
+
+
+def consume_invite_code(code):
+    """Increment TimesRedeemed. Last-write-wins CSV (same model as user rows); cap
+    is a soft backstop, not a hard lock against concurrent redemptions."""
+    code = normalize_invite_code(code)
+    path = DATA_DIR / 'tracking' / 'Invite_Codes.csv'
+    df = load_invite_codes()
+    if df.empty:
+        return
+    mask = df['Code'].astype(str).str.strip().str.upper() == code
+    if not mask.any():
+        return
+    idx = df.index[mask][-1]
+    df.at[idx, 'TimesRedeemed'] = str(_to_int(df.at[idx, 'TimesRedeemed'], 0) + 1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+    resolved = str(path.resolve())
+    for cache_key in list(DATAFRAME_CACHE.keys()):
+        if cache_key[0] == resolved:
+            DATAFRAME_CACHE.pop(cache_key, None)
+
+
+def resolve_signup_invite():
+    """The invite code in play for the current signup request (query, form, or a
+    /trial/<code> link stashed in session). Returns (code, row, redeemable)."""
+    raw = (request.values.get('invite_code', '') or request.values.get('invite', '')
+           or session.get('pending_invite', ''))
+    code = normalize_invite_code(raw)
+    if not code:
+        return '', None, False
+    row = get_invite_code(code)
+    return code, row, bool(row) and invite_code_redeemable(row)
 
 
 def load_featured_results_snapshot():
@@ -36102,6 +36253,8 @@ def signup():
     # ?plan=all_access (or any legacy paid key from an old link) means the user
     # arrived wanting the membership — create the account, then go straight to checkout.
     wants_membership = normalize_plan_key(request.args.get('plan', '') or request.form.get('plan', '')) == 'all_access'
+    invite_code, invite_row, invite_redeemable = resolve_signup_invite()
+    trial_days = trial_grant_for_code(invite_row)[0] if invite_redeemable else TRIAL_DEFAULT_DAYS
     error = ''
 
     if request.method == 'POST':
@@ -36126,23 +36279,33 @@ def signup():
             error = 'That email is already registered. Please sign in.'
         else:
             is_comp = email in COMP_ALL_ACCESS_EMAILS
+            grant_trial = bool(invite_redeemable) and not is_comp
             user = {
                 'UserId': uuid4().hex,
                 'DisplayName': display_name,
                 'Email': email,
                 'PasswordHash': generate_password_hash(password),
-                # Comped testers land on an active All Access membership immediately;
-                # everyone else starts free and subscribes via checkout.
-                'Plan': 'all_access' if is_comp else 'free',
+                # Comped testers -> active All Access immediately. Invite-code trial users
+                # -> All Access driven purely by TrialExpiresAt (PlanStatus stays 'selected'
+                # so the date controls access and it self-expires to the paywall at day N).
+                # Everyone else starts free and subscribes via checkout.
+                'Plan': 'all_access' if (is_comp or grant_trial) else 'free',
                 'BillingCycle': 'monthly',
                 'PlanStatus': 'active' if is_comp else 'selected',
                 'CreatedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
                 'PlanSelectedAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
                 'AcceptedTermsAt': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
             }
+            if grant_trial:
+                _trial_days, _trial_expires = trial_grant_for_code(invite_row)
+                user['TrialExpiresAt'] = _trial_expires
+                user['TrialInviteCode'] = invite_code
             save_user(user)
+            if grant_trial:
+                consume_invite_code(invite_code)
+                session.pop('pending_invite', None)
             login_user(user)
-            if wants_membership and not is_comp:
+            if wants_membership and not is_comp and not grant_trial:
                 checkout_next = raw_next or '/dashboard?postseason=1'
                 return redirect(f"/checkout/start?plan=all_access&billing=monthly&next={quote(checkout_next, safe='')}")
             return redirect(_resolve_post_auth_target(get_current_user(), raw_next))
@@ -36158,7 +36321,32 @@ def signup():
         founder_promo=dict(FOUNDER_PROMO),
         founder_slots_remaining=founder_slots_remaining(),
         wants_membership=wants_membership,
+        invite_code=invite_code,
+        invite_trial=invite_redeemable,
+        trial_days=trial_days,
     )
+
+
+@app.route('/trial/<code>')
+def trial_redeem(code):
+    """Invite link / QR target. Grants a no-card free trial:
+    - a shared code (MaxRedemptions=0) you flash in person, or a one-time code.
+    New visitor -> carried into signup. Logged-in free user -> stamped on the spot."""
+    code = normalize_invite_code(code)
+    row = get_invite_code(code)
+    if not row or not invite_code_redeemable(row):
+        return redirect('/signup?trial=expired')
+    user = get_current_user()
+    if user and normalize_user_plan(user) == 'all_access':
+        return redirect('/dashboard?postseason=1')
+    if user:
+        _days, _expires = trial_grant_for_code(row)
+        update_user_membership(user_id=str(user.get('user_id', '')), email=str(user.get('email', '')),
+                               plan='all_access', trial_expires_at=_expires, trial_invite_code=code)
+        consume_invite_code(code)
+        return redirect('/dashboard?postseason=1&welcome=trial')
+    session['pending_invite'] = code
+    return redirect(f"/signup?invite={quote(code, safe='')}")
 
 
 @app.route('/login', methods=['GET', 'POST'])

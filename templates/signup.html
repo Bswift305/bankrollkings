@@ -51,6 +51,9 @@
             {% if error %}
             <div class="signup-notice error">{{ error }}</div>
             {% endif %}
+            {% if invite_trial %}
+            <div class="signup-notice" style="border-color:rgba(78,212,138,.5);background:rgba(78,212,138,.10);color:#bff3d4;">&#127903; You're invited &mdash; {{ trial_days }}-day free trial of All Access. No credit card required.</div>
+            {% endif %}
 
             <label for="signupName">Display Name</label>
             <input id="signupName" name="display_name" type="text" autocomplete="name" required>
@@ -65,8 +68,15 @@
             </div>
             <div class="field-hint">Use at least 6 characters.</div>
 
+            <label for="signupInvite">Invite Code <span style="opacity:.6;font-weight:400;">(optional)</span></label>
+            <input id="signupInvite" name="invite_code" type="text" autocomplete="off" value="{{ invite_code }}" placeholder="Have a code? Enter it here">
+
             <div class="selected-plan-panel">
-                {% if wants_membership %}
+                {% if invite_trial %}
+                <div class="detail-kicker">Free Trial</div>
+                <strong>{{ trial_days }} days of All Access &mdash; on the house</strong>
+                <p>Your invite unlocks the entire platform for {{ trial_days }} days, no card now. Keep it for {{ all_access_tier.monthly_label }} whenever the trial ends.</p>
+                {% elif wants_membership %}
                 <div class="detail-kicker">Next Step</div>
                 <strong>All Access · {{ all_access_tier.monthly_label }}</strong>
                 <p>After your account is created you'll go straight to secure checkout{% if founder_slots_remaining > 0 %} — founders rate {{ founder_promo.monthly_label }} for year one while spots last{% endif %}.</p>
