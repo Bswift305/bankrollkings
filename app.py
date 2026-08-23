@@ -721,6 +721,7 @@ PRO_ENDPOINTS = {
     'scenario_lab_tool',
     'real_vs_luck_tool',
     'mlb_situational_tool',
+    'cfb_regression_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39285,6 +39286,39 @@ def mlb_situational_tool():
     """Quick Tool: MLB Situational Lab — grade hitters and pitchers by situation
     (vs LHP/RHP, RISP, times-through-order, first inning) from real pitches."""
     return render_template('mlb_situational.html', **build_mlb_situational_context())
+
+
+_CFB_REG_CACHE = {}
+
+def build_cfb_regression_context():
+    """Quick Tool: CFB Regression Watch. Preseason CONTEXT (not a claimed edge):
+    which teams' 2025 record outran their yards-per-play (the Phil-Steele-style
+    regression lens), corroborated by turnover margin + one-score records, plus
+    2026 returning production. Built from our own CFBD/game data — no magazine
+    content. Fixed JSON export; cached in-process by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_regression.json')
+    data = {'meta': {}, 'boards': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_REG_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_REG_CACHE['data'] = json.load(fh)
+            _CFB_REG_CACHE['mtime'] = mtime
+        data = _CFB_REG_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'cfbreg_data': data,
+        'cfbreg_meta': data.get('meta', {}),
+        'cfbreg_available': bool(data.get('boards')),
+    }
+
+
+@app.route('/tools/cfb-regression')
+def cfb_regression_tool():
+    """Quick Tool: CFB Regression Watch — who's due to fall/rise after a lucky or
+    unlucky 2025 (record vs yards, turnovers, one-score games) + 2026 experience."""
+    return render_template('cfb_regression.html', **build_cfb_regression_context())
 
 
 @app.route('/injuries')

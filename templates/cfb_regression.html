@@ -1,0 +1,141 @@
+{% set active_page = 'cfb_regression' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Regression Watch - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .cr-wrap{--cr-accent:#d7a74f;--cr-glow:rgba(215,167,79,.15);}
+  .cr-tabs,.cr-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .cr-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .cr-tab:hover{color:var(--text);}
+  .cr-tab.active{color:var(--text);border-bottom-color:var(--cr-accent);}
+  .cr-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(215,167,79,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .cr-explain b{color:var(--text-bright);}
+  .cr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.cr-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:680px;}
+  .cr-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .cr-table th:first-child,.cr-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .cr-table th.sorted{color:var(--cr-accent);}
+  .cr-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .cr-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .cr-table td.conf{text-align:left;color:var(--text-muted);font-family:'Helvetica Neue',Arial,sans-serif;font-weight:500;font-size:12px;}
+  .cr-table tbody tr:hover td{background:rgba(215,167,79,.05);}
+  .cr-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .cr-pos{color:#49d27d;}.cr-neg{color:var(--danger);}
+  .cr-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .cr-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  @media(max-width:640px){.cr-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="cr-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Regression <span class="accent">Watch</span></h1>
+    <div class="page-subtitle">Records lie; yards don't. We show which teams' 2025 record outran how they actually played &mdash; who got lucky and is due to fall, who got unlucky and is due to rise &mdash; plus how much production returns in 2026.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/sports/ncaaf" class="btn btn-secondary btn-sm">CFB Command Center</a>
+  </div>
+</div>
+
+{% if not cfbreg_available %}
+  <div class="card p-16"><p class="cr-note">Regression data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">FBS Teams</div><div class="stat-value">{{ cfbreg_meta.teams }}</div><div class="stat-note">graded on {{ cfbreg_meta.base_season }} play</div></div>
+  <div class="stat-card"><div class="page-kicker">Signals</div><div class="stat-value">3 agree</div><div class="stat-note">yards &middot; turnovers &middot; close games</div></div>
+  <div class="stat-card"><div class="page-kicker">Experience</div><div class="stat-value">{{ cfbreg_meta.returning_season }}</div><div class="stat-note">returning production (CFBD)</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">real data, no magazine</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);">
+    <div class="cr-tabs" id="cr-tabs">
+      <button class="cr-tab active" data-board="regression_down">Due to Fall</button>
+      <button class="cr-tab" data-board="bounceback_up">Due to Rise</button>
+      <button class="cr-tab" data-board="experience">Returning Production</button>
+    </div>
+  </div>
+  <div class="p-16">
+    <div class="cr-explain" id="cr-explain"></div>
+    <div class="cr-title" id="cr-title"></div>
+    <div class="cr-scroll" id="cr-body"></div>
+    <div class="cr-note" id="cr-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if cfbreg_available %}
+<script id="cr-data" type="application/json">{{ cfbreg_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('cr-data').textContent);
+  const S = {board:'regression_down', sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  const META = {
+    regression_down:{title:'Due to Fall — record outran the yards',
+      note:'<b>Luck = win% rank &minus; yards-per-play-margin rank.</b> A high positive Luck score means the team won more than it played &mdash; usually by going unbeaten in close games (<b>1-Score</b>) or winning the turnover battle (<b>TO Margin</b>). Those two things regress. High <b>Ret%</b> softens the fall (the talent stays); low Ret% compounds it.'},
+    bounceback_up:{title:'Due to Rise — better than their record',
+      note:'These teams <b>played better than their record</b> &mdash; strong yards-per-play margin undone by losing close games and bad turnover luck, both of which regress toward the mean. A rising <b>Ret%</b> makes the bounce-back more likely.'},
+    experience:{title:'Returning Production — 2026 experience',
+      note:'Share of 2025 production returning in 2026 (CFBD PPA). High returning production is a real year-over-year tailwind, especially through the air; a gutted roster is a caution flag no matter last year&rsquo;s record.'}
+  };
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='pct')  return (v*100).toFixed(0)+'%';
+    if(f==='p2')   return (v>=0?'+':'')+v.toFixed(2);
+    return v;
+  }
+  const signed = f => f==='p2';
+
+  function render(){
+    const board = DATA.boards[S.board];
+    $('#cr-explain').innerHTML = META[S.board].note;
+    $('#cr-title').textContent = META[S.board].title;
+    if(!board || !board.rows.length){ $('#cr-body').innerHTML='<p class="cr-note">No teams to show.</p>'; $('#cr-foot').innerHTML=''; return; }
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    let h='<table class="cr-table"><thead><tr><th class="cr-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="cr-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls = c.label==='Conf' ? 'conf' : '';
+        if(signed(c.fmt) && typeof r[i]==='number' && c.label==='YPP Margin') cls += (r[i]>=0?' cr-pos':' cr-neg');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#cr-body').innerHTML=h;
+    $('#cr-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#cr-foot').innerHTML='<b>Preseason context, not a pick.</b> This measures how much of 2025 was luck &mdash; it doesn&rsquo;t predict 2026 games. Once teams have tape (~Week 5), <a href="/sports/ncaaf" style="color:var(--cr-accent)">The Reveal</a> takes over with the real in-season read. Tap any column to re-sort.';
+  }
+
+  document.querySelectorAll('#cr-tabs .cr-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#cr-tabs .cr-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.board=t.dataset.board; S.sortCol=null; render();};
+  });
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
