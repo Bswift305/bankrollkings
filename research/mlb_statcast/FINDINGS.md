@@ -33,8 +33,10 @@ question our research showed is priced ("is this bat hot for real, or luck?").
 
 ## UPDATE — MLB Situational Lab BUILT (2026-08-22) ✅
 Grabbed pitch-by-pitch via **pybaseball** (already installed): `fetch_mlb_pbp.py` pulled
-2025 → `data/pbp/MLB_statcast_pbp_2025.parquet` (**761,524 pitches / 195,823 PA**, 34 cols;
-gitignored). `mlb_situational.py` (CLI engine) + `build_mlb_situational_export.py` (site
+**2023-2025** → `data/pbp/MLB_statcast_pbp_{2023,2024,2025}.parquet` (**2.28M pitches /
+591,161 PA**, 34 cols; gitignored). The engine auto-concatenates all season parquets;
+the export aggregates them into one 3-year board (sample floors sized for 3 seasons so
+platoon/RISP splits rest on real volume). `mlb_situational.py` (CLI engine) + `build_mlb_situational_export.py` (site
 JSON) grade hitters & pitchers by situation from real PAs:
 - **Hitters:** overall · vs RHP · vs LHP · RISP · bases empty. Metrics wOBA / K% / BB% /
   Hard-Hit% / HR. Verified: Judge #1 vs LHP (.569 wOBA, 64% hard-hit), #1 overall (.496, 54 HR).

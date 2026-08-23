@@ -18,9 +18,10 @@ OUT  = ROOT / "data" / "scenarios" / "mlb_situational.json"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 GEN_DATE = "2026-08-22"
 
-# min PA per scenario (narrow splits get a lower floor, still honest)
-H_MIN = {"overall":200,"vs_rhp":150,"vs_lhp":60,"risp":50,"bases_empty":120}
-P_MIN = {"overall":150,"vs_rhb":100,"vs_lhb":60,"tto1":100,"tto3":50,"first_inning":40}
+# min PA per scenario, sized for a 3-season (2023-2025) aggregate so the platoon/
+# RISP splits rest on real volume and a small-sample fluke can't top a board.
+H_MIN = {"overall":600,"vs_rhp":450,"vs_lhp":180,"risp":150,"bases_empty":400}
+P_MIN = {"overall":400,"vs_rhb":300,"vs_lhb":180,"tto1":250,"tto3":150,"first_inning":120}
 
 COLS = [{"label":"Player","fmt":"text"},{"label":"PA","fmt":"int"},{"label":"wOBA","fmt":"f3"},
         {"label":"K%","fmt":"pct"},{"label":"BB%","fmt":"pct"},{"label":"Hard-Hit%","fmt":"pct"},{"label":"HR","fmt":"int"}]
@@ -60,12 +61,13 @@ def build_boards(pa, df, role):
 
 def main():
     df = E.load(); pa = E.pa_table(df)
-    season = int(df["season"].dropna().iloc[0]) if "season" in df.columns else 2025
-    out = {"meta":{"season":season, "pitches":int(len(df)), "pa":int(len(pa)), "generated":GEN_DATE},
+    seasons = sorted(int(s) for s in df["season"].dropna().unique()) if "season" in df.columns else [2025]
+    span = f"{seasons[0]}-{seasons[-1]}" if len(seasons) > 1 else str(seasons[0])
+    out = {"meta":{"season":span, "seasons":seasons, "pitches":int(len(df)), "pa":int(len(pa)), "generated":GEN_DATE},
            "hitters":build_boards(pa, df, "hitters"),
            "pitchers":build_boards(pa, df, "pitchers")}
     OUT.write_text(json.dumps(out, separators=(",",":")), encoding="utf-8")
-    print(f"WROTE {OUT}  ({OUT.stat().st_size/1024:.0f} KB)  season={season} PA={len(pa):,}")
+    print(f"WROTE {OUT}  ({OUT.stat().st_size/1024:.0f} KB)  span={span} PA={len(pa):,}")
 
 if __name__ == "__main__":
     main()
