@@ -722,6 +722,7 @@ PRO_ENDPOINTS = {
     'real_vs_luck_tool',
     'mlb_situational_tool',
     'cfb_regression_tool',
+    'pick_analyzer_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -18874,6 +18875,104 @@ def build_ticket_check_context(raw_legs=''):
         'over_count': over_count,
         'sport_count': len(sports),
         'combined_implied': combined_implied,
+    }
+
+
+def build_pick_analyzer_context(raw_legs=''):
+    """Pick Analyzer: a bettor pastes their picks and we read each one against our
+    REAL data. For MLB we run the Statcast signal (barrel/hard-hit/xwOBA/K profile
+    from build_statcast_prop_signal) and surface the honest supports and risks; for
+    every leg we add injury + structural context. This is context to help decide,
+    NOT a prediction or a win-probability claim — no invented numbers."""
+    raw_legs = str(raw_legs or '')
+    legs = _parse_ticket_legs(raw_legs)
+    if not legs:
+        return {'legs': [], 'warnings': [], 'has_input': bool(raw_legs.strip()),
+                'raw_legs': raw_legs, 'leg_count': 0, 'combined_implied': None,
+                'support_count': 0, 'caution_count': 0, 'read_count': 0}
+
+    injured = _get_ttl_cached_value('ticket_injured', 300, _all_injured_lookup)
+    n = len(legs)
+    statdir_counts = {}
+    for leg in legs:
+        if leg['odds'] is None:
+            leg['flags'].append('no price')
+        if leg['_implied'] is not None and leg['_implied'] < 0.25:
+            leg['flags'].append('longshot')
+        if not leg['direction']:
+            leg['flags'].append('no side')
+        key = leg['player'].strip().lower()
+        if key and key in injured:
+            leg['injury'] = injured[key]
+            leg['flags'].append('injury')
+        if leg['stat'].strip():
+            sk = (leg['stat'].strip().lower(), leg['direction'])
+            statdir_counts[sk] = statdir_counts.get(sk, 0) + 1
+
+        # --- the real-data read (MLB Statcast for now) ---
+        leg['data'] = None
+        looks_mlb = leg['sport'] in ('MLB', '')   # try MLB even when sport is unlabeled
+        if looks_mlb and leg['player'].strip() and leg['stat'].strip():
+            try:
+                sig = build_statcast_prop_signal(leg['player'], leg['stat'], leg['direction'] or 'OVER')
+                # a bare "Strikeouts"/"Outs"/"Hits Allowed" is read as a hitter stat, so a
+                # pitcher won't match. If the hitter lookup misses, retry forcing pitcher.
+                if not sig.get('available') and any(k in leg['stat'].upper()
+                        for k in ('STRIKEOUT', 'KS', 'OUTS', 'HITS ALLOWED', 'EARNED RUN', 'WALK')):
+                    sig = build_statcast_prop_signal(leg['player'], 'Pitcher ' + leg['stat'], leg['direction'] or 'OVER')
+            except Exception:
+                sig = {'available': False}
+            if sig.get('available'):
+                delta = float(sig.get('score_delta') or 0.0)
+                lean = 'support' if delta >= 1.5 else ('caution' if delta <= -1.5 else 'neutral')
+                leg['data'] = {
+                    'role': sig.get('role'),
+                    'tags': sig.get('tags') or [],
+                    'note': sig.get('note') or '',
+                    'lean': lean,
+                }
+
+    support_count = sum(1 for leg in legs if leg.get('data') and leg['data']['lean'] == 'support')
+    caution_count = sum(1 for leg in legs if leg.get('data') and leg['data']['lean'] == 'caution')
+    read_count = sum(1 for leg in legs if leg.get('data'))
+
+    warnings = []
+    over_count = sum(1 for leg in legs if leg['direction'] == 'OVER')
+    longshots = sum(1 for leg in legs if leg['_implied'] is not None and leg['_implied'] < 0.25)
+    injured_legs = sum(1 for leg in legs if leg['injury'])
+
+    def warn(kind, tone, msg):
+        warnings.append({'kind': kind, 'tone': tone, 'message': msg})
+
+    if injured_legs:
+        warn('Injury exposure', 'danger', f'{injured_legs} leg(s) are on players listed Out/Doubtful/Questionable — verify availability first.')
+    if caution_count:
+        warn('Data cautions', 'warn', f'Our Statcast read flags {caution_count} leg(s) where the contact/strikeout profile works against the side you picked.')
+    if n >= 3 and over_count == n:
+        warn('All-OVER ticket', 'danger', 'Every leg is an OVER — the worst-performing structure in our graded record. Mix in unders or floors.')
+    if longshots >= 2:
+        warn('Longshot concentration', 'warn', f'{longshots} legs each imply under 25%. A couple of longshots sink most parlays.')
+
+    combined_implied = None
+    priced = [leg['_implied'] for leg in legs if leg['_implied'] is not None]
+    if priced and len(priced) == n:
+        product = 1.0
+        for p in priced:
+            product *= p
+        combined_implied = round(product * 100, 2)
+
+    for leg in legs:
+        leg.pop('_implied', None)
+    return {
+        'legs': legs,
+        'warnings': warnings,
+        'has_input': True,
+        'raw_legs': raw_legs,
+        'leg_count': n,
+        'combined_implied': combined_implied,
+        'support_count': support_count,
+        'caution_count': caution_count,
+        'read_count': read_count,
     }
 
 
@@ -39319,6 +39418,13 @@ def cfb_regression_tool():
     """Quick Tool: CFB Regression Watch — who's due to fall/rise after a lucky or
     unlucky 2025 (record vs yards, turnovers, one-score games) + 2026 experience."""
     return render_template('cfb_regression.html', **build_cfb_regression_context())
+
+
+@app.route('/tools/pick-analyzer')
+def pick_analyzer_tool():
+    """Quick Tool: Pick Analyzer — paste your picks, get an honest per-leg read
+    against our real data (MLB Statcast supports/risks + injury + structure)."""
+    return render_template('pick_analyzer.html', **build_pick_analyzer_context(request.args.get('legs', '')))
 
 
 @app.route('/injuries')

@@ -1,0 +1,131 @@
+{% set active_page = 'pick_analyzer' %}
+{% extends "bk_base.html" %}
+{% block title %}Pick Analyzer - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .pa-wrap{--pa-accent:#2dd4bf;--pa-glow:rgba(45,212,191,.14);}
+  .pa-form textarea{width:100%;min-height:120px;background:var(--bg);border:1px solid var(--border);
+    color:var(--text);border-radius:10px;padding:13px 14px;font:600 13px/1.6 ui-monospace,Consolas,monospace;resize:vertical;}
+  .pa-form textarea:focus{outline:none;border-color:var(--pa-accent);box-shadow:0 0 0 3px var(--pa-glow);}
+  .pa-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;}
+  .pa-btn{background:var(--pa-accent);color:#04140f;border:0;border-radius:9px;padding:11px 20px;
+    font:800 13px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;cursor:pointer;}
+  .pa-hint{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .pa-hint code{background:rgba(255,255,255,.05);padding:1px 6px;border-radius:5px;font-size:11.5px;}
+  .pa-leg{border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:rgba(255,255,255,.015);}
+  .pa-leg-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;justify-content:space-between;}
+  .pa-leg-name{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .pa-leg-sub{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .pa-lean{display:inline-block;font:800 10.5px ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;
+    padding:4px 10px;border-radius:999px;margin-top:10px;}
+  .pa-lean.support{background:rgba(73,210,125,.15);color:#49d27d;border:1px solid rgba(73,210,125,.4);}
+  .pa-lean.caution{background:rgba(255,111,126,.13);color:var(--danger);border:1px solid rgba(255,111,126,.4);}
+  .pa-lean.neutral{background:rgba(255,255,255,.05);color:var(--text-muted);border:1px solid var(--border);}
+  .pa-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
+  .pa-tag{font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.04em;padding:3px 9px;border-radius:6px;
+    background:rgba(45,212,191,.1);color:var(--pa-accent);border:1px solid rgba(45,212,191,.25);}
+  .pa-note{font:500 12.5px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);margin-top:9px;}
+  .pa-nodata{font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:9px;font-style:italic;}
+  .pa-badge{display:inline-block;font:700 10px ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.05em;
+    padding:3px 8px;border-radius:6px;margin-top:9px;margin-right:6px;}
+  .pa-badge.inj{background:rgba(255,111,126,.13);color:var(--danger);border:1px solid rgba(255,111,126,.35);}
+  .pa-badge.flag{background:rgba(240,198,107,.12);color:var(--warning);border:1px solid rgba(240,198,107,.3);}
+  .pa-warn{border-left:3px solid var(--border);padding:9px 13px;margin-bottom:8px;border-radius:0 8px 8px 0;background:rgba(255,255,255,.02);}
+  .pa-warn.danger{border-left-color:var(--danger);} .pa-warn.warn{border-left-color:var(--warning);} .pa-warn.muted{border-left-color:var(--text-muted);}
+  .pa-warn .k{font:800 11px ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--text-bright);}
+  .pa-warn .m{font:500 12.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .pa-disc{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(45,212,191,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:6px;}
+</style>
+
+<div class="pa-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools</div>
+    <h1>Pick <span class="accent">Analyzer</span></h1>
+    <div class="page-subtitle">Paste your picks and we read each one against our real data &mdash; Statcast contact and strikeout profiles, injuries, and ticket structure. It&rsquo;s here to inform your decision, not make it for you.</div>
+  </div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16">
+    <form class="pa-form" method="get" action="/tools/pick-analyzer">
+      <textarea name="legs" placeholder="One pick per line:  Sport | Player | Stat | Over/Under | Odds&#10;MLB | Aaron Judge | Home Runs | Over | +250&#10;MLB | Tarik Skubal | Strikeouts | Over | -115">{{ raw_legs }}</textarea>
+      <div class="pa-row">
+        <button type="submit" class="pa-btn">Analyze my picks</button>
+        <span class="pa-hint">Format: <code>Sport | Player | Stat | Over/Under | Odds</code> &mdash; sport &amp; odds optional. Deepest reads are MLB (Statcast); every leg gets an injury &amp; structure check.</span>
+      </div>
+    </form>
+    {% if not has_input %}
+    <p class="pa-hint" style="margin-top:12px;">Try it: <a href="/tools/pick-analyzer?legs=MLB %7C Aaron Judge %7C Home Runs %7C Over %7C %2B250%0AMLB %7C Yordan Alvarez %7C Total Bases %7C Over %7C -120" style="color:var(--pa-accent);">load an example ticket</a></p>
+    {% endif %}
+  </div>
+</div>
+
+{% if has_input %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Legs</div><div class="stat-value">{{ leg_count }}</div><div class="stat-note">on the ticket</div></div>
+  <div class="stat-card"><div class="page-kicker">Data Reads</div><div class="stat-value">{{ read_count }}</div><div class="stat-note">matched to Statcast</div></div>
+  <div class="stat-card"><div class="page-kicker">Support</div><div class="stat-value" style="color:#49d27d;">{{ support_count }}</div><div class="stat-note">data backs the side</div></div>
+  <div class="stat-card"><div class="page-kicker">Caution</div><div class="stat-value" style="color:var(--danger);">{{ caution_count }}</div><div class="stat-note">data works against</div></div>
+  {% if combined_implied is not none %}
+  <div class="stat-card"><div class="page-kicker">Combined Implied</div><div class="stat-value">{{ combined_implied }}%</div><div class="stat-note">assumes independence</div></div>
+  {% endif %}
+</div>
+
+{% if warnings %}
+<div class="card mb-24"><div class="p-16">
+  <div class="page-kicker" style="margin-bottom:10px;">Ticket Read</div>
+  {% for w in warnings %}
+  <div class="pa-warn {{ w.tone }}"><div class="k">{{ w.kind }}</div><div class="m">{{ w.message }}</div></div>
+  {% endfor %}
+</div></div>
+{% endif %}
+
+<div class="card mb-24"><div class="p-16">
+  <div class="page-kicker" style="margin-bottom:12px;">Leg-by-leg</div>
+  {% for leg in legs %}
+  <div class="pa-leg">
+    <div class="pa-leg-head">
+      <div class="pa-leg-name">{{ leg.player or 'Unnamed leg' }}</div>
+      <div class="pa-leg-sub">
+        {% if leg.stat %}{{ leg.stat }}{% endif %}
+        {% if leg.direction %} &middot; {{ leg.direction }}{% endif %}
+        {% if leg.odds is not none %} &middot; {{ '%+d'|format(leg.odds) }}{% if leg.implied is not none %} ({{ leg.implied }}%){% endif %}{% endif %}
+      </div>
+    </div>
+
+    {% if leg.injury %}
+      <span class="pa-badge inj">Injury &middot; {{ leg.injury[0] }} {{ leg.injury[1] }}</span>
+    {% endif %}
+    {% for f in leg.flags %}{% if f != 'injury' %}<span class="pa-badge flag">{{ f }}</span>{% endif %}{% endfor %}
+
+    {% if leg.data %}
+      <div>
+        <span class="pa-lean {{ leg.data.lean }}">
+          {% if leg.data.lean == 'support' %}Data supports this side
+          {% elif leg.data.lean == 'caution' %}Data cautions on this side
+          {% else %}Statcast: mixed / neutral{% endif %}
+        </span>
+      </div>
+      {% if leg.data.tags %}
+      <div class="pa-tags">{% for t in leg.data.tags %}<span class="pa-tag">{{ t }}</span>{% endfor %}</div>
+      {% endif %}
+      {% if leg.data.note %}<div class="pa-note">{{ leg.data.note }}</div>{% endif %}
+      {% if not leg.data.tags and not leg.data.note %}
+        <div class="pa-nodata">Matched in Statcast, but no strong contact/strikeout signal for this stat &amp; side &mdash; treat as neutral.</div>
+      {% endif %}
+    {% else %}
+      <div class="pa-nodata">No Statcast read for this leg &mdash; MLB player props only for now (or the name didn&rsquo;t match). Injury &amp; structure checks still apply.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div></div>
+
+<div class="pa-disc">
+  <b>How to use this:</b> the reads above come from real Statcast contact and strikeout profiles, live injury feeds, and our graded ticket-structure record &mdash; every signal traces to real data. This is <b>context to help you decide, not a prediction, a pick, or a win-probability guarantee.</b> The combined implied number assumes the legs are independent, which parlays rarely are.
+</div>
+{% endif %}
+</div>
+{% endblock %}
