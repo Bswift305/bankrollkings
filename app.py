@@ -720,6 +720,7 @@ PRO_ENDPOINTS = {
     'injury_report_tool',
     'scenario_lab_tool',
     'real_vs_luck_tool',
+    'mlb_situational_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39249,6 +39250,41 @@ def real_vs_luck_tool():
     """Quick Tool: MLB Real vs Luck — Statcast expected-vs-actual, which hot bats
     are contact-earned vs riding luck (and which slumps are bad luck due to turn)."""
     return render_template('mlb_luck.html', **build_mlb_luck_context())
+
+
+_MLB_SITU_CACHE = {}
+
+def build_mlb_situational_context():
+    """Quick Tool: MLB Situational Lab. Loads the precomputed pitch-by-pitch
+    situational JSON (hitters vs LHP/RHP, RISP, bases empty; pitchers by
+    times-through-order, handedness, first inning) and hands it to the page whole
+    for instant client-side switching. Fixed historical export
+    (data/scenarios/mlb_situational.json) built by
+    research/mlb_statcast/build_mlb_situational_export.py — no pandas/parquet at
+    request time. Cached in-process, keyed by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'mlb_situational.json')
+    data = {'meta': {}, 'hitters': {}, 'pitchers': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _MLB_SITU_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _MLB_SITU_CACHE['data'] = json.load(fh)
+            _MLB_SITU_CACHE['mtime'] = mtime
+        data = _MLB_SITU_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'situ_data': data,
+        'situ_meta': data.get('meta', {}),
+        'situ_available': bool(data.get('hitters', {}).get('boards')),
+    }
+
+
+@app.route('/tools/mlb-situational')
+def mlb_situational_tool():
+    """Quick Tool: MLB Situational Lab — grade hitters and pitchers by situation
+    (vs LHP/RHP, RISP, times-through-order, first inning) from real pitches."""
+    return render_template('mlb_situational.html', **build_mlb_situational_context())
 
 
 @app.route('/injuries')

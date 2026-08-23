@@ -1,0 +1,143 @@
+{% set active_page = 'mlb_situational' %}
+{% extends "bk_base.html" %}
+{% block title %}MLB Situational Lab - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .ms-wrap{--ms-accent:#3fae72;--ms-glow:rgba(63,174,114,.14);}
+  .ms-tabs,.ms-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .ms-tabs{gap:6px;margin-bottom:4px;}
+  .ms-chip{cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    font:600 12.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.02em;padding:8px 13px;border-radius:999px;
+    text-transform:uppercase;transition:.14s;white-space:nowrap;}
+  .ms-chip:hover{color:var(--text);border-color:var(--ms-accent);}
+  .ms-chip.active{background:var(--ms-accent);border-color:var(--ms-accent);color:#04140c;box-shadow:0 0 0 3px var(--ms-glow);}
+  .ms-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .ms-tab:hover{color:var(--text);}
+  .ms-tab.active{color:var(--text);border-bottom-color:var(--ms-accent);}
+  .ms-label{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:6px;}
+  .ms-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.ms-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:540px;}
+  .ms-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .ms-table th:first-child,.ms-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .ms-table th.sorted{color:var(--ms-accent);}
+  .ms-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .ms-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .ms-table tbody tr:hover td{background:rgba(63,174,114,.05);}
+  .ms-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .ms-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .ms-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  @media(max-width:640px){.ms-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="ms-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; MLB</div>
+    <h1>Situational <span class="accent">Lab</span></h1>
+    <div class="page-subtitle">Baseball is the most situational game there is. Grade any hitter or pitcher by the spot that matters &mdash; vs lefties, with runners in scoring position, the third time through the order &mdash; from every real pitch.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/real-vs-luck" class="btn btn-secondary btn-sm">Real vs Luck</a>
+  </div>
+</div>
+
+{% if not situ_available %}
+  <div class="card p-16"><p class="ms-note">Situational data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Plate Appearances</div><div class="stat-value">{{ '{:,}'.format(situ_meta.pa) }}</div><div class="stat-note">{{ situ_meta.season }} season</div></div>
+  <div class="stat-card"><div class="page-kicker">Pitches Graded</div><div class="stat-value">{{ '{:,}'.format(situ_meta.pitches) }}</div><div class="stat-note">real Statcast</div></div>
+  <div class="stat-card"><div class="page-kicker">Splits</div><div class="stat-value">Every spot</div><div class="stat-note">hitters &amp; pitchers</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">from pitches, not vibes</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:14px;">
+    <div class="ms-tabs" id="ms-tabs">
+      <button class="ms-tab active" data-role="hitters">Hitters</button>
+      <button class="ms-tab" data-role="pitchers">Pitchers</button>
+    </div>
+    <div class="ms-chips"><span class="ms-label">Situation</span><span id="ms-scen-chips"></span></div>
+  </div>
+  <div class="p-16">
+    <div class="ms-title" id="ms-title"></div>
+    <div class="ms-scroll" id="ms-body"></div>
+    <div class="ms-note" id="ms-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if situ_available %}
+<script id="ms-data" type="application/json">{{ situ_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('ms-data').textContent);
+  const S = {role:'hitters', scen:null, sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return (typeof v==='number'? v.toLocaleString(): v);
+    if(f==='f3')   return v.toFixed(3).replace(/^0\./,'.');
+    if(f==='pct')  return (v*100).toFixed(1)+'%';
+    return v;
+  }
+
+  function render(){
+    const pack = DATA[S.role];
+    if(!S.scen || !pack.boards[S.scen]) S.scen = pack.scenarios[0].key;
+    const meta = pack.scenarios.find(x=>x.key===S.scen);
+    $('#ms-title').textContent = (S.role==='hitters'?'Hitters':'Pitchers')+' — '+meta.label
+        + (S.role==='pitchers'?'  (wOBA against)':'');
+    const board = pack.boards[S.scen];
+    if(!board || !board.rows.length){ $('#ms-body').innerHTML='<p class="ms-note">Not enough plate appearances in this split &mdash; excluded, not padded.</p>'; $('#ms-foot').innerHTML=''; return; }
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    let h='<table class="ms-table"><thead><tr><th class="ms-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="ms-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{h+='<td>'+fmt(r[i],c.fmt)+'</td>';});
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#ms-body').innerHTML=h;
+    $('#ms-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    const bar = S.role==='hitters'?'wOBA (higher = better)':'wOBA allowed (lower = better)';
+    $('#ms-foot').innerHTML = 'Ranked by '+bar+'. Players below the sample floor for this split are excluded, never shown as leaders. Tap any column header to re-sort.';
+  }
+
+  function chip(html,active,on){const b=document.createElement('button');b.className='ms-chip'+(active?' active':'');b.innerHTML=html;b.onclick=on;return b;}
+  function buildScenChips(){
+    const c=$('#ms-scen-chips'); c.innerHTML='';
+    DATA[S.role].scenarios.forEach(s=>{
+      c.appendChild(chip(s.label, s.key===S.scen, e=>{S.scen=s.key; S.sortCol=null;
+        c.querySelectorAll('.ms-chip').forEach(x=>x.classList.remove('active')); e.currentTarget.classList.add('active'); render();}));
+    });
+  }
+  document.querySelectorAll('#ms-tabs .ms-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#ms-tabs .ms-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.role=t.dataset.role; S.scen=DATA[S.role].scenarios[0].key; S.sortCol=null; buildScenChips(); render();};
+  });
+
+  buildScenChips(); render();
+})();
+</script>
+{% endif %}
+{% endblock %}
