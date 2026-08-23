@@ -24,7 +24,8 @@ KEEP = ["game_date","game_pk","home_team","away_team","inning","inning_topbot",
         "at_bat_number","pitch_number","balls","strikes","outs_when_up",
         "on_1b","on_2b","on_3b","stand","p_throws","pitch_type","pitch_name",
         "events","description","type","zone","batter","pitcher","player_name",
-        "bat_score","fld_score","estimated_woba_using_speedangle","woba_value",
+        "bat_score","fld_score","post_bat_score","post_fld_score",
+        "estimated_woba_using_speedangle","woba_value",
         "woba_denom","babip_value","launch_speed","launch_angle"]
 
 # regular-season windows (spring training + postseason trimmed by these bounds)

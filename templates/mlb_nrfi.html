@@ -1,0 +1,132 @@
+{% set active_page = 'nrfi' %}
+{% extends "bk_base.html" %}
+{% block title %}NRFI / First Inning - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .nr-wrap{--nr-accent:#e8894a;--nr-glow:rgba(232,137,74,.14);}
+  .nr-tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px;}
+  .nr-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .nr-tab:hover{color:var(--text);}
+  .nr-tab.active{color:var(--text);border-bottom-color:var(--nr-accent);}
+  .nr-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(232,137,74,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .nr-explain b{color:var(--text-bright);}
+  .nr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.nr-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:480px;}
+  .nr-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .nr-table th:first-child,.nr-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .nr-table th.sorted{color:var(--nr-accent);}
+  .nr-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .nr-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .nr-table tbody tr:hover td{background:rgba(232,137,74,.05);}
+  .nr-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .nr-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .nr-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  @media(max-width:640px){.nr-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="nr-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; MLB</div>
+    <h1>NRFI <span class="accent">/ First Inning</span></h1>
+    <div class="page-subtitle">No Run First Inning is one of baseball&rsquo;s most-bet markets. Here&rsquo;s who actually controls the first frame &mdash; the starters who keep it scoreless, the offenses that strike first, and the staffs that hold the line.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/mlb-situational" class="btn btn-secondary btn-sm">Situational Lab</a>
+  </div>
+</div>
+
+{% if not nrfi_available %}
+  <div class="card p-16"><p class="nr-note">First-inning data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Games</div><div class="stat-value">{{ '{:,}'.format(nrfi_meta.games) }}</div><div class="stat-note">{{ nrfi_meta.season }}</div></div>
+  <div class="stat-card"><div class="page-kicker">League NRFI Rate</div><div class="stat-value">{{ (nrfi_meta.nrfi_rate * 100)|round(1) }}%</div><div class="stat-note">no run scored in the 1st</div></div>
+  <div class="stat-card"><div class="page-kicker">Views</div><div class="stat-value">3</div><div class="stat-note">pitcher &middot; offense &middot; staff</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">real first innings</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);">
+    <div class="nr-tabs" id="nr-tabs">
+      <button class="nr-tab active" data-board="pitchers">Starting Pitchers</button>
+      <button class="nr-tab" data-board="offense">Team Offense</button>
+      <button class="nr-tab" data-board="defense">Team Pitching</button>
+    </div>
+  </div>
+  <div class="p-16">
+    <div class="nr-explain" id="nr-explain"></div>
+    <div class="nr-title" id="nr-title"></div>
+    <div class="nr-scroll" id="nr-body"></div>
+    <div class="nr-note" id="nr-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if nrfi_available %}
+<script id="nr-data" type="application/json">{{ nrfi_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('nr-data').textContent);
+  const S = {board:'pitchers', sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  const META = {
+    pitchers:{title:'Starting Pitchers — keep the 1st scoreless',
+      note:'<b>NRFI%</b> = share of this starter&rsquo;s first innings that finished scoreless. High is good for an NRFI bet on his starts. <b>Runs/1st</b> is the average he allows in the opening frame.'},
+    offense:{title:'Team Offense — strike first',
+      note:'<b>Score 1st%</b> = share of games this offense put a run on the board in the 1st inning. High means they come out hot &mdash; the enemy of an NRFI bet, the friend of a YRFI (yes-run) bet.'},
+    defense:{title:'Team Pitching — hold the line',
+      note:'<b>Hold 1st%</b> = share of games this staff kept the 1st inning scoreless. A staff-level read that folds in the starter plus how the team scripts the opening frame.'}
+  };
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return (typeof v==='number'? v.toLocaleString(): v);
+    if(f==='pct')  return (v*100).toFixed(1)+'%';
+    if(f==='f2')   return v.toFixed(2);
+    return v;
+  }
+  function render(){
+    const board = DATA.boards[S.board];
+    $('#nr-explain').innerHTML = META[S.board].note;
+    $('#nr-title').textContent = META[S.board].title;
+    if(!board || !board.rows.length){ $('#nr-body').innerHTML='<p class="nr-note">No qualifiers.</p>'; $('#nr-foot').innerHTML=''; return; }
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    let h='<table class="nr-table"><thead><tr><th class="nr-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="nr-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{h+='<td>'+fmt(r[i],c.fmt)+'</td>';});
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#nr-body').innerHTML=h;
+    $('#nr-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#nr-foot').innerHTML='Ranked on the headline rate. Starters under 20 first innings excluded. <b>Context, not a pick</b> &mdash; there are no historical NRFI lines here to prove ROI; this shows who controls the frame, at real rates. Tap any column to re-sort.';
+  }
+  document.querySelectorAll('#nr-tabs .nr-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#nr-tabs .nr-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.board=t.dataset.board; S.sortCol=null; render();};
+  });
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}

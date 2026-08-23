@@ -723,6 +723,7 @@ PRO_ENDPOINTS = {
     'mlb_situational_tool',
     'cfb_regression_tool',
     'pick_analyzer_tool',
+    'nrfi_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39425,6 +39426,38 @@ def pick_analyzer_tool():
     """Quick Tool: Pick Analyzer — paste your picks, get an honest per-leg read
     against our real data (MLB Statcast supports/risks + injury + structure)."""
     return render_template('pick_analyzer.html', **build_pick_analyzer_context(request.args.get('legs', '')))
+
+
+_MLB_NRFI_CACHE = {}
+
+def build_mlb_nrfi_context():
+    """Quick Tool: NRFI / First Inning. Which starters keep the 1st scoreless, which
+    offenses strike first, which staffs hold the 1st clean — from real first-inning
+    outcomes (2023-2025). Honest context, not a claimed edge (no historical NRFI
+    lines to prove ROI). Fixed JSON export; cached in-process by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'mlb_nrfi.json')
+    data = {'meta': {}, 'boards': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _MLB_NRFI_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _MLB_NRFI_CACHE['data'] = json.load(fh)
+            _MLB_NRFI_CACHE['mtime'] = mtime
+        data = _MLB_NRFI_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'nrfi_data': data,
+        'nrfi_meta': data.get('meta', {}),
+        'nrfi_available': bool(data.get('boards')),
+    }
+
+
+@app.route('/tools/nrfi')
+def nrfi_tool():
+    """Quick Tool: NRFI / First Inning — starters, offenses, and staffs graded on
+    first-inning run outcomes (2023-2025)."""
+    return render_template('mlb_nrfi.html', **build_mlb_nrfi_context())
 
 
 @app.route('/injuries')
