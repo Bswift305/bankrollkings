@@ -67,7 +67,7 @@ from services.review_center import (
     load_floor_play_index as load_floor_play_index_service,
 )
 from services.ngs_loader import build_ngs_player_context, build_ngs_prop_signal
-from services.statcast_loader import build_statcast_player_context, build_statcast_prop_signal
+from services.statcast_loader import build_statcast_player_context, build_statcast_prop_signal, load_statcast_dataframe
 from services.season_markets import build_season_market_context
 try:
     from openpyxl import load_workbook
@@ -719,6 +719,7 @@ PRO_ENDPOINTS = {
     'method_hub',
     'injury_report_tool',
     'scenario_lab_tool',
+    'real_vs_luck_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39178,6 +39179,76 @@ def scenario_lab_tool():
     """Quick Tool: NFL Scenario Lab — grade any player or team by situation
     (3rd & 10+, red zone, deep shots, per-drive, pressure, ...) from real snaps."""
     return render_template('scenario_lab.html', **build_scenario_lab_context())
+
+
+def _luck_board(df, role, minpa):
+    """Build the over/under-performing tables from Statcast expected-vs-actual.
+    gap = xwOBA - wOBA. Hitter gap<0 = riding luck (regress down); gap>0 = unlucky
+    (bounce-back). Pitcher wOBA is contact allowed, so the meaning flips (gap>0 =
+    results better than contact = luck, ERA due to rise). Every value is a real
+    Statcast figure; sub-threshold players are excluded, never shown as leaders."""
+    if df is None or df.empty:
+        empty = {'columns': [], 'rows': []}
+        return empty, empty, 0
+    d = df.copy()
+    for c in ('Expected_pa', 'Expected_ba', 'Expected_est_ba', 'Expected_woba',
+              'Expected_est_woba', 'Percentile_hard_hit_percent', 'Barrel_brl_percent'):
+        d[c] = pd.to_numeric(d.get(c), errors='coerce')
+    d['gap'] = d['Expected_est_woba'] - d['Expected_woba']
+    d = d[(d['Expected_pa'] >= minpa) & d['gap'].notna()]
+    unit = 'PA' if role == 'hitter' else 'BF'
+    cols = [{'label': 'Player', 'fmt': 'text'}, {'label': unit, 'fmt': 'int'},
+            {'label': 'BA', 'fmt': 'f3'}, {'label': 'xBA', 'fmt': 'f3'},
+            {'label': 'wOBA', 'fmt': 'f3'}, {'label': 'xwOBA', 'fmt': 'f3'},
+            {'label': 'Gap', 'fmt': 'p3'}, {'label': 'Hard-Hit %ile', 'fmt': 'f0'},
+            {'label': 'Barrel%', 'fmt': 'f1'}]
+    def rows_from(sub):
+        def _n(v, n=3):
+            return None if pd.isna(v) else round(float(v), n)
+        return [[str(r['Player']), int(r['Expected_pa']), _n(r['Expected_ba']), _n(r['Expected_est_ba']),
+                 _n(r['Expected_woba']), _n(r['Expected_est_woba']), _n(r['gap']),
+                 (None if pd.isna(r['Percentile_hard_hit_percent']) else round(float(r['Percentile_hard_hit_percent']))),
+                 (None if pd.isna(r['Barrel_brl_percent']) else round(float(r['Barrel_brl_percent']), 1))]
+                for _, r in sub.iterrows()]
+    # "lucky" = production ahead of contact quality; for a pitcher that's the high-gap side
+    lucky_asc = (role == 'hitter')   # hitter: most negative gap is luckiest
+    lucky = d.sort_values('gap', ascending=lucky_asc).head(25)
+    unlucky = d.sort_values('gap', ascending=not lucky_asc).head(25)
+    return {'columns': cols, 'rows': rows_from(lucky)}, {'columns': cols, 'rows': rows_from(unlucky)}, len(d)
+
+
+def build_mlb_luck_context():
+    """Quick Tool: MLB 'Real vs Luck'. From Statcast expected-vs-actual (xwOBA vs
+    wOBA), separates contact-earned production from luck — the honest answer to
+    'is this bat hot for real?'. Computed at request time from the season Statcast
+    files (already refreshed on prod for the live prop signals), so it stays current."""
+    minpa = 200
+    hitters = load_statcast_dataframe('hitter')
+    pitchers = load_statcast_dataframe('pitcher')
+    h_lucky, h_unlucky, h_n = _luck_board(hitters, 'hitter', minpa)
+    p_lucky, p_unlucky, p_n = _luck_board(pitchers, 'pitcher', minpa)
+    updated = ''
+    try:
+        if hitters is not None and not hitters.empty and 'FetchedAt' in hitters.columns:
+            updated = str(hitters['FetchedAt'].dropna().max())[:10]
+    except Exception:
+        updated = ''
+    data = {
+        'season': 2026, 'updated': updated, 'min_pa': minpa,
+        'hitters_n': int(h_n), 'pitchers_n': int(p_n),
+        'boards': {
+            'hitters_lucky': h_lucky, 'hitters_unlucky': h_unlucky,
+            'pitchers_lucky': p_lucky, 'pitchers_unlucky': p_unlucky,
+        },
+    }
+    return {'luck_data': data, 'luck_available': bool(h_n or p_n)}
+
+
+@app.route('/tools/real-vs-luck')
+def real_vs_luck_tool():
+    """Quick Tool: MLB Real vs Luck — Statcast expected-vs-actual, which hot bats
+    are contact-earned vs riding luck (and which slumps are bad luck due to turn)."""
+    return render_template('mlb_luck.html', **build_mlb_luck_context())
 
 
 @app.route('/injuries')

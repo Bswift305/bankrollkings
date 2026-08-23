@@ -1,0 +1,165 @@
+{% set active_page = 'real_vs_luck' %}
+{% extends "bk_base.html" %}
+{% block title %}MLB Real vs Luck - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .rl-wrap{--rl-accent:#f0645a;--rl-glow:rgba(240,100,90,.14);}
+  .rl-tabs,.rl-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .rl-tabs{gap:6px;margin-bottom:4px;}
+  .rl-chip{cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    font:600 12.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.02em;padding:8px 13px;border-radius:999px;
+    text-transform:uppercase;transition:.14s;white-space:nowrap;}
+  .rl-chip:hover{color:var(--text);border-color:var(--rl-accent);}
+  .rl-chip.active{background:var(--rl-accent);border-color:var(--rl-accent);color:#1a0605;box-shadow:0 0 0 3px var(--rl-glow);}
+  .rl-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .rl-tab:hover{color:var(--text);}
+  .rl-tab.active{color:var(--text);border-bottom-color:var(--rl-accent);}
+  .rl-label{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:6px;}
+  .rl-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(240,100,90,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .rl-explain b{color:var(--text-bright);}
+  .rl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.rl-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:640px;}
+  .rl-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .rl-table th:first-child,.rl-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .rl-table th.sorted{color:var(--rl-accent);}
+  .rl-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .rl-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .rl-table tbody tr:hover td{background:rgba(240,100,90,.05);}
+  .rl-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .rl-hi{color:#49d27d;font-weight:700;}.rl-lo{color:var(--danger);font-weight:700;}
+  .rl-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .rl-board-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  @media(max-width:640px){.rl-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="rl-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; MLB</div>
+    <h1>Real vs <span class="accent">Luck</span></h1>
+    <div class="page-subtitle">Statcast knows the difference between a bat that's earning it and one that's riding luck. We show you which hot streaks are real &mdash; and which slumps are about to break.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/injury-report" class="btn btn-secondary btn-sm">All Quick Tools</a>
+  </div>
+</div>
+
+{% if not luck_available %}
+  <div class="card p-16"><p class="rl-note">Statcast data isn't loaded yet. It refreshes with the daily MLB pipeline &mdash; check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Hitters Graded</div><div class="stat-value">{{ luck_data.hitters_n }}</div><div class="stat-note">{{ luck_data.min_pa }}+ PA, {{ luck_data.season }}</div></div>
+  <div class="stat-card"><div class="page-kicker">Pitchers Graded</div><div class="stat-value">{{ luck_data.pitchers_n }}</div><div class="stat-note">{{ luck_data.min_pa }}+ batters faced</div></div>
+  <div class="stat-card"><div class="page-kicker">Signal</div><div class="stat-value">xwOBA</div><div class="stat-note">vs actual wOBA</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">every value is real Statcast{% if luck_data.updated %} &middot; {{ luck_data.updated }}{% endif %}</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:14px;">
+    <div class="rl-tabs" id="rl-tabs">
+      <button class="rl-tab active" data-role="hitters">Hitters</button>
+      <button class="rl-tab" data-role="pitchers">Pitchers</button>
+    </div>
+    <div class="rl-chips"><span class="rl-label">Show</span><span id="rl-side-chips"></span></div>
+  </div>
+  <div class="p-16">
+    <div class="rl-explain" id="rl-explain"></div>
+    <div class="rl-board-title" id="rl-board-title"></div>
+    <div class="rl-scroll" id="rl-body"></div>
+    <div class="rl-note" id="rl-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if luck_available %}
+<script id="rl-data" type="application/json">{{ luck_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('rl-data').textContent);
+  const S = {role:'hitters', side:'lucky', sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+
+  const SIDES = {
+    hitters: [
+      {key:'lucky',   label:'Riding luck (sell-high)'},
+      {key:'unlucky', label:'Due to break out (buy-low)'}],
+    pitchers: [
+      {key:'lucky',   label:'Riding luck (ERA due to rise)'},
+      {key:'unlucky', label:'Unlucky (due to improve)'}]
+  };
+  const EXPLAIN = {
+    hitters: '<b>Gap = xwOBA &minus; wOBA.</b> A big <b>negative</b> gap means the hitter is producing well beyond his contact quality &mdash; that’s luck, and it regresses down. A big <b>positive</b> gap means he’s hitting the ball hard with nothing to show for it &mdash; a bounce-back candidate. The <b>Hard-Hit %ile</b> confirms the read: green = elite contact, red = weak contact.',
+    pitchers: '<b>Gap = xwOBA &minus; wOBA allowed.</b> A <b>positive</b> gap means hitters are doing less damage than his contact allowed suggests &mdash; luck, and the ERA is due to climb. A <b>negative</b> gap means he’s pitching better than his results &mdash; due to improve. <b>Hard-Hit %ile</b> is contact allowed: green here = he’s limiting hard contact.'
+  };
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return v;
+    if(f==='f3')   return (v).toFixed(3).replace(/^0\./,'.');
+    if(f==='p3')   return (v>=0?'+':'')+v.toFixed(3);
+    if(f==='f0')   return Math.round(v);
+    if(f==='f1')   return v.toFixed(1);
+    return v;
+  }
+
+  function render(){
+    const board = DATA.boards[S.role+'_'+S.side];
+    const sideMeta = SIDES[S.role].find(x=>x.key===S.side);
+    $('#rl-explain').innerHTML = EXPLAIN[S.role];
+    $('#rl-board-title').textContent = (S.role==='hitters'?'Hitters':'Pitchers')+' — '+sideMeta.label;
+    if(!board || !board.rows.length){ $('#rl-body').innerHTML='<p class="rl-note">Not enough qualifying players.</p>'; $('#rl-foot').innerHTML=''; return; }
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    const hhIdx=cols.findIndex(c=>c.label.indexOf('Hard-Hit')>=0);
+    let h='<table class="rl-table"><thead><tr><th class="rl-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="rl-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(i===hhIdx && typeof r[i]==='number'){ cls = r[i]>=70?'rl-hi':(r[i]<=30?'rl-lo':''); }
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#rl-body').innerHTML=h;
+    $('#rl-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#rl-foot').innerHTML='Ranked by the gap between actual and expected production. Players under '+DATA.min_pa+' '+(S.role==='hitters'?'PA':'batters faced')+' are excluded. Tap any column header to re-sort. This is analytics context, not a prediction.';
+  }
+
+  function chip(html,active,on){const b=document.createElement('button');b.className='rl-chip'+(active?' active':'');b.innerHTML=html;b.onclick=on;return b;}
+  function buildSideChips(){
+    const c=$('#rl-side-chips'); c.innerHTML='';
+    SIDES[S.role].forEach(s=>{
+      c.appendChild(chip(s.label, s.key===S.side, e=>{S.side=s.key; S.sortCol=null;
+        c.querySelectorAll('.rl-chip').forEach(x=>x.classList.remove('active')); e.currentTarget.classList.add('active'); render();}));
+    });
+  }
+  document.querySelectorAll('#rl-tabs .rl-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#rl-tabs .rl-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.role=t.dataset.role; S.side='lucky'; S.sortCol=null; buildSideChips(); render();};
+  });
+
+  buildSideChips(); render();
+})();
+</script>
+{% endif %}
+{% endblock %}
