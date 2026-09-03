@@ -729,6 +729,8 @@ PRO_ENDPOINTS = {
     'cfb_situational_tool',
     'cfb_matchup_tool',
     'cfb_totals_tool',
+    'cfb_power_tool',
+    'cfb_talent_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39661,6 +39663,42 @@ def cfb_totals_tool():
     """Quick Tool: CFB Totals & Pace — team tempo (plays/game), scoring, and O/U
     record (2021-2025)."""
     return render_template('cfb_totals.html', **build_cfb_totals_context())
+
+
+def _load_scenario_json(cache, filename, board_key='board'):
+    """Shared loader for a precomputed /data/scenarios JSON, mtime-cached."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', filename)
+    data = {}
+    try:
+        mtime = os.path.getmtime(path)
+        if cache.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                cache['data'] = json.load(fh)
+            cache['mtime'] = mtime
+        data = cache['data']
+    except (OSError, ValueError):
+        pass
+    return data
+
+
+_CFB_POWER_CACHE = {}
+_CFB_TALENT_CACHE = {}
+
+@app.route('/tools/cfb-power')
+def cfb_power_tool():
+    """Quick Tool: CFB Power Rankings — SP+ / FPI, who's actually good (2026)."""
+    data = _load_scenario_json(_CFB_POWER_CACHE, 'cfb_power.json')
+    return render_template('cfb_power.html', pw_data=data, pw_meta=data.get('meta', {}),
+                           pw_available=bool(data.get('board', {}).get('rows')))
+
+
+@app.route('/tools/cfb-talent')
+def cfb_talent_tool():
+    """Quick Tool: CFB Talent vs Performance — recruiting composite vs SP+, the
+    over/underachiever gap (2026)."""
+    data = _load_scenario_json(_CFB_TALENT_CACHE, 'cfb_talent.json')
+    return render_template('cfb_talent.html', tl_data=data, tl_meta=data.get('meta', {}),
+                           tl_available=bool(data.get('board', {}).get('rows')))
 
 
 @app.route('/injuries')

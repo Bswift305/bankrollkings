@@ -1,0 +1,108 @@
+{% set active_page = 'cfb_power' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Power Rankings - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .pw-wrap{--pw-accent:#8b7fe0;--pw-glow:rgba(139,127,224,.15);}
+  .pw-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(139,127,224,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .pw-explain b{color:var(--text-bright);}
+  .pw-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.pw-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:520px;}
+  .pw-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .pw-table th:first-child,.pw-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .pw-table th.sorted{color:var(--pw-accent);}
+  .pw-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .pw-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .pw-table td.conf{text-align:left;color:var(--text-muted);font-family:'Helvetica Neue',Arial,sans-serif;font-weight:500;font-size:12px;}
+  .pw-table tbody tr:hover td{background:rgba(139,127,224,.05);}
+  .pw-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .pw-hot{color:#49d27d;font-weight:700;}.pw-cold{color:var(--danger);font-weight:700;}
+  .pw-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .pw-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0 8px;}
+</style>
+
+<div class="pw-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Power <span class="accent">Rankings</span></h1>
+    <div class="page-subtitle">Who&rsquo;s actually good &mdash; not who&rsquo;s ranked in the polls. SP+ is the industry-standard rating: how many points better or worse than an average team, adjusted for who they played. The higher the number, the better the team.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-talent" class="btn btn-secondary btn-sm">Talent vs Performance</a>
+  </div>
+</div>
+
+{% if not pw_available %}
+  <div class="card p-16"><p class="pw-note">Power ratings are being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Season</div><div class="stat-value">{{ pw_meta.season }}</div><div class="stat-note">{{ pw_meta.teams }} FBS teams</div></div>
+  <div class="stat-card"><div class="page-kicker">Rating</div><div class="stat-value">SP+</div><div class="stat-note">points vs an average team</div></div>
+  <div class="stat-card"><div class="page-kicker">Second Opinion</div><div class="stat-value">FPI</div><div class="stat-note">ESPN&rsquo;s power index</div></div>
+  <div class="stat-card"><div class="page-kicker">Source</div><div class="stat-value" style="font-size:16px;">CFBD</div><div class="stat-note">updates through the season</div></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="pw-explain"><b>New to this?</b> Think of <b>SP+</b> as a team&rsquo;s true strength in points. Ohio State at +32 means they&rsquo;d beat a perfectly average team by ~32 on a neutral field. <b>Offense</b> and <b>Defense</b> split that (for Defense, <b>lower is better</b> &mdash; fewer points allowed). <b>FPI</b> is ESPN&rsquo;s version, shown for a second opinion. Use this to sanity-check a spread: a big gap in SP+ should mean a big spread.</div>
+  <div class="pw-title" id="pw-title">Every FBS team by SP+ ({{ pw_meta.season }})</div>
+  <div class="pw-scroll" id="pw-body"></div>
+  <div class="pw-note" id="pw-foot"></div>
+</div></div>
+{% endif %}
+</div>
+
+{% if pw_available %}
+<script id="pw-data" type="application/json">{{ pw_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('pw-data').textContent);
+  const S = {sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='p1')   return (v>=0?'+':'')+v.toFixed(1);
+    if(f==='f1')   return v.toFixed(1);
+    if(f==='int')  return v;
+    return v;
+  }
+  function render(){
+    const board=DATA.board, cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    const spIdx=cols.findIndex(c=>c.label==='SP+');
+    let h='<table class="pw-table"><thead><tr><th class="pw-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="pw-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls = c.label==='Conf'?'conf':'';
+        if(i===spIdx && typeof r[i]==='number') cls += r[i]>=0?' pw-hot':' pw-cold';
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#pw-body').innerHTML=h;
+    $('#pw-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#pw-foot').innerHTML='Ranked by SP+ (best first). Tap Offense or Defense to sort by that side. SP+ &amp; FPI via CFBD; they update as games are played. This rates team strength &mdash; it is not a pick against a specific spread.';
+  }
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}

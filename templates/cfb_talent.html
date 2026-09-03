@@ -1,0 +1,101 @@
+{% set active_page = 'cfb_talent' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Talent vs Performance - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .tl-wrap{--tl-accent:#6ab04c;--tl-glow:rgba(106,176,76,.15);}
+  .tl-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(106,176,76,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .tl-explain b{color:var(--text-bright);}
+  .tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.tl-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:500px;}
+  .tl-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .tl-table th:first-child,.tl-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .tl-table th.sorted{color:var(--tl-accent);}
+  .tl-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .tl-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .tl-table td.conf{text-align:left;color:var(--text-muted);font-family:'Helvetica Neue',Arial,sans-serif;font-weight:500;font-size:12px;}
+  .tl-table tbody tr:hover td{background:rgba(106,176,76,.05);}
+  .tl-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .tl-hot{color:#49d27d;font-weight:700;}.tl-cold{color:var(--danger);font-weight:700;}
+  .tl-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .tl-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0 8px;}
+</style>
+
+<div class="tl-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Talent vs <span class="accent">Performance</span></h1>
+    <div class="page-subtitle">Recruiting rankings tell you who has the talent; the ratings tell you who&rsquo;s actually good. The gap is the edge &mdash; teams that do more with less (well-coached), and loaded rosters that don&rsquo;t live up to the hype.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-power" class="btn btn-secondary btn-sm">Power Rankings</a>
+  </div>
+</div>
+
+{% if not tl_available %}
+  <div class="card p-16"><p class="tl-note">Talent data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="card mb-24"><div class="p-16">
+  <div class="tl-explain"><b>How to read it:</b> <b>Talent</b> is the recruiting composite (how much blue-chip talent is on the roster). We rank all teams by talent, then by <b>SP+</b> (actual strength). <b>Over/Under</b> is the gap: <span style="color:#49d27d;font-weight:700;">green +</span> means a team is rated far ABOVE its talent (well-coached, punches up &mdash; e.g. service academies); <span style="color:var(--danger);font-weight:700;">red &minus;</span> means a loaded roster that&rsquo;s underachieving. Underachievers are candidates to be over-hyped by the public; overachievers get quietly disrespected.</div>
+  <div class="tl-title" id="tl-title">Every FBS team: talent vs actual strength ({{ tl_meta.season }})</div>
+  <div class="tl-scroll" id="tl-body"></div>
+  <div class="tl-note" id="tl-foot"></div>
+</div></div>
+{% endif %}
+</div>
+
+{% if tl_available %}
+<script id="tl-data" type="application/json">{{ tl_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('tl-data').textContent);
+  const S = {sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='f0')   return Math.round(v);
+    if(f==='int')  return v;
+    if(f==='ps')   return (v>=0?'+':'')+v;
+    return v;
+  }
+  function render(){
+    const board=DATA.board, cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    const gapIdx=cols.findIndex(c=>c.label==='Over/Under');
+    let h='<table class="tl-table"><thead><tr><th class="tl-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="tl-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls = c.label==='Conf'?'conf':'';
+        if(i===gapIdx && typeof r[i]==='number') cls += r[i]>0?' tl-hot':(r[i]<0?' tl-cold':'');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#tl-body').innerHTML=h;
+    $('#tl-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#tl-foot').innerHTML='Sorted biggest overachievers first (rated well above their recruiting talent). Tap Talent or a rank column to re-sort. Talent = 247 composite via CFBD; strength = SP+. Context on who the numbers respect vs the recruiting hype &mdash; not a pick.';
+  }
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
