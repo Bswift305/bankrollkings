@@ -724,6 +724,7 @@ PRO_ENDPOINTS = {
     'cfb_regression_tool',
     'pick_analyzer_tool',
     'nrfi_tool',
+    'cfb_favorites_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39465,6 +39466,38 @@ def nrfi_tool():
     """Quick Tool: NRFI / First Inning — starters, offenses, and staffs graded on
     first-inning run outcomes (2023-2025)."""
     return render_template('mlb_nrfi.html', **build_mlb_nrfi_context())
+
+
+_CFB_FAV_CACHE = {}
+
+def build_cfb_favorites_context():
+    """Quick Tool: CFB Big-Favorite Trends. Which teams and COACHES cover as heavy
+    early-season favorites over 10 years (2016-2025), 30+ and 40+ bands. Coach is the
+    sharper key — the tendency follows the coach, not the school. Fixed JSON export;
+    cached in-process by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_favorites.json')
+    data = {'meta': {}, 'bands': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_FAV_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_FAV_CACHE['data'] = json.load(fh)
+            _CFB_FAV_CACHE['mtime'] = mtime
+        data = _CFB_FAV_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'cfbfav_data': data,
+        'cfbfav_meta': data.get('meta', {}),
+        'cfbfav_available': bool(data.get('bands')),
+    }
+
+
+@app.route('/tools/cfb-favorites')
+def cfb_favorites_tool():
+    """Quick Tool: CFB Big-Favorite Trends — team & coach cover rates as heavy
+    early-season favorites (2016-2025)."""
+    return render_template('cfb_favorites.html', **build_cfb_favorites_context())
 
 
 @app.route('/injuries')

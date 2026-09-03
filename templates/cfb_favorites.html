@@ -1,0 +1,149 @@
+{% set active_page = 'cfb_favorites' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Big-Favorite Trends - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .cf-wrap{--cf-accent:#e0a53c;--cf-glow:rgba(224,165,60,.15);}
+  .cf-tabs,.cf-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .cf-chip{cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    font:600 12.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.02em;padding:8px 13px;border-radius:999px;
+    text-transform:uppercase;transition:.14s;white-space:nowrap;}
+  .cf-chip:hover{color:var(--text);border-color:var(--cf-accent);}
+  .cf-chip.active{background:var(--cf-accent);border-color:var(--cf-accent);color:#1c1204;box-shadow:0 0 0 3px var(--cf-glow);}
+  .cf-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .cf-tab:hover{color:var(--text);}
+  .cf-tab.active{color:var(--text);border-bottom-color:var(--cf-accent);}
+  .cf-label{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:6px;}
+  .cf-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(224,165,60,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .cf-explain b{color:var(--text-bright);}
+  .cf-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.cf-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:520px;}
+  .cf-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .cf-table th:first-child,.cf-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .cf-table th.sorted{color:var(--cf-accent);}
+  .cf-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .cf-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .cf-table tbody tr:hover td{background:rgba(224,165,60,.05);}
+  .cf-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .cf-hot{color:#49d27d;font-weight:700;}.cf-cold{color:var(--danger);font-weight:700;}
+  .cf-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .cf-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  @media(max-width:640px){.cf-tab{margin-right:12px;font-size:13px;}}
+</style>
+
+<div class="cf-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Big-Favorite <span class="accent">Trends</span></h1>
+    <div class="page-subtitle">Everyone knows some teams roll up the score and some coast once it&rsquo;s in hand. Ten years of data (2016&ndash;2025) says who actually covers as a heavy early-season favorite &mdash; and it follows the <b>coach</b>, not the school.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/sports/ncaaf" class="btn btn-secondary btn-sm">CFB Command Center</a>
+  </div>
+</div>
+
+{% if not cfbfav_available %}
+  <div class="card p-16"><p class="cf-note">Trend data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Seasons</div><div class="stat-value">{{ cfbfav_meta.seasons }}</div><div class="stat-note">weeks {{ cfbfav_meta.weeks }}</div></div>
+  <div class="stat-card"><div class="page-kicker">30+ Favorites</div><div class="stat-value">{{ (cfbfav_meta.band30.cover*100)|round|int }}%</div><div class="stat-note">cover ({{ cfbfav_meta.band30.games }} games)</div></div>
+  <div class="stat-card"><div class="page-kicker">40+ Favorites</div><div class="stat-value">{{ (cfbfav_meta.band40.cover*100)|round|int }}%</div><div class="stat-note">cover ({{ cfbfav_meta.band40.games }} games)</div></div>
+  <div class="stat-card"><div class="page-kicker">The Read</div><div class="stat-value" style="color:var(--cf-accent);">Coin flip</div><div class="stat-note">value is the coach spread</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:14px;">
+    <div class="cf-tabs" id="cf-tabs">
+      <button class="cf-tab active" data-view="coaches">By Head Coach</button>
+      <button class="cf-tab" data-view="teams">By Team</button>
+    </div>
+    <div class="cf-chips"><span class="cf-label">Favored by</span>
+      <button class="cf-chip active" data-band="30">30+ points</button>
+      <button class="cf-chip" data-band="40">40+ points</button>
+    </div>
+  </div>
+  <div class="p-16">
+    <div class="cf-explain" id="cf-explain"></div>
+    <div class="cf-title" id="cf-title"></div>
+    <div class="cf-scroll" id="cf-body"></div>
+    <div class="cf-note" id="cf-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if cfbfav_available %}
+<script id="cf-data" type="application/json">{{ cfbfav_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('cf-data').textContent);
+  const S = {view:'coaches', band:'30', sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return v;
+    if(f==='pct')  return Math.round(v*100)+'%';
+    if(f==='p1')   return (v>=0?'+':'')+v.toFixed(1);
+    return v;
+  }
+
+  function render(){
+    const board = DATA.bands[S.band][S.view];
+    const who = S.view==='coaches' ? 'Head coaches' : 'Teams';
+    $('#cf-explain').innerHTML = '<b>Cover%</b> = how often they win by MORE than the number as a '+S.band+'+ point early-season favorite. <b>Avg vs Line</b> = points they beat (green) or miss (red) the spread by on average. Ranked fastest starters at the top, slowest at the bottom. Heavy favorites cover just ~'+Math.round(DATA.meta['band'+S.band].cover*100)+'% overall &mdash; a coin flip &mdash; so the edge is the <b>spread between coaches</b>, and it travels with a coach when he changes jobs.';
+    $('#cf-title').textContent = who+' — as a '+S.band+'+ point favorite (2016-2025, weeks 1-4)';
+    if(!board.rows.length){ $('#cf-body').innerHTML='<p class="cf-note">Not enough qualifying games.</p>'; $('#cf-foot').innerHTML=''; return; }
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    const coverIdx=cols.findIndex(c=>c.label==='Cover%');
+    const avgIdx=cols.findIndex(c=>c.label==='Avg vs Line');
+    let h='<table class="cf-table"><thead><tr><th class="cf-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="cf-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(i===coverIdx && typeof r[i]==='number') cls = r[i]>=0.55?'cf-hot':(r[i]<=0.45?'cf-cold':'');
+        if(i===avgIdx && typeof r[i]==='number') cls = r[i]>0?'cf-hot':(r[i]<0?'cf-cold':'');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#cf-body').innerHTML=h;
+    $('#cf-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#cf-foot').innerHTML='<b>Context, not a lock.</b> Samples are 5&ndash;17 games per name over 10 years &mdash; a real tell, not a guarantee. Line = consensus (median across books); shop for a better number. Tap any column to re-sort.';
+  }
+
+  document.querySelectorAll('#cf-tabs .cf-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#cf-tabs .cf-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.view=t.dataset.view; S.sortCol=null; render();};
+  });
+  document.querySelectorAll('.cf-chips .cf-chip').forEach(b=>{
+    b.onclick=()=>{document.querySelectorAll('.cf-chips .cf-chip').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+      S.band=b.dataset.band; S.sortCol=null; render();};
+  });
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
