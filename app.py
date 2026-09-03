@@ -725,6 +725,7 @@ PRO_ENDPOINTS = {
     'pick_analyzer_tool',
     'nrfi_tool',
     'cfb_favorites_tool',
+    'cfb_ats_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39518,6 +39519,37 @@ def cfb_favorites_tool():
     """Quick Tool: CFB Big-Favorite Trends — team & coach cover rates as heavy
     early-season favorites (2016-2025)."""
     return render_template('cfb_favorites.html', **build_cfb_favorites_context())
+
+
+_CFB_ATS_CACHE = {}
+
+def build_cfb_ats_context():
+    """Quick Tool: CFB Team ATS Trends. Full Phil-Steele-style ATS + O/U for every
+    FBS team (2016-2025) — overall / home / away / as favorite / as underdog, plus
+    over-under, by team and by coach. Fixed JSON export; cached by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats.json')
+    data = {'meta': {}, 'teams': {}, 'coaches': {}, 'profiles': {}, 'teamList': []}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_ATS_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_ATS_CACHE['data'] = json.load(fh)
+            _CFB_ATS_CACHE['mtime'] = mtime
+        data = _CFB_ATS_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'ats_data': data,
+        'ats_meta': data.get('meta', {}),
+        'ats_available': bool(data.get('teams', {}).get('rows')),
+    }
+
+
+@app.route('/tools/cfb-ats')
+def cfb_ats_tool():
+    """Quick Tool: CFB Team ATS Trends — every FBS team's ATS + O/U record and
+    splits (home/away, fav/dog), by team and coach (2016-2025)."""
+    return render_template('cfb_ats.html', **build_cfb_ats_context())
 
 
 @app.route('/injuries')

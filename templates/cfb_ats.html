@@ -1,0 +1,175 @@
+{% set active_page = 'cfb_ats' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Team ATS Trends - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .at-wrap{--at-accent:#37b39a;--at-glow:rgba(55,179,154,.15);}
+  .at-tabs,.at-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .at-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:18px;transition:.14s;}
+  .at-tab:hover{color:var(--text);}
+  .at-tab.active{color:var(--text);border-bottom-color:var(--at-accent);}
+  .at-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(55,179,154,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .at-explain b{color:var(--text-bright);}
+  .at-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.at-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:560px;}
+  .at-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .at-table th:first-child,.at-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .at-table th.sorted{color:var(--at-accent);}
+  .at-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .at-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .at-table tbody tr:hover td{background:rgba(55,179,154,.05);}
+  .at-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .at-hot{color:#49d27d;font-weight:700;}.at-cold{color:var(--danger);font-weight:700;}
+  .at-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .at-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
+  .at-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;
+    padding:9px 12px;font:700 13px ui-monospace,Consolas,monospace;min-width:200px;}
+  .at-profile{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-top:14px;}
+  .at-stat{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .at-stat .k{font:600 13px/1.3 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .at-stat .v{font:700 14px/1 ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .at-stat .v small{color:var(--text-muted);font-weight:600;}
+  @media(max-width:640px){.at-tab{margin-right:12px;font-size:13px;}.at-profile{grid-template-columns:1fr;}}
+</style>
+
+<div class="at-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Team ATS <span class="accent">Trends</span></h1>
+    <div class="page-subtitle">The Phil-Steele table, built from our own graded games: every FBS team&rsquo;s record against the spread over 10 years (2016&ndash;2025) &mdash; overall, home, away, as a favorite, as a dog, plus over/under.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-favorites" class="btn btn-secondary btn-sm">Big-Favorite Trends</a>
+  </div>
+</div>
+
+{% if not ats_available %}
+  <div class="card p-16"><p class="at-note">ATS data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">FBS Teams</div><div class="stat-value">{{ ats_meta.teams }}</div><div class="stat-note">{{ ats_meta.seasons }}</div></div>
+  <div class="stat-card"><div class="page-kicker">Splits</div><div class="stat-value">6</div><div class="stat-note">ATS / home / away / fav / dog / O-U</div></div>
+  <div class="stat-card"><div class="page-kicker">Break-even</div><div class="stat-value">52.4%</div><div class="stat-note">to profit at &minus;110</div></div>
+  <div class="stat-card"><div class="page-kicker">Invented Numbers</div><div class="stat-value" style="color:#49d27d;">Zero</div><div class="stat-note">real graded games</div></div>
+</div>
+
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:14px;">
+    <div class="at-tabs" id="at-tabs">
+      <button class="at-tab active" data-view="teams">League Table</button>
+      <button class="at-tab" data-view="coaches">By Coach</button>
+      <button class="at-tab" data-view="profile">Team Profile</button>
+    </div>
+    <div id="at-team-picker" style="display:none;">
+      <span style="font:700 10.5px ui-monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:8px;">Team</span>
+      <select id="at-team-select" class="at-select"></select>
+    </div>
+  </div>
+  <div class="p-16">
+    <div class="at-explain" id="at-explain"></div>
+    <div class="at-title" id="at-title"></div>
+    <div class="at-scroll" id="at-body"></div>
+    <div class="at-note" id="at-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if ats_available %}
+<script id="at-data" type="application/json">{{ ats_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('at-data').textContent);
+  const S = {view:'teams', team:null, sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return v;
+    if(f==='pct')  return Math.round(v*100)+'%';
+    return v;
+  }
+
+  function renderTable(board, note){
+    const cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    let h='<table class="at-table"><thead><tr><th class="at-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="at-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(c.fmt==='pct' && typeof r[i]==='number') cls = r[i]>=0.55?'at-hot':(r[i]<=0.45?'at-cold':'');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#at-body').innerHTML=h;
+    $('#at-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#at-foot').innerHTML=note;
+  }
+
+  function renderProfile(){
+    const teams=DATA.teamList;
+    if(!S.team || !DATA.profiles[S.team]) S.team = teams.includes('Georgia')?'Georgia':teams[0];
+    $('#at-title').textContent = S.team+' — ATS & O/U profile (2016-2025)';
+    const p=DATA.profiles[S.team];
+    let h='<div class="at-profile">';
+    p.forEach(row=>{
+      const [label, rec, pct, n]=row;
+      const pctTxt = pct===null?'&mdash;':Math.round(pct*100)+'%';
+      const cls = (pct!==null && pct>=0.55)?'at-hot':((pct!==null && pct<=0.45)?'at-cold':'');
+      h+='<div class="at-stat"><span class="k">'+label+'</span><span class="v"><span class="'+cls+'">'+pctTxt+'</span> <small>'+rec+'</small></span></div>';
+    });
+    h+='</div>';
+    $('#at-body').innerHTML=h;
+    $('#at-foot').innerHTML='Every split is real graded games at the consensus line. Small-sample splits (e.g. a team rarely an underdog) swing more &mdash; the record shows the sample.';
+  }
+
+  function render(){
+    $('#at-team-picker').style.display = S.view==='profile'?'':'none';
+    if(S.view==='teams'){
+      $('#at-explain').innerHTML='<b>ATS%</b> = cover rate against the closing number. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over%</b> is the over/under lean. Green beats break-even (52.4%), red is under. Tap any column to sort &mdash; find the teams that live over, cover on the road, or fade at home.';
+      $('#at-title').textContent='Every FBS team, ranked by ATS% (2016-2025)';
+      renderTable(DATA.teams,'Ranked by overall ATS%. Tap any column header (Home%, Fav%, Over%, ...) to re-sort. Consensus line; a bettor shops for a better number.');
+    } else if(S.view==='coaches'){
+      $('#at-explain').innerHTML='Every head coach&rsquo;s ATS + over/under record across all their games and schools in the window &mdash; the tendency travels with the coach.';
+      $('#at-title').textContent='ATS by head coach (2016-2025, min 40 games)';
+      renderTable(DATA.coaches,'Ranked by ATS%. Aggregated across job changes. Tap a column to re-sort.');
+    } else {
+      $('#at-explain').innerHTML='A single team&rsquo;s full ATS profile &mdash; overall, home, away, as a favorite, as an underdog, and over/under &mdash; with the record behind each rate.';
+      renderProfile();
+    }
+  }
+
+  document.querySelectorAll('#at-tabs .at-tab').forEach(t=>{
+    t.onclick=()=>{document.querySelectorAll('#at-tabs .at-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.view=t.dataset.view; S.sortCol=null; render();};
+  });
+  const sel=$('#at-team-select');
+  sel.innerHTML=DATA.teamList.map(t=>'<option'+(t==='Georgia'?' selected':'')+'>'+t+'</option>').join('');
+  sel.onchange=()=>{S.team=sel.value; render();};
+
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
