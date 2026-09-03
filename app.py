@@ -728,6 +728,7 @@ PRO_ENDPOINTS = {
     'cfb_ats_tool',
     'cfb_situational_tool',
     'cfb_matchup_tool',
+    'cfb_totals_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39630,6 +39631,36 @@ def cfb_matchup_tool():
     """Quick Tool: CFB Matchup Edge Card — two teams side by side across ATS
     profile, coach ATS, returning production, and totals lean."""
     return render_template('cfb_matchup.html', **build_cfb_matchup_context())
+
+
+_CFB_TOT_CACHE = {}
+
+def build_cfb_totals_context():
+    """Quick Tool: CFB Totals & Pace. Per FBS team (2021-2025): real pace (plays/
+    game), scoring environment, and over/under record. Fixed JSON export."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_totals.json')
+    data = {'meta': {}, 'board': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_TOT_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_TOT_CACHE['data'] = json.load(fh)
+            _CFB_TOT_CACHE['mtime'] = mtime
+        data = _CFB_TOT_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'to_data': data,
+        'to_meta': data.get('meta', {}),
+        'to_available': bool(data.get('board', {}).get('rows')),
+    }
+
+
+@app.route('/tools/cfb-totals')
+def cfb_totals_tool():
+    """Quick Tool: CFB Totals & Pace — team tempo (plays/game), scoring, and O/U
+    record (2021-2025)."""
+    return render_template('cfb_totals.html', **build_cfb_totals_context())
 
 
 @app.route('/injuries')

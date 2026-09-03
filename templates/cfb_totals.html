@@ -1,0 +1,107 @@
+{% set active_page = 'cfb_totals' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Totals & Pace - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .to-wrap{--to-accent:#4bb3c9;--to-glow:rgba(75,179,201,.15);}
+  .to-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(75,179,201,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .to-explain b{color:var(--text-bright);}
+  .to-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.to-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:560px;}
+  .to-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .to-table th:first-child,.to-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .to-table th.sorted{color:var(--to-accent);}
+  .to-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .to-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .to-table tbody tr:hover td{background:rgba(75,179,201,.05);}
+  .to-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .to-hot{color:#49d27d;font-weight:700;}.to-cold{color:var(--danger);font-weight:700;}
+  .to-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  .to-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0 8px;}
+</style>
+
+<div class="to-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Totals &amp; <span class="accent">Pace</span></h1>
+    <div class="page-subtitle">Totals live and die on tempo. Here&rsquo;s every FBS team&rsquo;s real pace (plays per game), scoring environment, and over/under record over five seasons (2021&ndash;2025) &mdash; the fast, high-scoring teams that push totals, and the grind-it-out unders.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">Team ATS Trends</a>
+  </div>
+</div>
+
+{% if not to_available %}
+  <div class="card p-16"><p class="to-note">Totals data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="control-panel mb-24" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+  <div class="stat-card"><div class="page-kicker">Seasons</div><div class="stat-value">{{ to_meta.seasons }}</div><div class="stat-note">{{ to_meta.teams }} FBS teams</div></div>
+  <div class="stat-card"><div class="page-kicker">Avg Pace</div><div class="stat-value">{{ to_meta.avg_pace }}</div><div class="stat-note">plays / game</div></div>
+  <div class="stat-card"><div class="page-kicker">Avg Total</div><div class="stat-value">{{ to_meta.avg_total }}</div><div class="stat-note">combined points / game</div></div>
+  <div class="stat-card"><div class="page-kicker">League Over Rate</div><div class="stat-value">{{ (to_meta.over_rate*100)|round|int }}%</div><div class="stat-note">a coin flip — priced</div></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="to-explain"><b>Plays/G</b> is real offensive tempo (CFBD). <b>Avg Total</b> is the actual combined points their games land on. <b>Over%</b> is how often those games clear the number. High pace + high scoring = teams whose games chase the over; the grinders sit near the bottom. League over% is ~50% (the market prices totals) &mdash; use this to find the environments, then shop the number.</div>
+  <div class="to-title" id="to-title">Every FBS team by pace &amp; scoring (2021-2025)</div>
+  <div class="to-scroll" id="to-body"></div>
+  <div class="to-note" id="to-foot"></div>
+</div></div>
+{% endif %}
+</div>
+
+{% if to_available %}
+<script id="to-data" type="application/json">{{ to_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('to-data').textContent);
+  const S = {sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return v;
+    if(f==='f1')   return v.toFixed(1);
+    if(f==='pct')  return Math.round(v*100)+'%';
+    return v;
+  }
+  function render(){
+    const board=DATA.board, cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    const overIdx=cols.findIndex(c=>c.label==='Over%');
+    let h='<table class="to-table"><thead><tr><th class="to-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="to-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(i===overIdx && typeof r[i]==='number') cls = r[i]>=0.53?'to-hot':(r[i]<=0.47?'to-cold':'');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#to-body').innerHTML=h;
+    $('#to-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#to-foot').innerHTML='Default sort: fastest pace first. Tap any column (Avg Total, Over%, Opp PPG...) to re-sort. 30+ games per team. Context, not a lock — league over% ~50% means totals are efficiently priced; the value is spotting the environment before the number moves.';
+  }
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
