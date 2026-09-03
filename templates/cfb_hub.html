@@ -1,0 +1,90 @@
+{% set active_page = 'cfb_hub' %}
+{% extends "bk_base.html" %}
+{% block title %}College Football Hub - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .hb-wrap{--hb-accent:#2dd4bf;}
+  .hb-start{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;justify-content:space-between;
+    border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:26px;
+    background:linear-gradient(120deg, rgba(45,212,191,.10), rgba(45,212,191,.02));}
+  .hb-start .t{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin-bottom:3px;}
+  .hb-start .s{font:500 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);max-width:520px;}
+  .hb-btn{background:var(--hb-accent);color:#04140f;border-radius:9px;padding:11px 20px;text-decoration:none;
+    font:800 13px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.02em;text-transform:uppercase;white-space:nowrap;}
+  .hb-cat{margin-bottom:26px;}
+  .hb-h{display:flex;align-items:baseline;gap:10px;margin:0 0 12px;}
+  .hb-h .n{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.05em;}
+  .hb-h .d{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .hb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;}
+  .hb-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--border);border-radius:12px;
+    padding:14px;background:rgba(255,255,255,.015);text-decoration:none;transition:.14s;}
+  .hb-card:hover{border-color:var(--hb-accent);background:rgba(45,212,191,.05);transform:translateY(-1px);}
+  .hb-card img{width:34px;height:34px;flex:0 0 34px;}
+  .hb-card .nm{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin-bottom:3px;}
+  .hb-card .ds{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .hb-live{display:inline-block;font:700 9px ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;
+    color:#49d27d;border:1px solid rgba(73,210,125,.4);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;}
+</style>
+
+<div class="hb-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">College Football</div>
+    <h1>CFB <span class="accent">Hub</span></h1>
+    <div class="page-subtitle">Everything college football in one place &mdash; this week&rsquo;s slate, a decade of trends, power ratings, and a plain-English guide if you&rsquo;re just starting out. Pick a card.</div>
+  </div>
+</div>
+
+<div class="hb-start">
+  <div>
+    <div class="t">New to betting? Start here.</div>
+    <div class="s">No idea what ATS, a spread, or an over/under is? Our 5-minute primer breaks down every bet type, the words you&rsquo;ll see, and how to read each tool &mdash; in plain English.</div>
+  </div>
+  <a href="/tools/cfb-101" class="hb-btn">Read CFB Betting 101 &rsaquo;</a>
+</div>
+
+{% macro card(href, icon, name, desc, live=false) %}
+<a class="hb-card" href="{{ href }}">
+  <img src="/static/logos/nav/tools/{{ icon }}.svg" loading="lazy" alt="">
+  <div><div class="nm">{{ name }}{% if live %}<span class="hb-live">Live</span>{% endif %}</div><div class="ds">{{ desc }}</div></div>
+</a>
+{% endmacro %}
+
+<div class="hb-cat">
+  <div class="hb-h"><span class="n">This Week</span><span class="d">the games happening now</span></div>
+  <div class="hb-grid">
+    {{ card('/sports/ncaaf/game-lines', 'game-context', 'Game Lines', "This week's slate with live spreads, totals & moneylines. Filter by day, week, or weekend.", true) }}
+    {{ card('/tools/cfb-matchup', 'cfb-matchup', 'Matchup Edge Card', 'Pick any two teams — ATS profiles, coach tendencies, experience & totals lean, side by side.') }}
+    {{ card('/sports/ncaaf/props', 'game-context', 'Player Props', 'Anytime TD and yardage props, with our longshot-over guardrail flagging the traps.', true) }}
+  </div>
+</div>
+
+<div class="hb-cat">
+  <div class="hb-h"><span class="n">Trends</span><span class="d">who covers the spread — 10 years of graded games</span></div>
+  <div class="hb-grid">
+    {{ card('/tools/cfb-ats', 'cfb-ats', 'Team ATS Trends', "Every team's record vs the spread — overall, home, away, as a favorite or dog, plus by coach.") }}
+    {{ card('/tools/cfb-situational', 'cfb-situational', 'Situational ATS', 'Who covers off a bye, off a loss, as a road dog, or late in the season.') }}
+    {{ card('/tools/cfb-favorites', 'cfb-favorites', 'Big-Favorite Trends', "Do heavy favorites cover? Mostly a coin flip — and some coaches never do.") }}
+    {{ card('/tools/cfb-totals', 'cfb-totals', 'Totals & Pace', 'Team tempo, scoring environment, and over/under record — who pushes the total.') }}
+    {{ card('/tools/cfb-regression', 'cfb-regression', 'Regression Watch', "Who's due to fall or rise based on last year's luck, plus returning production.") }}
+  </div>
+</div>
+
+<div class="hb-cat">
+  <div class="hb-h"><span class="n">Ratings</span><span class="d">who's actually good</span></div>
+  <div class="hb-grid">
+    {{ card('/tools/cfb-power', 'cfb-power', 'Power Rankings', "SP+ & FPI — who's truly strong, adjusted for schedule. Sanity-check any spread.") }}
+    {{ card('/tools/cfb-talent', 'cfb-talent', 'Talent vs Performance', 'Recruiting hype vs reality — who does more with less, and who underachieves.') }}
+  </div>
+</div>
+
+<div class="hb-cat" style="margin-bottom:8px;">
+  <div class="hb-h"><span class="n">Learn</span><span class="d">make the numbers make sense</span></div>
+  <div class="hb-grid">
+    {{ card('/tools/cfb-101', 'cfb-101', 'CFB Betting 101', 'Bet types, key terms, what each tool does, and 5 honest truths — in plain English.') }}
+  </div>
+</div>
+
+</div>
+{% endblock %}

@@ -732,6 +732,7 @@ PRO_ENDPOINTS = {
     'cfb_power_tool',
     'cfb_talent_tool',
     'cfb_101_tool',
+    'cfb_hub_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39684,6 +39685,13 @@ def _load_scenario_json(cache, filename, board_key='board'):
 
 _CFB_POWER_CACHE = {}
 _CFB_TALENT_CACHE = {}
+
+@app.route('/tools/cfb-hub')
+def cfb_hub_tool():
+    """CFB Hub: a novice-friendly landing that organizes every college-football tool
+    into categories (This Week / Trends / Ratings / Learn) with a Start Here banner."""
+    return render_template('cfb_hub.html')
+
 
 @app.route('/tools/cfb-101')
 def cfb_101_tool():
