@@ -19,6 +19,12 @@
   .bs-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:rgba(224,179,74,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:6px;}
   .bs-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:6px 0 14px;}
+  .bs-toggle{display:flex;gap:8px;align-items:center;margin-bottom:14px;}
+  .bs-lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:4px;}
+  .bs-chip{display:inline-block;padding:7px 15px;border-radius:999px;border:1px solid var(--border);text-decoration:none;
+    font:700 12.5px/1 ui-monospace,Consolas,monospace;color:var(--text-muted);transition:.14s;}
+  .bs-chip:hover{color:var(--text);border-color:var(--bs-accent);}
+  .bs-chip.active{background:var(--bs-accent);border-color:var(--bs-accent);color:#1c1204;}
 </style>
 
 <div class="bs-wrap">
@@ -35,20 +41,29 @@
 
 <div class="card mb-24"><div class="p-16">
 
+  <div class="bs-toggle">
+    <span class="bs-lab">Show</span>
+    <a class="bs-chip {% if bs_date == 'today' %}active{% endif %}" href="/tools/cfb-best-spots?date=today">Today</a>
+    <a class="bs-chip {% if bs_date == 'week' %}active{% endif %}" href="/tools/cfb-best-spots?date=week">This Week</a>
+  </div>
+  {% set scope = "Today&rsquo;s" if bs_date == 'today' else "This Week&rsquo;s" %}
   {% if bs_has_live %}
-  <div class="bs-h"><span class="n">This Week&rsquo;s Spots</span><span class="d">from the live slate, ranked by how strong the angle is</span></div>
+  <div class="bs-h"><span class="n">{{ scope|safe }} Spots</span><span class="d">from the live slate, ranked by how strong the angle is</span></div>
   {% for c in bs_live %}
   <div class="bs-card">
     <div class="top">
       <span class="head">{{ c.headline }}</span>
-      <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}</span>
+      <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}{% if c.time %} {{ c.time }}{% endif %}</span>
     </div>
     {% for b in c.bullets %}<div class="bs-b"><span class="bs-dot">&rsaquo;</span><span>{{ b|safe }}</span></div>{% endfor %}
   </div>
   {% endfor %}
   {% else %}
-  <div class="bs-h"><span class="n">This Week&rsquo;s Spots</span></div>
-  <div class="bs-empty">No live slate is loaded right now (between weeks, or the odds feed hasn&rsquo;t posted this week&rsquo;s games yet). The season-long trends below are always in play &mdash; check back on game week and the matchup cards will appear here automatically.</div>
+  <div class="bs-h"><span class="n">{{ scope|safe }} Spots</span></div>
+  <div class="bs-empty">
+    {% if bs_date == 'today' %}No college football on today&rsquo;s card &mdash; try <a href="/tools/cfb-best-spots?date=week" style="color:var(--bs-accent);">This Week</a> for the full slate.{% else %}No live slate is loaded right now (between weeks, or the odds feed hasn&rsquo;t posted this week&rsquo;s games yet).{% endif %}
+    The season-long trends below are always in play &mdash; on game day the matchup cards appear here automatically.
+  </div>
   {% endif %}
 
   {% if bs_evergreen %}

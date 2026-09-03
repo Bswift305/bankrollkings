@@ -39766,11 +39766,12 @@ def _cfb_analyze_game(g, teams, coach_fav, totals, power):
     return headline, bullets, round(strength, 1)
 
 
-def build_cfb_best_spots_context():
+def build_cfb_best_spots_context(date_filter='week'):
     """This Week's Best Spots — reads the live CFB slate and cross-references our
     trend data (coach big-favorite tendencies, ATS splits, totals lean, SP+ vs the
-    market) into plain-English cards. Falls back to evergreen season-long trends
-    when no live slate is loaded (off-slate / off-season)."""
+    market) into plain-English cards. `date_filter` is 'today' or 'week'. Falls back
+    to evergreen season-long trends when no live slate is loaded."""
+    date_filter = date_filter if date_filter in ('today', 'week') else 'week'
     teams = _load_scenario_json(_CFB_MU_CACHE2, 'cfb_matchup.json').get('teams', {})
     coach_fav = _cfb_coach_bigfav_map()
     totals = {r[0]: r for r in _load_scenario_json(_CFB_TOT_CACHE2, 'cfb_totals.json').get('board', {}).get('rows', [])}
@@ -39778,7 +39779,7 @@ def build_cfb_best_spots_context():
 
     live_cards = []
     try:
-        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week')
+        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
     except Exception:
         games = []
     for g in games:
@@ -39810,14 +39811,16 @@ def build_cfb_best_spots_context():
         'bs_live': live_cards,
         'bs_evergreen': evergreen,
         'bs_has_live': bool(live_cards),
+        'bs_date': date_filter,
     }
 
 
 @app.route('/tools/cfb-best-spots')
 def cfb_best_spots_tool():
     """Quick Tool: This Week's Best Spots — plain-English weekly digest from the
-    live slate + our CFB trend data."""
-    return render_template('cfb_best_spots.html', **build_cfb_best_spots_context())
+    live slate + our CFB trend data. `?date=today|week` scopes the slate."""
+    return render_template('cfb_best_spots.html',
+                           **build_cfb_best_spots_context(request.args.get('date', 'week')))
 
 
 @app.route('/tools/cfb-hub')
