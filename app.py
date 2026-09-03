@@ -731,6 +731,7 @@ PRO_ENDPOINTS = {
     'cfb_totals_tool',
     'cfb_power_tool',
     'cfb_talent_tool',
+    'cfb_101_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39683,6 +39684,13 @@ def _load_scenario_json(cache, filename, board_key='board'):
 
 _CFB_POWER_CACHE = {}
 _CFB_TALENT_CACHE = {}
+
+@app.route('/tools/cfb-101')
+def cfb_101_tool():
+    """Quick Tool: CFB Betting 101 — plain-English primer (bet types, terms, what
+    each tool does, honest truths) for novice bettors. Static content."""
+    return render_template('cfb_101.html')
+
 
 @app.route('/tools/cfb-power')
 def cfb_power_tool():

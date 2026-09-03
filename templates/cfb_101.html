@@ -1,0 +1,98 @@
+{% set active_page = 'cfb_101' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Betting 101 - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .oh-wrap{--oh-accent:#2dd4bf;}
+  .oh-sec{margin-bottom:26px;}
+  .oh-h{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;
+    margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+  .oh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+  .oh-card{border:1px solid var(--border);border-radius:12px;padding:16px;background:rgba(255,255,255,.015);}
+  .oh-card h4{margin:0 0 6px;font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--oh-accent);}
+  .oh-card p{margin:0 0 8px;font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .oh-eg{font:600 12px/1.5 ui-monospace,Consolas,monospace;color:var(--text-muted);background:rgba(45,212,191,.06);
+    border-left:2px solid var(--oh-accent);padding:8px 10px;border-radius:0 6px 6px 0;}
+  .oh-def{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .oh-def dt{flex:0 0 130px;font:700 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .oh-def dd{margin:0;font:500 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .oh-tool{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .oh-tool a{flex:0 0 165px;font:700 13px 'Helvetica Neue',Arial,sans-serif;color:var(--oh-accent);text-decoration:none;}
+  .oh-tool a:hover{text-decoration:underline;}
+  .oh-tool span{font:500 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .oh-truth{display:flex;gap:10px;padding:9px 0;font:500 13.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);border-bottom:1px solid rgba(255,255,255,.05);}
+  .oh-truth b{color:var(--text-bright);} .oh-dot{color:var(--oh-accent);font-weight:800;}
+  @media(max-width:640px){.oh-def dt,.oh-tool a{flex-basis:110px;}}
+</style>
+
+<div class="oh-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB &middot; Start Here</div>
+    <h1>CFB Betting <span class="accent">101</span></h1>
+    <div class="page-subtitle">New to college football betting, or just want the numbers to make sense? Here&rsquo;s the whole thing in plain English &mdash; the three bet types, the words you&rsquo;ll see, what each of our tools does, and the honest truths most people learn the hard way.</div>
+  </div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+
+  <div class="oh-sec">
+    <div class="oh-h">The 3 ways to bet a game</div>
+    <div class="oh-grid">
+      <div class="oh-card">
+        <h4>The Spread (ATS)</h4>
+        <p>The favorite gives points; the underdog gets them. You&rsquo;re betting whether a team wins by <b>more</b> (or loses by <b>less</b>) than that number. &ldquo;ATS&rdquo; = against the spread.</p>
+        <div class="oh-eg">Georgia &minus;14 means Georgia must win by 15+ to &ldquo;cover.&rdquo; Win by 10? They won the game but <b>lost</b> ATS.</div>
+      </div>
+      <div class="oh-card">
+        <h4>The Total (Over/Under)</h4>
+        <p>The book posts a number for the <b>combined</b> points both teams score. You bet whether the real total lands <b>over</b> or <b>under</b> it.</p>
+        <div class="oh-eg">Total 52.5. Final is 31&ndash;24 = 55 &rarr; the <b>over</b> cashes. 20&ndash;17 = 37 &rarr; the <b>under</b>.</div>
+      </div>
+      <div class="oh-card">
+        <h4>The Moneyline</h4>
+        <p>The simplest bet: just pick who <b>wins</b>, any margin. Favorites pay less than you risk (&minus;250); underdogs pay more (+200).</p>
+        <div class="oh-eg">&minus;250 favorite: risk $250 to win $100. +200 dog: risk $100 to win $200.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="oh-sec">
+    <div class="oh-h">Words you&rsquo;ll see</div>
+    <dl style="margin:0;">
+      <div class="oh-def"><dt>Cover</dt><dd>To beat the spread. A favorite covers by winning by more than the number; a dog covers by keeping it closer (or winning outright).</dd></div>
+      <div class="oh-def"><dt>Push</dt><dd>A tie against the number (win by exactly the spread, or total lands on the number). Your stake is refunded.</dd></div>
+      <div class="oh-def"><dt>The number / line</dt><dd>The spread or total the book is offering. It moves as money comes in &mdash; getting a better number is a real edge.</dd></div>
+      <div class="oh-def"><dt>Juice / vig (&minus;110)</dt><dd>The book&rsquo;s cut. Most spreads and totals cost &minus;110: risk $110 to win $100. That&rsquo;s why you need to hit <b>~52.4%</b> just to break even.</dd></div>
+      <div class="oh-def"><dt>Implied probability</dt><dd>What the odds say the chance is. +250 implies ~29%; &minus;250 implies ~71%. Long odds (a +800 anytime-TD) imply a low chance &mdash; and cost the most when they miss.</dd></div>
+      <div class="oh-def"><dt>ATS record</dt><dd>A team&rsquo;s wins&ndash;losses <b>against the spread</b>, not their real record. A 12&ndash;1 team can be a losing ATS bet if it never covered the big numbers.</dd></div>
+      <div class="oh-def"><dt>Pace</dt><dd>How fast a team plays (plays per game). More plays = more scoring chances = totals lean over. Grind-it-out teams lean under.</dd></div>
+    </dl>
+  </div>
+
+  <div class="oh-sec">
+    <div class="oh-h">What each of our CFB tools does</div>
+    <div class="oh-tool"><a href="/tools/cfb-power">Power Rankings</a><span>Who&rsquo;s actually good (SP+), not who&rsquo;s ranked in the polls. Sanity-check a spread against it.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-matchup">Matchup Edge Card</a><span>Pick two teams &mdash; ATS profiles, coach tendencies, experience, and totals lean side by side.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-ats">Team ATS Trends</a><span>Every team&rsquo;s record against the spread &mdash; overall, home, away, as a favorite or dog.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-situational">Situational ATS</a><span>Who covers in specific spots: off a bye, off a loss, as a road dog, late in the season.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-favorites">Big-Favorite Trends</a><span>Do heavy favorites actually cover? (Mostly a coin flip &mdash; and some coaches never do.)</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-totals">Totals &amp; Pace</a><span>Team tempo and scoring environment &mdash; who plays fast and whose games go over.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-talent">Talent vs Performance</a><span>Who&rsquo;s better (or worse) than their recruiting hype &mdash; a check on public perception.</span></div>
+    <div class="oh-tool"><a href="/tools/cfb-regression">Regression Watch</a><span>Who&rsquo;s due to fall or rise based on last year&rsquo;s luck &mdash; a preseason context read.</span></div>
+    <div class="oh-tool"><a href="/sports/ncaaf/game-lines">Game Lines</a><span>This week&rsquo;s actual slate with live spreads and totals &mdash; filter by day, week, or month.</span></div>
+  </div>
+
+  <div class="oh-sec" style="margin-bottom:4px;">
+    <div class="oh-h">5 honest truths (the ones that save money)</div>
+    <div class="oh-truth"><span class="oh-dot">1</span><span><b>The market is smart.</b> Most trends land near 50% because the books already priced them in. Our tools help you find the <b>spots</b> and <b>context</b> &mdash; they are not guaranteed winners.</span></div>
+    <div class="oh-truth"><span class="oh-dot">2</span><span><b>Big favorites are a coin flip ATS.</b> Winning by a lot is hard; a 40-point favorite covers under half the time. Don&rsquo;t assume the good team covers.</span></div>
+    <div class="oh-truth"><span class="oh-dot">3</span><span><b>Longshot overs lose.</b> The +600/+900 anytime-TD tickets feel fun but bleed money over time &mdash; a miss costs the most at long odds. We flag them for you.</span></div>
+    <div class="oh-truth"><span class="oh-dot">4</span><span><b>Shop for the number.</b> Half a point matters. The same bet at &minus;3 vs &minus;3.5 is a different bet &mdash; take the better side.</span></div>
+    <div class="oh-truth"><span class="oh-dot">5</span><span><b>Context isn&rsquo;t a lock.</b> A team going 28&ndash;12 in a spot is a strong tell, not a promise. Bet what you can afford to lose, and treat every number as odds, not a certainty.</span></div>
+  </div>
+
+</div></div>
+</div>
+{% endblock %}
