@@ -1,10 +1,15 @@
 """Smoke QC for the cross-sport Quick Tools (/tools/*).
 
-These seven surfaces were built fast in one session and share loaders/caches, so a
-regression in any one (a renamed context key, a bad groupby, a template typo) would
-otherwise ship silently. This renders each route with an authenticated QC session and
-asserts a 200 plus a distinctive marker, then exercises the filter/input paths that carry
-the real logic (best-lines pagination, risk-radar flag filter, ticket-check parsing).
+These surfaces were built fast and share loaders / caches / precomputed JSON exports, so a
+regression in any one (a renamed context key, a bad groupby, a template typo, a missing
+data export) would otherwise ship silently. This renders each route with an authenticated
+QC session and asserts a 200 plus a distinctive CONTENT marker (not just the hero, so an
+empty-state or broken data-load is caught), then exercises the filter/input paths that
+carry the real logic (best-lines pagination, risk-radar flag filter, ticket-check parsing,
+and the pick-analyzer's Statcast read of a pasted leg).
+
+Covers the newer analytics tools too: NFL Scenario Lab, MLB Real vs Luck, MLB Situational
+Lab, CFB Regression Watch, Pick Analyzer, and NRFI / First Inning.
 """
 from __future__ import annotations
 
@@ -26,6 +31,13 @@ ROUTES = [
     ("/tools/track-record", ["Track", "Break-Even", "Forward-captured"]),
     ("/tools/season-markets", ["Season Markets", "comparison engine is installed", "Our Findings vs Vegas"]),
     ("/tools/injury-report", ["Injury", "inj-table", "Injury Report"]),
+    # Newer analytics tools (data-proving markers, so an empty/broken export fails here).
+    ("/tools/scenario-lab", ["Plays Graded", "Team Profiles"]),
+    ("/tools/real-vs-luck", ["Hitters Graded", "Riding luck"]),
+    ("/tools/mlb-situational", ["Plate Appearances"]),
+    ("/tools/cfb-regression", ["Due to Fall", "FBS Teams"]),
+    ("/tools/pick-analyzer", ["Analyze my picks"]),
+    ("/tools/nrfi", ["League NRFI", "Starting Pitchers"]),
 ]
 
 # Paths that exercise the logic-bearing query/input handling.
@@ -37,6 +49,7 @@ LOGIC_PATHS = [
     "/tools/track-record?sport=MLB&min_sample=50",
     "/tools/season-markets?sport=NFL&type=team&market=Regular%20Season%20Wins",
     "/tools/ticket-check?legs=MLB%20%7C%20Aaron%20Judge%20%7C%20Home%20Runs%20%7C%20Over%20%7C%20%2B150",
+    "/tools/pick-analyzer?legs=MLB%20%7C%20Aaron%20Judge%20%7C%20Home%20Runs%20%7C%20Over%20%7C%20%2B250",
 ]
 
 
@@ -84,6 +97,17 @@ def run_qc() -> dict:
     ttext = tresp.get_data(as_text=True)
     if "All-OVER" not in ttext:
         failures.append("ticket-check: an all-over ticket did not raise the All-OVER warning.")
+
+    # The pick analyzer must actually read a pasted MLB leg against Statcast: a matched
+    # player renders a lean chip (pa-lean). This guards the parse -> statcast signal ->
+    # template pipeline, incl. the pitcher-stat fallback.
+    checks += 1
+    pick_ticket = ("MLB | Aaron Judge | Home Runs | Over | +250\n"
+                   "MLB | Tarik Skubal | Strikeouts | Over | -115")
+    presp = client.get("/tools/pick-analyzer?legs=" + quote(pick_ticket))
+    ptext = presp.get_data(as_text=True)
+    if "pa-lean" not in ptext:
+        failures.append("pick-analyzer: a known MLB slugger + pitcher produced no Statcast data read (pa-lean).")
 
     report = {
         "checked_at": checked_at,

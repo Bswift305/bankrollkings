@@ -32,6 +32,9 @@ SCORECARDS = [
     # at runtime -- football archived all its picks and graded none of them -- so
     # this is the check that turns "silently absent" into a hard failure.
     ("Sport Registry", "qc_sport_registry.py", 240),
+    # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
+    # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
+    ("Quick Tools QC", "qc_quick_tools.py", 300),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
