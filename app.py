@@ -6889,7 +6889,14 @@ def build_football_live_game_method_board(method_key, odds_df, schedule_df, date
             'home_signal_tags': list((signal_context.get('home_signal') or {}).get('tags') or []),
         })
 
-    rows.sort(key=lambda item: (float(item.get('fit_score') or 0), item.get('date') or '', item.get('time') or ''), reverse=True)
+    # Chronological first (soonest date at the top, then earliest kickoff), so today's
+    # slate leads on game day; fit_score orders games WITHIN a day. A prior sort keyed
+    # on fit_score then date-DESCENDING buried today's games under later dates.
+    rows.sort(key=lambda item: (
+        str(item.get('date') or '9999-99-99'),
+        -float(item.get('fit_score') or 0),
+        str(item.get('time') or '99:99'),
+    ))
     return rows
 
 
