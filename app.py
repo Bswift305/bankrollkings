@@ -9389,7 +9389,23 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
             if ngs_signal.get('note'):
                 note = f"{note} NGS: {ngs_signal['note']}".strip()
 
+        # Longshot-OVER guardrail: our 178k-graded-prop study found overs under ~25%
+        # implied bleed money (a miss costs the most at long odds). In football that is
+        # the Anytime TD / long-yardage market that dominates the CFB board. Flag it and
+        # de-prioritize so these long-odds overs don't headline the board.
+        longshot_over = False
+        if direction == 'OVER' and pd.notna(market_price):
+            _imp = american_odds_to_implied_prob(market_price)
+            if _imp is not None and _imp < 0.25:
+                longshot_over = True
+                if 'LONGSHOT OVER' not in tags:
+                    tags.append('LONGSHOT OVER')
+                note = (f"{note} Longshot over (~{round(_imp*100)}% implied): at these odds a miss "
+                        f"costs the most, and our graded record fades overs under 25%.").strip()
+                score -= 8.0
+
         rows.append({
+            'longshot_over': longshot_over,
             'player': player,
             'stat': stat,
             'stat_family': stat_family,
