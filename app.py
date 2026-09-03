@@ -727,6 +727,7 @@ PRO_ENDPOINTS = {
     'cfb_favorites_tool',
     'cfb_ats_tool',
     'cfb_situational_tool',
+    'cfb_matchup_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39582,6 +39583,37 @@ def cfb_situational_tool():
     """Quick Tool: CFB Situational ATS — team ATS records off a bye/loss, as road
     favorite, big favorite, conference, late season (2016-2025)."""
     return render_template('cfb_situational.html', **build_cfb_situational_context())
+
+
+_CFB_MU_CACHE = {}
+
+def build_cfb_matchup_context():
+    """Quick Tool: CFB Matchup Edge Card. Per-team dossier (ATS splits + current
+    coach's career ATS + 2026 returning production); the page compares any two teams
+    side by side. Fixed JSON export; cached by file mtime."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_matchup.json')
+    data = {'meta': {}, 'teams': {}, 'teamList': []}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_MU_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_MU_CACHE['data'] = json.load(fh)
+            _CFB_MU_CACHE['mtime'] = mtime
+        data = _CFB_MU_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'mu_data': data,
+        'mu_meta': data.get('meta', {}),
+        'mu_available': bool(data.get('teams')),
+    }
+
+
+@app.route('/tools/cfb-matchup')
+def cfb_matchup_tool():
+    """Quick Tool: CFB Matchup Edge Card — two teams side by side across ATS
+    profile, coach ATS, returning production, and totals lean."""
+    return render_template('cfb_matchup.html', **build_cfb_matchup_context())
 
 
 @app.route('/injuries')

@@ -1,0 +1,137 @@
+{% set active_page = 'cfb_matchup' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Matchup Edge Card - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .mu-wrap{--mu-accent:#d97b3c;--mu-glow:rgba(217,123,60,.15);}
+  .mu-pick{display:flex;flex-wrap:wrap;gap:12px;align-items:center;}
+  .mu-pick .at{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mu-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;
+    padding:10px 12px;font:700 14px ui-monospace,Consolas,monospace;min-width:190px;}
+  .mu-head{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-bottom:6px;}
+  .mu-team{font:800 18px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mu-team small{display:block;font:600 11px ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .mu-vs{font:800 12px ui-monospace,Consolas,monospace;color:var(--mu-accent);text-align:center;}
+  .mu-r{text-align:right;}
+  table.mu-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;}
+  .mu-table td{padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);font:700 14px ui-monospace,Consolas,monospace;}
+  .mu-table td.lbl{text-align:center;font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);width:34%;}
+  .mu-table td.a{text-align:left;} .mu-table td.h{text-align:right;}
+  .mu-table td small{color:var(--text-muted);font-weight:600;font-size:11px;}
+  .mu-win{color:#49d27d;}
+  .mu-read{margin-top:16px;}
+  .mu-read .k{font:700 10.5px ui-monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;}
+  .mu-bullet{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);
+    font:500 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .mu-bullet b{color:var(--text-bright);}
+  .mu-dot{color:var(--mu-accent);font-weight:800;}
+  .mu-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;}
+</style>
+
+<div class="mu-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Matchup <span class="accent">Edge Card</span></h1>
+    <div class="page-subtitle">Pick any two teams and get the whole trend suite in one card &mdash; each side&rsquo;s ATS profile, its coach&rsquo;s career against the spread, returning production, and the totals lean, side by side.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">Team ATS Trends</a>
+  </div>
+</div>
+
+{% if not mu_available %}
+  <div class="card p-16"><p class="mu-note">Matchup data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);">
+    <div class="mu-pick">
+      <select id="mu-away" class="mu-select"></select>
+      <span class="at">@</span>
+      <select id="mu-home" class="mu-select"></select>
+    </div>
+  </div>
+  <div class="p-16">
+    <div class="mu-head">
+      <div class="mu-team" id="mu-away-name"></div>
+      <div class="mu-vs">at</div>
+      <div class="mu-team mu-r" id="mu-home-name"></div>
+    </div>
+    <table class="mu-table"><tbody id="mu-body"></tbody></table>
+    <div class="mu-read"><div class="k">The Read</div><div id="mu-read"></div></div>
+    <div class="mu-note">Every figure is real graded games (2016-2025) at the consensus line. Returning production is 2026 (CFBD). This is context to frame the matchup, not a pick or a guaranteed edge.</div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if mu_available %}
+<script id="mu-data" type="application/json">{{ mu_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('mu-data').textContent);
+  const list = DATA.teamList;
+  const S = {away: list.includes('Texas')?'Texas':list[0], home: list.includes('Georgia')?'Georgia':list[1]};
+  const $ = s => document.querySelector(s);
+  const P = v => (v===null||v===undefined)?'—':Math.round(v*100)+'%';
+
+  function row(label, aVal, hVal, aRec, hRec, higherWins){
+    const aP = (typeof aVal==='number'); const hP=(typeof hVal==='number');
+    let aCls='', hCls='';
+    if(higherWins && aP && hP){ if(aVal>hVal) aCls='mu-win'; else if(hVal>aVal) hCls='mu-win'; }
+    const av = aP?P(aVal):(aVal||'—'); const hv = hP?P(hVal):(hVal||'—');
+    const ar = aRec?(' <small>'+aRec+'</small>'):''; const hr = hRec?('<small>'+hRec+'</small> '):'';
+    return '<tr><td class="a '+aCls+'">'+av+ar+'</td><td class="lbl">'+label+'</td><td class="h '+hCls+'">'+hr+hv+'</td></tr>';
+  }
+
+  function render(){
+    const A=DATA.teams[S.away], H=DATA.teams[S.home];
+    if(!A||!H){ $('#mu-body').innerHTML=''; return; }
+    $('#mu-away-name').innerHTML = S.away+'<small>'+(A.conf||'')+' &middot; '+A.coach+'</small>';
+    $('#mu-home-name').innerHTML = S.home+'<small>'+(H.conf||'')+' &middot; '+H.coach+'</small>';
+    let h='';
+    h+=row('Coach career ATS', A.coach_ats, H.coach_ats, A.coach_rec, H.coach_rec, true);
+    h+=row('Returning prod (2026)', A.ret, H.ret, null, null, true);
+    h+=row('Overall ATS', A.ats.overall.pct, H.ats.overall.pct, A.ats.overall.rec, H.ats.overall.rec, true);
+    h+=row('This spot (road / home)', A.ats.away.pct, H.ats.home.pct, A.ats.away.rec, H.ats.home.rec, true);
+    h+=row('As favorite ATS', A.ats.fav.pct, H.ats.fav.pct, A.ats.fav.rec, H.ats.fav.rec, true);
+    h+=row('As underdog ATS', A.ats.dog.pct, H.ats.dog.pct, A.ats.dog.rec, H.ats.dog.rec, true);
+    h+=row('Over rate (O/U)', A.ats.over.pct, H.ats.over.pct, A.ats.over.rec, H.ats.over.rec, false);
+    $('#mu-body').innerHTML=h;
+
+    // synthesized read
+    const B=[];
+    const roadP=A.ats.away.pct, homeP=H.ats.home.pct;
+    if(roadP!==null && homeP!==null){
+      if(homeP>roadP+0.03) B.push('<b>'+S.home+'</b> covers <b>'+P(homeP)+'</b> at home ('+H.ats.home.rec+'); <b>'+S.away+'</b> is '+P(roadP)+' ATS on the road — situational edge to the home side.');
+      else if(roadP>homeP+0.03) B.push('<b>'+S.away+'</b> travels well ('+P(roadP)+' ATS away, '+A.ats.away.rec+') while <b>'+S.home+'</b> is only '+P(homeP)+' at home — road value.');
+      else B.push('Situational ATS is close: '+S.away+' '+P(roadP)+' away vs '+S.home+' '+P(homeP)+' home.');
+    }
+    if(A.coach_ats!==null && H.coach_ats!==null){
+      const diff=Math.abs(A.coach_ats-H.coach_ats);
+      const better = A.coach_ats>H.coach_ats?S.away:S.home, w=Math.max(A.coach_ats,H.coach_ats), l=Math.min(A.coach_ats,H.coach_ats);
+      B.push('Coaches vs the number: <b>'+A.coach+'</b> '+P(A.coach_ats)+' career ATS vs <b>'+H.coach+'</b> '+P(H.coach_ats)+(diff>=0.04?' — clear edge to <b>'+better+'</b>.':' — a wash.'));
+    }
+    if(A.ret!==null && H.ret!==null){
+      const d=A.ret-H.ret; const more=d>0?S.away:S.home;
+      B.push('Experience: <b>'+S.away+'</b> returns '+P(A.ret)+' of production vs <b>'+S.home+'</b> '+P(H.ret)+(Math.abs(d)>=0.12?' — <b>'+more+'</b> is the more veteran team.':' — similar experience.'));
+    }
+    const ao=A.ats.over.pct, ho=H.ats.over.pct;
+    if(ao!==null && ho!==null){
+      const avg=(ao+ho)/2;
+      B.push('Totals lean: '+S.away+' '+P(ao)+' over, '+S.home+' '+P(ho)+' over'+(avg>=0.53?' — both trend OVER.':(avg<=0.47?' — both trend UNDER.':' — no strong total lean.')));
+    }
+    $('#mu-read').innerHTML = B.map(b=>'<div class="mu-bullet"><span class="mu-dot">&rsaquo;</span><span>'+b+'</span></div>').join('');
+  }
+
+  const aw=$('#mu-away'), hm=$('#mu-home');
+  const opts=t=>list.map(x=>'<option'+(x===t?' selected':'')+'>'+x+'</option>').join('');
+  aw.innerHTML=opts(S.away); hm.innerHTML=opts(S.home);
+  aw.onchange=()=>{S.away=aw.value; render();};
+  hm.onchange=()=>{S.home=hm.value; render();};
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
