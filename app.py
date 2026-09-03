@@ -733,6 +733,7 @@ PRO_ENDPOINTS = {
     'cfb_talent_tool',
     'cfb_101_tool',
     'cfb_hub_tool',
+    'cfb_best_spots_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39685,6 +39686,139 @@ def _load_scenario_json(cache, filename, board_key='board'):
 
 _CFB_POWER_CACHE = {}
 _CFB_TALENT_CACHE = {}
+
+_CFB_MU_CACHE2 = {}
+_CFB_FAV_CACHE2 = {}
+_CFB_TOT_CACHE2 = {}
+_CFB_POW_CACHE2 = {}
+
+
+def _cfb_coach_bigfav_map():
+    """coach name -> {'30': cover%, '40': cover%} from the Big-Favorite export."""
+    fav = _load_scenario_json(_CFB_FAV_CACHE2, 'cfb_favorites.json')
+    out = {}
+    for band in ('30', '40'):
+        for r in (fav.get('bands', {}).get(band, {}).get('coaches', {}).get('rows', []) or []):
+            # row: [coach, games, cover%, record, avg_vs_line]
+            out.setdefault(r[0], {})[band] = {'pct': r[2], 'rec': r[3]}
+    return out
+
+
+def _cfb_analyze_game(g, teams, coach_fav, totals, power):
+    """Return (headline, bullets, strength) — plain-English angles for one game."""
+    away, home = g.get('away'), g.get('home')
+    A, H = teams.get(away), teams.get(home)
+    spread = pd.to_numeric(g.get('spread'), errors='coerce')
+    total = pd.to_numeric(g.get('total'), errors='coerce')
+    bullets, strength, headline = [], 0.0, ''
+    if pd.isna(spread):
+        return headline, bullets, strength
+    home_fav = spread < 0
+    fav = home if home_fav else away
+    dog = away if home_fav else home
+    line = abs(float(spread))
+    F = H if home_fav else A
+    if not F:                      # the FAVORITE must be an FBS team we track
+        return headline, bullets, strength
+
+    # 1) Big-favorite coach fade — the signature angle
+    if line >= 20:
+        band = '40' if line >= 40 else '30'
+        cov = coach_fav.get(F.get('coach', ''), {}).get(band)
+        if cov and cov['pct'] is not None and cov['pct'] <= 0.45:
+            headline = f"Fade the number on {fav}"
+            bullets.append(f"{fav}'s coach {F.get('coach')} covers just {round(cov['pct']*100)}% as a {band}+ favorite ({cov['rec']}) — {line:.0f} is a lot to lay. Consider {dog} +{line:.0f} or the under.")
+            strength += (0.5 - cov['pct']) * 100 + 8
+
+    # 2) Situational ATS (home team at home / away team on the road)
+    h_home = (H['ats']['home']['pct'] if (H and H.get('ats')) else None)
+    a_away = (A['ats']['away']['pct'] if (A and A.get('ats')) else None)
+    if h_home is not None and h_home <= 0.43:
+        bullets.append(f"{home} covers only {round(h_home*100)}% at home ({H['ats']['home']['rec']}).")
+        strength += (0.5 - h_home) * 40
+    if a_away is not None and a_away >= 0.57:
+        bullets.append(f"{away} is a strong {round(a_away*100)}% ATS on the road ({A['ats']['away']['rec']}).")
+        strength += (a_away - 0.5) * 40
+
+    # 3) Totals lean (both teams' over rate)
+    ho = totals.get(home); ao = totals.get(away)
+    if ho and ao and ho[4] is not None and ao[4] is not None:
+        avg = (ho[4] + ao[4]) / 2
+        if avg >= 0.55:
+            bullets.append(f"Both play toward the over — {home} {round(ho[4]*100)}%, {away} {round(ao[4]*100)}% over" + (f", total {total:.0f}" if pd.notna(total) else "") + ".")
+            strength += (avg - 0.5) * 30
+        elif avg <= 0.45:
+            bullets.append(f"Both trend under — {home} {round(ho[4]*100)}%, {away} {round(ao[4]*100)}% over.")
+            strength += (0.5 - avg) * 30
+
+    # 4) Power rating vs the market spread
+    ph = power.get(home); pa = power.get(away)
+    if ph and pa and ph[2] is not None and pa[2] is not None:
+        model_home_spread = -((ph[2] - pa[2]) + (0 if g.get('neutral') else 2.4))
+        diff = model_home_spread - float(spread)   # market home spread
+        if abs(diff) >= 6.5:
+            side = home if diff < 0 else away
+            bullets.append(f"SP+ makes it about {abs(model_home_spread):.0f} — ~{abs(diff):.0f} points off the market, leaning {side}.")
+            strength += min(abs(diff), 14)
+
+    if not headline and bullets:
+        headline = f"{away} @ {home}: a spot to watch"
+    return headline, bullets, round(strength, 1)
+
+
+def build_cfb_best_spots_context():
+    """This Week's Best Spots — reads the live CFB slate and cross-references our
+    trend data (coach big-favorite tendencies, ATS splits, totals lean, SP+ vs the
+    market) into plain-English cards. Falls back to evergreen season-long trends
+    when no live slate is loaded (off-slate / off-season)."""
+    teams = _load_scenario_json(_CFB_MU_CACHE2, 'cfb_matchup.json').get('teams', {})
+    coach_fav = _cfb_coach_bigfav_map()
+    totals = {r[0]: r for r in _load_scenario_json(_CFB_TOT_CACHE2, 'cfb_totals.json').get('board', {}).get('rows', [])}
+    power = {r[0]: r for r in _load_scenario_json(_CFB_POW_CACHE2, 'cfb_power.json').get('board', {}).get('rows', [])}
+
+    live_cards = []
+    try:
+        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week')
+    except Exception:
+        games = []
+    for g in games:
+        headline, bullets, strength = _cfb_analyze_game(g, teams, coach_fav, totals, power)
+        if bullets:
+            live_cards.append({
+                'matchup': f"{g.get('away')} @ {g.get('home')}",
+                'date': g.get('date', ''), 'time': g.get('time', ''),
+                'spread': _format_signed_line(g.get('spread')), 'total': g.get('total'),
+                'headline': headline, 'bullets': bullets, 'strength': strength,
+            })
+    live_cards.sort(key=lambda c: -c['strength'])
+    live_cards = live_cards[:10]
+
+    # Evergreen "trends to know" — always available, from the static exports
+    evergreen = []
+    fav = _load_scenario_json(_CFB_FAV_CACHE2, 'cfb_favorites.json')
+    for r in (fav.get('bands', {}).get('40', {}).get('coaches', {}).get('rows', []) or []):
+        if r[2] is not None and r[2] <= 0.30 and (r[1] or 0) >= 5:
+            evergreen.append(f"{r[0]} covers just {round(r[2]*100)}% as a 40+ favorite ({r[3]}) — fade the big number on his teams.")
+    situ = _load_scenario_json({}, 'cfb_situational.json')
+    for s in (situ.get('situations', []) or []):
+        top = (s.get('board', {}).get('rows') or [])[:1]
+        if top and top[0][2] is not None and top[0][2] >= 0.62:
+            evergreen.append(f"{top[0][0]} is {top[0][3]} ATS {s['label'].lower()} ({round(top[0][2]*100)}%).")
+    evergreen = evergreen[:8]
+
+    return {
+        'bs_live': live_cards,
+        'bs_evergreen': evergreen,
+        'bs_has_live': bool(live_cards),
+    }
+
+
+@app.route('/tools/cfb-best-spots')
+def cfb_best_spots_tool():
+    """Quick Tool: This Week's Best Spots — plain-English weekly digest from the
+    live slate + our CFB trend data."""
+    return render_template('cfb_best_spots.html', **build_cfb_best_spots_context())
+
 
 @app.route('/tools/cfb-hub')
 def cfb_hub_tool():

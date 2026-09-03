@@ -1,0 +1,65 @@
+{% set active_page = 'cfb_best_spots' %}
+{% extends "bk_base.html" %}
+{% block title %}This Week's Best Spots - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .bs-wrap{--bs-accent:#e0b34a;}
+  .bs-h{display:flex;align-items:baseline;gap:10px;margin:2px 0 12px;}
+  .bs-h .n{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.05em;}
+  .bs-h .d{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .bs-card{border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;background:rgba(255,255,255,.015);}
+  .bs-card .top{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
+  .bs-card .head{font:800 16px 'Helvetica Neue',Arial,sans-serif;color:var(--bs-accent);}
+  .bs-card .mt{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .bs-b{display:flex;gap:9px;padding:7px 0;font:500 13px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .bs-b b{color:var(--text-bright);} .bs-dot{color:var(--bs-accent);font-weight:800;flex:0 0 auto;}
+  .bs-ever{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);
+    font:500 13px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .bs-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(224,179,74,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:6px;}
+  .bs-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:6px 0 14px;}
+</style>
+
+<div class="bs-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">College Football &middot; This Week</div>
+    <h1>Best <span class="accent">Spots</span></h1>
+    <div class="page-subtitle">The plain-English weekly read. We take this week&rsquo;s actual slate and run it against a decade of our trends &mdash; the coaches who don&rsquo;t cover big, the teams that fade at home, the games that chase the over &mdash; and hand you the spots worth a look.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">CFB Hub</a>
+  </div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+
+  {% if bs_has_live %}
+  <div class="bs-h"><span class="n">This Week&rsquo;s Spots</span><span class="d">from the live slate, ranked by how strong the angle is</span></div>
+  {% for c in bs_live %}
+  <div class="bs-card">
+    <div class="top">
+      <span class="head">{{ c.headline }}</span>
+      <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}</span>
+    </div>
+    {% for b in c.bullets %}<div class="bs-b"><span class="bs-dot">&rsaquo;</span><span>{{ b|safe }}</span></div>{% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="bs-h"><span class="n">This Week&rsquo;s Spots</span></div>
+  <div class="bs-empty">No live slate is loaded right now (between weeks, or the odds feed hasn&rsquo;t posted this week&rsquo;s games yet). The season-long trends below are always in play &mdash; check back on game week and the matchup cards will appear here automatically.</div>
+  {% endif %}
+
+  {% if bs_evergreen %}
+  <div class="bs-h" style="margin-top:22px;"><span class="n">Trends to Know</span><span class="d">standing angles from 10 years of graded games</span></div>
+  {% for e in bs_evergreen %}
+  <div class="bs-ever"><span class="bs-dot">&rsaquo;</span><span>{{ e }}</span></div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="bs-note"><b>How to use this:</b> these are <b>spots</b>, not locks. Each one is a real, decade-deep tendency the market may be slow to price &mdash; a reason to look closer, shop the number, and decide. The line is the consensus; a better number is a real edge. Bet what you can afford to lose.</div>
+
+</div></div>
+</div>
+{% endblock %}
