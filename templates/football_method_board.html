@@ -654,6 +654,30 @@
 </div>
 {% endif %}
 
+{% if active_method in ['game_lines','totals'] and method_view.source in ['live','empty_live'] %}
+<style>
+  .fmb-filter{display:flex;flex-wrap:wrap;gap:18px 24px;align-items:center;}
+  .fmb-grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .fmb-lab{font:700 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .fmb-chip{display:inline-block;padding:6px 12px;border-radius:999px;border:1px solid var(--border);
+    font:600 12px/1 ui-monospace,Consolas,monospace;color:var(--text-muted);text-decoration:none;white-space:nowrap;transition:.14s;}
+  .fmb-chip:hover{color:var(--text);border-color:var(--accent);}
+  .fmb-chip.active{background:var(--accent);border-color:var(--accent);color:#04121f;}
+</style>
+<div class="card mb-16"><div class="p-16 fmb-filter">
+  <div class="fmb-grp"><span class="fmb-lab">When</span>
+    {% for k,l in [('all','All'),('today','Today'),('week','This Week'),('weekend','Weekend'),('month','This Month')] %}
+    <a class="fmb-chip{% if date_filter==k %} active{% endif %}" href="{{ request.path }}?date={{ k }}{% if day_filter %}&day={{ day_filter }}{% endif %}">{{ l }}</a>
+    {% endfor %}
+  </div>
+  <div class="fmb-grp"><span class="fmb-lab">Day</span>
+    {% for k,l in [('','Any'),('thu','Thu'),('fri','Fri'),('sat','Sat'),('sun','Sun')] %}
+    <a class="fmb-chip{% if (day_filter or '')==k %} active{% endif %}" href="{{ request.path }}?date={{ date_filter }}{% if k %}&day={{ k }}{% endif %}">{{ l }}</a>
+    {% endfor %}
+  </div>
+</div></div>
+{% endif %}
+
 {% if method_view.live_games %}
     <div class="card mb-24">
         <div class="card-header">

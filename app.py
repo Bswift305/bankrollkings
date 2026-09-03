@@ -6341,11 +6341,15 @@ def get_football_stat_family(stat):
     return 'Props'
 
 
-def build_football_live_games(odds_df, schedule_df, date_filter='all'):
+def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filter=''):
     lookup = build_live_game_lookup(odds_df, schedule_df)
     rows = []
     today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
+    # optional day-of-week filter (e.g. all Thursday games)
+    _wd = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6}
+    want_wd = _wd.get(str(day_filter or '').strip().lower()[:3])
+    date_filter = str(date_filter or 'all').strip().lower()
     for key, market in lookup.items():
         slug = market.get('slug')
         if key == slug:
@@ -6353,10 +6357,23 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all'):
         game_date = str(market.get('date') or '').strip()
         parsed_date = pd.to_datetime(game_date, errors='coerce')
         game_day = parsed_date.normalize() if pd.notna(parsed_date) else None
-        if date_filter == 'today' and game_day is not None and game_day != today:
+        # weekday filter: an undated game can't match a specific day
+        if want_wd is not None and (game_day is None or game_day.weekday() != want_wd):
             continue
-        if date_filter == 'tomorrow' and game_day is not None and game_day != tomorrow:
-            continue
+        # date-window filter (undated games only survive the unfiltered 'all' view)
+        if date_filter not in ('all', ''):
+            if game_day is None:
+                continue
+            if date_filter == 'today' and game_day != today:
+                continue
+            if date_filter == 'tomorrow' and game_day != tomorrow:
+                continue
+            if date_filter == 'week' and not (today <= game_day <= today + pd.Timedelta(days=6)):
+                continue
+            if date_filter == 'weekend' and not (game_day.weekday() in (3, 4, 5, 6) and today <= game_day <= today + pd.Timedelta(days=7)):
+                continue
+            if date_filter == 'month' and not (game_day.year == today.year and game_day.month == today.month):
+                continue
         away = str(market.get('away') or '').strip()
         home = str(market.get('home') or '').strip()
         if not away or not home:
@@ -6814,11 +6831,11 @@ def build_ncaaf_matchup_signal_context(away, home, method_key='game_lines', sign
     )
 
 
-def build_football_live_game_method_board(method_key, odds_df, schedule_df, date_filter='all', search_query='', sport_key=None):
+def build_football_live_game_method_board(method_key, odds_df, schedule_df, date_filter='all', search_query='', sport_key=None, day_filter=''):
     method_key = str(method_key or 'game_lines').strip().lower()
     sport_key = str(sport_key or '').strip().lower()
     search_query = str(search_query or '').strip().lower()
-    base_games = build_football_live_games(odds_df, schedule_df, date_filter=date_filter)
+    base_games = build_football_live_games(odds_df, schedule_df, date_filter=date_filter, day_filter=day_filter)
     ncaaf_signal_map = build_ncaaf_team_signal_map() if sport_key == 'ncaaf' else {}
     rows = []
     for game in base_games:
@@ -29448,6 +29465,7 @@ def _render_football_method_page(sport_key, method_key):
         },
     }
     date_filter = request.args.get('date', 'all').strip().lower() or 'all'
+    day_filter = request.args.get('day', '').strip().lower()
     stat_filter = request.args.get('stat', '').strip()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
@@ -29474,6 +29492,7 @@ def _render_football_method_page(sport_key, method_key):
                 date_filter=date_filter,
                 search_query=search_query,
                 sport_key=sport_key,
+                day_filter=day_filter,
             )
             if live_games:
                 method_view['live_games'] = live_games
@@ -29591,6 +29610,7 @@ def _render_football_method_page(sport_key, method_key):
         method_view=method_view,
         filter_state=filter_state,
         date_filter=date_filter,
+        day_filter=day_filter,
         stat_filter=stat_filter,
         direction_filter=direction_filter,
         search_query=search_query,
