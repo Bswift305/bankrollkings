@@ -726,6 +726,7 @@ PRO_ENDPOINTS = {
     'nrfi_tool',
     'cfb_favorites_tool',
     'cfb_ats_tool',
+    'cfb_situational_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39550,6 +39551,37 @@ def cfb_ats_tool():
     """Quick Tool: CFB Team ATS Trends — every FBS team's ATS + O/U record and
     splits (home/away, fav/dog), by team and coach (2016-2025)."""
     return render_template('cfb_ats.html', **build_cfb_ats_context())
+
+
+_CFB_SITU_CACHE = {}
+
+def build_cfb_situational_context():
+    """Quick Tool: CFB Situational ATS. Phil-Steele situational tables — each team's
+    ATS in named spots (off a bye/loss, road favorite, big favorite, conference,
+    late season...) with the league-wide trend, 2016-2025. Fixed JSON export."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_situational.json')
+    data = {'meta': {}, 'situations': []}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_SITU_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_SITU_CACHE['data'] = json.load(fh)
+            _CFB_SITU_CACHE['mtime'] = mtime
+        data = _CFB_SITU_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {
+        'situ_data': data,
+        'situ_meta': data.get('meta', {}),
+        'situ_available': bool(data.get('situations')),
+    }
+
+
+@app.route('/tools/cfb-situational')
+def cfb_situational_tool():
+    """Quick Tool: CFB Situational ATS — team ATS records off a bye/loss, as road
+    favorite, big favorite, conference, late season (2016-2025)."""
+    return render_template('cfb_situational.html', **build_cfb_situational_context())
 
 
 @app.route('/injuries')

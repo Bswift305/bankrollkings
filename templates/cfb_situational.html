@@ -1,0 +1,138 @@
+{% set active_page = 'cfb_situational' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Situational ATS - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .si-wrap{--si-accent:#5b8fd6;--si-glow:rgba(91,143,214,.15);}
+  .si-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .si-chip{cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);
+    font:600 12px/1 ui-monospace,Consolas,monospace;letter-spacing:.02em;padding:8px 12px;border-radius:999px;
+    transition:.14s;white-space:nowrap;}
+  .si-chip:hover{color:var(--text);border-color:var(--si-accent);}
+  .si-chip.active{background:var(--si-accent);border-color:var(--si-accent);color:#04121f;box-shadow:0 0 0 3px var(--si-glow);}
+  .si-lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:6px;}
+  .si-league{display:flex;flex-wrap:wrap;gap:18px 28px;align-items:baseline;background:rgba(91,143,214,.06);
+    border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+  .si-league .big{font:800 22px/1 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .si-league .k{font:700 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);}
+  .si-league .read{font:500 12.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);flex:1 1 220px;}
+  .si-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  table.si-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:480px;}
+  .si-table th{position:sticky;top:0;background:var(--bg);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .si-table th:first-child,.si-table td:first-child{text-align:left;position:sticky;left:0;background:var(--bg);z-index:1;}
+  .si-table th.sorted{color:var(--si-accent);}
+  .si-table td{text-align:right;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);
+    font:600 13px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .si-table td:first-child{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .si-table tbody tr:hover td{background:rgba(91,143,214,.05);}
+  .si-rank{color:var(--text-muted);font-weight:700;width:26px;padding-right:0!important;}
+  .si-hot{color:#49d27d;font-weight:700;}.si-cold{color:var(--danger);font-weight:700;}
+  .si-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+  @media(max-width:640px){}
+</style>
+
+<div class="si-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Situational <span class="accent">ATS</span></h1>
+    <div class="page-subtitle">The situational tables bettors screenshot: who covers off a bye, off a loss, as a road favorite, in November. Ten years of graded games (2016&ndash;2025) &mdash; the league-wide trend, then the teams that own each spot.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">Team ATS Trends</a>
+  </div>
+</div>
+
+{% if not situ_available %}
+  <div class="card p-16"><p class="si-note">Situational data is being generated. Check back shortly.</p></div>
+{% else %}
+<div class="card mb-24">
+  <div class="p-16" style="border-bottom:1px solid var(--border);">
+    <div class="si-chips"><span class="si-lab">Situation</span><span id="si-chips"></span></div>
+  </div>
+  <div class="p-16">
+    <div class="si-league" id="si-league"></div>
+    <div class="si-scroll" id="si-body"></div>
+    <div class="si-note" id="si-foot"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+{% if situ_available %}
+<script id="si-data" type="application/json">{{ situ_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('si-data').textContent);
+  const S = {sit:DATA.situations[0].key, sortCol:null, sortDir:-1};
+  const $ = s => document.querySelector(s);
+  const cur = () => DATA.situations.find(x=>x.key===S.sit) || DATA.situations[0];
+
+  function fmt(v,f){
+    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
+    if(f==='text') return v;
+    if(f==='int')  return v;
+    if(f==='pct')  return Math.round(v*100)+'%';
+    return v;
+  }
+  function readLine(pct){
+    if(pct===null) return '';
+    if(pct>=0.535) return 'Leans cover league-wide — but shop the teams below.';
+    if(pct<=0.465) return 'A fade spot league-wide.';
+    return 'A coin flip league-wide (the market prices it) — the edge is the team spread below.';
+  }
+
+  function render(){
+    const s=cur();
+    // league summary
+    const lg=s.league;
+    $('#si-league').innerHTML =
+      '<div><div class="k">'+s.label+'</div><div class="big">'+(lg.ats!==null?Math.round(lg.ats*100)+'% ATS':'—')+'</div></div>'+
+      '<div><div class="k">Record</div><div class="big" style="font-size:16px;">'+lg.rec+'</div></div>'+
+      '<div><div class="k">Over</div><div class="big" style="font-size:16px;">'+(lg.over!==null?Math.round(lg.over*100)+'%':'—')+'</div></div>'+
+      '<div><div class="k">Sample</div><div class="big" style="font-size:16px;">'+lg.n.toLocaleString()+' g</div></div>'+
+      '<div class="read">'+readLine(lg.ats)+'</div>';
+    // team board
+    const board=s.board, cols=board.columns;
+    let rows=board.rows.map(r=>r.slice());
+    if(S.sortCol!==null && S.sortCol<cols.length){
+      rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(x===null)return 1; if(y===null)return -1;
+        if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
+        return S.sortDir*(x-y);});
+    }
+    let h='<table class="si-table"><thead><tr><th class="si-rank">#</th>';
+    cols.forEach((c,i)=>{h+='<th class="'+(i===S.sortCol?'sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    h+='</tr></thead><tbody>';
+    rows.forEach((r,ri)=>{
+      h+='<tr><td class="si-rank">'+(ri+1)+'</td>';
+      cols.forEach((c,i)=>{
+        let cls='';
+        if(c.fmt==='pct' && typeof r[i]==='number') cls = r[i]>=0.55?'si-hot':(r[i]<=0.45?'si-cold':'');
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    $('#si-body').innerHTML=h;
+    $('#si-body').querySelectorAll('th[data-col]').forEach(th=>{
+      th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+    });
+    $('#si-foot').innerHTML='Teams with 12+ games in this spot, ranked by ATS%. Green beats break-even (52.4%), red is under. Small samples swing &mdash; the record shows how many. Consensus line; context, not a lock.';
+  }
+
+  const cc=$('#si-chips');
+  cc.innerHTML='';
+  DATA.situations.forEach(s=>{
+    const b=document.createElement('button'); b.className='si-chip'+(s.key===S.sit?' active':''); b.textContent=s.label;
+    b.onclick=()=>{S.sit=s.key; S.sortCol=null; cc.querySelectorAll('.si-chip').forEach(x=>x.classList.remove('active')); b.classList.add('active'); render();};
+    cc.appendChild(b);
+  });
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}
