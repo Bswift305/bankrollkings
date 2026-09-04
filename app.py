@@ -39564,10 +39564,12 @@ def build_cfb_ats_context():
         data = _CFB_ATS_CACHE['data']
     except (OSError, ValueError):
         pass
+    situ = _load_scenario_json(_CFB_SITU_CACHE, 'cfb_situational.json')
     return {
         'ats_data': data,
         'ats_meta': data.get('meta', {}),
         'ats_available': bool(data.get('team_seasons')),
+        'situ_data': situ,
     }
 
 
@@ -39604,9 +39606,11 @@ def build_cfb_situational_context():
 
 @app.route('/tools/cfb-situational')
 def cfb_situational_tool():
-    """Quick Tool: CFB Situational ATS — team ATS records off a bye/loss, as road
-    favorite, big favorite, conference, late season (2016-2025)."""
-    return render_template('cfb_situational.html', **build_cfb_situational_context())
+    """Folded into the Team ATS Trends tool as the Situational tab. Kept as a
+    redirect so old links / bookmarks still land on the right view."""
+    spot = (request.args.get('spot') or '').strip()
+    return redirect(url_for('cfb_ats_tool', view='situational',
+                            **({'spot': spot} if spot else {})))
 
 
 _CFB_MU_CACHE = {}

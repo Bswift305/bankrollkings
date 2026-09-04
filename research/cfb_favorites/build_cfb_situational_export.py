@@ -3,7 +3,12 @@
 Precompute CFB Situational ATS Trends -> data/scenarios/cfb_situational.json.
 The Phil-Steele situational tables, from our CFBD games+lines (2016-2025): each
 team's ATS record in named spots (off a bye / off a loss / road favorite / big
-favorite / conference / late season, ...), plus the league-wide trend for each.
+favorite / conference / late season, ...).
+
+Stores PER-SEASON counts per team per situation so the site can recompute any
+year window (All / Last 5 / Last 3 / Last 2 / current) client-side. Each team-
+season is a compact 6-int array [ats_w, ats_l, ats_p, ou_o, ou_u, ou_p]. This
+feeds the "Situational" tab of the Team ATS Trends tool.
 
     python research/cfb_favorites/build_cfb_situational_export.py
 """
@@ -36,87 +41,98 @@ SITS = [
     ("late",      "Late season (Wk 10+)", lambda t: t["week"] >= 10),
 ]
 
-def R(): return {"w":0,"l":0,"p":0,"o":0,"u":0}
-def add_ats(r,res): r["w" if res>0 else ("l" if res<0 else "p")] += 1
-def add_ou(r,res):
-    if res>0: r["o"]+=1
-    elif res<0: r["u"]+=1
-def pct(r): d=r["w"]+r["l"]; return round(r["w"]/d,3) if d else None
-def ovr(r): d=r["o"]+r["u"]; return round(r["o"]/d,3) if d else None
-def rec(r): return f'{r["w"]}-{r["l"]}' + (f'-{r["p"]}' if r["p"] else '')
-def n(r): return r["w"]+r["l"]+r["p"]
 
 def load():
-    games={}
-    for r in csv.DictReader(open(H/"CFBD_Games_2016_2025.csv",encoding="utf-8")):
-        games[(r["season"],r["week"],r["homeTeam"],r["awayTeam"])]=r
-    lines=list(csv.DictReader(open(H/"CFBD_Lines_2016_2025.csv",encoding="utf-8")))
-    return games,lines
+    games = {}
+    for r in csv.DictReader(open(H/"CFBD_Games_2016_2025.csv", encoding="utf-8")):
+        games[(r["season"], r["week"], r["homeTeam"], r["awayTeam"])] = r
+    lines = list(csv.DictReader(open(H/"CFBD_Lines_2016_2025.csv", encoding="utf-8")))
+    return games, lines
+
 
 def build_team_games():
-    games,lines=load()
-    tg=[]   # one dict per team-perspective of each lined game
+    games, lines = load()
+    tg = []   # one dict per team-perspective of each lined game
     for L in lines:
-        try: sp=float(L["spread"])
-        except: continue
-        g=games.get((L["season"],L["week"],L["homeTeam"],L["awayTeam"]))
-        if not g: continue
-        try: hp,ap=int(float(g["homePts"])),int(float(g["awayPts"]))
-        except: continue
-        try: wk=int(L["week"])
-        except: continue
-        m=hp-ap
-        h_ats = 1 if (m+sp)>0 else (-1 if (m+sp)<0 else 0)
-        conf_game = (g["homeConf"] in FBS and g["awayConf"] in FBS and g["homeConf"]==g["awayConf"])
-        try: tot=float(L["total"]); ou = 1 if (hp+ap)>tot else (-1 if (hp+ap)<tot else 0)
-        except: ou=0
+        try:
+            sp = float(L["spread"])
+        except (ValueError, TypeError):
+            continue
+        g = games.get((L["season"], L["week"], L["homeTeam"], L["awayTeam"]))
+        if not g:
+            continue
+        try:
+            hp, ap = int(float(g["homePts"])), int(float(g["awayPts"]))
+        except (ValueError, TypeError):
+            continue
+        try:
+            wk = int(L["week"])
+        except (ValueError, TypeError):
+            continue
+        m = hp - ap
+        h_ats = 1 if (m + sp) > 0 else (-1 if (m + sp) < 0 else 0)
+        conf_game = (g["homeConf"] in FBS and g["awayConf"] in FBS and g["homeConf"] == g["awayConf"])
+        try:
+            tot = float(L["total"]); ou = 1 if (hp + ap) > tot else (-1 if (hp + ap) < tot else 0)
+        except (ValueError, TypeError):
+            ou = 0
         for team, home, tspread, tmargin, tats, tconf in [
             (g["homeTeam"], True,  sp,  m,  h_ats, g["homeConf"]),
             (g["awayTeam"], False, -sp, -m, -h_ats, g["awayConf"]),
         ]:
-            if tconf not in FBS: continue
-            tg.append({"team":team,"season":L["season"],"week":wk,"home":home,
-                       "spread":tspread,"su": 1 if tmargin>0 else -1,"ats":tats,"ou":ou,
-                       "conf_game":conf_game,"prev_su":None,"prev_ats":None,"off_bye":False})
+            if tconf not in FBS:
+                continue
+            tg.append({"team": team, "season": L["season"], "week": wk, "home": home,
+                       "spread": tspread, "su": 1 if tmargin > 0 else -1, "ats": tats, "ou": ou,
+                       "conf_game": conf_game, "prev_su": None, "prev_ats": None, "off_bye": False})
     # prior-game context within (team, season)
-    byteam=defaultdict(list)
-    for t in tg: byteam[(t["team"],t["season"])].append(t)
-    for key, seq in byteam.items():
-        seq.sort(key=lambda x:x["week"])
-        for i in range(1,len(seq)):
-            prev=seq[i-1]
-            seq[i]["prev_su"] = "W" if prev["su"]>0 else "L"
+    byteam = defaultdict(list)
+    for t in tg:
+        byteam[(t["team"], t["season"])].append(t)
+    for _key, seq in byteam.items():
+        seq.sort(key=lambda x: x["week"])
+        for i in range(1, len(seq)):
+            prev = seq[i-1]
+            seq[i]["prev_su"] = "W" if prev["su"] > 0 else "L"
             seq[i]["prev_ats"] = prev["ats"]
-            seq[i]["off_bye"] = (seq[i]["week"]-prev["week"])>=2
+            seq[i]["off_bye"] = (seq[i]["week"] - prev["week"]) >= 2
     return tg
 
-def build():
-    tg=build_team_games()
-    league={k:R() for k,_,_ in SITS}
-    team={k:defaultdict(R) for k,_,_ in SITS}
-    for t in tg:
-        for k,_,pred in SITS:
-            if pred(t):
-                add_ats(league[k],t["ats"]); add_ou(league[k],t["ou"])
-                add_ats(team[k][t["team"]],t["ats"]); add_ou(team[k][t["team"]],t["ou"])
-    out_sits=[]
-    for k,label,_ in SITS:
-        lg=league[k]
-        cols=[{"label":"Team","fmt":"text"},{"label":"G","fmt":"int"},{"label":"ATS%","fmt":"pct"},
-              {"label":"Record","fmt":"text"},{"label":"Over%","fmt":"pct"}]
-        rows=[]
-        for tm,r in team[k].items():
-            if n(r)>=12: rows.append([tm,n(r),pct(r),rec(r),ovr(r)])
-        rows.sort(key=lambda z:-(z[2] or 0))
-        out_sits.append({"key":k,"label":label,
-            "league":{"rec":rec(lg),"ats":pct(lg),"over":ovr(lg),"n":n(lg)},
-            "board":{"columns":cols,"rows":rows}})
-    out={"meta":{"seasons":"2016-2025","generated":GEN_DATE,"situations":len(SITS)},
-         "situations":out_sits}
-    OUT.write_text(json.dumps(out,separators=(",",":")),encoding="utf-8")
-    print(f"WROTE {OUT} ({OUT.stat().st_size/1024:.0f} KB)")
-    for s in out_sits:
-        lg=s["league"]
-        print(f"  {s['label']:<22} league {lg['rec']:<12} {(lg['ats']*100 if lg['ats'] else 0):.0f}% ATS  (n={lg['n']})  |  {len(s['board']['rows'])} teams")
 
-if __name__=="__main__": build()
+def build():
+    tg = build_team_games()
+    seasons = set()
+    # per situation: team -> season -> [aw,al,ap, o,u,op]
+    sit = {k: defaultdict(lambda: defaultdict(lambda: [0, 0, 0, 0, 0, 0])) for k, _, _ in SITS}
+    for t in tg:
+        seasons.add(t["season"])
+        for k, _label, pred in SITS:
+            if pred(t):
+                cell = sit[k][t["team"]][t["season"]]
+                a = t["ats"]
+                cell[0 if a > 0 else (1 if a < 0 else 2)] += 1
+                o = t["ou"]
+                if o > 0:
+                    cell[3] += 1
+                elif o < 0:
+                    cell[4] += 1
+                else:
+                    cell[5] += 1
+    seasons = sorted(seasons)
+    out_sits = []
+    for k, label, _ in SITS:
+        teams = {tm: {yr: sit[k][tm][yr] for yr in sit[k][tm]} for tm in sit[k]}
+        out_sits.append({"key": k, "label": label, "t": teams})
+    out = {
+        "meta": {"seasons": f"{seasons[0]}-{seasons[-1]}", "generated": GEN_DATE,
+                 "situations": len(SITS), "min_year": int(seasons[0]), "max_year": int(seasons[-1])},
+        "seasons": [int(s) for s in seasons],
+        "situations": out_sits,
+    }
+    OUT.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+    print(f"WROTE {OUT} ({OUT.stat().st_size/1024:.0f} KB)  {len(SITS)} situations, "
+          f"seasons {seasons[0]}-{seasons[-1]}")
+
+
+if __name__ == "__main__":
+    build()

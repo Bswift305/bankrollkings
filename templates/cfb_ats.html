@@ -50,7 +50,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; CFB</div>
     <h1>Team ATS <span class="accent">Trends</span></h1>
-    <div class="page-subtitle">The Phil-Steele table, built from our own graded games: every FBS team&rsquo;s record against the spread over 10 years (2016&ndash;2025) &mdash; overall, home, away, as a favorite, as a dog, plus over/under.</div>
+    <div class="page-subtitle">The Phil-Steele table, built from our own graded games: every FBS team&rsquo;s record against the spread &mdash; overall, home/away, fav/dog, by coach, and in 14 situational spots (off a bye, road favorite, favored by 14+, and more). Filter any window from all 10 years down to the last 2.</div>
   </div>
   <div class="hero-actions">
     <a href="/tools/cfb-favorites" class="btn btn-secondary btn-sm">Big-Favorite Trends</a>
@@ -72,11 +72,16 @@
     <div class="at-tabs" id="at-tabs">
       <button class="at-tab active" data-view="teams">League Table</button>
       <button class="at-tab" data-view="coaches">By Coach</button>
+      <button class="at-tab" data-view="situational">Situational</button>
       <button class="at-tab" data-view="profile">Team Profile</button>
     </div>
     <div id="at-team-picker" style="display:none;">
       <span style="font:700 10.5px ui-monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:8px;">Team</span>
       <select id="at-team-select" class="at-select"></select>
+    </div>
+    <div id="at-spot-picker" style="display:none;">
+      <span style="font:700 10.5px ui-monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:8px;">Spot</span>
+      <select id="at-spot-select" class="at-select"></select>
     </div>
     <div class="at-yr" id="at-year-chips"><span class="lab">Seasons</span></div>
   </div>
@@ -92,9 +97,13 @@
 
 {% if ats_available %}
 <script id="at-data" type="application/json">{{ ats_data|tojson }}</script>
+<script id="situ-data" type="application/json">{{ situ_data|tojson }}</script>
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('at-data').textContent);
+  const SITU = JSON.parse(document.getElementById('situ-data').textContent);
+  const SITS = (SITU && SITU.situations) || [];
+  const SITMAP = {}; SITS.forEach(s=>SITMAP[s.key]=s);
   const $ = s => document.querySelector(s);
   const YRS = DATA.seasons.slice().sort((a,b)=>a-b);
   const MAXY = YRS[YRS.length-1], MINY = YRS[0];
@@ -112,9 +121,10 @@
   const TEAM_COLS = [{label:'Team',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},
     {label:'Home%',fmt:'pct'},{label:'Away%',fmt:'pct'},{label:'Fav%',fmt:'pct'},{label:'Dog%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
   const COACH_COLS = [{label:'Head Coach',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
+  const SITU_COLS = [{label:'Team',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},{label:'Record',fmt:'text'},{label:'Over%',fmt:'pct'}];
   const SPLITS = ['ats','home','away','fav','dog','ou'];
 
-  const S = {view:'teams', team:null, sortCol:null, sortDir:-1, range:0};
+  const S = {view:'teams', team:null, spot:(SITS[0]&&SITS[0].key)||null, sortCol:null, sortDir:-1, range:0};
 
   const inRange = y => { const n=+y; return n>=RANGES[S.range].from && n<=RANGES[S.range].to; };
   const years  = () => RANGES[S.range].to - RANGES[S.range].from + 1;
@@ -202,8 +212,36 @@
     $('#at-foot').innerHTML='Every split is real graded games at the consensus line, '+rangeTxt()+'. Small-sample splits swing more &mdash; the record shows the sample.';
   }
 
+  // sum situational 6-int arrays [aw,al,ap,o,u,op] across the in-range seasons
+  function aggSitu(seasonMap){
+    let a=[0,0,0,0,0,0];
+    for(const y in seasonMap){ if(!inRange(y)) continue; const c=seasonMap[y]; for(let i=0;i<6;i++)a[i]+=c[i]; }
+    return a;
+  }
+  function renderSituational(){
+    const spot=SITMAP[S.spot]||SITS[0]; if(!spot){$('#at-body').innerHTML='';return;}
+    const minG=Math.max(4, years()+2);
+    const rows=[]; let LW=[0,0,0,0,0,0];
+    for(const t in spot.t){
+      const a=aggSitu(spot.t[t]);
+      for(let i=0;i<6;i++)LW[i]+=a[i];
+      const g=a[0]+a[1]+a[2]; if(g<minG) continue;
+      const ats=(a[0]+a[1])?a[0]/(a[0]+a[1]):null;
+      const rec=a[0]+'-'+a[1]+(a[2]?('-'+a[2]):'');
+      const over=(a[3]+a[4])?a[3]/(a[3]+a[4]):null;
+      rows.push([t, g, ats, rec, over]);
+    }
+    $('#at-title').textContent = spot.label+' — ATS by team ('+rangeTxt()+')';
+    const lgAts=(LW[0]+LW[1])?Math.round(LW[0]/(LW[0]+LW[1])*100):null;
+    const lgN=LW[0]+LW[1]+LW[2];
+    const lg = lgAts===null?'':' League-wide in this spot: <b>'+lgAts+'%</b> ATS across '+lgN+' team-games.';
+    $('#at-explain').innerHTML='<b>'+spot.label+'</b> &mdash; every team&rsquo;s record against the spread in this exact spot, '+rangeTxt()+'. Green beats break-even (52.4%), red is under.'+lg;
+    renderTable(SITU_COLS, rows, 'Ranked by ATS% over '+rangeTxt()+' (min '+minG+' games in the spot). Situational splits are smaller samples &mdash; the record shows how many. Tap a column to re-sort.');
+  }
+
   function render(){
     $('#at-team-picker').style.display = S.view==='profile'?'':'none';
+    $('#at-spot-picker').style.display = S.view==='situational'?'':'none';
     const rt=rangeTxt();
     if(S.view==='teams'){
       $('#at-explain').innerHTML='<b>ATS%</b> = cover rate against the closing number. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over%</b> is the over/under lean. Green beats break-even (52.4%), red is under. Tap any column to sort &mdash; find the teams that live over, cover on the road, or fade at home.';
@@ -213,6 +251,8 @@
       $('#at-explain').innerHTML='Every head coach&rsquo;s ATS + over/under record across all their games and schools in the window &mdash; the tendency travels with the coach.';
       $('#at-title').textContent='ATS by head coach ('+rt+', min '+(4*years())+' games)';
       renderTable(COACH_COLS, coachRows(),'Ranked by ATS% over '+rt+'. Aggregated across job changes. Tap a column to re-sort.');
+    } else if(S.view==='situational'){
+      renderSituational();
     } else {
       $('#at-explain').innerHTML='A single team&rsquo;s full ATS profile &mdash; overall, home, away, as a favorite, as an underdog, and over/under &mdash; with the record behind each rate.';
       renderProfile();
@@ -235,6 +275,21 @@
   const sel=$('#at-team-select');
   sel.innerHTML=DATA.teamList.map(t=>'<option'+(t==='Georgia'?' selected':'')+'>'+t+'</option>').join('');
   sel.onchange=()=>{S.team=sel.value; render();};
+
+  const spotSel=$('#at-spot-select');
+  spotSel.innerHTML=SITS.map(s=>'<option value="'+s.key+'"'+(s.key===S.spot?' selected':'')+'>'+s.label+'</option>').join('');
+  spotSel.onchange=()=>{S.spot=spotSel.value; S.sortCol=null; render();};
+
+  // deep-link: /tools/cfb-ats?view=situational[&spot=key] (old Situational page redirects here)
+  try{
+    const p=new URLSearchParams(location.search);
+    const v=p.get('view');
+    if(v && ['teams','coaches','situational','profile'].includes(v)){
+      S.view=v;
+      document.querySelectorAll('#at-tabs .at-tab').forEach(x=>x.classList.toggle('active', x.dataset.view===v));
+      const sp=p.get('spot'); if(v==='situational' && sp && SITMAP[sp]){ S.spot=sp; spotSel.value=sp; }
+    }
+  }catch(e){}
 
   render();
 })();
