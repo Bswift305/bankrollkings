@@ -39554,7 +39554,7 @@ def build_cfb_ats_context():
     FBS team (2016-2025) — overall / home / away / as favorite / as underdog, plus
     over-under, by team and by coach. Fixed JSON export; cached by file mtime."""
     path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats.json')
-    data = {'meta': {}, 'teams': {}, 'coaches': {}, 'profiles': {}, 'teamList': []}
+    data = {'meta': {}, 'team_seasons': {}, 'coach_seasons': {}, 'seasons': [], 'teamList': []}
     try:
         mtime = os.path.getmtime(path)
         if _CFB_ATS_CACHE.get('mtime') != mtime:
@@ -39567,7 +39567,7 @@ def build_cfb_ats_context():
     return {
         'ats_data': data,
         'ats_meta': data.get('meta', {}),
-        'ats_available': bool(data.get('teams', {}).get('rows')),
+        'ats_available': bool(data.get('team_seasons')),
     }
 
 
