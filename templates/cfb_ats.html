@@ -27,6 +27,19 @@
   .at-table tbody tr:hover td{background:rgba(55,179,154,.09);}
   .at-rank{color:var(--text-muted);font-weight:700;}
   .at-hot{color:#49d27d;font-weight:700;}.at-cold{color:var(--danger);font-weight:700;}
+  .at-exp{cursor:pointer;}
+  .at-exp:hover{color:var(--at-accent);}
+  .at-exp .cv{color:var(--at-accent);font-weight:800;margin-right:7px;display:inline-block;font-size:10px;vertical-align:middle;}
+  .at-detail td{padding:0!important;overflow:visible!important;white-space:normal!important;background:rgba(0,0,0,.2);}
+  .at-logwrap{padding:8px 14px 14px;}
+  .at-logsum{font:600 12.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:6px 0 10px;}
+  .at-logsum b{color:var(--text-bright);}
+  table.at-log{width:100%;border-collapse:collapse;}
+  .at-log th{text-align:center;color:var(--text-muted);font:700 10px/1 ui-monospace,Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--border);}
+  .at-log th.l,.at-log td.l{text-align:left;}
+  .at-log td{text-align:center;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.05);font:600 12px/1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .lg-c{color:#49d27d;font-weight:800;}.lg-x{color:var(--danger);font-weight:800;}.lg-p{color:var(--text-muted);}
+  .at-logempty{padding:12px 14px;color:var(--text-muted);font:500 13px 'Helvetica Neue',Arial,sans-serif;}
   .at-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
   .at-title{font:800 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:2px 0;}
   .at-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;
@@ -118,10 +131,10 @@
   ].map(r=>({...r, from:Math.max(r.from,MINY)}))
    .filter((r,i,a)=>i===0 || r.from!==a[i-1].from || r.to!==a[i-1].to);
 
-  const TEAM_COLS = [{label:'Team',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},
+  const TEAM_COLS = [{label:'Team',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},
     {label:'Home%',fmt:'pct'},{label:'Away%',fmt:'pct'},{label:'Fav%',fmt:'pct'},{label:'Dog%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
-  const COACH_COLS = [{label:'Head Coach',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
-  const SITU_COLS = [{label:'Team',fmt:'text'},{label:'Games',fmt:'int'},{label:'ATS%',fmt:'pct'},{label:'Record',fmt:'text'},{label:'Over%',fmt:'pct'}];
+  const COACH_COLS = [{label:'Head Coach',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
+  const SITU_COLS = [{label:'Team',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
   const SPLITS = ['ats','home','away','fav','dog','ou'];
 
   const S = {view:'teams', team:null, spot:(SITS[0]&&SITS[0].key)||null, sortCol:null, sortDir:-1, range:0};
@@ -152,7 +165,7 @@
     for(const t in DATA.team_seasons){
       const sm=DATA.team_seasons[t].s;
       const a=agg(sm,'ats'); if(games(a)<minG) continue;
-      rows.push([t, games(a), pct(a), pct(agg(sm,'home')), pct(agg(sm,'away')),
+      rows.push([t, recTxt(a), pct(a), pct(agg(sm,'home')), pct(agg(sm,'away')),
                  pct(agg(sm,'fav')), pct(agg(sm,'dog')), pct(agg(sm,'ou'))]);
     }
     return rows;
@@ -163,12 +176,52 @@
     for(const c in DATA.coach_seasons){
       const sm=DATA.coach_seasons[c];
       const a=agg(sm,'ats'); if(games(a)<minG) continue;
-      rows.push([c, games(a), pct(a), pct(agg(sm,'ou'))]);
+      rows.push([c, recTxt(a), pct(a), pct(agg(sm,'ou'))]);
     }
     return rows;
   }
 
-  function renderTable(cols, rows, note){
+  // ---- per-team game log (drill-down) ----
+  const GAMECACHE={};
+  function gget(team){
+    if(GAMECACHE[team]) return Promise.resolve(GAMECACHE[team]);
+    return fetch('/tools/cfb-ats/games?team='+encodeURIComponent(team), {credentials:'same-origin'})
+      .then(r=>r.ok?r.json():{games:[]}).then(j=>{GAMECACHE[team]=j.games||[]; return GAMECACHE[team];})
+      .catch(()=>{GAMECACHE[team]=[]; return [];});
+  }
+  function gameLogHTML(team, list){
+    const r=RANGES[S.range];
+    const gs=list.filter(g=>g[0]>=r.from && g[0]<=r.to).sort((a,b)=> b[0]-a[0] || b[1]-a[1]);
+    if(!gs.length) return '<div class="at-logempty">No games in this window.</div>';
+    let w=0,l=0,p=0; gs.forEach(g=>{g[7]>0?w++:(g[7]<0?l++:p++);});
+    const pctTxt=(w+l)?Math.round(w/(w+l)*100)+'%':'—';
+    let h='<div class="at-logwrap"><div class="at-logsum">'+team+' &middot; '+gs.length+' games, '+rangeTxt()
+        +' &middot; <b>'+w+'-'+l+(p?'-'+p:'')+' ATS ('+pctTxt+')</b></div>'
+        +'<table class="at-log"><thead><tr><th>Yr</th><th>Wk</th><th class="l">Opponent</th><th>Line</th><th>Result</th><th>ATS</th><th>O/U</th></tr></thead><tbody>';
+    gs.forEach(g=>{
+      const yr=g[0],wk=g[1],opp=g[2],loc=g[3],line=g[4],pts=g[5],op=g[6],ats=g[7],ou=g[8];
+      const won=pts>op;
+      const lineTxt=(line>0?'+':'')+line;
+      const atsTxt=ats>0?'<span class="lg-c">Cover</span>':(ats<0?'<span class="lg-x">No</span>':'<span class="lg-p">Push</span>');
+      const ouTxt=(ou===null)?'&mdash;':(ou>0?'Over':(ou<0?'Under':'Push'));
+      h+='<tr><td>'+yr+'</td><td>'+wk+'</td><td class="l">'+(loc==='H'?'vs ':'@ ')+opp+'</td><td>'
+        +lineTxt+'</td><td>'+(won?'W ':'L ')+pts+'-'+op+'</td><td>'+atsTxt+'</td><td>'+ouTxt+'</td></tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+  function toggleLog(sp){
+    const tr=sp.closest('tr'), team=sp.dataset.team, cv=sp.querySelector('.cv');
+    const nxt=tr.nextElementSibling;
+    if(nxt && nxt.classList.contains('at-detail')){ nxt.remove(); cv.innerHTML='&#9656;'; return; }
+    $('#at-body').querySelectorAll('tr.at-detail').forEach(d=>d.remove());
+    $('#at-body').querySelectorAll('.at-exp .cv').forEach(c=>c.innerHTML='&#9656;');
+    const dt=document.createElement('tr'); dt.className='at-detail';
+    dt.innerHTML='<td colspan="'+tr.children.length+'"><div class="at-logwrap"><div class="at-logsum">Loading&hellip;</div></div></td>';
+    tr.after(dt); cv.innerHTML='&#9662;';
+    gget(team).then(list=>{ dt.querySelector('td').innerHTML=gameLogHTML(team, list); });
+  }
+
+  function renderTable(cols, rows, note, expand){
     const sc = S.sortCol===null ? 2 : S.sortCol;   // default sort by ATS%
     rows.sort((a,b)=>{let x=a[sc],y=b[sc];
       if(x===null)return 1; if(y===null)return -1;
@@ -182,7 +235,11 @@
       cols.forEach((c,i)=>{
         let cls=(i===0)?'at-l':'';
         if(c.fmt==='pct' && typeof r[i]==='number') cls += r[i]>=0.55?' at-hot':(r[i]<=0.45?' at-cold':'');
-        h+='<td class="'+cls.trim()+'">'+fmt(r[i],c.fmt)+'</td>';
+        let content;
+        if(i===0 && expand){
+          content='<span class="at-exp" data-team="'+String(r[0]).replace(/"/g,'&quot;')+'"><span class="cv">&#9656;</span>'+r[0]+'</span>';
+        } else { content=fmt(r[i],c.fmt); }
+        h+='<td class="'+cls.trim()+'">'+content+'</td>';
       });
       h+='</tr>';
     });
@@ -191,6 +248,7 @@
     $('#at-body').querySelectorAll('th[data-col]').forEach(th=>{
       th.onclick=()=>{const c=+th.dataset.col; if((S.sortCol===null?2:S.sortCol)===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
     });
+    if(expand){ $('#at-body').querySelectorAll('.at-exp').forEach(sp=>{ sp.onclick=()=>toggleLog(sp); }); }
     $('#at-foot').innerHTML=note;
   }
 
@@ -229,14 +287,14 @@
       const ats=(a[0]+a[1])?a[0]/(a[0]+a[1]):null;
       const rec=a[0]+'-'+a[1]+(a[2]?('-'+a[2]):'');
       const over=(a[3]+a[4])?a[3]/(a[3]+a[4]):null;
-      rows.push([t, g, ats, rec, over]);
+      rows.push([t, rec, ats, over]);
     }
     $('#at-title').textContent = spot.label+' — ATS by team ('+rangeTxt()+')';
     const lgAts=(LW[0]+LW[1])?Math.round(LW[0]/(LW[0]+LW[1])*100):null;
     const lgN=LW[0]+LW[1]+LW[2];
     const lg = lgAts===null?'':' League-wide in this spot: <b>'+lgAts+'%</b> ATS across '+lgN+' team-games.';
     $('#at-explain').innerHTML='<b>'+spot.label+'</b> &mdash; every team&rsquo;s record against the spread in this exact spot, '+rangeTxt()+'. Green beats break-even (52.4%), red is under.'+lg;
-    renderTable(SITU_COLS, rows, 'Ranked by ATS% over '+rangeTxt()+' (min '+minG+' games in the spot). Situational splits are smaller samples &mdash; the record shows how many. Tap a column to re-sort.');
+    renderTable(SITU_COLS, rows, 'Ranked by ATS% over '+rangeTxt()+' (min '+minG+' games in the spot). Click a team to see the games. Tap a column to re-sort.', true);
   }
 
   function render(){
@@ -246,7 +304,7 @@
     if(S.view==='teams'){
       $('#at-explain').innerHTML='<b>ATS%</b> = cover rate against the closing number. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over%</b> is the over/under lean. Green beats break-even (52.4%), red is under. Tap any column to sort &mdash; find the teams that live over, cover on the road, or fade at home.';
       $('#at-title').textContent='Every FBS team, ranked by ATS% ('+rt+')';
-      renderTable(TEAM_COLS, teamRows(),'Ranked by overall ATS% over '+rt+' (min '+(6*years())+' games in the window). Tap any column header to re-sort. Consensus line; a bettor shops for a better number.');
+      renderTable(TEAM_COLS, teamRows(),'Ranked by overall ATS% over '+rt+' (min '+(6*years())+' games). Click a team to see every game &mdash; week, opponent, line, result. Tap any column header to re-sort.', true);
     } else if(S.view==='coaches'){
       $('#at-explain').innerHTML='Every head coach&rsquo;s ATS + over/under record across all their games and schools in the window &mdash; the tendency travels with the coach.';
       $('#at-title').textContent='ATS by head coach ('+rt+', min '+(4*years())+' games)';

@@ -736,6 +736,7 @@ PRO_ENDPOINTS = {
     'cfb_best_spots_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
+    'cfb_ats_games',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39576,8 +39577,21 @@ def build_cfb_ats_context():
 @app.route('/tools/cfb-ats')
 def cfb_ats_tool():
     """Quick Tool: CFB Team ATS Trends — every FBS team's ATS + O/U record and
-    splits (home/away, fav/dog), by team and coach (2016-2025)."""
+    splits (home/away, fav/dog), by team and coach, plus situational spots
+    (2016-2025), all year-filterable."""
     return render_template('cfb_ats.html', **build_cfb_ats_context())
+
+
+_CFB_ATS_GAMES_CACHE = {}
+
+@app.route('/tools/cfb-ats/games')
+def cfb_ats_games():
+    """Drill-down: return one team's full game log behind the ATS tables
+    (season, week, opponent, line, final, ATS, O/U). Served per-team on demand."""
+    team = (request.args.get('team') or '').strip()
+    data = _load_scenario_json(_CFB_ATS_GAMES_CACHE, 'cfb_ats_games.json')
+    games = (data.get('games', {}) or {}).get(team, [])
+    return jsonify({'team': team, 'cols': data.get('meta', {}).get('cols', []), 'games': games})
 
 
 _CFB_SITU_CACHE = {}
