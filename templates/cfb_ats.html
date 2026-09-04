@@ -27,6 +27,12 @@
   .at-table tbody tr:hover td{background:rgba(55,179,154,.09);}
   .at-rank{color:var(--text-muted);font-weight:700;}
   .at-hot{color:#49d27d;font-weight:700;}.at-cold{color:var(--danger);font-weight:700;}
+  .at-table td.statcell{line-height:1.15;padding-top:8px;padding-bottom:8px;}
+  .at-table td .pc{display:block;font:700 14px/1.1 ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .at-table td .rc{display:block;font:600 10.5px/1.1 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:3px;}
+  .at-table td .pc.hot{color:#49d27d;} .at-table td .pc.cold{color:var(--danger);}
+  .at-table td .pc.sm{color:var(--text-muted);opacity:.8;} /* too few games to read as a trend */
+  .at-table td .pc.dim{color:var(--text-muted);}
   .at-exp{cursor:pointer;}
   .at-exp:hover{color:var(--at-accent);}
   .at-exp .cv{color:var(--at-accent);font-weight:800;margin-right:7px;display:inline-block;font-size:10px;vertical-align:middle;}
@@ -131,11 +137,12 @@
   ].map(r=>({...r, from:Math.max(r.from,MINY)}))
    .filter((r,i,a)=>i===0 || r.from!==a[i-1].from || r.to!==a[i-1].to);
 
-  const TEAM_COLS = [{label:'Team',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},
-    {label:'Home%',fmt:'pct'},{label:'Away%',fmt:'pct'},{label:'Fav%',fmt:'pct'},{label:'Dog%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
-  const COACH_COLS = [{label:'Head Coach',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
-  const SITU_COLS = [{label:'Team',fmt:'text'},{label:'Record',fmt:'text'},{label:'ATS%',fmt:'pct'},{label:'Over%',fmt:'pct'}];
-  const SPLITS = ['ats','home','away','fav','dog','ou'];
+  // col types: 'name' = team/coach (left, expandable); 'stat' = a %+record cell
+  const TEAM_COLS = [{label:'Team',t:'name'},{label:'ATS',t:'stat'},{label:'Home',t:'stat'},
+    {label:'Away',t:'stat'},{label:'Fav',t:'stat'},{label:'Dog',t:'stat'},{label:'Over',t:'stat'}];
+  const COACH_COLS = [{label:'Head Coach',t:'name'},{label:'ATS',t:'stat'},{label:'Over',t:'stat'}];
+  const SITU_COLS = [{label:'Team',t:'name'},{label:'ATS',t:'stat'},{label:'Over',t:'stat'}];
+  const MIN_TRUST = 4;   // decided games below this = too small to color as a trend
 
   const S = {view:'teams', team:null, spot:(SITS[0]&&SITS[0].key)||null, sortCol:null, sortDir:-1, range:0};
 
@@ -152,11 +159,8 @@
   const pct = c => (c[0]+c[1]) ? c[0]/(c[0]+c[1]) : null;
   const games = c => c[0]+c[1]+c[2];
   const recTxt = c => c[0]+'-'+c[1] + (c[2]?('-'+c[2]):'');
-
-  function fmt(v,f){
-    if(v===null||v===undefined) return '<span style="color:var(--text-muted)">&mdash;</span>';
-    return (f==='pct') ? Math.round(v*100)+'%' : v;
-  }
+  // a stat cell carries its rate AND the record + decided-game count behind it
+  const cell = c => ({p:pct(c), r:recTxt(c), n:c[0]+c[1]});
 
   // build league-table rows for the current window
   function teamRows(){
@@ -165,8 +169,8 @@
     for(const t in DATA.team_seasons){
       const sm=DATA.team_seasons[t].s;
       const a=agg(sm,'ats'); if(games(a)<minG) continue;
-      rows.push([t, recTxt(a), pct(a), pct(agg(sm,'home')), pct(agg(sm,'away')),
-                 pct(agg(sm,'fav')), pct(agg(sm,'dog')), pct(agg(sm,'ou'))]);
+      rows.push([t, cell(a), cell(agg(sm,'home')), cell(agg(sm,'away')),
+                 cell(agg(sm,'fav')), cell(agg(sm,'dog')), cell(agg(sm,'ou'))]);
     }
     return rows;
   }
@@ -176,7 +180,7 @@
     for(const c in DATA.coach_seasons){
       const sm=DATA.coach_seasons[c];
       const a=agg(sm,'ats'); if(games(a)<minG) continue;
-      rows.push([c, recTxt(a), pct(a), pct(agg(sm,'ou'))]);
+      rows.push([c, cell(a), cell(agg(sm,'ou'))]);
     }
     return rows;
   }
@@ -221,32 +225,39 @@
     gget(team).then(list=>{ dt.querySelector('td').innerHTML=gameLogHTML(team, list); });
   }
 
+  function statCellHTML(c){
+    if(!c || c.p===null) return '<span class="pc dim">&mdash;</span>';
+    const k = c.n<MIN_TRUST ? 'sm' : (c.p>=0.55?'hot':(c.p<=0.45?'cold':''));
+    return '<span class="pc '+k+'">'+Math.round(c.p*100)+'%</span><span class="rc">'+c.r+'</span>';
+  }
   function renderTable(cols, rows, note, expand){
-    const sc = S.sortCol===null ? 2 : S.sortCol;   // default sort by ATS%
-    rows.sort((a,b)=>{let x=a[sc],y=b[sc];
-      if(x===null)return 1; if(y===null)return -1;
-      if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
-      return S.sortDir*(x-y);});
+    const sc = S.sortCol===null ? 1 : S.sortCol;   // default sort by the ATS cell
+    rows.sort((a,b)=>{
+      if(sc===0) return -S.sortDir*String(a[0]).localeCompare(String(b[0]));
+      const xv=(a[sc]&&a[sc].p!=null)?a[sc].p:-1, yv=(b[sc]&&b[sc].p!=null)?b[sc].p:-1;
+      return S.sortDir*(xv-yv);
+    });
     let h='<table class="at-table"><thead><tr><th class="at-rank">#</th>';
-    cols.forEach((c,i)=>{const l=(i===0)?'at-l':''; h+='<th class="'+l+(i===sc?' sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
+    cols.forEach((c,i)=>{const l=(c.t==='name')?'at-l':''; h+='<th class="'+l+(i===sc?' sorted':'')+'" data-col="'+i+'">'+c.label+'</th>';});
     h+='</tr></thead><tbody>';
     rows.forEach((r,ri)=>{
       h+='<tr><td class="at-rank">'+(ri+1)+'</td>';
       cols.forEach((c,i)=>{
-        let cls=(i===0)?'at-l':'';
-        if(c.fmt==='pct' && typeof r[i]==='number') cls += r[i]>=0.55?' at-hot':(r[i]<=0.45?' at-cold':'');
-        let content;
-        if(i===0 && expand){
-          content='<span class="at-exp" data-team="'+String(r[0]).replace(/"/g,'&quot;')+'"><span class="cv">&#9656;</span>'+r[0]+'</span>';
-        } else { content=fmt(r[i],c.fmt); }
-        h+='<td class="'+cls.trim()+'">'+content+'</td>';
+        if(c.t==='name'){
+          const nm = expand
+            ? '<span class="at-exp" data-team="'+String(r[0]).replace(/"/g,'&quot;')+'"><span class="cv">&#9656;</span>'+r[0]+'</span>'
+            : r[0];
+          h+='<td class="at-l">'+nm+'</td>';
+        } else {
+          h+='<td class="statcell">'+statCellHTML(r[i])+'</td>';
+        }
       });
       h+='</tr>';
     });
     h+='</tbody></table>';
     $('#at-body').innerHTML=h;
     $('#at-body').querySelectorAll('th[data-col]').forEach(th=>{
-      th.onclick=()=>{const c=+th.dataset.col; if((S.sortCol===null?2:S.sortCol)===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
+      th.onclick=()=>{const c=+th.dataset.col; if((S.sortCol===null?1:S.sortCol)===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
     });
     if(expand){ $('#at-body').querySelectorAll('.at-exp').forEach(sp=>{ sp.onclick=()=>toggleLog(sp); }); }
     $('#at-foot').innerHTML=note;
@@ -284,16 +295,13 @@
       const a=aggSitu(spot.t[t]);
       for(let i=0;i<6;i++)LW[i]+=a[i];
       const g=a[0]+a[1]+a[2]; if(g<minG) continue;
-      const ats=(a[0]+a[1])?a[0]/(a[0]+a[1]):null;
-      const rec=a[0]+'-'+a[1]+(a[2]?('-'+a[2]):'');
-      const over=(a[3]+a[4])?a[3]/(a[3]+a[4]):null;
-      rows.push([t, rec, ats, over]);
+      rows.push([t, cell([a[0],a[1],a[2]]), cell([a[3],a[4],a[5]])]);
     }
     $('#at-title').textContent = spot.label+' — ATS by team ('+rangeTxt()+')';
     const lgAts=(LW[0]+LW[1])?Math.round(LW[0]/(LW[0]+LW[1])*100):null;
     const lgN=LW[0]+LW[1]+LW[2];
     const lg = lgAts===null?'':' League-wide in this spot: <b>'+lgAts+'%</b> ATS across '+lgN+' team-games.';
-    $('#at-explain').innerHTML='<b>'+spot.label+'</b> &mdash; every team&rsquo;s record against the spread in this exact spot, '+rangeTxt()+'. Green beats break-even (52.4%), red is under.'+lg;
+    $('#at-explain').innerHTML='<b>'+spot.label+'</b> &mdash; each team&rsquo;s cover rate in this exact spot with the W-L record beneath it, '+rangeTxt()+'. Green beats break-even (52.4%), red is under, grey = too few games (under 4) to trust.'+lg;
     renderTable(SITU_COLS, rows, 'Ranked by ATS% over '+rangeTxt()+' (min '+minG+' games in the spot). Click a team to see the games. Tap a column to re-sort.', true);
   }
 
@@ -302,7 +310,7 @@
     $('#at-spot-picker').style.display = S.view==='situational'?'':'none';
     const rt=rangeTxt();
     if(S.view==='teams'){
-      $('#at-explain').innerHTML='<b>ATS%</b> = cover rate against the closing number. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over%</b> is the over/under lean. Green beats break-even (52.4%), red is under. Tap any column to sort &mdash; find the teams that live over, cover on the road, or fade at home.';
+      $('#at-explain').innerHTML='Each cell shows the <b>cover rate</b> with its <b>W-L record</b> underneath, so you always see the sample. Green beats break-even (52.4%), red is under, <b>grey = too few games</b> (under 4) to read as a trend yet. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over</b> is the O/U lean. Tap any column to sort; click a team for its games.';
       $('#at-title').textContent='Every FBS team, ranked by ATS% ('+rt+')';
       renderTable(TEAM_COLS, teamRows(),'Ranked by overall ATS% over '+rt+' (min '+(6*years())+' games). Click a team to see every game &mdash; week, opponent, line, result. Tap any column header to re-sort.', true);
     } else if(S.view==='coaches'){
