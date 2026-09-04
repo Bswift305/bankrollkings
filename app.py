@@ -734,6 +734,7 @@ PRO_ENDPOINTS = {
     'cfb_101_tool',
     'cfb_hub_tool',
     'cfb_best_spots_tool',
+    'cfb_team_tool',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39852,6 +39853,121 @@ def cfb_talent_tool():
     data = _load_scenario_json(_CFB_TALENT_CACHE, 'cfb_talent.json')
     return render_template('cfb_talent.html', tl_data=data, tl_meta=data.get('meta', {}),
                            tl_available=bool(data.get('board', {}).get('rows')))
+
+
+_CFB_TEAM_MU_CACHE = {}
+_CFB_TEAM_POW_CACHE = {}
+_CFB_TEAM_TOT_CACHE = {}
+_CFB_TEAM_TAL_CACHE = {}
+_CFB_TEAM_REG_CACHE = {}
+_CFB_TEAM_LOG_CACHE = {}
+
+
+def _board_by_team(data):
+    """Turn a {board:{columns,rows}} export into {team_name: {col_label: value}}."""
+    board = data.get('board', {})
+    cols = [c.get('label') for c in board.get('columns', [])]
+    out = {}
+    for r in board.get('rows', []) or []:
+        if r:
+            out[r[0]] = dict(zip(cols, r))
+    return out
+
+
+def build_cfb_team_context(team=None):
+    """CFB Team Profile — consolidate everything we know about one team (ATS splits,
+    coach, SP+/FPI, talent, pace/totals, regression flag) plus its season-long weekly
+    log (auto-graded ATS / O-U with comments). `team` selects which team to show."""
+    mu = _load_scenario_json(_CFB_TEAM_MU_CACHE, 'cfb_matchup.json').get('teams', {})
+    power = _board_by_team(_load_scenario_json(_CFB_TEAM_POW_CACHE, 'cfb_power.json'))
+    totals = _board_by_team(_load_scenario_json(_CFB_TEAM_TOT_CACHE, 'cfb_totals.json'))
+    talent = _board_by_team(_load_scenario_json(_CFB_TEAM_TAL_CACHE, 'cfb_talent.json'))
+    reg = _load_scenario_json(_CFB_TEAM_REG_CACHE, 'cfb_regression.json').get('boards', {})
+    log = _load_scenario_json(_CFB_TEAM_LOG_CACHE, 'cfb_team_log.json')
+
+    team_list = sorted(mu.keys())
+    if not team_list:
+        return {'ct_available': False, 'ct_team_list': [], 'ct_team': None}
+
+    # pick the team: query arg, else a sensible default
+    if not team or team not in mu:
+        team = 'Utah' if 'Utah' in mu else team_list[0]
+
+    d = mu.get(team, {})
+    pw = power.get(team) or {}
+    to = totals.get(team) or {}
+    tl = talent.get(team) or {}
+
+    # regression flag (down / bounce-back), plus the underlying luck row
+    reg_flag = None
+    for board_key, label in (('regression_down', 'Regression-down risk'),
+                             ('bounceback_up', 'Bounce-back candidate')):
+        b = reg.get(board_key, {})
+        cols = [c.get('label') for c in b.get('columns', [])]
+        for r in b.get('rows', []) or []:
+            if r and r[0] == team:
+                reg_flag = {'label': label, 'row': dict(zip(cols, r))}
+                break
+        if reg_flag:
+            break
+
+    log_team = (log.get('teams', {}) or {}).get(team)
+
+    # honest at-a-glance tags derived from the data
+    tags = []
+    ats = d.get('ats', {}) or {}
+    favp = (ats.get('fav') or {}).get('pct')
+    if favp is not None:
+        if favp >= 0.57:
+            tags.append(('good', f"Covers {round(favp*100)}% as a favorite"))
+        elif favp <= 0.45:
+            tags.append(('bad', f"Only {round(favp*100)}% ATS as a favorite"))
+    trk, srk = tl.get('Talent Rk'), tl.get('SP+ Rk')
+    if isinstance(trk, (int, float)) and isinstance(srk, (int, float)):
+        gap = trk - srk
+        if gap >= 15:
+            tags.append(('good', f"Overachiever — plays ~{int(gap)} spots above its talent"))
+        elif gap <= -15:
+            tags.append(('bad', f"Underachiever — plays ~{int(-gap)} spots below its talent"))
+    ovp = to.get('Over%')
+    if isinstance(ovp, (int, float)):
+        if ovp >= 0.55:
+            tags.append(('info', f"Over team — {round(ovp*100)}% of games go over"))
+        elif ovp <= 0.45:
+            tags.append(('info', f"Under team — only {round(ovp*100)}% go over"))
+    if reg_flag:
+        tags.append(('bad' if 'down' in reg_flag['label'].lower() else 'good', reg_flag['label']))
+
+    profile = {
+        'name': team,
+        'conf': d.get('conf'),
+        'coach': d.get('coach'),
+        'coach_rec': d.get('coach_rec'),
+        'coach_ats': d.get('coach_ats'),
+        'ret': d.get('ret'),
+        'ats': ats,
+        'power': pw or None,
+        'totals': to or None,
+        'talent': tl or None,
+        'regression': reg_flag,
+        'tags': tags,
+        'log': log_team,
+    }
+    return {
+        'ct_available': True,
+        'ct_team_list': team_list,
+        'ct_team': profile,
+        'ct_log_meta': log.get('meta', {}),
+    }
+
+
+@app.route('/tools/cfb-team')
+def cfb_team_tool():
+    """Quick Tool: CFB Team Profile — one team, everything we have: ATS splits,
+    coach tendencies, SP+/FPI, talent, pace/totals, regression flag, and a
+    season-long weekly log (auto-graded ATS / O-U with weekly comments)."""
+    return render_template('cfb_team.html',
+                           **build_cfb_team_context(request.args.get('team', '').strip()))
 
 
 @app.route('/injuries')

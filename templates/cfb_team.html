@@ -1,0 +1,187 @@
+{% set active_page = 'cfb_team' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Team Profile - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .tp-wrap{--tp-accent:#7cc4ff;}
+  .tp-pick{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:22px;}
+  .tp-pick label{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);}
+  .tp-pick select{background:var(--panel,#0e1826);color:var(--text-bright);border:1px solid var(--border);
+    border-radius:9px;padding:9px 13px;font:600 14px 'Helvetica Neue',Arial,sans-serif;min-width:240px;}
+  .tp-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px;margin-bottom:6px;}
+  .tp-head h2{font:800 26px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0;}
+  .tp-conf{font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--tp-accent);border:1px solid rgba(124,196,255,.35);border-radius:6px;padding:3px 8px;}
+  .tp-coach{font:500 13.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:14px;}
+  .tp-coach b{color:var(--text);}
+  .tp-tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+  .tp-tag{font:700 12px 'Helvetica Neue',Arial,sans-serif;border-radius:999px;padding:6px 13px;border:1px solid;}
+  .tp-tag.good{color:#49d27d;border-color:rgba(73,210,125,.4);background:rgba(73,210,125,.07);}
+  .tp-tag.bad{color:#ff6b6b;border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.07);}
+  .tp-tag.info{color:var(--tp-accent);border-color:rgba(124,196,255,.4);background:rgba(124,196,255,.07);}
+  .tp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:26px;}
+  .tp-stat{border:1px solid var(--border);border-radius:12px;padding:14px 15px;background:rgba(255,255,255,.015);}
+  .tp-stat .k{font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;}
+  .tp-stat .v{font:800 22px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);font-variant-numeric:tabular-nums;}
+  .tp-stat .sub{font:500 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:3px;}
+  .tp-sec{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;
+    letter-spacing:.05em;margin:0 0 12px;display:flex;align-items:baseline;gap:10px;}
+  .tp-sec .d{font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:none;letter-spacing:0;}
+  .tp-grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:28px;}
+  @media(max-width:720px){.tp-grid2{grid-template-columns:1fr;}}
+  .tp-tbl{width:100%;border-collapse:collapse;font:500 13.5px 'Helvetica Neue',Arial,sans-serif;}
+  .tp-tbl td{padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--text);}
+  .tp-tbl td:first-child{color:var(--text-muted);}
+  .tp-tbl td:last-child{text-align:right;color:var(--text-bright);font-variant-numeric:tabular-nums;}
+  .tp-pct{display:inline-block;min-width:44px;text-align:right;}
+  .tp-log{border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .tp-lg{display:grid;grid-template-columns:56px 1fr auto;gap:4px 14px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);align-items:baseline;}
+  .tp-lg:last-child{border-bottom:0;}
+  .tp-lg .wk{font:800 12px ui-monospace,Consolas,monospace;color:var(--tp-accent);}
+  .tp-lg .mu{font:600 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .tp-lg .cm{font:500 12.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);grid-column:2;}
+  .tp-lg .ed{font:500 12.5px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);grid-column:1 / -1;
+    background:rgba(124,196,255,.06);border-left:2px solid var(--tp-accent);border-radius:0 8px 8px 0;padding:8px 12px;margin-top:8px;}
+  .tp-badges{display:flex;flex-direction:column;gap:5px;align-items:flex-end;justify-self:end;}
+  .tp-bdg{font:700 10.5px ui-monospace,Consolas,monospace;letter-spacing:.04em;border-radius:5px;padding:3px 8px;white-space:nowrap;}
+  .tp-bdg.cover{color:#49d27d;background:rgba(73,210,125,.12);}
+  .tp-bdg.nocover{color:#ff6b6b;background:rgba(255,107,107,.12);}
+  .tp-bdg.push{color:var(--text-muted);background:rgba(255,255,255,.06);}
+  .tp-bdg.ou{color:var(--text-muted);background:rgba(255,255,255,.06);}
+  .tp-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:14px 16px;}
+  .tp-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(124,196,255,.04);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:22px;}
+</style>
+
+<div class="tp-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">College Football &middot; Team Profile</div>
+    <h1>Team <span class="accent">Profile</span></h1>
+    <div class="page-subtitle">One team, everything we have &mdash; ATS splits, coach tendencies, power ratings, talent, pace, and a season-long weekly log where every result is graded against the number and gets a plain-English note.</div>
+  </div>
+  <div class="hero-actions">
+    <a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">CFB Hub</a>
+  </div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+
+  <form class="tp-pick" method="get" action="/tools/cfb-team">
+    <label for="team">Pick a team</label>
+    <select id="team" name="team" onchange="this.form.submit()">
+      {% for t in ct_team_list %}
+      <option value="{{ t }}" {% if ct_team and t == ct_team.name %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn btn-secondary btn-sm" type="submit">Show</button></noscript>
+  </form>
+
+  {% if not ct_available or not ct_team %}
+  <div class="tp-empty">Team data isn&rsquo;t loaded right now. Try again shortly.</div>
+  {% else %}
+  {% set t = ct_team %}
+
+  <div class="tp-head">
+    <h2>{{ t.name }}</h2>
+    {% if t.conf %}<span class="tp-conf">{{ t.conf }}</span>{% endif %}
+  </div>
+  {% if t.coach %}
+  <div class="tp-coach">Head coach <b>{{ t.coach }}</b>{% if t.coach_rec %} &middot; {{ t.coach_rec }}{% endif %}{% if t.coach_ats is not none %} &middot; {{ (t.coach_ats*100)|round|int }}% ATS as coach{% endif %}</div>
+  {% endif %}
+
+  {% if t.tags %}
+  <div class="tp-tags">
+    {% for kind, label in t.tags %}<span class="tp-tag {{ kind }}">{{ label }}</span>{% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Stat cards -->
+  <div class="tp-cards">
+    {% if t.power and t.power.get('SP+') is not none %}
+    <div class="tp-stat"><div class="k">SP+ Rating</div><div class="v">{{ '%+.1f'|format(t.power['SP+']) }}</div>
+      <div class="sub">{% if t.talent and t.talent.get('SP+ Rk') %}#{{ t.talent['SP+ Rk'] }} nationally{% else %}points vs avg{% endif %}</div></div>
+    {% endif %}
+    {% if t.power and t.power.get('FPI') is not none %}
+    <div class="tp-stat"><div class="k">FPI</div><div class="v">{{ '%+.1f'|format(t.power['FPI']) }}</div><div class="sub">ESPN power index</div></div>
+    {% endif %}
+    {% if t.talent and t.talent.get('Talent Rk') %}
+    <div class="tp-stat"><div class="k">Talent</div><div class="v">#{{ t.talent['Talent Rk'] }}</div><div class="sub">recruiting composite</div></div>
+    {% endif %}
+    {% if t.ret is not none %}
+    <div class="tp-stat"><div class="k">Returning</div><div class="v">{{ (t.ret*100)|round|int }}%</div><div class="sub">production back</div></div>
+    {% endif %}
+    {% if t.totals and t.totals.get('Plays/G') is not none %}
+    <div class="tp-stat"><div class="k">Tempo</div><div class="v">{{ '%.1f'|format(t.totals['Plays/G']) }}</div><div class="sub">plays / game</div></div>
+    {% endif %}
+  </div>
+
+  <div class="tp-grid2">
+    <!-- ATS splits -->
+    <div>
+      <div class="tp-sec">Against the Spread <span class="d">10-yr record</span></div>
+      {% if t.ats %}
+      <table class="tp-tbl">
+        {% for key, lbl in [('overall','Overall'),('home','At home'),('away','On the road'),('fav','As favorite'),('dog','As underdog')] %}
+        {% set s = t.ats.get(key) %}
+        {% if s and s.get('pct') is not none %}
+        <tr><td>{{ lbl }}</td><td>{{ s.rec }} <span class="tp-pct">{{ (s.pct*100)|round|int }}%</span></td></tr>
+        {% endif %}
+        {% endfor %}
+        {% set ov = t.ats.get('over') %}
+        {% if ov and ov.get('pct') is not none %}
+        <tr><td>Over / Under</td><td>{{ ov.rec }} <span class="tp-pct">{{ (ov.pct*100)|round|int }}% ovr</span></td></tr>
+        {% endif %}
+      </table>
+      {% else %}<div class="tp-empty">No ATS history on file.</div>{% endif %}
+    </div>
+
+    <!-- Scoring & pace -->
+    <div>
+      <div class="tp-sec">Scoring &amp; Pace <span class="d">recent seasons</span></div>
+      {% if t.totals %}
+      <table class="tp-tbl">
+        {% if t.totals.get('PPG') is not none %}<tr><td>Points / game</td><td>{{ '%.1f'|format(t.totals['PPG']) }}</td></tr>{% endif %}
+        {% if t.totals.get('Opp PPG') is not none %}<tr><td>Points allowed / game</td><td>{{ '%.1f'|format(t.totals['Opp PPG']) }}</td></tr>{% endif %}
+        {% if t.totals.get('Avg Total') is not none %}<tr><td>Avg game total</td><td>{{ '%.1f'|format(t.totals['Avg Total']) }}</td></tr>{% endif %}
+        {% if t.totals.get('Over%') is not none %}<tr><td>Games over the total</td><td>{{ (t.totals['Over%']*100)|round|int }}%{% if t.totals.get('O/U') %} ({{ t.totals['O/U'] }}){% endif %}</td></tr>{% endif %}
+        {% if t.talent and t.talent.get('Over/Under') is not none %}<tr><td>Talent vs performance</td><td>{{ '%+d'|format(t.talent['Over/Under']) }} spots</td></tr>{% endif %}
+      </table>
+      {% else %}<div class="tp-empty">No pace/scoring data on file.</div>{% endif %}
+    </div>
+  </div>
+
+  <!-- Weekly log -->
+  <div class="tp-sec">{{ ct_log_meta.get('season', '') }} Weekly Log
+    <span class="d">{% if t.log %}{{ t.log.ats }} ATS &middot; {{ t.log.ou }} O/U this season{% else %}graded against the closing number{% endif %}</span>
+  </div>
+  <div class="tp-log">
+    {% if t.log and t.log.weeks %}
+    {% for w in t.log.weeks %}
+    <div class="tp-lg">
+      <span class="wk">WK {{ w.week }}</span>
+      <span class="mu">{{ w.loc }} {{ w.opp }}
+        <span style="color:var(--text-muted);font-weight:500;">&middot; {{ w.pts }}-{{ w.opp_pts }}{% if w.line is not none %} &middot; {{ '%+.1f'|format(w.line) }}{% endif %}{% if w.total is not none %} &middot; O/U {{ w.total }}{% endif %}</span>
+      </span>
+      <span class="tp-badges">
+        {% if w.ats == 'Cover' %}<span class="tp-bdg cover">COVER {{ '%+.1f'|format(w.ats_edge) }}</span>
+        {% elif w.ats == 'No cover' %}<span class="tp-bdg nocover">NO COVER {{ '%.1f'|format(w.ats_edge) }}</span>
+        {% elif w.ats == 'Push' %}<span class="tp-bdg push">PUSH</span>{% endif %}
+        {% if w.ou %}<span class="tp-bdg ou">{{ w.ou|upper }}</span>{% endif %}
+      </span>
+      <span class="cm">{{ w.comment }}</span>
+      {% if w.editorial %}<div class="ed"><b>Our read:</b> {{ w.editorial }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="tp-empty">No graded games yet this season &mdash; results appear here each week, auto-graded against the closing number with a note.</div>
+    {% endif %}
+  </div>
+
+  <div class="tp-note"><b>How to read this:</b> ATS splits and scoring are multi-season baselines &mdash; a team&rsquo;s <em>tendency</em>, not a prediction. The weekly log is the season as it actually happens, graded honestly against the closing line. A cover or a miss is one data point; the profile is how they add up over time.</div>
+  {% endif %}
+
+</div></div>
+</div>
+{% endblock %}
