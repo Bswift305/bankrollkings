@@ -51,6 +51,7 @@ data/props/
 data/rosters/
 data/schedules/
 data/tracking/
+data/user_notes/
 
 # Local exports, spreadsheets, docs, archives
 *.zip

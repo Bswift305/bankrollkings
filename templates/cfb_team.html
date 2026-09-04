@@ -50,6 +50,13 @@
   .tp-bdg.push{color:var(--text-muted);background:rgba(255,255,255,.06);}
   .tp-bdg.ou{color:var(--text-muted);background:rgba(255,255,255,.06);}
   .tp-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:14px 16px;}
+  .tp-notes textarea{width:100%;box-sizing:border-box;min-height:96px;resize:vertical;
+    background:var(--panel,#0e1826);color:var(--text-bright);border:1px solid var(--border);border-radius:11px;
+    padding:12px 14px;font:500 13.5px/1.6 'Helvetica Neue',Arial,sans-serif;}
+  .tp-notes textarea:focus{outline:none;border-color:var(--tp-accent);}
+  .tp-notes-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;}
+  .tp-hint{font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .tp-saved{font:700 12.5px 'Helvetica Neue',Arial,sans-serif;color:#49d27d;}
   .tp-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:rgba(124,196,255,.04);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:22px;}
 </style>
@@ -178,6 +185,22 @@
     <div class="tp-empty">No graded games yet this season &mdash; results appear here each week, auto-graded against the closing number with a note.</div>
     {% endif %}
   </div>
+
+  <!-- Your private notes -->
+  <div class="tp-sec" style="margin-top:28px;">My Notes <span class="d">private to you &mdash; only you can see these</span></div>
+  {% if ct_logged_in %}
+  <form class="tp-notes" method="post" action="/tools/cfb-team/note">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="team" value="{{ t.name }}">
+    <textarea name="note" maxlength="2000" placeholder="Your own read on {{ t.name }} — what you're watching, how they've treated your tickets, anything you want to remember next week&hellip;">{{ ct_user_note }}</textarea>
+    <div class="tp-notes-row">
+      {% if ct_saved %}<span class="tp-saved">&#10003; Saved</span>{% else %}<span class="tp-hint">Autosaves to your account. Leave it blank and save to clear.</span>{% endif %}
+      <button type="submit" class="btn btn-primary btn-sm">Save note</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="tp-empty">Sign in to keep your own private notes on {{ t.name }}.</div>
+  {% endif %}
 
   <div class="tp-note"><b>How to read this:</b> ATS splits and scoring are multi-season baselines &mdash; a team&rsquo;s <em>tendency</em>, not a prediction. The weekly log is the season as it actually happens, graded honestly against the closing line. A cover or a miss is one data point; the profile is how they add up over time.</div>
   {% endif %}

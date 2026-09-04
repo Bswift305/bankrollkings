@@ -735,6 +735,7 @@ PRO_ENDPOINTS = {
     'cfb_hub_tool',
     'cfb_best_spots_tool',
     'cfb_team_tool',
+    'cfb_team_note_save',
     'slate_pulse_tool',
     'market_movers_tool',
     'best_lines_tool',
@@ -39863,6 +39864,46 @@ _CFB_TEAM_REG_CACHE = {}
 _CFB_TEAM_LOG_CACHE = {}
 
 
+USER_NOTES_DIR = os.path.join(BASE_DIR, 'data', 'user_notes')
+_MAX_NOTE_LEN = 2000
+
+
+def _user_notes_path(uid):
+    return os.path.join(USER_NOTES_DIR, f"{uid}.json")
+
+
+def load_user_team_notes(uid):
+    """All of one user's private team notes: {team_name: note_text}."""
+    if not uid:
+        return {}
+    try:
+        with open(_user_notes_path(uid), 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_user_team_note(uid, team, text):
+    """Write/clear one user's private note for one team. Empty text removes it."""
+    if not uid or not team:
+        return
+    notes = load_user_team_notes(uid)
+    text = (text or '').strip()[:_MAX_NOTE_LEN]
+    if text:
+        notes[team] = text
+    else:
+        notes.pop(team, None)
+    try:
+        os.makedirs(USER_NOTES_DIR, exist_ok=True)
+        tmp = _user_notes_path(uid) + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            json.dump(notes, fh)
+        os.replace(tmp, _user_notes_path(uid))
+    except OSError:
+        pass
+
+
 def _board_by_team(data):
     """Turn a {board:{columns,rows}} export into {team_name: {col_label: value}}."""
     board = data.get('board', {})
@@ -39953,21 +39994,45 @@ def build_cfb_team_context(team=None):
         'tags': tags,
         'log': log_team,
     }
+    # the logged-in user's own private note for this team (visible only to them)
+    cur = get_current_user()
+    uid = str((cur or {}).get('user_id', '') or '')
+    user_note = load_user_team_notes(uid).get(team, '') if uid else ''
+
     return {
         'ct_available': True,
         'ct_team_list': team_list,
         'ct_team': profile,
         'ct_log_meta': log.get('meta', {}),
+        'ct_logged_in': bool(uid),
+        'ct_user_note': user_note,
+        'ct_saved': request.args.get('saved') == '1',
     }
 
 
 @app.route('/tools/cfb-team')
 def cfb_team_tool():
     """Quick Tool: CFB Team Profile — one team, everything we have: ATS splits,
-    coach tendencies, SP+/FPI, talent, pace/totals, regression flag, and a
-    season-long weekly log (auto-graded ATS / O-U with weekly comments)."""
+    coach tendencies, SP+/FPI, talent, pace/totals, regression flag, a season-long
+    weekly log (auto-graded ATS / O-U with weekly comments), and the viewer's own
+    private notes on the team."""
     return render_template('cfb_team.html',
                            **build_cfb_team_context(request.args.get('team', '').strip()))
+
+
+@app.route('/tools/cfb-team/note', methods=['POST'])
+def cfb_team_note_save():
+    """Save the current user's private note for a team, then return to the profile."""
+    cur = get_current_user()
+    if not cur:
+        return redirect(url_for('login', next='/tools/cfb-team'))
+    uid = str(cur.get('user_id', '') or '')
+    team = (request.form.get('team') or '').strip()
+    # only accept a team we actually track
+    valid = _load_scenario_json(_CFB_TEAM_MU_CACHE, 'cfb_matchup.json').get('teams', {})
+    if team in valid:
+        save_user_team_note(uid, team, request.form.get('note', ''))
+    return redirect(url_for('cfb_team_tool', team=team, saved='1'))
 
 
 @app.route('/injuries')
