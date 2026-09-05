@@ -36,6 +36,8 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
     player stats, so both must already be on disk.
     """
     return [
+        ("CFB game slate + lines", ["fetch_ncaaf_slate_cfbd.py",
+                                    "--year", str(season), "--days", "12"], 300),
         ("CFB current roster", ["fetch_cfbd_current_roster.py",
                                 "--year", str(season),
                                 "--fallback-year", str(last_season)], 900),
