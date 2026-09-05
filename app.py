@@ -39786,6 +39786,52 @@ def _cfb_analyze_game(g, teams, coach_fav, totals, power):
     return headline, bullets, round(strength, 1)
 
 
+def _cfb_week_trends(games, teams, coach_fav):
+    """Coach/team standing tendencies, but ONLY for teams actually playing in the
+    given slate and ONLY in the role they hold this week — a big-favorite fade if
+    they're a big favorite this week, an underdog record if they're a dog. Returns
+    plain-English lines, strongest edge first."""
+    scored, seen = [], set()
+    for g in games:
+        sp = pd.to_numeric(g.get('spread'), errors='coerce')
+        if pd.isna(sp):
+            continue
+        home, away = g.get('home'), g.get('away')
+        home_fav = sp < 0
+        fav = home if home_fav else away
+        dog = away if home_fav else home
+        line = abs(float(sp))
+        F, D = teams.get(fav), teams.get(dog)
+
+        # 1) big-favorite coach fade — only if this coach is a 30+/40+ favorite THIS week
+        if F and line >= 30 and (fav, 'fav') not in seen:
+            band = '40' if line >= 40 else '30'
+            cov = coach_fav.get(F.get('coach', ''), {}).get(band)
+            if cov and cov['pct'] is not None and cov['pct'] <= 0.45:
+                scored.append(((0.5 - cov['pct']) + (line - 30) / 200,
+                    f"{F.get('coach')} covers just {round(cov['pct']*100)}% as a {band}+ favorite "
+                    f"({cov['rec']}) — and {fav} is laying {line:.0f} this week. Fade the number."))
+                seen.add((fav, 'fav'))
+
+        # 2) underdog record — only if this team is actually a dog THIS week
+        if D and (dog, 'dog') not in seen:
+            d = (D.get('ats') or {}).get('dog') or {}
+            if d.get('pct') is not None and (d.get('n') or 0) >= 15:
+                if d['pct'] >= 0.57:
+                    scored.append((d['pct'] - 0.5,
+                        f"{dog} is a strong {d['rec']} ATS as an underdog ({round(d['pct']*100)}%) — "
+                        f"and they're getting {line:.0f} this week."))
+                    seen.add((dog, 'dog'))
+                elif d['pct'] <= 0.43:
+                    scored.append((0.5 - d['pct'],
+                        f"{dog} covers just {round(d['pct']*100)}% as an underdog ({d['rec']}) — "
+                        f"a dog again this week."))
+                    seen.add((dog, 'dog'))
+
+    scored.sort(key=lambda x: -x[0])
+    return [line for _, line in scored][:8]
+
+
 def build_cfb_best_spots_context(date_filter='week'):
     """This Week's Best Spots — reads the live CFB slate and cross-references our
     trend data (coach big-favorite tendencies, ATS splits, totals lean, SP+ vs the
@@ -39807,6 +39853,7 @@ def build_cfb_best_spots_context(date_filter='week'):
         if bullets:
             live_cards.append({
                 'matchup': f"{g.get('away')} @ {g.get('home')}",
+                'away': g.get('away', ''), 'home': g.get('home', ''),
                 'date': g.get('date', ''), 'time': g.get('time', ''),
                 'spread': _format_signed_line(g.get('spread')), 'total': g.get('total'),
                 'headline': headline, 'bullets': bullets, 'strength': strength,
@@ -39814,23 +39861,24 @@ def build_cfb_best_spots_context(date_filter='week'):
     live_cards.sort(key=lambda c: -c['strength'])
     live_cards = live_cards[:10]
 
-    # Evergreen "trends to know" — always available, from the static exports
-    evergreen = []
-    fav = _load_scenario_json(_CFB_FAV_CACHE2, 'cfb_favorites.json')
-    for r in (fav.get('bands', {}).get('40', {}).get('coaches', {}).get('rows', []) or []):
-        if r[2] is not None and r[2] <= 0.30 and (r[1] or 0) >= 5:
-            evergreen.append(f"{r[0]} covers just {round(r[2]*100)}% as a 40+ favorite ({r[3]}) — fade the big number on his teams.")
-    situ = _load_scenario_json({}, 'cfb_situational.json')
-    for s in (situ.get('situations', []) or []):
-        top = (s.get('board', {}).get('rows') or [])[:1]
-        if top and top[0][2] is not None and top[0][2] >= 0.62:
-            evergreen.append(f"{top[0][0]} is {top[0][3]} ATS {s['label'].lower()} ({round(top[0][2]*100)}%).")
-    evergreen = evergreen[:8]
+    # "Trends to know" — tied to THIS week's slate: coaches/teams in action, in the
+    # role they actually hold this week. Off-season (no slate) falls back to the
+    # standing big-favorite fades so the section isn't empty between weeks.
+    if games:
+        evergreen = _cfb_week_trends(games, teams, coach_fav)
+    else:
+        evergreen = []
+        fav = _load_scenario_json(_CFB_FAV_CACHE2, 'cfb_favorites.json')
+        for r in (fav.get('bands', {}).get('40', {}).get('coaches', {}).get('rows', []) or []):
+            if r[2] is not None and r[2] <= 0.30 and (r[1] or 0) >= 5:
+                evergreen.append(f"{r[0]} covers just {round(r[2]*100)}% as a 40+ favorite ({r[3]}) — fade the big number on his teams.")
+        evergreen = evergreen[:8]
 
     return {
         'bs_live': live_cards,
         'bs_evergreen': evergreen,
         'bs_has_live': bool(live_cards),
+        'bs_evergreen_live': bool(games),
         'bs_date': date_filter,
     }
 

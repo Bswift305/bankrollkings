@@ -53,6 +53,7 @@
     </div>
   </div>
   <div class="p-16">
+    <div id="mu-flag" class="mu-note" style="color:var(--mu-accent);margin:0 0 10px;"></div>
     <div class="mu-head">
       <div class="mu-team" id="mu-away-name"></div>
       <div class="mu-vs">at</div>
@@ -74,6 +75,15 @@
   const list = DATA.teamList;
   const S = {away: list.includes('Texas')?'Texas':list[0], home: list.includes('Georgia')?'Georgia':list[1]};
   const $ = s => document.querySelector(s);
+
+  // deep-link: /tools/cfb-matchup?away=X&home=Y (from Best Spots / boards)
+  const _missing = [];
+  try{
+    const p = new URLSearchParams(location.search);
+    const qa = p.get('away'), qh = p.get('home');
+    if(qa){ if(list.includes(qa)) S.away = qa; else _missing.push(qa); }
+    if(qh){ if(list.includes(qh)) S.home = qh; else _missing.push(qh); }
+  }catch(e){}
   const P = v => (v===null||v===undefined)?'—':Math.round(v*100)+'%';
 
   function row(label, aVal, hVal, aRec, hRec, higherWins){
@@ -128,9 +138,17 @@
   const aw=$('#mu-away'), hm=$('#mu-home');
   const opts=t=>list.map(x=>'<option'+(x===t?' selected':'')+'>'+x+'</option>').join('');
   aw.innerHTML=opts(S.away); hm.innerHTML=opts(S.home);
-  aw.onchange=()=>{S.away=aw.value; render();};
-  hm.onchange=()=>{S.home=hm.value; render();};
+  aw.onchange=()=>{S.away=aw.value; $('#mu-flag').innerHTML=''; render();};
+  hm.onchange=()=>{S.home=hm.value; $('#mu-flag').innerHTML=''; render();};
   render();
+
+  // if a linked team isn't in our FBS dataset (likely FCS), say so and point to the FBS side's profile
+  if(_missing.length){
+    const present = list.includes(S.home)?S.home:(list.includes(S.away)?S.away:null);
+    let msg = _missing.join(' and ')+(_missing.length>1?" aren't":" isn't")+" in our FBS dataset (likely FCS), so there's no two-way contrast for that game.";
+    if(present) msg += ' See <a class="bs-mu" style="color:var(--mu-accent);" href="/tools/cfb-team?team='+encodeURIComponent(present)+'">'+present+"&rsquo;s full profile &rsaquo;</a>";
+    $('#mu-flag').innerHTML = msg;
+  }
 })();
 </script>
 {% endif %}

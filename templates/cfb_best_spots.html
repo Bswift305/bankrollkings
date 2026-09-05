@@ -11,6 +11,9 @@
   .bs-card{border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;background:rgba(255,255,255,.015);}
   .bs-card .top{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
   .bs-card .head{font:800 16px 'Helvetica Neue',Arial,sans-serif;color:var(--bs-accent);}
+  a.bs-mu{color:var(--bs-accent);text-decoration:none;transition:.14s;}
+  a.bs-mu:hover{text-decoration:underline;filter:brightness(1.15);}
+  .bs-b a.bs-mu{font-weight:700;}
   .bs-card .mt{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
   .bs-b{display:flex;gap:9px;padding:7px 0;font:500 13px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
   .bs-b b{color:var(--text-bright);} .bs-dot{color:var(--bs-accent);font-weight:800;flex:0 0 auto;}
@@ -52,10 +55,11 @@
   {% for c in bs_live %}
   <div class="bs-card">
     <div class="top">
-      <span class="head">{{ c.headline }}</span>
+      <a class="head bs-mu" href="/tools/cfb-matchup?away={{ c.away|urlencode }}&amp;home={{ c.home|urlencode }}" title="Open the matchup card: {{ c.matchup }}">{{ c.headline }} &rsaquo;</a>
       <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}{% if c.time %} {{ c.time }}{% endif %}</span>
     </div>
     {% for b in c.bullets %}<div class="bs-b"><span class="bs-dot">&rsaquo;</span><span>{{ b|safe }}</span></div>{% endfor %}
+    <div class="bs-b"><span class="bs-dot">&rsaquo;</span><span><a class="bs-mu" href="/tools/cfb-matchup?away={{ c.away|urlencode }}&amp;home={{ c.home|urlencode }}">See the full matchup: {{ c.away }} vs {{ c.home }} &rsaquo;</a></span></div>
   </div>
   {% endfor %}
   {% else %}
@@ -67,7 +71,7 @@
   {% endif %}
 
   {% if bs_evergreen %}
-  <div class="bs-h" style="margin-top:22px;"><span class="n">Trends to Know</span><span class="d">standing angles from 10 years of graded games</span></div>
+  <div class="bs-h" style="margin-top:22px;"><span class="n">Trends to Know</span><span class="d">{% if bs_evergreen_live %}this week&rsquo;s coaches &amp; teams, measured against a decade of our data{% else %}standing angles from 10 years of graded games{% endif %}</span></div>
   {% for e in bs_evergreen %}
   <div class="bs-ever"><span class="bs-dot">&rsaquo;</span><span>{{ e }}</span></div>
   {% endfor %}
