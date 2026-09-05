@@ -734,6 +734,7 @@ PRO_ENDPOINTS = {
     'cfb_101_tool',
     'cfb_hub_tool',
     'cfb_best_spots_tool',
+    'cfb_big_favorites_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -39964,6 +39965,97 @@ def cfb_best_spots_tool():
     live slate + our CFB trend data. `?date=today|week` scopes the slate."""
     return render_template('cfb_best_spots.html',
                            **build_cfb_best_spots_context(request.args.get('date', 'week')))
+
+
+_CFB_BIGFAV_CACHE = {}
+
+def build_cfb_big_favorites_context(date_filter='today', threshold=30):
+    """Today's / this week's heavy favorites (20+/30+/40+), each joined to the
+    favorite's and coach's all-weeks big-favorite ATS record plus the 1H line."""
+    date_filter = date_filter if date_filter in ('today', 'week') else 'today'
+    try:
+        threshold = int(threshold)
+    except (TypeError, ValueError):
+        threshold = 30
+    if threshold not in (20, 30, 40):
+        threshold = 30
+    data = _load_scenario_json(_CFB_BIGFAV_CACHE, 'cfb_bigfav_records.json')
+    recs = (data.get('thresholds', {}) or {}).get(str(threshold), {})
+    team_rec, coach_rec = recs.get('teams', {}), recs.get('coaches', {})
+    teams = _load_scenario_json(_CFB_MU_CACHE2, 'cfb_matchup.json').get('teams', {})
+    fh_rows = load_football_first_half('ncaaf')
+    try:
+        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
+    except Exception:
+        games = []
+
+    def _verdict(rec, n_ok):
+        if not rec or rec[0] is None:
+            return None
+        try:
+            w, l = rec[1].split('-')[:2]
+            n = int(w) + int(l)
+        except (ValueError, AttributeError):
+            n = 0
+        if n < n_ok:
+            return None
+        if rec[0] <= 0.42:
+            return 'fade'
+        if rec[0] >= 0.62:
+            return 'cover'
+        return None
+
+    rows = []
+    for g in games:
+        sp = pd.to_numeric(g.get('spread'), errors='coerce')
+        if pd.isna(sp) or abs(float(sp)) < threshold:
+            continue
+        home, away = g.get('home'), g.get('away')
+        home_fav = sp < 0
+        fav = home if home_fav else away
+        line = abs(float(sp))
+        coach = (teams.get(fav) or {}).get('coach') or ''
+        cr, tr = coach_rec.get(coach), team_rec.get(fav)
+        fh = _match_first_half(fh_rows, g.get('date'), away, home)
+        fav_1h = None
+        if fh and fh.get('sh1'):
+            try:
+                sh1 = float(fh['sh1'])
+                fav_1h = sh1 if home_fav else -sh1
+            except ValueError:
+                pass
+        verds = [_verdict(cr, 8), _verdict(tr, 10)]
+        read = ''
+        if 'fade' in verds and 'cover' not in verds:
+            read = 'fade'
+        elif 'cover' in verds and 'fade' not in verds:
+            read = 'cover'
+        rows.append({
+            'away': away, 'home': home, 'fav': fav, 'line': round(line),
+            'spread': _format_signed_line(g.get('spread')), 'total': g.get('total'),
+            'date': g.get('date'), 'time': g.get('time'),
+            'fav_1h': (f"{fav_1h:+.0f}" if fav_1h is not None else ''),
+            'coach': coach,
+            'coach_pct': (round(cr[0] * 100) if cr and cr[0] is not None else None),
+            'coach_rec': (cr[1] if cr else ''), 'coach_avg': (cr[2] if cr else None),
+            'team_pct': (round(tr[0] * 100) if tr and tr[0] is not None else None),
+            'team_rec': (tr[1] if tr else ''), 'team_avg': (tr[2] if tr else None),
+            'read': read, 'huge': line >= 48,
+        })
+    rows.sort(key=lambda r: -r['line'])
+    return {
+        'bf_rows': rows, 'bf_threshold': threshold, 'bf_date': date_filter,
+        'bf_count': len(rows), 'bf_meta': data.get('meta', {}),
+    }
+
+
+@app.route('/tools/cfb-big-favorites')
+def cfb_big_favorites_tool():
+    """Quick Tool: Today's Big Favorites — the live heavy-favorite board
+    (20+/30+/40+) with each favorite's and coach's big-favorite ATS history."""
+    return render_template('cfb_big_favorites.html',
+                           **build_cfb_big_favorites_context(
+                               request.args.get('date', 'today'), request.args.get('t', 30)))
 
 
 @app.route('/tools/cfb-hub')

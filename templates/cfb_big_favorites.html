@@ -1,0 +1,106 @@
+{% set active_page = 'cfb_big_favorites' %}
+{% extends "bk_base.html" %}
+{% block title %}Today's Big Favorites - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .bf-wrap{--bf-accent:#e07a3c;}
+  .bf-bar{display:flex;flex-wrap:wrap;gap:16px 26px;align-items:center;margin-bottom:16px;}
+  .bf-grp{display:flex;gap:7px;align-items:center;}
+  .bf-lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .bf-chip{display:inline-block;padding:7px 14px;border-radius:999px;border:1px solid var(--border);text-decoration:none;
+    font:700 12.5px/1 ui-monospace,Consolas,monospace;color:var(--text-muted);transition:.14s;}
+  .bf-chip:hover{color:var(--text);border-color:var(--bf-accent);}
+  .bf-chip.active{background:var(--bf-accent);border-color:var(--bf-accent);color:#150a03;}
+  .bf-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:940px;}
+  table.bf-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:680px;}
+  .bf-tbl th{position:sticky;top:0;background:var(--panel,#0f1a29);font:700 11px/1.2 ui-monospace,Consolas,monospace;
+    letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);text-align:center;padding:12px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .bf-tbl th.l{text-align:left;padding-left:16px;}
+  .bf-tbl td{text-align:center;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);
+    font:600 13px/1.15 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .bf-tbl td.l{text-align:left;padding-left:16px;font-family:'Helvetica Neue',Arial,sans-serif;}
+  .bf-tbl tbody tr:nth-child(odd) td{background:rgba(255,255,255,.022);}
+  .bf-tbl tbody tr:hover td{background:rgba(224,122,60,.08);}
+  .bf-fav{font-weight:800;color:var(--text-bright);text-decoration:none;}
+  .bf-fav:hover{color:var(--bf-accent);text-decoration:underline;}
+  .bf-fav small{display:block;font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .bf-line{font-weight:800;color:var(--text-bright);} .bf-1h{color:var(--text-muted);}
+  .bf-pct .p{display:block;font-weight:800;} .bf-pct .r{display:block;font:600 10.5px ui-monospace;color:var(--text-muted);margin-top:2px;}
+  .bf-pct.hot .p{color:#49d27d;} .bf-pct.cold .p{color:#ff6b6b;} .bf-pct.dim .p{color:var(--text-muted);}
+  .bf-read{font:700 11px ui-monospace,Consolas,monospace;padding:4px 9px;border-radius:6px;white-space:nowrap;}
+  .bf-read.fade{color:#ff6b6b;background:rgba(255,107,107,.12);}
+  .bf-read.cover{color:#49d27d;background:rgba(73,210,125,.12);}
+  .bf-read.huge{color:#e0b34a;background:rgba(224,179,74,.12);}
+  .bf-read.none{color:var(--text-muted);}
+  .bf-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:16px 4px;}
+  .bf-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(224,122,60,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:18px;max-width:940px;}
+</style>
+
+<div class="bf-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">College Football &middot; Live Board</div>
+    <h1>Today's Big <span class="accent">Favorites</span></h1>
+    <div class="page-subtitle">Every heavy favorite on the slate, each measured against a decade of how that team &mdash; and that coach, wherever he&rsquo;s been &mdash; actually covers big numbers. Big favorites are roughly a coin flip; the record tells you which way to lean.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">CFB Hub</a></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="bf-bar">
+    <div class="bf-grp"><span class="bf-lab">Spread</span>
+      {% for th in [20,30,40] %}
+      <a class="bf-chip {% if bf_threshold==th %}active{% endif %}" href="/tools/cfb-big-favorites?t={{ th }}&amp;date={{ bf_date }}">{{ th }}+</a>
+      {% endfor %}
+    </div>
+    <div class="bf-grp"><span class="bf-lab">When</span>
+      <a class="bf-chip {% if bf_date=='today' %}active{% endif %}" href="/tools/cfb-big-favorites?t={{ bf_threshold }}&amp;date=today">Today</a>
+      <a class="bf-chip {% if bf_date=='week' %}active{% endif %}" href="/tools/cfb-big-favorites?t={{ bf_threshold }}&amp;date=week">This Week</a>
+    </div>
+  </div>
+
+  {% if bf_rows %}
+  <div class="bf-scroll">
+  <table class="bf-tbl">
+    <thead><tr>
+      <th class="l">Favorite ({{ bf_count }})</th><th>Line</th><th>1H</th>
+      <th>Coach {{ bf_threshold }}+</th><th>Team {{ bf_threshold }}+</th><th>Read</th>
+    </tr></thead>
+    <tbody>
+    {% macro pctcell(pct, rec, avg) %}
+      {% if pct is none %}<td class="bf-pct dim"><span class="p">&mdash;</span></td>
+      {% else %}
+      <td class="bf-pct {% if pct>=55 %}hot{% elif pct<=45 %}cold{% endif %}">
+        <span class="p">{{ pct }}%</span><span class="r">{{ rec }}{% if avg is not none %} &middot; {{ '%+.1f'|format(avg) }}{% endif %}</span></td>
+      {% endif %}
+    {% endmacro %}
+    {% for r in bf_rows %}
+    <tr>
+      <td class="l"><a class="bf-fav" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
+        <small>{{ r.away }} @ {{ r.home }}{% if r.coach %} &middot; {{ r.coach }}{% endif %}</small></td>
+      <td><span class="bf-line">-{{ r.line }}</span></td>
+      <td class="bf-1h">{{ r.fav_1h or '&mdash;'|safe }}</td>
+      {{ pctcell(r.coach_pct, r.coach_rec, r.coach_avg) }}
+      {{ pctcell(r.team_pct, r.team_rec, r.team_avg) }}
+      <td>
+        {% if r.read == 'fade' %}<span class="bf-read fade">Fade</span>
+        {% elif r.read == 'cover' %}<span class="bf-read cover">Covers</span>
+        {% elif r.huge %}<span class="bf-read huge">Huge #</span>
+        {% else %}<span class="bf-read none">&mdash;</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="bf-empty">No {{ bf_threshold }}+ favorites on {% if bf_date=='today' %}today&rsquo;s card{% else %}this week&rsquo;s slate{% endif %} yet. Try a lower threshold or <a href="/tools/cfb-big-favorites?t={{ bf_threshold }}&amp;date=week" style="color:var(--bf-accent);">This Week</a>.</div>
+  {% endif %}
+
+  <div class="bf-note"><b>How to read this:</b> records are real graded games in {{ bf_threshold }}+ spots, 2016&ndash;2025. <b style="color:#49d27d;">Covers</b> = a coverer you can trust the number on; <b style="color:#ff6b6b;">Fade</b> = a weak coverer with a real sample; <b style="color:#e0b34a;">Huge #</b> = 48+, where starters-pulled garbage time drives it more than any trend. Coach records travel with the coach across schools. Click a favorite for its full profile. These are spots, not locks &mdash; shop the number.</div>
+
+</div></div>
+</div>
+{% endblock %}
