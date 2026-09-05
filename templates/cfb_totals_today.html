@@ -1,0 +1,102 @@
+{% set active_page = 'cfb_totals_today' %}
+{% extends "bk_base.html" %}
+{% block title %}Today's Totals - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .tb-wrap{--tb-accent:#5ac8b0;}
+  .tb-bar{display:flex;flex-wrap:wrap;gap:16px 26px;align-items:center;margin-bottom:16px;}
+  .tb-grp{display:flex;gap:7px;align-items:center;}
+  .tb-lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .tb-chip{display:inline-block;padding:7px 14px;border-radius:999px;border:1px solid var(--border);text-decoration:none;
+    font:700 12.5px/1 ui-monospace,Consolas,monospace;color:var(--text-muted);transition:.14s;}
+  .tb-chip:hover{color:var(--text);border-color:var(--tb-accent);}
+  .tb-chip.active{background:var(--tb-accent);border-color:var(--tb-accent);color:#04140f;}
+  .tb-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:960px;}
+  table.tb-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:700px;}
+  .tb-tbl th{position:sticky;top:0;background:var(--panel,#0f1a29);font:700 11px/1.2 ui-monospace,Consolas,monospace;
+    letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);text-align:center;padding:12px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .tb-tbl th.l{text-align:left;padding-left:16px;}
+  .tb-tbl td{text-align:center;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);
+    font:600 13px/1.15 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .tb-tbl td.l{text-align:left;padding-left:16px;font-family:'Helvetica Neue',Arial,sans-serif;}
+  .tb-tbl tbody tr:nth-child(odd) td{background:rgba(255,255,255,.022);}
+  .tb-tbl tbody tr:hover td{background:rgba(90,200,176,.08);}
+  .tb-mu{font-weight:800;color:var(--text-bright);text-decoration:none;}
+  .tb-mu:hover{color:var(--tb-accent);text-decoration:underline;}
+  .tb-mu small{display:block;font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .tb-total{font-weight:800;color:var(--text-bright);} .tb-1h{color:var(--text-muted);}
+  .tb-ov .p{display:block;font-weight:800;} .tb-ov .r{display:block;font:600 10.5px ui-monospace;color:var(--text-muted);margin-top:2px;}
+  .tb-ov.hot .p{color:#49d27d;} .tb-ov.cold .p{color:#7cc4ff;} .tb-ov.dim .p{color:var(--text-muted);}
+  .tb-read{font:700 11px ui-monospace,Consolas,monospace;padding:4px 9px;border-radius:6px;white-space:nowrap;}
+  .tb-read.over{color:#49d27d;background:rgba(73,210,125,.12);}
+  .tb-read.under{color:#7cc4ff;background:rgba(124,196,255,.14);}
+  .tb-read.none{color:var(--text-muted);}
+  .tb-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:16px 4px;}
+  .tb-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(90,200,176,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:18px;max-width:960px;}
+</style>
+
+<div class="tb-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">College Football &middot; Live Board</div>
+    <h1>Today's <span class="accent">Totals</span></h1>
+    <div class="page-subtitle">Every game on the slate by its over/under &mdash; the posted total, the first-half total, and each team&rsquo;s scoring environment (how often their games go over, their pace, their scoring). The whole card, not just the big spreads.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">CFB Hub</a></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="tb-bar">
+    <div class="tb-grp"><span class="tb-lab">Total</span>
+      <a class="tb-chip {% if tb_band=='all' %}active{% endif %}" href="/tools/cfb-totals-today?band=all&amp;date={{ tb_date }}">All</a>
+      <a class="tb-chip {% if tb_band=='high' %}active{% endif %}" href="/tools/cfb-totals-today?band=high&amp;date={{ tb_date }}">High (55+)</a>
+      <a class="tb-chip {% if tb_band=='low' %}active{% endif %}" href="/tools/cfb-totals-today?band=low&amp;date={{ tb_date }}">Low (&le;44)</a>
+    </div>
+    <div class="tb-grp"><span class="tb-lab">When</span>
+      <a class="tb-chip {% if tb_date=='today' %}active{% endif %}" href="/tools/cfb-totals-today?band={{ tb_band }}&amp;date=today">Today</a>
+      <a class="tb-chip {% if tb_date=='week' %}active{% endif %}" href="/tools/cfb-totals-today?band={{ tb_band }}&amp;date=week">This Week</a>
+    </div>
+  </div>
+
+  {% if tb_rows %}
+  <div class="tb-scroll">
+  <table class="tb-tbl">
+    <thead><tr>
+      <th class="l">Matchup ({{ tb_count }})</th><th>Total</th><th>1H</th>
+      <th>Away Over%</th><th>Home Over%</th><th>Pace</th><th>Env</th>
+    </tr></thead>
+    <tbody>
+    {% macro ovcell(pct, rec) %}
+      {% if pct is none %}<td class="tb-ov dim"><span class="p">&mdash;</span></td>
+      {% else %}<td class="tb-ov {% if pct>=55 %}hot{% elif pct<=45 %}cold{% endif %}"><span class="p">{{ pct }}%</span>{% if rec %}<span class="r">{{ rec }}</span>{% endif %}</td>{% endif %}
+    {% endmacro %}
+    {% for r in tb_rows %}
+    <tr>
+      <td class="l"><a class="tb-mu" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.away }} @ {{ r.home }}</a>
+        <small>{% if r.spread %}spread {{ r.spread }}{% endif %}{% if r.time %} &middot; {{ r.time }}{% endif %}</small></td>
+      <td><span class="tb-total">{{ '%g'|format(r.total) }}</span></td>
+      <td class="tb-1h">{{ r.total_1h or '&mdash;'|safe }}</td>
+      {{ ovcell(r.away_over, r.away_ou) }}
+      {{ ovcell(r.home_over, r.home_ou) }}
+      <td>{{ r.pace if r.pace is not none else '&mdash;'|safe }}</td>
+      <td>
+        {% if r.read == 'over' %}<span class="tb-read over">Over env</span>
+        {% elif r.read == 'under' %}<span class="tb-read under">Under env</span>
+        {% else %}<span class="tb-read none">&mdash;</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="tb-empty">No games with a posted total on {% if tb_date=='today' %}today&rsquo;s card{% else %}this week&rsquo;s slate{% endif %}{% if tb_band!='all' %} in this band{% endif %}. Try <a href="/tools/cfb-totals-today?band=all&amp;date=week" style="color:var(--tb-accent);">All / This Week</a>.</div>
+  {% endif %}
+
+  <div class="tb-note"><b>How to read this:</b> <b>Over%</b> is how often each team&rsquo;s games have gone over (multi-season), <b>Pace</b> is the two teams&rsquo; average plays/game, and <b>1H</b> is the first-half total. <b style="color:#49d27d;">Over env</b> / <b style="color:#7cc4ff;">Under env</b> flag games where both teams lean the same way. Honest caveat: our own backtest shows the market prices totals efficiently &mdash; this is <b>scoring-environment context</b> to frame a game, not a proven bet edge. Click a matchup for the full card.</div>
+
+</div></div>
+</div>
+{% endblock %}

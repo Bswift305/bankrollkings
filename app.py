@@ -735,6 +735,7 @@ PRO_ENDPOINTS = {
     'cfb_hub_tool',
     'cfb_best_spots_tool',
     'cfb_big_favorites_tool',
+    'cfb_totals_today_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40056,6 +40057,80 @@ def cfb_big_favorites_tool():
     return render_template('cfb_big_favorites.html',
                            **build_cfb_big_favorites_context(
                                request.args.get('date', 'today'), request.args.get('t', 30)))
+
+
+_CFB_TOTBOARD_CACHE = {}
+
+def build_cfb_totals_board_context(date_filter='today', band='all'):
+    """Today's / this week's slate viewed through TOTALS: each game's posted total
+    and 1H total, plus each team's scoring environment (over rate, pace, PPG) from
+    our multi-season data. Framed as environment context, not a bet edge — O/U is
+    efficiently priced (see the totals-model backtest)."""
+    date_filter = date_filter if date_filter in ('today', 'week') else 'today'
+    band = band if band in ('all', 'high', 'low') else 'all'
+    board = _load_scenario_json(_CFB_TOTBOARD_CACHE, 'cfb_totals.json').get('board', {})
+    cols = [c.get('label') for c in board.get('columns', [])]
+    idx = {lab: i for i, lab in enumerate(cols)}
+    look = {r[0]: r for r in board.get('rows', []) if r}
+
+    def cell(team, label):
+        r = look.get(team)
+        if not r or label not in idx:
+            return None
+        return r[idx[label]]
+
+    fh_rows = load_football_first_half('ncaaf')
+    try:
+        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
+    except Exception:
+        games = []
+
+    rows = []
+    for g in games:
+        total = pd.to_numeric(g.get('total'), errors='coerce')
+        if pd.isna(total):
+            continue
+        total = float(total)
+        if band == 'high' and total < 55:
+            continue
+        if band == 'low' and total > 44:
+            continue
+        away, home = g.get('away'), g.get('home')
+        ao, ho = cell(away, 'Over%'), cell(home, 'Over%')
+        ap, hp = cell(away, 'Plays/G'), cell(home, 'Plays/G')
+        combined = ((ao + ho) / 2) if (ao is not None and ho is not None) else None
+        pace = None
+        if isinstance(ap, (int, float)) and isinstance(hp, (int, float)):
+            pace = round((ap + hp) / 2, 1)
+        read = ''
+        if combined is not None:
+            if combined >= 0.55:
+                read = 'over'
+            elif combined <= 0.45:
+                read = 'under'
+        fh = _match_first_half(fh_rows, g.get('date'), away, home)
+        rows.append({
+            'away': away, 'home': home, 'date': g.get('date'), 'time': g.get('time'),
+            'total': total, 'spread': _format_signed_line(g.get('spread')),
+            'total_1h': (fh.get('th1') if fh else ''),
+            'away_over': (round(ao * 100) if ao is not None else None), 'away_ou': cell(away, 'O/U'),
+            'home_over': (round(ho * 100) if ho is not None else None), 'home_ou': cell(home, 'O/U'),
+            'away_ppg': cell(away, 'PPG'), 'home_ppg': cell(home, 'PPG'),
+            'pace': pace, 'read': read,
+        })
+    rows.sort(key=lambda r: -r['total'])
+    return {
+        'tb_rows': rows, 'tb_band': band, 'tb_date': date_filter, 'tb_count': len(rows),
+    }
+
+
+@app.route('/tools/cfb-totals-today')
+def cfb_totals_today_tool():
+    """Quick Tool: Today's Totals — the live slate by total, with each team's
+    scoring environment (over rate, pace, PPG) and the 1H total. Context, not a pick."""
+    return render_template('cfb_totals_today.html',
+                           **build_cfb_totals_board_context(
+                               request.args.get('date', 'today'), request.args.get('band', 'all')))
 
 
 @app.route('/tools/cfb-hub')
