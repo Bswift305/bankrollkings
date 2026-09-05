@@ -4,74 +4,7 @@
 {% block workflow_toolbar %}{% endblock workflow_toolbar %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">{{ membership_label | default('Member') }}</div>
-  <a class="bk-sidebar-item active" href="{{ url_for('dashboard') }}" title="Home">
-    <span class="si-icon"><img src="{{ sidebar_icon_url('home') }}" alt=""></span><span class="si-name">Home</span>
-  </a>
-</div>
-
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Sport / League</div>
-  {% for sport in sport_snapshots %}
-  <a href="{{ sport.href }}" class="bk-sidebar-item">
-    <span class="si-icon"><img src="{{ sidebar_icon_url(sport.key) }}" alt=""></span>
-    <span class="si-name">{{ sport.sport }}</span>
-    <span class="si-count">{{ sport.props_rows }}</span>
-  </a>
-  {% endfor %}
-</div>
-
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Trends &amp; Labs</div>
-  <a href="/tools/cfb-hub" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-hub.svg" loading="lazy" alt=""></span><span class="si-name">CFB Hub</span></a>
-  <a href="/tools/cfb-best-spots" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-best-spots.svg" loading="lazy" alt=""></span><span class="si-name">This Week's Best Spots</span></a>
-  <a href="/tools/cfb-101" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-101.svg" loading="lazy" alt=""></span><span class="si-name">CFB Betting 101</span></a>
-  <a href="/tools/cfb-matchup" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-matchup.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge Card</span></a>
-  <a href="/tools/cfb-favorites" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-favorites.svg" loading="lazy" alt=""></span><span class="si-name">Big-Favorite Trends</span></a>
-  <a href="/tools/cfb-ats" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Team &amp; Situational ATS</span></a>
-  <a href="/tools/cfb-totals" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Totals &amp; Pace</span></a>
-  <a href="/tools/cfb-power" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-power.svg" loading="lazy" alt=""></span><span class="si-name">Power Rankings</span></a>
-  <a href="/tools/cfb-talent" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-talent.svg" loading="lazy" alt=""></span><span class="si-name">Talent vs Performance</span></a>
-  <a href="/tools/cfb-regression" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-regression.svg" loading="lazy" alt=""></span><span class="si-name">Regression Watch</span></a>
-  <a href="/tools/scenario-lab" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/scenario-lab.svg" loading="lazy" alt=""></span><span class="si-name">Scenario Lab</span></a>
-  <a href="/tools/pick-analyzer" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/pick-analyzer.svg" loading="lazy" alt=""></span><span class="si-name">Pick Analyzer</span></a>
-  <a href="/tools/real-vs-luck" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/real-vs-luck.svg" loading="lazy" alt=""></span><span class="si-name">Real vs Luck</span></a>
-  <a href="/tools/mlb-situational" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/mlb-situational.svg" loading="lazy" alt=""></span><span class="si-name">Situational Lab</span></a>
-  <a href="/tools/nrfi" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/nrfi.svg" loading="lazy" alt=""></span><span class="si-name">NRFI / First Inning</span></a>
-</div>
-
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Quick Tools</div>
-  <a href="/tools/slate-pulse" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/slate-pulse.svg" loading="lazy" alt=""></span><span class="si-name">Slate Pulse</span></a>
-  <a href="/tools/market-movers" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Market Movers</span></a>
-  <a href="/tools/best-lines" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/best-lines.svg" loading="lazy" alt=""></span><span class="si-name">Best Lines</span></a>
-  <a href="/tools/risk-radar" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/risk-radar.svg" loading="lazy" alt=""></span><span class="si-name">Risk Radar</span></a>
-  <a href="/tools/ticket-check" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/ticket-check.svg" loading="lazy" alt=""></span><span class="si-name">Ticket Check</span></a>
-  <a href="/tools/game-context" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/game-context.svg" loading="lazy" alt=""></span><span class="si-name">Game Context</span></a>
-  <a href="/tools/track-record" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/track-record.svg" loading="lazy" alt=""></span><span class="si-name">Track Record</span></a>
-  <a href="/tools/season-markets" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Season Markets</span></a>
-  <a href="/tools/injury-report" class="bk-sidebar-item"><span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injury Report</span></a>
-</div>
-
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Fantasy / League</div>
-  <a href="/fantasy/nfl" class="bk-sidebar-item">
-    <span class="si-icon"><img src="{{ sidebar_icon_url('nfl') }}" alt=""></span>
-    <span class="si-name">NFL</span>
-  </a>
-  <a href="/fantasy/nba" class="bk-sidebar-item">
-    <span class="si-icon"><img src="{{ sidebar_icon_url('nba') }}" alt=""></span>
-    <span class="si-name">NBA</span>
-  </a>
-</div>
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Game</div>
-  <a href="/franchise" class="bk-sidebar-item {% if active_page == 'franchise' %}active{% endif %}">
-    <span class="si-icon"><img src="{{ sidebar_icon_url('nfl') }}" alt=""></span>
-    <span class="si-name">Franchise Kings</span>
-  </a>
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block content %}
