@@ -6404,6 +6404,21 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
             'slug': market.get('slug'),
             'summary': format_game_market_summary(market, home),
         })
+    # Collapse case-variant duplicates: the schedule keeps proper case ('Wyoming')
+    # while the odds feed normalizes known CFB names to abbreviations ('WYOMING'),
+    # so the same game can appear twice. Keep one per (date, away, home), preferring
+    # the proper-cased variant.
+    def _proper_count(item):
+        return sum(1 for nm in (item.get('away'), item.get('home'))
+                   if any(c.islower() for c in str(nm or '')))
+    best = {}
+    for r in rows:
+        k = (str(r.get('date') or ''), str(r.get('away') or '').strip().lower(),
+             str(r.get('home') or '').strip().lower())
+        prev = best.get(k)
+        if prev is None or _proper_count(r) > _proper_count(prev):
+            best[k] = r
+    rows = list(best.values())
     rows.sort(key=lambda item: (item.get('date') or '', item.get('time') or '', item.get('away') or ''))
     return rows
 
@@ -6843,11 +6858,68 @@ def build_ncaaf_matchup_signal_context(away, home, method_key='game_lines', sign
     )
 
 
+_FH_CACHE = {}
+
+def load_football_first_half(sport_key):
+    """First-half spread/total rows for a football sport (from The Odds API's
+    per-event markets, written by fetch_football_first_half.py). Returns a list of
+    {date, away_l, home_l, sh1, th1} for prefix-matching against board games."""
+    prefix = {'nfl': 'NFL', 'ncaaf': 'NCAAF'}.get(str(sport_key or '').strip().lower())
+    if not prefix:
+        return []
+    path = DATA_DIR / 'odds' / f'{prefix}_FirstHalf.csv'
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return []
+    cached = _FH_CACHE.get(prefix)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    rows = []
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return []
+    for _, r in df.iterrows():
+        def _s(col):
+            v = r.get(col)
+            return '' if v is None or (isinstance(v, float) and pd.isna(v)) else str(v).strip()
+        rows.append({
+            'date': _s('Date'),
+            'away_l': _s('Away').lower(),
+            'home_l': _s('Home').lower(),
+            'sh1': _s('SpreadH1'),
+            'th1': _s('TotalH1'),
+        })
+    _FH_CACHE[prefix] = (mtime, rows)
+    return rows
+
+
+def _match_first_half(fh_rows, date, away, home):
+    """Match a board game to a first-half row. The board uses CFBD school names
+    ('Alabama'); the Odds API uses mascot names ('Alabama Crimson Tide'), so the
+    board name is a prefix of the first-half name (NFL names match exactly)."""
+    if not fh_rows:
+        return None
+    a = str(away or '').strip().lower()
+    h = str(home or '').strip().lower()
+    d = str(date or '').strip()
+    if not a or not h:
+        return None
+    for r in fh_rows:
+        if d and r['date'] and r['date'] != d:
+            continue
+        if r['home_l'].startswith(h) and r['away_l'].startswith(a):
+            return r
+    return None
+
+
 def build_football_live_game_method_board(method_key, odds_df, schedule_df, date_filter='all', search_query='', sport_key=None, day_filter=''):
     method_key = str(method_key or 'game_lines').strip().lower()
     sport_key = str(sport_key or '').strip().lower()
     search_query = str(search_query or '').strip().lower()
     base_games = build_football_live_games(odds_df, schedule_df, date_filter=date_filter, day_filter=day_filter)
+    fh_rows = load_football_first_half(sport_key)
     ncaaf_signal_map = build_ncaaf_team_signal_map() if sport_key == 'ncaaf' else {}
     rows = []
     for game in base_games:
@@ -6907,6 +6979,7 @@ def build_football_live_game_method_board(method_key, odds_df, schedule_df, date
             if signal_summary:
                 note = f"{note} {signal_summary}".strip()
 
+        fh = _match_first_half(fh_rows, game.get('date'), game.get('away'), game.get('home'))
         rows.append({
             **game,
             'fit_score': round(max(50.0, min(fit_score, 95.0)), 1),
@@ -6917,6 +6990,8 @@ def build_football_live_game_method_board(method_key, odds_df, schedule_df, date
             'signal_summary': signal_summary,
             'away_signal_tags': list((signal_context.get('away_signal') or {}).get('tags') or []),
             'home_signal_tags': list((signal_context.get('home_signal') or {}).get('tags') or []),
+            'spread_h1': (fh or {}).get('sh1') or '',
+            'total_h1': (fh or {}).get('th1') or '',
         })
 
     # Chronological first (soonest date at the top, then earliest kickoff), so today's

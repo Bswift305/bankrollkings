@@ -726,8 +726,10 @@
                         </td>
                         <td>{{ game.date or '-' }}</td>
                         <td>{{ game.time or '-' }}</td>
-                        <td>{% if game.spread is not none %}{{ '%+g'|format(game.spread|float) }}{% else %}-{% endif %}</td>
-                        <td>{% if game.total is not none %}{{ game.total }}{% else %}-{% endif %}</td>
+                        <td>{% if game.spread is not none %}{{ '%+g'|format(game.spread|float) }}{% else %}-{% endif %}
+                            {% if game.spread_h1 %}<div class="cell-meta" style="margin-top:4px;">1H {{ '%+g'|format(game.spread_h1|float) }}</div>{% endif %}</td>
+                        <td>{% if game.total is not none %}{{ game.total }}{% else %}-{% endif %}
+                            {% if game.total_h1 %}<div class="cell-meta" style="margin-top:4px;">1H {{ game.total_h1 }}</div>{% endif %}</td>
                         <td>
                             {% if game.away_ml is not none and game.home_ml is not none %}
                             {{ '%+d'|format(game.away_ml|int) }}/{{ '%+d'|format(game.home_ml|int) }}

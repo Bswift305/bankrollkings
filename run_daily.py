@@ -27,6 +27,13 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # transitions (Questionable -> Out, new injuries, clearances) -- a timing signal.
         ("NFL injury change tracker", _python("track_nfl_injury_changes.py"), 120),
         ("Football line movement", _python("refresh_football_line_movement.py"), 600),
+        # First-half spread/total (Odds API per-event markets, not in the bulk feed
+        # or CFBD). Self-empties out of season; ~2 credits/event so --days is kept
+        # tight. Feeds the "1H" line on the game-lines board.
+        ("NFL first-half lines", _python("fetch_football_first_half.py",
+                                         "--sport", "americanfootball_nfl", "--days", "4"), 300),
+        ("CFB first-half lines", _python("fetch_football_first_half.py",
+                                         "--sport", "americanfootball_ncaaf", "--days", "4"), 600),
         # Player props for NFL + NCAAF. The line-movement step above fetches GAME
         # LINES; this fetches player PROPS, which previously lived only in the
         # Windows batch and so never ran on prod. Self-gating and cheap in the

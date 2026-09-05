@@ -81,10 +81,13 @@
   try{
     const p = new URLSearchParams(location.search);
     const qa = p.get('away'), qh = p.get('home');
-    if(qa){ if(list.includes(qa)) S.away = qa; else _missing.push(qa); }
-    if(qh){ if(list.includes(qh)) S.home = qh; else _missing.push(qh); }
+    // honor the requested teams verbatim — never silently swap in a default
+    if(qa){ S.away = qa; if(!list.includes(qa)) _missing.push(qa); }
+    if(qh){ S.home = qh; if(!list.includes(qh)) _missing.push(qh); }
   }catch(e){}
   const P = v => (v===null||v===undefined)?'—':Math.round(v*100)+'%';
+  const BLANK = () => ({conf:'', coach:'—', coach_ats:null, coach_rec:'', ret:null,
+    ats:{overall:{}, home:{}, away:{}, fav:{}, dog:{}, over:{}}});
 
   function row(label, aVal, hVal, aRec, hRec, higherWins){
     const aP = (typeof aVal==='number'); const hP=(typeof hVal==='number');
@@ -96,10 +99,11 @@
   }
 
   function render(){
-    const A=DATA.teams[S.away], H=DATA.teams[S.home];
-    if(!A||!H){ $('#mu-body').innerHTML=''; return; }
-    $('#mu-away-name').innerHTML = S.away+'<small>'+(A.conf||'')+' &middot; '+A.coach+'</small>';
-    $('#mu-home-name').innerHTML = S.home+'<small>'+(H.conf||'')+' &middot; '+H.coach+'</small>';
+    const missA = !DATA.teams[S.away], missH = !DATA.teams[S.home];
+    const A = DATA.teams[S.away] || BLANK();
+    const H = DATA.teams[S.home] || BLANK();
+    $('#mu-away-name').innerHTML = S.away+'<small>'+(A.conf||(missA?'not in FBS dataset':''))+' &middot; '+A.coach+'</small>';
+    $('#mu-home-name').innerHTML = S.home+'<small>'+(H.conf||(missH?'not in FBS dataset':''))+' &middot; '+H.coach+'</small>';
     let h='';
     h+=row('Coach career ATS', A.coach_ats, H.coach_ats, A.coach_rec, H.coach_rec, true);
     h+=row('Returning prod (2026)', A.ret, H.ret, null, null, true);
@@ -109,6 +113,14 @@
     h+=row('As underdog ATS', A.ats.dog.pct, H.ats.dog.pct, A.ats.dog.rec, H.ats.dog.rec, true);
     h+=row('Over rate (O/U)', A.ats.over.pct, H.ats.over.pct, A.ats.over.rec, H.ats.over.rec, false);
     $('#mu-body').innerHTML=h;
+
+    // one side isn't in our FBS dataset (e.g. an FCS opponent): no two-way contrast,
+    // and never fabricate a stand-in opponent. Point to the FBS team's profile.
+    if(missA || missH){
+      const miss = missA ? S.away : S.home, present = missA ? S.home : S.away;
+      $('#mu-read').innerHTML = '<div class="mu-bullet"><span class="mu-dot">&rsaquo;</span><span><b>'+miss+"</b> isn't in our FBS dataset (likely an FCS opponent), so there's no two-way contrast for this game. See <a href=\"/tools/cfb-team?team="+encodeURIComponent(present)+'" style="color:var(--mu-accent);">'+present+"’s full profile &rsaquo;</a></span></div>";
+      return;
+    }
 
     // synthesized read
     const B=[];
@@ -136,7 +148,7 @@
   }
 
   const aw=$('#mu-away'), hm=$('#mu-home');
-  const opts=t=>list.map(x=>'<option'+(x===t?' selected':'')+'>'+x+'</option>').join('');
+  const opts=t=>(list.includes(t)?list:[t].concat(list)).map(x=>'<option'+(x===t?' selected':'')+'>'+x+'</option>').join('');
   aw.innerHTML=opts(S.away); hm.innerHTML=opts(S.home);
   aw.onchange=()=>{S.away=aw.value; $('#mu-flag').innerHTML=''; render();};
   hm.onchange=()=>{S.home=hm.value; $('#mu-flag').innerHTML=''; render();};
