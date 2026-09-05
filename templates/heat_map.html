@@ -4,30 +4,7 @@
 {% block app_class %}no-slip{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Heat Filters</div>
-  <a class="bk-sidebar-item {% if not sport_filter %}active{% endif %}" href="{{ url_for('heat_map', min_resolved=min_resolved) }}">
-    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
-    <span class="si-name">All Sports</span>
-    <span class="si-count">{{ streak_heat|length }}</span>
-  </a>
-  {% for sport in sport_options %}
-  <a class="bk-sidebar-item {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('heat_map', sport=sport, min_resolved=min_resolved) }}">
-    <span class="si-icon"><img src="{{ sport_logo_url(sport|lower) }}" alt=""></span>
-    <span class="si-name">{{ sport }}</span>
-  </a>
-  {% endfor %}
-</div>
-
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Minimum Sample</div>
-  {% for sample in [3, 5, 10, 15] %}
-  <a class="bk-sidebar-item {% if min_resolved == sample %}active{% endif %}" href="{{ url_for('heat_map', sport=sport_filter, min_resolved=sample) }}">
-    <span class="si-icon"><img src="{{ sport_logo_url('props') }}" alt=""></span>
-    <span class="si-name">{{ sample }}+ resolved</span>
-  </a>
-  {% endfor %}
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}

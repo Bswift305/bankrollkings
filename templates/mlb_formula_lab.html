@@ -5,13 +5,7 @@
 {% block betslip %}{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">MLB Formula</div>
-  <a class="bk-sidebar-item active" href="#overview"><span class="si-icon">OV</span><span class="si-name">Overview</span></a>
-  <a class="bk-sidebar-item" href="#bands"><span class="si-icon">SC</span><span class="si-name">Score Bands</span></a>
-  <a class="bk-sidebar-item" href="#buckets"><span class="si-icon">BK</span><span class="si-name">Buckets</span></a>
-  <a class="bk-sidebar-item" href="#notes"><span class="si-icon">NT</span><span class="si-name">Notes</span></a>
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}

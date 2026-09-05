@@ -5,24 +5,7 @@
 {% block betslip %}{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">NFL Formula</div>
-  <a class="bk-sidebar-item active" href="#overview"><span class="si-icon">OV</span><span class="si-name">Overview</span></a>
-  <a class="bk-sidebar-item" href="#scores"><span class="si-icon">SC</span><span class="si-name">Score Bands</span></a>
-  <a class="bk-sidebar-item" href="#simulation"><span class="si-icon">SM</span><span class="si-name">Simulation</span></a>
-  <a class="bk-sidebar-item" href="#calibration"><span class="si-icon">CL</span><span class="si-name">Calibration</span></a>
-  <a class="bk-sidebar-item" href="#notes"><span class="si-icon">NT</span><span class="si-name">Notes</span></a>
-</div>
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Files</div>
-  {% for file in files %}
-  <div class="bk-sidebar-item">
-    <span class="si-icon">{{ loop.index }}</span>
-    <span class="si-name">{{ file.label }}</span>
-    <span class="si-count">{{ file.status }}</span>
-  </div>
-  {% endfor %}
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}

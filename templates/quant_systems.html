@@ -5,24 +5,7 @@
 {% block betslip %}{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Systems</div>
-  {% for system in systems %}
-  <a class="bk-sidebar-item" href="#{{ system.key }}">
-    <span class="si-icon">{{ loop.index }}</span>
-    <span class="si-name">{{ system.name }}</span>
-  </a>
-  {% endfor %}
-</div>
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Bankroll Layers</div>
-  {% for layer in engine_layers %}
-  <a class="bk-sidebar-item" href="#layer-{{ loop.index }}">
-    <span class="si-icon">{{ layer.status_short }}</span>
-    <span class="si-name">{{ layer.name }}</span>
-  </a>
-  {% endfor %}
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}

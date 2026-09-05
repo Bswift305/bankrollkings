@@ -5,27 +5,7 @@
 {% block betslip %}{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Sports</div>
-  {% for row in sports %}
-  <a class="bk-sidebar-item" href="#{{ row.Sport|lower }}">
-    <span class="si-icon">{{ row.Sport[:2] }}</span>
-    <span class="si-name">{{ row.Sport }}</span>
-    <span class="si-count">{{ row.DataStatus }}</span>
-  </a>
-  {% endfor %}
-</div>
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Formula Labs</div>
-  <a class="bk-sidebar-item" href="{{ url_for('nfl_formula_lab') }}">
-    <span class="si-icon">NF</span>
-    <span class="si-name">NFL Formula Lab</span>
-  </a>
-  <a class="bk-sidebar-item" href="{{ url_for('quant_systems') }}">
-    <span class="si-icon">QS</span>
-    <span class="si-name">Systems Lab</span>
-  </a>
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}

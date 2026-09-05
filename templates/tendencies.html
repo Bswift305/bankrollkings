@@ -4,19 +4,7 @@
 {% block app_class %}no-slip{% endblock %}
 
 {% block sidebar %}
-<div class="bk-sidebar-section">
-  <div class="bk-sidebar-heading">Tendency Scope</div>
-  <a class="bk-sidebar-item {% if not sport_filter %}active{% endif %}" href="{{ url_for('tendencies') }}">
-    <span class="si-icon"><img src="{{ sport_logo_url('review') }}" alt=""></span>
-    <span class="si-name">All Sports</span>
-  </a>
-  {% for sport in sport_options %}
-  <a class="bk-sidebar-item {% if sport_filter == sport %}active{% endif %}" href="{{ url_for('tendencies', sport=sport) }}">
-    <span class="si-icon"><img src="{{ sport_logo_url(sport|lower) }}" alt=""></span>
-    <span class="si-name">{{ 'CFB' if sport == 'NCAAF' else sport }}</span>
-  </a>
-  {% endfor %}
-</div>
+{% include '_sidebar.html' %}
 {% endblock sidebar %}
 
 {% block main %}
