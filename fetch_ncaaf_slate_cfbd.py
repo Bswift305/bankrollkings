@@ -36,11 +36,14 @@ def _key():
         return k.strip()
     for name in (".env.local", ".env"):   # dev keeps it in .env.local, prod in .env
         envf = ROOT / name
-        if envf.exists():
-            for line in envf.read_text().splitlines():
-                if line.strip().startswith("CFBD_API_KEY"):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise SystemExit("No CFBD_API_KEY (env, .env.local, or .env)")
+        try:
+            if envf.exists():
+                for line in envf.read_text().splitlines():
+                    if line.strip().startswith("CFBD_API_KEY"):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+        except OSError:
+            continue   # e.g. .env readable only by the service user -> rely on env instead
+    raise SystemExit("No CFBD_API_KEY in environment (set it, or run as the service user that can read .env)")
 
 
 def _get(url, key):
