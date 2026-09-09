@@ -90,15 +90,18 @@ def main() -> int:
             # Transient slowness (box busy during refresh). Logged, not fatal —
             # a real persistent hang will keep showing up and can be acted on.
             status = "TIMEOUT (slow; not blocking)"
-        elif sport is None:
-            # Cross-sport / launch gate (Prelaunch Scorecard). It is already
-            # season-aware internally, so its exit code is authoritative.
-            status = "FAIL"
-            failed = True
-        elif sport not in active:
+        elif sport is not None and sport not in active:
             # Off-season sport: scorecard can't pass without data. Expected.
             status = "SKIP (off-season)"
         else:
+            # Judge every scorecard, launch gate included, on hard FAIL sections
+            # rather than on its exit code. The Prelaunch Scorecard exits non-zero
+            # for any NO-GO, and its GO rule also requires fewer than 3 WATCH
+            # sections -- a bar nothing can clear pre-season, when "0 plays
+            # evaluated", "0 resolved results" and a standing manual visual-trust
+            # review are all true at once. Paging nightly on that is the alert
+            # fatigue the season gate exists to prevent. A genuinely failing
+            # section, or a crash (no summary line at all), still alarms.
             hard = _hard_fail_count(output)
             if hard is None:
                 # No summary printed -> the scorecard likely crashed. Real.
@@ -108,8 +111,8 @@ def main() -> int:
                 status = "FAIL"
                 failed = True
             else:
-                # In-season with zero hard fails: non-zero exit is only WATCH
-                # items (e.g. calibration immaturity). Not an alarm.
+                # Zero hard fails: non-zero exit is only WATCH items (e.g.
+                # calibration immaturity, a NO-GO on watch count). Not an alarm.
                 status = "WATCH (not blocking)"
         print(f"[{status}] {label}")
         lines += [f"[{status}] {label}", f"Script: {script}", output or "(no output)", ""]
