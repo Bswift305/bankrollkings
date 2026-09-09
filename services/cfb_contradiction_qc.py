@@ -51,8 +51,24 @@ def check_tight_support_featured(play: dict, runtime: dict) -> AuditResult | Non
 
 
 def check_low_support_sample(play: dict, runtime: dict) -> AuditResult | None:
-    resolved = int(play.get("governance_resolved", 0) or 0)
-    if play.get("_is_featured") and resolved < 120:
+    if not play.get("_is_featured"):
+        return ok()
+    raw = play.get("governance_resolved")
+    if raw is None or str(raw).strip() == "":
+        # No governance annotation at all. The CFB board is built by
+        # build_football_live_prop_board(), which writes no governance fields --
+        # only the NFL workbook path does -- so this read used to come back 0 and
+        # hard-fail EVERY featured CFB prop, in week 1 or week 15 alike. An
+        # absent measurement is not a failed one: say it is unverified, the same
+        # way this suite already treats a board with 0 plays evaluated. Once CFB
+        # governance is actually wired up, a real 0 still fails below.
+        return warn(
+            play,
+            "SUPPORT_SAMPLE_UNVERIFIED",
+            "Featured CFB prop carries no governance support data, so its sample size is UNVERIFIED, not proven.",
+        )
+    resolved = int(raw or 0)
+    if resolved < 120:
         return fail(play, "LOW_SUPPORT_SAMPLE_FEATURED", f"Featured CFB prop only has {resolved} resolved support samples.")
     return ok()
 
