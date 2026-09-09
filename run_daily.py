@@ -79,6 +79,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # prod had a valid CFBD_API_KEY but no refresh path and every NCAAF data
         # file was missing. Self-skips when CFBD_API_KEY is absent.
         ("CFB data refresh", _python("refresh_cfb_data.py"), 2400),
+        # Snapshot NCAAF featured-play results vs gamelogs. Same omission as NFL:
+        # the prelaunch scorecard requires NCAAF_FeaturedResults.csv once CFB is
+        # in season, and nothing in the daily chain produced it, so the launch
+        # gate hard-failed on a missing artifact the week CFB props went live.
+        ("NCAAF featured results", _python("refresh_ncaaf_featured_results.py"), 600),
     ]
     if "mlb" in sports:
         steps.append(("MLB daily refresh", _python("refresh_mlb_daily.py"), 900))
