@@ -113,7 +113,13 @@ def _collect_sections() -> dict:
 def _resolved_count(path: Path) -> tuple[int, int]:
     if not path.exists():
         return 0, 0
-    df = pd.read_csv(path)
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        # A zero-byte archive is an empty archive, not a reason to take out the
+        # whole launch verdict. This crashed the entire scorecard on 2026-09-09,
+        # so it reported no decision at all rather than a section-level result.
+        return 0, 0
     if df.empty or "OutcomeState" not in df.columns:
         return 0, 0
     outcomes = df["OutcomeState"].fillna("").astype(str)
