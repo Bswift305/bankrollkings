@@ -43,7 +43,9 @@ data/debug/
 data/franchise/
 data/franchise_leagues/
 data/gamelogs/
-data/historical/
+# Contents-glob rather than the bare directory: git will not descend into an
+# excluded directory, so a `!` exception below would never be reachable.
+data/historical/*
 data/injuries/
 data/live_scores/
 data/odds/
@@ -72,6 +74,17 @@ data/user_notes/
 # Keep intentional repo seed/config CSVs, not generated slate context
 !data/context/MLB_BallparkFactors.csv
 data/context/MLB_GameContext.csv
+
+# Keep the NFL historical prop lab. NFL_Props_History.csv was bought from The
+# Odds API's billed historical endpoints and cannot be regenerated for free; the
+# two schedule files are what the backfill joins it against. These live under an
+# ignored directory, so the deploy never carried them, and prod's NFL calibration
+# pipeline crashed on the missing input the moment NFL props went live
+# (2026-09-09). Shipping them lets any fresh checkout rebuild the NFL lab itself.
+# Must sit after the blanket *.csv rule above, or that rule wins.
+!data/historical/NFL_Props_History.csv
+!data/historical/NFL_Games_nfldata.csv
+!data/historical/NFL_Games_2025_from_pbp.csv
 
 # OS/editor noise
 .DS_Store
