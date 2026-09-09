@@ -12,6 +12,16 @@ from services.qc_tracking import append_qc_run_log
 BASE_DIR = Path(__file__).resolve().parent
 RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NFL_FeaturedResults.csv"
 
+# Written as a header row when there is nothing to archive yet, so the file always
+# parses and the 99 scorecard's Archive & Replay check sees a real, if empty,
+# archive. Must match the keys built in main().
+RESULT_COLUMNS = [
+    "SnapshotDate", "SavedAt", "Player", "Team", "Stat", "Direction", "Line",
+    "Floor", "Avg", "HitPct", "Streak", "GovernanceTier", "GovernanceBadge",
+    "GovernanceResolved", "GovernanceHitRate", "TrustScore", "TrustVerdict",
+    "ResultDate", "ResultValue", "DaysToResult", "OutcomeState", "SnapshotWrittenAt",
+]
+
 NFL_STAT_COLUMN_MAP = {
     "Pass Yds": "PassYds",
     "Pass TDs": "PassTD",
@@ -23,19 +33,24 @@ NFL_STAT_COLUMN_MAP = {
 
 def _load_existing() -> pd.DataFrame:
     if RESULTS_PATH.exists():
-        return pd.read_csv(RESULTS_PATH)
+        try:
+            return pd.read_csv(RESULTS_PATH)
+        except pd.errors.EmptyDataError:
+            # A zero-byte file left behind by an older build of this script. Treat
+            # it as an empty archive instead of crashing the whole daily step.
+            return pd.DataFrame()
     return pd.DataFrame()
 
 
 def _replace(df: pd.DataFrame) -> None:
-    if df.empty:
-        # An empty frame writes a zero-byte, header-less file that _load_existing()
-        # then chokes on with pandas' "No columns to parse from file". Off-season
-        # (no top plays, no archive yet) is a normal state, so leave the file alone
-        # rather than laying down a landmine for the next run.
-        print(f"No NFL featured rows to store; leaving {RESULTS_PATH.name} untouched.")
-        return
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if df.empty:
+        # Writing an empty frame straight out produces a zero-byte, header-less
+        # file that every reader then dies on with pandas' "No columns to parse
+        # from file". Having no top plays and no archive yet is a normal state
+        # (off-season, or a season that has not played a game), so lay down a
+        # valid empty archive rather than a landmine.
+        df = pd.DataFrame(columns=RESULT_COLUMNS)
     df.to_csv(RESULTS_PATH, index=False)
 
 
