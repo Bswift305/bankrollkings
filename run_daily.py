@@ -63,6 +63,12 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.
         ("NFL fantasy gamelogs", _python("build_nfl_gamelogs.py"), 180),
+        # Snapshot NFL featured-play results vs gamelogs. Mirrors the MLB and WNBA
+        # featured-results steps; NFL was simply never added, so prod had no
+        # NFL_FeaturedResults.csv and the 99 scorecard's Archive & Replay check
+        # hard-failed on the missing artifact the moment NFL came into season.
+        # Runs after the gamelog rebuild so the grader has fresh results to grade.
+        ("NFL featured results", _python("refresh_nfl_featured_results.py"), 600),
         # Confirmed MLB lineups. Without these every batter prop is stuck on
         # "LINEUP PENDING", which downgrades the verdict and blocks archiving.
         # This run is early for most slates (see bk-mlb-lineups.timer, which

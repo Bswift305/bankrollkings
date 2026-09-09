@@ -28,6 +28,13 @@ def _load_existing() -> pd.DataFrame:
 
 
 def _replace(df: pd.DataFrame) -> None:
+    if df.empty:
+        # An empty frame writes a zero-byte, header-less file that _load_existing()
+        # then chokes on with pandas' "No columns to parse from file". Off-season
+        # (no top plays, no archive yet) is a normal state, so leave the file alone
+        # rather than laying down a landmine for the next run.
+        print(f"No NFL featured rows to store; leaving {RESULTS_PATH.name} untouched.")
+        return
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(RESULTS_PATH, index=False)
 
