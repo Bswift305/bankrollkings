@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from season_utils import active_sports, sport_for_label
+
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
@@ -171,11 +173,21 @@ def main() -> int:
         f"Sports: {', '.join(sorted(sports)).upper()}",
         "",
     ]
+    active = active_sports()
     failed = False
     for label, command, timeout in steps:
         print(f"[RUN] {label}")
         ok, output = _run_step(label, command, timeout)
-        status = "PASS" if ok else "FAIL"
+        if ok:
+            status = "PASS"
+        else:
+            # Same season gate the Edge Engine pipeline and the scorecard runner
+            # already use: a sport with no live props has no data for its refresh
+            # to work on, so its failure is expected and must not fire the daily
+            # alert. (2026-09-09: NBA's board QC correctly reports "no upcoming
+            # schedule" all summer, which failed the whole run every night.)
+            sport = sport_for_label(label)
+            status = "SKIP (off-season)" if sport and sport not in active else "FAIL"
         print(f"[{status}] {label}")
         lines += [
             f"[{status}] {label}",
@@ -183,7 +195,7 @@ def main() -> int:
             output or "(no output)",
             "",
         ]
-        if not ok:
+        if status == "FAIL":
             failed = True
             if not args.continue_on_error:
                 break

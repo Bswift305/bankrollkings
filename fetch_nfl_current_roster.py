@@ -35,7 +35,11 @@ def normalize_team_abbr(value: str) -> str:
 
 def fetch_roster(slug: str, timeout: int) -> dict:
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{slug}/roster"
-    request = urllib.request.Request(url, headers={"User-Agent": "BankrollKingsRosterRefresh/1.0"})
+    # No custom User-Agent. ESPN's edge blocks the "BankrollKings*" UA family with a
+    # blanket 403 (verified 2026-09-09: 32/32 teams forbidden with it, 32/32 OK on the
+    # stdlib default), which silently emptied this roster in NFL Week 1. Sending no
+    # User-Agent override keeps urllib's plain default, which is not blocked.
+    request = urllib.request.Request(url)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
 
@@ -92,6 +96,16 @@ def main() -> int:
     args = parser.parse_args()
 
     rows, errors = build_rows(timeout=args.timeout)
+    if not rows:
+        # Never overwrite a good roster with an empty file. The fetch failing for
+        # every team used to leave a header-only CSV behind, so an upstream outage
+        # turned into missing NFL roster data across the site.
+        print(f"No roster rows fetched; keeping the existing file at {OUTPUT_PATH}")
+        if errors:
+            print("Errors:")
+            for error in errors:
+                print(f"  - {error}")
+        return 1
     write_rows(rows)
     print(f"Saved {len(rows)} NFL roster rows to {OUTPUT_PATH}")
     if rows:

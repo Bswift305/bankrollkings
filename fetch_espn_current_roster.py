@@ -25,10 +25,11 @@ BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-footb
 
 
 def get_json(url: str) -> list[dict] | dict:
+    # No custom User-Agent: ESPN's edge returns a blanket 403 for the "BankrollKings*"
+    # UA family (see fetch_nfl_current_roster.py). urllib's default UA is not blocked.
     request = Request(
         url,
         headers={
-            "User-Agent": "BankrollKings/1.0",
             "Accept": "application/json",
         },
     )
