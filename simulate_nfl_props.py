@@ -170,6 +170,18 @@ def main() -> int:
             rows.append(sim)
 
     output = pd.DataFrame(rows)
+    if output.empty:
+        # Writing an empty frame produces a zero-byte file with no header, which
+        # blows up every downstream reader with pandas' opaque "No columns to
+        # parse from file" instead of pointing at the real gap. Fail here, where
+        # the cause is visible, and leave any good prior file alone. (2026-09-09:
+        # a stale scored input silently emptied this and crashed the NFL
+        # calibration notes two steps later.)
+        raise ValueError(
+            f"No simulation rows built from {input_path} ({len(df):,} input rows). "
+            "Refusing to overwrite "
+            f"{OUTPUT_PATH.name}; rebuild the scored input first."
+        )
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(OUTPUT_PATH, index=False)
 
