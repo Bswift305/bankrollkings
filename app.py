@@ -9380,8 +9380,32 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
         if pd.isna(line):
             continue
 
+        # Only books quoting the SAME line we display. Books often sit on
+        # different lines for one player, and pooling them printed one bet's
+        # price against another bet's line: Juszczyk receptions showed
+        # DraftKings' 1.5 beside BetMGM's +150, which is the under on 0.5. It
+        # skewed the probability too, since BetMGM's 0.5 read was averaged in
+        # (45.1/54.9 rather than ~35.6/64.4 from the two books actually on 1.5).
+        # The spread across books is still reported via line_low/line_high.
+        try:
+            display_line = float(line)
+        except (TypeError, ValueError):
+            display_line = None
+
         book_probs = []
+        off_line_books = 0
         for _, book_row in market_rows.iterrows():
+            row_line = book_row.get('CurrentLine')
+            if pd.isna(row_line):
+                row_line = book_row.get('Line')
+            if display_line is not None:
+                try:
+                    if abs(float(row_line) - display_line) > 1e-9:
+                        off_line_books += 1
+                        continue
+                except (TypeError, ValueError):
+                    off_line_books += 1
+                    continue
             over_odds = book_row.get('OverOdds')
             under_odds = book_row.get('UnderOdds')
             over_prob = american_odds_to_implied_prob(over_odds)
@@ -9392,7 +9416,7 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
                     'book': str(book_row.get('Book') or '').strip(),
                     'over_rate': (over_prob / total_prob) * 100,
                     'under_rate': (under_prob / total_prob) * 100,
-                    'line': book_row.get('CurrentLine') if pd.notna(book_row.get('CurrentLine')) else book_row.get('Line'),
+                    'line': row_line,
                     'over_odds': over_odds,
                     'under_odds': under_odds,
                 })
@@ -9570,6 +9594,9 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
             'fair_price': prob_to_american_odds((lean_prob / 100) if lean_prob is not None else None),
             'book': str(primary_row.get('Book') or market.get('book') or '').strip(),
             'book_count': int(market_rows['Book'].dropna().nunique()) if 'Book' in market_rows.columns else 1,
+            # Books quoting this player/stat at a DIFFERENT line, excluded from the
+            # price and probability above. line_low/line_high show the spread.
+            'off_line_books': off_line_books,
             'books': sorted([str(book).strip() for book in market_rows['Book'].dropna().unique().tolist() if str(book).strip()]) if 'Book' in market_rows.columns else [],
             'draftkings_line': round(float(dk_line), 2) if dk_line is not None and not pd.isna(dk_line) else None,
             'vegas_line': round(float(vegas_line), 2) if vegas_line is not None and not pd.isna(vegas_line) else None,
