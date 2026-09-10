@@ -53,7 +53,7 @@ OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_LiveProps_Scored.csv"
 
 OUTPUT_COLUMNS = [
     "Player", "Team", "Opponent", "Stat", "Direction", "Line", "RoleLabel",
-    "Confidence", "MarketPrice", "MarketGate", "VolatilityFlag",
+    "Confidence", "MarketPrice", "BetPrice", "MarketGate", "VolatilityFlag",
     "GameTotalLine", "GameSpreadLine", "ProjectedMargin", "WindMph", "Temperature", "Roof",
     "GameScriptTags", "ContradictionTags",
     "UsageStability", "MatchupAdvantage", "GameScriptFit", "LineValue",
@@ -219,7 +219,12 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
         if not pd.isna(_num(wind)) and float(_num(wind)) >= 15:
             stats["with_wind"] += 1
 
-        stat = _clean(row.get("stat")).upper()
+        # Keep the feed's casing ("Pass Yds", not "PASS YDS"). The scoring functions
+        # upper-case internally so they do not care, but research/nfl_edge's wind
+        # board matches Stat against a title-case set, and the graded history is
+        # written the same way. Diverging here would silently empty that board --
+        # the same class of bug as the Pass Completions label mismatch.
+        stat = _clean(row.get("stat"))
         direction = _clean(row.get("direction")).upper() or "OVER"
         game_tags = build_game_script_tags(total, projected_margin, wind, temp, roof)
 
@@ -235,6 +240,9 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
             # holds in the graded history the model was fitted on.
             "Confidence": row.get("market_prob"),
             "MarketPrice": row.get("market_price"),
+            # research/nfl_edge/nfl_edge_board.py reads BetPrice; the graded history
+            # uses that name for the price a play was struck at. Same value.
+            "BetPrice": row.get("market_price"),
             "MarketGate": "CLEAR",
             "VolatilityFlag": "STABLE",
             "GameTotalLine": None if pd.isna(total) else float(total),
