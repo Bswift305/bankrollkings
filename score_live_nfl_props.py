@@ -49,6 +49,7 @@ from calculate_nfl_prop_score import score_rows
 
 BASE_DIR = Path(__file__).resolve().parent
 WEATHER_PATH = BASE_DIR / "data" / "context" / "NFL_GameWeather.csv"
+ROSTER_PATH = BASE_DIR / "data" / "rosters" / "NFL_CurrentRoster.csv"
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_LiveProps_Scored.csv"
 
 OUTPUT_COLUMNS = [
@@ -127,6 +128,30 @@ def load_weather() -> dict:
     return lookup
 
 
+def load_roster_teams() -> dict:
+    """Player -> (abbreviation, full team name).
+
+    The props feed leaves Team blank on purpose (fetch_player_props: "Keep blank if
+    we cannot infer from source"), and the player's side is what turns a HOME spread
+    into THIS player's projected margin. Without it ProjectedMargin was always NA,
+    so no PROJECTED_* tag ever fired and GameScriptFit -- one of PropScore's six
+    components -- was silently dead. The roster carries a full display name that
+    matches the board's home/away naming directly.
+    """
+    if not ROSTER_PATH.exists():
+        return {}
+    try:
+        frame = pd.read_csv(ROSTER_PATH)
+    except (pd.errors.EmptyDataError, OSError):
+        return {}
+    lookup = {}
+    for _, row in frame.iterrows():
+        name = _clean(row.get("Player"))
+        if name and name not in lookup:
+            lookup[name] = (_clean(row.get("CurrentTeam")), _clean(row.get("TeamName")))
+    return lookup
+
+
 def load_game_lines() -> list[dict]:
     odds = load_nfl_game_market_odds()
     if odds is None or odds.empty:
@@ -181,6 +206,7 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
     )
     games = load_game_lines()
     weather = load_weather()
+    roster = load_roster_teams()
 
     stats = {
         "prop_rows": int(len(props)),
@@ -189,6 +215,9 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
         "no_game_line": 0,
         "with_wind": 0,
         "weather_rows": len(weather),
+        "roster_rows": len(roster),
+        "no_team": 0,
+        "with_script_tag": 0,
     }
 
     records = []
@@ -197,11 +226,24 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
             stats["one_sided_skipped"] += 1
             continue
         player = _clean(row.get("player"))
-        team = team_by_player.get(player, "")
+        abbrev, team_full = roster.get(player, ("", ""))
+        team = abbrev or team_by_player.get(player, "")
         game = match_game(row, games)
         if not game:
             stats["no_game_line"] += 1
-        is_home = team_is_home(team, game) if game else None
+
+        # Prefer the roster's full team name against the board's own home/away
+        # names; fall back to matching an abbreviation in the game-lines row.
+        is_home = None
+        if team_full:
+            if team_full.lower() == _clean(row.get("home")).lower():
+                is_home = True
+            elif team_full.lower() == _clean(row.get("away")).lower():
+                is_home = False
+        if is_home is None and game:
+            is_home = team_is_home(team, game)
+        if is_home is None:
+            stats["no_team"] += 1
 
         spread = _num(game.get("Spread")) if game else pd.NA
         total = _num(game.get("Total")) if game else pd.NA
@@ -227,11 +269,16 @@ def build_live_frame(date_filter: str = "all") -> tuple[pd.DataFrame, dict]:
         stat = _clean(row.get("stat"))
         direction = _clean(row.get("direction")).upper() or "OVER"
         game_tags = build_game_script_tags(total, projected_margin, wind, temp, roof)
+        if "PROJECTED_" in game_tags:
+            stats["with_script_tag"] += 1
 
         records.append({
             "Player": player,
             "Team": team,
-            "Opponent": _clean(row.get("away") if is_home else row.get("home")),
+            # Left blank when the side is unknown. Guessing here used to print the
+            # home team as every player's opponent, including the home team's own.
+            "Opponent": ("" if is_home is None
+                         else _clean(row.get("away") if is_home else row.get("home"))),
             "Stat": stat,
             "Direction": direction,
             "Line": row.get("line"),
@@ -290,6 +337,9 @@ def main() -> int:
     print(f"Feed rows: {stats['prop_rows']:,} | board rows: {stats['board_rows']:,}")
     print(f"Scored: {len(scored):,} | one-sided skipped: {stats['one_sided_skipped']:,} | no game line: {stats['no_game_line']:,}")
     print(f"Weather rows loaded: {stats['weather_rows']:,} | props in 15+ mph wind: {stats['with_wind']:,}")
+    print(f"Roster rows: {stats['roster_rows']:,} | side unknown: {stats['no_team']:,} | with a game-script tag: {stats['with_script_tag']:,}")
+    if stats["no_team"]:
+        print("[WARN] Some players had no roster match, so their game-script tags could not be built.")
     if not stats["weather_rows"]:
         print("[WARN] No weather file, so WIND_15_PLUS never fired. Run fetch_nfl_weather.py.")
     score = pd.to_numeric(scored["BK_NFL_PropScore"], errors="coerce")
