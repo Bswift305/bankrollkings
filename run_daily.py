@@ -58,6 +58,12 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # Powers the validated high-wind UNDER flag; self-empties out of the ~16-day
         # forecast window and skips cleanly on any network error.
         ("NFL game weather", _python("fetch_nfl_weather.py"), 180),
+        # Score THIS WEEK's props with the validated PropScore model. Must run after
+        # the props fetch, the game lines and the weather pull, since it needs all
+        # three to build the game-script and wind tags. Until this existed, nothing
+        # scored a live prop and the board could only reuse a 2024/25 score for a
+        # matching player/stat/direction/line.
+        ("NFL live prop scoring", _python("score_live_nfl_props.py"), 600),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
