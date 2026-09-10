@@ -554,7 +554,12 @@
                     </details>
                     {% endif %}
                 </td>
-                <td><span class="{% if prop.confidence >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ prop.confidence|round|int }}%</span></td>
+                {# No percent sign: this is normalize_confidence_rate's 50-99 play-strength
+                   score, not a probability. It floors at 50 and caps at 99, so a "%" made a
+                   floored longshot read as a coin flip and made every row look like the model
+                   disagreeing with the book by a few points. The glossary above the table
+                   already defines it as a 50-99 score; this makes the cell agree. #}
+                <td><span class="{% if prop.confidence >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ prop.confidence|round|int }}</span></td>
             </tr>
             {% endfor %}
         </tbody>
