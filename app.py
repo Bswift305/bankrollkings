@@ -9413,12 +9413,45 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
         if stat_filter and stat_filter not in stat.lower():
             continue
 
+        one_sided_price = False
         if over_rate is None or under_rate is None:
-            direction = 'OVER'
-            lean_prob = 50.0
+            # No book quoted BOTH sides, so there is nothing to de-vig. Normal on
+            # thin markets (sacks, anytime TD). The old code asserted a flat 50.0,
+            # which the screener rendered as "O:50.0% / U:50.0%" beside a +750
+            # longshot: a placeholder shown as a measurement, and one that reads
+            # as an enormous edge. Use the price that actually exists (vig
+            # included, since one side alone cannot be devigged) and flag it.
+            one_sided_price = True
+            over_quotes = pd.to_numeric(market_rows.get('OverOdds'), errors='coerce').dropna()
+            under_quotes = pd.to_numeric(market_rows.get('UnderOdds'), errors='coerce').dropna()
+            if not over_quotes.empty:
+                direction = 'OVER'
+                market_price = float(over_quotes.max())
+            elif not under_quotes.empty:
+                direction = 'UNDER'
+                market_price = float(under_quotes.max())
+            else:
+                # Nothing priced on either side: not a bet, so do not list it.
+                continue
+            implied = american_odds_to_implied_prob(market_price)
+            if implied is None:
+                continue
+            lean_prob = round(float(implied) * 100, 1)
+            # The unpriced side is the complement of a vig-inclusive number, so it
+            # is an inference, not a quote. Kept only so the screener has two
+            # values to render; one_sided_price marks it as such.
+            if direction == 'OVER':
+                over_rate, under_rate = lean_prob, round(100.0 - lean_prob, 1)
+            else:
+                under_rate, over_rate = lean_prob, round(100.0 - lean_prob, 1)
             lean_gap = 0.0
-            market_price = primary_row.get('OverOdds') if pd.notna(primary_row.get('OverOdds')) else primary_row.get('UnderOdds')
-            best_book = str(primary_row.get('Book') or '').strip()
+            price_col = 'OverOdds' if direction == 'OVER' else 'UnderOdds'
+            matched = market_rows[pd.to_numeric(market_rows.get(price_col), errors='coerce') == market_price]
+            best_book = (
+                str(matched.iloc[0].get('Book') or '').strip()
+                if not matched.empty
+                else str(primary_row.get('Book') or '').strip()
+            )
         else:
             if over_rate >= under_rate:
                 direction = 'OVER'
@@ -9512,7 +9545,12 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
             'player': player,
             'stat': stat,
             'stat_family': stat_family,
-            'line': round(float(line), 1) if pd.notna(line) else line,
+            # 2dp, not 1. DraftKings genuinely quotes quarter-lines on defensive
+            # markets -- sacks at 0.25 and 0.75 -- and rounding to one decimal
+            # both misreports the line and, because Python rounds halves to even,
+            # renders them 0.2 and 0.8: numbers no book offers. Half-point lines
+            # are unaffected (1.5 stays 1.5).
+            'line': round(float(line), 2) if pd.notna(line) else line,
             'game': game,
             'matchup': matchup_text,
             'away': away,
@@ -9524,16 +9562,19 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
             'under_rate': under_rate,
             'market_prob': round(float(lean_prob), 1),
             'market_confidence': normalize_confidence_rate(lean_prob),
+            # True when no book priced both sides, so market_prob is one book's
+            # vig-inclusive implied probability, not a devigged two-way read.
+            'one_sided_price': one_sided_price,
             'lean_gap': lean_gap,
             'market_price': int(market_price) if pd.notna(market_price) else None,
             'fair_price': prob_to_american_odds((lean_prob / 100) if lean_prob is not None else None),
             'book': str(primary_row.get('Book') or market.get('book') or '').strip(),
             'book_count': int(market_rows['Book'].dropna().nunique()) if 'Book' in market_rows.columns else 1,
             'books': sorted([str(book).strip() for book in market_rows['Book'].dropna().unique().tolist() if str(book).strip()]) if 'Book' in market_rows.columns else [],
-            'draftkings_line': round(float(dk_line), 1) if dk_line is not None and not pd.isna(dk_line) else None,
-            'vegas_line': round(float(vegas_line), 1) if vegas_line is not None and not pd.isna(vegas_line) else None,
-            'line_low': round(float(line_low), 1) if line_low is not None else None,
-            'line_high': round(float(line_high), 1) if line_high is not None else None,
+            'draftkings_line': round(float(dk_line), 2) if dk_line is not None and not pd.isna(dk_line) else None,
+            'vegas_line': round(float(vegas_line), 2) if vegas_line is not None and not pd.isna(vegas_line) else None,
+            'line_low': round(float(line_low), 2) if line_low is not None else None,
+            'line_high': round(float(line_high), 2) if line_high is not None else None,
             'best_book': best_book,
             'market_note': build_football_market_note(direction, over_rate, under_rate),
             'book_comparison_note': build_football_book_comparison_note(dk_line, vegas_line, line_low, line_high, direction, best_book),

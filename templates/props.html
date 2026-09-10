@@ -505,10 +505,19 @@
                     {% else %}<span class="play-pill-gloss {% if prop.direction == 'OVER' %}over{% else %}under{% endif %}">{{ prop.direction }}</span>{% endif %}
                 </td>
                 <td style="white-space:nowrap;">
+                    {% if prop.one_sided_price %}
+                    {# Only one side is quoted, so there is no two-way price to devig.
+                       Show the priced side's implied number and say what it is, rather
+                       than printing a symmetrical split that was never measured. #}
+                    {% set priced_pct = over_pct if prop.direction == 'OVER' else under_pct %}
+                    <span style="color: {{ ou_rate_color(priced_pct) }};">{{ prop.direction|title }}:{{ priced_pct }}%</span>
+                    <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">One-sided market &middot; implied from the only quote, not de-vigged</div>
+                    {% else %}
                     <span style="color: {{ ou_rate_color(over_pct) }};">O:{{ over_pct }}%</span>
                     <span style="color: var(--text-muted);">/</span>
                     <span style="color: {{ ou_rate_color(under_pct) }};">U:{{ under_pct }}%</span>
                     <div style="font-size:10.5px; color:var(--text-muted); margin-top:3px;">Best: {{ 'Over' if over_is_best else 'Under' }} &middot; avg {{ prop.avg }}</div>
+                    {% endif %}
                 </td>
                 <td style="white-space:nowrap;">
                     {% if prop.ev_pct is not none %}
