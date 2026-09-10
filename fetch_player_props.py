@@ -62,6 +62,14 @@ SPORT_DEFAULT_MARKETS = {
         "player_receptions",
         "player_reception_yds",
         "player_anytime_td",
+        # Defensive markets. Each one is a separate billed market per event, so
+        # these four roughly double the per-event cost of an NFL props pull.
+        # NCAAF deliberately does not get them: CFBD/nflverse-style defensive
+        # box scores are not in the college pipeline, so they could never grade.
+        "player_tackles_assists",
+        "player_solo_tackles",
+        "player_sacks",
+        "player_defensive_interceptions",
     ],
     "americanfootball_ncaaf": [
         "player_pass_yds",
@@ -133,6 +141,14 @@ MARKET_STAT_MAP = {
     "player_receptions": "Receptions",
     "player_reception_yds": "Rec Yds",
     "player_anytime_td": "Anytime TD",
+    # These labels MUST stay identical to STAT_CONFIG in
+    # backfill_nfl_historical_props.py. When they drifted for pass completions
+    # ("Pass Completions" here vs "Pass Comp" there) the quant lookup could never
+    # join that market and it rendered unscored for months without an error.
+    "player_tackles_assists": "Tackles + Assists",
+    "player_solo_tackles": "Solo Tackles",
+    "player_sacks": "Sacks",
+    "player_defensive_interceptions": "Def INT",
     "batter_hits": "Hits",
     "batter_total_bases": "Total Bases",
     "batter_home_runs": "Home Runs",

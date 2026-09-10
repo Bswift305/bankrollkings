@@ -26,6 +26,10 @@ HIST = os.path.join(DATA, "historical")
 OUT = os.path.join(DATA, "gamelogs", "NFL_GameLogs.csv")
 
 SKILL = {"QB", "RB", "WR", "TE", "FB"}
+# Defensive position groups. Books now price tackles, sacks and defensive
+# interceptions, so those players need per-game rows or every defensive prop
+# sits Pending forever with nothing to grade it against.
+DEFENSE = {"DB", "DL", "LB"}
 SEASONS_KEPT = 3          # most recent completed/current seasons to include
 
 
@@ -41,6 +45,15 @@ def _infer_position(row):
         return "RB"
     if tgt > 0:
         return "WR"
+    # No offensive usage at all but defensive production: a defender. "LB" is a
+    # deliberate catch-all here, not a real position read -- it only has to land
+    # inside DEFENSE so the row survives the filter and can grade a prop.
+    solo = float(row.get("def_tackles_solo", 0) or 0)
+    ast = float(row.get("def_tackle_assists", 0) or 0)
+    sacks = float(row.get("def_sacks", 0) or 0)
+    ints = float(row.get("def_interceptions", 0) or 0)
+    if solo + ast + sacks + ints > 0:
+        return "LB"
     return ""
 
 
@@ -140,12 +153,29 @@ def build():
     out["RecYd"] = num("receiving_yards")
     out["RecTD"] = num("receiving_tds")
     out["Targets"] = num("targets")
+
+    # Defensive stat columns, for grading defensive props. "Tackles" is the
+    # combined figure books price (solo + assists), kept alongside solo so both
+    # markets can grade. Sacks carry halves in the source, which is what makes a
+    # 0.5 line gradeable at all, so they stay float.
+    out["Tackles"] = num("def_tackles_solo") + num("def_tackle_assists")
+    out["SoloTackles"] = num("def_tackles_solo")
+    out["Sacks"] = num("def_sacks")
+    out["DefInt"] = num("def_interceptions")
+
     out["Date"] = [_week_to_date(s, w) for s, w in zip(out["Season"], out["Week"])]
 
-    # Fantasy-relevant players only: skill positions, and games with real usage.
-    out = out[out["Position"].isin(SKILL)]
-    usage = out[["PassYd", "RushYd", "RecYd", "Rec", "Targets"]].abs().sum(axis=1)
-    out = out[(usage > 0) & out["Date"].astype(bool)]
+    # Keep a player if he did something in one of the two lanes: skill position
+    # with offensive usage, or defensive position with defensive production.
+    # Judging defenders by offensive usage (the old single filter) dropped every
+    # one of them.
+    offense = out["Position"].isin(SKILL) & (
+        out[["PassYd", "RushYd", "RecYd", "Rec", "Targets"]].abs().sum(axis=1) > 0
+    )
+    defense = out["Position"].isin(DEFENSE) & (
+        out[["Tackles", "Sacks", "DefInt"]].abs().sum(axis=1) > 0
+    )
+    out = out[(offense | defense) & out["Date"].astype(bool)]
     out = out.sort_values(["Date", "Player"]).reset_index(drop=True)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

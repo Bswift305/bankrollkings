@@ -96,6 +96,18 @@ STAT_CONFIG = {
     "player_reception_yds": {"stat_label": "Rec Yds", "actual_col": "receiving_yards"},
     "player_receptions": {"stat_label": "Receptions", "actual_col": "receptions"},
     "player_anytime_td": {"stat_label": "Anytime TD", "actual_col": "receiving_tds"},
+    # Defensive markets. Labels MUST match MARKET_STAT_MAP in
+    # fetch_player_props.py, or the quant lookup silently fails to join (which is
+    # exactly what happened to pass completions). Deliberately NOT in
+    # DEFAULT_MARKETS: the historical endpoints are billed per market per event,
+    # so a defensive backfill has to be asked for explicitly with --markets.
+    "player_tackles_assists": {
+        "stat_label": "Tackles + Assists",
+        "actual_col": ("def_tackles_solo", "def_tackle_assists"),
+    },
+    "player_solo_tackles": {"stat_label": "Solo Tackles", "actual_col": "def_tackles_solo"},
+    "player_sacks": {"stat_label": "Sacks", "actual_col": "def_sacks"},
+    "player_defensive_interceptions": {"stat_label": "Def INT", "actual_col": "def_interceptions"},
 }
 
 
@@ -379,7 +391,19 @@ def attach_actuals(rows: list[dict], actual_lookup: dict, season: int, week: int
                 if player_row:
                     team = team_abbr
                     opponent = opp_abbr
-                    if stat_key and stat_key in player_row:
+                    if isinstance(stat_key, tuple):
+                        # Combined markets (tackles + assists) sum several source
+                        # columns. All-missing stays NA rather than becoming a
+                        # fake 0, which would grade as a loss on every under.
+                        parts = [
+                            pd.to_numeric(player_row.get(col), errors="coerce")
+                            for col in stat_key
+                            if col in player_row
+                        ]
+                        present = [p for p in parts if pd.notna(p)]
+                        if present:
+                            actual_value = sum(present)
+                    elif stat_key and stat_key in player_row:
                         actual_value = pd.to_numeric(player_row.get(stat_key), errors="coerce")
                     break
             if team:

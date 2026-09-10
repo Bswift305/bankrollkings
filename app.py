@@ -4217,6 +4217,11 @@ MLB_STAT_COLUMN_MAP = {
 # Keys are UPPERCASE because archive_method_candidates upper-cases Stat on write.
 # Source of truth for the names is MARKET_STAT_MAP in fetch_player_props.py;
 # columns come from build_nfl_gamelogs.py.
+# Skill positions the NFL fantasy product ranks. The gamelog itself is wider than
+# this now (it carries defenders so defensive props can grade), so the fantasy
+# path filters with this rather than assuming the file is skill-only.
+FANTASY_NFL_POSITIONS = {'QB', 'RB', 'WR', 'TE', 'FB'}
+
 FOOTBALL_STAT_COLUMN_MAP = {
     'PASS YDS': 'PassYd',
     'PASSING YARDS': 'PassYd',
@@ -4238,6 +4243,18 @@ FOOTBALL_STAT_COLUMN_MAP = {
     'REC TDS': 'RecTD',
     'RECEIVING TDS': 'RecTD',
     'TARGETS': 'Targets',
+    # Defensive markets. The gamelog carries these as of build_nfl_gamelogs.py
+    # including DB/DL/LB rows; before that every defensive prop was ungradeable.
+    # "Tackles + Assists" is the combined figure books price, so it maps to the
+    # combined column, NOT to solo tackles, which is a separate market.
+    'TACKLES + ASSISTS': 'Tackles',
+    'TACKLES+ASSISTS': 'Tackles',
+    'TACKLES': 'Tackles',
+    'COMBINED TACKLES': 'Tackles',
+    'SOLO TACKLES': 'SoloTackles',
+    'SACKS': 'Sacks',
+    'DEF INT': 'DefInt',
+    'DEFENSIVE INTERCEPTIONS': 'DefInt',
 }
 # Markets with no gamelog equivalent are deliberately absent rather than mapped
 # to a lookalike column: "Pass Completions", "Rush Att" and "Anytime TD" have no
@@ -31285,6 +31302,12 @@ def _build_fantasy_projection_rows(sport_key, scoring=None):
             logs = _load_cached_csv(DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv')
         except Exception:
             logs = None
+        # The NFL gamelog now also carries DB/DL/LB rows so defensive props can be
+        # graded. Fantasy is a skill-position product and scores off offensive
+        # weights only, so defenders would land in the pool at ~0 points and pad
+        # the rankings. Filter them out here rather than narrowing the file.
+        if logs is not None and not logs.empty and 'Position' in logs.columns:
+            logs = logs[logs['Position'].astype(str).str.upper().isin(FANTASY_NFL_POSITIONS)]
         scoring = scoring if scoring in FOOTBALL_SCORING_SYSTEMS else FOOTBALL_DEFAULT_SCORING
         fp_series = lambda w: _fantasy_points_nfl(w, scoring=scoring)
     else:
