@@ -28388,20 +28388,12 @@ def load_nfl_simulation_lookup() -> dict:
             df = pd.read_csv(path, low_memory=False)
         except Exception:
             return {}
-        lookup = {}
-        for _, row in df.iterrows():
-            key = (
-                str(row.get('Player') or '').strip().lower(),
-                str(row.get('Stat') or '').strip().upper(),
-                str(row.get('Direction') or '').strip().upper(),
-                _line_lookup_key(row.get('Line')),
-            )
-            if key[0] and key[1] and key[2]:
-                lookup[key] = row.to_dict()
-                lookup[(key[0], key[1], key[2], '')] = row.to_dict()
-        return lookup
+        return _nfl_quant_lookup_from_frame(df)
+    # Cache name bumped with the lookup's shape: the version token is derived
+    # from the source file, which does not change when the code does, so an old
+    # pickle of the previous structure would otherwise still be served.
     return _get_disk_ttl_cached_value(
-        'nfl_simulation_lookup',
+        'nfl_simulation_lookup_v2',
         43200,
         _build_lookup,
         version=_build_file_token(path),
@@ -28415,6 +28407,95 @@ def _line_lookup_key(value):
         return str(value or '').strip()
 
 
+# The live props feed and the historical backfill label the same Odds API market
+# differently: fetch_player_props.py maps player_pass_completions to "Pass
+# Completions", backfill_nfl_historical_props.py maps it to "Pass Comp". So the
+# quant lookup could never join that market and every completions prop rendered
+# with no score at all, silently. Canonicalise both sides of the join rather than
+# renaming either source, which would orphan the data already written under the
+# old label (and NFL_Props_History.csv can only be refetched for money).
+_NFL_LOOKUP_STAT_ALIASES = {
+    'PASS COMPLETIONS': 'PASS COMP',
+    'PASS ATTEMPTS': 'PASS ATT',
+    'PASS INTERCEPTIONS': 'PASS INT',
+    'INTERCEPTIONS': 'PASS INT',
+    'PASS YARDS': 'PASS YDS',
+    'RUSH ATTEMPTS': 'RUSH ATT',
+    'RUSH YARDS': 'RUSH YDS',
+    'RECEIVING YARDS': 'REC YDS',
+    'RECEIVING TDS': 'REC TDS',
+}
+
+
+def _nfl_lookup_stat(value):
+    stat = str(value or '').strip().upper()
+    return _NFL_LOOKUP_STAT_ALIASES.get(stat, stat)
+
+
+def _nfl_line_tolerance(line):
+    """How far a historical line may sit from the live line and still count.
+
+    Half a unit for small counting markets (receptions, pass TDs), 10% once the
+    numbers get large (rush/rec yards), where half a yard is meaninglessly tight.
+    """
+    try:
+        return max(0.5, abs(float(line)) * 0.10)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _nfl_quant_match(lookup, player, stat, direction, line):
+    """Find the historical row for a live prop: (row, source_line_if_approximate).
+
+    Exact line first, then the nearest historical line within tolerance. This
+    replaces a line-blind fallback that matched on player/stat/direction alone
+    and so scored a Rec Yds UNDER 24.5 off a 14.5 row, and a 4.5 off a 13.5 row.
+    Those are different bets, and nothing in the UI said the score came from
+    another line -- hence the returned source line, so callers can say so.
+    """
+    key = (player, stat, direction)
+    exact = lookup.get(key + (_line_lookup_key(line),))
+    if exact:
+        return exact, None
+    try:
+        target = float(line)
+    except (TypeError, ValueError):
+        return None, None
+    tolerance = _nfl_line_tolerance(target)
+    best_row = None
+    best_delta = None
+    best_line = None
+    for candidate_line, candidate_row in lookup.get(key + ('*',)) or []:
+        try:
+            delta = abs(float(candidate_line) - target)
+        except (TypeError, ValueError):
+            continue
+        if delta <= tolerance and (best_delta is None or delta < best_delta):
+            best_row, best_delta, best_line = candidate_row, delta, candidate_line
+    return best_row, best_line
+
+
+def _nfl_quant_lookup_from_frame(df):
+    """Index a scored/simulation frame by (player, stat, direction, line).
+
+    Also keeps every line for a (player, stat, direction) under a '*' entry so
+    _nfl_quant_match can pick the NEAREST line instead of an arbitrary one.
+    """
+    lookup = {}
+    for _, row in df.iterrows():
+        key = (
+            str(row.get('Player') or '').strip().lower(),
+            _nfl_lookup_stat(row.get('Stat')),
+            str(row.get('Direction') or '').strip().upper(),
+        )
+        if not all(key):
+            continue
+        record = row.to_dict()
+        lookup[key + (_line_lookup_key(row.get('Line')),)] = record
+        lookup.setdefault(key + ('*',), []).append((row.get('Line'), record))
+    return lookup
+
+
 def load_nfl_scored_lookup() -> dict:
     path = DATA_DIR / 'tracking' / 'NFL_AllPropResults_Scored.csv'
     if not path.exists():
@@ -28424,23 +28505,15 @@ def load_nfl_scored_lookup() -> dict:
             df = pd.read_csv(path, low_memory=False)
         except Exception:
             return {}
-        lookup = {}
         sort_cols = [col for col in ['Season', 'Week', 'SnapshotDate'] if col in df.columns]
         if sort_cols:
+            # Ascending, so the most recent row for a given line wins the exact key.
             df = df.sort_values(sort_cols)
-        for _, row in df.iterrows():
-            key = (
-                str(row.get('Player') or '').strip().lower(),
-                str(row.get('Stat') or '').strip().upper(),
-                str(row.get('Direction') or '').strip().upper(),
-                _line_lookup_key(row.get('Line')),
-            )
-            if key[0] and key[1] and key[2]:
-                lookup[key] = row.to_dict()
-                lookup[(key[0], key[1], key[2], '')] = row.to_dict()
-        return lookup
+        return _nfl_quant_lookup_from_frame(df)
+    # See the note on the simulation lookup: bump this name whenever the shape
+    # changes, because the version token only tracks the source file.
     return _get_disk_ttl_cached_value(
-        'nfl_scored_lookup',
+        'nfl_scored_lookup_v2',
         43200,
         _build_lookup,
         version=_build_file_token(path),
@@ -28461,11 +28534,15 @@ def attach_nfl_quant_insights_to_rows(rows, default_direction='OVER'):
     sim_lookup = load_nfl_simulation_lookup()
     for row in rows:
         player = str(row.get('player') or row.get('Player') or '').strip().lower()
-        stat = str(row.get('stat') or row.get('Stat') or '').strip().upper()
+        stat = _nfl_lookup_stat(row.get('stat') or row.get('Stat'))
         direction = str(row.get('direction') or row.get('Direction') or default_direction or 'OVER').strip().upper()
         line = row.get('line') if row.get('line') is not None else row.get('line_proxy')
-        key = (player, stat, direction, _line_lookup_key(line))
-        scored = scored_lookup.get(key) or scored_lookup.get((player, stat, direction, ''))
+        scored, scored_from_line = _nfl_quant_match(scored_lookup, player, stat, direction, line)
+        if scored_from_line is not None:
+            # Surfaced so the row can never present another line's score as its own.
+            row['quant_source_line'] = scored_from_line
+            row['quant_line_approx'] = True
+        approx_note = f" | from line {scored_from_line}" if scored_from_line is not None else ""
         if scored:
             edge = _score_label(scored.get('BK_NFL_EdgeScore'))
             prop = _score_label(scored.get('BK_NFL_PropScore'))
@@ -28474,6 +28551,7 @@ def attach_nfl_quant_insights_to_rows(rows, default_direction='OVER'):
                 row['edge_score_detail'] = (
                     f"Projection {scored.get('ProjectionEdge', '-')} | Market {scored.get('MarketEdge', '-')} | "
                     f"Script {scored.get('GameScriptEdge', '-')} | Risk {scored.get('RiskPenalty', '-')}"
+                    + approx_note
                 )
             if prop:
                 row['nfl_prop_score'] = prop
@@ -28486,10 +28564,10 @@ def attach_nfl_quant_insights_to_rows(rows, default_direction='OVER'):
                 ngs_modifier = _score_label(scored.get('NGSModifier'))
                 if ngs_modifier:
                     prop_parts.append(f"NGS {ngs_modifier}")
-                row['prop_score_detail'] = " | ".join(prop_parts)
+                row['prop_score_detail'] = " | ".join(prop_parts) + approx_note
                 if scored.get('NGSNote'):
                     row['ngs_note'] = str(scored.get('NGSNote') or '').strip()
-        sim = sim_lookup.get(key) or sim_lookup.get((player, stat, direction, ''))
+        sim, sim_from_line = _nfl_quant_match(sim_lookup, player, stat, direction, line)
         if sim:
             try:
                 row['sim_hit_probability'] = round(float(sim.get('SimHitProbability')), 1)
@@ -28498,6 +28576,7 @@ def attach_nfl_quant_insights_to_rows(rows, default_direction='OVER'):
             row['sim_detail'] = (
                 f"Mean {sim.get('SimMean', '-')} | P25 {sim.get('SimP25', '-')} | "
                 f"P75 {sim.get('SimP75', '-')} | Vol {sim.get('SimVolatility', '-')}"
+                + (f" | from line {sim_from_line}" if sim_from_line is not None else "")
             )
     return rows
 
@@ -28568,12 +28647,14 @@ def attach_formula_insights_to_rows(rows, *, sport='NBA'):
             row['formula_detail'] = f"{row['formula_driver']}: {rate_label} on {row['formula_sample']} resolved"
 
         if sim_lookup:
-            line = str(row.get('line') or row.get('Line') or '').strip()
+            # Key the same way the lookup is built: canonicalised stat (so "Pass
+            # Completions" reaches "Pass Comp" rows) and _line_lookup_key, which
+            # normalises 10 and 10.0 to one token. Raw str() missed both.
             sim_key = (
                 str(row.get('player') or row.get('Player') or '').strip().lower(),
-                stat,
+                _nfl_lookup_stat(stat),
                 direction,
-                line,
+                _line_lookup_key(row.get('line') if row.get('line') is not None else row.get('Line')),
             )
             sim = sim_lookup.get(sim_key)
             if sim:
