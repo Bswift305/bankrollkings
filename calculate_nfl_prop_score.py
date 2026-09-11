@@ -5,14 +5,17 @@ from pathlib import Path
 import pandas as pd
 
 from services.ngs_loader import build_ngs_prop_signal
+from services.nfl_usage_distribution import PlayerUsage, usage_signal
 
 
 BASE_DIR = Path(__file__).resolve().parent
 SCORED_INPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_AllPropResults_Scored.csv"
 RAW_INPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_AllPropResults.csv"
 PROFILE_PATH = BASE_DIR / "data" / "tracking" / "NFL_Player_Hit_Profiles.csv"
+USAGE_PROFILE_PATH = BASE_DIR / "data" / "tracking" / "NFL_Usage_Distribution.csv"
 OUTPUT_PATH = BASE_DIR / "data" / "tracking" / "NFL_AllPropResults_Scored.csv"
 MODEL_VERSION = "NFL_PropScore_v1"
+BACKFIELD_SHARE_CLAMP = 7.0
 
 
 def to_float(value, default: float = 0.0) -> float:
@@ -58,6 +61,46 @@ def profile_for(row: pd.Series, profiles: dict[tuple[str, str, str], dict]) -> d
         str(row.get("Direction") or "").strip().upper(),
     )
     return profiles.get(key, {})
+
+
+def load_usage_profiles() -> dict[str, dict]:
+    """Per-player backfield/receiver-room usage profile, keyed by player name.
+
+    Produced by build_nfl_usage_distribution.py. Absent file = no usage signal.
+    """
+    if not USAGE_PROFILE_PATH.exists():
+        return {}
+    try:
+        usage = pd.read_csv(USAGE_PROFILE_PATH, low_memory=False)
+    except Exception:
+        return {}
+    lookup: dict[str, dict] = {}
+    for _, row in usage.iterrows():
+        key = str(row.get("Player") or "").strip().upper()
+        if key:
+            lookup[key] = row.to_dict()
+    return lookup
+
+
+def _usage_player_from(prof: dict) -> tuple[PlayerUsage, str]:
+    player = PlayerUsage(
+        player=str(prof.get("Player") or ""),
+        team=str(prof.get("Team") or ""),
+        position=str(prof.get("Position") or ""),
+        rank=int(to_float(prof.get("Rank"), 0)),
+        carry_share=to_float(prof.get("CarryShare"), 0.0),
+        target_share=to_float(prof.get("TargetShare"), 0.0),
+        trend=to_float(prof.get("Trend"), 0.0),
+    )
+    return player, str(prof.get("Scheme") or "unknown")
+
+
+def backfield_signal_for_row(row: pd.Series, usage_lookup: dict[str, dict]) -> dict:
+    prof = usage_lookup.get(str(row.get("Player") or "").strip().upper())
+    if not prof:
+        return {"score_delta": 0.0, "tags": [], "note": ""}
+    player, scheme = _usage_player_from(prof)
+    return usage_signal(player, scheme, str(row.get("Stat") or ""), str(row.get("Direction") or "OVER"))
 
 
 def calculate_usage_stability(row: pd.Series, profile: dict) -> float:
@@ -258,6 +301,16 @@ def score_rows(df: pd.DataFrame) -> pd.DataFrame:
         if signal.get("available") else ""
         for signal in ngs_signals
     ]
+    usage_lookup = load_usage_profiles()
+    backfield_signals = [backfield_signal_for_row(row, usage_lookup) for _, row in scored.iterrows()]
+    scored["BackfieldShare"] = [
+        round(clamp(to_float(signal.get("score_delta"), 0.0), -BACKFIELD_SHARE_CLAMP, BACKFIELD_SHARE_CLAMP), 1)
+        for signal in backfield_signals
+    ]
+    scored["BackfieldShareNote"] = [
+        " - ".join(part for part in [" | ".join(signal.get("tags") or []), str(signal.get("note") or "").strip()] if part)
+        for signal in backfield_signals
+    ]
     scored["BK_NFL_PropScore"] = (
         scored["UsageStability"]
         + scored["MatchupAdvantage"]
@@ -265,6 +318,7 @@ def score_rows(df: pd.DataFrame) -> pd.DataFrame:
         + scored["LineValue"]
         + scored["VolatilityPenalty"]
         + scored["NGSModifier"]
+        + scored["BackfieldShare"]
     ).round(1)
     scored["PropModelVersion"] = MODEL_VERSION
     return scored

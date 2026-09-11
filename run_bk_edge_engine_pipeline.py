@@ -14,6 +14,7 @@ STEPS = [
     ("NFL historical backfill", "build_nfl_historical_calibration.py"),
     ("NFL base calibration", "calibrate_nfl_model.py"),
     ("NFL EdgeScore", "calculate_nfl_edge_score.py"),
+    ("NFL usage distribution", "build_nfl_usage_distribution.py"),
     ("NFL PropScore", "calculate_nfl_prop_score.py"),
     ("NFL simulation", "simulate_nfl_props.py"),
     ("Active sport simulations", "simulate_active_sport_props.py"),
