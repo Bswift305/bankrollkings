@@ -16675,6 +16675,43 @@ CFB_TEAM_ALIASES = {
     'utmartin': 'Tennessee Martin',
     'stfrancispa': 'St Francis PA',
     'pvamu': 'Prairie View',
+    # Washington State (Cougars) — keep distinct from Washington (Huskies).
+    'washingtonst': 'Washington State',
+    'washingtonstate': 'Washington State',
+    'washingtonstatecougars': 'Washington State',
+    'wsu': 'Washington State',
+    'wazzu': 'Washington State',
+    'washingtonhuskies': 'Washington',
+    # Miami (OH) RedHawks — Miami University; keep distinct from Miami (FL).
+    'miamiredhawks': 'Miami OH',
+    'miamiohredhawks': 'Miami OH',
+    'miamiuniversity': 'Miami OH',
+    # Miami (FL) Hurricanes.
+    'miamifl': 'Miami',
+    'miamiflorida': 'Miami',
+    'miamihurricanes': 'Miami',
+}
+
+# College logo-stem overrides. These win over the NFL alias table for college
+# sports so a college "Washington" resolves to the Huskies mark, not the NFL
+# Washington Commanders, and each ambiguous school gets its own crest.
+CFB_LOGO_ALIASES = {
+    'washington': 'washington',
+    'washingtonhuskies': 'washington',
+    'washingtonst': 'washingtonState',
+    'washingtonstate': 'washingtonState',
+    'washingtonstatecougars': 'washingtonState',
+    'wsu': 'washingtonState',
+    'wazzu': 'washingtonState',
+    'miami': 'miami',
+    'miamifl': 'miami',
+    'miamiflorida': 'miami',
+    'miamihurricanes': 'miami',
+    'miamioh': 'miamiOH',
+    'miamiohio': 'miamiOH',
+    'miamiredhawks': 'miamiOH',
+    'miamiohredhawks': 'miamiOH',
+    'miamiuniversity': 'miamiOH',
 }
 
 
@@ -16685,12 +16722,23 @@ def football_logo_url(value, sport_key=None):
     if not cleaned:
         return ''
     normalized = _normalize_logo_key(cleaned)
+    is_college = str(sport_key or '').strip().lower() in {'ncaaf', 'cfb'}
     filename = ''
-    alias_stem = FOOTBALL_LOGO_ALIASES.get(normalized)
-    if alias_stem:
-        filename = f'{alias_stem}.png'
-    elif normalized in FOOTBALL_LOGO_STEM_INDEX:
-        filename = FOOTBALL_LOGO_STEM_INDEX[normalized]
+    if is_college:
+        # College team names collide with NFL alias keys (e.g. "Washington" ->
+        # the NFL Commanders). Resolve college variants and files only; never
+        # fall through to the NFL alias table.
+        college_stem = CFB_LOGO_ALIASES.get(normalized)
+        if college_stem:
+            filename = FOOTBALL_LOGO_STEM_INDEX.get(_normalize_logo_key(college_stem), f'{college_stem}.png')
+        elif normalized in FOOTBALL_LOGO_STEM_INDEX:
+            filename = FOOTBALL_LOGO_STEM_INDEX[normalized]
+    else:
+        alias_stem = FOOTBALL_LOGO_ALIASES.get(normalized)
+        if alias_stem:
+            filename = f'{alias_stem}.png'
+        elif normalized in FOOTBALL_LOGO_STEM_INDEX:
+            filename = FOOTBALL_LOGO_STEM_INDEX[normalized]
     if filename:
         candidate = FOOTBALL_LOGO_DIR / filename
         if candidate.exists():
