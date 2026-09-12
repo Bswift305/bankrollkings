@@ -6399,8 +6399,14 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
                 continue
             if date_filter == 'tomorrow' and game_day != tomorrow:
                 continue
-            if date_filter == 'week' and not (today <= game_day <= today + pd.Timedelta(days=6)):
-                continue
+            if date_filter == 'week':
+                # "This week" = the current football week (Tue–Mon block containing
+                # today), forward-looking from today. A rolling today+6 window on a
+                # Sat/Sun leaks next week's Thu/Fri games onto the current slate.
+                _week_start = today - pd.Timedelta(days=(today.weekday() - 1) % 7)  # most recent Tuesday
+                _week_end = _week_start + pd.Timedelta(days=6)                       # that week's Monday
+                if not (today <= game_day <= _week_end):
+                    continue
             if date_filter == 'weekend' and not (game_day.weekday() in (3, 4, 5, 6) and today <= game_day <= today + pd.Timedelta(days=7)):
                 continue
             if date_filter == 'month' and not (game_day.year == today.year and game_day.month == today.month):
