@@ -1,256 +1,171 @@
-{% set active_page = 'dashboard' %}
+{% set active_page = 'nfl_matchup' %}
 {% set active_sport = 'nfl' %}
 {% extends "bk_base.html" %}
-{% block title %}NFL Matchup Board{% endblock %}
-{% block app_class %}no-slip{% endblock %}
-{% block betslip %}{% endblock %}
+{% block title %}NFL Matchup Edge Card - Bankroll Kings{% endblock %}
 
 {% block content %}
+<style>
+  .mu-wrap{--mu-accent:#5b8def;}
+  .mu-pick{display:flex;flex-wrap:wrap;gap:12px;align-items:center;}
+  .mu-pick .at{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mu-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;
+    padding:10px 12px;font:700 14px ui-monospace,Consolas,monospace;min-width:190px;}
+  .mu-head{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-bottom:6px;}
+  .mu-team{font:800 18px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mu-team small{display:block;font:600 11px ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .mu-vs{font:800 12px ui-monospace,Consolas,monospace;color:var(--mu-accent);text-align:center;}
+  .mu-r{text-align:right;}
+  table.mu-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;}
+  .mu-table td{padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);font:700 14px ui-monospace,Consolas,monospace;}
+  .mu-table td.lbl{text-align:center;font:600 11px ui-monospace,Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);width:34%;}
+  .mu-table td.a{text-align:left;} .mu-table td.h{text-align:right;}
+  .mu-table td small{color:var(--text-muted);font-weight:600;font-size:11px;}
+  .mu-win{color:#49d27d;}
+  .mu-read{margin-top:16px;}
+  .mu-read .k{font:700 10.5px ui-monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;}
+  .mu-bullet{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);
+    font:500 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .mu-bullet b{color:var(--text-bright);}
+  .mu-dot{color:var(--mu-accent);font-weight:800;}
+  .mu-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;}
+  .mu-wk-h{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;}
+  .mu-wk-h span{display:block;font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-top:3px;}
+  .mu-wk-list{display:flex;flex-direction:column;}
+  .mu-wk{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;width:100%;text-align:left;
+    background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.05);padding:12px 2px;cursor:pointer;transition:.12s;}
+  .mu-wk:last-child{border-bottom:0;}
+  .mu-wk:hover{background:rgba(91,141,239,.08);}
+  .mu-wk-tm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mu-wk-tm .at{color:var(--text-muted);font-weight:600;margin:0 5px;}
+  .mu-wk-ln{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+</style>
+
+<div class="mu-wrap">
 <div class="page-hero">
-    <div>
-        <div class="page-kicker">NFL Matchup Board</div>
-        <h1>{{ matchup.sheet }} <span class="accent">Floor Read</span></h1>
-        <div class="page-subtitle">{{ matchup.title }} | {{ sport_profile.label }}</div>
-    </div>
-    <div class="hero-actions">
-        <a href="/sports/nfl?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Back to NFL Board</a>
-        <a href="/sports/nba?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Open NBA Board</a>
-    </div>
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>NFL Matchup <span class="accent">Edge Card</span></h1>
+    <div class="page-subtitle">Pick any two teams &mdash; or tap a game from this week &mdash; and get both sides against the spread in one card: overall, home/away, as favorite, as underdog, and the totals lean, side by side. Real graded games.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/bk-power" class="btn btn-secondary btn-sm">BK Power</a></div>
 </div>
 
+{% if not mu_available %}
+  <div class="card p-16"><p class="mu-note">NFL matchup data is being generated. Check back shortly.</p></div>
+{% else %}
+{% if mu_week %}
+<div class="card mb-24"><div class="p-16">
+  <div class="mu-wk-h">This Week&rsquo;s Matchups <span>{{ mu_week|length }} games &middot; tap one for the full edge card</span></div>
+  <div class="mu-wk-list">
+    {% for g in mu_week %}
+    <button type="button" class="mu-wk" data-away="{{ g.away }}" data-home="{{ g.home }}">
+      <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
+      <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
+    </button>
+    {% endfor %}
+  </div>
+</div></div>
+{% endif %}
 <div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">Platform Lens</div>
-        <span class="badge badge-accent">Football Matchup Read</span>
+  <div class="p-16" style="border-bottom:1px solid var(--border);">
+    <div class="mu-pick">
+      <select id="mu-away" class="mu-select"></select>
+      <span class="at">@</span>
+      <select id="mu-home" class="mu-select"></select>
     </div>
-    <div class="p-16" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Market Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">This board sits under the bigger NFL market map, so every floor play should still be read against the side, total, and game script.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Matchup Read</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Use it to isolate which player families actually fit this specific game environment instead of treating all props the same.</div>
-        </div>
-        <div class="parlay-surface-soft" style="padding: 12px;">
-            <div class="page-kicker">Verdict</div>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">The goal is not just to rank floors. It is to show which floors still make sense inside this matchup.</div>
-        </div>
+  </div>
+  <div class="p-16">
+    <div id="mu-flag" class="mu-note" style="color:var(--mu-accent);margin:0 0 10px;"></div>
+    <div class="mu-head">
+      <div class="mu-team" id="mu-away-name"></div>
+      <div class="mu-vs">at</div>
+      <div class="mu-team mu-r" id="mu-home-name"></div>
     </div>
-</div>
-
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">NFL Market Map</div>
-        <span class="badge badge-accent">{{ sport_profile.label }}</span>
-    </div>
-    <div class="p-16">
-        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
-            This matchup board lives inside a bigger NFL market system where spreads, totals, team totals, and props are all treated as equal research lanes.
-        </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-            {% for group in market_groups %}
-                {% for market in group.markets[:3] %}
-                <span class="badge" title="{{ market.key }}">{{ market.label }}</span>
-                {% endfor %}
-            {% endfor %}
-        </div>
-    </div>
-</div>
-
-<div class="card mb-24">
-    <div class="card-header">
-        <div class="card-title">Matchup Filters</div>
-        <span class="badge badge-accent">{{ matchup.plays|length }} shown</span>
-    </div>
-    <div class="p-16">
-        <form method="get" class="control-group" style="gap: 12px;">
-            <input type="hidden" name="postseason" value="{{ 1 if postseason_only else 0 }}">
-            <div>
-                <div class="control-label">Team</div>
-                <select name="team" class="form-control">
-                    <option value="">Both Teams</option>
-                    {% for team in filter_state.teams %}
-                    <option value="{{ team }}" {% if filter_state.team == team %}selected{% endif %}>{{ team }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <div class="control-label">Family</div>
-                <select name="family" class="form-control">
-                    <option value="">All Families</option>
-                    {% for family in filter_state.families %}
-                    <option value="{{ family }}" {% if filter_state.family == family %}selected{% endif %}>{{ family }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <div class="control-label">Min Hit</div>
-                <select name="min_hit" class="form-control">
-                    <option value="">Any</option>
-                    <option value="80" {% if filter_state.min_hit == '80' %}selected{% endif %}>80%+</option>
-                    <option value="100" {% if filter_state.min_hit == '100' %}selected{% endif %}>100%</option>
-                </select>
-            </div>
-            <div>
-                <div class="control-label">Sort</div>
-                <select name="sort_by" class="form-control">
-                    {% for key, label in filter_state.sorts.items() %}
-                    <option value="{{ key }}" {% if filter_state.sort_by == key %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <div class="control-label">Direction</div>
-                <select name="sort_dir" class="form-control">
-                    <option value="desc" {% if filter_state.sort_dir == 'desc' %}selected{% endif %}>High to Low</option>
-                    <option value="asc" {% if filter_state.sort_dir == 'asc' %}selected{% endif %}>Low to High</option>
-                </select>
-            </div>
-            <div style="min-width: 200px;">
-                <div class="control-label">Search</div>
-                <input type="text" name="query" value="{{ filter_state.query }}" class="form-control" placeholder="Player, team, or stat">
-            </div>
-            <div style="display: flex; gap: 8px; align-items: end;">
-                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-                <a href="{{ matchup.matchup_href }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Reset</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="grid-3 mb-24" style="gap: 12px;">
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Game Line</div>
-        <div style="font-size: 18px; font-weight: 700; color: var(--text-bright);">{{ matchup.market_line }}</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Workbook market snapshot</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Listed Plays</div>
-        <div style="font-size: 28px; font-weight: 800; color: var(--accent);">{{ matchup.plays|length }}</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Player props in this matchup tab</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Perfect-Hit Plays</div>
-        <div style="font-size: 28px; font-weight: 800; color: var(--accent-copper);">{{ matchup.hit_rate_100 }}</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">100% floor clears in the workbook sample</div>
-    </div>
-</div>
-
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Best Floor Plays</div>
-        <span class="badge badge-accent">{{ matchup.best_plays|length }} highlighted</span>
-    </div>
-    <div class="table-shell">
-        <table class="data-table compact-board">
-            <thead>
-                <tr>
-                    <th>Player</th>
-                    <th>Team</th>
-                    <th>Stat</th>
-                    <th>Line</th>
-                    <th>Floor</th>
-                    <th>Avg</th>
-                    <th>Hit %</th>
-                    <th>Streak</th>
-                    <th>Trust</th>
-                    <th>Why It Stands Out</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for play in matchup.best_plays %}
-                <tr>
-                    <td>
-                        <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
-                        {% if play.trust_verdict %}
-                        <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
-                        {% endif %}
-                    </td>
-                    <td>{{ play.team }}</td>
-                    <td>
-                        <span class="badge">{{ play.stat_meta.short }}</span>
-                        <div class="cell-meta">{{ play.stat_meta.family }}</div>
-                    </td>
-                    <td><strong>{{ play.line }}</strong></td>
-                    <td>{{ play.floor }}</td>
-                    <td>{{ play.avg }}</td>
-                    <td><span class="hr-strong">{{ play.hit_pct }}</span></td>
-                    <td>{{ play.streak }}</td>
-                    <td style="font-size:11px;">
-                        <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
-                        <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
-                    </td>
-                    <td style="font-size: 11px; color: var(--text-muted); line-height: 1.5;">
-                        <div>{{ play.note }}</div>
-                        {% if play.trust_summary %}
-                        <div style="margin-top: 4px;">{{ play.trust_summary }}</div>
-                        {% endif %}
-                        <div style="margin-top: 4px;">Last 5: {{ play.games|join(', ') }}</div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-{% if not matchup.plays %}
-<div class="empty-state mb-24">
-    <div class="empty-state-title">No plays match this matchup filter set.</div>
-    <div class="empty-state-copy">Open the filter back up and widen the thresholds if you want the full sheet again.</div>
+    <table class="mu-table"><tbody id="mu-body"></tbody></table>
+    <div class="mu-read"><div class="k">The Read</div><div id="mu-read"></div></div>
+    <div class="mu-note">Every figure is real graded games ({{ mu_meta.seasons }}) at the consensus line. This is context to frame the matchup, not a pick or a guaranteed edge.</div>
+  </div>
 </div>
 {% endif %}
-
-<div class="card">
-    <div class="card-header">
-        <div class="card-title">Full Matchup Sheet</div>
-        <span class="badge badge-accent">{{ matchup.plays|length }} plays</span>
-    </div>
-    <div class="table-shell">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Player</th>
-                    <th>Team</th>
-                    <th>Stat</th>
-                    <th>Line</th>
-                    <th>Floor</th>
-                    <th>Avg</th>
-                    <th>Hit %</th>
-                    <th>Streak</th>
-                    <th>Trust</th>
-                    <th>Last 5</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for play in matchup.plays %}
-                <tr>
-                    <td>
-                        <div style="font-weight:700; color:var(--text-bright);">{{ play.player }}</div>
-                        {% if play.trust_verdict %}
-                        <div class="cell-meta" style="margin-top:4px; line-height:1.45;">{{ play.trust_verdict }}</div>
-                        {% endif %}
-                    </td>
-                    <td>{{ play.team }}</td>
-                    <td>
-                        <span class="badge">{{ play.stat_meta.short }}</span>
-                        <div class="cell-meta">{{ play.stat_meta.label }}</div>
-                    </td>
-                    <td><strong>{{ play.line }}</strong></td>
-                    <td>{{ play.floor }}</td>
-                    <td>{{ play.avg }}</td>
-                    <td>{{ play.hit_pct }}</td>
-                    <td>{{ play.streak }}</td>
-                    <td style="font-size:11px;">
-                        <div style="font-weight:700; color:{% if play.governance_tier == 'trusted' %}var(--accent){% elif play.governance_tier in ['fade','partial'] %}var(--accent-copper){% else %}var(--text-bright){% endif %};">{{ play.governance_badge or 'REVIEW WATCH' }}</div>
-                        <div class="cell-meta">{{ play.trust_score if play.trust_score is not none else '-' }}%</div>
-                    </td>
-                    <td style="font-size: 11px; color: var(--text-muted);">{{ play.games|join(', ') }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
 </div>
+
+{% if mu_available %}
+<script id="mu-data" type="application/json">{{ mu_data|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('mu-data').textContent);
+  const list = DATA.teamList;
+  const S = {away: list[0], home: list[1]};
+  const $ = s => document.querySelector(s);
+
+  const _missing = [];
+  try{
+    const p = new URLSearchParams(location.search);
+    const qa = p.get('away'), qh = p.get('home');
+    if(qa){ S.away = qa; if(!list.includes(qa)) _missing.push(qa); }
+    if(qh){ S.home = qh; if(!list.includes(qh)) _missing.push(qh); }
+  }catch(e){}
+  const P = v => (v===null||v===undefined)?'—':Math.round(v*100)+'%';
+  const BLANK = () => ({ats:{overall:{}, home:{}, away:{}, fav:{}, dog:{}, over:{}}});
+
+  function row(label, aVal, hVal, aRec, hRec, higherWins){
+    const aP=(typeof aVal==='number'), hP=(typeof hVal==='number');
+    let aCls='', hCls='';
+    if(higherWins && aP && hP){ if(aVal>hVal) aCls='mu-win'; else if(hVal>aVal) hCls='mu-win'; }
+    const av=aP?P(aVal):(aVal||'—'), hv=hP?P(hVal):(hVal||'—');
+    const ar=aRec?(' <small>'+aRec+'</small>'):'', hr=hRec?('<small>'+hRec+'</small> '):'';
+    return '<tr><td class="a '+aCls+'">'+av+ar+'</td><td class="lbl">'+label+'</td><td class="h '+hCls+'">'+hr+hv+'</td></tr>';
+  }
+
+  function render(){
+    const A = DATA.teams[S.away] || BLANK();
+    const H = DATA.teams[S.home] || BLANK();
+    $('#mu-away-name').innerHTML = S.away;
+    $('#mu-home-name').innerHTML = S.home;
+    let h='';
+    h+=row('Overall ATS', A.ats.overall.pct, H.ats.overall.pct, A.ats.overall.rec, H.ats.overall.rec, true);
+    h+=row('This spot (road / home)', A.ats.away.pct, H.ats.home.pct, A.ats.away.rec, H.ats.home.rec, true);
+    h+=row('As favorite ATS', A.ats.fav.pct, H.ats.fav.pct, A.ats.fav.rec, H.ats.fav.rec, true);
+    h+=row('As underdog ATS', A.ats.dog.pct, H.ats.dog.pct, A.ats.dog.rec, H.ats.dog.rec, true);
+    h+=row('Over rate (O/U)', A.ats.over.pct, H.ats.over.pct, A.ats.over.rec, H.ats.over.rec, false);
+    $('#mu-body').innerHTML=h;
+
+    const B=[];
+    const roadP=A.ats.away.pct, homeP=H.ats.home.pct;
+    if(roadP!==null && roadP!==undefined && homeP!==null && homeP!==undefined){
+      if(homeP>roadP+0.03) B.push('<b>'+S.home+'</b> covers <b>'+P(homeP)+'</b> at home ('+H.ats.home.rec+'); <b>'+S.away+'</b> is '+P(roadP)+' ATS on the road — situational edge to the home side.');
+      else if(roadP>homeP+0.03) B.push('<b>'+S.away+'</b> travels well ('+P(roadP)+' ATS away, '+A.ats.away.rec+') while <b>'+S.home+'</b> is only '+P(homeP)+' at home — road value.');
+      else B.push('Situational ATS is close: '+S.away+' '+P(roadP)+' away vs '+S.home+' '+P(homeP)+' home.');
+    }
+    const ao=A.ats.over.pct, ho=H.ats.over.pct;
+    if(ao!==null && ao!==undefined && ho!==null && ho!==undefined){
+      const avg=(ao+ho)/2;
+      B.push('Totals lean: '+S.away+' '+P(ao)+' over, '+S.home+' '+P(ho)+' over'+(avg>=0.53?' — both trend OVER.':(avg<=0.47?' — both trend UNDER.':' — no strong total lean.')));
+    }
+    $('#mu-read').innerHTML = B.map(b=>'<div class="mu-bullet"><span class="mu-dot">&rsaquo;</span><span>'+b+'</span></div>').join('');
+  }
+
+  const aw=$('#mu-away'), hm=$('#mu-home');
+  const opts=t=>(list.includes(t)?list:[t].concat(list)).map(x=>'<option'+(x===t?' selected':'')+'>'+x+'</option>').join('');
+  aw.innerHTML=opts(S.away); hm.innerHTML=opts(S.home);
+  aw.onchange=()=>{S.away=aw.value; $('#mu-flag').innerHTML=''; render();};
+  hm.onchange=()=>{S.home=hm.value; $('#mu-flag').innerHTML=''; render();};
+  render();
+
+  if(_missing.length){
+    $('#mu-flag').innerHTML = _missing.join(' and ')+(_missing.length>1?" aren't":" isn't")+" in our NFL dataset yet.";
+  }
+
+  document.querySelectorAll('.mu-wk').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      S.away = btn.getAttribute('data-away'); S.home = btn.getAttribute('data-home');
+      aw.innerHTML = opts(S.away); hm.innerHTML = opts(S.home);
+      $('#mu-flag').innerHTML = ''; render();
+      const head = document.querySelector('.mu-head');
+      if(head){ head.scrollIntoView({behavior:'smooth', block:'center'}); }
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

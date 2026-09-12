@@ -740,6 +740,7 @@ PRO_ENDPOINTS = {
     'nfl_totals_today_tool',
     'weekend_tool',
     'nfl_spots_tool',
+    'nfl_matchup_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40177,6 +40178,105 @@ def cfb_matchup_tool():
     """Quick Tool: CFB Matchup Edge Card — two teams side by side across ATS
     profile, coach ATS, returning production, and totals lean."""
     return render_template('cfb_matchup.html', **build_cfb_matchup_context())
+
+
+_NFL_MATCHUP_CACHE = {}
+
+
+def _nfl_mascot_to_full():
+    """History uses mascots ('Packers'); live games use full names ('Green Bay
+    Packers'). Map mascot -> full (last word of each full name) + Washington renames."""
+    m = {}
+    for _abbr, full in NFL_ABBR_TO_FULL.items():
+        m[full.rsplit(' ', 1)[-1]] = full
+    m.update({'Redskins': 'Washington Commanders', 'Football Team': 'Washington Commanders',
+              'Commanders': 'Washington Commanders'})
+    return m
+
+
+def build_nfl_matchup_dossier():
+    """Per-team NFL ATS profile (overall / home / away / fav / dog / over) from the
+    game-lines history, keyed by full team name so it lines up with the live slate.
+    Memoized on the data size (history changes only on refresh)."""
+    hist = load_nfl_game_lines_history()
+    if hist is None or hist.empty:
+        return {'teams': {}, 'teamList': [], 'meta': {}}
+    sig = len(hist)
+    if _NFL_MATCHUP_CACHE.get('sig') == sig:
+        return _NFL_MATCHUP_CACHE['data']
+    from collections import defaultdict
+    m2f = _nfl_mascot_to_full()
+    splits = ('overall', 'home', 'away', 'fav', 'dog', 'over')
+    T = defaultdict(lambda: {k: [0, 0, 0] for k in splits})
+    seasons = set()
+
+    def _add(counter, res):
+        counter[0 if res > 0 else (1 if res < 0 else 2)] += 1
+
+    for _, r in hist.iterrows():
+        hs = pd.to_numeric(r.get('HomeScore'), errors='coerce')
+        as_ = pd.to_numeric(r.get('AwayScore'), errors='coerce')
+        hsp = pd.to_numeric(r.get('HomeSpread'), errors='coerce')
+        if pd.isna(hs) or pd.isna(as_) or pd.isna(hsp):
+            continue
+        home = m2f.get(str(r.get('Home')).strip(), str(r.get('Home')).strip())
+        away = m2f.get(str(r.get('Away')).strip(), str(r.get('Away')).strip())
+        seasons.add(str(r.get('Season')))
+        margin = float(hs) - float(as_)
+        h_ats = 1 if (margin + float(hsp)) > 0 else (-1 if (margin + float(hsp)) < 0 else 0)
+        _add(T[home]['overall'], h_ats); _add(T[home]['home'], h_ats)
+        _add(T[home]['fav' if hsp < 0 else 'dog'], h_ats)
+        _add(T[away]['overall'], -h_ats); _add(T[away]['away'], -h_ats)
+        _add(T[away]['fav' if hsp > 0 else 'dog'], -h_ats)
+        tot = pd.to_numeric(r.get('CloseTotal', r.get('Total')), errors='coerce')
+        if not pd.isna(tot):
+            ou = 1 if (float(hs) + float(as_)) > float(tot) else (-1 if (float(hs) + float(as_)) < float(tot) else 0)
+            _add(T[home]['over'], ou); _add(T[away]['over'], ou)
+
+    def _cell(c):
+        n = c[0] + c[1]
+        return {'pct': (round(c[0] / n, 3) if n else None),
+                'rec': f"{c[0]}-{c[1]}" + (f"-{c[2]}" if c[2] else ''), 'n': n}
+
+    teams = {}
+    for t, sp in T.items():
+        if sp['overall'][0] + sp['overall'][1] < 20:
+            continue
+        teams[t] = {'conf': '', 'coach': '', 'coach_ats': None, 'coach_rec': '', 'ret': None,
+                    'ats': {k: _cell(sp[k]) for k in splits}}
+    data = {
+        'teams': teams, 'teamList': sorted(teams.keys()),
+        'meta': {'seasons': (min(seasons) + '-' + max(seasons)) if seasons else ''},
+    }
+    _NFL_MATCHUP_CACHE['sig'] = sig
+    _NFL_MATCHUP_CACHE['data'] = data
+    return data
+
+
+def build_nfl_matchup_context():
+    dossier = build_nfl_matchup_dossier()
+    week_games = []
+    try:
+        for g in build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            if a and h:
+                week_games.append({
+                    'away': a, 'home': h, 'spread': _format_signed_line(g.get('spread')),
+                    'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
+                })
+    except Exception:
+        week_games = []
+    return {
+        'mu_data': dossier, 'mu_meta': dossier.get('meta', {}),
+        'mu_available': bool(dossier.get('teams')), 'mu_week': week_games,
+    }
+
+
+@app.route('/tools/nfl-matchup')
+def nfl_matchup_tool():
+    """Quick Tool: NFL Matchup Edge Card — two teams side by side on their ATS
+    profiles (overall/home/away/fav/dog/over), plus this week's games to tap into."""
+    return render_template('nfl_matchup.html', **build_nfl_matchup_context())
 
 
 _CFB_TOT_CACHE = {}
