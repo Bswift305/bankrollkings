@@ -40186,17 +40186,57 @@ def build_cfb_totals_context():
         data = _CFB_TOT_CACHE['data']
     except (OSError, ValueError):
         pass
+    # Apply the team pace/scoring profiles to THIS WEEK's actual games: a naive
+    # scoring-environment total (offense vs the other side's defense) next to the
+    # posted line, plus the combined pace and a shootout/grind read. Context only --
+    # league over% is ~50%, totals are efficiently priced -- but it turns the static
+    # reference table into something you can use on this week's card.
+    to_week = []
+    try:
+        board = data.get('board', {})
+        cols = [c.get('label') for c in board.get('columns', [])]
+        idx = {lab: i for i, lab in enumerate(cols)}
+        prof = {}
+        for row in board.get('rows', []):
+            try:
+                prof[str(row[idx['Team']])] = {
+                    'pace': float(row[idx['Plays/G']]), 'ppg': float(row[idx['PPG']]),
+                    'opp_ppg': float(row[idx['Opp PPG']]), 'over': float(row[idx['Over%']]),
+                }
+            except (KeyError, ValueError, TypeError, IndexError):
+                continue
+        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            pa, ph = prof.get(a), prof.get(h)
+            if not (a and h and pa and ph):
+                continue  # need both FBS teams' profiles
+            posted = pd.to_numeric(g.get('total'), errors='coerce')
+            proj = round((pa['ppg'] + ph['opp_ppg']) / 2 + (ph['ppg'] + pa['opp_ppg']) / 2, 1)
+            pace = round((pa['pace'] + ph['pace']) / 2, 1)
+            hi = pa['over'] >= 0.53 and ph['over'] >= 0.53
+            lo = pa['over'] <= 0.47 and ph['over'] <= 0.47
+            read = 'shootout' if (hi and pace >= 70) else ('grind' if (lo and pace <= 68) else '')
+            to_week.append({
+                'away': a, 'home': h, 'time': g.get('time'), 'pace': pace, 'proj': proj,
+                'posted': (round(float(posted), 1) if pd.notna(posted) else None),
+                'gap': (round(proj - float(posted), 1) if pd.notna(posted) else None),
+                'read': read,
+            })
+        to_week.sort(key=lambda r: -r['pace'])
+    except Exception:
+        to_week = []
     return {
         'to_data': data,
         'to_meta': data.get('meta', {}),
         'to_available': bool(data.get('board', {}).get('rows')),
+        'to_week': to_week,
     }
 
 
 @app.route('/tools/cfb-totals')
 def cfb_totals_tool():
     """Quick Tool: CFB Totals & Pace — team tempo (plays/game), scoring, and O/U
-    record (2021-2025)."""
+    record (2021-2025), plus this week's games scored against those pace profiles."""
     return render_template('cfb_totals.html', **build_cfb_totals_context())
 
 
