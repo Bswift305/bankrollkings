@@ -29879,6 +29879,14 @@ def _render_football_method_page(sport_key, method_key):
                     date_filter if date_filter in ('today', 'week') else 'week', 'all')
             except Exception:
                 method_view['cfb_totals_board'] = {}
+        # NFL Totals pill: fold in the per-game totals board with the validated WIND
+        # flag (the one football totals edge), same as the CFB fold.
+        if sport_key == 'nfl' and method_key == 'totals':
+            try:
+                method_view['nfl_totals_board'] = build_nfl_totals_board_context(
+                    date_filter if date_filter in ('today', 'week') else 'week', 'all')
+            except Exception:
+                method_view['nfl_totals_board'] = {}
         if method_key in {'game_lines', 'totals'}:
             live_games = build_football_live_game_method_board(
                 method_key,
