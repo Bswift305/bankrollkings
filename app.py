@@ -29844,7 +29844,12 @@ def _render_football_method_page(sport_key, method_key):
             'props': load_ncaaf_live_props_feed,
         },
     }
-    date_filter = request.args.get('date', 'all').strip().lower() or 'all'
+    # "Live" lines/totals should be about the current games, not the whole all-time
+    # slate. Default those two boards to this football week (capped so next week doesn't
+    # leak in); today's games sit at the front on game day. The Today/All toggle still
+    # works via ?date=. Props/trends keep 'all'.
+    _default_date = 'week' if method_key in {'game_lines', 'totals'} else 'all'
+    date_filter = request.args.get('date', _default_date).strip().lower() or _default_date
     day_filter = request.args.get('day', '').strip().lower()
     stat_filter = request.args.get('stat', '').strip()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
