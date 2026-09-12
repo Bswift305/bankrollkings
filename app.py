@@ -38339,6 +38339,46 @@ def trends(stat):
     params['stat'] = stat
     return redirect(f"/trend-board?{urlencode(params)}", code=302)
 
+def _df_freshness_sig(df):
+    """Cheap fingerprint of a dataframe for cache-versioning: row count + latest date."""
+    if df is None or getattr(df, 'empty', True):
+        return '0'
+    n = len(df)
+    md = ''
+    if 'Date' in getattr(df, 'columns', []):
+        try:
+            md = str(pd.to_datetime(df['Date'], errors='coerce').max())
+        except Exception:
+            md = ''
+    return f"{n}:{md}"
+
+
+def build_trend_board_cached(gamelogs, current_team_map, props_df=None, player_snapshot=None,
+                             team_filter=None, sample_mode='current', stat_filter='all'):
+    """Disk-cached build_trend_board. The heavy part is a per-player streak loop over
+    gamelogs (~1k players, was ~20s every hit); it depends on the gamelogs + filters,
+    not on the live props (which only decorate rows). Key on the filter combo, version
+    on data freshness (gamelogs + props + snapshot), so a warm hit skips the loop and
+    a data refresh invalidates cleanly."""
+    team_key = _serialize_team_filter(team_filter) or 'all'
+    stat_key = str(stat_filter or 'all').strip().lower() or 'all'
+    cache_key = f"disk::trend_board::v1::{sample_mode}::{stat_key}::{team_key.replace('|', '_')}"
+    version = "|".join([
+        _df_freshness_sig(gamelogs),
+        _df_freshness_sig(props_df),
+        str(len(player_snapshot) if player_snapshot is not None and hasattr(player_snapshot, '__len__') else 0),
+    ])
+    hit, cached = _read_disk_ttl_cached_value(cache_key, version=version)
+    if hit:
+        return cached
+    rows = build_trend_board(
+        gamelogs, current_team_map, props_df=props_df, player_snapshot=player_snapshot,
+        team_filter=team_filter, sample_mode=sample_mode, stat_filter=stat_filter,
+    )
+    _write_disk_ttl_cached_value(cache_key, 86400, rows, version=version)
+    return rows
+
+
 @app.route('/trend-board')
 def trend_board():
     gamelogs = load_gamelogs()
@@ -38355,7 +38395,7 @@ def trend_board():
     default_sort_dir = 'asc' if sort_by in {'player', 'team', 'stat'} else 'desc'
     sort_dir = request.args.get('sort_dir', default_sort_dir)
 
-    rows = build_trend_board(
+    rows = build_trend_board_cached(
         gamelogs,
         current_team_map,
         props_df=props_df,
