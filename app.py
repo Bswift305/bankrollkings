@@ -40268,8 +40268,26 @@ def build_bk_power_context():
             'games': dec,
         })
     teams.sort(key=lambda x: -x['ats_pct'])
+    # Coaches: same cover/over ranking, keyed by the head coach (records travel with the
+    # coach across schools). coach_seasons is {coach: {year: {ats:[w,l,p], ou:[w,l,p]}}}.
+    coaches = []
+    for coach, ys in (ats.get('coach_seasons') or {}).items():
+        aw = al = ow = ol = 0
+        for _yr, sp in (ys or {}).items():
+            a = sp.get('ats', [0, 0, 0]); o = sp.get('ou', [0, 0, 0])
+            aw += a[0]; al += a[1]; ow += o[0]; ol += o[1]
+        dec, odec = aw + al, ow + ol
+        if dec < 30:
+            continue
+        coaches.append({
+            'coach': coach, 'ats_pct': round(aw / dec * 100, 1), 'ats_rec': f"{aw}-{al}",
+            'ou_pct': (round(ow / odec * 100, 1) if odec else None), 'ou_rec': f"{ow}-{ol}",
+            'games': dec,
+        })
+    coaches.sort(key=lambda x: -x['ats_pct'])
     return {
         'bp_teams': teams,
+        'bp_coaches': coaches,
         'bp_players': pdata.get('players', {}),
         'bp_sports': (pdata.get('meta', {}) or {}).get('sports', []),
         'bp_meta': pdata.get('meta', {}),

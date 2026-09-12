@@ -50,6 +50,7 @@
 <div class="card mb-24"><div class="p-16">
   <div class="bp-tabs">
     <button class="bp-tab active" data-tab="teams">Teams</button>
+    <button class="bp-tab" data-tab="coaches">Coaches</button>
     <button class="bp-tab" data-tab="players">Players</button>
   </div>
   <div class="bp-sportbar" id="bp-sportbar" style="display:none;"><span class="lab">Sport</span></div>
@@ -59,7 +60,7 @@
 </div></div>
 </div>
 
-<script id="bp-data" type="application/json">{{ {'teams':bp_teams,'players':bp_players,'sports':bp_sports,'ats':bp_ats_meta}|tojson }}</script>
+<script id="bp-data" type="application/json">{{ {'teams':bp_teams,'coaches':bp_coaches,'players':bp_players,'sports':bp_sports,'ats':bp_ats_meta}|tojson }}</script>
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('bp-data').textContent);
@@ -76,6 +77,12 @@
     {key:'ou_pct', label:'Over%', sortVal:r=>r.ou_pct, cell:r=>'<td>'+(r.ou_pct===null?'&mdash;':('<span class="'+cls(r.ou_pct,50)+'">'+r.ou_pct+'%</span><span class="sub">'+r.ou_rec+'</span>'))+'</td>'},
     {key:'games', label:'Games', sortVal:r=>r.games, cell:r=>'<td>'+r.games+'</td>'},
   ];
+  const COACH_COLS = [
+    {key:'coach', label:'Head Coach', l:true, sortVal:r=>r.coach, cell:r=>'<td class="l">'+r.coach+'<span class="sub">'+r.games+' g</span></td>'},
+    {key:'ats_pct', label:'ATS%', sortVal:r=>r.ats_pct, cell:r=>'<td><span class="'+cls(r.ats_pct,50)+'">'+pct(r.ats_pct)+'</span><span class="sub">'+r.ats_rec+'</span></td>'},
+    {key:'ou_pct', label:'Over%', sortVal:r=>r.ou_pct, cell:r=>'<td>'+(r.ou_pct===null?'&mdash;':('<span class="'+cls(r.ou_pct,50)+'">'+r.ou_pct+'%</span><span class="sub">'+r.ou_rec+'</span>'))+'</td>'},
+    {key:'games', label:'Games', sortVal:r=>r.games, cell:r=>'<td>'+r.games+'</td>'},
+  ];
   const PLAYER_COLS = [
     {key:'player', label:'Player', l:true, sortVal:r=>r.player, cell:r=>'<td class="l">'+r.player+'<span class="sub">'+(r.team||'')+'</span></td>'},
     {key:'over', label:'Over%', sortVal:r=>r.over, cell:r=>{const p=Math.round(r.over*100); return '<td><span class="'+cls(p,base())+'">'+p+'%</span></td>';}},
@@ -86,13 +93,13 @@
   function base(){ // sport-specific over% baseline for coloring
     return {NFL:48, NBA:48, MLB:30, WNBA:50}[S.sport] || 48;
   }
-  function rows(){ return S.tab==='teams' ? DATA.teams : (DATA.players[S.sport]||[]); }
-  function cols(){ return S.tab==='teams' ? TEAM_COLS : PLAYER_COLS; }
+  function rows(){ return S.tab==='teams' ? DATA.teams : (S.tab==='coaches' ? (DATA.coaches||[]) : (DATA.players[S.sport]||[])); }
+  function cols(){ return S.tab==='teams' ? TEAM_COLS : (S.tab==='coaches' ? COACH_COLS : PLAYER_COLS); }
 
   function render(){
     const cs = cols();
     let data = rows().slice();
-    const sk = S.sortKey || (S.tab==='teams' ? 'ats_pct' : 'over');
+    const sk = S.sortKey || (S.tab==='players' ? 'over' : 'ats_pct');
     const col = cs.find(c=>c.key===sk) || cs[1];
     data.sort((a,b)=>{ let x=col.sortVal(a), y=col.sortVal(b);
       if(x===null||x===undefined) x=-1; if(y===null||y===undefined) y=-1;
@@ -106,12 +113,15 @@
     h+='</tbody></table>';
     $('#bp-body').innerHTML=h;
     $('#bp-body').querySelectorAll('th[data-k]').forEach(th=>{
-      th.onclick=()=>{ const k=th.getAttribute('data-k'); if(S.sortKey===k){S.dir*=-1;} else {S.sortKey=k; S.dir=(k==='team'||k==='player'||k==='best')?1:-1;} render(); };
+      th.onclick=()=>{ const k=th.getAttribute('data-k'); if(S.sortKey===k){S.dir*=-1;} else {S.sortKey=k; S.dir=(k==='team'||k==='player'||k==='coach'||k==='best')?1:-1;} render(); };
     });
     // explain + note
     if(S.tab==='teams'){
       $('#bp-explain').innerHTML='<b>ATS%</b> is how often the team actually covered the spread; <b>Over%</b> how often its games went over &mdash; real graded games ('+(DATA.ats.seasons||'')+'). Green beats a coin flip, red is under. Tap a column to rank by it.';
       $('#bp-note').innerHTML='Descriptive, not a pick &mdash; this is who has historically hit their marks, not who will. Min 30 decided games.';
+    } else if(S.tab==='coaches'){
+      $('#bp-explain').innerHTML='<b>ATS%</b> is how often this head coach&rsquo;s teams covered; <b>Over%</b> how often their games went over &mdash; records travel with the coach across schools ('+(DATA.ats.seasons||'')+'). Tap a column to rank by it.';
+      $('#bp-note').innerHTML='Descriptive, not a pick. Coach records follow the coach wherever he&rsquo;s been. Min 30 decided games.';
     } else {
       $('#bp-explain').innerHTML='<b>Over%</b> is how often this player&rsquo;s actual result cleared the posted line &mdash; the players who consistently beat their number (top) and rarely do (sort ascending). Baseline over% for '+S.sport+' is ~'+base()+'%.';
       $('#bp-note').innerHTML='Descriptive, not a pick. Real graded props, min '+(20)+' over-props per player. MLB skews heavily under, so its baseline is low by nature.';
