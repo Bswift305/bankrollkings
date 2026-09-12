@@ -277,6 +277,42 @@
 </div>
 {% endif %}
 
+{% if method_view.cfb_totals_board and method_view.cfb_totals_board.tb_rows %}
+{% set tb = method_view.cfb_totals_board %}
+<div class="card mb-24">
+    <div class="card-header">
+        <div>
+            <div class="card-title">This Week&rsquo;s Totals</div>
+            <div class="cell-meta" style="margin-top:4px;line-height:1.5;max-width:640px;">Every game by its over/under &mdash; posted total, first-half total, each team&rsquo;s over rate &amp; pace, and the scoring-environment read. Context, not a proven edge.</div>
+        </div>
+        <span class="badge badge-accent">{{ tb.tb_rows|length }} games</span>
+    </div>
+    <div class="table-shell" style="overflow-x:auto;">
+        <table class="data-table compact-board" style="min-width:640px;">
+            <thead><tr>
+                <th style="text-align:left;">Matchup</th><th>Total</th><th>1H</th>
+                <th>Away Over%</th><th>Home Over%</th><th>Pace</th><th>Env</th>
+            </tr></thead>
+            <tbody>
+            {% for r in tb.tb_rows %}
+            <tr>
+                <td style="text-align:left;"><a href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}" style="font-weight:700;color:var(--text-bright);text-decoration:none;">{{ r.away }} @ {{ r.home }}</a>
+                    <div class="cell-meta">{% if r.spread %}spread {{ r.spread }}{% endif %}{% if r.time %} &middot; {{ r.time }}{% endif %}</div></td>
+                <td style="font-weight:800;color:var(--text-bright);">{{ '%g'|format(r.total) }}</td>
+                <td class="cell-meta">{{ r.total_1h or '&mdash;'|safe }}</td>
+                <td>{% if r.away_over is not none %}{{ r.away_over }}%{% else %}&mdash;{% endif %}</td>
+                <td>{% if r.home_over is not none %}{{ r.home_over }}%{% else %}&mdash;{% endif %}</td>
+                <td>{{ r.pace if r.pace is not none else '&mdash;'|safe }}</td>
+                <td>{% if r.read=='over' %}<span style="color:#49d27d;font-weight:700;">Over env</span>{% elif r.read=='under' %}<span style="color:#7cc4ff;font-weight:700;">Under env</span>{% else %}&mdash;{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-scroll-hint">Scroll for over rate, pace, and the environment read.</div>
+</div>
+{% endif %}
+
 {% if method_view.history_rows %}
 <div class="card mb-24">
     <div class="card-header">

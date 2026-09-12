@@ -29869,6 +29869,15 @@ def _render_football_method_page(sport_key, method_key):
                 odds_df=live_odds,
                 limit=20,
             )
+        # CFB Totals pill: fold in the per-game "Today's Totals" board (posted total,
+        # 1H total, each team's over rate + pace + scoring-environment read). The
+        # standalone Today's Totals tool now lives here inside Live & Lines.
+        if sport_key == 'ncaaf' and method_key == 'totals':
+            try:
+                method_view['cfb_totals_board'] = build_cfb_totals_board_context(
+                    date_filter if date_filter in ('today', 'week') else 'week', 'all')
+            except Exception:
+                method_view['cfb_totals_board'] = {}
         if method_key in {'game_lines', 'totals'}:
             live_games = build_football_live_game_method_board(
                 method_key,
@@ -40563,11 +40572,9 @@ def build_cfb_totals_board_context(date_filter='today', band='all'):
 
 @app.route('/tools/cfb-totals-today')
 def cfb_totals_today_tool():
-    """Quick Tool: Today's Totals — the live slate by total, with each team's
-    scoring environment (over rate, pace, PPG) and the 1H total. Context, not a pick."""
-    return render_template('cfb_totals_today.html',
-                           **build_cfb_totals_board_context(
-                               request.args.get('date', 'today'), request.args.get('band', 'all')))
+    """Folded into the Live Board & Lines Totals view (the per-game totals board now
+    renders there). Redirect old links/bookmarks."""
+    return redirect('/sports/ncaaf/totals')
 
 
 def build_nfl_totals_board_context(date_filter='week', band='all'):
