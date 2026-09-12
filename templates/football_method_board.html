@@ -6,6 +6,22 @@
 {% block betslip %}{% endblock %}
 
 {% block content %}
+<style>
+  /* Collapsible "how to read this" so the page leads with the board, not the essay. */
+  .fmb-howto{padding:0;overflow:hidden;}
+  .fmb-howto>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+    padding:14px 16px;font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .fmb-howto>summary::-webkit-details-marker{display:none;}
+  .fmb-howto>summary::before{content:'\25B8';color:var(--text-muted);font-size:12px;transition:transform .15s;}
+  .fmb-howto[open]>summary::before{transform:rotate(90deg);}
+  .fmb-howto>summary .fmb-howto-title{margin-right:auto;}
+  .fmb-howto>summary:hover{color:var(--accent);}
+  .fmb-howto .mt-16{margin-top:16px;}
+  /* Tighten the pattern board on narrow screens. */
+  @media (max-width:760px){
+    .fmb-howto>summary{padding:12px 14px;font-size:13px;}
+  }
+</style>
 <div class="page-hero">
     <div>
         <div class="page-kicker">Football Methods</div>
@@ -30,30 +46,6 @@
     </div>
 </div>
 
-<div class="card mb-24 panel-glow">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Why This Method Matters</div>
-        <span class="badge badge-accent">
-            {% if active_method in ['game_lines','totals'] %}Primary Read
-            {% elif active_method == 'props' and sport_key == 'ncaaf' %}Optional Support
-            {% elif active_method == 'props' %}Selective Support
-            {% else %}Support Layer{% endif %}
-        </span>
-    </div>
-    <div class="p-16">
-        <div class="grid-2" style="gap: 16px;">
-            <div class="parlay-surface-soft" style="padding: 12px;">
-                <div class="page-kicker" style="margin-bottom: 6px;">Method Read</div>
-                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.55;">{{ method.summary }}</div>
-            </div>
-            <div class="parlay-surface-soft" style="padding: 12px;">
-                <div class="page-kicker" style="margin-bottom: 6px;">Best Use Case</div>
-                <div style="font-size: 13px; color: var(--accent-copper); line-height: 1.55;">{{ method.best_use }}</div>
-            </div>
-        </div>
-    </div>
-</div>
-
 {% if method_view.live_refresh_meta and method_view.live_refresh_meta.warning %}
 <div class="card mb-24 panel-glow" style="border-color: rgba(201,128,58,0.28);">
     <div class="card-header panel-header-gloss">
@@ -71,68 +63,94 @@
 </div>
 {% endif %}
 
-<div class="grid-4 mb-24" style="gap: 12px;">
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--accent);">What is the number saying?</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Start with spread, total, price shape, and book context. The market is part of the handicap, not just the price tag.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How does the game want to play?</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use environment, style, and team behavior to understand whether the spot supports a side, a total, or no bet at all.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Does the history actually support it?</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Streaks and continuation patterns only matter if they survive review. This layer is here to confirm or challenge the first read.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Plain-English Verdict</div>
-        <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or conflict?</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is not to overwhelm you with variables. The goal is to show whether the signals agree, partially agree, or should keep you off the bet.</div>
-    </div>
-</div>
+{# The full "how to read this" explainer is collapsed by default so the page leads
+   with the pills + the actual board -- much better on a phone. Tap to expand. #}
+<details class="fmb-howto card mb-24">
+    <summary>
+        <span class="fmb-howto-title">How to read this board</span>
+        <span class="badge badge-accent">
+            {% if active_method in ['game_lines','totals'] %}Primary Read
+            {% elif active_method == 'props' and sport_key == 'ncaaf' %}Optional Support
+            {% elif active_method == 'props' %}Selective Support
+            {% else %}Support Layer{% endif %}
+        </span>
+    </summary>
+    <div class="p-16 fmb-howto-body">
+        <div class="grid-2" style="gap: 16px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Method Read</div>
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.55;">{{ method.summary }}</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Best Use Case</div>
+                <div style="font-size: 13px; color: var(--accent-copper); line-height: 1.55;">{{ method.best_use }}</div>
+            </div>
+        </div>
 
-{% if sport_key == 'nfl' %}
-<div class="grid-3 mb-24" style="gap: 12px;">
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">NFL Order</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Support</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">The board now treats game lines and totals as the lead signal. Trends and props only add support.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">What We Learned</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Broad prop hot-hand is thin</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Real historical line review says NFL prop streaks need more filtering than NBA-style prop boards do.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">How To Use This</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Build script first</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Pick the game environment first, then let trends or props confirm it instead of inventing a play on their own.</div>
-    </div>
-</div>
-{% endif %}
+        <div class="grid-4 mt-16" style="gap: 12px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Market Read</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--accent);">What is the number saying?</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Start with spread, total, price shape, and book context. The market is part of the handicap, not just the price tag.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Matchup Read</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--accent-copper);">How does the game want to play?</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Use environment, style, and team behavior to understand whether the spot supports a side, a total, or no bet at all.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Trend Read</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Does the history actually support it?</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">Streaks and continuation patterns only matter if they survive review. This layer is here to confirm or challenge the first read.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Plain-English Verdict</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--text-bright);">Clean support or conflict?</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.55;">The goal is not to overwhelm you with variables. The goal is to show whether the signals agree, partially agree, or should keep you off the bet.</div>
+            </div>
+        </div>
 
-{% if sport_key == 'ncaaf' %}
-<div class="grid-3 mb-24" style="gap: 12px;">
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">CFB Order</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Matchups</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">College football should start with the game environment and weekly board shape, not a prop-first workflow.</div>
+        {% if sport_key == 'nfl' %}
+        <div class="grid-3 mt-16" style="gap: 12px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">NFL Order</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Support</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">The board now treats game lines and totals as the lead signal. Trends and props only add support.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">What We Learned</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Broad prop hot-hand is thin</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Real historical line review says NFL prop streaks need more filtering than NBA-style prop boards do.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">How To Use This</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Build script first</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Pick the game environment first, then let trends or props confirm it instead of inventing a play on their own.</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if sport_key == 'ncaaf' %}
+        <div class="grid-3 mt-16" style="gap: 12px;">
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">CFB Order</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--accent);">1. Sides  2. Totals  3. Matchups</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">College football should start with the game environment and weekly board shape, not a prop-first workflow.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Trend Role</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Team behavior first</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">ATS runs, O/U runs, conference form, and home-road spots matter more than broad prop streak hunting.</div>
+            </div>
+            <div class="parlay-surface-soft" style="padding: 12px;">
+                <div class="page-kicker" style="margin-bottom: 6px;">Prop Role</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Optional only</div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Use props only when the market is actually available and it clearly supports the side, total, and matchup script already on the board.</div>
+            </div>
+        </div>
+        {% endif %}
     </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Trend Role</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--accent-copper);">Team behavior first</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">ATS runs, O/U runs, conference form, and home-road spots matter more than broad prop streak hunting.</div>
-    </div>
-    <div class="parlay-surface-soft" style="padding: 12px;">
-        <div class="page-kicker" style="margin-bottom: 6px;">Prop Role</div>
-        <div style="font-size: 18px; font-weight: 800; color: var(--text-bright);">Optional only</div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Use props only when the market is actually available and it clearly supports the side, total, and matchup script already on the board.</div>
-    </div>
-</div>
-{% endif %}
+</details>
 
 {% if method_view.summary_cards %}
 <div class="grid-3 mb-24" style="gap: 12px;">
@@ -221,13 +239,13 @@
 {% endif %}
 
 {% if method_view.history_status and method_view.history_status.cards %}
-<div class="card mb-24 panel-glow" style="border-color: {% if method_view.history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif method_view.history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
-    <div class="card-header panel-header-gloss">
-        <div class="card-title">Historical Coverage</div>
+<details class="fmb-howto card mb-24" style="border-color: {% if method_view.history_status.state == 'ready' %}rgba(45,212,191,0.22){% elif method_view.history_status.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
+    <summary>
+        <span class="fmb-howto-title">Data coverage &amp; sources</span>
         <span class="badge {% if method_view.history_status.state == 'ready' %}badge-accent{% else %}badge{% endif %}">
             {% if method_view.history_status.state == 'ready' %}Operational{% elif method_view.history_status.state == 'partial' %}Partial{% else %}Waiting on Data{% endif %}
         </span>
-    </div>
+    </summary>
     <div class="grid-3 p-16" style="gap: 12px;">
         {% for card in method_view.history_status.cards %}
         <div class="parlay-surface-soft" style="padding: 12px;">
@@ -240,7 +258,7 @@
     <div class="p-16" style="padding-top: 0;">
         <div class="cell-meta" style="line-height: 1.55;">{{ method_view.history_status.note }}</div>
     </div>
-</div>
+</details>
 {% endif %}
 
 {% if method_view.history_insights %}
@@ -266,7 +284,6 @@
             <thead>
                 <tr>
                     <th>Team</th>
-                    <th>Trend</th>
                     <th>ATS Streak</th>
                     <th>O/U Streak</th>
                     <th>Last 5</th>
@@ -283,7 +300,6 @@
                         <div style="font-weight:700; color:var(--text-bright);">{{ team_mark(row.team, size='sm', sport_key=sport_key) }}</div>
                         <div class="cell-meta">{{ row.games }} games | {{ row.seasons }} seasons</div>
                     </td>
-                    <td>{{ row.trend }}</td>
                     <td>{{ row.ats_streak }}</td>
                     <td>{{ row.ou_streak }}</td>
                     <td>

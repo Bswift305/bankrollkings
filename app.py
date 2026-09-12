@@ -29774,9 +29774,16 @@ def _render_football_method_page(sport_key, method_key):
                 _live_totals = [pd.to_numeric(game.get('total'), errors='coerce') for game in live_games]
                 _valid_totals = [float(t) for t in _live_totals if pd.notna(t)]
                 avg_total = round(sum(_valid_totals) / len(_valid_totals), 1) if _valid_totals else 0
+                # NaN book values are floats, and float('nan') is truthy, so the old
+                # "book or ''" let a literal "nan" through. Filter on the cleaned string.
+                _books = sorted({
+                    b for game in live_games
+                    for b in [str(game.get("book") or "").strip()]
+                    if b and b.lower() not in ('nan', 'none')
+                })
                 method_view['summary_cards'] = [
                     {'label': 'Matchups', 'value': len(live_games), 'note': 'live slate rows loaded'},
-                    {'label': 'Book Source', 'value': len(sorted({str(game.get("book") or "").strip() for game in live_games if str(game.get("book") or "").strip()})), 'note': ', '.join(sorted({str(game.get("book") or "").strip() for game in live_games if str(game.get("book") or "").strip()})[:4]) or 'No books loaded'},
+                    {'label': 'Book Source', 'value': len(_books), 'note': ', '.join(_books[:4]) or 'CFBD consensus'},
                     {'label': 'Avg Total', 'value': avg_total if avg_total else '-', 'note': 'live market total average'},
                 ]
             elif not live_odds.empty or not live_schedule.empty:
