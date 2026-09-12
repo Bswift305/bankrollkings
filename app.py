@@ -40208,7 +40208,9 @@ def build_nfl_matchup_dossier():
     m2f = _nfl_mascot_to_full()
     splits = ('overall', 'home', 'away', 'fav', 'dog', 'over')
     T = defaultdict(lambda: {k: [0, 0, 0] for k in splits})
+    CO = defaultdict(lambda: {'ats': [0, 0, 0], 'over': [0, 0, 0]})  # coaches (2022-25 carry coach names)
     seasons = set()
+    coach_seasons = set()
 
     def _add(counter, res):
         counter[0 if res > 0 else (1 if res < 0 else 2)] += 1
@@ -40229,9 +40231,21 @@ def build_nfl_matchup_dossier():
         _add(T[away]['overall'], -h_ats); _add(T[away]['away'], -h_ats)
         _add(T[away]['fav' if hsp > 0 else 'dog'], -h_ats)
         tot = pd.to_numeric(r.get('CloseTotal', r.get('Total')), errors='coerce')
+        ou = None
         if not pd.isna(tot):
             ou = 1 if (float(hs) + float(as_)) > float(tot) else (-1 if (float(hs) + float(as_)) < float(tot) else 0)
             _add(T[home]['over'], ou); _add(T[away]['over'], ou)
+        hc = str(r.get('home_coach') or '').strip()
+        ac = str(r.get('away_coach') or '').strip()
+        if hc and hc.lower() != 'nan':
+            _add(CO[hc]['ats'], h_ats)
+            if ou is not None:
+                _add(CO[hc]['over'], ou)
+            coach_seasons.add(str(r.get('Season')))
+        if ac and ac.lower() != 'nan':
+            _add(CO[ac]['ats'], -h_ats)
+            if ou is not None:
+                _add(CO[ac]['over'], ou)
 
     def _cell(c):
         n = c[0] + c[1]
@@ -40244,9 +40258,22 @@ def build_nfl_matchup_dossier():
             continue
         teams[t] = {'conf': '', 'coach': '', 'coach_ats': None, 'coach_rec': '', 'ret': None,
                     'ats': {k: _cell(sp[k]) for k in splits}}
+    coaches = []
+    for name, sp in CO.items():
+        if sp['ats'][0] + sp['ats'][1] < 20:
+            continue
+        a, o = _cell(sp['ats']), _cell(sp['over'])
+        coaches.append({
+            'coach': name,
+            'ats_pct': (round(a['pct'] * 100, 1) if a['pct'] is not None else None), 'ats_rec': a['rec'],
+            'ou_pct': (round(o['pct'] * 100, 1) if o['pct'] is not None else None), 'ou_rec': o['rec'],
+            'games': a['n'],
+        })
+    coaches.sort(key=lambda x: -(x['ats_pct'] or 0))
     data = {
-        'teams': teams, 'teamList': sorted(teams.keys()),
-        'meta': {'seasons': (min(seasons) + '-' + max(seasons)) if seasons else ''},
+        'teams': teams, 'teamList': sorted(teams.keys()), 'coaches': coaches,
+        'meta': {'seasons': (min(seasons) + '-' + max(seasons)) if seasons else '',
+                 'coach_seasons': (min(coach_seasons) + '-' + max(coach_seasons)) if coach_seasons else ''},
     }
     _NFL_MATCHUP_CACHE['sig'] = sig
     _NFL_MATCHUP_CACHE['data'] = data
@@ -40393,13 +40420,29 @@ def build_bk_power_context():
             'games': dec,
         })
     coaches.sort(key=lambda x: -x['ats_pct'])
+    # NFL teams + coaches from the NFL ATS dossier (same cover/over shape).
+    nfl = build_nfl_matchup_dossier()
+    nfl_teams = []
+    for team, v in (nfl.get('teams') or {}).items():
+        ov, over = v['ats']['overall'], v['ats']['over']
+        if ov['n'] < 30:
+            continue
+        nfl_teams.append({
+            'team': team, 'conf': '',
+            'ats_pct': (round(ov['pct'] * 100, 1) if ov['pct'] is not None else None), 'ats_rec': ov['rec'],
+            'ou_pct': (round(over['pct'] * 100, 1) if over['pct'] is not None else None), 'ou_rec': over['rec'],
+            'games': ov['n'],
+        })
+    nfl_teams.sort(key=lambda x: -(x['ats_pct'] or 0))
+    nfl_coaches = nfl.get('coaches', [])
     return {
-        'bp_teams': teams,
-        'bp_coaches': coaches,
+        'bp_teams': {'CFB': teams, 'NFL': nfl_teams},
+        'bp_coaches': {'CFB': coaches, 'NFL': nfl_coaches},
         'bp_players': pdata.get('players', {}),
-        'bp_sports': (pdata.get('meta', {}) or {}).get('sports', []),
+        'bp_players_sports': (pdata.get('meta', {}) or {}).get('sports', []),
         'bp_meta': pdata.get('meta', {}),
         'bp_ats_meta': ats.get('meta', {}),
+        'bp_nfl_meta': nfl.get('meta', {}),
     }
 
 

@@ -60,7 +60,7 @@
 </div></div>
 </div>
 
-<script id="bp-data" type="application/json">{{ {'teams':bp_teams,'coaches':bp_coaches,'players':bp_players,'sports':bp_sports,'ats':bp_ats_meta}|tojson }}</script>
+<script id="bp-data" type="application/json">{{ {'teams':bp_teams,'coaches':bp_coaches,'players':bp_players,'playerSports':bp_players_sports,'ats':bp_ats_meta,'nfl':bp_nfl_meta}|tojson }}</script>
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('bp-data').textContent);
@@ -68,7 +68,9 @@
   const pct = v => (v===null||v===undefined) ? '&mdash;' : (v+'%');
   const cls = (v,base) => v>=base+3 ? 'bp-hot' : (v<=base-3 ? 'bp-cold' : '');
 
-  const S = {tab:'teams', sport:(DATA.sports&&DATA.sports[0])||'NFL', sortKey:null, dir:-1};
+  // Teams & Coaches toggle CFB/NFL; Players toggles NFL/NBA/MLB/WNBA.
+  const sportsFor = tab => tab==='players' ? (DATA.playerSports||[]) : ['CFB','NFL'];
+  const S = {tab:'teams', sport:'CFB', sortKey:null, dir:-1};
 
   // column defs: {key, label, l(eft)?, get(row), sortVal(row), cell(row)}
   const TEAM_COLS = [
@@ -93,7 +95,11 @@
   function base(){ // sport-specific over% baseline for coloring
     return {NFL:48, NBA:48, MLB:30, WNBA:50}[S.sport] || 48;
   }
-  function rows(){ return S.tab==='teams' ? DATA.teams : (S.tab==='coaches' ? (DATA.coaches||[]) : (DATA.players[S.sport]||[])); }
+  function rows(){
+    if(S.tab==='teams')   return (DATA.teams[S.sport]||[]);
+    if(S.tab==='coaches') return (DATA.coaches[S.sport]||[]);
+    return (DATA.players[S.sport]||[]);
+  }
   function cols(){ return S.tab==='teams' ? TEAM_COLS : (S.tab==='coaches' ? COACH_COLS : PLAYER_COLS); }
 
   function render(){
@@ -117,11 +123,13 @@
     });
     // explain + note
     if(S.tab==='teams'){
-      $('#bp-explain').innerHTML='<b>ATS%</b> is how often the team actually covered the spread; <b>Over%</b> how often its games went over &mdash; real graded games ('+(DATA.ats.seasons||'')+'). Green beats a coin flip, red is under. Tap a column to rank by it.';
-      $('#bp-note').innerHTML='Descriptive, not a pick &mdash; this is who has historically hit their marks, not who will. Min 30 decided games.';
+      const yr = S.sport==='NFL' ? (DATA.nfl.seasons||'') : (DATA.ats.seasons||'');
+      $('#bp-explain').innerHTML='<b>ATS%</b> is how often the team actually covered the spread; <b>Over%</b> how often its games went over &mdash; real graded games ('+yr+'). Green beats a coin flip, red is under. Tap a column to rank by it.';
+      $('#bp-note').innerHTML='Descriptive, not a pick &mdash; who has historically hit their marks, not who will. Min 30 decided games.';
     } else if(S.tab==='coaches'){
-      $('#bp-explain').innerHTML='<b>ATS%</b> is how often this head coach&rsquo;s teams covered; <b>Over%</b> how often their games went over &mdash; records travel with the coach across schools ('+(DATA.ats.seasons||'')+'). Tap a column to rank by it.';
-      $('#bp-note').innerHTML='Descriptive, not a pick. Coach records follow the coach wherever he&rsquo;s been. Min 30 decided games.';
+      const yr = S.sport==='NFL' ? (DATA.nfl.coach_seasons||'') : (DATA.ats.seasons||'');
+      $('#bp-explain').innerHTML='<b>ATS%</b> is how often this head coach&rsquo;s teams covered; <b>Over%</b> how often their games went over ('+yr+'). Records travel with the coach across schools. Tap a column to rank by it.';
+      $('#bp-note').innerHTML='Descriptive, not a pick. '+(S.sport==='NFL'?'NFL coach data starts 2022. ':'')+'Min 20 decided games.';
     } else {
       $('#bp-explain').innerHTML='<b>Over%</b> is how often this player&rsquo;s actual result cleared the posted line &mdash; the players who consistently beat their number (top) and rarely do (sort ascending). Baseline over% for '+S.sport+' is ~'+base()+'%.';
       $('#bp-note').innerHTML='Descriptive, not a pick. Real graded props, min '+(20)+' over-props per player. MLB skews heavily under, so its baseline is low by nature.';
@@ -130,7 +138,7 @@
 
   function buildSportBar(){
     const bar=$('#bp-sportbar'); bar.querySelectorAll('.bp-chip').forEach(c=>c.remove());
-    (DATA.sports||[]).forEach(sp=>{
+    sportsFor(S.tab).forEach(sp=>{
       const b=document.createElement('button'); b.className='bp-chip'+(sp===S.sport?' active':''); b.textContent=sp;
       b.onclick=()=>{ S.sport=sp; S.sortKey=null; S.dir=-1; buildSportBar(); render(); };
       bar.appendChild(b);
@@ -139,11 +147,11 @@
 
   document.querySelectorAll('.bp-tab').forEach(t=>{
     t.onclick=()=>{ document.querySelectorAll('.bp-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
-      S.tab=t.getAttribute('data-tab'); S.sortKey=null; S.dir=-1;
-      $('#bp-sportbar').style.display = S.tab==='players' ? '' : 'none';
-      render(); };
+      S.tab=t.getAttribute('data-tab'); S.sport=sportsFor(S.tab)[0]; S.sortKey=null; S.dir=-1;
+      buildSportBar(); render(); };
   });
 
+  $('#bp-sportbar').style.display='';
   buildSportBar();
   render();
 })();
