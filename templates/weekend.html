@@ -1,0 +1,124 @@
+{% set active_page = 'weekend' %}
+{% extends "bk_base.html" %}
+{% block title %}This Weekend - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .wk-wrap{--wk-accent:#e0b34a;max-width:600px;}
+  .wk-sec{margin:0 0 22px;}
+  .wk-sech{display:flex;align-items:baseline;gap:10px;margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+  .wk-sech .n{font:800 16px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;}
+  .wk-sech .d{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .wk-card{border:1px solid var(--border);border-radius:13px;padding:14px 15px;margin-bottom:12px;background:rgba(255,255,255,.015);}
+  .wk-ch{display:flex;align-items:center;gap:8px;font:800 13.5px 'Helvetica Neue',Arial,sans-serif;margin-bottom:10px;}
+  .wk-ch.fade{color:#ff6b6b;} .wk-ch.cover{color:#49d27d;} .wk-ch.wind{color:#49d27d;} .wk-ch.lean{color:#7cc4ff;} .wk-ch.spot{color:var(--wk-accent);}
+  .wk-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .wk-row:last-child{border-bottom:0;}
+  .wk-row a.tm,.wk-row .tm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-decoration:none;}
+  .wk-row a.tm:hover{color:var(--wk-accent);}
+  .wk-num{font:800 14px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .wk-why{flex:1 1 100%;font:500 12.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
+  .wk-why b{color:var(--text);}
+  .wk-hot{color:#49d27d;font-weight:700;} .wk-cold{color:#ff6b6b;font-weight:700;}
+  .wk-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:4px 0;}
+  .wk-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(224,179,74,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:6px;}
+  .wk-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;}
+  .wk-links a{font:700 12px ui-monospace,Consolas,monospace;color:var(--text-muted);border:1px solid var(--border);
+    border-radius:999px;padding:6px 12px;text-decoration:none;transition:.14s;}
+  .wk-links a:hover{color:var(--wk-accent);border-color:var(--wk-accent);}
+</style>
+
+<div class="wk-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">The Board &middot; Both Sports</div>
+    <h1>This <span class="accent">Weekend</span></h1>
+    <div class="page-subtitle">The sharpest data-backed spots across College Saturday and NFL Sunday, on one screen. Real edges are flagged; everything else is honest context. Built to glance at on the floor.</div>
+  </div>
+</div>
+
+<div class="wk-links">
+  <a href="/tools/cfb-big-favorites">CFB Big Favorites &rsaquo;</a>
+  <a href="/tools/cfb-totals-today">CFB Totals &rsaquo;</a>
+  <a href="/tools/nfl-totals-today">NFL Totals &rsaquo;</a>
+  <a href="/tools/cfb-best-spots">Best Spots &rsaquo;</a>
+</div>
+
+<!-- ============ COLLEGE FOOTBALL ============ -->
+<div class="wk-sec">
+  <div class="wk-sech"><span class="n">College Football</span><span class="d">Saturday &middot; {{ cfb_count }} games laying 20+</span></div>
+
+  {% if cfb_fades %}
+  <div class="wk-card">
+    <div class="wk-ch fade">🚩 Fade the number — weak big-favorite coverers</div>
+    {% for r in cfb_fades %}
+    <div class="wk-row">
+      <a class="tm" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
+      <span class="wk-num">-{{ r.line }}</span>
+      <span class="wk-why">{{ r.coach }} covers <b class="wk-cold">{{ r.coach_pct if r.coach_pct is not none else '—' }}%</b> as a big favorite{% if r.team_pct is not none %}, the program <b class="wk-cold">{{ r.team_pct }}%</b>{% endif %} — {{ r.line }} is a lot to lay.</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if cfb_covers %}
+  <div class="wk-card">
+    <div class="wk-ch cover">✅ Number looks earned — strong coverers</div>
+    {% for r in cfb_covers %}
+    <div class="wk-row">
+      <a class="tm" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
+      <span class="wk-num">-{{ r.line }}</span>
+      <span class="wk-why">{{ r.coach }} <b class="wk-hot">{{ r.coach_pct if r.coach_pct is not none else '—' }}%</b> / program <b class="wk-hot">{{ r.team_pct if r.team_pct is not none else '—' }}%</b> as a big favorite — they bury the number.</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if cfb_spots %}
+  <div class="wk-card">
+    <div class="wk-ch spot">💡 Other angles on the slate</div>
+    {% for c in cfb_spots %}
+    <div class="wk-row">
+      <span class="tm" style="font-size:13.5px;">{{ c.matchup }}</span><span class="wk-num" style="font-size:12.5px;">{{ c.spread }}</span>
+      <span class="wk-why">{{ c.headline }}{% if c.bullets %} — {{ c.bullets[0]|striptags }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ============ NFL ============ -->
+<div class="wk-sec">
+  <div class="wk-sech"><span class="n">NFL</span><span class="d">Sunday &middot; {{ nfl_count }} games</span></div>
+
+  {% if nfl_wind %}
+  <div class="wk-card">
+    <div class="wk-ch wind">🌬 Wind Under — our one validated totals edge</div>
+    {% for r in nfl_wind %}
+    <div class="wk-row">
+      <span class="tm" style="font-size:14px;">{{ r.away }} @ {{ r.home }}</span><span class="wk-num">O/U {{ '%g'|format(r.total) }}</span>
+      <span class="wk-why"><b>{{ r.wind }} mph</b> outdoors — outdoor 15+ mph hits the UNDER ~55% (+5% ROI, backtested out of sample). The real one this week.</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if nfl_leans %}
+  <div class="wk-card">
+    <div class="wk-ch lean">📊 Scoring environment (context, not an edge)</div>
+    {% for r in nfl_leans %}
+    <div class="wk-row">
+      <span class="tm" style="font-size:13.5px;">{{ r.away }} @ {{ r.home }}</span><span class="wk-num" style="font-size:12.5px;">O/U {{ '%g'|format(r.total) }}</span>
+      <span class="wk-why">Both lean <b class="{{ 'wk-hot' if r.read=='over' else 'wk-cold' }}">{{ 'OVER' if r.read=='over' else 'UNDER' }}</b> — {{ r.away }} {{ r.away_over }}% / {{ r.home }} {{ r.home_over }}% to the over (last season).</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if not nfl_wind and not nfl_leans %}<div class="wk-empty">NFL lines still loading for this week — check back closer to Sunday.</div>{% endif %}
+</div>
+
+<div class="wk-note"><b>How to use this:</b> the <b class="wk-cold">🚩 fades</b> / <b class="wk-hot">✅ covers</b> and the <b class="wk-hot">🌬 wind under</b> are real, decade-and-backtest-deep tendencies the market can be slow to price — reasons to look closer and shop the number. The scoring-environment leans are context, not a proven edge (our totals backtest says O/U is efficiently priced). Records are big-favorite spots 2016–2025. These are spots, not locks. Bet what you can afford to lose.</div>
+
+</div>
+{% endblock %}

@@ -737,6 +737,7 @@ PRO_ENDPOINTS = {
     'cfb_big_favorites_tool',
     'cfb_totals_today_tool',
     'nfl_totals_today_tool',
+    'weekend_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40368,6 +40369,47 @@ def nfl_totals_today_tool():
     return render_template('nfl_totals_today.html',
                            **build_nfl_totals_board_context(
                                request.args.get('date', 'week'), request.args.get('band', 'all')))
+
+
+def build_weekend_context():
+    """This weekend across both sports in one glance — the sharpest data-backed spots
+    for CFB (Saturday) and NFL (Sunday), pulled from the existing engines. Built to be
+    read on a phone: honest one-liners, the real edges flagged, context labeled as such."""
+    ctx = {'cfb_fades': [], 'cfb_covers': [], 'cfb_spots': [], 'nfl_wind': [], 'nfl_leans': [],
+           'cfb_count': 0, 'nfl_count': 0}
+    try:
+        bf = build_cfb_big_favorites_context('week', 20)
+        for r in bf.get('bf_rows', []):
+            if r['read'] == 'fade' and len(ctx['cfb_fades']) < 6:
+                ctx['cfb_fades'].append(r)
+            elif r['read'] == 'cover' and len(ctx['cfb_covers']) < 6:
+                ctx['cfb_covers'].append(r)
+        ctx['cfb_count'] = bf.get('bf_count', 0)
+    except Exception:
+        pass
+    try:
+        bs = build_cfb_best_spots_context('week')
+        ctx['cfb_spots'] = (bs.get('bs_live') or [])[:5]
+    except Exception:
+        pass
+    try:
+        nt = build_nfl_totals_board_context('week')
+        ctx['nfl_count'] = nt.get('nt_count', 0)
+        for r in nt.get('nt_rows', []):
+            if r['read'] == 'wind_under':
+                ctx['nfl_wind'].append(r)
+            elif r['read'] in ('over', 'under') and len(ctx['nfl_leans']) < 6:
+                ctx['nfl_leans'].append(r)
+    except Exception:
+        pass
+    return ctx
+
+
+@app.route('/tools/weekend')
+def weekend_tool():
+    """Quick Tool: This Weekend — one phone-first page across CFB (Sat) + NFL (Sun)
+    with the sharpest data-backed spots, for glancing at (and sharing) on the floor."""
+    return render_template('weekend.html', **build_weekend_context())
 
 
 @app.route('/tools/cfb-hub')
