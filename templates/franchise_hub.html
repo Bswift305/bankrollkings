@@ -789,6 +789,7 @@
     {% if gp.warn %}<div class="fk-gp-warn">⚠️ {{ gp.warn }}</div>{% endif %}
     {% if gp.install %}{% for i in gp.install %}<div class="fk-gp-warn">🛠 New {{ i.side }} scheme still installing — {{ i.weeks }} week{{ 's' if i.weeks != 1 }} until the room has it down.</div>{% endfor %}{% endif %}
     {% if gp.friction %}<div class="fk-gp-warn">🎧 {{ gp.friction }}</div>{% endif %}
+    {% if gp.roster_note %}<div class="fk-gp-warn" style="border-color:rgba(73,210,125,.4);color:#49d27d;">💡 {{ gp.roster_note }}</div>{% endif %}
     <div class="fk-gp-pick">
       <div class="fk-gp-h">Offensive identity{% if gp.reco and gp.reco.off %} <span class="fk-gp-reco">🎧 OC wants {{ gp.reco.off.label }}{% if gp.reco.off.reason %} — {{ gp.reco.off.reason }}{% endif %}</span>{% endif %}</div>
       <div class="fk-gp-opts">

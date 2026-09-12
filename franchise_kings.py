@@ -1843,21 +1843,29 @@ def opponent_tendencies(opp):
     return t
 
 
+# `feat` = the personnel group an identity leans on {position: players-on-field}.
+# It drives the roster-fit term in the identity edge: an identity only pays off if
+# the players it forces onto the field are good (see _roster_fit). This is what makes
+# "Dual Backfield" a real call only when your RB2 has developed, and "Spread" only
+# when your WR3/WR4 are good — the playbook follows your roster, not just the matchup.
 OFF_IDENTITIES = {
     "establish_run": {"label": "Establish the Run", "strong": ["blitz_heavy", "weak_run_d"], "weak": ["strong_run_d"],
-                      "blurb": "Pound it, control the game, punish the blitz."},
+                      "blurb": "Pound it, control the game, punish the blitz.", "feat": {"RB": 1}},
+    "dual_back": {"label": "Dual Backfield", "strong": ["blitz_heavy", "weak_run_d"], "weak": ["strong_run_d"],
+                  "blurb": "Two backs on the field — run flexibility, mismatches, and a check-down that punishes the blitz.",
+                  "feat": {"RB": 2}},
     "quick_pass": {"label": "Quick Passing Attack", "strong": ["blitz_heavy", "strong_pass_rush"], "weak": ["soft_zone"],
                    "blurb": "Get it out fast — beat pressure before it arrives."},
     "attack_deep": {"label": "Attack Downfield", "strong": ["weak_secondary", "soft_zone"], "weak": ["strong_pass_d", "strong_pass_rush"],
-                    "blurb": "Take your shots and stress the top of the coverage."},
+                    "blurb": "Take your shots and stress the top of the coverage.", "feat": {"WR": 2}},
     "control_clock": {"label": "Control the Clock", "strong": ["weak_run_d"], "weak": ["strong_run_d"],
-                      "blurb": "Long drives, keep their offense on the bench."},
+                      "blurb": "Long drives, keep their offense on the bench.", "feat": {"RB": 2}},
     "feature_star": {"label": "Feature the Star", "strong": ["soft_zone", "weak_secondary"], "weak": ["strong_pass_d"],
                      "blurb": "Force-feed your best weapon the ball."},
     "protect_qb": {"label": "Protect the Quarterback", "strong": ["blitz_heavy", "strong_pass_rush"], "weak": [],
                    "blurb": "Max protect and chip — keep him clean."},
     "spread": {"label": "Spread Them Out", "strong": ["strong_run_d", "blitz_heavy"], "weak": ["strong_pass_d"],
-               "blurb": "Empty the box, create space, throw underneath."},
+               "blurb": "Empty the box, create space, throw underneath.", "feat": {"WR": 4}},
 }
 DEF_IDENTITIES = {
     "stop_run": {"label": "Stop the Run", "strong": ["run_heavy"], "weak": ["deep_pass", "star_wr"],
@@ -1877,13 +1885,45 @@ DEF_IDENTITIES = {
 }
 
 
-def _identity_edge_for(idef, opp_tags):
+def _roster_fit(team, idef):
+    """How well YOUR personnel supports this identity, as a bounded power swing.
+    An identity is only as good as the MARGINAL player it forces onto the field:
+    Dual Backfield ({"RB":2}) is judged on your RB2, Spread ({"WR":4}) on your WR4.
+    Measured against your own average skill starter, so it reads 'do I have the depth
+    to run this?' — and it climbs on its own as that young back/receiver develops."""
+    feat = idef.get("feat")
+    if not feat:
+        return 0.0
+    # Baseline = the REST of your offensive skill talent (positions this identity does
+    # NOT feature), so the featured group is judged against what it displaces — never
+    # against itself. Two good backs clear a receiver-led baseline; a deep WR room
+    # clears a back/TE-led one.
+    base = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        if pos in feat:
+            continue
+        base += [p["overall"] for p in pos_depth(team, pos)[:ROSTER.get(pos, 1)]]
+    baseline = (sum(base) / len(base)) if base else 72.0
+    parts = []
+    for pos, slots in feat.items():
+        best = pos_depth(team, pos)[:slots]
+        if len(best) < slots:                 # not enough bodies to field it
+            parts.append(-9.0)
+            continue
+        parts.append(min(x["overall"] for x in best) - baseline)   # the weakest required starter
+    raw = (sum(parts) / len(parts)) if parts else 0.0
+    return round(max(-0.45, min(0.6, raw / 22.0)), 3)
+
+
+def _identity_edge_for(idef, opp_tags, team=None):
     e = 0.0
     for tag in opp_tags:
         if tag in idef.get("strong", []):
             e += 0.35
         elif tag in idef.get("weak", []):
             e -= 0.35
+    if team is not None:                        # does your roster actually fit this call?
+        e += _roster_fit(team, idef)
     return e
 
 
@@ -1903,13 +1943,14 @@ def identity_edge(save):
     def_tags = [x["tag"] for x in tends if x["side"] == "def"]
     off_tags = [x["tag"] for x in tends if x["side"] == "off"]
     wo = save.get("weekly_ops", {})
+    team = current_team(save)
     e = 0.0
     oid = OFF_IDENTITIES.get(wo.get("off_identity"))
     did = DEF_IDENTITIES.get(wo.get("def_identity"))
     if oid:
-        e += _identity_edge_for(oid, def_tags)
+        e += _identity_edge_for(oid, def_tags, team)
     if did:
-        e += _identity_edge_for(did, off_tags)
+        e += _identity_edge_for(did, off_tags, team)
     streak = save.get("identity_streak", {})
     for side in ("off", "def"):
         s = streak.get(side)
@@ -1933,9 +1974,10 @@ def coordinator_reco(save, opp=None):
     tends = opponent_tendencies(opp)
     def_tags = [x["tag"] for x in tends if x["side"] == "def"]
     off_tags = [x["tag"] for x in tends if x["side"] == "off"]
+    my_team = current_team(save)
 
     def best(cat, tags):
-        scored = sorted(((_identity_edge_for(d, tags), k, d) for k, d in cat.items()), key=lambda x: -x[0])
+        scored = sorted(((_identity_edge_for(d, tags, my_team), k, d) for k, d in cat.items()), key=lambda x: -x[0])
         top = scored[0]
         reason = next((x["text"] for x in tends
                        if x["tag"] in top[2].get("strong", []) and x["side"] == ("def" if cat is OFF_IDENTITIES else "off")), "")
@@ -1960,11 +2002,12 @@ def game_plan_report(save):
     off_tags = [x["tag"] for x in tends if x["side"] == "off"]
     wo = save.get("weekly_ops", {})
     reco = coordinator_reco(save, opp)
+    my_team = current_team(save)
 
     def opts(cat, tags, cur):
         out = []
         for k, d in cat.items():
-            e = _identity_edge_for(d, tags)
+            e = _identity_edge_for(d, tags, my_team)
             out.append({"key": k, "label": d["label"], "blurb": d["blurb"], "edge": round(e, 2),
                         "on": k == cur, "fit": "good" if e >= 0.3 else "bad" if e <= -0.3 else "neutral"})
         return sorted(out, key=lambda x: -x["edge"])
@@ -1975,7 +2018,17 @@ def game_plan_report(save):
         if s and s.get("id") == wo.get(side + "_identity") and s.get("count", 0) >= 3:
             nm = (OFF_IDENTITIES if side == "off" else DEF_IDENTITIES).get(s["id"], {}).get("label", "")
             warn = f"You've run {nm} {s['count']} weeks straight — opponents are sitting on it."
+    # Development/roster callout: surface when a personnel identity now fits strongly,
+    # so a GM watching a young back/receiver develop knows the playbook has opened up.
+    roster_note = None
+    for k, grp in (("dual_back", "backfield"), ("spread", "receiver room")):
+        d = OFF_IDENTITIES.get(k)
+        if d and _roster_fit(my_team, d) >= 0.3:
+            roster_note = (f"Your {grp} has the depth to run {d['label']} now — it's grading as "
+                           f"a strong call, and your OC will lean into it if you set it.")
+            break
     return {"opp_short": opp.get("name", opp["full"]),
+            "roster_note": roster_note,
             "off_tendencies": [x for x in tends if x["side"] == "off"],
             "def_tendencies": [x for x in tends if x["side"] == "def"],
             "off_opts": opts(OFF_IDENTITIES, def_tags, wo.get("off_identity")),
