@@ -736,6 +736,7 @@ PRO_ENDPOINTS = {
     'cfb_best_spots_tool',
     'cfb_big_favorites_tool',
     'cfb_totals_today_tool',
+    'nfl_totals_today_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40303,6 +40304,70 @@ def cfb_totals_today_tool():
     return render_template('cfb_totals_today.html',
                            **build_cfb_totals_board_context(
                                request.args.get('date', 'today'), request.args.get('band', 'all')))
+
+
+def build_nfl_totals_board_context(date_filter='week', band='all'):
+    """This week's NFL slate by total: each team's over rate, the 1H total, and the
+    game-day WIND — the one football totals signal our backtest says the market
+    underprices (outdoor 15+ mph -> UNDER ~55%, +5% ROI out of sample). Wind-under
+    is a real flag; the over/under environment is context."""
+    date_filter = date_filter if date_filter in ('today', 'week') else 'week'
+    band = band if band in ('all', 'high', 'low') else 'all'
+    ou_raw = _nfl_ou_tendencies()
+    ou = {}
+    for t in ou_raw.get('teams', []):
+        full = NFL_ABBR_TO_FULL.get(str(t['team']).strip().upper())
+        if full:
+            ou[full] = t
+    wind = _nfl_game_wind_map()
+    fh_rows = load_football_first_half('nfl')
+    try:
+        games = build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter=date_filter)
+    except Exception:
+        games = []
+    rows = []
+    for g in games:
+        total = pd.to_numeric(g.get('total'), errors='coerce')
+        if pd.isna(total):
+            continue
+        total = float(total)
+        if band == 'high' and total < 48:
+            continue
+        if band == 'low' and total > 42:
+            continue
+        away, home = g.get('away'), g.get('home')
+        ao = (ou.get(away) or {}).get('over_rate')
+        ho = (ou.get(home) or {}).get('over_rate')
+        combined = ((ao + ho) / 2) if (ao is not None and ho is not None) else None
+        w = wind.get((str(g.get('date')), str(home).strip().lower()))
+        high_wind = bool(w and w['wind'] >= 15)
+        fh = _match_first_half(fh_rows, g.get('date'), away, home)
+        read = ''
+        if high_wind:
+            read = 'wind_under'
+        elif combined is not None:
+            read = 'over' if combined >= 0.55 else 'under' if combined <= 0.45 else ''
+        rows.append({
+            'away': away, 'home': home, 'date': g.get('date'), 'time': g.get('time'),
+            'total': total, 'spread': _format_signed_line(g.get('spread')),
+            'total_1h': (fh.get('th1') if fh else ''),
+            'away_over': (round(ao * 100) if ao is not None else None), 'away_ou': (ou.get(away) or {}).get('record_label'),
+            'home_over': (round(ho * 100) if ho is not None else None), 'home_ou': (ou.get(home) or {}).get('record_label'),
+            'wind': (round(w['wind']) if w else None), 'high_wind': high_wind,
+            'read': read,
+        })
+    rows.sort(key=lambda r: (0 if r['read'] == 'wind_under' else 1, -r['total']))
+    return {'nt_rows': rows, 'nt_band': band, 'nt_date': date_filter,
+            'nt_count': len(rows), 'nt_season': ou_raw.get('season')}
+
+
+@app.route('/tools/nfl-totals-today')
+def nfl_totals_today_tool():
+    """Quick Tool: NFL Totals — this week's slate by total with each team's over rate,
+    the 1H total, and the validated high-wind UNDER flag."""
+    return render_template('nfl_totals_today.html',
+                           **build_nfl_totals_board_context(
+                               request.args.get('date', 'week'), request.args.get('band', 'all')))
 
 
 @app.route('/tools/cfb-hub')

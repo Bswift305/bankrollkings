@@ -1,0 +1,105 @@
+{% set active_page = 'nfl_totals_today' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Totals - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .nt-wrap{--nt-accent:#5b8def;}
+  .nt-bar{display:flex;flex-wrap:wrap;gap:16px 26px;align-items:center;margin-bottom:16px;}
+  .nt-grp{display:flex;gap:7px;align-items:center;}
+  .nt-lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .nt-chip{display:inline-block;padding:7px 14px;border-radius:999px;border:1px solid var(--border);text-decoration:none;
+    font:700 12.5px/1 ui-monospace,Consolas,monospace;color:var(--text-muted);transition:.14s;}
+  .nt-chip:hover{color:var(--text);border-color:var(--nt-accent);}
+  .nt-chip.active{background:var(--nt-accent);border-color:var(--nt-accent);color:#04101f;}
+  .nt-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:960px;}
+  table.nt-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:700px;}
+  .nt-tbl th{position:sticky;top:0;background:var(--panel,#0f1a29);font:700 11px/1.2 ui-monospace,Consolas,monospace;
+    letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);text-align:center;padding:12px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .nt-tbl th.l{text-align:left;padding-left:16px;}
+  .nt-tbl td{text-align:center;padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);
+    font:600 13px/1.15 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .nt-tbl td.l{text-align:left;padding-left:16px;font-family:'Helvetica Neue',Arial,sans-serif;}
+  .nt-tbl tbody tr:nth-child(odd) td{background:rgba(255,255,255,.022);}
+  .nt-tbl tbody tr:hover td{background:rgba(91,141,239,.09);}
+  .nt-tbl tbody tr.nt-wind td{background:rgba(73,210,125,.06);}
+  .nt-mu{font-weight:800;color:var(--text-bright);}
+  .nt-mu small{display:block;font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .nt-total{font-weight:800;color:var(--text-bright);} .nt-1h{color:var(--text-muted);}
+  .nt-ov .p{display:block;font-weight:800;} .nt-ov .r{display:block;font:600 10.5px ui-monospace;color:var(--text-muted);margin-top:2px;}
+  .nt-ov.hot .p{color:#49d27d;} .nt-ov.cold .p{color:#7cc4ff;} .nt-ov.dim .p{color:var(--text-muted);}
+  .nt-wind-h{color:#49d27d;font-weight:800;} .nt-wind-c{color:var(--text-muted);}
+  .nt-read{font:700 11px ui-monospace,Consolas,monospace;padding:4px 9px;border-radius:6px;white-space:nowrap;}
+  .nt-read.wind{color:#49d27d;background:rgba(73,210,125,.16);}
+  .nt-read.over{color:#49d27d;background:rgba(73,210,125,.12);}
+  .nt-read.under{color:#7cc4ff;background:rgba(124,196,255,.14);}
+  .nt-read.none{color:var(--text-muted);}
+  .nt-empty{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:16px 4px;}
+  .nt-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(91,141,239,.05);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:18px;max-width:960px;}
+</style>
+
+<div class="nt-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">NFL &middot; Live Board</div>
+    <h1>NFL <span class="accent">Totals</span></h1>
+    <div class="page-subtitle">This week&rsquo;s slate by over/under &mdash; the posted total, the first-half total, each team&rsquo;s over rate, and the game-day <b>wind</b>. High wind outdoors is the one totals signal our backtest says the market underprices.</div>
+  </div>
+  <div class="hero-actions"><a href="{{ sport_home_href('nfl') }}" class="btn btn-secondary btn-sm">NFL Board</a></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="nt-bar">
+    <div class="nt-grp"><span class="nt-lab">Total</span>
+      <a class="nt-chip {% if nt_band=='all' %}active{% endif %}" href="/tools/nfl-totals-today?band=all&amp;date={{ nt_date }}">All</a>
+      <a class="nt-chip {% if nt_band=='high' %}active{% endif %}" href="/tools/nfl-totals-today?band=high&amp;date={{ nt_date }}">High (48+)</a>
+      <a class="nt-chip {% if nt_band=='low' %}active{% endif %}" href="/tools/nfl-totals-today?band=low&amp;date={{ nt_date }}">Low (&le;42)</a>
+    </div>
+    <div class="nt-grp"><span class="nt-lab">When</span>
+      <a class="nt-chip {% if nt_date=='today' %}active{% endif %}" href="/tools/nfl-totals-today?band={{ nt_band }}&amp;date=today">Today</a>
+      <a class="nt-chip {% if nt_date=='week' %}active{% endif %}" href="/tools/nfl-totals-today?band={{ nt_band }}&amp;date=week">This Week</a>
+    </div>
+  </div>
+
+  {% if nt_rows %}
+  <div class="nt-scroll">
+  <table class="nt-tbl">
+    <thead><tr>
+      <th class="l">Matchup ({{ nt_count }})</th><th>Total</th><th>1H</th>
+      <th>Away Over%</th><th>Home Over%</th><th>Wind</th><th>Read</th>
+    </tr></thead>
+    <tbody>
+    {% macro ovcell(pct, rec) %}
+      {% if pct is none %}<td class="nt-ov dim"><span class="p">&mdash;</span></td>
+      {% else %}<td class="nt-ov {% if pct>=55 %}hot{% elif pct<=45 %}cold{% endif %}"><span class="p">{{ pct }}%</span>{% if rec %}<span class="r">{{ rec }}</span>{% endif %}</td>{% endif %}
+    {% endmacro %}
+    {% for r in nt_rows %}
+    <tr class="{{ 'nt-wind' if r.read=='wind_under' }}">
+      <td class="l"><span class="nt-mu">{{ r.away }} @ {{ r.home }}</span>
+        <small>{% if r.spread %}spread {{ r.spread }}{% endif %}{% if r.time %} &middot; {{ r.time }}{% endif %}</small></td>
+      <td><span class="nt-total">{{ '%g'|format(r.total) }}</span></td>
+      <td class="nt-1h">{{ r.total_1h or '&mdash;'|safe }}</td>
+      {{ ovcell(r.away_over, r.away_ou) }}
+      {{ ovcell(r.home_over, r.home_ou) }}
+      <td>{% if r.wind is not none %}<span class="{{ 'nt-wind-h' if r.high_wind else 'nt-wind-c' }}">{{ r.wind }}{% if r.high_wind %}🌬{% endif %}</span>{% else %}<span class="nt-wind-c">dome</span>{% endif %}</td>
+      <td>
+        {% if r.read == 'wind_under' %}<span class="nt-read wind">🌬 Wind Under</span>
+        {% elif r.read == 'over' %}<span class="nt-read over">Over env</span>
+        {% elif r.read == 'under' %}<span class="nt-read under">Under env</span>
+        {% else %}<span class="nt-read none">&mdash;</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="nt-empty">No NFL games with a posted total loaded right now (between weeks, or lines haven&rsquo;t posted).</div>
+  {% endif %}
+
+  <div class="nt-note"><b>How to read this:</b> <b class="nt-wind-h">🌬 Wind Under</b> = an outdoor game with 15+ mph wind — the one totals angle our backtest found the market underprices (~55%, +5% ROI out of sample); that's a real lean. <b>Over%</b> is each team&rsquo;s over/under record ({{ nt_season or 'last season' }}), and <b style="color:#49d27d;">Over env</b> / <b style="color:#7cc4ff;">Under env</b> flag games where both teams lean the same way &mdash; that part is context, not a proven edge. Shop the number.</div>
+
+</div></div>
+</div>
+{% endblock %}
