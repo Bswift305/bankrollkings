@@ -69,7 +69,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; CFB</div>
     <h1>Team ATS <span class="accent">Trends</span></h1>
-    <div class="page-subtitle">The Phil-Steele table, built from our own graded games: every FBS team&rsquo;s record against the spread &mdash; overall, home/away, fav/dog, by coach, and in 14 situational spots (off a bye, road favorite, favored by 14+, and more). Filter any window from all 10 years down to the last 2.</div>
+    <div class="page-subtitle">The Phil-Steele table, built from our own graded games: every FBS team&rsquo;s record against the spread &mdash; overall, home/away, fav/dog, by coach, and in 14 situational spots (off a bye, road favorite, favored by 14+, and more). Filter any window &mdash; this season, last season, last 3/5, or all the way back.</div>
   </div>
   <div class="hero-actions">
     <a href="/tools/cfb-favorites" class="btn btn-secondary btn-sm">Big-Favorite Trends</a>
@@ -127,14 +127,15 @@
   const YRS = DATA.seasons.slice().sort((a,b)=>a-b);
   const MAXY = YRS[YRS.length-1], MINY = YRS[0];
 
-  // year-window presets (clamped to available seasons)
+  // year-window presets (clamped to available seasons). MAXY is the current season,
+  // MAXY-1 last season, so those get named windows -- everything else is a lookback.
   const RANGES = [
-    {label:'All years', from:MINY, to:MAXY},
-    {label:'Last 5',    from:MAXY-4, to:MAXY},
-    {label:'Last 3',    from:MAXY-2, to:MAXY},
-    {label:'Last 2',    from:MAXY-1, to:MAXY},
-    {label:MAXY+' only',from:MAXY,   to:MAXY},
-  ].map(r=>({...r, from:Math.max(r.from,MINY)}))
+    {label:'All years',                  from:MINY,   to:MAXY},
+    {label:'This Season ('+MAXY+')',     from:MAXY,   to:MAXY},
+    {label:'Last Season ('+(MAXY-1)+')', from:MAXY-1, to:MAXY-1},
+    {label:'Last 3',                     from:MAXY-2, to:MAXY},
+    {label:'Last 5',                     from:MAXY-4, to:MAXY},
+  ].map(r=>({...r, from:Math.max(r.from,MINY), to:Math.max(r.to,MINY)}))
    .filter((r,i,a)=>i===0 || r.from!==a[i-1].from || r.to!==a[i-1].to);
 
   // col types: 'name' = team/coach (left, expandable); 'stat' = a %+record cell
@@ -148,6 +149,10 @@
 
   const inRange = y => { const n=+y; return n>=RANGES[S.range].from && n<=RANGES[S.range].to; };
   const years  = () => RANGES[S.range].to - RANGES[S.range].from + 1;
+  // A single in-progress season (This Season) is only a game or two deep, so a
+  // full min-games gate would empty the table. Floor a 1-year window at 1 game;
+  // the cell coloring still greys anything under MIN_TRUST as too thin to read.
+  const minGames = mult => years() <= 1 ? 1 : mult * years();
   const rangeTxt = () => { const r=RANGES[S.range]; return r.from===r.to ? (''+r.from) : (r.from+'–'+r.to); };
 
   // sum a split's [w,l,p] arrays across the in-range seasons of a season map
@@ -164,7 +169,7 @@
 
   // build league-table rows for the current window
   function teamRows(){
-    const minG = 6*years();
+    const minG = minGames(6);
     const rows=[];
     for(const t in DATA.team_seasons){
       const sm=DATA.team_seasons[t].s;
@@ -175,7 +180,7 @@
     return rows;
   }
   function coachRows(){
-    const minG = 4*years();
+    const minG = minGames(4);
     const rows=[];
     for(const c in DATA.coach_seasons){
       const sm=DATA.coach_seasons[c];
@@ -289,7 +294,7 @@
   }
   function renderSituational(){
     const spot=SITMAP[S.spot]||SITS[0]; if(!spot){$('#at-body').innerHTML='';return;}
-    const minG=Math.max(4, years()+2);
+    const minG = years()<=1 ? 1 : Math.max(4, years()+2);
     const rows=[]; let LW=[0,0,0,0,0,0];
     for(const t in spot.t){
       const a=aggSitu(spot.t[t]);
@@ -312,10 +317,10 @@
     if(S.view==='teams'){
       $('#at-explain').innerHTML='Each cell shows the <b>cover rate</b> with its <b>W-L record</b> underneath, so you always see the sample. Green beats break-even (52.4%), red is under, <b>grey = too few games</b> (under 4) to read as a trend yet. <b>Home/Away</b> and <b>Fav/Dog</b> split the same games by role; <b>Over</b> is the O/U lean. Tap any column to sort; click a team for its games.';
       $('#at-title').textContent='Every FBS team, ranked by ATS% ('+rt+')';
-      renderTable(TEAM_COLS, teamRows(),'Ranked by overall ATS% over '+rt+' (min '+(6*years())+' games). Click a team to see every game &mdash; week, opponent, line, result. Tap any column header to re-sort.', true);
+      renderTable(TEAM_COLS, teamRows(),'Ranked by overall ATS% over '+rt+' (min '+minGames(6)+' games). Click a team to see every game &mdash; week, opponent, line, result. Tap any column header to re-sort.', true);
     } else if(S.view==='coaches'){
       $('#at-explain').innerHTML='Every head coach&rsquo;s ATS + over/under record across all their games and schools in the window &mdash; the tendency travels with the coach.';
-      $('#at-title').textContent='ATS by head coach ('+rt+', min '+(4*years())+' games)';
+      $('#at-title').textContent='ATS by head coach ('+rt+', min '+minGames(4)+' games)';
       renderTable(COACH_COLS, coachRows(),'Ranked by ATS% over '+rt+'. Aggregated across job changes. Tap a column to re-sort.');
     } else if(S.view==='situational'){
       renderSituational();
