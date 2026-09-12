@@ -15484,7 +15484,21 @@ def build_mlb_matchup_game_detail(matchup_slug, odds_df, schedule_df=None):
     return detail
 
 
+_MLB_HITTER_POWER_CACHE = {}
+
+
 def build_mlb_hitter_power_profiles(gamelogs=None):
+    # ~7s per-player groupby over MLB gamelogs, called several times per /elite/mlb-lab
+    # render (HR suppression + one-sided power markets). Memoize the no-arg path (the
+    # hot one) on the gamelogs fingerprint; an explicit df bypasses the cache.
+    if gamelogs is None:
+        token = _build_file_token(
+            DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
+            DATA_DIR / 'gamelogs' / 'MLB_Gamelogs.csv',
+        )
+        cached = _MLB_HITTER_POWER_CACHE.get('p')
+        if cached and cached[0] == token:
+            return cached[1]
     logs = load_mlb_gamelogs() if gamelogs is None else gamelogs
     if logs is None or logs.empty:
         return {}
@@ -15521,6 +15535,8 @@ def build_mlb_hitter_power_profiles(gamelogs=None):
             'recent_tb_avg': round(float(recent['TB'].mean()), 2) if not recent.empty else None,
             'recent_zero_hr_games': int((recent['HR'] == 0).sum()) if not recent.empty else 0,
         }
+    if gamelogs is None:
+        _MLB_HITTER_POWER_CACHE['p'] = (token, profiles)
     return profiles
 
 
@@ -37968,11 +37984,40 @@ def elite_matchup_builder():
     )
 
 
+def _mlb_power_market_token():
+    """Fingerprint of the inputs both MLB power builders read (props + gamelogs +
+    lineups), so their results can be memoized until a data refresh changes them."""
+    return _build_file_token(
+        DATA_DIR / 'props' / 'MLB_Props.csv',
+        DATA_DIR / 'props' / 'MLB_Props_Fallback.csv',
+        DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv',
+        DATA_DIR / 'gamelogs' / 'MLB_Gamelogs.csv',
+        DATA_DIR / 'lineups' / 'MLB_Lineups.csv',
+    )
+
+
+_MLB_POWER_BUILDER_CACHE = {}
+
+
+def _cached_mlb_power_builder(name, builder, limit):
+    token = _mlb_power_market_token()
+    key = (name, limit)
+    cached = _MLB_POWER_BUILDER_CACHE.get(key)
+    if cached and cached[0] == token:
+        return cached[1]
+    val = builder(limit=limit)
+    _MLB_POWER_BUILDER_CACHE[key] = (token, val)
+    return val
+
+
 @app.route('/elite/mlb-lab')
 def elite_mlb_lab():
     current_user = get_current_user()
-    suppression = build_mlb_hr_suppression_engine(limit=60)
-    one_sided_power = build_mlb_one_sided_power_markets(limit=40)
+    # Both builders group over the MLB props feed (~5s combined even with the hitter
+    # profiles cached). Memoize on the market data fingerprint -- this page hit them
+    # fresh on every load.
+    suppression = _cached_mlb_power_builder('suppression', build_mlb_hr_suppression_engine, 60)
+    one_sided_power = _cached_mlb_power_builder('one_sided', build_mlb_one_sided_power_markets, 40)
     pitcher_cards = build_mlb_pitcher_profile_cards(limit=18)
     market_coverage = load_mlb_market_coverage()
     environments = build_mlb_slate_intelligence(
@@ -39152,6 +39197,25 @@ def _load_mlb_formula_lab_context():
     }
 
 
+_MLB_FORMULA_LAB_CACHE = {}
+
+
+def _load_mlb_formula_lab_context_cached():
+    # The context re-reads two large scored/summary CSVs (~5.5s) every request. Memoize
+    # on those files' fingerprint -- they only change when the calibration refresh runs.
+    token = _build_file_token(
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults_Scored.csv',
+        DATA_DIR / 'tracking' / 'MLB_Formula_Calibration_Summary.csv',
+        DATA_DIR / 'tracking' / 'Calibration_Notes_MLB_2026.txt',
+    )
+    cached = _MLB_FORMULA_LAB_CACHE.get('ctx')
+    if cached and cached[0] == token:
+        return cached[1]
+    ctx = _load_mlb_formula_lab_context()
+    _MLB_FORMULA_LAB_CACHE['ctx'] = (token, ctx)
+    return ctx
+
+
 @app.route('/mlb-formula-lab')
 def mlb_formula_lab():
     return render_template(
@@ -39159,7 +39223,7 @@ def mlb_formula_lab():
         active_page='mlb_lab',
         active_sport='mlb',
         bankroll='2,450.00',
-        **_load_mlb_formula_lab_context(),
+        **_load_mlb_formula_lab_context_cached(),
     )
 
 
