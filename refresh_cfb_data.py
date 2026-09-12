@@ -38,6 +38,11 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
     return [
         ("CFB game slate + lines", ["fetch_ncaaf_slate_cfbd.py",
                                     "--year", str(season), "--days", "12"], 300),
+        # Rebuild the graded game-lines history (rolling window ending at the current
+        # season) so the ATS/O-U Pattern Board folds in THIS week's finished games.
+        # Called with no year args -> the fetcher self-computes the rolling window.
+        ("CFB game-lines history", ["fetch_cfbd_game_lines_history.py",
+                                    "--season-type", "both"], 600),
         ("CFB current roster", ["fetch_cfbd_current_roster.py",
                                 "--year", str(season),
                                 "--fallback-year", str(last_season)], 900),

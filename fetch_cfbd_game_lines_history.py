@@ -136,16 +136,30 @@ def main() -> int:
         years.extend(range(args.start_year, args.end_year + 1))
     years = sorted(set(years))
     if not years:
-        raise SystemExit("Supply --year or --start-year/--end-year.")
+        # No years given -> rebuild a rolling window ending at the CURRENT CFB season,
+        # so the weekly refresh always folds in this week's completed games. The season
+        # year rolls over in August (a Sept 2026 game is season 2026).
+        from datetime import date
+        today = date.today()
+        current_season = today.year if today.month >= 8 else today.year - 1
+        years = list(range(current_season - 5, current_season + 1))
+        print(f"No years given; defaulting to rolling window {years[0]}-{years[-1]}.")
+
+    # "both" fans out to regular + postseason so a rebuild keeps bowl/playoff games
+    # (CFBD's /lines takes one seasonType per call).
+    season_types = ["regular", "postseason"] if args.season_type == "both" else [args.season_type]
 
     api_key = get_api_key(args.api_key)
     frames = []
     for year in years:
-        payload = get_json("/lines", api_key, year=year, seasonType=args.season_type)
-        frame = normalize_payload(payload if isinstance(payload, list) else [], year, args.provider)
-        if not frame.empty:
-            frames.append(frame)
-        print(f"{year}: {len(frame)} line rows")
+        year_rows = 0
+        for season_type in season_types:
+            payload = get_json("/lines", api_key, year=year, seasonType=season_type)
+            frame = normalize_payload(payload if isinstance(payload, list) else [], year, args.provider)
+            if not frame.empty:
+                frames.append(frame)
+                year_rows += len(frame)
+        print(f"{year}: {year_rows} line rows")
 
     output = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     output_path = Path(args.output)
