@@ -276,7 +276,10 @@
 {% if method_view.history_rows %}
 <div class="card mb-24">
     <div class="card-header">
-        <div class="card-title">{{ method.title }} Historical Pattern Board</div>
+        <div>
+            <div class="card-title">Money Trends</div>
+            <div class="cell-meta" style="margin-top:4px; line-height:1.5; max-width:640px;">Teams on the hottest ATS / O-U runs — sorted so the hottest sit on top — and, next to each, whether that run has <strong>historically kept paying</strong>. Context and spots, not locks: a hot streak is not a bet by itself.</div>
+        </div>
         <span class="badge badge-accent">{{ method_view.history_rows|length }} teams</span>
     </div>
     <div class="table-shell">
@@ -286,6 +289,7 @@
                     <th>Team</th>
                     <th>ATS Streak</th>
                     <th>O/U Streak</th>
+                    <th>Continuation</th>
                     <th>Last 5</th>
                     <th>Last Season</th>
                     <th>5 Seasons</th>
@@ -302,6 +306,16 @@
                     </td>
                     <td>{{ row.ats_streak }}</td>
                     <td>{{ row.ou_streak }}</td>
+                    <td>
+                        {% if row.continuation_rate is not none %}
+                        <div style="font-weight:700; color:var(--text-bright);">{{ row.continuation_rate }}%</div>
+                        {% endif %}
+                        {% set _v = row.continuation_verdict %}
+                        <div class="cell-meta" style="font-weight:700; color:{% if _v == 'Ride it' %}var(--positive, #49d27d){% elif _v == 'Due to fade' %}var(--negative, #ff6b6b){% elif _v == 'Coin flip' %}var(--accent-copper){% else %}var(--text-muted){% endif %};">{{ _v }}</div>
+                        {% if row.continuation_rate is not none %}
+                        <div class="cell-meta" style="margin-top:2px;">kept covering next game</div>
+                        {% endif %}
+                    </td>
                     <td>
                         <div class="cell-meta">ATS {{ row.cover_rate_last5 if row.cover_rate_last5 is not none else '-' }}%</div>
                         <div class="cell-meta">O/U {{ row.over_rate_last5 if row.over_rate_last5 is not none else '-' }}%</div>

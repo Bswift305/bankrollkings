@@ -8157,7 +8157,10 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
 def build_football_historical_market_rows(sport_key, method_key):
     sport_key = str(sport_key or 'nfl').strip().lower()
     method_key = str(method_key or 'game_lines').strip().lower()
-    cache_key = f'football_historical_market_rows::{sport_key}::{method_key}'
+    # Bump the schema tag (v2) whenever the row shape changes, so a code-only change
+    # (new fields / new sort) invalidates the disk cache even though the input files
+    # haven't. v2: Money Trends -- ats_run/ou_run, continuation_rate, continuation_verdict.
+    cache_key = f'football_historical_market_rows::v2::{sport_key}::{method_key}'
     if sport_key == 'ncaaf':
         cache_version = _build_file_token(
             DATA_DIR / 'historical' / 'NCAAF_GameLines_History.csv',
@@ -8469,6 +8472,27 @@ def build_football_historical_market_rows(sport_key, method_key):
             if signal_verdict:
                 note = f"{note} {signal_verdict}".strip()
 
+        # Continuation read (the honest core of "Money Trends"): of the past times this
+        # team was on a same-length ATS cover run, how often did it cover the NEXT game?
+        # This -- not the raw streak -- drives the verdict, so we never imply that a hot
+        # streak is a bet by itself.
+        continuation_rate = None
+        if ats_side == 'COVER' and ats_streak:
+            if ats_streak >= 5 and ats_follow_5_rate is not None:
+                continuation_rate = ats_follow_5_rate
+            elif ats_streak >= 3 and ats_follow_3_rate is not None:
+                continuation_rate = ats_follow_3_rate
+        if continuation_rate is None:
+            continuation_verdict = 'Too short to call' if (ats_side == 'COVER' and ats_streak) else '—'
+        elif continuation_rate >= 58:
+            continuation_verdict = 'Ride it'
+        elif continuation_rate >= 48:
+            continuation_verdict = 'Coin flip'
+        else:
+            continuation_verdict = 'Due to fade'
+        # Signed run: cover streaks positive (money, sort to top), miss streaks negative.
+        ats_run_signed = (ats_streak if ats_side == 'COVER' else -ats_streak) if ats_streak else 0
+
         rows.append({
             'team': team,
             'games': int(len(group)),
@@ -8477,6 +8501,10 @@ def build_football_historical_market_rows(sport_key, method_key):
             'trend': primary_trend or '-',
             'ats_streak': f'{ats_side} {ats_streak}' if ats_streak else '-',
             'ou_streak': f'{ou_side} {ou_streak}' if ou_streak else '-',
+            'ats_run': ats_run_signed,
+            'ou_run': ou_streak or 0,
+            'continuation_rate': continuation_rate,
+            'continuation_verdict': continuation_verdict,
             'cover_rate_5y': cover_rate_5y,
             'cover_rate_last_season': cover_rate_last_season,
             'cover_rate_last5': cover_rate_last5,
@@ -8496,15 +8524,37 @@ def build_football_historical_market_rows(sport_key, method_key):
             'last_game_date': group['Date'].max().strftime('%Y-%m-%d') if not group.empty else '-',
         })
 
-    rows.sort(
-        key=lambda item: (
-            float(item.get('fit_score') or 0),
-            float(item.get('cover_rate_last5') or 0),
-            float(item.get('over_rate_last5') or 0),
-            item.get('team') or '',
-        ),
-        reverse=True,
-    )
+    # Hottest-money-first: for the sides board, the longest ACTIVE cover run tops the
+    # list (miss streaks sink to the bottom), then the continuation rate, then fit. The
+    # totals board leads with the longest O/U run; other views keep the fit ranking.
+    if method_key == 'game_lines':
+        rows.sort(
+            key=lambda item: (
+                float(item.get('ats_run') or 0),
+                float(item.get('continuation_rate') or 0),
+                float(item.get('fit_score') or 0),
+            ),
+            reverse=True,
+        )
+    elif method_key == 'totals':
+        rows.sort(
+            key=lambda item: (
+                float(item.get('ou_run') or 0),
+                float(item.get('fit_score') or 0),
+                float(item.get('over_rate_last5') or 0),
+            ),
+            reverse=True,
+        )
+    else:
+        rows.sort(
+            key=lambda item: (
+                float(item.get('fit_score') or 0),
+                float(item.get('cover_rate_last5') or 0),
+                float(item.get('over_rate_last5') or 0),
+                item.get('team') or '',
+            ),
+            reverse=True,
+        )
     result = rows[:24]
     _write_disk_ttl_cached_value(f'disk::{cache_key}', 43200, result, version=cache_version)
     return result
