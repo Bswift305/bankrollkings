@@ -942,9 +942,13 @@ body::after {
   flex-wrap: wrap;
 }
 .bk-command-toolbar {
-  position: static;
-  top: auto;
-  z-index: auto;
+  /* Pin to the top of the scroll area so the tool nav doesn't float away vertically
+     when the page scrolls -- it should only ever move left<->right (its own horizontal
+     scroll). It's the first element in .bk-main, so top:0 sits it just under the fixed
+     header. */
+  position: sticky;
+  top: 0;
+  z-index: 8;
   border-radius: 0 0 10px 10px;
   margin: 0 20px 18px;
   border-top: 0;
