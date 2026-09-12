@@ -730,6 +730,7 @@ PRO_ENDPOINTS = {
     'cfb_matchup_tool',
     'cfb_totals_tool',
     'cfb_power_tool',
+    'bk_power_tool',
     'cfb_talent_tool',
     'cfb_101_tool',
     'cfb_hub_tool',
@@ -40238,6 +40239,49 @@ def cfb_totals_tool():
     """Quick Tool: CFB Totals & Pace — team tempo (plays/game), scoring, and O/U
     record (2021-2025), plus this week's games scored against those pace profiles."""
     return render_template('cfb_totals.html', **build_cfb_totals_context())
+
+
+_BK_POWER_CACHE = {}
+_BK_POWER_ATS_CACHE = {}
+
+
+def build_bk_power_context():
+    """BK Power — our own descriptive power rankings from graded results (not picks).
+    Teams by how often they actually cover / go over (CFB ATS data); players by how
+    often their result cleared the posted prop line (over-rate). Separate columns so
+    every angle stays sortable. Historical, not predictive."""
+    pdata = _load_scenario_json(_BK_POWER_CACHE, 'bk_power_players.json')
+    ats = _load_scenario_json(_BK_POWER_ATS_CACHE, 'cfb_ats.json')
+    teams = []
+    for team, v in (ats.get('team_seasons') or {}).items():
+        aw = al = ow = ol = 0
+        for _yr, sp in (v.get('s') or {}).items():
+            a = sp.get('ats', [0, 0, 0]); o = sp.get('ou', [0, 0, 0])
+            aw += a[0]; al += a[1]; ow += o[0]; ol += o[1]
+        dec, odec = aw + al, ow + ol
+        if dec < 30:
+            continue
+        teams.append({
+            'team': team, 'conf': v.get('conf') or '',
+            'ats_pct': round(aw / dec * 100, 1), 'ats_rec': f"{aw}-{al}",
+            'ou_pct': (round(ow / odec * 100, 1) if odec else None), 'ou_rec': f"{ow}-{ol}",
+            'games': dec,
+        })
+    teams.sort(key=lambda x: -x['ats_pct'])
+    return {
+        'bp_teams': teams,
+        'bp_players': pdata.get('players', {}),
+        'bp_sports': (pdata.get('meta', {}) or {}).get('sports', []),
+        'bp_meta': pdata.get('meta', {}),
+        'bp_ats_meta': ats.get('meta', {}),
+    }
+
+
+@app.route('/tools/bk-power')
+def bk_power_tool():
+    """Quick Tool: BK Power — our own rankings from graded results. Teams by cover/
+    over rate, players by how often they clear their prop line. Historical, not a pick."""
+    return render_template('bk_power.html', **build_bk_power_context())
 
 
 def _load_scenario_json(cache, filename, board_key='board'):

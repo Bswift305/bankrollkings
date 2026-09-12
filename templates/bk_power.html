@@ -1,0 +1,141 @@
+{% set active_page = 'bk_power' %}
+{% extends "bk_base.html" %}
+{% block title %}BK Power - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .bp-wrap{--bp-accent:#8a7bf0;}
+  .bp-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .bp-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:16px;transition:.14s;}
+  .bp-tab:hover{color:var(--text);} .bp-tab.active{color:var(--text);border-bottom-color:var(--bp-accent);}
+  .bp-sportbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:14px;}
+  .bp-sportbar .lab{font:700 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .bp-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:999px;
+    padding:6px 14px;font:700 12px/1 ui-monospace,Consolas,monospace;transition:.14s;}
+  .bp-chip:hover{color:var(--text);border-color:var(--bp-accent);}
+  .bp-chip.active{background:var(--bp-accent);border-color:var(--bp-accent);color:#0c0820;}
+  .bp-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(138,123,240,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .bp-explain b{color:var(--text-bright);}
+  .bp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;}
+  table.bp-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:560px;}
+  .bp-tbl th{position:sticky;top:0;background:var(--panel,#0f1a29);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:12px 11px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .bp-tbl th.l{text-align:left;padding-left:15px;}
+  .bp-tbl th.sorted{color:var(--bp-accent);}
+  .bp-tbl td{text-align:right;padding:10px 11px;border-bottom:1px solid rgba(255,255,255,.05);
+    font:600 13px/1.1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .bp-tbl td.l{text-align:left;padding-left:15px;font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;color:var(--text-bright);}
+  .bp-tbl td .sub{display:block;font:600 10.5px/1.1 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .bp-tbl tbody tr:nth-child(odd) td{background:rgba(255,255,255,.02);}
+  .bp-tbl tbody tr:hover td{background:rgba(138,123,240,.08);}
+  .bp-rank{color:var(--text-muted);font-weight:700;width:30px;}
+  .bp-hot{color:#49d27d;font-weight:800;} .bp-cold{color:#ff6b6b;font-weight:800;}
+  .bp-note{font:500 12px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;}
+  .bp-empty{font:500 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:16px 4px;}
+</style>
+
+<div class="bp-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; BK Power</div>
+    <h1>BK <span class="accent">Power</span></h1>
+    <div class="page-subtitle">Our own rankings, built from what actually happened &mdash; not SP+, not a projection. Teams by how often they truly cover the spread and go over; players by how often their result clears the posted prop line. Real graded games, ranked. Sort any column to find the angle you want.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">Team ATS Trends</a></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="bp-tabs">
+    <button class="bp-tab active" data-tab="teams">Teams</button>
+    <button class="bp-tab" data-tab="players">Players</button>
+  </div>
+  <div class="bp-sportbar" id="bp-sportbar" style="display:none;"><span class="lab">Sport</span></div>
+  <div class="bp-explain" id="bp-explain"></div>
+  <div class="bp-scroll"><div id="bp-body"></div></div>
+  <div class="bp-note" id="bp-note"></div>
+</div></div>
+</div>
+
+<script id="bp-data" type="application/json">{{ {'teams':bp_teams,'players':bp_players,'sports':bp_sports,'ats':bp_ats_meta}|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('bp-data').textContent);
+  const $ = s => document.querySelector(s);
+  const pct = v => (v===null||v===undefined) ? '&mdash;' : (v+'%');
+  const cls = (v,base) => v>=base+3 ? 'bp-hot' : (v<=base-3 ? 'bp-cold' : '');
+
+  const S = {tab:'teams', sport:(DATA.sports&&DATA.sports[0])||'NFL', sortKey:null, dir:-1};
+
+  // column defs: {key, label, l(eft)?, get(row), sortVal(row), cell(row)}
+  const TEAM_COLS = [
+    {key:'team', label:'Team', l:true, sortVal:r=>r.team, cell:r=>'<td class="l">'+r.team+'<span class="sub">'+(r.conf||'')+' &middot; '+r.games+' g</span></td>'},
+    {key:'ats_pct', label:'ATS%', sortVal:r=>r.ats_pct, cell:r=>'<td><span class="'+cls(r.ats_pct,50)+'">'+pct(r.ats_pct)+'</span><span class="sub">'+r.ats_rec+'</span></td>'},
+    {key:'ou_pct', label:'Over%', sortVal:r=>r.ou_pct, cell:r=>'<td>'+(r.ou_pct===null?'&mdash;':('<span class="'+cls(r.ou_pct,50)+'">'+r.ou_pct+'%</span><span class="sub">'+r.ou_rec+'</span>'))+'</td>'},
+    {key:'games', label:'Games', sortVal:r=>r.games, cell:r=>'<td>'+r.games+'</td>'},
+  ];
+  const PLAYER_COLS = [
+    {key:'player', label:'Player', l:true, sortVal:r=>r.player, cell:r=>'<td class="l">'+r.player+'<span class="sub">'+(r.team||'')+'</span></td>'},
+    {key:'over', label:'Over%', sortVal:r=>r.over, cell:r=>{const p=Math.round(r.over*100); return '<td><span class="'+cls(p,base())+'">'+p+'%</span></td>';}},
+    {key:'n', label:'Props', sortVal:r=>r.n, cell:r=>'<td>'+r.n+'</td>'},
+    {key:'best', label:'Best Stat', l:true, sortVal:r=>(r.stats&&r.stats[0]?r.stats[0].over:0), cell:r=>{const s=r.stats&&r.stats[0]; return '<td class="l" style="font-family:ui-monospace;font-weight:600;color:var(--text);">'+(s?(s.stat+' <span class="sub" style="display:inline;">'+Math.round(s.over*100)+'% ('+s.n+')</span>'):'&mdash;')+'</td>';}},
+  ];
+
+  function base(){ // sport-specific over% baseline for coloring
+    return {NFL:48, NBA:48, MLB:30, WNBA:50}[S.sport] || 48;
+  }
+  function rows(){ return S.tab==='teams' ? DATA.teams : (DATA.players[S.sport]||[]); }
+  function cols(){ return S.tab==='teams' ? TEAM_COLS : PLAYER_COLS; }
+
+  function render(){
+    const cs = cols();
+    let data = rows().slice();
+    const sk = S.sortKey || (S.tab==='teams' ? 'ats_pct' : 'over');
+    const col = cs.find(c=>c.key===sk) || cs[1];
+    data.sort((a,b)=>{ let x=col.sortVal(a), y=col.sortVal(b);
+      if(x===null||x===undefined) x=-1; if(y===null||y===undefined) y=-1;
+      if(typeof x==='string') return S.dir*x.localeCompare(y);
+      return S.dir*(x-y); });
+    let h='<table class="bp-tbl"><thead><tr><th class="l bp-rank">#</th>';
+    cs.forEach(c=>{h+='<th class="'+(c.l?'l ':'')+(c.key===sk?'sorted':'')+'" data-k="'+c.key+'">'+c.label+(c.key===sk?(S.dir<0?' ▼':' ▲'):'')+'</th>';});
+    h+='</tr></thead><tbody>';
+    if(!data.length){ h+='<tr><td colspan="'+(cs.length+1)+'" class="bp-empty">No graded data for this view yet.</td></tr>'; }
+    data.forEach((r,i)=>{ h+='<tr><td class="l bp-rank">'+(i+1)+'</td>'+cs.map(c=>c.cell(r)).join('')+'</tr>'; });
+    h+='</tbody></table>';
+    $('#bp-body').innerHTML=h;
+    $('#bp-body').querySelectorAll('th[data-k]').forEach(th=>{
+      th.onclick=()=>{ const k=th.getAttribute('data-k'); if(S.sortKey===k){S.dir*=-1;} else {S.sortKey=k; S.dir=(k==='team'||k==='player'||k==='best')?1:-1;} render(); };
+    });
+    // explain + note
+    if(S.tab==='teams'){
+      $('#bp-explain').innerHTML='<b>ATS%</b> is how often the team actually covered the spread; <b>Over%</b> how often its games went over &mdash; real graded games ('+(DATA.ats.seasons||'')+'). Green beats a coin flip, red is under. Tap a column to rank by it.';
+      $('#bp-note').innerHTML='Descriptive, not a pick &mdash; this is who has historically hit their marks, not who will. Min 30 decided games.';
+    } else {
+      $('#bp-explain').innerHTML='<b>Over%</b> is how often this player&rsquo;s actual result cleared the posted line &mdash; the players who consistently beat their number (top) and rarely do (sort ascending). Baseline over% for '+S.sport+' is ~'+base()+'%.';
+      $('#bp-note').innerHTML='Descriptive, not a pick. Real graded props, min '+(20)+' over-props per player. MLB skews heavily under, so its baseline is low by nature.';
+    }
+  }
+
+  function buildSportBar(){
+    const bar=$('#bp-sportbar'); bar.querySelectorAll('.bp-chip').forEach(c=>c.remove());
+    (DATA.sports||[]).forEach(sp=>{
+      const b=document.createElement('button'); b.className='bp-chip'+(sp===S.sport?' active':''); b.textContent=sp;
+      b.onclick=()=>{ S.sport=sp; S.sortKey=null; S.dir=-1; buildSportBar(); render(); };
+      bar.appendChild(b);
+    });
+  }
+
+  document.querySelectorAll('.bp-tab').forEach(t=>{
+    t.onclick=()=>{ document.querySelectorAll('.bp-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.tab=t.getAttribute('data-tab'); S.sortKey=null; S.dir=-1;
+      $('#bp-sportbar').style.display = S.tab==='players' ? '' : 'none';
+      render(); };
+  });
+
+  buildSportBar();
+  render();
+})();
+</script>
+{% endblock %}
