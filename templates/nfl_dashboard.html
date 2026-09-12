@@ -488,6 +488,25 @@
         </div>
     </div>
     {% endif %}
+    {% if current_season_context.experience_leaders and (current_season_context.experience_leaders.returning or current_season_context.experience_leaders.experienced) %}
+    <div class="grid-2 p-16" style="gap:12px;">
+        {% set el = current_season_context.experience_leaders %}
+        {% if el.returning %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Most Returning Players</div>
+            <div style="font-size:18px;font-weight:800;color:var(--accent);">{{ team_mark(el.returning.team, size='xs', sport_key='ncaaf') }}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">{{ el.returning.value }} players back (roster minus incoming transfers) &mdash; the most continuity in the country.</div>
+        </div>
+        {% endif %}
+        {% if el.experienced %}
+        <div class="parlay-surface-soft" style="padding:12px;">
+            <div class="page-kicker" style="margin-bottom:6px;">Most Veteran Roster</div>
+            <div style="font-size:18px;font-weight:800;color:var(--accent-copper);">{{ team_mark(el.experienced.team, size='xs', sport_key='ncaaf') }}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">{{ el.experienced.value }} upperclassmen (Jr/Sr+) on the roster &mdash; the most experienced team by class.</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
     {% if current_season_context.team_rollups %}
     <div class="table-shell" style="padding: 0 16px 16px 16px;">
         <table class="data-table compact-board">
@@ -495,7 +514,9 @@
                 <tr>
                     <th>Team</th>
                     <th>Players</th>
+                    <th>Returning</th>
                     <th>Transfers</th>
+                    <th>Upperclassmen</th>
                     <th>QBs</th>
                     <th>Returning Offense</th>
                     <th>Tackles</th>
@@ -506,7 +527,9 @@
                 <tr>
                     <td>{{ team_mark(row.team, size='xs', sport_key='ncaaf') }}</td>
                     <td>{{ row.players }}</td>
+                    <td>{{ row.returning_players }}</td>
                     <td>{{ row.transfers }}</td>
+                    <td>{{ row.veterans }}</td>
                     <td>{{ row.qbs }}</td>
                     <td>{{ row.returning_offense }}</td>
                     <td>{{ row.tackles }}</td>
@@ -515,6 +538,7 @@
             </tbody>
         </table>
     </div>
+    <div class="cell-meta" style="padding:0 16px 12px;">&ldquo;Returning&rdquo; = roster minus incoming transfers (continuity); &ldquo;Upperclassmen&rdquo; = Jr/Sr+ players by class (experience proxy until per-player career games are wired in).</div>
     {% endif %}
     {% if current_season_context.top_returning_teams or current_season_context.portal_moves %}
     <div class="grid-2 p-16" style="gap: 12px; padding-top: 0;">

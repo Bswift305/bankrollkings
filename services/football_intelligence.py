@@ -517,6 +517,7 @@ def build_ncaaf_current_season_context(
             })
 
     team_rollups = []
+    experience_leaders = {}
     grouped = pd.DataFrame()
     if not master.empty:
         grouped = master.groupby('CurrentTeam', dropna=False).agg(
@@ -527,9 +528,14 @@ def build_ncaaf_current_season_context(
             rush_yds=('CareerRushYds', 'sum'),
             rec_yds=('CareerRecYds', 'sum'),
             tackles=('CareerTackles', 'sum'),
+            veterans=('Class', lambda s: int((pd.to_numeric(s, errors='coerce') >= 3).sum())),
         ).reset_index()
         grouped = grouped.fillna(0)
         grouped['returning_offense'] = grouped['pass_yds'] + grouped['rush_yds'] + grouped['rec_yds']
+        # Returning players = roster minus incoming transfers (continuity). Veterans =
+        # upperclassmen (Jr/Sr+ by roster Class) -- the working proxy for experience
+        # (the player-stats feed carries no per-player games count yet).
+        grouped['returning_players'] = (grouped['players'] - grouped['transfers']).clip(lower=0)
         # Keep the FULL sorted frame: it feeds signal_rows -> the live game-line
         # matchup map, which must cover every team, not a top-N. The .head(18) here
         # was a display cap for team_rollups that doubled as the modeling universe,
@@ -540,10 +546,23 @@ def build_ncaaf_current_season_context(
                 'team': row.get('CurrentTeam', ''),
                 'players': int(row.get('players', 0) or 0),
                 'transfers': int(row.get('transfers', 0) or 0),
+                'returning_players': int(row.get('returning_players', 0) or 0),
+                'veterans': int(row.get('veterans', 0) or 0),
                 'qbs': int(row.get('qbs', 0) or 0),
                 'returning_offense': round(float(row.get('returning_offense', 0) or 0), 1),
                 'tackles': round(float(row.get('tackles', 0) or 0), 1),
             })
+        # Feature the leaders (from the FULL frame, not just the top-18 by offense):
+        # the team that returned the most players, and the most-experienced roster.
+        def _leader(col):
+            if grouped.empty or col not in grouped.columns:
+                return None
+            top = grouped.sort_values(col, ascending=False).iloc[0]
+            return {'team': top.get('CurrentTeam', ''), 'value': int(top.get(col, 0) or 0)}
+        experience_leaders = {
+            'returning': _leader('returning_players'),
+            'experienced': _leader('veterans'),
+        }
 
     returning_map = pd.DataFrame()
     if not returning.empty and 'Team' in returning.columns:
@@ -765,6 +784,7 @@ def build_ncaaf_current_season_context(
         'top_skill': top_skill,
         'top_defense': top_defense,
         'team_rollups': team_rollups,
+        'experience_leaders': experience_leaders,
         'top_returning_teams': top_returning_teams,
         'portal_moves': portal_moves,
         'plain_english_cards': plain_english_cards,
