@@ -6400,6 +6400,11 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
     rows = []
     today = sports_today_ts()
     tomorrow = today + pd.Timedelta(days=1)
+    # "This week" = the current football week (games run Tue->Mon), forward-looking from
+    # today. week_end is the Monday that closes the football week containing today, so
+    # next week's Thu/Fri games don't leak onto this week's board (the old rolling 7-day
+    # window did: on a Saturday it reached into next week). Rolls over on Tuesday.
+    _week_end = today + pd.Timedelta(days=(6 - ((today.weekday() - 1) % 7)))
     # optional day-of-week filter (e.g. all Thursday games)
     _wd = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6}
     want_wd = _wd.get(str(day_filter or '').strip().lower()[:3])
@@ -6422,7 +6427,7 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
                 continue
             if date_filter == 'tomorrow' and game_day != tomorrow:
                 continue
-            if date_filter == 'week' and not (today <= game_day <= today + pd.Timedelta(days=6)):
+            if date_filter == 'week' and not (today <= game_day <= _week_end):
                 continue
             if date_filter == 'weekend' and not (game_day.weekday() in (3, 4, 5, 6) and today <= game_day <= today + pd.Timedelta(days=7)):
                 continue
