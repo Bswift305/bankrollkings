@@ -1,0 +1,125 @@
+{% set active_page = 'nfl_spots' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Spots - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .ns-wrap{--ns-accent:#3fbf7f;max-width:640px;}
+  .ns-sec{margin:0 0 22px;}
+  .ns-sech{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+  .ns-sech .n{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;}
+  .ns-sech .d{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-left:auto;}
+  .ns-blurb{font:500 12px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 12px;}
+  .ns-blurb b{color:var(--text);}
+  .ns-card{border:1px solid var(--border);border-radius:13px;padding:2px 15px;margin-bottom:12px;background:rgba(255,255,255,.015);}
+  .ns-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .ns-row:last-child{border-bottom:0;}
+  .ns-play{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .ns-bet{font:700 13px ui-monospace,Consolas,monospace;color:var(--ns-accent);}
+  .ns-price{font:700 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .ns-score{margin-left:auto;font:800 14px ui-monospace,Consolas,monospace;color:var(--text-bright);
+    border:1px solid var(--border);border-radius:8px;padding:3px 9px;white-space:nowrap;}
+  .ns-score.prem{color:#0c1622;background:var(--ns-accent);border-color:var(--ns-accent);}
+  .ns-meta{flex:1 1 100%;font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
+  .ns-meta b{color:var(--text);}
+  .ns-tag{display:inline-block;font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 6px;border-radius:5px;vertical-align:middle;}
+  .ns-tag.prem{color:#0c1622;background:var(--ns-accent);}
+  .ns-wind{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .ns-num{font:700 13px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .ns-inj .ns-play{font-size:14px;}
+  .ns-dir{display:inline-block;font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;padding:2px 6px;border-radius:5px;vertical-align:middle;}
+  .ns-dir.out{color:#ff6b6b;border:1px solid rgba(255,107,107,.4);} .ns-dir.back{color:#49d27d;border:1px solid rgba(73,210,125,.4);}
+  .ns-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 2px;}
+  .ns-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:6px;}
+  .ns-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px;}
+  .ns-links a{font:700 12px ui-monospace,Consolas,monospace;color:var(--text-muted);border:1px solid var(--border);
+    border-radius:999px;padding:6px 12px;text-decoration:none;transition:.14s;}
+  .ns-links a:hover{color:var(--ns-accent);border-color:var(--ns-accent);}
+</style>
+
+<div class="ns-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">NFL &middot; Sunday</div>
+    <h1>NFL <span class="accent">Spots</span></h1>
+    <div class="page-subtitle">This week's board on the three prop signals that actually held up on real money — validated PropScore top plays, wind unders, and injury-change timing. The NFL parallel to College's Best Spots. Spots, not locks.</div>
+  </div>
+</div>
+
+<div class="ns-links">
+  <a href="/tools/nfl-totals-today">NFL Totals &rsaquo;</a>
+  <a href="/sports/nfl/props">Full Props Board &rsaquo;</a>
+  <a href="/tools/weekend">This Weekend &rsaquo;</a>
+</div>
+
+<!-- ============ 1. TOP PLAYS (validated PropScore) ============ -->
+<div class="ns-sec">
+  <div class="ns-sech"><span class="n">Top Plays</span><span class="d">Validated PropScore{% if sp_premium_count %} &middot; {{ sp_premium_count }} premium{% endif %}</span></div>
+  <p class="ns-blurb">Ranked by our backtested <b>PropScore</b> — the one prop score that held out of sample: <b>≥10 returned +9–11%</b> (63% hit), <b>≥20 returned +13–16%</b> (66% hit) across 2024–2025. This is the validated model, not the board's market-price read.</p>
+
+  {% if sp_top %}
+  <div class="ns-card">
+    {% for p in sp_top %}
+    <div class="ns-row">
+      <span class="ns-play">{{ p.player }}</span>
+      <span class="ns-bet">{{ p.direction }} {{ '%g'|format(p.line) if p.line is number else p.line }} {{ p.stat }}</span>
+      {% if p.price %}<span class="ns-price">{{ p.price }}{% if p.best_book %} · {{ p.best_book }}{% endif %}</span>{% endif %}
+      <span class="ns-score{{ ' prem' if p.premium else '' }}">{{ '%.1f'|format(p.prop_score) }}{% if p.premium %} ★{% endif %}</span>
+      <span class="ns-meta">{{ p.matchup }}{% if p.sim is not none %} — <b>{{ p.sim }}%</b> simulated hit{% endif %}{% if p.detail %} · {{ p.detail }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif sp_top_available %}
+  <div class="ns-empty">No plays cleared PropScore {{ '%g'|format(sp_floor) }} on this week's slate yet — the model isn't forcing a play. Check back as lines fill in.</div>
+  {% else %}
+  <div class="ns-empty">This week's live props haven't loaded yet — the scored top plays appear once the Sunday board is live. Check back closer to kickoff.</div>
+  {% endif %}
+</div>
+
+<!-- ============ 2. WIND UNDERS ============ -->
+<div class="ns-sec">
+  <div class="ns-sech"><span class="n">Wind Under</span><span class="d">Outdoor 15+ mph</span></div>
+  <p class="ns-blurb">The strongest football totals edge we found: passing &amp; receiving <b>unders</b> in outdoor wind of 15+ mph returned <b>+10.4% / +21.9%</b> (the mirror — overs — lost 22–32%). Low volume, big mechanical effect.</p>
+
+  {% if sp_wind %}
+  <div class="ns-card">
+    {% for r in sp_wind %}
+    <div class="ns-row">
+      <span class="ns-wind">{{ r.away }} @ {{ r.home }}</span>
+      <span class="ns-bet">UNDER {{ '%g'|format(r.total) }}</span>
+      <span class="ns-score prem">{{ r.wind }} mph</span>
+      <span class="ns-meta">Outdoor, wind at kickoff <b>{{ r.wind }} mph</b> — leans the passing game and the total down. Shop the under and the game-script unders.</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="ns-empty">No outdoor 15+ mph games flagged this week — the wind edge simply isn't on the board. It's rare (~40–50 games a season), and we won't manufacture it.</div>
+  {% endif %}
+</div>
+
+<!-- ============ 3. INJURY-CHANGE TIMING ============ -->
+<div class="ns-sec ns-inj">
+  <div class="ns-sech"><span class="n">Injury-Change Timing</span><span class="d">Speed signal · not a backtested edge</span></div>
+  <p class="ns-blurb">A status move to <b>Out</b> (or a new injury) shifts the total and the affected props before the market fully catches up. This is a <b>timing</b> signal — being early is the point — not a proven ROI edge. Ruled-out first.</p>
+
+  {% if sp_injuries %}
+  <div class="ns-card">
+    {% for i in sp_injuries %}
+    <div class="ns-row">
+      <span class="ns-play">{{ i.player }}</span>{% if i.team %}<span class="ns-price">{{ i.team }}</span>{% endif %}
+      <span class="ns-dir {{ 'out' if 'out' in (i.new|lower) or (i.direction|lower)=='worse' else 'back' }}">{{ i.prev or '—' }} → {{ i.new or '—' }}</span>
+      <span class="ns-meta">{{ i.change_type }}{% if i.direction %} · {{ i.direction }}{% endif %} — re-check this game's total and {{ i.player.split(' ')[-1] }}'s market before you bet.</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="ns-empty">No fresh NFL status changes tracked right now — check back as inactives and Friday/Saturday reports post.</div>
+  {% endif %}
+</div>
+
+<div class="ns-note"><b>How to use this:</b> the <b>Top Plays</b> (PropScore) and the <b>Wind Under</b> are the two backtested, out-of-sample-confirmed edges — reasons to look closer and shop the number, not guarantees. Injury-change timing is about being <i>early</i>, not a proven edge. Absolute ROI trims with real line-shopping, and PropScore is monotonic (higher score → higher return both seasons). These are spots, not locks. Bet what you can afford to lose.</div>
+
+</div>
+{% endblock %}

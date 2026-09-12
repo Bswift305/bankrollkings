@@ -738,6 +738,7 @@ PRO_ENDPOINTS = {
     'cfb_totals_today_tool',
     'nfl_totals_today_tool',
     'weekend_tool',
+    'nfl_spots_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40410,6 +40411,88 @@ def weekend_tool():
     """Quick Tool: This Weekend — one phone-first page across CFB (Sat) + NFL (Sun)
     with the sharpest data-backed spots, for glancing at (and sharing) on the floor."""
     return render_template('weekend.html', **build_weekend_context())
+
+
+# PropScore >= 10 is the meaningful cut (research/nfl_edge/FINDINGS.md: +9.2%/+11.3%
+# ROI across 2024/2025, 63% hit); >= 20 is the premium band (+13.3%/+16.1%, 66%).
+_NFL_SPOTS_PROPSCORE_FLOOR = 10.0
+_NFL_SPOTS_PROPSCORE_PREMIUM = 20.0
+
+
+def build_nfl_spots_context(limit=12):
+    """This week's NFL 'spots' board on the three PROVEN prop signals only
+    (research/nfl_edge/FINDINGS.md, 2024 scout + 2025 out-of-sample, real ROI):
+
+      1. Top Plays  -- validated BK_NFL_PropScore ranking (+9-16% ROI, 63-66% hit).
+      2. Wind Under -- passing/rec unders at outdoor 15+ mph (+10.4%/+21.9% ROI).
+      3. Injury-change timing -- a status move shifts the total/props before the
+         market fully adjusts. Surfacing speed is the point; NOT a backtested edge.
+
+    The scored top plays only materialize where the LIVE props feed is fresh (prod).
+    Everything degrades to an honest empty state when the feed hasn't loaded."""
+    ctx = {
+        'sp_top': [], 'sp_premium_count': 0, 'sp_wind': [], 'sp_injuries': [],
+        'sp_top_available': False, 'sp_season': None, 'sp_week': None,
+        'sp_floor': _NFL_SPOTS_PROPSCORE_FLOOR, 'sp_premium': _NFL_SPOTS_PROPSCORE_PREMIUM,
+    }
+
+    # 1) Top PropScore plays off this week's live, scored props.
+    try:
+        props_df, refresh_meta = load_nfl_live_props_feed(require_fresh=True)
+        ctx['sp_top_available'] = bool(refresh_meta.get('has_live_props'))
+        if not props_df.empty:
+            rows = build_football_live_prop_board(
+                props_df, load_nfl_game_market_odds(), load_nfl_schedule(),
+                method_key='props', date_filter='all', sport_key='nfl')
+            rows = attach_nfl_quant_insights_to_rows(rows, default_direction='OVER')
+            scored = []
+            for r in rows:
+                try:
+                    ps = float(r.get('nfl_prop_score'))
+                except (TypeError, ValueError):
+                    continue
+                if ps < _NFL_SPOTS_PROPSCORE_FLOOR:
+                    continue
+                scored.append({
+                    'player': r.get('player'), 'team': r.get('team') or r.get('Team') or '',
+                    'stat': r.get('stat'), 'direction': r.get('direction'),
+                    'line': r.get('line'), 'matchup': r.get('matchup'),
+                    'away': r.get('away'), 'home': r.get('home'), 'date': r.get('date'),
+                    'price': _format_american_price(r.get('market_price')),
+                    'best_book': r.get('best_book') or r.get('book') or '',
+                    'prop_score': round(ps, 1), 'premium': ps >= _NFL_SPOTS_PROPSCORE_PREMIUM,
+                    'detail': r.get('prop_score_detail') or '',
+                    'sim': r.get('sim_hit_probability'),
+                })
+            scored.sort(key=lambda x: x['prop_score'], reverse=True)
+            ctx['sp_top'] = scored[:limit]
+            ctx['sp_premium_count'] = sum(1 for x in scored if x['premium'])
+    except Exception:
+        pass
+
+    # 2) Wind unders -- reuse the validated NFL totals board's wind flag.
+    try:
+        nt = build_nfl_totals_board_context('week')
+        ctx['sp_season'] = nt.get('nt_season')
+        ctx['sp_wind'] = [r for r in nt.get('nt_rows', []) if r.get('read') == 'wind_under']
+    except Exception:
+        pass
+
+    # 3) Injury-change timing -- speed signal, honestly labeled as such.
+    try:
+        ctx['sp_injuries'] = build_nfl_injury_changes(limit=10)
+    except Exception:
+        pass
+
+    return ctx
+
+
+@app.route('/tools/nfl-spots')
+def nfl_spots_tool():
+    """Quick Tool: NFL Spots — this week's board on the three proven prop signals
+    (validated PropScore top plays + wind unders + injury-change timing). The NFL
+    parallel to CFB Best Spots."""
+    return render_template('nfl_spots.html', **build_nfl_spots_context())
 
 
 @app.route('/tools/cfb-hub')
