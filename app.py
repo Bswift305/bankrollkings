@@ -40132,10 +40132,25 @@ def build_cfb_matchup_context():
         data = _CFB_MU_CACHE['data']
     except (OSError, ValueError):
         pass
+    # This week's actual CFB slate, so the page can list the matchups (Team vs Team)
+    # and open any one -- not just hand-pick two teams from the dropdowns.
+    week_games = []
+    try:
+        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            if a and h:
+                week_games.append({
+                    'away': a, 'home': h,
+                    'spread': _format_signed_line(g.get('spread')),
+                    'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
+                })
+    except Exception:
+        week_games = []
     return {
         'mu_data': data,
         'mu_meta': data.get('meta', {}),
         'mu_available': bool(data.get('teams')),
+        'mu_week': week_games,
     }
 
 

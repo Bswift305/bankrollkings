@@ -27,6 +27,17 @@
   .mu-bullet b{color:var(--text-bright);}
   .mu-dot{color:var(--mu-accent);font-weight:800;}
   .mu-note{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;}
+  /* This Week's Matchups list */
+  .mu-wk-h{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;}
+  .mu-wk-h span{display:block;font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-top:3px;}
+  .mu-wk-list{display:flex;flex-direction:column;}
+  .mu-wk{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;width:100%;text-align:left;
+    background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.05);padding:12px 2px;cursor:pointer;transition:.12s;}
+  .mu-wk:last-child{border-bottom:0;}
+  .mu-wk:hover{background:rgba(217,123,60,.07);}
+  .mu-wk-tm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mu-wk-tm .at{color:var(--text-muted);font-weight:600;margin:0 5px;}
+  .mu-wk-ln{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
 </style>
 
 <div class="mu-wrap">
@@ -44,6 +55,19 @@
 {% if not mu_available %}
   <div class="card p-16"><p class="mu-note">Matchup data is being generated. Check back shortly.</p></div>
 {% else %}
+{% if mu_week %}
+<div class="card mb-24"><div class="p-16">
+  <div class="mu-wk-h">This Week&rsquo;s Matchups <span>{{ mu_week|length }} games &middot; tap one for the full edge card</span></div>
+  <div class="mu-wk-list">
+    {% for g in mu_week %}
+    <button type="button" class="mu-wk" data-away="{{ g.away }}" data-home="{{ g.home }}">
+      <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
+      <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
+    </button>
+    {% endfor %}
+  </div>
+</div></div>
+{% endif %}
 <div class="card mb-24">
   <div class="p-16" style="border-bottom:1px solid var(--border);">
     <div class="mu-pick">
@@ -161,6 +185,17 @@
     if(present) msg += ' See <a class="bs-mu" style="color:var(--mu-accent);" href="/tools/cfb-team?team='+encodeURIComponent(present)+'">'+present+"&rsquo;s full profile &rsaquo;</a>";
     $('#mu-flag').innerHTML = msg;
   }
+
+  // "This Week's Matchups" list -> load any game into the edge card and scroll to it
+  document.querySelectorAll('.mu-wk').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      S.away = btn.getAttribute('data-away'); S.home = btn.getAttribute('data-home');
+      aw.innerHTML = opts(S.away); hm.innerHTML = opts(S.home);
+      $('#mu-flag').innerHTML = ''; render();
+      const head = document.querySelector('.mu-head');
+      if(head){ head.scrollIntoView({behavior:'smooth', block:'center'}); }
+    });
+  });
 })();
 </script>
 {% endif %}
