@@ -317,7 +317,7 @@
                         {% set _v = row.continuation_verdict %}
                         <div class="cell-meta" style="font-weight:700; color:{% if _v == 'Ride it' %}var(--positive, #49d27d){% elif _v == 'Due to fade' %}var(--negative, #ff6b6b){% elif _v == 'Coin flip' %}var(--accent-copper){% else %}var(--text-muted){% endif %};">{{ _v }}</div>
                         {% if row.continuation_rate is not none %}
-                        <div class="cell-meta" style="margin-top:2px;">kept covering next game</div>
+                        <div class="cell-meta" style="margin-top:2px;">of {{ row.continuation_n }} prior run{{ '' if row.continuation_n == 1 else 's' }}</div>
                         {% endif %}
                     </td>
                     <td>

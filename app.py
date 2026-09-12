@@ -8154,13 +8154,18 @@ def build_football_live_status(sport_key, live_games, live_prop_rows, live_props
     }
 
 
+# Minimum prior 3+/5+ cover runs before a continuation rate earns a directional
+# verdict; below this the rate is shown but labeled "Small sample".
+_MIN_CONTINUATION_SAMPLE = 4
+
+
 def build_football_historical_market_rows(sport_key, method_key):
     sport_key = str(sport_key or 'nfl').strip().lower()
     method_key = str(method_key or 'game_lines').strip().lower()
     # Bump the schema tag (v2) whenever the row shape changes, so a code-only change
     # (new fields / new sort) invalidates the disk cache even though the input files
     # haven't. v2: Money Trends -- ats_run/ou_run, continuation_rate, continuation_verdict.
-    cache_key = f'football_historical_market_rows::v2::{sport_key}::{method_key}'
+    cache_key = f'football_historical_market_rows::v3::{sport_key}::{method_key}'
     if sport_key == 'ncaaf':
         cache_version = _build_file_token(
             DATA_DIR / 'historical' / 'NCAAF_GameLines_History.csv',
@@ -8336,6 +8341,10 @@ def build_football_historical_market_rows(sport_key, method_key):
         ou_follow_df = pd.DataFrame(ou_follow_opps)
         ats_follow_3_rate = _rate_percent(ats_follow_df[ats_follow_df['Threshold'] == 3]['Continued']) if not ats_follow_df.empty else None
         ats_follow_5_rate = _rate_percent(ats_follow_df[ats_follow_df['Threshold'] == 5]['Continued']) if not ats_follow_df.empty else None
+        # How many prior 3+/5+ cover runs the rate is built on -- so a % off a handful
+        # of instances can be flagged as an untrustworthy small sample.
+        ats_follow_3_n = int((ats_follow_df['Threshold'] == 3).sum()) if not ats_follow_df.empty else 0
+        ats_follow_5_n = int((ats_follow_df['Threshold'] == 5).sum()) if not ats_follow_df.empty else 0
         ou_follow_3_rate = _rate_percent(ou_follow_df[ou_follow_df['Threshold'] == 3]['Continued']) if not ou_follow_df.empty else None
         ou_follow_5_rate = _rate_percent(ou_follow_df[ou_follow_df['Threshold'] == 5]['Continued']) if not ou_follow_df.empty else None
 
@@ -8477,13 +8486,18 @@ def build_football_historical_market_rows(sport_key, method_key):
         # This -- not the raw streak -- drives the verdict, so we never imply that a hot
         # streak is a bet by itself.
         continuation_rate = None
+        continuation_n = 0
         if ats_side == 'COVER' and ats_streak:
             if ats_streak >= 5 and ats_follow_5_rate is not None:
-                continuation_rate = ats_follow_5_rate
+                continuation_rate, continuation_n = ats_follow_5_rate, ats_follow_5_n
             elif ats_streak >= 3 and ats_follow_3_rate is not None:
-                continuation_rate = ats_follow_3_rate
+                continuation_rate, continuation_n = ats_follow_3_rate, ats_follow_3_n
         if continuation_rate is None:
             continuation_verdict = 'Too short to call' if (ats_side == 'COVER' and ats_streak) else '—'
+        elif continuation_n < _MIN_CONTINUATION_SAMPLE:
+            # Too few prior runs to trust the rate (a long current streak alone can
+            # produce a shiny 100% off 2-3 within-streak steps). Show it, don't sell it.
+            continuation_verdict = 'Small sample'
         elif continuation_rate >= 58:
             continuation_verdict = 'Ride it'
         elif continuation_rate >= 48:
@@ -8505,6 +8519,7 @@ def build_football_historical_market_rows(sport_key, method_key):
             'ou_run': ou_streak or 0,
             'continuation_rate': continuation_rate,
             'continuation_verdict': continuation_verdict,
+            'continuation_n': continuation_n,
             'cover_rate_5y': cover_rate_5y,
             'cover_rate_last_season': cover_rate_last_season,
             'cover_rate_last5': cover_rate_last5,
