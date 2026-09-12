@@ -3542,5 +3542,14 @@ body::after {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .bk-command-toolbar::-webkit-scrollbar,
+  .bk-workflow-toolbar::-webkit-scrollbar { display: none; }
+  /* Keep each pill at its natural width and on one line, so the bar scrolls
+     sideways instead of squeezing the buttons until their labels wrap and clip. */
+  .bk-command-toolbar > *,
+  .bk-workflow-toolbar > * { flex: 0 0 auto; }
+  .bk-command-toolbar .bk-btn,
+  .bk-workflow-toolbar .bk-btn { white-space: nowrap; }
 }
