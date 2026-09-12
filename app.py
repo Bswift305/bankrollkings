@@ -40374,9 +40374,19 @@ def build_cfb_best_spots_context(date_filter='week'):
 @app.route('/tools/cfb-best-spots')
 def cfb_best_spots_tool():
     """Quick Tool: This Week's Best Spots — plain-English weekly digest from the
-    live slate + our CFB trend data. `?date=today|week` scopes the slate."""
-    return render_template('cfb_best_spots.html',
-                           **build_cfb_best_spots_context(request.args.get('date', 'week')))
+    live slate + our CFB trend data, with the Big Favorites board folded in.
+    `?date=today|week` scopes the slate; `?fav=20|30|40` sets the big-fav threshold."""
+    date = request.args.get('date', 'week')
+    date = date if date in ('today', 'week') else 'week'
+    try:
+        fav = int(request.args.get('fav', 20))
+    except (TypeError, ValueError):
+        fav = 20
+    if fav not in (20, 30, 40):
+        fav = 20
+    ctx = build_cfb_best_spots_context(date)
+    ctx.update(build_cfb_big_favorites_context(date, fav))  # bf_* keys, no collision with bs_*
+    return render_template('cfb_best_spots.html', **ctx)
 
 
 _CFB_BIGFAV_CACHE = {}
@@ -40463,11 +40473,12 @@ def build_cfb_big_favorites_context(date_filter='today', threshold=30):
 
 @app.route('/tools/cfb-big-favorites')
 def cfb_big_favorites_tool():
-    """Quick Tool: Today's Big Favorites — the live heavy-favorite board
-    (20+/30+/40+) with each favorite's and coach's big-favorite ATS history."""
-    return render_template('cfb_big_favorites.html',
-                           **build_cfb_big_favorites_context(
-                               request.args.get('date', 'today'), request.args.get('t', 30)))
+    """Folded into Best Spots (the Big Favorites board now lives there as a section).
+    Redirect old links/bookmarks, mapping the old ?t= threshold to ?fav=."""
+    t = request.args.get('t', '20')
+    date = request.args.get('date', 'week')
+    date = date if date in ('today', 'week') else 'week'
+    return redirect(url_for('cfb_best_spots_tool', fav=t, date=date))
 
 
 _CFB_TOTBOARD_CACHE = {}
