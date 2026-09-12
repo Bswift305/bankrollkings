@@ -38488,6 +38488,9 @@ def trend_board():
     )
 
 
+_CANDIDATE_REVIEW_DF_CACHE = {}
+
+
 @app.route('/candidate-review')
 def candidate_review():
     archive_cache_version = _build_file_token(
@@ -38516,7 +38519,16 @@ def candidate_review():
         _load_candidate_review_archive_source,
         version=archive_cache_version,
     )
-    archive_df = pd.DataFrame(archive_source.get('rows') or [])
+    # Rebuilding the DataFrame from the cached records was ~7s of pandas construction
+    # on every request. Memoize the reconstructed frame on the archive version and hand
+    # out a copy (downstream filters/grades on it), so the rebuild happens once per data
+    # refresh instead of per hit.
+    _adf_cached = _CANDIDATE_REVIEW_DF_CACHE.get('df')
+    if _adf_cached and _adf_cached[0] == archive_cache_version:
+        archive_df = _adf_cached[1].copy()
+    else:
+        archive_df = pd.DataFrame(archive_source.get('rows') or [])
+        _CANDIDATE_REVIEW_DF_CACHE['df'] = (archive_cache_version, archive_df.copy())
     using_pregraded_results = bool(archive_source.get('using_pregraded_results')) and not archive_df.empty
     if using_pregraded_results:
         gamelog_map = {}
@@ -38667,14 +38679,32 @@ def candidate_review():
 
 @app.route('/missed-opportunities')
 def missed_opportunities():
-    context = build_missed_opportunities_context_service(
-        sport_filter=request.args.get('sport', '').strip(),
-        stat_filter=request.args.get('stat', '').strip(),
-        grade_filter=request.args.get('grade', '').strip(),
-        start_date=request.args.get('start_date', '').strip(),
-        end_date=request.args.get('end_date', '').strip(),
-        min_grade=request.args.get('min_grade', '').strip(),
+    # The context is an ~87k-row grading loop over the prop-results archive (~17s).
+    # It only depends on the archive files + the filter params, so disk-cache it: key
+    # on the filter combo, version on the source files' fingerprint.
+    _sf = request.args.get('sport', '').strip()
+    _stf = request.args.get('stat', '').strip()
+    _gf = request.args.get('grade', '').strip()
+    _sd = request.args.get('start_date', '').strip()
+    _ed = request.args.get('end_date', '').strip()
+    _mg = request.args.get('min_grade', '').strip()
+    _version = _build_file_token(
+        DATA_DIR / 'tracking' / 'Floor_Play_Index.csv',
+        DATA_DIR / 'tracking' / 'NBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'WNBA_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'MLB_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_AllPropResults.csv',
+        BASE_DIR / 'services' / 'review_center.py',
     )
+    _ckey = f"disk::missed_opps::v1::{_sf}::{_stf}::{_gf}::{_sd}::{_ed}::{_mg}"
+    _hit, context = _read_disk_ttl_cached_value(_ckey, version=_version)
+    if not _hit:
+        context = build_missed_opportunities_context_service(
+            sport_filter=_sf, stat_filter=_stf, grade_filter=_gf,
+            start_date=_sd, end_date=_ed, min_grade=_mg,
+        )
+        _write_disk_ttl_cached_value(_ckey, 86400, context, version=_version)
     return render_template(
         'missed_opportunities.html',
         rows=context['rows'],
