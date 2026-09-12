@@ -21,7 +21,11 @@
   @media (max-width:760px){
     .fmb-howto>summary{padding:12px 14px;font-size:13px;}
   }
+  /* In-place pill swap: fade the board while the next method loads. */
+  #fmb-swap{transition:opacity .12s ease;}
+  #fmb-swap.fmb-loading{opacity:.45;pointer-events:none;}
 </style>
+<div id="fmb-swap">
 <div class="page-hero">
     <div>
         <div class="page-kicker">Football Methods</div>
@@ -40,7 +44,7 @@
 <div class="card mb-24">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         {% for item in football_methods %}
-        <a href="/sports/{{ sport_key }}/{{ item.key }}?postseason={{ 1 if postseason_only else 0 }}" class="btn {% if active_method == item.key %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ item.title }}</a>
+        <a href="/sports/{{ sport_key }}/{{ item.key }}?postseason={{ 1 if postseason_only else 0 }}" class="btn fmb-pill {% if active_method == item.key %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ item.title }}</a>
         {% endfor %}
         <span class="badge badge-accent" style="margin-left:auto;">{{ sport_profile.label }}</span>
     </div>
@@ -1122,4 +1126,43 @@
 </div>
 {% endif %}
 {% endif %}
+</div>{# /#fmb-swap #}
+
+<script>
+/* Pills swap the board in place (single-view) instead of a full page load.
+   Progressive enhancement: the pills are still real <a href> links, so with JS
+   off — or if a fetch fails — they navigate normally. Delegation is bound to
+   document, which survives the innerHTML swap. */
+(function(){
+  var swap = document.getElementById('fmb-swap');
+  if(!swap || !window.fetch || !window.DOMParser) return;
+
+  function load(url, push){
+    swap.classList.add('fmb-loading');
+    fetch(url, {credentials:'same-origin', headers:{'X-Requested-With':'fetch'}})
+      .then(function(r){ if(!r.ok){ throw new Error(r.status); } return r.text(); })
+      .then(function(html){
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var next = doc.getElementById('fmb-swap');
+        if(!next){ window.location.href = url; return; }
+        swap.innerHTML = next.innerHTML;
+        swap.classList.remove('fmb-loading');
+        if(doc.title){ document.title = doc.title; }
+        if(push){ history.pushState({fmb:1}, '', url); }
+        window.scrollTo({top:0, behavior:'smooth'});
+      })
+      .catch(function(){ window.location.href = url; });
+  }
+
+  document.addEventListener('click', function(e){
+    var a = e.target.closest && e.target.closest('a.fmb-pill');
+    if(!a) return;
+    if(e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if(!a.classList.contains('btn-primary')){ load(a.getAttribute('href'), true); }
+  });
+
+  window.addEventListener('popstate', function(){ load(location.href, false); });
+})();
+</script>
 {% endblock %}
