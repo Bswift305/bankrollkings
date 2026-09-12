@@ -2788,7 +2788,25 @@ def build_ncaaf_player_master(current_roster=None, player_history=None, last_sea
     )
 
 
+_NCAAF_SEASON_CTX_CACHE = {}
+
+
 def build_ncaaf_current_season_context():
+    # This is ~4s of roster/stat joins and ~2.5M name-normalization calls, and it is
+    # hit multiple times per football method render (directly + via the team signal
+    # map). The inputs only change on the daily CFB refresh, so memoize on their
+    # fingerprint: compute once per worker, reuse until the data actually changes.
+    token = _build_file_token(
+        DATA_DIR / 'rosters' / 'NCAAF_CurrentRoster.csv',
+        DATA_DIR / 'historical' / 'NCAAF_PlayerStats_History.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_ReturningProduction.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_TransferPortal.csv',
+        DATA_DIR / 'tracking' / 'NCAAF_CurrentRoster_Coverage.csv',
+    )
+    cached = _NCAAF_SEASON_CTX_CACHE.get('ctx')
+    if cached and cached[0] == token:
+        return cached[1]
+
     next_steps = [
         r'py fetch_cfbd_current_roster.py --year 2026 --fallback-year 2025',
         r'py fetch_cfbd_player_stats.py --year 2025',
@@ -2801,7 +2819,7 @@ def build_ncaaf_current_season_context():
     returning = load_ncaaf_returning_production()
     portal = load_ncaaf_transfer_portal()
     coverage = load_ncaaf_current_roster_coverage()
-    return build_ncaaf_current_season_context_service(
+    result = build_ncaaf_current_season_context_service(
         roster,
         history,
         returning,
@@ -2813,6 +2831,8 @@ def build_ncaaf_current_season_context():
         normalize_position_group=_normalize_position_group,
         last_season=2025,
     )
+    _NCAAF_SEASON_CTX_CACHE['ctx'] = (token, result)
+    return result
 
 
 def load_wnba_gamelogs():
