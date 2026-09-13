@@ -106,6 +106,50 @@ PARLAYS = [
 ]
 PARLAY_FOOTNOTE = "* team total implied from the game line - confirm your book's posted number."
 
+# EQC-legal tickets: CROSS-GAME game lines only (no props, no same-game) - one leg per
+# matchup, built from the Riding-the-Wave streak leans. kind: 'spread'/'over'/'under'.
+EQC_TICKETS = [
+    ("SAFEST - 2 LEG", CY, [
+        ("GB@MIN", "Vikings -1.5", "spread"),
+        ("DAL@NYG", "Over 47.5", "over"),
+    ]),
+    ("BIG DOGS - 2 LEG", GOLD, [
+        ("NO@DET", "Saints +7", "spread"),
+        ("CLE@JAX", "Browns +9", "spread"),
+    ]),
+    ("ALL OVERS - 3 LEG", GREEN, [
+        ("BAL@IND", "Over 48", "over"),
+        ("DAL@NYG", "Over 47.5", "over"),
+        ("WAS@PHI", "Over 44", "over"),
+    ]),
+    ("COVER DOGS - 3 LEG", GOLD, [
+        ("NO@DET", "Saints +7", "spread"),
+        ("CLE@JAX", "Browns +9", "spread"),
+        ("DEN@KC", "Broncos +2.5", "spread"),
+    ]),
+    ("MIXED - 4 LEG", CY, [
+        ("GB@MIN", "Vikings -1.5", "spread"),
+        ("BAL@IND", "Over 48", "over"),
+        ("WAS@PHI", "Over 44", "over"),
+        ("DAL@NYG", "Over 47.5", "over"),
+    ]),
+    ("LONGSHOT - 5 LEG", RED, [
+        ("GB@MIN", "Vikings -1.5", "spread"),
+        ("NO@DET", "Saints +7", "spread"),
+        ("CLE@JAX", "Browns +9", "spread"),
+        ("TB@CIN", "Under 50.5", "under"),
+        ("DEN@KC", "Chiefs Under 43.5", "under"),
+    ]),
+    ("FULL SEND - 6 LEG", GOLD, [
+        ("GB@MIN", "Vikings -1.5", "spread"),
+        ("NO@DET", "Saints +7", "spread"),
+        ("CLE@JAX", "Browns +9", "spread"),
+        ("BAL@IND", "Over 48", "over"),
+        ("WAS@PHI", "Over 44", "over"),
+        ("DAL@NYG", "Over 47.5", "over"),
+    ]),
+]
+
 # --------------------------------------------------------------------------- #
 # Drawing helper
 # --------------------------------------------------------------------------- #
@@ -414,6 +458,38 @@ def card_hitlist(plays, games, week, out, floor=24):
     c.text(M, y, "Validated PropScore plays. Verify the line before you bet. Bet responsibly. 21+", F['ft'], FAINT)
     return c.save(out)
 
+def card_eqc_tickets(week, out, stake=1.0):
+    """$1 cross-game game-line tickets for a book with no prop/same-game parlays (EQC).
+    Payouts approximated at -110 per leg; the book shows the exact number."""
+    kcol = {'spread': GOLD, 'over': GREEN, 'under': RED}
+    top = 250
+    body = sum(56 + len(legs) * 40 + 16 + 22 for _, _, legs in EQC_TICKETS)
+    H = top + body + 120
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} - $1 TICKETS", chip="EQC-LEGAL - CROSS-GAME")
+    c.text(M, y, "Game lines only (no props/SGP at EQC). One leg per game. Approx payout on a $1 bet.", F['de'], DIM)
+    y += 40
+    for title, accent, legs in EQC_TICKETS:
+        dec = 1.909 ** len(legs)
+        payout = f"$1 -> ~${dec * stake:.2f}"
+        bh = 56 + len(legs) * 40 + 16
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=16, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + bh)], radius=6, fill=accent)
+        c.text(M + 30, y + 16, title, F['blk'], accent)
+        pw = d.textlength(payout, font=F['sc']) + 28
+        d.rounded_rectangle([(W - M - pw - 14, y + 12), (W - M - 14, y + 48)], radius=10, fill=(11, 30, 28))
+        c.text(W - M - 14 - pw / 2, y + 17, payout, F['sc'], CY, center=True)
+        ry = y + 60
+        for mu, pick, kind in legs:
+            c.text(M + 30, ry + 4, mu, F['de'], FAINT)
+            c.text(M + 160, ry, pick, F['pl'], kcol.get(kind, INK))
+            ry += 40
+        y += bh + 22
+    y += 6
+    c.text(M, y, f"Live lines pulled {_stamp()}. Payouts approximate (-110/leg) - the slip shows the exact number.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Streak leans = trends the market prices, not locks. Parlays are longshots. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_parlay(week, out):
     top = 250
     body = sum(62 + len(legs) * 74 + 16 + 26 for _, _, legs in PARLAYS)
@@ -484,6 +560,8 @@ def main():
             made.append(card_defense(sacks, tk, args.week, str(out_dir / 'bk_defense.png')))
     if 'hitlist' in want:
         made.append(card_hitlist(plays, games, args.week, str(out_dir / 'bk_hitlist.png')))
+    if 'eqc' in want:
+        made.append(card_eqc_tickets(args.week, str(out_dir / 'bk_eqc_tickets.png')))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
