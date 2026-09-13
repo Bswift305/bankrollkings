@@ -30051,7 +30051,9 @@ def nfl_props_page():
     stat_filter = request.args.get('stat', '').strip().upper()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('player', request.args.get('search', '')).strip()
-    sort_by = request.args.get('sort_by', 'confidence').strip().lower() or 'confidence'
+    # Best-first: lead with the validated PropScore, not confidence (which restates the
+    # de-vigged price and ranks the most -EV plays first). See feedback_ranked_lists_best_first.
+    sort_by = request.args.get('sort_by', 'prop_score').strip().lower() or 'prop_score'
     sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
     odds_df = load_nfl_game_market_odds()
     schedule_df = load_nfl_schedule()
@@ -36317,6 +36319,9 @@ def sort_generic_prop_rows(rows, sort_by='confidence', sort_dir='desc'):
     reverse = str(sort_dir or 'desc').strip().lower() != 'asc'
 
     def key(row):
+        if sort_by in {'prop_score', 'nfl_prop_score'}:
+            # The validated NFL PropScore (best-first). Rows without a score sink.
+            return _prop_float_value(row.get('nfl_prop_score'), -999)
         if sort_by in {'confidence', 'score'}:
             return _prop_float_value(row.get('confidence'), 0) or 0
         if sort_by == 'line':

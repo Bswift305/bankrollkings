@@ -420,6 +420,7 @@
         <div class="board-filter-field">
             <label for="nba-sort-filter">Sort</label>
             <select id="nba-sort-filter" name="sort_by">
+                {% if props_sport_key == 'nfl' %}<option value="prop_score" {% if sort_by == 'prop_score' %}selected{% endif %}>Prop Score (best)</option>{% endif %}
                 <option value="confidence" {% if sort_by == 'confidence' %}selected{% endif %}>Confidence</option>
                 <option value="player" {% if sort_by == 'player' %}selected{% endif %}>Player</option>
                 <option value="team" {% if sort_by == 'team' %}selected{% endif %}>Team</option>
