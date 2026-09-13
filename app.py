@@ -40381,17 +40381,76 @@ def _wave_trailing_run(signs):
     return n, last
 
 
+def build_nfl_prop_streaks(limit=60):
+    """Active player-prop over/under streaks: for each (player, stat), collapse every
+    book row for a game to one consensus line, walk games in date order, and count the
+    current run of the player beating (Over) or falling short of (Under) that number.
+    Longest run on top. Honest: 'over his receptions line 6 straight' from graded logs."""
+    ph = load_nfl_props_history()
+    if ph is None or ph.empty:
+        return []
+    req = {'Player', 'Stat', 'Line', 'Actual', 'CommenceTime', 'EventId'}
+    if not req.issubset(ph.columns):
+        return []
+    df = ph.copy()
+    df['Line'] = pd.to_numeric(df['Line'], errors='coerce')
+    df['Actual'] = pd.to_numeric(df['Actual'], errors='coerce')
+    df['_t'] = pd.to_datetime(df['CommenceTime'], errors='coerce')
+    df = df.dropna(subset=['Player', 'Stat', 'Line', 'Actual', '_t', 'EventId'])
+    if df.empty:
+        return []
+    latest_season = 0
+    if 'Season' in df.columns:
+        s = pd.to_numeric(df['Season'], errors='coerce')
+        latest_season = int(s.max()) if s.notna().any() else 0
+    # one graded outcome per player-stat-game (consensus line across books)
+    g = df.groupby(['Player', 'Stat', 'EventId'], dropna=False)
+    games = g.agg(line=('Line', 'median'), actual=('Actual', 'first'), t=('_t', 'max'),
+                  team=('Team', 'first'),
+                  season=('Season', 'first') if 'Season' in df.columns else ('Actual', 'size')).reset_index()
+    games['over'] = games['actual'] > games['line']
+    games['under'] = games['actual'] < games['line']
+    out = []
+    for (player, stat), grp in games.sort_values('t').groupby(['Player', 'Stat'], dropna=False):
+        grp = grp.sort_values('t')
+        for side, col in (('Over', 'over'), ('Under', 'under')):
+            signs = [1 if v else -1 for v in grp[col].tolist()]
+            n, direction = _wave_trailing_run(signs)
+            if n < _WAVE_MIN_STREAK or direction != 1:
+                continue
+            last = grp.iloc[-1]
+            last_season = str(last['season']) if 'season' in grp.columns else ''
+            if latest_season and _season_num_top(last_season) != latest_season:
+                continue  # active only: ran into the most recent season
+            out.append({
+                'player': str(player), 'stat': str(stat), 'side': side, 'streak': int(n),
+                'team': (str(last['team']) if pd.notna(last.get('team')) else ''),
+                'line': (round(float(last['line']), 1) if pd.notna(last['line']) else None),
+                'last_season': last_season,
+            })
+    out.sort(key=lambda x: -x['streak'])
+    return out[:limit]
+
+
+def _season_num_top(s):
+    try:
+        return int(str(s)[:4])
+    except Exception:
+        return 0
+
+
 def build_nfl_wave_context():
     """Riding the Wave — every ACTIVE streak computed by walking each team's real graded
     games in date order (2011-2025 game-lines history). ATS cover streaks, straight-up
-    win streaks, and over/under runs, plus situational hot hands (season openers by team
-    and starting QB). Longest streak on top. Honest: these are trends the market already
-    prices, not predictions."""
+    win streaks, over/under runs, situational hot hands (season openers by team and
+    starting QB), and player-prop over/under streaks. Longest streak on top. Honest:
+    these are trends the market already prices, not predictions."""
     hist = load_nfl_game_lines_history()
     if hist is None or hist.empty:
-        return {'rw_boards': {'ats': [], 'su': [], 'ou': []}, 'rw_situational': [],
+        return {'rw_boards': {'ats': [], 'su': [], 'ou': [], 'props': []}, 'rw_situational': [],
                 'rw_meta': {}, 'rw_available': False}
-    sig = len(hist)
+    ph = load_nfl_props_history()
+    sig = f"{len(hist)}::{0 if ph is None or ph.empty else len(ph)}"
     if _NFL_WAVE_CACHE.get('sig') == sig:
         return _NFL_WAVE_CACHE['data']
 
@@ -40466,6 +40525,7 @@ def build_nfl_wave_context():
         'ats': _collect(ats, pos_only=True),   # riding = covering
         'su': _collect(su, pos_only=True),     # riding = winning
         'ou': _collect(ou, pos_only=False, over_labels=True),  # either direction is a run
+        'props': build_nfl_prop_streaks(),     # player over/under line streaks
     }
 
     # ---- situational hot hands: season openers (Week 1), team + starting QB ----

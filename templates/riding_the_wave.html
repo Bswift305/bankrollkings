@@ -34,6 +34,8 @@
   .rw-badge .n{font-size:18px;font-weight:800;line-height:1;} .rw-badge .u{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);}
   .rw-badge.hot .n{color:var(--rw-hot);} .rw-badge.over .n{color:var(--rw-over);} .rw-badge.cold .n{color:var(--rw-cold);} .rw-badge.acc .n{color:var(--rw-accent);}
   .rw-empty{padding:16px;color:var(--text-muted);font:500 12.5px 'Helvetica Neue',Arial,sans-serif;}
+  .rw-card-wide .rw-props{display:grid;grid-template-columns:1fr;}
+  @media (min-width:720px){ .rw-card-wide .rw-props{grid-template-columns:1fr 1fr;} .rw-card-wide .rw-props .rw-row:nth-child(2){border-top:1px solid rgba(255,255,255,.05);} }
   .rw-foot{margin-top:22px;font:500 11.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
   .rw-soon{margin-top:22px;background:linear-gradient(180deg,rgba(91,141,239,.07),transparent);border:1px dashed var(--border);
     border-radius:12px;padding:14px 16px;font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
@@ -59,11 +61,25 @@
 
 <div class="rw-filter">
   <button class="rw-chip active" data-f="all">All</button>
+  <button class="rw-chip" data-f="props">Player Props</button>
   <button class="rw-chip" data-f="ats">Covering</button>
   <button class="rw-chip" data-f="su">Winning</button>
   <button class="rw-chip" data-f="ou">Totals</button>
   <button class="rw-chip" data-f="situ">Situational</button>
 </div>
+
+{% if rw_boards.props %}
+<div class="rw-card rw-card-wide" data-cat="props" style="margin-bottom:16px;">
+  <h3><span class="dot" style="background:var(--rw-hot)"></span>Player Prop Streaks <small>beat / fell short of the line, N straight</small></h3>
+  <div class="rw-props">
+    {% for r in rw_boards.props[:24] %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}</small></span>
+      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}</span></span></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 <div class="rw-grid" id="rw-grid">
 
@@ -106,7 +122,7 @@
 </div>
 
 <div class="rw-soon">
-  <b>Coming next:</b> player-prop streaks (who&rsquo;s gone over/under their line N straight), plus CFB, NBA and MLB on the same board &mdash; all from real graded results, same honesty rules.
+  <b>Coming next:</b> CFB, NBA and MLB streaks on this same board &mdash; all from real graded results, same honesty rules.
 </div>
 
 <div class="rw-foot">Streaks counted from the NFL game-lines history ({{ rw_meta.seasons }}). A run &ldquo;through {{ rw_meta.asof or 'the latest graded game' }}&rdquo; carries into the current week until it ends.</div>
