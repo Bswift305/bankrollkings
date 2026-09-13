@@ -585,10 +585,31 @@ FLOOR_LONGSHOT = [
     ("Ja'Marr Chase", "OVER 55 Rec Yds", "TB@CIN"),
 ]
 
-def card_floor_longshot(week, out, stake=1.0, avg_odds=-175):
+FLOOR_LONGSHOT_2 = [
+    ("Baker Mayfield", "OVER 185 Pass Yds", "TB@CIN"),
+    ("Bo Nix", "OVER 180 Pass Yds", "DEN@KC"),
+    ("Jordan Love", "OVER 190 Pass Yds", "GB@MIN"),
+    ("Aaron Rodgers", "OVER 170 Pass Yds", "ATL@PIT"),
+    ("Jonathan Taylor", "OVER 50 Rush Yds", "BAL@IND"),
+    ("James Cook", "OVER 50 Rush Yds", "BUF@HOU"),
+    ("Javonte Williams", "OVER 50 Rush Yds", "DAL@NYG"),
+    ("D'Andre Swift", "OVER 40 Rush Yds", "CHI@CAR"),
+    ("Ashton Jeanty", "OVER 40 Rush Yds", "MIA@LV"),
+    ("Quinshon Judkins", "OVER 38 Rush Yds", "CLE@JAX"),
+    ("Amon-Ra St. Brown", "OVER 50 Rec Yds", "NO@DET"),
+    ("Chris Olave", "OVER 48 Rec Yds", "NO@DET"),
+    ("DeVonta Smith", "OVER 42 Rec Yds", "WAS@PHI"),
+    ("Garrett Wilson", "OVER 40 Rec Yds", "NYJ@TEN"),
+    ("Trey McBride", "OVER 38 Rec Yds", "ARI@LAC"),
+]
+
+def card_floor_longshot(week, out, stake=1.0, avg_odds=-175, legs=None, corr_note=None):
     """One big teaser-style longshot: 15 conservative 'floor' overs (lowest alt rung),
     one per game. Payout illustrative at avg_odds/leg - the book prices your actual rungs."""
-    legs = FLOOR_LONGSHOT
+    if legs is None:
+        legs = FLOOR_LONGSHOT
+    if corr_note is None:
+        corr_note = "Burrow + Chase are same-game (may need SGP). High-prob stack, still a longshot. 21+"
     dec_leg = 1 + (100 / abs(avg_odds) if avg_odds < 0 else avg_odds / 100)
     est = dec_leg ** len(legs) * stake
     top = 250; rh = 46
@@ -612,7 +633,7 @@ def card_floor_longshot(week, out, stake=1.0, avg_odds=-175):
     c.text(M + bw + 20, y + 36, f"at ~{avg_odds}/leg", F['de'], FAINT)
     y += 86
     c.text(M, y, "Floors derived from main lines - the book's alt rungs & prices are the truth; payout will vary.", F['ftb'], DIM); y += 30
-    c.text(M, y, "Burrow + Chase are same-game (may need SGP). High-prob stack, still a longshot. 21+", F['ft'], FAINT)
+    c.text(M, y, corr_note, F['ft'], FAINT)
     return c.save(out)
 
 def card_bol_tickets(week, out, stake=1.0):
@@ -760,6 +781,10 @@ def main():
         made.append(card_bol_tickets(args.week, str(out_dir / 'bk_bol_tickets.png')))
     if 'floorshot' in want:
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot.png')))
+    if 'floorshot2' in want:
+        made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot2.png'),
+                                        legs=FLOOR_LONGSHOT_2,
+                                        corr_note="St. Brown + Olave share a game (different teams, low correlation). Still a longshot. 21+"))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
