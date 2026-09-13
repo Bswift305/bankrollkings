@@ -515,6 +515,91 @@ def card_openers(games, week, out, min_games=3):
     c.text(M, y, f"Lines pulled {_stamp()}. Bet responsibly. 21+", F['ft'], FAINT)
     return c.save(out)
 
+# BetOnline (full book) $1 tickets: props, SGPs, ML, game lines. leg = (subject, detail, kind)
+# kind: 'over'/'under'/'line'. note flags a same-game ticket that needs SGP support.
+BOL_TICKETS = [
+    ("TOP 2 PROPS", CY, "", [
+        ("David Montgomery", "UNDER Rush Yds 56.5  ·  BUF@HOU", "under"),
+        ("Jameson Williams", "OVER Receptions 3.5  ·  NO@DET", "over"),
+    ]),
+    ("COWBOYS PASSING SGP", GOLD, "same game - needs SGP; else 3 singles", [
+        ("Dak Prescott", "OVER Pass TDs 1.5  ·  DAL@NYG", "over"),
+        ("CeeDee Lamb", "OVER Receptions 5.5  ·  DAL@NYG", "over"),
+        ("George Pickens", "OVER Receptions 4.5  ·  DAL@NYG", "over"),
+    ]),
+    ("TEXANS UNDER SGP", GOLD, "same game - needs SGP; else 2 singles", [
+        ("C.J. Stroud", "UNDER Pass TDs 1.5  ·  BUF@HOU", "under"),
+        ("Nico Collins", "UNDER Receptions 5.5  ·  BUF@HOU", "under"),
+    ]),
+    ("ALL UNDERS - 3 LEG", RED, "", [
+        ("David Montgomery", "UNDER Rush Yds 56.5  ·  BUF@HOU", "under"),
+        ("Dontayvion Wicks", "UNDER Receptions 2.5  ·  WAS@PHI", "under"),
+        ("Kenneth Walker III", "UNDER Rush Att 16.5  ·  DEN@KC", "under"),
+    ]),
+    ("SKILL OVERS - 3 LEG", GREEN, "", [
+        ("Jameson Williams", "OVER Receptions 3.5  ·  NO@DET", "over"),
+        ("CeeDee Lamb", "OVER Receptions 5.5  ·  DAL@NYG", "over"),
+        ("Daniel Jones", "OVER Pass Yds 232.5  ·  BAL@IND", "over"),
+    ]),
+    ("DOG ML + PROP - 2 LEG", GOLD, "", [
+        ("Buccaneers ML +170", "TB@CIN  ·  4-0 in openers", "line"),
+        ("Jameson Williams", "OVER Receptions 3.5  ·  NO@DET", "over"),
+    ]),
+    ("GAME-LINE LEANS - 3 LEG", CY, "", [
+        ("Vikings -2", "GB@MIN  ·  5 covers + 5 wins", "line"),
+        ("Cowboys Over 47.5", "DAL@NYG  ·  6-game over run", "over"),
+        ("Ravens Over 48", "BAL@IND  ·  3-game over run", "over"),
+    ]),
+    ("MIXED - 4 LEG", CY, "", [
+        ("David Montgomery", "UNDER Rush Yds 56.5  ·  BUF@HOU", "under"),
+        ("Jameson Williams", "OVER Receptions 3.5  ·  NO@DET", "over"),
+        ("CeeDee Lamb", "OVER Receptions 5.5  ·  DAL@NYG", "over"),
+        ("Bryce Young", "UNDER Pass Yds 209.5  ·  CHI@CAR", "under"),
+    ]),
+    ("LONGSHOT - 5 LEG", RED, "", [
+        ("David Montgomery", "UNDER Rush Yds 56.5  ·  BUF@HOU", "under"),
+        ("CeeDee Lamb", "OVER Receptions 5.5  ·  DAL@NYG", "over"),
+        ("Kenneth Walker III", "UNDER Rush Att 16.5  ·  DEN@KC", "under"),
+        ("Bryce Young", "UNDER Pass Yds 209.5  ·  CHI@CAR", "under"),
+        ("Buccaneers ML +170", "TB@CIN  ·  opener trend dog", "line"),
+    ]),
+]
+
+def card_bol_tickets(week, out, stake=1.0):
+    """9 x $1 tickets for a full online book (BetOnline): prop parlays, correlated SGPs,
+    ML value and game-line leans. Payouts are a rough -110/leg ballpark - prop and ML
+    juice varies, so the slip is the truth."""
+    kcol = {'over': GREEN, 'under': RED, 'line': GOLD}
+    top = 250
+    body = sum(56 + (18 if note else 0) + len(legs) * 42 + 16 + 22 for _, _, note, legs in BOL_TICKETS)
+    H = top + body + 120
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} - $1 TICKETS", chip="BETONLINE - FULL BOARD")
+    c.text(M, y, "Props, SGPs, ML & game lines. Rough payout on $1 (-110/leg) - the slip prices it exactly.", F['de'], DIM)
+    y += 40
+    for title, accent, note, legs in BOL_TICKETS:
+        dec = 1.909 ** len(legs)
+        payout = f"$1 -> ~${dec * stake:.2f}"
+        bh = 56 + (18 if note else 0) + len(legs) * 42 + 16
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=16, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + bh)], radius=6, fill=accent)
+        c.text(M + 30, y + 16, title, F['blk'], accent)
+        pw = d.textlength(payout, font=F['sc']) + 28
+        d.rounded_rectangle([(W - M - pw - 14, y + 12), (W - M - 14, y + 48)], radius=10, fill=(11, 30, 28))
+        c.text(W - M - 14 - pw / 2, y + 17, payout, F['sc'], CY, center=True)
+        ry = y + 56
+        if note:
+            c.text(M + 30, ry, f"({note})", F['mu'], AMBER); ry += 18
+        for subj, detail, kind in legs:
+            c.text(M + 30, ry, subj, F['pl'], kcol.get(kind, INK))
+            c.text(M + 470, ry + 2, detail, F['de'], FAINT)
+            ry += 42
+        y += bh + 22
+    y += 6
+    c.text(M, y, f"Live board pulled {_stamp()}. Payouts rough (-110/leg) - props/ML juice varies; the slip is exact.", F['ftb'], DIM); y += 30
+    c.text(M, y, "SGP legs need same-game support - split to singles if not. Trends aren't locks. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_eqc_tickets(week, out, stake=1.0):
     """$1 cross-game game-line tickets for a book with no prop/same-game parlays (EQC).
     Payouts approximated at -110 per leg; the book shows the exact number."""
@@ -621,6 +706,8 @@ def main():
         made.append(card_eqc_tickets(args.week, str(out_dir / 'bk_eqc_tickets.png')))
     if 'openers' in want:
         made.append(card_openers(games, args.week, str(out_dir / 'bk_openers.png')))
+    if 'bol' in want:
+        made.append(card_bol_tickets(args.week, str(out_dir / 'bk_bol_tickets.png')))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
