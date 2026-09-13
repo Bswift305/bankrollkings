@@ -743,6 +743,7 @@ PRO_ENDPOINTS = {
     'nfl_matchup_tool',
     'nfl_ats_tool',
     'nfl_team_tool',
+    'riding_the_wave_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40356,6 +40357,179 @@ def nfl_team_tool():
     """Quick Tool: NFL Team Profile — one team's full ATS dossier (opens the profile
     tab of the ATS trends tool)."""
     return render_template('nfl_ats.html', **build_nfl_ats_context('profile'))
+
+
+_NFL_WAVE_CACHE = {}
+_WAVE_MIN_STREAK = 3  # a "wave" is 3+ in a row; below that isn't a trend
+
+
+def _wave_trailing_run(signs):
+    """Given a chronological list of outcome signs (+1/-1/0), return (length, direction)
+    of the current active run through the most recent game. Pushes (0) break the run.
+    direction is +1 or -1; length counts consecutive most-recent games of that sign."""
+    if not signs:
+        return 0, 0
+    last = signs[-1]
+    if last == 0:
+        return 0, 0
+    n = 0
+    for s in reversed(signs):
+        if s == last:
+            n += 1
+        else:
+            break
+    return n, last
+
+
+def build_nfl_wave_context():
+    """Riding the Wave — every ACTIVE streak computed by walking each team's real graded
+    games in date order (2011-2025 game-lines history). ATS cover streaks, straight-up
+    win streaks, and over/under runs, plus situational hot hands (season openers by team
+    and starting QB). Longest streak on top. Honest: these are trends the market already
+    prices, not predictions."""
+    hist = load_nfl_game_lines_history()
+    if hist is None or hist.empty:
+        return {'rw_boards': {'ats': [], 'su': [], 'ou': []}, 'rw_situational': [],
+                'rw_meta': {}, 'rw_available': False}
+    sig = len(hist)
+    if _NFL_WAVE_CACHE.get('sig') == sig:
+        return _NFL_WAVE_CACHE['data']
+
+    from collections import defaultdict
+    m2f = _nfl_mascot_to_full()
+    df = hist.copy()
+    df['_d'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Week'] = pd.to_numeric(df.get('Week'), errors='coerce')
+    df = df.dropna(subset=['_d']).sort_values('_d')
+
+    # per-team chronological outcome signs
+    ats = defaultdict(list)   # team -> [(date, season, sign)]
+    su = defaultdict(list)
+    ou = defaultdict(list)
+    seasons = set()
+
+    for _, r in df.iterrows():
+        hs = pd.to_numeric(r.get('HomeScore'), errors='coerce')
+        as_ = pd.to_numeric(r.get('AwayScore'), errors='coerce')
+        hsp = pd.to_numeric(r.get('HomeSpread'), errors='coerce')
+        if pd.isna(hs) or pd.isna(as_):
+            continue
+        home = m2f.get(str(r.get('Home')).strip(), str(r.get('Home')).strip())
+        away = m2f.get(str(r.get('Away')).strip(), str(r.get('Away')).strip())
+        season = str(r.get('Season'))
+        seasons.add(season)
+        d = r['_d']
+        margin = float(hs) - float(as_)
+        # straight-up
+        su[home].append((d, season, 1 if margin > 0 else (-1 if margin < 0 else 0)))
+        su[away].append((d, season, 1 if margin < 0 else (-1 if margin > 0 else 0)))
+        # ATS
+        if not pd.isna(hsp):
+            h_ats = 1 if (margin + float(hsp)) > 0 else (-1 if (margin + float(hsp)) < 0 else 0)
+            ats[home].append((d, season, h_ats))
+            ats[away].append((d, season, -h_ats))
+        # over/under
+        tot = pd.to_numeric(r.get('CloseTotal', r.get('Total')), errors='coerce')
+        if not pd.isna(tot):
+            o = 1 if (float(hs) + float(as_)) > float(tot) else (-1 if (float(hs) + float(as_)) < float(tot) else 0)
+            ou[home].append((d, season, o))
+            ou[away].append((d, season, o))
+
+    def _season_num(s):
+        try:
+            return int(str(s)[:4])
+        except Exception:
+            return 0
+    latest_season = max((_season_num(s) for s in seasons), default=0)
+
+    def _collect(store, pos_only, over_labels=False):
+        out = []
+        for team, seq in store.items():
+            signs = [s for (_, _, s) in seq]
+            n, direction = _wave_trailing_run(signs)
+            if n < _WAVE_MIN_STREAK or direction == 0:
+                continue
+            if pos_only and direction != 1:
+                continue
+            last_season = seq[-1][1]
+            if _season_num(last_season) != latest_season:  # active = ran into the most recent season
+                continue
+            if over_labels:
+                kind = 'Overs' if direction == 1 else 'Unders'
+            else:
+                kind = None
+            out.append({'team': team, 'streak': n, 'kind': kind, 'last_season': last_season})
+        out.sort(key=lambda x: -x['streak'])
+        return out
+
+    boards = {
+        'ats': _collect(ats, pos_only=True),   # riding = covering
+        'su': _collect(su, pos_only=True),     # riding = winning
+        'ou': _collect(ou, pos_only=False, over_labels=True),  # either direction is a run
+    }
+
+    # ---- situational hot hands: season openers (Week 1), team + starting QB ----
+    situational = []
+    op = df[df['Week'] == 1].sort_values('_d')
+
+    def _opener_runs(key_fn):
+        agg = defaultdict(list)  # key -> [(date, season, win)]
+        for _, r in op.iterrows():
+            hs = pd.to_numeric(r.get('HomeScore'), errors='coerce')
+            as_ = pd.to_numeric(r.get('AwayScore'), errors='coerce')
+            if pd.isna(hs) or pd.isna(as_):
+                continue
+            margin = float(hs) - float(as_)
+            for side in ('home', 'away'):
+                k = key_fn(r, side)
+                if not k:
+                    continue
+                win = (margin > 0) if side == 'home' else (margin < 0)
+                agg[k].append((r['_d'], str(r.get('Season')), 1 if win else -1))
+        runs = []
+        for k, seq in agg.items():
+            seq.sort(key=lambda x: x[0])
+            n, direction = _wave_trailing_run([s for (_, _, s) in seq])
+            if n >= 3 and direction == 1:
+                yrs = [s for (_, s, sg) in seq][-n:]
+                runs.append({'who': k, 'streak': n, 'detail': f"{yrs[0]}-{yrs[-1]}"})
+        return runs
+
+    def _qb_key(r, side):
+        q = str(r.get('home_qb_name' if side == 'home' else 'away_qb_name') or '').strip()
+        return f"{q} (QB)" if q and q.lower() != 'nan' else None
+
+    def _team_key(r, side):
+        raw = str(r.get('Home' if side == 'home' else 'Away')).strip()
+        return m2f.get(raw, raw)
+
+    for r in _opener_runs(_qb_key):
+        situational.append({'label': 'Season openers', **r})
+    for r in _opener_runs(_team_key):
+        situational.append({'label': 'Season openers', **r})
+    situational.sort(key=lambda x: -x['streak'])
+
+    asof = df['_d'].max()
+    data = {
+        'rw_boards': boards,
+        'rw_situational': situational,
+        'rw_meta': {
+            'seasons': (min(seasons) + '-' + max(seasons)) if seasons else '',
+            'asof': (asof.strftime('%b ') + str(asof.day) + asof.strftime(', %Y')) if pd.notna(asof) else '',
+            'min_streak': _WAVE_MIN_STREAK,
+        },
+        'rw_available': any(boards.values()) or bool(situational),
+    }
+    _NFL_WAVE_CACHE['sig'] = sig
+    _NFL_WAVE_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/riding-the-wave')
+def riding_the_wave_tool():
+    """Quick Tool: Riding the Wave — all active NFL streaks (ATS / straight-up / totals)
+    plus situational hot hands, computed from real graded games. Longest run on top."""
+    return render_template('riding_the_wave.html', **build_nfl_wave_context())
 
 
 _CFB_TOT_CACHE = {}

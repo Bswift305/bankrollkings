@@ -1,0 +1,124 @@
+{% set active_page = 'riding_the_wave' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Riding the Wave - Live Streaks - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .rw-wrap{--rw-accent:#5b8def;--rw-hot:#49d27d;--rw-cold:#ff6b6b;--rw-over:#f4b740;}
+  .rw-asof{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 ui-monospace,Consolas,monospace;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--rw-accent);background:rgba(91,141,239,.1);
+    border:1px solid rgba(91,141,239,.3);border-radius:999px;padding:7px 12px;margin-top:8px;}
+  .rw-note{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(91,141,239,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:14px 0 20px;}
+  .rw-note b{color:var(--text-bright);}
+  .rw-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
+  .rw-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;padding:8px 14px;font:800 12px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;
+    text-transform:uppercase;transition:.14s;}
+  .rw-chip:hover{color:var(--text);border-color:var(--rw-accent);}
+  .rw-chip.active{color:#0b1118;background:var(--rw-accent);border-color:var(--rw-accent);}
+  .rw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
+  .rw-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+  .rw-card h3{margin:0;padding:14px 16px 10px;font:800 14px/1.2 'Helvetica Neue',Arial,sans-serif;
+    letter-spacing:.02em;color:var(--text-bright);display:flex;align-items:center;gap:9px;}
+  .rw-card h3 .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+  .rw-card h3 small{font:600 11px/1.3 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-left:auto;}
+  .rw-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid rgba(255,255,255,.05);}
+  .rw-row:hover{background:rgba(91,141,239,.06);}
+  .rw-rank{font:700 12px ui-monospace,Consolas,monospace;color:var(--text-muted);width:20px;flex:0 0 auto;}
+  .rw-name{font:700 13.5px/1.25 'Helvetica Neue',Arial,sans-serif;color:var(--text);flex:1;min-width:0;}
+  .rw-name small{display:block;font:600 11px/1.3 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .rw-badge{flex:0 0 auto;display:flex;align-items:baseline;gap:4px;font-family:ui-monospace,Consolas,monospace;
+    padding:5px 11px;border-radius:8px;background:rgba(255,255,255,.05);}
+  .rw-badge .n{font-size:18px;font-weight:800;line-height:1;} .rw-badge .u{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);}
+  .rw-badge.hot .n{color:var(--rw-hot);} .rw-badge.over .n{color:var(--rw-over);} .rw-badge.cold .n{color:var(--rw-cold);} .rw-badge.acc .n{color:var(--rw-accent);}
+  .rw-empty{padding:16px;color:var(--text-muted);font:500 12.5px 'Helvetica Neue',Arial,sans-serif;}
+  .rw-foot{margin-top:22px;font:500 11.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .rw-soon{margin-top:22px;background:linear-gradient(180deg,rgba(91,141,239,.07),transparent);border:1px dashed var(--border);
+    border-radius:12px;padding:14px 16px;font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .rw-soon b{color:var(--text-bright);}
+</style>
+
+<div class="rw-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Riding the <span class="accent">Wave</span></h1>
+    <div class="page-subtitle">Every active streak, pulled from real graded games &mdash; who&rsquo;s covering, who&rsquo;s winning, whose games keep going over or under, and the situational hot hands. Longest run on top.</div>
+    {% if rw_meta.asof %}<span class="rw-asof">Through {{ rw_meta.asof }}</span>{% endif %}
+  </div>
+</div>
+
+{% if not rw_available %}
+  <div class="card"><div class="p-16 rw-empty">No graded game history loaded yet &mdash; streaks appear once games are graded.</div></div>
+{% else %}
+<div class="rw-note">
+  These are real, active streaks ({{ rw_meta.min_streak }}+ in a row) counted from actual graded results through the most recent games &mdash; not cherry-picked splits. Streaks are <b>trends, not predictions</b>: the market already prices a hot team, and every run ends. Use them as context, ride with a plan.
+</div>
+
+<div class="rw-filter">
+  <button class="rw-chip active" data-f="all">All</button>
+  <button class="rw-chip" data-f="ats">Covering</button>
+  <button class="rw-chip" data-f="su">Winning</button>
+  <button class="rw-chip" data-f="ou">Totals</button>
+  <button class="rw-chip" data-f="situ">Situational</button>
+</div>
+
+<div class="rw-grid" id="rw-grid">
+
+  <div class="rw-card" data-cat="ats">
+    <h3><span class="dot" style="background:var(--rw-hot)"></span>ATS Cover Streaks <small>straight covers</small></h3>
+    {% for r in rw_boards.ats %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
+      <span class="rw-badge hot"><span class="n">{{ r.streak }}</span><span class="u">covers</span></span></div>
+    {% else %}<div class="rw-empty">No active cover streaks of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+  </div>
+
+  <div class="rw-card" data-cat="su">
+    <h3><span class="dot" style="background:var(--rw-accent)"></span>Win Streaks <small>straight up</small></h3>
+    {% for r in rw_boards.su %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
+      <span class="rw-badge acc"><span class="n">{{ r.streak }}</span><span class="u">wins</span></span></div>
+    {% else %}<div class="rw-empty">No active win streaks of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+  </div>
+
+  <div class="rw-card" data-cat="ou">
+    <h3><span class="dot" style="background:var(--rw-over)"></span>Totals Runs <small>over / under</small></h3>
+    {% for r in rw_boards.ou %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
+      <span class="rw-badge {{ 'over' if r.kind == 'Overs' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.kind }}</span></span></div>
+    {% else %}<div class="rw-empty">No active totals runs of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+  </div>
+
+  <div class="rw-card" data-cat="situ">
+    <h3><span class="dot" style="background:var(--rw-hot)"></span>Situational Hot Hands <small>season openers</small></h3>
+    {% for r in rw_situational %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.who }}<small>{{ r.label }} &middot; {{ r.detail }}</small></span>
+      <span class="rw-badge hot"><span class="n">{{ r.streak }}</span><span class="u">-0</span></span></div>
+    {% else %}<div class="rw-empty">No active situational runs of 3+.</div>{% endfor %}
+  </div>
+
+</div>
+
+<div class="rw-soon">
+  <b>Coming next:</b> player-prop streaks (who&rsquo;s gone over/under their line N straight), plus CFB, NBA and MLB on the same board &mdash; all from real graded results, same honesty rules.
+</div>
+
+<div class="rw-foot">Streaks counted from the NFL game-lines history ({{ rw_meta.seasons }}). A run &ldquo;through {{ rw_meta.asof or 'the latest graded game' }}&rdquo; carries into the current week until it ends.</div>
+{% endif %}
+</div>
+
+<script>
+(function(){
+  const chips=document.querySelectorAll('.rw-chip'), cards=document.querySelectorAll('.rw-card');
+  chips.forEach(c=>c.onclick=()=>{ chips.forEach(x=>x.classList.remove('active')); c.classList.add('active');
+    const f=c.getAttribute('data-f');
+    cards.forEach(card=>{ card.style.display=(f==='all'||card.getAttribute('data-cat')===f)?'':'none'; }); });
+})();
+</script>
+{% endblock %}
