@@ -376,6 +376,44 @@ def card_defense(sacks, tk, week, out):
     c.text(M, y, "Reference only - no validated edge. Bet responsibly. 21+", F['ft'], FAINT)
     return c.save(out)
 
+def card_hitlist(plays, games, week, out, floor=24):
+    """Game-by-game hunt list for books with no filters (e.g. a casino retail menu):
+    plays grouped by matchup in slate order, so you scroll the board once and tick
+    off targets per game instead of hunting the whole list."""
+    groups = {}
+    for p in plays:
+        if p['prop_score'] < floor:
+            continue
+        groups.setdefault(mabbr(p.get('matchup')), []).append(p)
+    ordered = []
+    for g in games:
+        key = f"{abbr(g.get('away'))}@{abbr(g.get('home'))}"
+        if key in groups:
+            ordered.append((key, sorted(groups[key], key=lambda x: -x['prop_score'])))
+    n = sum(len(v) for _, v in ordered)
+    top = 250
+    H = top + len(ordered) * 50 + n * 40 + 100
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} - HIT LIST", chip="SCROLL & CHECK OFF")
+    c.text(M, y, "Your plays grouped by game (slate order). No filters needed - tick each off as you scroll the board.", F['de'], DIM)
+    y += 36
+    for key, ps in ordered:
+        d.rounded_rectangle([(M, y), (W - M, y + 38)], radius=8, fill=(11, 30, 28))
+        c.text(M + 14, y + 8, key.replace('@', '  @  '), F['col'], CY)
+        y += 48
+        for p in ps:
+            dc = GREEN if str(p.get('direction')) == 'OVER' else RED
+            d.rectangle([(M + 6, y + 6), (M + 26, y + 26)], outline=FAINT, width=2)  # checkbox
+            c.text(M + 40, y + 4, str(p.get('player')), F['pl'], INK)
+            det = f"{p.get('direction')}  {p.get('stat')} {p.get('line')}"
+            c.text(M + 420, y + 4, det, F['pl'], dc)
+            c.text(W - M, y + 4, f"{p['prop_score']}", F['sc'], CY, right=True)
+            y += 40
+        y += 10
+    c.text(M, y, f"Live props pulled {_stamp()}. A casino board may not carry every play - grab what's there.", F['ft'], FAINT); y += 28
+    c.text(M, y, "Validated PropScore plays. Verify the line before you bet. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_parlay(week, out):
     top = 250
     body = sum(62 + len(legs) * 74 + 16 + 26 for _, _, legs in PARLAYS)
@@ -427,7 +465,7 @@ def main():
         refresh_live()
 
     out_dir = Path(args.out); out_dir.mkdir(parents=True, exist_ok=True)
-    want = {s.strip() for s in args.only.split(',') if s.strip()} or {'slate', 'top', 'premium', 'floor', 'defense', 'parlay'}
+    want = {s.strip() for s in args.only.split(',') if s.strip()} or {'slate', 'top', 'premium', 'floor', 'defense', 'parlay', 'hitlist'}
 
     games = load_slate()
     plays = apply_book_preference(load_scored(), args.book)
@@ -444,6 +482,8 @@ def main():
         sacks, tk = load_defense()
         if len(sacks) or len(tk):
             made.append(card_defense(sacks, tk, args.week, str(out_dir / 'bk_defense.png')))
+    if 'hitlist' in want:
+        made.append(card_hitlist(plays, games, args.week, str(out_dir / 'bk_hitlist.png')))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
