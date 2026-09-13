@@ -458,6 +458,63 @@ def card_hitlist(plays, games, week, out, floor=24):
     c.text(M, y, "Validated PropScore plays. Verify the line before you bet. Bet responsibly. 21+", F['ft'], FAINT)
     return c.save(out)
 
+def card_openers(games, week, out, min_games=3):
+    """Week 1 opener-trend moneyline board: each team's straight-up record in season
+    openers (Week 1 of the game-lines history) vs its current ML. Best record on top;
+    value dogs (strong record + plus money) flagged. Small samples - trend, not edge."""
+    hist = A.load_nfl_game_lines_history().copy()
+    hist['Week'] = pd.to_numeric(hist['Week'], errors='coerce')
+    op = hist[hist['Week'] == 1].dropna(subset=['HomeScore', 'AwayScore'])
+    m2f = A._nfl_mascot_to_full()
+    rec = {}
+    for _, r in op.iterrows():
+        hs, as_ = float(r['HomeScore']), float(r['AwayScore'])
+        for team, win in ((m2f.get(str(r['Home']).strip(), str(r['Home']).strip()), hs > as_),
+                          (m2f.get(str(r['Away']).strip(), str(r['Away']).strip()), as_ > hs)):
+            rec.setdefault(team, [0, 0])[0 if win else 1] += 1
+    rows = []
+    for g in games:
+        mu = f"{abbr(g.get('away'))}@{abbr(g.get('home'))}"
+        for team, ml in ((g.get('home'), g.get('home_ml')), (g.get('away'), g.get('away_ml'))):
+            w, l = rec.get(team, [0, 0]); n = w + l
+            if n >= min_games:
+                rows.append({'team': team, 'w': w, 'l': l, 'pct': w / n, 'ml': ml, 'mu': mu})
+    rows.sort(key=lambda x: (-x['pct'], -(x['w'] + x['l'])))
+    top = 250; rh = 52
+    H = top + len(rows) * rh + 120
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} - OPENER TRENDS", chip="SEASON-OPENER ML")
+    c.text(M, y, "Straight-up record in season openers vs today's moneyline. Best record on top; value dogs flagged.", F['de'], DIM)
+    y += 40; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 6
+    for i, r in enumerate(rows):
+        ml = r['ml']
+        try: mlf = f"+{int(ml)}" if ml and ml > 0 else f"{int(ml)}"
+        except (TypeError, ValueError): mlf = '-'
+        if r['pct'] >= 0.75 and ml and ml > 0:
+            tag, tc = 'VALUE DOG', GREEN
+        elif r['pct'] >= 0.75 and ml and ml < 0:
+            tag, tc = 'CHALK FAV', GOLD
+        elif r['pct'] <= 0.25:
+            tag, tc = 'FADE', RED
+        else:
+            tag, tc = '', DIM
+        c.text(M, y + 14, f"{i+1}", F['rk'], FAINT)
+        c.text(M + 40, y + 4, r['team'], F['pl'], INK)
+        c.text(M + 40, y + 30, f"{r['mu']}", F['de'], FAINT)
+        c.text(M + 470, y + 8, f"{r['w']}-{r['l']}", F['sc'], INK, right=False)
+        c.text(M + 560, y + 12, "openers", F['de'], FAINT)
+        c.text(M + 720, y + 8, f"{r['pct']*100:.0f}%", F['sc'], CY, right=True)
+        c.text(M + 830, y + 8, mlf, F['sc'], (GREEN if (ml and ml > 0) else INK), right=True)
+        if tag:
+            tw = d.textlength(tag, font=F['de']) + 20
+            d.rounded_rectangle([(W - M - tw, y + 8), (W - M, y + 40)], radius=9, fill=(tc[0]//7, tc[1]//7, tc[2]//7))
+            c.text(W - M - tw / 2, y + 12, tag, F['de'], tc, center=True)
+        d.line([(M, y + rh), (W - M, y + rh)], fill=(20, 32, 38), width=1); y += rh
+    y += 16
+    c.text(M, y, "Openers = Week 1 games, 2022-2025 (4-game samples). A trend/context read, not an edge - the market prices team quality.", F['ftb'], DIM); y += 30
+    c.text(M, y, f"Lines pulled {_stamp()}. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_eqc_tickets(week, out, stake=1.0):
     """$1 cross-game game-line tickets for a book with no prop/same-game parlays (EQC).
     Payouts approximated at -110 per leg; the book shows the exact number."""
@@ -562,6 +619,8 @@ def main():
         made.append(card_hitlist(plays, games, args.week, str(out_dir / 'bk_hitlist.png')))
     if 'eqc' in want:
         made.append(card_eqc_tickets(args.week, str(out_dir / 'bk_eqc_tickets.png')))
+    if 'openers' in want:
+        made.append(card_openers(games, args.week, str(out_dir / 'bk_openers.png')))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
