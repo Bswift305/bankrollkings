@@ -1,0 +1,145 @@
+{% set active_page = 'nfl_ats' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Team ATS Trends - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .na-wrap{--na-accent:#5b8def;}
+  .na-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .na-tab{cursor:pointer;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-muted);
+    font:800 14px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;padding:10px 4px;margin-right:16px;transition:.14s;}
+  .na-tab:hover{color:var(--text);} .na-tab.active{color:var(--text);border-bottom-color:var(--na-accent);}
+  .na-explain{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(91,141,239,.06);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .na-explain b{color:var(--text-bright);}
+  .na-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;}
+  table.na-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:600px;}
+  .na-tbl th{position:sticky;top:0;background:var(--panel,#0f1a29);cursor:pointer;user-select:none;
+    font:700 10.5px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);
+    text-align:right;padding:12px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .na-tbl th.l{text-align:left;padding-left:14px;} .na-tbl th.sorted{color:var(--na-accent);}
+  .na-tbl td{text-align:right;padding:10px 10px;border-bottom:1px solid rgba(255,255,255,.05);
+    font:700 13px/1.1 ui-monospace,Consolas,monospace;color:var(--text);white-space:nowrap;}
+  .na-tbl td.l{text-align:left;padding-left:14px;font-family:'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .na-tbl td .rc{display:block;font:600 10px/1.1 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .na-tbl td .hot{color:#49d27d;} .na-tbl td .cold{color:#ff6b6b;} .na-tbl td .dim{color:var(--text-muted);}
+  .na-tbl tbody tr:nth-child(odd) td{background:rgba(255,255,255,.02);}
+  .na-tbl tbody tr:hover td{background:rgba(91,141,239,.08);}
+  .na-rank{color:var(--text-muted);font-weight:700;width:28px;}
+  .na-sel{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font:700 14px ui-monospace,Consolas,monospace;min-width:220px;margin-bottom:14px;}
+  .na-prof{display:grid;grid-template-columns:1fr;gap:2px;max-width:520px;}
+  .na-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .na-row .k{font:600 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .na-row .v{font:800 15px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .na-row .v small{color:var(--text-muted);font-weight:600;font-size:11px;margin-left:6px;}
+  .na-note{font:500 12px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;}
+</style>
+
+<div class="na-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>NFL Team ATS <span class="accent">Trends</span></h1>
+    <div class="page-subtitle">Every team&rsquo;s record against the spread &mdash; overall, home/away, as favorite, as underdog, and over/under &mdash; from real graded games ({{ na_meta.seasons }}). Best cover rate on top. Pick a team for its full profile.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-matchup" class="btn btn-secondary btn-sm">Matchup Card</a></div>
+</div>
+
+<div class="card mb-24"><div class="p-16">
+  <div class="na-tabs">
+    <button class="na-tab" data-tab="teams">League Table</button>
+    <button class="na-tab" data-tab="coaches">By Coach</button>
+    <button class="na-tab" data-tab="profile">Team Profile</button>
+  </div>
+  <select id="na-team" class="na-sel" style="display:none;"></select>
+  <div class="na-explain" id="na-explain"></div>
+  <div id="na-body"></div>
+  <div class="na-note" id="na-note"></div>
+</div></div>
+</div>
+
+<script id="na-data" type="application/json">{{ {'teams':na_teams,'coaches':na_coaches,'teamlist':na_teamlist,'meta':na_meta,'tab':na_default_tab}|tojson }}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('na-data').textContent);
+  const $ = s => document.querySelector(s);
+  const S = {tab: DATA.tab || 'teams', team: (DATA.teamlist||[])[0], sortKey:null, dir:-1};
+
+  const pct = v => (v===null||v===undefined) ? '&mdash;' : (v+'%');
+  const cl = v => (v>=53?'hot':(v<=47?'cold':'')); // ~break-even coloring
+  function statTd(v, rec){ return v===null||v===undefined ? '<td><span class="dim">&mdash;</span></td>'
+    : '<td><span class="'+cl(v)+'">'+v+'%</span><span class="rc">'+(rec||'')+'</span></td>'; }
+
+  const TEAM_COLS = [
+    {k:'team', l:true, label:'Team', sv:r=>r.team, cell:r=>'<td class="l">'+r.team+'<span class="rc">'+r.games+' g</span></td>'},
+    {k:'ats', label:'ATS%', sv:r=>r.ats, cell:r=>statTd(r.ats,r.ats_rec)},
+    {k:'home', label:'Home', sv:r=>r.home, cell:r=>statTd(r.home,r.home_rec)},
+    {k:'away', label:'Away', sv:r=>r.away, cell:r=>statTd(r.away,r.away_rec)},
+    {k:'fav', label:'Fav', sv:r=>r.fav, cell:r=>statTd(r.fav,r.fav_rec)},
+    {k:'dog', label:'Dog', sv:r=>r.dog, cell:r=>statTd(r.dog,r.dog_rec)},
+    {k:'over', label:'Over', sv:r=>r.over, cell:r=>statTd(r.over,r.over_rec)},
+  ];
+  const COACH_COLS = [
+    {k:'coach', l:true, label:'Head Coach', sv:r=>r.coach, cell:r=>'<td class="l">'+r.coach+'<span class="rc">'+r.games+' g</span></td>'},
+    {k:'ats_pct', label:'ATS%', sv:r=>r.ats_pct, cell:r=>statTd(r.ats_pct,r.ats_rec)},
+    {k:'ou_pct', label:'Over%', sv:r=>r.ou_pct, cell:r=>statTd(r.ou_pct,r.ou_rec)},
+  ];
+
+  function renderTable(cols, rows, defSort){
+    const sk = S.sortKey || defSort;
+    const col = cols.find(c=>c.k===sk) || cols[1];
+    const data = rows.slice().sort((a,b)=>{ let x=col.sv(a),y=col.sv(b);
+      if(x===null||x===undefined)x=-1; if(y===null||y===undefined)y=-1;
+      if(typeof x==='string') return S.dir*x.localeCompare(y); return S.dir*(x-y); });
+    let h='<div class="na-scroll"><table class="na-tbl"><thead><tr><th class="l na-rank">#</th>';
+    cols.forEach(c=>{h+='<th class="'+(c.l?'l ':'')+(c.k===sk?'sorted':'')+'" data-k="'+c.k+'">'+c.label+(c.k===sk?(S.dir<0?' ▼':' ▲'):'')+'</th>';});
+    h+='</tr></thead><tbody>';
+    data.forEach((r,i)=>{ h+='<tr><td class="l na-rank">'+(i+1)+'</td>'+cols.map(c=>c.cell(r)).join('')+'</tr>'; });
+    h+='</tbody></table></div>';
+    $('#na-body').innerHTML=h;
+    $('#na-body').querySelectorAll('th[data-k]').forEach(th=>{ th.onclick=()=>{ const k=th.getAttribute('data-k');
+      if(S.sortKey===k){S.dir*=-1;} else {S.sortKey=k; S.dir=(k==='team'||k==='coach')?1:-1;} render(); }; });
+  }
+
+  function renderProfile(){
+    const t = (DATA.teams||[]).find(x=>x.team===S.team) || {};
+    const rows = [['Overall ATS','ats','ats_rec'],['Home','home','home_rec'],['Away','away','away_rec'],
+      ['As favorite','fav','fav_rec'],['As underdog','dog','dog_rec'],['Over rate (O/U)','over','over_rec']];
+    let h='<div class="na-prof">';
+    rows.forEach(([label,k,rk])=>{ const v=t[k]; h+='<div class="na-row"><span class="k">'+label+'</span><span class="v">'
+      +(v===null||v===undefined?'&mdash;':('<span class="'+cl(v)+'">'+v+'%</span>'))+'<small>'+(t[rk]||'')+'</small></span></div>'; });
+    h+='</div>';
+    $('#na-body').innerHTML=h;
+  }
+
+  function render(){
+    $('#na-team').style.display = S.tab==='profile' ? '' : 'none';
+    if(S.tab==='teams'){
+      $('#na-explain').innerHTML='<b>ATS%</b> is how often the team covered; the split columns break it down by <b>home / away / favorite / underdog</b>, and <b>Over</b> is the O/U rate. Real graded games ('+(DATA.meta.seasons||'')+'). Tap a column to re-rank.';
+      $('#na-note').innerHTML='Descriptive, not a pick. Green beats ~53% (break-even), red is under. Best cover rate on top by default.';
+      renderTable(TEAM_COLS, DATA.teams||[], 'ats');
+    } else if(S.tab==='coaches'){
+      $('#na-explain').innerHTML='<b>ATS%</b> is how often this head coach&rsquo;s teams covered; <b>Over%</b> how often their games went over. Coach data starts 2022.';
+      $('#na-note').innerHTML='Descriptive, not a pick. Records follow the coach. Best cover rate on top.';
+      renderTable(COACH_COLS, DATA.coaches||[], 'ats_pct');
+    } else {
+      $('#na-explain').innerHTML='One team&rsquo;s full ATS dossier &mdash; overall, home/away, as favorite/underdog, and the totals lean. Real graded games ('+(DATA.meta.seasons||'')+').';
+      $('#na-note').innerHTML='Descriptive, not a pick. Pick another team above to compare.';
+      renderProfile();
+    }
+  }
+
+  const sel=$('#na-team');
+  sel.innerHTML=(DATA.teamlist||[]).map(t=>'<option'+(t===S.team?' selected':'')+'>'+t+'</option>').join('');
+  sel.onchange=()=>{ S.team=sel.value; render(); };
+
+  document.querySelectorAll('.na-tab').forEach(t=>{
+    if(t.getAttribute('data-tab')===S.tab) t.classList.add('active');
+    t.onclick=()=>{ document.querySelectorAll('.na-tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+      S.tab=t.getAttribute('data-tab'); S.sortKey=null; S.dir=-1; render(); };
+  });
+  render();
+})();
+</script>
+{% endblock %}

@@ -741,6 +741,8 @@ PRO_ENDPOINTS = {
     'weekend_tool',
     'nfl_spots_tool',
     'nfl_matchup_tool',
+    'nfl_ats_tool',
+    'nfl_team_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -40309,6 +40311,51 @@ def nfl_matchup_tool():
     """Quick Tool: NFL Matchup Edge Card — two teams side by side on their ATS
     profiles (overall/home/away/fav/dog/over), plus this week's games to tap into."""
     return render_template('nfl_matchup.html', **build_nfl_matchup_context())
+
+
+def build_nfl_ats_context(default_tab='teams'):
+    """NFL Team ATS Trends + per-team profile, from the same dossier as the matchup
+    card. Teams ranked best-first (highest ATS%). League table + coaches + a team
+    profile tab, all from real graded games."""
+    d = build_nfl_matchup_dossier()
+
+    def _p(cell):
+        return (round(cell['pct'] * 100, 1) if cell.get('pct') is not None else None)
+
+    teams = []
+    for t, v in (d.get('teams') or {}).items():
+        a = v['ats']
+        teams.append({
+            'team': t, 'games': a['overall']['n'],
+            'ats': _p(a['overall']), 'ats_rec': a['overall']['rec'],
+            'home': _p(a['home']), 'home_rec': a['home']['rec'],
+            'away': _p(a['away']), 'away_rec': a['away']['rec'],
+            'fav': _p(a['fav']), 'fav_rec': a['fav']['rec'],
+            'dog': _p(a['dog']), 'dog_rec': a['dog']['rec'],
+            'over': _p(a['over']), 'over_rec': a['over']['rec'],
+        })
+    teams.sort(key=lambda x: -(x['ats'] or 0))  # best-first
+    return {
+        'na_teams': teams,
+        'na_coaches': d.get('coaches', []),
+        'na_teamlist': d.get('teamList', []),
+        'na_meta': d.get('meta', {}),
+        'na_default_tab': default_tab,
+    }
+
+
+@app.route('/tools/nfl-ats')
+def nfl_ats_tool():
+    """Quick Tool: NFL Team & Situational ATS — every team's cover rate overall/home/
+    away/fav/dog/over, by coach, and a per-team profile. Best team on top."""
+    return render_template('nfl_ats.html', **build_nfl_ats_context('teams'))
+
+
+@app.route('/tools/nfl-team')
+def nfl_team_tool():
+    """Quick Tool: NFL Team Profile — one team's full ATS dossier (opens the profile
+    tab of the ATS trends tool)."""
+    return render_template('nfl_ats.html', **build_nfl_ats_context('profile'))
 
 
 _CFB_TOT_CACHE = {}
