@@ -565,6 +565,56 @@ BOL_TICKETS = [
     ]),
 ]
 
+# 15-leg teaser-style floor longshot: conservative OVER floors (take the lowest alt rung
+# on the book). Derived from main lines - match each to the book's alt ladder + real price.
+FLOOR_LONGSHOT = [
+    ("Joe Burrow", "OVER 225 Pass Yds", "TB@CIN"),
+    ("Dak Prescott", "OVER 210 Pass Yds", "DAL@NYG"),
+    ("Jared Goff", "OVER 210 Pass Yds", "NO@DET"),
+    ("Justin Herbert", "OVER 190 Pass Yds", "ARI@LAC"),
+    ("Trevor Lawrence", "OVER 185 Pass Yds", "CLE@JAX"),
+    ("Caleb Williams", "OVER 180 Pass Yds", "CHI@CAR"),
+    ("Patrick Mahomes", "OVER 180 Pass Yds", "DEN@KC"),
+    ("Josh Allen", "OVER 175 Pass Yds", "BUF@HOU"),
+    ("Derrick Henry", "OVER 55 Rush Yds", "BAL@IND"),
+    ("Saquon Barkley", "OVER 50 Rush Yds", "WAS@PHI"),
+    ("Bijan Robinson", "OVER 50 Rush Yds", "ATL@PIT"),
+    ("De'Von Achane", "OVER 45 Rush Yds", "MIA@LV"),
+    ("Breece Hall", "OVER 45 Rush Yds", "NYJ@TEN"),
+    ("Justin Jefferson", "OVER 50 Rec Yds", "GB@MIN"),
+    ("Ja'Marr Chase", "OVER 55 Rec Yds", "TB@CIN"),
+]
+
+def card_floor_longshot(week, out, stake=1.0, avg_odds=-175):
+    """One big teaser-style longshot: 15 conservative 'floor' overs (lowest alt rung),
+    one per game. Payout illustrative at avg_odds/leg - the book prices your actual rungs."""
+    legs = FLOOR_LONGSHOT
+    dec_leg = 1 + (100 / abs(avg_odds) if avg_odds < 0 else avg_odds / 100)
+    est = dec_leg ** len(legs) * stake
+    top = 250; rh = 46
+    H = top + len(legs) * rh + 200
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} - FLOOR LONGSHOT", chip=f"{len(legs)}-LEG TEASER STYLE")
+    c.text(M, y, "Floor numbers - take the LOWEST alt rung each guy clears most weeks. High-probability legs, lottery stack.", F['de'], DIM)
+    y += 40; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 6
+    for i, (player, pick, mu) in enumerate(legs):
+        d.rectangle([(M + 4, y + 8), (M + 24, y + 28)], outline=FAINT, width=2)
+        c.text(M + 38, y + 6, player, F['pl'], INK)
+        c.text(M + 470, y + 6, pick, F['pl'], GREEN)
+        c.text(W - M, y + 6, mu, F['de'], FAINT, right=True)
+        d.line([(M, y + rh), (W - M, y + rh)], fill=(20, 32, 38), width=1); y += rh
+    y += 16
+    box = f"$1 -> ~${est:,.0f}"
+    bw = d.textlength(box, font=F['h1']) + 40
+    d.rounded_rectangle([(M, y), (M + bw, y + 66)], radius=14, fill=(11, 30, 28), outline=CY, width=2)
+    c.text(M + bw / 2, y + 8, box, F['h1'], CY, center=True)
+    c.text(M + bw + 20, y + 12, "illustrative", F['de'], FAINT)
+    c.text(M + bw + 20, y + 36, f"at ~{avg_odds}/leg", F['de'], FAINT)
+    y += 86
+    c.text(M, y, "Floors derived from main lines - the book's alt rungs & prices are the truth; payout will vary.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Burrow + Chase are same-game (may need SGP). High-prob stack, still a longshot. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_bol_tickets(week, out, stake=1.0):
     """9 x $1 tickets for a full online book (BetOnline): prop parlays, correlated SGPs,
     ML value and game-line leans. Payouts are a rough -110/leg ballpark - prop and ML
@@ -708,6 +758,8 @@ def main():
         made.append(card_openers(games, args.week, str(out_dir / 'bk_openers.png')))
     if 'bol' in want:
         made.append(card_bol_tickets(args.week, str(out_dir / 'bk_bol_tickets.png')))
+    if 'floorshot' in want:
+        made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot.png')))
     if 'parlay' in want:
         made.append(card_parlay(args.week, str(out_dir / 'bk_parlay.png')))
 
