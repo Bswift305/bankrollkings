@@ -157,6 +157,28 @@ def load_slate():
 def load_scored():
     return A.build_nfl_spots_context(limit=500).get('sp_top') or []
 
+def apply_book_preference(plays, book):
+    """Prefer a single sportsbook for the whole board when it carries the play at the
+    SAME line (avoids sending bettors across apps for a sliver of price). Default
+    DraftKings - deepest prop menu + best UX; BetMGM's prop section is thin/clunky.
+    Only overrides when the preferred book lists the exact (player, stat) line."""
+    if not book:
+        return plays
+    path = BASE / 'data' / 'props' / 'NFL_Props.csv'
+    if not path.exists():
+        return plays
+    df = pd.read_csv(path)
+    df['Line'] = pd.to_numeric(df.get('Line'), errors='coerce')
+    pref = df[df['Book'].astype(str).str.contains(book, case=False, na=False)].dropna(subset=['Player', 'Stat', 'Line'])
+    lines = {}
+    for _, r in pref.iterrows():
+        lines.setdefault((r['Player'], r['Stat']), r['Line'])
+    for p in plays:
+        key = (p.get('player'), p.get('stat'))
+        if key in lines and lines[key] == p.get('line'):  # same line -> safe to relabel
+            p['best_book'] = book
+    return plays
+
 def implied_team_total(game, team):
     """Implied team total from the game line. home = total/2 - spread/2; away = total/2 + spread/2
     (spread is the HOME team's number)."""
@@ -396,6 +418,9 @@ def main():
     ap.add_argument('--week', default='Week 1', help="Week label shown on cards, e.g. 'Week 1 - Sunday'")
     ap.add_argument('--out', default=str(BASE / 'marketing' / 'weekly_cards'), help="Output directory")
     ap.add_argument('--only', default='', help="Comma list: slate,top,premium,floor,defense,parlay")
+    ap.add_argument('--book', default='DraftKings',
+                    help="Prefer this book for the whole board when it carries the play at the same line "
+                         "(default DraftKings - deepest menu + best UX). Pass '' to keep each play's best-price book.")
     args = ap.parse_args()
 
     if args.refresh:
@@ -405,7 +430,7 @@ def main():
     want = {s.strip() for s in args.only.split(',') if s.strip()} or {'slate', 'top', 'premium', 'floor', 'defense', 'parlay'}
 
     games = load_slate()
-    plays = load_scored()
+    plays = apply_book_preference(load_scored(), args.book)
     made = []
     if 'slate' in want:
         made.append(card_slate(games, streak_leans(games), args.week, str(out_dir / 'bk_slate.png')))
