@@ -8,9 +8,12 @@ from services.qc_tracking import append_qc_run_log
 
 ROUTES = (
     ("/sports/nfl?postseason=1", ("Weekly Script Board", "Closeout Check", "Live Feed Status")),
-    ("/sports/nfl/game-lines?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
-    ("/sports/nfl/totals?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
-    ("/sports/nfl/trends?postseason=1", ("Why This Method Matters", "Historical Coverage", "Plain-English Verdict")),
+    # Money Trends redesign (2026-09-13) relabeled the two trust sections; the concepts
+    # still render, just under clearer names. "How to read this board" = method framing,
+    # "Data coverage" = historical coverage. (Substring avoids the escaped ampersand.)
+    ("/sports/nfl/game-lines?postseason=1", ("How to read this board", "Data coverage", "Plain-English Verdict")),
+    ("/sports/nfl/totals?postseason=1", ("How to read this board", "Data coverage", "Plain-English Verdict")),
+    ("/sports/nfl/trends?postseason=1", ("How to read this board", "Data coverage", "Plain-English Verdict")),
     # Props is the shared screener (props.html), not a method board — assert the
     # markers it actually renders (board decision columns), mirroring the NBA
     # check. The method-board markers above only exist on football_method_board.html.
