@@ -603,6 +603,52 @@ FLOOR_LONGSHOT_2 = [
     ("Trey McBride", "OVER 38 Rec Yds", "ARI@LAC"),
 ]
 
+# Single-game SGP tickets (a full book that allows same-game parlays). Edit per game.
+SGP_GAME = "DEN @ KC  ·  MNF  ·  KC -2  ·  O/U 42.5"
+SGP_TICKETS = [
+    ("GRIND SGP", RED, "both QBs held to <=1 TD - low total game", [
+        ("Bo Nix", "UNDER Pass TDs 1.5", "under"),
+        ("Patrick Mahomes", "UNDER Pass TDs 1.5", "under"),
+    ]),
+    ("DOBBINS VOLUME SGP", GOLD, "same player - carries drive the yards", [
+        ("J.K. Dobbins", "OVER Rush Att 11.5", "over"),
+        ("J.K. Dobbins", "OVER Rush Yds 49.5", "over"),
+    ]),
+    ("CHIEFS SCRIPT SGP", CY, "KC passing volume - Mahomes to Kelce", [
+        ("Patrick Mahomes", "OVER Pass Completions 20.5", "over"),
+        ("Travis Kelce", "OVER Rec Yds 40.5", "over"),
+    ]),
+]
+
+def card_game_sgp(week, out, stake=1.0):
+    """Single-game SGP tickets for a full book. Correlated legs; the book sets the SGP
+    price (correlation-adjusted, usually a bit under a straight parlay)."""
+    kcol = {'over': GREEN, 'under': RED, 'line': GOLD}
+    top = 250
+    body = sum(56 + 18 + len(legs) * 42 + 16 + 22 for _, _, _, legs in SGP_TICKETS)
+    H = top + body + 130
+    c = Card(H); d = c.d
+    y = c.header("NFL - TONIGHT'S SGPs", chip="SAME-GAME PARLAYS")
+    c.text(M, y, SGP_GAME, F['sub'], INK); y += 34
+    c.text(M, y, "Correlated $1 tickets off the PropScore board. Book sets the SGP price (usually a bit under a straight parlay).", F['de'], DIM)
+    y += 40
+    for title, accent, thesis, legs in SGP_TICKETS:
+        bh = 56 + 18 + len(legs) * 42 + 16
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=16, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + bh)], radius=6, fill=accent)
+        c.text(M + 30, y + 16, title, F['blk'], accent)
+        c.text(M + 30, y + 50, f"({thesis})", F['mu'], FAINT)
+        ry = y + 74
+        for subj, detail, kind in legs:
+            c.text(M + 30, ry, subj, F['pl'], INK)
+            c.text(M + 420, ry + 2, detail, F['pl'], kcol.get(kind, INK))
+            ry += 42
+        y += bh + 22
+    y += 6
+    c.text(M, y, f"Live board pulled {_stamp()}. Verify lines on your book - SGP prices are correlation-adjusted.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Validated PropScore legs. SGPs are still longshots. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
 def card_floor_longshot(week, out, stake=1.0, avg_odds=-175, legs=None, corr_note=None):
     """One big teaser-style longshot: 15 conservative 'floor' overs (lowest alt rung),
     one per game. Payout illustrative at avg_odds/leg - the book prices your actual rungs."""
@@ -781,6 +827,8 @@ def main():
         made.append(card_bol_tickets(args.week, str(out_dir / 'bk_bol_tickets.png')))
     if 'floorshot' in want:
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot.png')))
+    if 'sgp' in want:
+        made.append(card_game_sgp(args.week, str(out_dir / 'bk_tonight_sgp.png')))
     if 'floorshot2' in want:
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot2.png'),
                                         legs=FLOOR_LONGSHOT_2,
