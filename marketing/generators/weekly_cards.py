@@ -628,6 +628,44 @@ SGP_TICKETS = [
     ]),
 ]
 
+LONGSHOT_GAME = "DET @ BUF  ·  TNF  ·  BUF -5.5  ·  O/U 55"
+LONGSHOT_TITLE = "SHOOTOUT LONGSHOT  ·  7-LEG SGP"
+LONGSHOT_THESIS = "everything cashes if it's the high-scoring passing game the 55 total implies"
+LONGSHOT_LEGS = [
+    ("Game Total", "OVER 55", "line"),
+    ("Jared Goff", "OVER Pass Yds 261.5", "over"),
+    ("Josh Allen", "OVER Pass Yds 253.5", "over"),
+    ("Jared Goff", "OVER Pass TDs 1.5", "over"),
+    ("Josh Allen", "OVER Pass TDs 1.5", "over"),
+    ("Jameson Williams", "OVER Rec Yds 57.5", "over"),
+    ("Amon-Ra St. Brown", "OVER Rec Yds 79.5", "over"),
+]
+
+
+def card_game_longshot(week, out):
+    """One big single-game shootout longshot SGP. Correlated legs -> the book prices
+    it correlation-adjusted (a big number, but less than the same legs independent)."""
+    kcol = {'over': GREEN, 'under': RED, 'line': GOLD}
+    legs = LONGSHOT_LEGS
+    top = 250; rh = 48
+    H = top + 40 + len(legs) * rh + 150
+    c = Card(H); d = c.d
+    y = c.header("NFL - TONIGHT'S LONGSHOT", chip="SAME-GAME PARLAY")
+    c.text(M, y, LONGSHOT_GAME, F['sub'], INK); y += 34
+    c.text(M, y, LONGSHOT_TITLE, F['blk'], GOLD); y += 30
+    c.text(M, y, f"({LONGSHOT_THESIS})", F['de'], DIM); y += 34
+    d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 8
+    for i, (subj, detail, kind) in enumerate(legs):
+        d.rectangle([(M + 4, y + 6), (M + 24, y + 26)], outline=FAINT, width=2)
+        c.text(M + 38, y + 4, f"{subj}", F['pl'], INK)
+        c.text(M + 470, y + 4, detail, F['pl'], kcol.get(kind, INK))
+        d.line([(M, y + rh), (W - M, y + rh)], fill=(20, 32, 38), width=1); y += rh
+    y += 18
+    c.text(M, y, f"Live board pulled {_stamp()}. 7 correlated legs — the book sets the SGP price (a big number,", F['ftb'], DIM); y += 30
+    c.text(M, y, "but correlation-adjusted, not 7 independent legs). It's a lottery ticket: one quiet stat busts it. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_game_sgp(week, out, stake=1.0):
     """Single-game SGP tickets for a full book. Correlated legs; the book sets the SGP
     price (correlation-adjusted, usually a bit under a straight parlay)."""
@@ -837,6 +875,8 @@ def main():
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot.png')))
     if 'sgp' in want:
         made.append(card_game_sgp(args.week, str(out_dir / 'bk_tonight_sgp.png')))
+    if 'sgplong' in want:
+        made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot2.png'),
                                         legs=FLOOR_LONGSHOT_2,
