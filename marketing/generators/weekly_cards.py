@@ -609,7 +609,7 @@ SGP_TICKETS = [
     ("SHOOTOUT SGP", GOLD, "the site's read: OVER + Detroit passing", [
         ("Game Total", "OVER 55", "line"),
         ("Jared Goff", "OVER Pass Yds 261.5", "over"),
-        ("Jameson Williams", "OVER Receptions 3.5", "over"),
+        ("Jameson Williams", "OVER Rec Yds 56.5", "over"),
     ]),
     ("GROUND GAME SGP", CY, "both lead backs run in a high-scoring game", [
         ("James Cook", "OVER Rush Att 17.5", "over"),
@@ -622,7 +622,7 @@ SGP_TICKETS = [
         ("Sam LaPorta", "UNDER Receptions 4.5", "under"),
     ]),
     ("TOP EDGE SGP", GREEN, "three of the highest-PropScore plays", [
-        ("Jameson Williams", "OVER Receptions 3.5", "over"),
+        ("Jameson Williams", "OVER Rec Yds 56.5", "over"),
         ("James Cook", "OVER Rush Yds 78.5", "over"),
         ("Joshua Palmer", "UNDER Receptions 1.5", "under"),
     ]),
