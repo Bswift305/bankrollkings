@@ -65,6 +65,9 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # matching player/stat/direction/line.
         ("NFL live prop scoring", _python("score_live_nfl_props.py"), 600),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
+        # Prior-season team map for the early-season usage gate (flags movers whose
+        # PropScore is projected on last year's role). Cheap; static once built.
+        ("NFL prior-season team map", _python("build_nfl_prior_team_map.py"), 120),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.

@@ -41275,6 +41275,15 @@ def build_nfl_spots_context(limit=12):
             scored.sort(key=lambda x: x['prop_score'], reverse=True)
             ctx['sp_top'] = scored[:limit]
             ctx['sp_premium_count'] = sum(1 for x in scored if x['premium'])
+            # Early-season usage gate (Week-1 2026 retro): flag plays for players who
+            # changed teams, whose usage/volume is projected on last year's role until
+            # current-season data accrues (weeks 1-3). Flag only -- no score change.
+            try:
+                import nfl_early_season_gate as _esg
+                _esg.annotate_plays(ctx['sp_top'], _esg.current_week(), apply_penalty=False)
+                ctx['sp_gated_count'] = sum(1 for x in ctx['sp_top'] if x.get('usage_flag'))
+            except Exception:
+                pass
     except Exception:
         pass
 
