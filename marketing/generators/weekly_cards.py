@@ -604,19 +604,27 @@ FLOOR_LONGSHOT_2 = [
 ]
 
 # Single-game SGP tickets (a full book that allows same-game parlays). Edit per game.
-SGP_GAME = "DEN @ KC  ·  MNF  ·  KC -2  ·  O/U 42.5"
+SGP_GAME = "DET @ BUF  ·  TNF  ·  BUF -5.5  ·  O/U 55"
 SGP_TICKETS = [
-    ("GRIND SGP", RED, "both QBs held to <=1 TD - low total game", [
-        ("Bo Nix", "UNDER Pass TDs 1.5", "under"),
-        ("Patrick Mahomes", "UNDER Pass TDs 1.5", "under"),
+    ("SHOOTOUT SGP", GOLD, "the site's read: OVER + Detroit passing", [
+        ("Game Total", "OVER 55", "line"),
+        ("Jared Goff", "OVER Pass Yds 261.5", "over"),
+        ("Jameson Williams", "OVER Receptions 3.5", "over"),
     ]),
-    ("DOBBINS VOLUME SGP", GOLD, "same player - carries drive the yards", [
-        ("J.K. Dobbins", "OVER Rush Att 11.5", "over"),
-        ("J.K. Dobbins", "OVER Rush Yds 49.5", "over"),
+    ("GROUND GAME SGP", CY, "both lead backs run in a high-scoring game", [
+        ("James Cook", "OVER Rush Att 17.5", "over"),
+        ("James Cook", "OVER Rush Yds 78.5", "over"),
+        ("Jahmyr Gibbs", "OVER Rush Yds 86.5", "over"),
     ]),
-    ("CHIEFS SCRIPT SGP", CY, "KC passing volume - Mahomes to Kelce", [
-        ("Patrick Mahomes", "OVER Pass Completions 20.5", "over"),
-        ("Travis Kelce", "OVER Rec Yds 40.5", "over"),
+    ("TEs QUIET SGP", RED, "usage runs WR/RB; Allen is a low-completion QB", [
+        ("Josh Allen", "UNDER Pass Comp 21.5", "under"),
+        ("Dalton Kincaid", "UNDER Rec Yds 52.5", "under"),
+        ("Sam LaPorta", "UNDER Receptions 4.5", "under"),
+    ]),
+    ("TOP EDGE SGP", GREEN, "three of the highest-PropScore plays", [
+        ("Jameson Williams", "OVER Receptions 3.5", "over"),
+        ("James Cook", "OVER Rush Yds 78.5", "over"),
+        ("Joshua Palmer", "UNDER Receptions 1.5", "under"),
     ]),
 ]
 
