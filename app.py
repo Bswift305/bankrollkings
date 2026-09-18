@@ -40166,11 +40166,21 @@ def build_cfb_matchup_context():
         for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
             if a and h:
-                week_games.append({
+                wg = {
                     'away': a, 'home': h,
                     'spread': _format_signed_line(g.get('spread')),
                     'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
-                })
+                }
+                # Current-season form + common-opponent read (this year's games, not
+                # last year's ATS) -- the "think like this" layer.
+                try:
+                    import cfb_current_form as _cff
+                    fr = _cff.matchup_read(a, h, g.get('spread'))
+                    wg['form'] = {k: fr.get(k) for k in
+                                  ('proj_home_margin', 'lean', 'note', 'away_form', 'home_form', 'commons')}
+                except Exception:
+                    pass
+                week_games.append(wg)
     except Exception:
         week_games = []
     return {
