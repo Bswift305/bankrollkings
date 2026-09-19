@@ -97,3 +97,13 @@ static/franchise_avatars/
 
 # Local NFL play-by-play source (regenerable; prod serves the JSON export only)
 data/pbp/*.parquet
+
+# Marketing video renders — large binaries; rebuild from marketing/generators/
+marketing/TikTok/
+marketing/content_pack_video/
+
+# Redeemable free-trial codes — this repo is PUBLIC, never commit these
+marketing/trial/CODES.txt
+
+# Generated season-markets data (built by fetch_season_markets_sportsdataio.py)
+data/season_markets/
