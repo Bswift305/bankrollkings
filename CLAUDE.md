@@ -386,9 +386,16 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
 
 - **Injury Report "impact" (with/without):** NBA + NFL live; **MLB/WNBA not built** —
   needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`.
-- **Football guardrail:** `build_football_live_prop_board` has no verdict/guardrail
-  fields, so there is no `LONGSHOT OVER` rule for football. Anytime TD (+300..+900) is
-  where it would earn its keep. Cannot be verified against an empty feed.
+- **Football `LONGSHOT OVER` guardrail — BUILT (61df4ef, 2026-09-03), not open.**
+  `build_football_live_prop_board` flags overs under 25% implied: sets `longshot_over`,
+  prepends the `LONGSHOT OVER` method tag, appends the cost note, and applies
+  `score -= 8.0` so long-odds overs don't headline the board. `docs/PROJECT_MAP.md` §8
+  still describes this as unbuilt — that entry is stale; trust the code.
+  The football board has no `play_verdict`, but that is **deliberate**, not a gap:
+  `sport_registry.py` sets `requires_play_verdict=False` for NFL and NCAAF (only
+  MLB/WNBA gate archiving on it). What genuinely remains is **evidence**, not code —
+  the 25% threshold is MLB/WNBA-derived, and football needs its own graded ROI to
+  confirm or kill it. Per §10, out-of-sample or it does not count.
 - **`NFL_PlayerStats_<yr>.csv` is built locally and gitignored.** 2023–25 were one-time
   copied to prod. For in-season freshness, wire
   `build_nfl_player_stats_from_pbp.py` for the current season into the prod football
