@@ -9651,11 +9651,22 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
         # implied bleed money (a miss costs the most at long odds). In football that is
         # the Anytime TD / long-yardage market that dominates the CFB board. Flag it and
         # de-prioritize so these long-odds overs don't headline the board.
+        #
+        # NOTE on the -8.0 below: `method_score` is floored at 50.0 further down, and a
+        # flagged row is usually already at that floor (a long-shot over is one-sided, so
+        # lean_prob is weak). The subtraction is therefore clamped away. Verified against
+        # the first live NFL slate (2026-09-19): all 386 flagged rows scored exactly 50.0,
+        # so the penalty FLATTENED them rather than ordering them, and changed the board
+        # sort not at all for any row that would already have scored <= 58. The -8.0 stays
+        # because it still does real work for mid-range rows, but the de-prioritization
+        # that actually holds is the explicit sort demotion at the end of this function.
         longshot_over = False
+        longshot_implied = None
         if direction == 'OVER' and pd.notna(market_price):
             _imp = american_odds_to_implied_prob(market_price)
             if _imp is not None and _imp < 0.25:
                 longshot_over = True
+                longshot_implied = float(_imp)
                 if 'LONGSHOT OVER' not in tags:
                     tags.append('LONGSHOT OVER')
                 note = (f"{note} Longshot over (~{round(_imp*100)}% implied): at these odds a miss "
@@ -9664,6 +9675,10 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
 
         rows.append({
             'longshot_over': longshot_over,
+            # Implied probability that tripped the guardrail, kept so the sort can rank
+            # long shots against each other: -40.9% ROI under 15% implied vs -20.4% in
+            # the 15-25% band, so a 24% over is materially less bad than a 2% one.
+            'longshot_implied': round(longshot_implied, 4) if longshot_implied is not None else None,
             'player': player,
             'stat': stat,
             'stat_family': stat_family,
@@ -9716,7 +9731,28 @@ def build_football_live_prop_board(props_df, odds_df, schedule_df, method_key='p
         rows = attach_nfl_quant_insights_to_rows(rows)
         rows = attach_promotion_signals_to_props(rows, sport='NFL', score_fields=('method_score', 'market_confidence'))
     rows = annotate_prop_rows_with_injuries(rows, load_sport_injuries(sport_key))
-    rows.sort(key=lambda item: (float(item.get('method_score') or 0), float(item.get('market_prob') or 0), float(item.get('lean_gap') or 0), item.get('player') or ''), reverse=True)
+    # Long-shot overs sort BELOW everything else, as their own block. This is the
+    # guardrail's real de-prioritization: expressing it through `score -= 8.0` alone did
+    # not survive the 50.0 floor on `method_score` (see the guardrail note above), which
+    # collapsed every flagged row onto the same value and left the ordering unchanged.
+    #
+    # Slot 1 splits the blocks (1 = keep, 0 = long shot). Slot 2 orders WITHIN the
+    # long-shot block by implied probability, so the least-extreme ones surface first --
+    # the graded record separates them (-20.4% in the 15-25% band vs -40.9% under 15%),
+    # and a bettor who is taking one anyway should see the cheaper mistake first. It is a
+    # constant 0.0 for everything else, so the kept block falls straight through to
+    # method_score and its ordering is untouched.
+    rows.sort(
+        key=lambda item: (
+            0 if item.get('longshot_over') else 1,
+            float(item.get('longshot_implied') or 0.0) if item.get('longshot_over') else 0.0,
+            float(item.get('method_score') or 0),
+            float(item.get('market_prob') or 0),
+            float(item.get('lean_gap') or 0),
+            item.get('player') or '',
+        ),
+        reverse=True,
+    )
     return rows
 
 
