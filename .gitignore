@@ -34,8 +34,13 @@ logs/
 server*.out.txt
 server*.err.txt
 
-# Local assistant/editor state
-.claude/
+# Local assistant/editor state. The shared session-start hook and the settings
+# that register it must be tracked, or Claude Code on the web never runs them;
+# personal overrides (settings.local.json) stay local.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
 
 # Generated app data and bulky local datasets
 data/cache/
@@ -97,3 +102,6 @@ static/franchise_avatars/
 
 # Local NFL play-by-play source (regenerable; prod serves the JSON export only)
 data/pbp/*.parquet
+
+# Session-start hook virtualenv (Claude Code on the web)
+.venv/
