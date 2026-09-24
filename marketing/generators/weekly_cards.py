@@ -756,15 +756,19 @@ ATLGB_GOOD = [
      "checkdown volume drops with Penix pushing the ball downfield"),
 ]
 ATLGB_CTX = "Both run D's rank top-5 opponent-adjusted — ground games get stuffed, the total rides on passing."
+# Game-level play: the same read expressed on the 1H total (median across books).
+ATLGB_PERIOD = ("1st Half Team Total", "UNDER 20.5", "under",
+                "both run D's top-5 adj — slow, run-stuffed start; the total needs passing, which takes time to warm up")
 
 
 def card_atlgb_good(week, out):
     """Single-game clean card: the ATL@GB 'Good' tier — props where current-season
-    form and the injury report point the same direction."""
+    form and the injury report point the same direction, plus the 1H-under expression."""
     kcol = {'over': GREEN, 'under': RED}
     top = 250
     ph = 96  # per-play block height
-    H = top + 54 + len(ATLGB_GOOD) * (ph + 14) + 92 + 120
+    n_plays = len(ATLGB_GOOD) + 1  # + the 1H period play
+    H = top + 54 + n_plays * (ph + 14) + 92 + 120
     c = Card(H); d = c.d
     y = c.header(f"NFL {week.upper()} — THE GOOD", chip=ATLGB_GAME[0])
 
@@ -775,8 +779,20 @@ def card_atlgb_good(week, out):
     y += 58
 
     c.text(M, y, "PLAYS WE TRUST", F['col'], CY)
-    c.text(W - M, y + 2, f"{len(ATLGB_GOOD)} clean", F['de'], FAINT, right=True)
+    c.text(W - M, y + 2, f"{n_plays} clean", F['de'], FAINT, right=True)
     y += 32; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
+
+    # 1H period play first (game-level), with a period badge
+    plabel, ppick, pkind, pwhy = ATLGB_PERIOD
+    accent = kcol.get(pkind, INK)
+    d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
+    d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=accent)
+    d.rounded_rectangle([(M + 30, y + 16), (M + 84, y + 40)], radius=6, fill=GOLD)
+    c.text(M + 40, y + 19, "1H", F['blk'], (11, 18, 24))
+    c.text(M + 100, y + 16, plabel, F['blk'], INK)
+    c.text(W - M - 20, y + 18, ppick, F['pl'], accent, right=True)
+    c.text(M + 30, y + 56, pwhy, F['de'], FAINT)
+    y += ph + 14
 
     for player, pick, kind, why in ATLGB_GOOD:
         accent = kcol.get(kind, INK)
