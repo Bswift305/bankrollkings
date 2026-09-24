@@ -92,8 +92,10 @@ def build(season: int, source: str | None = None) -> dict:
             qb1 = str(top["player_display_name"])
             qb1_att = int(top["att"])
             qb1_adot = round(top["ay"] / top["att"], 1) if top["att"] else None
+        opps_faced = [str(o) for o in own.groupby("week")["opponent_team"].first().tolist()]
         rec[T] = {
             "games": int(own["week"].nunique()),
+            "opps_faced": opps_faced,
             "qb1": qb1, "qb1_att": qb1_att, "qb1_adot": qb1_adot,
             # defense: what T allows
             "def_sacks": float(own["def_sacks"].sum()),
@@ -111,6 +113,40 @@ def build(season: int, source: str | None = None) -> dict:
             "sacks_allowed": float(own["sacks_suffered"].sum()),
         }
 
+    # --- Strength-of-schedule adjustment ---------------------------------------
+    # A raw rank is flattered by an easy slate: ATL's #1 run D faced PIT + CAR. So
+    # discount each defense's yards allowed by the quality of the OFFENSES it faced,
+    # measured by what those offenses did in their OTHER games (head-to-head excluded
+    # so the number isn't circular). Faced weak offenses -> adjust allowed up; faced
+    # strong ones -> adjust down. Single-pass SoS, not a full iterative rating.
+    league_off_rush = sum(rec[t]["rush_ypg"] for t in rec) / len(rec)
+    league_off_pass = sum(rec[t]["pass_ypg"] for t in rec) / len(rec)
+
+    def _opp_off(team, exclude, col):
+        """Opponent `team`'s offensive yds/game in `col`, excluding games vs `exclude`."""
+        g = df[(df["team"] == team) & (df["opponent_team"] != exclude)]
+        n = g["week"].nunique()
+        if not n:
+            return league_off_rush if "rush" in col else league_off_pass
+        return g[col].sum() / n
+
+    for T in rec:
+        faced = rec[T]["opps_faced"] or []
+        if faced:
+            fr = sum(_opp_off(o, T, "rushing_yards") for o in faced) / len(faced)
+            fp = sum(_opp_off(o, T, "passing_yards") for o in faced) / len(faced)
+        else:
+            fr, fp = league_off_rush, league_off_pass
+        rec[T]["faced_off_rush"] = round(fr, 1)
+        rec[T]["faced_off_pass"] = round(fp, 1)
+        rec[T]["sos_rush"] = round(league_off_rush - fr, 1)   # +ve => faced weak rush offenses
+        rec[T]["sos_pass"] = round(league_off_pass - fp, 1)
+        rec[T]["rush_ypg_allowed_adj"] = round(rec[T]["rush_ypg_allowed"] + rec[T]["sos_rush"], 1)
+        rec[T]["pass_ypg_allowed_adj"] = round(rec[T]["pass_ypg_allowed"] + rec[T]["sos_pass"], 1)
+        # combined schedule strength (avg of the two offensive sides faced), for a label
+        strength = ((fr - league_off_rush) + (fp - league_off_pass)) / 2  # +ve => tough slate
+        rec[T]["sos_pts"] = round(strength, 1)
+
     # league ranks (1 = best defense) on the metrics a game read turns on
     frame = pd.DataFrame(rec).T
     rank_specs = [
@@ -119,6 +155,9 @@ def build(season: int, source: str | None = None) -> dict:
         ("rush_ypc_allowed", True, "rush_ypc_rank"),
         ("rush_ypg_allowed", True, "rush_ypg_rank"),
         ("pass_ypg_allowed", True, "pass_ypg_rank"),
+        ("rush_ypg_allowed_adj", True, "rush_ypg_adj_rank"),
+        ("pass_ypg_allowed_adj", True, "pass_ypg_adj_rank"),
+        ("sos_pts", False, "sos_rank"),  # 1 = toughest schedule faced
     ]
     for col, asc, name in rank_specs:
         ranks = frame[col].rank(ascending=asc, method="min").astype(int)

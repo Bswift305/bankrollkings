@@ -91,17 +91,45 @@ def _tier(rank: int) -> str:
     return "soft"
 
 
+def _adj_run_rank(t: dict) -> int:
+    return int(t.get("rush_ypg_adj_rank") or t.get("rush_ypg_rank") or 16)
+
+
+def _adj_pass_rank(t: dict) -> int:
+    return int(t.get("pass_ypg_adj_rank") or t.get("pass_ypg_rank") or 16)
+
+
+def _sched_tag(t: dict) -> str:
+    """Short label for the strength of offenses this team has faced."""
+    r = int(t.get("sos_rank") or 16)
+    if r <= 8:
+        return "tough slate"
+    if r >= 25:
+        return "soft slate"
+    return "avg slate"
+
+
+def _rawtag(raw_rank: int, adj_rank: int) -> str:
+    """Note the raw rank only when the schedule adjustment moves it materially."""
+    if abs(int(raw_rank) - int(adj_rank)) >= 4:
+        return f", raw {_ord(raw_rank)}"
+    return ""
+
+
 def defense_note(team: str) -> str | None:
-    """One-line read of a team's current-season defense: run, pass, pressure + ranks."""
+    """One-line read of a team's current-season defense, opponent-adjusted: run, pass,
+    pressure. Leads with the SoS-adjusted rank (raw shown when the schedule moved it)."""
     t = team_form(team)
     if not t.get("games"):
         return None
     ab = t["abbr"]
+    rr, pr = _adj_run_rank(t), _adj_pass_rank(t)
+    run_adj = t.get("rush_ypg_allowed_adj", t["rush_ypg_allowed"])
+    pass_adj = t.get("pass_ypg_allowed_adj", t["pass_ypg_allowed"])
     return (
-        f"{ab} D ({t['games']}g): run {t['rush_ypc_allowed']} ypc "
-        f"({_ord(t['rush_ypc_rank'])}), {t['rush_ypg_allowed']}/gm ({_ord(t['rush_ypg_rank'])}) "
-        f"— {_tier(t['rush_ypg_rank'])} vs run; pass {t['pass_ypg_allowed']}/gm "
-        f"({_ord(t['pass_ypg_rank'])}) — {_tier(t['pass_ypg_rank'])}; "
+        f"{ab} D ({t['games']}g, {_sched_tag(t)}): run {run_adj}/gm adj "
+        f"({_ord(rr)}{_rawtag(t['rush_ypg_rank'], rr)}) — {_tier(rr)} vs run; "
+        f"pass {pass_adj}/gm adj ({_ord(pr)}{_rawtag(t['pass_ypg_rank'], pr)}) — {_tier(pr)}; "
         f"pressure {int(t['def_sacks'])} sacks ({_ord(t['sack_rank'])})."
     )
 
@@ -135,23 +163,25 @@ def matchup_read(away: str, home: str, spread_home=None, total=None) -> dict:
         return read
 
     ga, gh = int(fa["games"]), int(fh["games"])
-    # run reads: away rushing attack vs home run D, and vice versa
+    ha_rr, ha_pr = _adj_run_rank(fa), _adj_pass_rank(fa)
+    hh_rr, hh_pr = _adj_run_rank(fh), _adj_pass_rank(fh)
+    # run reads: away rushing attack vs home run D, and vice versa (opponent-adjusted)
     read["run_reads"] = [
-        f"{fa['abbr']} run game meets {fh['abbr']}'s run D ({fh['rush_ypc_allowed']} ypc, "
-        f"{_ord(fh['rush_ypc_rank'])})",
-        f"{fh['abbr']} run game meets {fa['abbr']}'s run D ({fa['rush_ypc_allowed']} ypc, "
-        f"{_ord(fa['rush_ypc_rank'])})",
+        f"{fa['abbr']} run game meets {fh['abbr']}'s run D "
+        f"({fh.get('rush_ypg_allowed_adj', fh['rush_ypg_allowed'])}/gm adj, {_ord(hh_rr)})",
+        f"{fh['abbr']} run game meets {fa['abbr']}'s run D "
+        f"({fa.get('rush_ypg_allowed_adj', fa['rush_ypg_allowed'])}/gm adj, {_ord(ha_rr)})",
     ]
     read["pass_reads"] = [
-        f"{fa['abbr']} passing vs {fh['abbr']} pass D ({fh['pass_ypg_allowed']}/gm, "
-        f"{_ord(fh['pass_ypg_rank'])})",
-        f"{fh['abbr']} passing vs {fa['abbr']} pass D ({fa['pass_ypg_allowed']}/gm, "
-        f"{_ord(fa['pass_ypg_rank'])})",
+        f"{fa['abbr']} passing vs {fh['abbr']} pass D "
+        f"({fh.get('pass_ypg_allowed_adj', fh['pass_ypg_allowed'])}/gm adj, {_ord(hh_pr)})",
+        f"{fh['abbr']} passing vs {fa['abbr']} pass D "
+        f"({fa.get('pass_ypg_allowed_adj', fa['pass_ypg_allowed'])}/gm adj, {_ord(ha_pr)})",
     ]
 
-    # total lean from where both defenses are strong/soft (rank-based, honest hedge)
-    both_run_strong = fa["rush_ypg_rank"] <= 10 and fh["rush_ypg_rank"] <= 10
-    both_pass_soft = fa["pass_ypg_rank"] >= 22 and fh["pass_ypg_rank"] >= 22
+    # total lean from where both defenses are strong/soft (opponent-adjusted ranks)
+    both_run_strong = ha_rr <= 10 and hh_rr <= 10
+    both_pass_soft = ha_pr >= 22 and hh_pr >= 22
     if both_run_strong and not both_pass_soft:
         read["total_lean"] = ("Both run defenses rank top-10 on current form — the ground "
                               "games project to get stuffed, so points have to come through the "

@@ -5,7 +5,7 @@
     2
   ],
   "n_teams": 32,
-  "updated": "2026-09-24 21:42 UTC",
+  "updated": "2026-09-24 21:56 UTC",
   "league_avg": {
     "rush_ypc_allowed": 4.13,
     "rush_ypg_allowed": 112.7,
@@ -15,6 +15,10 @@
   "teams": {
     "ARI": {
       "games": 2,
+      "opps_faced": [
+        "LAC",
+        "SEA"
+      ],
       "qb1": "Jacoby Brissett",
       "qb1_att": 65,
       "qb1_adot": 6.0,
@@ -30,14 +34,28 @@
       "pass_ypg": 186.0,
       "rush_ypc": 3.65,
       "sacks_allowed": 3.0,
+      "faced_off_rush": 112.0,
+      "faced_off_pass": 196.0,
+      "sos_rush": 0.7,
+      "sos_pass": 31.2,
+      "rush_ypg_allowed_adj": 122.2,
+      "pass_ypg_allowed_adj": 253.2,
+      "sos_pts": -15.9,
       "sack_rank": 16,
       "qbhit_rank": 24,
       "rush_ypc_rank": 16,
       "rush_ypg_rank": 22,
-      "pass_ypg_rank": 17
+      "pass_ypg_rank": 17,
+      "rush_ypg_adj_rank": 21,
+      "pass_ypg_adj_rank": 21,
+      "sos_rank": 21
     },
     "ATL": {
       "games": 2,
+      "opps_faced": [
+        "PIT",
+        "CAR"
+      ],
       "qb1": "Cooper Rush",
       "qb1_att": 39,
       "qb1_adot": 4.7,
@@ -53,14 +71,28 @@
       "pass_ypg": 144.0,
       "rush_ypc": 4.4,
       "sacks_allowed": 7.0,
+      "faced_off_rush": 108.0,
+      "faced_off_pass": 274.0,
+      "sos_rush": 4.7,
+      "sos_pass": -46.8,
+      "rush_ypg_allowed_adj": 67.7,
+      "pass_ypg_allowed_adj": 207.2,
+      "sos_pts": 21.1,
       "sack_rank": 16,
       "qbhit_rank": 7,
       "rush_ypc_rank": 3,
       "rush_ypg_rank": 1,
-      "pass_ypg_rank": 25
+      "pass_ypg_rank": 25,
+      "rush_ypg_adj_rank": 5,
+      "pass_ypg_adj_rank": 10,
+      "sos_rank": 9
     },
     "BAL": {
       "games": 2,
+      "opps_faced": [
+        "IND",
+        "NO"
+      ],
       "qb1": "Lamar Jackson",
       "qb1_att": 56,
       "qb1_adot": 10.5,
@@ -76,14 +108,28 @@
       "pass_ypg": 279.5,
       "rush_ypc": 5.25,
       "sacks_allowed": 5.0,
+      "faced_off_rush": 105.0,
+      "faced_off_pass": 310.0,
+      "sos_rush": 7.7,
+      "sos_pass": -82.8,
+      "rush_ypg_allowed_adj": 91.2,
+      "pass_ypg_allowed_adj": 126.2,
+      "sos_pts": 37.6,
       "sack_rank": 11,
       "qbhit_rank": 10,
       "rush_ypc_rank": 7,
       "rush_ypg_rank": 5,
-      "pass_ypg_rank": 13
+      "pass_ypg_rank": 13,
+      "rush_ypg_adj_rank": 8,
+      "pass_ypg_adj_rank": 5,
+      "sos_rank": 3
     },
     "BUF": {
       "games": 2,
+      "opps_faced": [
+        "HOU",
+        "DET"
+      ],
       "qb1": "Josh Allen",
       "qb1_att": 60,
       "qb1_adot": 10.3,
@@ -99,14 +145,28 @@
       "pass_ypg": 291.0,
       "rush_ypc": 5.07,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 112.5,
+      "faced_off_pass": 279.5,
+      "sos_rush": 0.2,
+      "sos_pass": -52.3,
+      "rush_ypg_allowed_adj": 95.2,
+      "pass_ypg_allowed_adj": 248.2,
+      "sos_pts": 26.1,
       "sack_rank": 4,
       "qbhit_rank": 2,
       "rush_ypc_rank": 8,
       "rush_ypg_rank": 12,
-      "pass_ypg_rank": 30
+      "pass_ypg_rank": 30,
+      "rush_ypg_adj_rank": 9,
+      "pass_ypg_adj_rank": 19,
+      "sos_rank": 5
     },
     "CAR": {
       "games": 2,
+      "opps_faced": [
+        "CHI",
+        "ATL"
+      ],
       "qb1": "Bryce Young",
       "qb1_att": 73,
       "qb1_adot": 9.2,
@@ -122,14 +182,28 @@
       "pass_ypg": 324.0,
       "rush_ypc": 4.39,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 127.0,
+      "faced_off_pass": 167.5,
+      "sos_rush": -14.3,
+      "sos_pass": 59.7,
+      "rush_ypg_allowed_adj": 209.7,
+      "pass_ypg_allowed_adj": 266.7,
+      "sos_pts": -22.7,
       "sack_rank": 16,
       "qbhit_rank": 24,
       "rush_ypc_rank": 32,
       "rush_ypg_rank": 32,
-      "pass_ypg_rank": 12
+      "pass_ypg_rank": 12,
+      "rush_ypg_adj_rank": 32,
+      "pass_ypg_adj_rank": 25,
+      "sos_rank": 25
     },
     "CHI": {
       "games": 2,
+      "opps_faced": [
+        "CAR",
+        "MIN"
+      ],
       "qb1": "Caleb Williams",
       "qb1_att": 55,
       "qb1_adot": 7.9,
@@ -145,14 +219,28 @@
       "pass_ypg": 230.5,
       "rush_ypc": 6.07,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 87.5,
+      "faced_off_pass": 219.0,
+      "sos_rush": 25.2,
+      "sos_pass": 8.2,
+      "rush_ypg_allowed_adj": 147.2,
+      "pass_ypg_allowed_adj": 260.2,
+      "sos_pts": -16.7,
       "sack_rank": 11,
       "qbhit_rank": 22,
       "rush_ypc_rank": 26,
       "rush_ypg_rank": 23,
-      "pass_ypg_rank": 24
+      "pass_ypg_rank": 24,
+      "rush_ypg_adj_rank": 27,
+      "pass_ypg_adj_rank": 23,
+      "sos_rank": 22
     },
     "CIN": {
       "games": 2,
+      "opps_faced": [
+        "TB",
+        "HOU"
+      ],
       "qb1": "Joe Burrow",
       "qb1_att": 66,
       "qb1_adot": 6.0,
@@ -168,14 +256,28 @@
       "pass_ypg": 230.5,
       "rush_ypc": 3.82,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 130.5,
+      "faced_off_pass": 228.0,
+      "sos_rush": -17.8,
+      "sos_pass": -0.8,
+      "rush_ypg_allowed_adj": 56.7,
+      "pass_ypg_allowed_adj": 283.7,
+      "sos_pts": 9.3,
       "sack_rank": 1,
       "qbhit_rank": 10,
       "rush_ypc_rank": 15,
       "rush_ypg_rank": 3,
-      "pass_ypg_rank": 28
+      "pass_ypg_rank": 28,
+      "rush_ypg_adj_rank": 3,
+      "pass_ypg_adj_rank": 27,
+      "sos_rank": 14
     },
     "CLE": {
       "games": 2,
+      "opps_faced": [
+        "JAX",
+        "TB"
+      ],
       "qb1": "Deshaun Watson",
       "qb1_att": 52,
       "qb1_adot": 6.5,
@@ -191,14 +293,28 @@
       "pass_ypg": 221.5,
       "rush_ypc": 2.91,
       "sacks_allowed": 7.0,
+      "faced_off_rush": 92.0,
+      "faced_off_pass": 202.5,
+      "sos_rush": 20.7,
+      "sos_pass": 24.7,
+      "rush_ypg_allowed_adj": 152.2,
+      "pass_ypg_allowed_adj": 238.2,
+      "sos_pts": -22.7,
       "sack_rank": 16,
       "qbhit_rank": 24,
       "rush_ypc_rank": 24,
       "rush_ypg_rank": 26,
-      "pass_ypg_rank": 14
+      "pass_ypg_rank": 14,
+      "rush_ypg_adj_rank": 28,
+      "pass_ypg_adj_rank": 14,
+      "sos_rank": 25
     },
     "DAL": {
       "games": 2,
+      "opps_faced": [
+        "NYG",
+        "WAS"
+      ],
       "qb1": "Dak Prescott",
       "qb1_att": 65,
       "qb1_adot": 8.5,
@@ -214,14 +330,28 @@
       "pass_ypg": 227.0,
       "rush_ypc": 3.46,
       "sacks_allowed": 2.0,
+      "faced_off_rush": 92.0,
+      "faced_off_pass": 147.5,
+      "sos_rush": 20.7,
+      "sos_pass": 79.7,
+      "rush_ypg_allowed_adj": 194.2,
+      "pass_ypg_allowed_adj": 298.2,
+      "sos_pts": -50.2,
       "sack_rank": 29,
       "qbhit_rank": 14,
       "rush_ypc_rank": 28,
       "rush_ypg_rank": 30,
-      "pass_ypg_rank": 15
+      "pass_ypg_rank": 15,
+      "rush_ypg_adj_rank": 31,
+      "pass_ypg_adj_rank": 29,
+      "sos_rank": 30
     },
     "DEN": {
       "games": 2,
+      "opps_faced": [
+        "KC",
+        "JAX"
+      ],
       "qb1": "Bo Nix",
       "qb1_att": 59,
       "qb1_adot": 6.1,
@@ -237,14 +367,28 @@
       "pass_ypg": 209.5,
       "rush_ypc": 3.84,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 139.0,
+      "faced_off_pass": 313.5,
+      "sos_rush": -26.3,
+      "sos_pass": -86.3,
+      "rush_ypg_allowed_adj": 131.2,
+      "pass_ypg_allowed_adj": 100.2,
+      "sos_pts": 56.3,
       "sack_rank": 16,
       "qbhit_rank": 14,
       "rush_ypc_rank": 30,
       "rush_ypg_rank": 29,
-      "pass_ypg_rank": 8
+      "pass_ypg_rank": 8,
+      "rush_ypg_adj_rank": 23,
+      "pass_ypg_adj_rank": 2,
+      "sos_rank": 2
     },
     "DET": {
       "games": 2,
+      "opps_faced": [
+        "NO",
+        "BUF"
+      ],
       "qb1": "Jared Goff",
       "qb1_att": 77,
       "qb1_adot": 7.1,
@@ -260,14 +404,28 @@
       "pass_ypg": 266.5,
       "rush_ypc": 4.36,
       "sacks_allowed": 5.0,
+      "faced_off_rush": 75.5,
+      "faced_off_pass": 293.0,
+      "sos_rush": 37.2,
+      "sos_pass": -65.8,
+      "rush_ypg_allowed_adj": 184.2,
+      "pass_ypg_allowed_adj": 263.2,
+      "sos_pts": 14.3,
       "sack_rank": 4,
       "qbhit_rank": 4,
       "rush_ypc_rank": 25,
       "rush_ypg_rank": 28,
-      "pass_ypg_rank": 31
+      "pass_ypg_rank": 31,
+      "rush_ypg_adj_rank": 30,
+      "pass_ypg_adj_rank": 24,
+      "sos_rank": 12
     },
     "GB": {
       "games": 2,
+      "opps_faced": [
+        "MIN",
+        "NYJ"
+      ],
       "qb1": "Jordan Love",
       "qb1_att": 71,
       "qb1_adot": 9.6,
@@ -283,14 +441,28 @@
       "pass_ypg": 266.0,
       "rush_ypc": 3.31,
       "sacks_allowed": 7.0,
+      "faced_off_rush": 135.5,
+      "faced_off_pass": 179.0,
+      "sos_rush": -22.8,
+      "sos_pass": 48.2,
+      "rush_ypg_allowed_adj": 64.2,
+      "pass_ypg_allowed_adj": 247.2,
+      "sos_pts": -12.7,
       "sack_rank": 4,
       "qbhit_rank": 5,
       "rush_ypc_rank": 2,
       "rush_ypg_rank": 8,
-      "pass_ypg_rank": 10
+      "pass_ypg_rank": 10,
+      "rush_ypg_adj_rank": 4,
+      "pass_ypg_adj_rank": 18,
+      "sos_rank": 20
     },
     "HOU": {
       "games": 2,
+      "opps_faced": [
+        "BUF",
+        "CIN"
+      ],
       "qb1": "C.J. Stroud",
       "qb1_att": 93,
       "qb1_adot": 8.6,
@@ -306,14 +478,28 @@
       "pass_ypg": 313.5,
       "rush_ypc": 3.68,
       "sacks_allowed": 7.0,
+      "faced_off_rush": 154.5,
+      "faced_off_pass": 251.0,
+      "sos_rush": -41.8,
+      "sos_pass": -23.8,
+      "rush_ypg_allowed_adj": 43.7,
+      "pass_ypg_allowed_adj": 246.7,
+      "sos_pts": 32.8,
       "sack_rank": 4,
       "qbhit_rank": 7,
       "rush_ypc_rank": 14,
       "rush_ypg_rank": 6,
-      "pass_ypg_rank": 27
+      "pass_ypg_rank": 27,
+      "rush_ypg_adj_rank": 2,
+      "pass_ypg_adj_rank": 17,
+      "sos_rank": 4
     },
     "IND": {
       "games": 2,
+      "opps_faced": [
+        "BAL",
+        "KC"
+      ],
       "qb1": "Daniel Jones",
       "qb1_att": 62,
       "qb1_adot": 5.9,
@@ -329,14 +515,28 @@
       "pass_ypg": 188.0,
       "rush_ypc": 4.25,
       "sacks_allowed": 2.0,
+      "faced_off_rush": 164.0,
+      "faced_off_pass": 209.5,
+      "sos_rush": -51.3,
+      "sos_pass": 17.7,
+      "rush_ypg_allowed_adj": 125.7,
+      "pass_ypg_allowed_adj": 370.7,
+      "sos_pts": 16.8,
       "sack_rank": 16,
       "qbhit_rank": 24,
       "rush_ypc_rank": 31,
       "rush_ypg_rank": 31,
-      "pass_ypg_rank": 32
+      "pass_ypg_rank": 32,
+      "rush_ypg_adj_rank": 22,
+      "pass_ypg_adj_rank": 32,
+      "sos_rank": 11
     },
     "JAX": {
       "games": 2,
+      "opps_faced": [
+        "CLE",
+        "DEN"
+      ],
       "qb1": "Trevor Lawrence",
       "qb1_att": 52,
       "qb1_adot": 10.5,
@@ -352,14 +552,28 @@
       "pass_ypg": 217.0,
       "rush_ypc": 3.95,
       "sacks_allowed": 3.0,
+      "faced_off_rush": 52.5,
+      "faced_off_pass": 184.5,
+      "sos_rush": 60.2,
+      "sos_pass": 42.7,
+      "rush_ypg_allowed_adj": 155.7,
+      "pass_ypg_allowed_adj": 289.2,
+      "sos_pts": -51.4,
       "sack_rank": 11,
       "qbhit_rank": 18,
       "rush_ypc_rank": 10,
       "rush_ypg_rank": 13,
-      "pass_ypg_rank": 22
+      "pass_ypg_rank": 22,
+      "rush_ypg_adj_rank": 29,
+      "pass_ypg_adj_rank": 28,
+      "sos_rank": 31
     },
     "KC": {
       "games": 2,
+      "opps_faced": [
+        "DEN",
+        "IND"
+      ],
       "qb1": "Patrick Mahomes",
       "qb1_att": 74,
       "qb1_adot": 5.3,
@@ -375,14 +589,28 @@
       "pass_ypg": 283.0,
       "rush_ypc": 5.55,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 103.0,
+      "faced_off_pass": 227.0,
+      "sos_rush": 9.7,
+      "sos_pass": 0.2,
+      "rush_ypg_allowed_adj": 99.7,
+      "pass_ypg_allowed_adj": 170.7,
+      "sos_pts": -4.9,
       "sack_rank": 24,
       "qbhit_rank": 22,
       "rush_ypc_rank": 11,
       "rush_ypg_rank": 10,
-      "pass_ypg_rank": 4
+      "pass_ypg_rank": 4,
+      "rush_ypg_adj_rank": 13,
+      "pass_ypg_adj_rank": 8,
+      "sos_rank": 17
     },
     "LAC": {
       "games": 2,
+      "opps_faced": [
+        "ARI",
+        "LV"
+      ],
       "qb1": "Justin Herbert",
       "qb1_att": 54,
       "qb1_adot": 10.0,
@@ -398,14 +626,28 @@
       "pass_ypg": 200.5,
       "rush_ypc": 3.92,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 100.0,
+      "faced_off_pass": 127.5,
+      "sos_rush": 12.7,
+      "sos_pass": 99.7,
+      "rush_ypg_allowed_adj": 99.2,
+      "pass_ypg_allowed_adj": 364.7,
+      "sos_pts": -56.2,
       "sack_rank": 24,
       "qbhit_rank": 5,
       "rush_ypc_rank": 1,
       "rush_ypg_rank": 7,
-      "pass_ypg_rank": 26
+      "pass_ypg_rank": 26,
+      "rush_ypg_adj_rank": 12,
+      "pass_ypg_adj_rank": 31,
+      "sos_rank": 32
     },
     "LAR": {
       "games": 2,
+      "opps_faced": [
+        "SF",
+        "NYG"
+      ],
       "qb1": "Matthew Stafford",
       "qb1_att": 56,
       "qb1_adot": 10.1,
@@ -421,14 +663,28 @@
       "pass_ypg": 247.5,
       "rush_ypc": 5.0,
       "sacks_allowed": 1.0,
+      "faced_off_rush": 130.0,
+      "faced_off_pass": 258.5,
+      "sos_rush": -17.3,
+      "sos_pass": -31.3,
+      "rush_ypg_allowed_adj": 95.7,
+      "pass_ypg_allowed_adj": 136.7,
+      "sos_pts": 24.3,
       "sack_rank": 29,
       "qbhit_rank": 20,
       "rush_ypc_rank": 23,
       "rush_ypg_rank": 19,
-      "pass_ypg_rank": 3
+      "pass_ypg_rank": 3,
+      "rush_ypg_adj_rank": 10,
+      "pass_ypg_adj_rank": 7,
+      "sos_rank": 7
     },
     "LV": {
       "games": 2,
+      "opps_faced": [
+        "MIA",
+        "LAC"
+      ],
       "qb1": "Kirk Cousins",
       "qb1_att": 59,
       "qb1_adot": 8.6,
@@ -444,14 +700,28 @@
       "pass_ypg": 206.5,
       "rush_ypc": 2.83,
       "sacks_allowed": 2.0,
+      "faced_off_rush": 91.5,
+      "faced_off_pass": 203.0,
+      "sos_rush": 21.2,
+      "sos_pass": 24.2,
+      "rush_ypg_allowed_adj": 121.7,
+      "pass_ypg_allowed_adj": 230.2,
+      "sos_pts": -22.7,
       "sack_rank": 1,
       "qbhit_rank": 2,
       "rush_ypc_rank": 17,
       "rush_ypg_rank": 15,
-      "pass_ypg_rank": 11
+      "pass_ypg_rank": 11,
+      "rush_ypg_adj_rank": 20,
+      "pass_ypg_adj_rank": 13,
+      "sos_rank": 25
     },
     "MIA": {
       "games": 2,
+      "opps_faced": [
+        "LV",
+        "SF"
+      ],
       "qb1": "Malik Willis",
       "qb1_att": 50,
       "qb1_adot": 9.6,
@@ -467,14 +737,28 @@
       "pass_ypg": 208.5,
       "rush_ypc": 3.74,
       "sacks_allowed": 9.0,
+      "faced_off_rush": 115.5,
+      "faced_off_pass": 229.0,
+      "sos_rush": -2.8,
+      "sos_pass": -1.8,
+      "rush_ypg_allowed_adj": 109.7,
+      "pass_ypg_allowed_adj": 221.7,
+      "sos_pts": 2.3,
       "sack_rank": 32,
       "qbhit_rank": 32,
       "rush_ypc_rank": 6,
       "rush_ypg_rank": 18,
-      "pass_ypg_rank": 18
+      "pass_ypg_rank": 18,
+      "rush_ypg_adj_rank": 17,
+      "pass_ypg_adj_rank": 11,
+      "sos_rank": 15
     },
     "MIN": {
       "games": 2,
+      "opps_faced": [
+        "GB",
+        "CHI"
+      ],
       "qb1": "Carson Wentz",
       "qb1_att": 39,
       "qb1_adot": 7.6,
@@ -490,14 +774,28 @@
       "pass_ypg": 147.0,
       "rush_ypc": 3.65,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 177.0,
+      "faced_off_pass": 207.0,
+      "sos_rush": -64.3,
+      "sos_pass": 20.2,
+      "rush_ypg_allowed_adj": 35.7,
+      "pass_ypg_allowed_adj": 309.7,
+      "sos_pts": 22.1,
       "sack_rank": 1,
       "qbhit_rank": 1,
       "rush_ypc_rank": 12,
       "rush_ypg_rank": 14,
-      "pass_ypg_rank": 29
+      "pass_ypg_rank": 29,
+      "rush_ypg_adj_rank": 1,
+      "pass_ypg_adj_rank": 30,
+      "sos_rank": 8
     },
     "NE": {
       "games": 2,
+      "opps_faced": [
+        "SEA",
+        "PIT"
+      ],
       "qb1": "Drake Maye",
       "qb1_att": 55,
       "qb1_adot": 7.6,
@@ -513,14 +811,28 @@
       "pass_ypg": 193.0,
       "rush_ypc": 4.15,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 110.0,
+      "faced_off_pass": 228.0,
+      "sos_rush": 2.7,
+      "sos_pass": -0.8,
+      "rush_ypg_allowed_adj": 96.7,
+      "pass_ypg_allowed_adj": 192.7,
+      "sos_pts": -0.9,
       "sack_rank": 9,
       "qbhit_rank": 10,
       "rush_ypc_rank": 20,
       "rush_ypg_rank": 11,
-      "pass_ypg_rank": 9
+      "pass_ypg_rank": 9,
+      "rush_ypg_adj_rank": 11,
+      "pass_ypg_adj_rank": 9,
+      "sos_rank": 16
     },
     "NO": {
       "games": 2,
+      "opps_faced": [
+        "DET",
+        "BAL"
+      ],
       "qb1": "Tyler Shough",
       "qb1_att": 90,
       "qb1_adot": 7.7,
@@ -536,14 +848,28 @@
       "pass_ypg": 331.0,
       "rush_ypc": 3.0,
       "sacks_allowed": 8.0,
+      "faced_off_rush": 134.0,
+      "faced_off_pass": 325.5,
+      "sos_rush": -21.3,
+      "sos_pass": -98.3,
+      "rush_ypg_allowed_adj": 115.2,
+      "pass_ypg_allowed_adj": 122.2,
+      "sos_pts": 59.8,
       "sack_rank": 16,
       "qbhit_rank": 7,
       "rush_ypc_rank": 27,
       "rush_ypg_rank": 27,
-      "pass_ypg_rank": 16
+      "pass_ypg_rank": 16,
+      "rush_ypg_adj_rank": 19,
+      "pass_ypg_adj_rank": 4,
+      "sos_rank": 1
     },
     "NYG": {
       "games": 2,
+      "opps_faced": [
+        "DAL",
+        "LAR"
+      ],
       "qb1": "Jaxson Dart",
       "qb1_att": 34,
       "qb1_adot": 8.6,
@@ -559,14 +885,28 @@
       "pass_ypg": 180.5,
       "rush_ypc": 3.74,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 94.0,
+      "faced_off_pass": 223.5,
+      "sos_rush": 18.7,
+      "sos_pass": 3.7,
+      "rush_ypg_allowed_adj": 134.7,
+      "pass_ypg_allowed_adj": 254.7,
+      "sos_pts": -11.2,
       "sack_rank": 31,
       "qbhit_rank": 30,
       "rush_ypc_rank": 29,
       "rush_ypg_rank": 20,
-      "pass_ypg_rank": 23
+      "pass_ypg_rank": 23,
+      "rush_ypg_adj_rank": 25,
+      "pass_ypg_adj_rank": 22,
+      "sos_rank": 19
     },
     "NYJ": {
       "games": 2,
+      "opps_faced": [
+        "TEN",
+        "GB"
+      ],
       "qb1": "Geno Smith",
       "qb1_att": 65,
       "qb1_adot": 6.4,
@@ -582,14 +922,28 @@
       "pass_ypg": 231.0,
       "rush_ypc": 3.32,
       "sacks_allowed": 4.0,
+      "faced_off_rush": 94.0,
+      "faced_off_pass": 285.0,
+      "sos_rush": 18.7,
+      "sos_pass": -57.8,
+      "rush_ypg_allowed_adj": 84.2,
+      "pass_ypg_allowed_adj": 84.7,
+      "sos_pts": 19.6,
       "sack_rank": 9,
       "qbhit_rank": 24,
       "rush_ypc_rank": 18,
       "rush_ypg_rank": 2,
-      "pass_ypg_rank": 2
+      "pass_ypg_rank": 2,
+      "rush_ypg_adj_rank": 7,
+      "pass_ypg_adj_rank": 1,
+      "sos_rank": 10
     },
     "PHI": {
       "games": 2,
+      "opps_faced": [
+        "WAS",
+        "TEN"
+      ],
       "qb1": "Jalen Hurts",
       "qb1_att": 62,
       "qb1_adot": 8.3,
@@ -605,14 +959,28 @@
       "pass_ypg": 233.5,
       "rush_ypc": 3.95,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 125.0,
+      "faced_off_pass": 173.5,
+      "sos_rush": -12.3,
+      "sos_pass": 53.7,
+      "rush_ypg_allowed_adj": 114.7,
+      "pass_ypg_allowed_adj": 227.2,
+      "sos_pts": -20.7,
       "sack_rank": 24,
       "qbhit_rank": 30,
       "rush_ypc_rank": 19,
       "rush_ypg_rank": 24,
-      "pass_ypg_rank": 5
+      "pass_ypg_rank": 5,
+      "rush_ypg_adj_rank": 18,
+      "pass_ypg_adj_rank": 12,
+      "sos_rank": 23
     },
     "PIT": {
       "games": 2,
+      "opps_faced": [
+        "ATL",
+        "NE"
+      ],
       "qb1": "Aaron Rodgers",
       "qb1_att": 79,
       "qb1_adot": 7.8,
@@ -628,14 +996,28 @@
       "pass_ypg": 204.0,
       "rush_ypc": 3.39,
       "sacks_allowed": 6.0,
+      "faced_off_rush": 133.0,
+      "faced_off_pass": 161.5,
+      "sos_rush": -20.3,
+      "sos_pass": 65.7,
+      "rush_ypg_allowed_adj": 107.7,
+      "pass_ypg_allowed_adj": 241.2,
+      "sos_pts": -22.7,
       "sack_rank": 4,
       "qbhit_rank": 14,
       "rush_ypc_rank": 21,
       "rush_ypg_rank": 25,
-      "pass_ypg_rank": 6
+      "pass_ypg_rank": 6,
+      "rush_ypg_adj_rank": 16,
+      "pass_ypg_adj_rank": 15,
+      "sos_rank": 25
     },
     "SEA": {
       "games": 2,
+      "opps_faced": [
+        "NE",
+        "ARI"
+      ],
       "qb1": "Drew Lock",
       "qb1_att": 48,
       "qb1_adot": 7.6,
@@ -651,14 +1033,28 @@
       "pass_ypg": 217.5,
       "rush_ypc": 4.18,
       "sacks_allowed": 3.0,
+      "faced_off_rush": 126.0,
+      "faced_off_pass": 242.5,
+      "sos_rush": -13.3,
+      "sos_pass": -15.3,
+      "rush_ypg_allowed_adj": 76.2,
+      "pass_ypg_allowed_adj": 121.2,
+      "sos_pts": 14.3,
       "sack_rank": 11,
       "qbhit_rank": 14,
       "rush_ypc_rank": 9,
       "rush_ypg_rank": 9,
-      "pass_ypg_rank": 1
+      "pass_ypg_rank": 1,
+      "rush_ypg_adj_rank": 6,
+      "pass_ypg_adj_rank": 3,
+      "sos_rank": 12
     },
     "SF": {
       "games": 2,
+      "opps_faced": [
+        "LAR",
+        "MIA"
+      ],
       "qb1": "Brock Purdy",
       "qb1_att": 56,
       "qb1_adot": 5.9,
@@ -674,14 +1070,28 @@
       "pass_ypg": 246.0,
       "rush_ypc": 4.72,
       "sacks_allowed": 0.0,
+      "faced_off_rush": 118.5,
+      "faced_off_pass": 273.5,
+      "sos_rush": -5.8,
+      "sos_pass": -46.3,
+      "rush_ypg_allowed_adj": 106.2,
+      "pass_ypg_allowed_adj": 136.2,
+      "sos_pts": 26.1,
       "sack_rank": 16,
       "qbhit_rank": 10,
       "rush_ypc_rank": 13,
       "rush_ypg_rank": 17,
-      "pass_ypg_rank": 7
+      "pass_ypg_rank": 7,
+      "rush_ypg_adj_rank": 15,
+      "pass_ypg_adj_rank": 6,
+      "sos_rank": 5
     },
     "TB": {
       "games": 2,
+      "opps_faced": [
+        "CIN",
+        "CLE"
+      ],
       "qb1": "Baker Mayfield",
       "qb1_att": 62,
       "qb1_adot": 9.1,
@@ -697,14 +1107,28 @@
       "pass_ypg": 199.0,
       "rush_ypc": 5.02,
       "sacks_allowed": 7.0,
+      "faced_off_rush": 86.0,
+      "faced_off_pass": 206.0,
+      "sos_rush": 26.7,
+      "sos_pass": 21.2,
+      "rush_ypg_allowed_adj": 101.7,
+      "pass_ypg_allowed_adj": 267.2,
+      "sos_pts": -23.9,
       "sack_rank": 24,
       "qbhit_rank": 20,
       "rush_ypc_rank": 4,
       "rush_ypg_rank": 4,
-      "pass_ypg_rank": 21
+      "pass_ypg_rank": 21,
+      "rush_ypg_adj_rank": 14,
+      "pass_ypg_adj_rank": 26,
+      "sos_rank": 29
     },
     "TEN": {
       "games": 2,
+      "opps_faced": [
+        "NYJ",
+        "PHI"
+      ],
       "qb1": "Cam Ward",
       "qb1_att": 52,
       "qb1_adot": 6.3,
@@ -720,14 +1144,28 @@
       "pass_ypg": 161.5,
       "rush_ypc": 4.42,
       "sacks_allowed": 5.0,
+      "faced_off_rush": 101.5,
+      "faced_off_pass": 225.0,
+      "sos_rush": 11.2,
+      "sos_pass": 2.2,
+      "rush_ypg_allowed_adj": 131.7,
+      "pass_ypg_allowed_adj": 241.7,
+      "sos_pts": -6.7,
       "sack_rank": 24,
       "qbhit_rank": 29,
       "rush_ypc_rank": 5,
       "rush_ypg_rank": 21,
-      "pass_ypg_rank": 19
+      "pass_ypg_rank": 19,
+      "rush_ypg_adj_rank": 24,
+      "pass_ypg_adj_rank": 16,
+      "sos_rank": 18
     },
     "WAS": {
       "games": 2,
+      "opps_faced": [
+        "PHI",
+        "DAL"
+      ],
       "qb1": "Jayden Daniels",
       "qb1_att": 51,
       "qb1_adot": 9.3,
@@ -743,11 +1181,21 @@
       "pass_ypg": 185.5,
       "rush_ypc": 4.91,
       "sacks_allowed": 1.0,
+      "faced_off_rush": 79.0,
+      "faced_off_pass": 219.5,
+      "sos_rush": 33.7,
+      "sos_pass": 7.7,
+      "rush_ypg_allowed_adj": 134.7,
+      "pass_ypg_allowed_adj": 248.7,
+      "sos_pts": -20.7,
       "sack_rank": 11,
       "qbhit_rank": 18,
       "rush_ypc_rank": 22,
       "rush_ypg_rank": 16,
-      "pass_ypg_rank": 20
+      "pass_ypg_rank": 20,
+      "rush_ypg_adj_rank": 25,
+      "pass_ypg_adj_rank": 20,
+      "sos_rank": 23
     }
   }
 }
