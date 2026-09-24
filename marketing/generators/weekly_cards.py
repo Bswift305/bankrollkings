@@ -604,27 +604,16 @@ FLOOR_LONGSHOT_2 = [
 ]
 
 # Single-game SGP tickets (a full book that allows same-game parlays). Edit per game.
-SGP_GAME = "DET @ BUF  ·  TNF  ·  BUF -5.5  ·  O/U 55"
+SGP_GAME = "ATL @ GB  ·  TNF  ·  GB -4.5  ·  O/U 43  (thin props — injury-driven)"
 SGP_TICKETS = [
-    ("SHOOTOUT SGP", GOLD, "the site's read: OVER + Detroit passing", [
-        ("Game Total", "OVER 55", "line"),
-        ("Jared Goff", "OVER Pass Yds 261.5", "over"),
-        ("Jameson Williams", "OVER Rec Yds 56.5", "over"),
+    ("INJURY EDGE SGP", GOLD, "ATL down CB1 Terrell + edge Ebukam — GB airs it out, ATL chases", [
+        ("Jordan Love", "OVER Pass TDs 1.5", "over"),
+        ("Michael Penix Jr", "OVER Pass Comp 18.5", "over"),
     ]),
-    ("GROUND GAME SGP", CY, "both lead backs run in a high-scoring game", [
-        ("James Cook", "OVER Rush Att 17.5", "over"),
-        ("James Cook", "OVER Rush Yds 78.5", "over"),
-        ("Jahmyr Gibbs", "OVER Rush Yds 86.5", "over"),
-    ]),
-    ("TEs QUIET SGP", RED, "usage runs WR/RB; Allen is a low-completion QB", [
-        ("Josh Allen", "UNDER Pass Comp 21.5", "under"),
-        ("Dalton Kincaid", "UNDER Rec Yds 52.5", "under"),
-        ("Sam LaPorta", "UNDER Receptions 4.5", "under"),
-    ]),
-    ("TOP EDGE SGP", GREEN, "three of the highest-PropScore plays", [
-        ("Jameson Williams", "OVER Rec Yds 56.5", "over"),
-        ("James Cook", "OVER Rush Yds 78.5", "over"),
-        ("Joshua Palmer", "UNDER Receptions 1.5", "under"),
+    ("GB CONTROL SGP", CY, "Love throws (not runs) with a lead; Bijan quiet as a receiver", [
+        ("Jordan Love", "OVER Pass TDs 1.5", "over"),
+        ("Jordan Love", "UNDER Rush Yds 8.5", "under"),
+        ("Bijan Robinson", "UNDER Rec Yds 41.5", "under"),
     ]),
 ]
 
