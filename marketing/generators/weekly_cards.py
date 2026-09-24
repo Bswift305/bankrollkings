@@ -744,6 +744,61 @@ def card_sunday_best(week, out):
     return c.save(out)
 
 
+# ATL @ GB (Thu Week 3) — "The Good" tier: props where 2026 form + injuries stack the
+# same way. Each: player, pick, kind, one-line why (grounded in usage + availability).
+ATLGB_GAME = ("ATL @ GB", "Thu · GB -4.5 · O/U 42.5")
+ATLGB_GOOD = [
+    ("Christian Watson", "OVER 70.5 Rec Yds", "over",
+     "94/gm pace · WR1 with Reed & S.Williams OUT · ATL's CB1 Terrell OUT"),
+    ("Matthew Golden", "OVER 52.5 Rec Yds", "over",
+     "76.5/gm pace · co-No.1 on the same target vacuum · Terrell OUT"),
+    ("Bijan Robinson", "UNDER 39.5 Rec Yds", "under",
+     "checkdown volume drops with Penix pushing the ball downfield"),
+]
+ATLGB_CTX = "Both run D's rank top-5 opponent-adjusted — ground games get stuffed, the total rides on passing."
+
+
+def card_atlgb_good(week, out):
+    """Single-game clean card: the ATL@GB 'Good' tier — props where current-season
+    form and the injury report point the same direction."""
+    kcol = {'over': GREEN, 'under': RED}
+    top = 250
+    ph = 96  # per-play block height
+    H = top + 54 + len(ATLGB_GOOD) * (ph + 14) + 92 + 120
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — THE GOOD", chip=ATLGB_GAME[0])
+
+    # Game context strip
+    d.rounded_rectangle([(M, y), (W - M, y + 40)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 16, y + 9, ATLGB_GAME[1], F['pl'], INK)
+    c.text(W - M - 16, y + 11, "form + injuries agree", F['de'], CY, right=True)
+    y += 58
+
+    c.text(M, y, "PLAYS WE TRUST", F['col'], CY)
+    c.text(W - M, y + 2, f"{len(ATLGB_GOOD)} clean", F['de'], FAINT, right=True)
+    y += 32; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
+
+    for player, pick, kind, why in ATLGB_GOOD:
+        accent = kcol.get(kind, INK)
+        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=accent)
+        c.text(M + 30, y + 16, player, F['blk'], INK)
+        c.text(W - M - 20, y + 18, pick, F['pl'], accent, right=True)
+        c.text(M + 30, y + 56, why, F['de'], FAINT)
+        y += ph + 14
+
+    y += 8
+    d.rounded_rectangle([(M, y), (W - M, y + 56)], radius=12,
+                        fill=(45//14, 212//14, 191//14), outline=(45, 212, 191), width=1)
+    c.text(M + 16, y + 9, "WHY", F['col'], CY)
+    c.text(M + 16, y + 30, ATLGB_CTX, F['de'], INK)
+    y += 78
+
+    c.text(M, y, f"Live board pulled {_stamp()}. 2-game sample — spots, not locks. Verify lines on Caesars.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Grounded in real 2026 usage + injury report. Not guarantees. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_reads(week, out):
     """CFB Saturday leans from the current-season form engine. Labeled trend/context --
     CFB has no validated edge like the NFL PropScore, and these are 3-game samples."""
@@ -979,6 +1034,8 @@ def main():
         made.append(card_cfb_reads(args.week, str(out_dir / 'bk_cfb_reads.png')))
     if 'sunday' in want:
         made.append(card_sunday_best(args.week, str(out_dir / 'bk_sunday_best.png')))
+    if 'atlgb' in want:
+        made.append(card_atlgb_good(args.week, str(out_dir / 'bk_atlgb_good.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
