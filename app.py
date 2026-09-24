@@ -40334,9 +40334,39 @@ def build_nfl_matchup_dossier():
     return data
 
 
+def _nfl_game_tackle_reads(away, home, props_df):
+    """Tackle-volume reads (build_nfl_defense_form) for one game's defensive props:
+    each tackle prop against the player's 2026 pace, strongest edge first. Sacks are
+    deliberately excluded -- they're a coin flip, not an edge."""
+    if props_df is None or props_df.empty:
+        return []
+    try:
+        import nfl_defense_form as _ndf
+    except Exception:
+        return []
+    am = str(away).split()[-1].lower()  # 'Falcons'
+    hm = str(home).split()[-1].lower()  # 'Packers'
+    gm = props_df[props_df['Game'].astype(str).str.lower().str.contains(am)
+                  & props_df['Game'].astype(str).str.lower().str.contains(hm)]
+    tk = gm[gm['Stat'].astype(str).str.contains('Tackle|Solo|Assist', case=False, na=False)]
+    if tk.empty:
+        return []
+    # consensus line per player+stat (median across books)
+    rows = []
+    for (pl, st), grp in tk.groupby(['Player', 'Stat']):
+        line = pd.to_numeric(grp['Line'], errors='coerce').median()
+        if pd.notna(line):
+            rows.append({'player': pl, 'stat': st, 'line': float(line)})
+    return _ndf.game_tackle_reads(rows, limit=8)
+
+
 def build_nfl_matchup_context():
     dossier = build_nfl_matchup_dossier()
     week_games = []
+    try:
+        nfl_props = load_nfl_props()
+    except Exception:
+        nfl_props = None
     try:
         for g in build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
@@ -40361,6 +40391,12 @@ def build_nfl_matchup_context():
                                    'away_form', 'home_form')}
                 except Exception:
                     pass
+                # Defensive tackle-volume reads (offense-first model's blind spot):
+                # each tackle prop vs the player's real 2026 pace. Sacks excluded.
+                try:
+                    wg['tackles'] = _nfl_game_tackle_reads(a, h, nfl_props)
+                except Exception:
+                    wg['tackles'] = []
                 week_games.append(wg)
     except Exception:
         week_games = []

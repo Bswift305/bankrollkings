@@ -51,6 +51,18 @@
   .mu-wk-form .inj-p.out{color:#ff6f7e;}
   .mu-wk-form .inj-p.doubtful{color:#ff9f6a;}
   .mu-wk-form .inj-p.questionable{color:#ffcf6a;}
+  .mu-wk-tk{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);}
+  .mu-wk-tk>b{color:var(--text);font-weight:700;}
+  .mu-wk-tk .tk-sub{color:var(--text-muted);font-size:10.5px;}
+  .mu-wk-tk .tk-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px;}
+  .mu-wk-tk .tk-lean{font:800 10px ui-monospace,Consolas,monospace;letter-spacing:.04em;border-radius:4px;padding:1px 5px;min-width:62px;text-align:center;}
+  .mu-wk-tk .tk-lean.over{color:#0b1118;background:#4ed48a;}
+  .mu-wk-tk .tk-lean.under{color:#0b1118;background:#ff6f7e;}
+  .mu-wk-tk .tk-lean.flip{color:var(--text-muted);border:1px solid var(--border);}
+  .mu-wk-tk .tk-name{color:var(--text);font-weight:700;}
+  .mu-wk-tk .tk-name em{font-style:normal;color:var(--text-muted);font-size:10px;text-transform:uppercase;}
+  .mu-wk-tk .tk-stat{color:var(--text-muted);font-family:ui-monospace,Consolas,monospace;font-size:11px;}
+  .mu-wk-tk .tk-pace{margin-left:auto;color:var(--mu-accent);font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:700;}
 </style>
 
 <div class="mu-wrap">
@@ -76,8 +88,10 @@
         <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
         <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
       </button>
-      {% if g.form and g.form.away_def_note and g.form.home_def_note %}
+      {% set has_form = g.form and g.form.away_def_note and g.form.home_def_note %}
+      {% if has_form or g.tackles %}
       <div class="mu-wk-form">
+        {% if has_form %}
         {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
         <span class="d">{{ g.form.away_def_note }}</span>
         <span class="d">{{ g.form.home_def_note }}</span>
@@ -88,6 +102,20 @@
           <b>{{ (g.away if loop.first else g.home) }} out/questionable:</b>
           {% for i in side %}<span class="inj-p {{ i.status|lower }}">{{ i.player }} <em>{{ i.pos }}</em> {{ i.status[:1] if i.status=='QUESTIONABLE' else i.status }}{% if i.ailment %} ({{ i.ailment }}){% endif %}</span>{% if not loop.last %} &middot; {% endif %}{% endfor %}
         </span>{% endif %}{% endfor %}
+        {% endif %}
+        {% if g.tackles %}
+        <div class="mu-wk-tk">
+          <b>Tackle volume</b> <span class="tk-sub">2026 pace vs line &middot; volume read, not a graded edge &middot; sacks excluded (coin flip)</span>
+          {% for t in g.tackles %}
+          <span class="tk-row">
+            <span class="tk-lean {{ 'over' if t.lean=='OVER' else ('under' if t.lean=='UNDER' else 'flip') }}">{{ t.lean }}{% if t.strong %} &#9733;{% endif %}</span>
+            <span class="tk-name">{{ t.player }} <em>{{ t.pos }}</em></span>
+            <span class="tk-stat">{{ t.stat }} {{ '%g'|format(t.line) }}</span>
+            <span class="tk-pace">{{ t.pace }}/gm ({{ '%+g'|format(t.edge) }})</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       {% endif %}
     </div>
