@@ -157,7 +157,19 @@ def matchup_read(away: str, home: str, spread_home=None, total=None) -> dict:
         "away_def_note": defense_note(away), "home_def_note": defense_note(home),
         "away_qb_note": passer_note(away), "home_qb_note": passer_note(home),
         "note": None, "total_lean": None, "run_reads": [], "pass_reads": [],
+        "away_injuries": [], "home_injuries": [], "away_inj_note": None, "home_inj_note": None,
     }
+    # Injury overlay -- the availability the rearview box scores can't see (a #1 CB on
+    # IR, a starting RB out). Attached even when form is thin, and never fabricated.
+    try:
+        import nfl_injury_context as _nic
+        aa, ha = resolve(away), resolve(home)
+        read["away_injuries"] = _nic.team_injuries(aa, 5)
+        read["home_injuries"] = _nic.team_injuries(ha, 5)
+        read["away_inj_note"] = _nic.injury_note(aa)
+        read["home_inj_note"] = _nic.injury_note(ha)
+    except Exception:
+        pass
     if not fa.get("games") or not fh.get("games"):
         read["note"] = "No 2026 form yet for one side — read off the board."
         return read

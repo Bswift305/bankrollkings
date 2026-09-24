@@ -40355,7 +40355,10 @@ def build_nfl_matchup_context():
                     wg['form'] = {k: fr.get(k) for k in
                                   ('note', 'total_lean', 'run_reads', 'pass_reads',
                                    'away_def_note', 'home_def_note',
-                                   'away_qb_note', 'home_qb_note', 'away_form', 'home_form')}
+                                   'away_qb_note', 'home_qb_note',
+                                   'away_injuries', 'home_injuries',
+                                   'away_inj_note', 'home_inj_note',
+                                   'away_form', 'home_form')}
                 except Exception:
                     pass
                 week_games.append(wg)

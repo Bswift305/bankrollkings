@@ -44,6 +44,13 @@
   .mu-wk-form .d{display:block;}
   .mu-wk-form .d b{color:var(--text);}
   .mu-wk-form .qb{color:var(--text-dim,#8a94a6);font-style:italic;margin-top:2px;}
+  .mu-wk-form .inj{margin-top:4px;line-height:1.7;}
+  .mu-wk-form .inj b{color:var(--text);font-weight:700;}
+  .mu-wk-form .inj-p{white-space:nowrap;}
+  .mu-wk-form .inj-p em{font-style:normal;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.03em;}
+  .mu-wk-form .inj-p.out{color:#ff6f7e;}
+  .mu-wk-form .inj-p.doubtful{color:#ff9f6a;}
+  .mu-wk-form .inj-p.questionable{color:#ffcf6a;}
 </style>
 
 <div class="mu-wrap">
@@ -76,6 +83,11 @@
         <span class="d">{{ g.form.home_def_note }}</span>
         {% if g.form.away_qb_note %}<span class="d qb">{{ g.form.away_qb_note }}</span>{% endif %}
         {% if g.form.home_qb_note %}<span class="d qb">{{ g.form.home_qb_note }}</span>{% endif %}
+        {% for side in [g.form.away_injuries, g.form.home_injuries] %}{% if side %}
+        <span class="d inj">
+          <b>{{ (g.away if loop.first else g.home) }} out/questionable:</b>
+          {% for i in side %}<span class="inj-p {{ i.status|lower }}">{{ i.player }} <em>{{ i.pos }}</em> {{ i.status[:1] if i.status=='QUESTIONABLE' else i.status }}{% if i.ailment %} ({{ i.ailment }}){% endif %}</span>{% if not loop.last %} &middot; {% endif %}{% endfor %}
+        </span>{% endif %}{% endfor %}
       </div>
       {% endif %}
     </div>
