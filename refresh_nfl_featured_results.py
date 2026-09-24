@@ -5,16 +5,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from app import load_nfl_floor_board, load_nfl_gamelogs
+from app import build_nfl_spots_context
 from services.qc_tracking import append_qc_run_log
 
+# Resolve against real nflverse weekly actuals (the reliable path the weekly grader
+# uses) instead of the static 2023-25 gamelogs, which lack the current fall season and
+# whose column names ('PassYd') never matched the old map ('PassYds'). This is what
+# makes the 99 scorecard's LIVE-resolved count actually move in-season.
+from grade_nfl_week import _season_df, STAT_COL
 
 BASE_DIR = Path(__file__).resolve().parent
 RESULTS_PATH = BASE_DIR / "data" / "tracking" / "NFL_FeaturedResults.csv"
 
-# Written as a header row when there is nothing to archive yet, so the file always
-# parses and the 99 scorecard's Archive & Replay check sees a real, if empty,
-# archive. Must match the keys built in main().
+# Featured = the validated PropScore tier. >=20 is "premium".
+FEATURED_MIN_SCORE = 20.0
+
 RESULT_COLUMNS = [
     "SnapshotDate", "SavedAt", "Player", "Team", "Stat", "Direction", "Line",
     "Floor", "Avg", "HitPct", "Streak", "GovernanceTier", "GovernanceBadge",
@@ -22,13 +27,13 @@ RESULT_COLUMNS = [
     "ResultDate", "ResultValue", "DaysToResult", "OutcomeState", "SnapshotWrittenAt",
 ]
 
-NFL_STAT_COLUMN_MAP = {
-    "Pass Yds": "PassYds",
-    "Pass TDs": "PassTD",
-    "Rush Yds": "RushYds",
-    "Rec Yds": "RecYds",
-    "Receptions": "Receptions",
-}
+
+def _current_week(d):
+    try:
+        from nfl_early_season_gate import current_week
+        return current_week(d)
+    except Exception:
+        return None
 
 
 def _load_existing() -> pd.DataFrame:
@@ -36,8 +41,6 @@ def _load_existing() -> pd.DataFrame:
         try:
             return pd.read_csv(RESULTS_PATH)
         except pd.errors.EmptyDataError:
-            # A zero-byte file left behind by an older build of this script. Treat
-            # it as an empty archive instead of crashing the whole daily step.
             return pd.DataFrame()
     return pd.DataFrame()
 
@@ -45,104 +48,98 @@ def _load_existing() -> pd.DataFrame:
 def _replace(df: pd.DataFrame) -> None:
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     if df.empty:
-        # Writing an empty frame straight out produces a zero-byte, header-less
-        # file that every reader then dies on with pandas' "No columns to parse
-        # from file". Having no top plays and no archive yet is a normal state
-        # (off-season, or a season that has not played a game), so lay down a
-        # valid empty archive rather than a landmine.
         df = pd.DataFrame(columns=RESULT_COLUMNS)
     df.to_csv(RESULTS_PATH, index=False)
 
 
-def _grade_rows(df: pd.DataFrame, gamelogs: pd.DataFrame) -> pd.DataFrame:
-    if df.empty or gamelogs is None or gamelogs.empty or "Player" not in gamelogs.columns or "Date" not in gamelogs.columns:
+def _grade_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Resolve Pending rows against nflverse weekly actuals. A play snapshotted in the
+    week of its game resolves against that week's box score (Hit/Miss/Push, honoring
+    Direction). Dedupe-safe: already-resolved rows are left alone."""
+    if df.empty:
         return df
-    logs = gamelogs.copy()
-    logs["Date"] = pd.to_datetime(logs["Date"], errors="coerce")
+    seasons: dict[int, pd.DataFrame] = {}
     for idx, row in df.iterrows():
+        if str(row.get("OutcomeState", "")) in ("Hit", "Miss", "Push"):
+            continue
         stat = str(row.get("Stat", "")).strip()
-        stat_col = NFL_STAT_COLUMN_MAP.get(stat)
-        if not stat_col or stat_col not in logs.columns:
-            continue
-        player = str(row.get("Player", "")).strip()
-        team = str(row.get("Team", "")).strip().upper()
-        snapshot_date = pd.to_datetime(row.get("SnapshotDate"), errors="coerce")
+        col = STAT_COL.get(stat)
+        snap = pd.to_datetime(row.get("SnapshotDate"), errors="coerce")
         line = pd.to_numeric(row.get("Line"), errors="coerce")
-        if not player or pd.isna(snapshot_date) or pd.isna(line):
+        player = str(row.get("Player", "")).strip()
+        direction = str(row.get("Direction", "OVER")).strip().upper()
+        if not col or not player or pd.isna(snap) or pd.isna(line):
             continue
-
-        player_logs = logs[logs["Player"].astype(str) == player].copy()
-        if team and "Team" in player_logs.columns:
-            team_logs = player_logs[player_logs["Team"].astype(str).str.upper() == team].copy()
-            if not team_logs.empty:
-                player_logs = team_logs
-        next_logs = player_logs[player_logs["Date"] > snapshot_date].sort_values("Date", ascending=True)
-        if next_logs.empty:
+        wk = _current_week(snap.date())
+        if wk is None:
             continue
-        next_game = next_logs.iloc[0]
-        value = pd.to_numeric(next_game.get(stat_col), errors="coerce")
-        if pd.isna(value):
+        season = snap.year if snap.month >= 3 else snap.year - 1
+        if season not in seasons:
+            try:
+                seasons[season] = _season_df(season)
+            except Exception:
+                seasons[season] = None
+        sdf = seasons[season]
+        if sdf is None or col not in sdf.columns:
             continue
-
-        state = "Hit" if float(value) > float(line) else "Miss" if float(value) < float(line) else "Push"
-        df.at[idx, "ResultDate"] = next_game["Date"].strftime("%Y-%m-%d") if pd.notna(next_game["Date"]) else ""
-        df.at[idx, "ResultValue"] = round(float(value), 1)
-        df.at[idx, "DaysToResult"] = int((next_game["Date"] - snapshot_date).days) if pd.notna(next_game["Date"]) else None
+        m = sdf[(sdf["week"] == wk) &
+                (sdf["player_display_name"].astype(str).str.lower() == player.lower())]
+        if m.empty:
+            continue
+        val = pd.to_numeric(m.iloc[0][col], errors="coerce")
+        if pd.isna(val):
+            continue
+        if float(val) == float(line):
+            state = "Push"
+        else:
+            over = float(val) > float(line)
+            state = "Hit" if (over if direction == "OVER" else not over) else "Miss"
+        df.at[idx, "ResultValue"] = round(float(val), 1)
+        df.at[idx, "ResultDate"] = f"{season} wk{wk}"
         df.at[idx, "OutcomeState"] = state
     return df
 
 
 def main() -> int:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    board = load_nfl_floor_board()
-    plays = list(board.get("top_plays", []) or [])
     snapshot_date = datetime.now().date().isoformat()
 
+    plays = [p for p in (build_nfl_spots_context(limit=500).get("sp_top") or [])
+             if (p.get("prop_score") or 0) >= FEATURED_MIN_SCORE]
+
     rows = []
-    for play in plays:
+    for p in plays:
         rows.append({
-            "SnapshotDate": snapshot_date,
-            "SavedAt": checked_at,
-            "Player": play.get("player"),
-            "Team": play.get("team"),
-            "Stat": play.get("stat"),
-            "Direction": "OVER",
-            "Line": play.get("line"),
-            "Floor": play.get("floor"),
-            "Avg": play.get("avg"),
-            "HitPct": play.get("hit_pct"),
-            "Streak": play.get("streak"),
-            "GovernanceTier": play.get("governance_tier"),
-            "GovernanceBadge": play.get("governance_badge"),
-            "GovernanceResolved": play.get("governance_resolved"),
-            "GovernanceHitRate": play.get("governance_hit_rate"),
-            "TrustScore": play.get("trust_score"),
-            "TrustVerdict": play.get("trust_verdict"),
-            "ResultDate": "",
-            "ResultValue": None,
-            "DaysToResult": None,
-            "OutcomeState": "Pending",
-            "SnapshotWrittenAt": checked_at,
+            "SnapshotDate": snapshot_date, "SavedAt": checked_at,
+            "Player": p.get("player"), "Team": p.get("team"),
+            "Stat": p.get("stat"), "Direction": str(p.get("direction") or "OVER").upper(),
+            "Line": p.get("line"), "Floor": None, "Avg": None, "HitPct": None, "Streak": None,
+            "GovernanceTier": None, "GovernanceBadge": None, "GovernanceResolved": None,
+            "GovernanceHitRate": None, "TrustScore": p.get("prop_score"),
+            "TrustVerdict": p.get("detail"), "ResultDate": "", "ResultValue": None,
+            "DaysToResult": None, "OutcomeState": "Pending", "SnapshotWrittenAt": checked_at,
         })
 
     existing = _load_existing()
+    # Drop stale pre-current-season Pending cruft so the archive stays clean.
+    if not existing.empty and "SnapshotDate" in existing.columns:
+        cutoff = pd.Timestamp(datetime.now().year if datetime.now().month >= 3 else datetime.now().year - 1, 8, 1)
+        sd = pd.to_datetime(existing["SnapshotDate"], errors="coerce")
+        keep_resolved = existing["OutcomeState"].isin(["Hit", "Miss", "Push"]) if "OutcomeState" in existing else False
+        existing = existing[(sd >= cutoff) | keep_resolved].copy()
+
     entry = pd.DataFrame(rows)
     updated = entry if existing.empty else pd.concat([existing, entry], ignore_index=True)
     if not updated.empty:
-        dedupe_cols = ["SnapshotDate", "Player", "Team", "Stat", "Line"]
-        updated = updated.drop_duplicates(subset=dedupe_cols, keep="last").copy()
-        updated = _grade_rows(updated, load_nfl_gamelogs())
+        updated = updated.drop_duplicates(subset=["SnapshotDate", "Player", "Team", "Stat", "Line"], keep="last").copy()
+        updated = _grade_rows(updated)
         updated = updated.sort_values(["SnapshotDate", "TrustScore"], ascending=[False, False], na_position="last")
     _replace(updated)
 
-    resolved = updated[updated["OutcomeState"].isin(["Hit", "Miss", "Push"])].copy() if not updated.empty else pd.DataFrame()
+    resolved = updated[updated["OutcomeState"].isin(["Hit", "Miss", "Push"])] if not updated.empty else pd.DataFrame()
     report = {
-        "checked_at": checked_at,
-        "clean": True,
-        "pass_count": int(len(updated)),
-        "warning_count": 0,
-        "failure_count": 0,
-        "featured_prop_count": int(len(plays)),
+        "checked_at": checked_at, "clean": True, "pass_count": int(len(updated)),
+        "warning_count": 0, "failure_count": 0, "featured_prop_count": int(len(plays)),
         "notes": f"Wrote {len(rows)} NFL featured rows. Resolved {len(resolved)} rows.",
     }
     append_qc_run_log("nfl_featured_results", report)
@@ -151,9 +148,7 @@ def main() -> int:
     print("NFL FEATURED RESULTS SNAPSHOT")
     print("=" * 60)
     print(f"Checked at: {checked_at}")
-    print(f"Rows written: {len(rows)}")
-    print(f"Stored rows: {len(updated)}")
-    print(f"Resolved rows: {len(resolved)}")
+    print(f"Rows written: {len(rows)} | Stored: {len(updated)} | Resolved: {len(resolved)}")
     return 0
 
 
