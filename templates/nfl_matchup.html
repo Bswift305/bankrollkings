@@ -31,13 +31,19 @@
   .mu-wk-h{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;}
   .mu-wk-h span{display:block;font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:none;letter-spacing:0;margin-top:3px;}
   .mu-wk-list{display:flex;flex-direction:column;}
+  .mu-wk-item{border-bottom:1px solid rgba(255,255,255,.05);}
+  .mu-wk-item:last-child{border-bottom:0;}
   .mu-wk{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;width:100%;text-align:left;
-    background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.05);padding:12px 2px;cursor:pointer;transition:.12s;}
-  .mu-wk:last-child{border-bottom:0;}
+    background:transparent;border:0;padding:12px 2px 4px;cursor:pointer;transition:.12s;}
   .mu-wk:hover{background:rgba(91,141,239,.08);}
   .mu-wk-tm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
   .mu-wk-tm .at{color:var(--text-muted);font-weight:600;margin:0 5px;}
   .mu-wk-ln{font:600 12.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .mu-wk-form{padding:0 2px 11px;font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mu-wk-form .lean{color:var(--mu-accent);font-weight:700;display:block;margin-bottom:3px;}
+  .mu-wk-form .d{display:block;}
+  .mu-wk-form .d b{color:var(--text);}
+  .mu-wk-form .qb{color:var(--text-dim,#8a94a6);font-style:italic;margin-top:2px;}
 </style>
 
 <div class="mu-wrap">
@@ -58,10 +64,21 @@
   <div class="mu-wk-h">This Week&rsquo;s Matchups <span>{{ mu_week|length }} games &middot; tap one for the full edge card</span></div>
   <div class="mu-wk-list">
     {% for g in mu_week %}
-    <button type="button" class="mu-wk" data-away="{{ g.away }}" data-home="{{ g.home }}">
-      <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
-      <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
-    </button>
+    <div class="mu-wk-item">
+      <button type="button" class="mu-wk" data-away="{{ g.away }}" data-home="{{ g.home }}">
+        <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
+        <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
+      </button>
+      {% if g.form and g.form.away_def_note and g.form.home_def_note %}
+      <div class="mu-wk-form">
+        {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
+        <span class="d">{{ g.form.away_def_note }}</span>
+        <span class="d">{{ g.form.home_def_note }}</span>
+        {% if g.form.away_qb_note %}<span class="d qb">{{ g.form.away_qb_note }}</span>{% endif %}
+        {% if g.form.home_qb_note %}<span class="d qb">{{ g.form.home_qb_note }}</span>{% endif %}
+      </div>
+      {% endif %}
+    </div>
     {% endfor %}
   </div>
 </div></div>

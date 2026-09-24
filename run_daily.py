@@ -76,6 +76,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # Receiver aDOT/archetype profile for the archetype gate (flags volatile
         # deep-threat receptions props). One nflverse call; cheap.
         ("NFL receiver profile", _python("build_nfl_receiver_profile.py"), 120),
+        # Current-season team form (offense + defense splits + pressure, league-ranked)
+        # so the matchup card reasons off how teams play NOW, not last year. One
+        # nflverse call; writes committable data/scenarios/nfl_2026_form.json.
+        ("NFL team form", _python("build_nfl_team_form.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.

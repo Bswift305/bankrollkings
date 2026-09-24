@@ -40341,10 +40341,24 @@ def build_nfl_matchup_context():
         for g in build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
             if a and h:
-                week_games.append({
+                wg = {
                     'away': a, 'home': h, 'spread': _format_signed_line(g.get('spread')),
                     'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
-                })
+                }
+                # Current-season form read (how each side is playing NOW: run D, pass D,
+                # pressure, and what it implies for run/pass/total) -- the NFL "think
+                # like this" layer, mirroring CFB. Degrades quietly if the form file
+                # isn't built yet.
+                try:
+                    import nfl_current_form as _ncf
+                    fr = _ncf.matchup_read(a, h, g.get('spread'), g.get('total'))
+                    wg['form'] = {k: fr.get(k) for k in
+                                  ('note', 'total_lean', 'run_reads', 'pass_reads',
+                                   'away_def_note', 'home_def_note',
+                                   'away_qb_note', 'home_qb_note', 'away_form', 'home_form')}
+                except Exception:
+                    pass
+                week_games.append(wg)
     except Exception:
         week_games = []
     return {
