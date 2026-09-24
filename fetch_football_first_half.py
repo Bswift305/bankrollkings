@@ -8,8 +8,12 @@ their own pass. Writes a compact consensus file the board reads to show "1H" and
 "1Q" lines next to the game -- more ways to play the same read (e.g. a first-half
 under when both defenses start strong).
 
+Also grabs full-game TEAM TOTALS (each team's own points line) off the same per-event
+call -- a cleaner way to bet a depleted or hot offense than the game total.
+
   data/odds/NFL_FirstHalf.csv   /  data/odds/NCAAF_FirstHalf.csv
-  cols: Date,Time,Away,Home,SpreadH1,TotalH1,SpreadQ1,TotalQ1,Books,GameID,LastUpdated
+  cols: Date,Time,Away,Home,SpreadH1,TotalH1,SpreadQ1,TotalQ1,TeamTotalAway,TeamTotalHome,
+        Books,GameID,LastUpdated
   (SpreadH1/SpreadQ1 are the HOME-perspective spreads, matching the full-game convention.
    Consensus is the MEDIAN across books, which shrugs off the occasional book-side outlier.)
 
@@ -30,7 +34,7 @@ except Exception:
 ROOT = pathlib.Path(__file__).resolve().parent
 PREFIX = {"americanfootball_nfl": "NFL", "americanfootball_ncaaf": "NCAAF"}
 COLS = ["Date", "Time", "Away", "Home", "SpreadH1", "TotalH1", "SpreadQ1", "TotalQ1",
-        "Books", "GameID", "LastUpdated"]
+        "TeamTotalAway", "TeamTotalHome", "Books", "GameID", "LastUpdated"]
 
 
 def _key():
@@ -87,7 +91,7 @@ def build(sport, days, bookmakers):
             continue
         home, away = ev.get("home_team"), ev.get("away_team")
         qs = urllib.parse.urlencode({"apiKey": key, "regions": "us",
-                                     "markets": "spreads_h1,totals_h1,spreads_q1,totals_q1",
+                                     "markets": "spreads_h1,totals_h1,spreads_q1,totals_q1,team_totals",
                                      "oddsFormat": "american", "bookmakers": bookmakers})
         try:
             odds, rem = _get(f"{base}/events/{ev['id']}/odds?{qs}")
@@ -95,10 +99,19 @@ def build(sport, days, bookmakers):
             continue
         checked += 1
         h_spreads, h_totals, q_spreads, q_totals, books = [], [], [], [], 0
+        tt_home, tt_away = [], []  # full-game team totals (line from the Over outcome)
         for bk in odds.get("bookmakers", []):
             got = False
             for m in bk.get("markets", []):
                 key_m = m.get("key")
+                if key_m == "team_totals":
+                    for o in m.get("outcomes", []):
+                        if o.get("name") == "Over" and o.get("point") is not None:
+                            bucket = tt_home if o.get("description") == home else (
+                                tt_away if o.get("description") == away else None)
+                            if bucket is not None:
+                                bucket.append(float(o["point"])); got = True
+                    continue
                 spread_bucket = h_spreads if key_m == "spreads_h1" else (q_spreads if key_m == "spreads_q1" else None)
                 total_bucket = h_totals if key_m == "totals_h1" else (q_totals if key_m == "totals_q1" else None)
                 if spread_bucket is not None:
@@ -113,11 +126,14 @@ def build(sport, days, bookmakers):
                 books += 1
         sp, tot = _consensus(h_spreads), _consensus(h_totals)
         qsp, qtot = _consensus(q_spreads), _consensus(q_totals)
-        if sp is None and tot is None and qsp is None and qtot is None:
+        tta, tth = _consensus(tt_away), _consensus(tt_home)
+        if all(v is None for v in (sp, tot, qsp, qtot, tta, tth)):
             continue
         rows.append({"Date": date, "Time": t, "Away": away, "Home": home,
                      "SpreadH1": sp if sp is not None else "", "TotalH1": tot if tot is not None else "",
                      "SpreadQ1": qsp if qsp is not None else "", "TotalQ1": qtot if qtot is not None else "",
+                     "TeamTotalAway": tta if tta is not None else "",
+                     "TeamTotalHome": tth if tth is not None else "",
                      "Books": books, "GameID": ev.get("id"), "LastUpdated": now})
 
     rows.sort(key=lambda r: (r["Date"], r["Home"]))
@@ -129,7 +145,8 @@ def build(sport, days, bookmakers):
     print(f"  credits remaining: {rem}")
     if rows:
         s = rows[0]
-        print(f"  e.g. {s['Date']} {s['Away']} @ {s['Home']}  1H {s['SpreadH1']}/{s['TotalH1']}  1Q {s['SpreadQ1']}/{s['TotalQ1']}")
+        print(f"  e.g. {s['Date']} {s['Away']} @ {s['Home']}  1H {s['SpreadH1']}/{s['TotalH1']}  "
+              f"1Q {s['SpreadQ1']}/{s['TotalQ1']}  TT {s['Away']}={s['TeamTotalAway']} {s['Home']}={s['TeamTotalHome']}")
 
 
 if __name__ == "__main__":

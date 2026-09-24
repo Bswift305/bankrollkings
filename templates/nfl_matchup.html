@@ -98,6 +98,13 @@
           {% if g.periods['1H'] %}<span class="per-tag">1H</span> {% if g.periods['1H'].spread is not none %}{{ g.home.split(' ')[-1] }} {{ '%+g'|format(g.periods['1H'].spread) }}{% endif %}{% if g.periods['1H'].total is not none %} · O/U {{ '%g'|format(g.periods['1H'].total) }}{% endif %}{% endif %}
           {% if g.periods['1Q'] %}&nbsp;&nbsp;<span class="per-tag">1Q</span> {% if g.periods['1Q'].spread is not none %}{{ g.home.split(' ')[-1] }} {{ '%+g'|format(g.periods['1Q'].spread) }}{% endif %}{% if g.periods['1Q'].total is not none %} · O/U {{ '%g'|format(g.periods['1Q'].total) }}{% endif %}{% endif %}
         </span>
+        {% if g.periods['TT'] %}
+        <span class="d per">
+          <span class="per-tag">TT</span>
+          {% if g.periods['TT'].away is not none %}{{ g.away.split(' ')[-1] }} {{ '%g'|format(g.periods['TT'].away) }}{% endif %}{% if g.periods['TT'].home is not none %} &nbsp; {{ g.home.split(' ')[-1] }} {{ '%g'|format(g.periods['TT'].home) }}{% endif %}
+          <span class="tk-sub">team totals</span>
+        </span>
+        {% endif %}
         {% endif %}
         {% if has_form %}
         {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}

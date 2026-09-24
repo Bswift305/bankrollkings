@@ -40389,6 +40389,11 @@ def _nfl_period_lines(away, home):
         sp, tot = _num(sp_col), (_num(tot_col) if tot_col in df.columns else None)
         if sp is not None or tot is not None:
             out[period] = {'spread': sp, 'total': tot}
+    if 'TeamTotalHome' in df.columns:
+        tta = _num('TeamTotalAway') if 'TeamTotalAway' in df.columns else None
+        tth = _num('TeamTotalHome')
+        if tta is not None or tth is not None:
+            out['TT'] = {'away': tta, 'home': tth}
     return out
 
 
