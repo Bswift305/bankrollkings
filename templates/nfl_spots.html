@@ -54,6 +54,24 @@
   <a href="/tools/weekend">This Weekend &rsaquo;</a>
 </div>
 
+<!-- ============ 0. WEATHER ALERT (wind under) — leads the board only when live ============ -->
+{% if sp_wind %}
+<div class="ns-sec" style="border:1px solid rgba(255,176,90,.4);border-radius:12px;padding:12px 16px;background:rgba(255,176,90,.06);margin-bottom:18px;">
+  <div class="ns-sech" style="border-bottom-color:rgba(255,176,90,.3);"><span class="n" style="color:#ffb05a;">&#9888; Weather &middot; Wind Under</span><span class="d">Strongest totals edge — leads when it's on the board</span></div>
+  <p class="ns-blurb">Outdoor wind of 15+ mph is the strongest football totals edge we found: passing/receiving <b>unders</b> returned <b>+10.4% / +21.9%</b> (overs lost 22–32%). When it's live, it sits at the top.</p>
+  <div class="ns-card">
+    {% for r in sp_wind %}
+    <div class="ns-row">
+      <span class="ns-wind">{{ r.away }} @ {{ r.home }}</span>
+      <span class="ns-bet">UNDER {{ '%g'|format(r.total) }}</span>
+      <span class="ns-score prem">{{ r.wind }} mph</span>
+      <span class="ns-meta">Outdoor, wind at kickoff <b>{{ r.wind }} mph</b> — leans the passing game and the total down. Shop the under and the game-script unders.</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- ============ 1. TOP PLAYS (validated PropScore) ============ -->
 <div class="ns-sec">
   <div class="ns-sech"><span class="n">Top Plays</span><span class="d">Validated PropScore{% if sp_premium_count %} &middot; {{ sp_premium_count }} premium{% endif %}</span></div>
@@ -78,26 +96,14 @@
   {% endif %}
 </div>
 
-<!-- ============ 2. WIND UNDERS ============ -->
+<!-- ============ 2. WIND UNDERS (empty-state only; the live card leads the board above) ============ -->
+{% if not sp_wind %}
 <div class="ns-sec">
   <div class="ns-sech"><span class="n">Wind Under</span><span class="d">Outdoor 15+ mph</span></div>
   <p class="ns-blurb">The strongest football totals edge we found: passing &amp; receiving <b>unders</b> in outdoor wind of 15+ mph returned <b>+10.4% / +21.9%</b> (the mirror — overs — lost 22–32%). Low volume, big mechanical effect.</p>
-
-  {% if sp_wind %}
-  <div class="ns-card">
-    {% for r in sp_wind %}
-    <div class="ns-row">
-      <span class="ns-wind">{{ r.away }} @ {{ r.home }}</span>
-      <span class="ns-bet">UNDER {{ '%g'|format(r.total) }}</span>
-      <span class="ns-score prem">{{ r.wind }} mph</span>
-      <span class="ns-meta">Outdoor, wind at kickoff <b>{{ r.wind }} mph</b> — leans the passing game and the total down. Shop the under and the game-script unders.</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
   <div class="ns-empty">No outdoor 15+ mph games flagged this week — the wind edge simply isn't on the board. It's rare (~40–50 games a season), and we won't manufacture it.</div>
-  {% endif %}
 </div>
+{% endif %}
 
 <!-- ============ 3. INJURY-CHANGE TIMING ============ -->
 <div class="ns-sec ns-inj">
