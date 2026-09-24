@@ -65,6 +65,20 @@
   .mu-wk-tk .tk-pace{margin-left:auto;color:var(--mu-accent);font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:700;}
   .mu-wk-form .per{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--text);margin-bottom:3px;}
   .mu-wk-form .per .per-tag{display:inline-block;font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;color:#0b1118;background:var(--text-muted);border-radius:4px;padding:1px 5px;vertical-align:middle;}
+  .mu-wk-sgp{margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:7px;}
+  .mu-wk-sgp>summary{cursor:pointer;font:700 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--mu-accent);list-style:none;}
+  .mu-wk-sgp>summary::-webkit-details-marker{display:none;}
+  .mu-wk-sgp>summary::before{content:'\25B8 ';color:var(--text-muted);}
+  .mu-wk-sgp[open]>summary::before{content:'\25BE ';}
+  .mu-wk-sgp .sgp-note{font:500 10.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:6px 0 8px;}
+  .mu-wk-sgp .sgp-grp{margin-bottom:8px;}
+  .mu-wk-sgp .sgp-cat{font:800 10px 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--text-bright);margin-bottom:3px;}
+  .mu-wk-sgp .sgp-cat span{color:var(--text-muted);font-weight:600;}
+  .mu-wk-sgp .sgp-leg{display:inline-block;font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text);background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px;padding:2px 7px;margin:0 5px 5px 0;}
+  .mu-wk-sgp .sgp-leg em{font-style:normal;color:var(--text-muted);}
+  .mu-wk-sgp .sgp-lean{font:800 8.5px ui-monospace,monospace;border-radius:3px;padding:0 3px;vertical-align:middle;}
+  .mu-wk-sgp .sgp-lean.over{color:#0b1118;background:#4ed48a;}
+  .mu-wk-sgp .sgp-lean.under{color:#0b1118;background:#ff6f7e;}
 </style>
 
 <div class="mu-wrap">
@@ -130,6 +144,22 @@
           </span>
           {% endfor %}
         </div>
+        {% endif %}
+        {% if g.menu %}
+        <details class="mu-wk-sgp">
+          <summary>Full SGP menu &mdash; every market ({{ g.menu|sum(attribute='legs', start=[])|length }} player legs)</summary>
+          <div class="sgp-body">
+            <div class="sgp-note">Game &amp; period lines above · every player leg below, grouped · O/U both sides available · tackle leans tagged. Combined odds assume independence — the book prices same-game correlation.</div>
+            {% for grp in g.menu %}
+            <div class="sgp-grp">
+              <div class="sgp-cat">{{ grp.cat }} <span>{{ grp.legs|length }}</span></div>
+              {% for l in grp.legs %}
+              <span class="sgp-leg">{% if l.lean %}<span class="sgp-lean {{ l.lean|lower }}">{{ l.lean }}</span> {% endif %}{{ l.player }} <em>{{ l.stat }} {{ '%g'|format(l.line) }}</em></span>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+        </details>
         {% endif %}
       </div>
       {% endif %}

@@ -40397,6 +40397,61 @@ def _nfl_period_lines(away, home):
     return out
 
 
+_SGP_CATEGORY = [
+    ('QB', ('Pass',)),
+    ('Rushing', ('Rush',)),
+    ('Receiving', ('Rec', 'Receptions')),
+    ('Touchdowns', ('Anytime TD', 'TD Scorer', '1st TD', 'Last TD')),
+    ('Defense', ('Tackle', 'Solo', 'Assist', 'Sacks')),
+]
+
+
+def _sgp_category(stat):
+    s = str(stat)
+    for name, keys in _SGP_CATEGORY:
+        if any(k in s for k in keys):
+            return name
+    return 'Other'
+
+
+def _nfl_game_prop_menu(away, home, props_df):
+    """The full per-game player-prop menu for SGP building -- every leg on the board,
+    grouped by category, with our tackle-volume lean tagged on the defensive legs.
+    'Every option on the table' in one place."""
+    if props_df is None or props_df.empty:
+        return []
+    am, hm = str(away).split()[-1].lower(), str(home).split()[-1].lower()
+    gm = props_df[props_df['Game'].astype(str).str.lower().str.contains(am)
+                  & props_df['Game'].astype(str).str.lower().str.contains(hm)]
+    if gm.empty:
+        return []
+    try:
+        import nfl_defense_form as _ndf
+    except Exception:
+        _ndf = None
+    # consensus line per player+stat
+    legs_by_cat = {}
+    for (pl, st), grp in gm.groupby(['Player', 'Stat']):
+        line = pd.to_numeric(grp['Line'], errors='coerce').median()
+        if pd.isna(line):
+            continue
+        cat = _sgp_category(st)
+        leg = {'player': pl, 'stat': st, 'line': float(line), 'lean': None}
+        if _ndf is not None and cat == 'Defense' and ('Tackle' in st or 'Solo' in st or 'Assist' in st):
+            rd = _ndf.tackle_lean(pl, st, float(line))
+            if rd and rd['lean'] != 'COIN FLIP':
+                leg['lean'] = rd['lean']
+        legs_by_cat.setdefault(cat, []).append(leg)
+    order = [c for c, _ in _SGP_CATEGORY] + ['Other']
+    out = []
+    for cat in order:
+        legs = legs_by_cat.get(cat)
+        if legs:
+            legs.sort(key=lambda x: (x['player'], x['stat']))
+            out.append({'cat': cat, 'legs': legs})
+    return out
+
+
 def build_nfl_matchup_context():
     dossier = build_nfl_matchup_dossier()
     week_games = []
@@ -40440,6 +40495,12 @@ def build_nfl_matchup_context():
                     wg['periods'] = _nfl_period_lines(a, h)
                 except Exception:
                     wg['periods'] = {}
+                # Full SGP option menu -- every player-prop leg on the board, grouped,
+                # so you can build a same-game parlay off the whole table, not a subset.
+                try:
+                    wg['menu'] = _nfl_game_prop_menu(a, h, nfl_props)
+                except Exception:
+                    wg['menu'] = []
                 week_games.append(wg)
     except Exception:
         week_games = []
