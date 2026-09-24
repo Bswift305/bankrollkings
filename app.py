@@ -41330,6 +41330,13 @@ def build_nfl_spots_context(limit=12):
                 ctx['sp_gated_count'] = sum(1 for x in ctx['sp_top'] if x.get('usage_flag'))
             except Exception:
                 pass
+            # Receiver-archetype gate: flag receptions props on deep threats whose catch
+            # count is volatile (edge is yards, not receptions). Flag only, no score change.
+            try:
+                import nfl_archetype_gate as _arch
+                _arch.annotate_plays(ctx['sp_top'], apply_penalty=False)
+            except Exception:
+                pass
     except Exception:
         pass
 

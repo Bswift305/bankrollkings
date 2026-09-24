@@ -73,6 +73,9 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # Prior-season team map for the early-season usage gate (flags movers whose
         # PropScore is projected on last year's role). Cheap; static once built.
         ("NFL prior-season team map", _python("build_nfl_prior_team_map.py"), 120),
+        # Receiver aDOT/archetype profile for the archetype gate (flags volatile
+        # deep-threat receptions props). One nflverse call; cheap.
+        ("NFL receiver profile", _python("build_nfl_receiver_profile.py"), 120),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.

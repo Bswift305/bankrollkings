@@ -81,11 +81,11 @@
   <div class="ns-card">
     {% for p in sp_top %}
     <div class="ns-row">
-      <span class="ns-play">{{ p.player }}{% if p.usage_flag == 'new_team' %} <span style="font:700 9px/1 ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ffb05a;border-radius:4px;padding:2px 5px;vertical-align:middle;">NEW TEAM</span>{% endif %}</span>
+      <span class="ns-play">{{ p.player }}{% if p.usage_flag == 'new_team' %} <span style="font:700 9px/1 ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ffb05a;border-radius:4px;padding:2px 5px;vertical-align:middle;">NEW TEAM</span>{% endif %}{% if p.archetype_flag == 'deep_threat' %} <span style="font:700 9px/1 ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ff6f7e;border-radius:4px;padding:2px 5px;vertical-align:middle;">VOLATILE</span>{% endif %}</span>
       <span class="ns-bet">{{ p.direction }} {{ '%g'|format(p.line) if p.line is number else p.line }} {{ p.stat }}</span>
       {% if p.price %}<span class="ns-price">{{ p.price }}{% if p.best_book %} · {{ p.best_book }}{% endif %}</span>{% endif %}
       <span class="ns-score{{ ' prem' if p.premium else '' }}">{{ '%.1f'|format(p.prop_score) }}{% if p.premium %} ★{% endif %}</span>
-      <span class="ns-meta">{{ p.matchup }}{% if p.sim is not none %} — <b>{{ p.sim }}%</b> simulated hit{% endif %}{% if p.detail %} · {{ p.detail }}{% endif %}{% if p.usage_note %} · <span style="color:#ffb05a;">{{ p.usage_note }}</span>{% endif %}</span>
+      <span class="ns-meta">{{ p.matchup }}{% if p.sim is not none %} — <b>{{ p.sim }}%</b> simulated hit{% endif %}{% if p.detail %} · {{ p.detail }}{% endif %}{% if p.usage_note %} · <span style="color:#ffb05a;">{{ p.usage_note }}</span>{% endif %}{% if p.archetype_note %} · <span style="color:#ff6f7e;">{{ p.archetype_note }}</span>{% endif %}</span>
     </div>
     {% endfor %}
   </div>
