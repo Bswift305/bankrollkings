@@ -64,6 +64,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # scored a live prop and the board could only reuse a 2024/25 score for a
         # matching player/stat/direction/line.
         ("NFL live prop scoring", _python("score_live_nfl_props.py"), 600),
+        # Live-results record: snapshot this week's PropScore board, then grade any
+        # past week that now has nflverse actuals (dedupe-safe). Builds the running
+        # live hit-rate log the calibration story needs. See grade_nfl_week.py.
+        ("NFL board snapshot", _python("grade_nfl_week.py", "--snapshot"), 180),
+        ("NFL board grade (resolve)", _python("grade_nfl_week.py", "--resolve"), 300),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Prior-season team map for the early-season usage gate (flags movers whose
         # PropScore is projected on last year's role). Cheap; static once built.
