@@ -665,6 +665,85 @@ CFB_READS = [
 ]
 
 
+SUNDAY_WEATHER = [
+    ("LAR @ DEN", "UNDER 45", "19 mph"),
+    ("TEN @ NYG", "UNDER 38.5", "15 mph"),
+]
+SUNDAY_CLEAN = [  # top PropScore plays with NO usage/archetype flag
+    ("Dak Prescott", "OVER Pass TDs 1.5", "BAL@DAL", 35.3),
+    ("C.J. Stroud", "UNDER Pass TDs 1.5", "HOU@IND", 35.0),
+    ("Drake Maye", "OVER Pass Yds 218.5", "NE@JAX", 35.0),
+    ("Lamar Jackson", "UNDER Rush Yds 38.5", "BAL@DAL", 33.5),
+    ("Bryce Young", "UNDER Pass Yds 227.5", "CAR@CLE", 33.0),
+    ("Patrick Mahomes", "OVER Pass Yds 234.5", "KC@MIA", 32.7),
+    ("Ja'Marr Chase", "OVER Rec Yds 75.5", "CIN@PIT", 31.3),
+]
+SUNDAY_PARLAYS = [
+    ("CLEAN 3-LEG · cross-game", CY, [
+        ("Dak Prescott", "OVER Pass TDs 1.5", "over"),
+        ("Ja'Marr Chase", "OVER Rec Yds 75.5", "over"),
+        ("C.J. Stroud", "UNDER Pass TDs 1.5", "under"),
+    ]),
+    ("HOU@IND UNDER SGP", RED, [
+        ("C.J. Stroud", "UNDER Pass TDs 1.5", "under"),
+        ("Daniel Jones", "UNDER Rush Yds 11.5", "under"),
+    ]),
+]
+
+
+def card_sunday_best(week, out):
+    """Curated NFL Sunday card: weather-unders + the clean top PropScore plays (no
+    usage/archetype flag) + two parlays."""
+    kcol = {'over': GREEN, 'under': RED}
+    top = 250
+    H = (top + 46 + len(SUNDAY_WEATHER) * 40 + 60 + len(SUNDAY_CLEAN) * 44
+         + sum(56 + len(l) * 40 + 16 for _, _, l in SUNDAY_PARLAYS) + 120)
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — SUNDAY BEST", chip="CLEAN PLAYS + WEATHER")
+
+    # Weather
+    d.rounded_rectangle([(M, y), (W - M, y + 42 + len(SUNDAY_WEATHER) * 40)], radius=12,
+                        fill=(255//12, 176//12, 90//12), outline=(255, 176, 90), width=2)
+    c.text(M + 16, y + 10, "WEATHER — WIND UNDERS", F['blk'], GOLD)
+    yy = y + 46
+    for mu, pick, wind in SUNDAY_WEATHER:
+        c.text(M + 20, yy, mu, F['pl'], INK)
+        c.text(M + 300, yy + 2, pick, F['pl'], RED)
+        c.text(W - M - 20, yy + 2, wind, F['de'], FAINT, right=True)
+        yy += 40
+    y = yy + 18
+
+    # Clean plays
+    c.text(M, y, "CLEAN TOP PLAYS", F['col'], CY)
+    c.text(W - M, y + 2, "no flags — trust these", F['de'], FAINT, right=True)
+    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 8
+    for i, (player, pick, mu, score) in enumerate(SUNDAY_CLEAN):
+        c.text(M + 4, y + 6, f"{i+1}", F['rk'], FAINT)
+        c.text(M + 34, y + 2, player, F['pl'], INK)
+        c.text(M + 380, y + 4, pick, F['de'], GREEN if 'OVER' in pick else RED)
+        c.text(M + 700, y + 6, mu, F['de'], FAINT)
+        c.text(W - M, y + 2, f"{score}", F['sc'], CY, right=True)
+        d.line([(M, y + 40), (W - M, y + 40)], fill=(20, 32, 38), width=1); y += 44
+    y += 16
+
+    # Parlays
+    for title, accent, legs in SUNDAY_PARLAYS:
+        bh = 50 + len(legs) * 40
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + bh)], radius=6, fill=accent)
+        c.text(M + 30, y + 14, title, F['blk'], accent)
+        ry = y + 50
+        for subj, detail, kind in legs:
+            c.text(M + 30, ry, subj, F['pl'], INK)
+            c.text(M + 420, ry + 2, detail, F['pl'], kcol.get(kind, INK))
+            ry += 40
+        y += bh + 16
+    y += 6
+    c.text(M, y, f"Live board pulled {_stamp()}. Clean = no usage/archetype flag. Verify lines on Caesars.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Validated PropScore edge, not guarantees. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_reads(week, out):
     """CFB Saturday leans from the current-season form engine. Labeled trend/context --
     CFB has no validated edge like the NFL PropScore, and these are 3-game samples."""
@@ -898,6 +977,8 @@ def main():
         made.append(card_game_sgp(args.week, str(out_dir / 'bk_tonight_sgp.png')))
     if 'cfbreads' in want:
         made.append(card_cfb_reads(args.week, str(out_dir / 'bk_cfb_reads.png')))
+    if 'sunday' in want:
+        made.append(card_sunday_best(args.week, str(out_dir / 'bk_sunday_best.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
