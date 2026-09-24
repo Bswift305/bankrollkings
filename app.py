@@ -40360,6 +40360,38 @@ def _nfl_game_tackle_reads(away, home, props_df):
     return _ndf.game_tackle_reads(rows, limit=8)
 
 
+def _nfl_period_lines(away, home):
+    """Consensus 1H / 1Q spread + total for a game from NFL_FirstHalf.csv
+    (fetch_football_first_half writes both periods, median across books).
+    Returns {'1H':{spread,total}, '1Q':{spread,total}}."""
+    path = DATA_DIR / 'odds' / 'NFL_FirstHalf.csv'
+    if not path.exists():
+        return {}
+    try:
+        df = _load_cached_csv(path)
+    except Exception:
+        return {}
+    if df is None or df.empty or 'SpreadH1' not in df.columns:
+        return {}
+    am, hm = str(away).split()[-1].lower(), str(home).split()[-1].lower()
+    g = df[df['Home'].astype(str).str.lower().str.contains(hm)
+           & df['Away'].astype(str).str.lower().str.contains(am)]
+    if g.empty:
+        return {}
+    r = g.iloc[0]
+
+    def _num(col):
+        v = pd.to_numeric(r.get(col), errors='coerce')
+        return None if pd.isna(v) else float(v)
+
+    out = {}
+    for period, sp_col, tot_col in (('1H', 'SpreadH1', 'TotalH1'), ('1Q', 'SpreadQ1', 'TotalQ1')):
+        sp, tot = _num(sp_col), (_num(tot_col) if tot_col in df.columns else None)
+        if sp is not None or tot is not None:
+            out[period] = {'spread': sp, 'total': tot}
+    return out
+
+
 def build_nfl_matchup_context():
     dossier = build_nfl_matchup_dossier()
     week_games = []
@@ -40397,6 +40429,12 @@ def build_nfl_matchup_context():
                     wg['tackles'] = _nfl_game_tackle_reads(a, h, nfl_props)
                 except Exception:
                     wg['tackles'] = []
+                # 1H / 1Q team lines -- more ways to play the same read (e.g. a
+                # first-half under when both defenses start strong).
+                try:
+                    wg['periods'] = _nfl_period_lines(a, h)
+                except Exception:
+                    wg['periods'] = {}
                 week_games.append(wg)
     except Exception:
         week_games = []

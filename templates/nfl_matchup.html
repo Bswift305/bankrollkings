@@ -63,6 +63,8 @@
   .mu-wk-tk .tk-name em{font-style:normal;color:var(--text-muted);font-size:10px;text-transform:uppercase;}
   .mu-wk-tk .tk-stat{color:var(--text-muted);font-family:ui-monospace,Consolas,monospace;font-size:11px;}
   .mu-wk-tk .tk-pace{margin-left:auto;color:var(--mu-accent);font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:700;}
+  .mu-wk-form .per{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--text);margin-bottom:3px;}
+  .mu-wk-form .per .per-tag{display:inline-block;font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;color:#0b1118;background:var(--text-muted);border-radius:4px;padding:1px 5px;vertical-align:middle;}
 </style>
 
 <div class="mu-wrap">
@@ -89,8 +91,14 @@
         <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
       </button>
       {% set has_form = g.form and g.form.away_def_note and g.form.home_def_note %}
-      {% if has_form or g.tackles %}
+      {% if has_form or g.tackles or g.periods %}
       <div class="mu-wk-form">
+        {% if g.periods %}
+        <span class="d per">
+          {% if g.periods['1H'] %}<span class="per-tag">1H</span> {% if g.periods['1H'].spread is not none %}{{ g.home.split(' ')[-1] }} {{ '%+g'|format(g.periods['1H'].spread) }}{% endif %}{% if g.periods['1H'].total is not none %} · O/U {{ '%g'|format(g.periods['1H'].total) }}{% endif %}{% endif %}
+          {% if g.periods['1Q'] %}&nbsp;&nbsp;<span class="per-tag">1Q</span> {% if g.periods['1Q'].spread is not none %}{{ g.home.split(' ')[-1] }} {{ '%+g'|format(g.periods['1Q'].spread) }}{% endif %}{% if g.periods['1Q'].total is not none %} · O/U {{ '%g'|format(g.periods['1Q'].total) }}{% endif %}{% endif %}
+        </span>
+        {% endif %}
         {% if has_form %}
         {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
         <span class="d">{{ g.form.away_def_note }}</span>
