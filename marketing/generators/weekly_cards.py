@@ -655,6 +655,38 @@ def card_game_longshot(week, out):
     return c.save(out)
 
 
+CFB_READS_TITLE = "CFB SATURDAY — CURRENT-FORM READS"
+CFB_READS = [
+    ("Clemson @ Cal  (pick'em)", "Cal +1 / ML", "Clemson's underperforming badly (-6 avg margin); Cal +8. Fade the ranked name."),
+    ("Ole Miss @ Florida  (-3)", "Florida -3", "Florida dominant early (+33/gm) at home; Ole Miss solid but a step back (+14)."),
+    ("Iowa @ Michigan  (O/U 38.5)", "Iowa +5.5 + Under 38.5", "Iowa the better form team (+32.7); low-total Big Ten grind favors the under."),
+    ("South Alabama @ Kentucky  (-20.5)", "South Alabama +20.5", "Kentucky winning by only ~5/gm — laying 20.5 is an overvalued-SEC fade."),
+    ("Nebraska @ Michigan State  (+6)", "Nebraska +6", "Nebraska rolling (+34.7 margin) vs a middling MSU (+7)."),
+]
+
+
+def card_cfb_reads(week, out):
+    """CFB Saturday leans from the current-season form engine. Labeled trend/context --
+    CFB has no validated edge like the NFL PropScore, and these are 3-game samples."""
+    top = 250; rh = 92
+    H = top + 40 + len(CFB_READS) * rh + 120
+    c = Card(H); d = c.d
+    y = c.header("CFB SATURDAY — FORM READS", chip="TREND / CONTEXT")
+    c.text(M, y, "From this year's results + margins. NOT a validated edge — CFB has no proven niche, and it's early (3 games).", F['de'], DIM)
+    y += 40
+    for matchup, pick, thesis in CFB_READS:
+        d.rounded_rectangle([(M, y), (W - M, y + rh - 12)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + rh - 12)], radius=6, fill=CY)
+        c.text(M + 30, y + 14, matchup, F['plr'], INK)
+        c.text(W - M - 20, y + 16, pick, F['dir'], GOLD, right=True)
+        c.text(M + 30, y + 50, thesis, F['de'], DIM)
+        y += rh
+    y += 8
+    c.text(M, y, f"Live lines pulled {_stamp()}. Trend/context, not locks — CFB's honest read is 'lean and shop', not 'edge'.", F['ftb'], DIM); y += 30
+    c.text(M, y, "Early-season form is inflated by opponent quality. Verify lines. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_game_sgp(week, out, stake=1.0):
     """Single-game SGP tickets for a full book. Correlated legs; the book sets the SGP
     price (correlation-adjusted, usually a bit under a straight parlay)."""
@@ -864,6 +896,8 @@ def main():
         made.append(card_floor_longshot(args.week, str(out_dir / 'bk_floor_longshot.png')))
     if 'sgp' in want:
         made.append(card_game_sgp(args.week, str(out_dir / 'bk_tonight_sgp.png')))
+    if 'cfbreads' in want:
+        made.append(card_cfb_reads(args.week, str(out_dir / 'bk_cfb_reads.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
