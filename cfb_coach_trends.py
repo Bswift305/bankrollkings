@@ -38,6 +38,7 @@ def _load():
         "ats": _j("cfb_ats.json"),
         "bigfav": _j("cfb_bigfav_records.json"),
         "favmeta": _j("cfb_favorites.json").get("meta", {}),
+        "ats2026": _j("cfb_2026_ats.json").get("teams", {}),
     }
 
 
@@ -111,21 +112,37 @@ def favorite_trend(fav_team, spread_mag) -> dict | None:
     if spread_mag is not None and abs(spread_mag) >= 20:
         band = fm.get("band40" if abs(spread_mag) >= 40 else "band30", {}).get("cover")
 
-    # plain-English note
-    bits = []
-    if out["coach"]:
-        lead = f"{key} ({out['coach']})"
-    else:
-        lead = key
+    # CURRENT-SEASON ATS -- leads, because recent behavior can diverge from the stale
+    # multi-year history (a coach now burying teams vs one who used to pull starters).
+    cur = d["ats2026"].get(key)
+    out["ats_2026"] = cur
+
+    lead = f"{key} ({out['coach']})" if out["coach"] else key
+    # historical descriptor (demoted to context)
     if big:
-        bits.append(f"as a {big['threshold']}+ favorite: {big['record']} ATS ({big['cover']}%), {big['avg']:+.1f} vs the line")
+        hist = f"historically {big['record']} ATS ({big['cover']}%) as a {big['threshold']}+ favorite"
+        hist_cover = big["cover"]
     elif out["fav_ats"]:
-        bits.append(f"as a favorite: {out['fav_ats']} ATS ({out['fav_cover']}%)")
+        hist = f"historically {out['fav_ats']} ATS ({out['fav_cover']}%) as a favorite"
+        hist_cover = out["fav_cover"]
+    else:
+        hist, hist_cover = None, None
+
+    bits = []
+    if cur and cur.get("n"):
+        bits.append(f"2026: {cur['ats']} ATS ({cur['cover']}%, {cur['acm']:+.0f} vs the line, {cur['n']}g)")
+    if hist:
+        bits.append(hist)
     if out["coach_ats"]:
         bits.append(f"{out['coach']} career {out['coach_ats']} ATS ({out['coach_cover']}%)")
     if band:
-        bits.append(f"big favorites cover ~{round(band*100)}% league-wide")
-    out["note"] = f"{lead} " + "; ".join(bits) + "." if bits else None
+        bits.append(f"big favorites cover ~{round(band * 100)}% league-wide")
+
+    # flag the conflict so the reader weights this year, not the old book
+    if cur and hist_cover is not None and cur.get("cover", 0) >= 60 and hist_cover < 48:
+        bits.append("— this year's form is beating the stale history; weight 2026")
+
+    out["note"] = f"{lead}: " + "; ".join(bits) + "." if bits else None
     return out if out["note"] else None
 
 
