@@ -84,6 +84,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # matchup card can read tackle props vs real volume -- the offense-first
         # model's blind spot. One nflverse call; writes data/scenarios/nfl_2026_defense.json.
         ("NFL defense form", _python("build_nfl_defense_form.py"), 180),
+        # Forward-capture NFL opening game lines (The Odds API only serves current), so
+        # open->current movement accrues. Reads NFL_Odds.csv; never overwrites a game's
+        # first-seen open. Cheap, no network.
+        ("NFL line-open capture", _python("capture_nfl_line_open.py"), 120),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.

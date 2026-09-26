@@ -105,8 +105,14 @@
         <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
       </button>
       {% set has_form = g.form and g.form.away_def_note and g.form.home_def_note %}
-      {% if has_form or g.tackles or g.periods %}
+      {% if has_form or g.tackles or g.periods or g.move %}
       <div class="mu-wk-form">
+        {% if g.move %}
+        <span class="d per">
+          <span class="per-tag">MOVE</span>
+          {% if g.move.spread_open is not none and g.move.spread_now is not none %}spread {{ '%+g'|format(g.move.spread_open) }} &rarr; {{ '%+g'|format(g.move.spread_now) }}{% if g.move.spread_move %} <b style="color:{% if g.move.spread_move < 0 %}#4ed48a{% else %}#ffb05a{% endif %};">({{ '%+g'|format(g.move.spread_move) }})</b>{% endif %}{% endif %}{% if g.move.total_open is not none and g.move.total_now is not none %} &middot; total {{ '%g'|format(g.move.total_open) }} &rarr; {{ '%g'|format(g.move.total_now) }}{% if g.move.total_move %} ({{ '%+g'|format(g.move.total_move) }}){% endif %}{% endif %}
+        </span>
+        {% endif %}
         {% if g.periods %}
         <span class="d per">
           {% if g.periods['1H'] %}<span class="per-tag">1H</span> {% if g.periods['1H'].spread is not none %}{{ g.home.split(' ')[-1] }} {{ '%+g'|format(g.periods['1H'].spread) }}{% endif %}{% if g.periods['1H'].total is not none %} · O/U {{ '%g'|format(g.periods['1H'].total) }}{% endif %}{% endif %}

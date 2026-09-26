@@ -40487,6 +40487,45 @@ def _nfl_game_prop_menu(away, home, props_df):
     return out
 
 
+def _nfl_line_move(away, home):
+    """Open (forward-capture ledger) -> current (NFL_Odds consensus) game-line movement
+    for an NFL game, matched by team names. Returns None until a real delta exists."""
+    ledger = DATA_DIR / 'tracking' / 'NFL_LineOpen.csv'
+    if not ledger.exists():
+        return None
+    try:
+        lo = _load_cached_csv(ledger)
+        cur = _load_cached_csv(DATA_DIR / 'odds' / 'NFL_Odds.csv')
+    except Exception:
+        return None
+    if lo is None or lo.empty or cur is None or cur.empty:
+        return None
+    am, hm = str(away).split()[-1].lower(), str(home).split()[-1].lower()
+
+    def _find(df):
+        return df[df['Home'].astype(str).str.lower().str.contains(hm)
+                  & df['Away'].astype(str).str.lower().str.contains(am)]
+    lrow, crows = _find(lo), _find(cur)
+    if lrow.empty or crows.empty:
+        return None
+    o = lrow.iloc[0]
+    sp_now = pd.to_numeric(crows['Spread'], errors='coerce').median()
+    tot_now = pd.to_numeric(crows['Total'], errors='coerce').median()
+    sp_open = pd.to_numeric(pd.Series([o.get('OpenSpread')]), errors='coerce').iloc[0]
+    tot_open = pd.to_numeric(pd.Series([o.get('OpenTotal')]), errors='coerce').iloc[0]
+    out = {'spread_open': None if pd.isna(sp_open) else float(sp_open),
+           'spread_now': None if pd.isna(sp_now) else float(sp_now),
+           'total_open': None if pd.isna(tot_open) else float(tot_open),
+           'total_now': None if pd.isna(tot_now) else float(tot_now)}
+    out['spread_move'] = (round(out['spread_now'] - out['spread_open'], 1)
+                          if out['spread_now'] is not None and out['spread_open'] is not None else None)
+    out['total_move'] = (round(out['total_now'] - out['total_open'], 1)
+                         if out['total_now'] is not None and out['total_open'] is not None else None)
+    if not out['spread_move'] and not out['total_move']:
+        return None  # nothing moved yet; don't clutter
+    return out
+
+
 def build_nfl_matchup_context():
     dossier = build_nfl_matchup_dossier()
     week_games = []
@@ -40536,6 +40575,10 @@ def build_nfl_matchup_context():
                     wg['menu'] = _nfl_game_prop_menu(a, h, nfl_props)
                 except Exception:
                     wg['menu'] = []
+                try:
+                    wg['move'] = _nfl_line_move(a, h)
+                except Exception:
+                    wg['move'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []
