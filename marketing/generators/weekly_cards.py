@@ -761,6 +761,79 @@ ATLGB_PERIOD = ("1st Half Team Total", "UNDER 20.5", "under",
                 "both run D's top-5 adj — slow, run-stuffed start; the total needs passing, which takes time to warm up")
 
 
+# CFB Wave Watch — Week 4. Rides = ATS coverers that are underrated (line lagging) AND
+# the model still likes this week's number. Fades = overrated teams laying points they
+# can't cover -> back the dog. (team, pick, kind, why)
+CFBWAVE_RIDES = [
+    ("Penn State", "-10 vs Wisconsin", "over",
+     "2-1 ATS, rising in the polls · model projects them to cover by +4"),
+    ("New Mexico", "-11.2 vs NM State", "over",
+     "3-0 ATS, surging past its rating · model +3 on the number"),
+    ("Michigan State", "+5.8 vs Nebraska", "under",
+     "surging home dog the model under-rates · projects to lose by ~2, not 6"),
+]
+CFBWAVE_FADES = [
+    ("Arizona", "-10.5 → back Washington St", "fade",
+     "0-3 ATS, overrated, laying two scores it hasn't earned"),
+    ("Washington", "-10.2 → back Minnesota", "fade",
+     "0-3 ATS, overrated · model says it doesn't cover the lay"),
+]
+CFBWAVE_TOSS = ("GEORGIA -13.5 vs OKLAHOMA: model likes Oklahoma +13.5, but OU collapsed",
+                "(AP #10 -> unranked, 10 & 14 pts last two). Toss-up -- lean the dog or pass.")
+
+
+def card_cfb_wave(week, out):
+    """CFB Wave Watch card: this week's model-confirmed rides (underrated ATS coverers)
+    and fades (overrated teams laying points), casino-ready."""
+    kcol = {'over': GREEN, 'under': GREEN, 'fade': RED}
+    top = 250
+    ph = 92
+    H = top + 54 + len(CFBWAVE_RIDES) * (ph + 12) + 46 + len(CFBWAVE_FADES) * (ph + 12) + 92 + 116
+    c = Card(H); d = c.d
+    y = c.header(f"CFB {week.upper()} — WAVE WATCH", chip="RIDE / FADE")
+
+    d.rounded_rectangle([(M, y), (W - M, y + 40)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 16, y + 9, "Covering for a reason that PERSISTS + a number the model likes", F['de'], INK)
+    y += 58
+
+    # Rides
+    c.text(M, y, "RIDE THE WAVE", F['col'], CY)
+    c.text(W - M, y + 2, "underrated + model-confirmed", F['de'], FAINT, right=True)
+    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
+    for team, pick, kind, why in CFBWAVE_RIDES:
+        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=GREEN)
+        c.text(M + 30, y + 15, team, F['blk'], INK)
+        c.text(W - M - 20, y + 17, pick, F['pl'], GREEN, right=True)
+        c.text(M + 30, y + 54, why, F['de'], FAINT)
+        y += ph + 12
+    y += 6
+
+    # Fades
+    c.text(M, y, "FADE THE SINKERS", F['col'], RED)
+    c.text(W - M, y + 2, "overrated, laying points", F['de'], FAINT, right=True)
+    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
+    for team, pick, kind, why in CFBWAVE_FADES:
+        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=RED)
+        c.text(M + 30, y + 15, team, F['blk'], INK)
+        c.text(W - M - 20, y + 17, pick, F['de'], RED, right=True)
+        c.text(M + 30, y + 54, why, F['de'], FAINT)
+        y += ph + 12
+    y += 6
+
+    d.rounded_rectangle([(M, y), (W - M, y + 62)], radius=12,
+                        fill=(255//14, 176//14, 90//14), outline=(255, 176, 90), width=1)
+    c.text(M + 16, y + 9, "TOSS-UP", F['col'], GOLD)
+    c.text(M + 16, y + 30, CFBWAVE_TOSS[0], F['de'], INK)
+    c.text(M + 16, y + 44, CFBWAVE_TOSS[1], F['de'], INK)
+    y += 84
+
+    c.text(M, y, f"Week 4 lines, {_stamp()}. Cover streak = the START; these are model-confirmed.", F['ftb'], DIM); y += 30
+    c.text(M, y, "3-4 game sample. Spots, not locks. Bet responsibly. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_atlgb_good(week, out):
     """Single-game clean card: the ATL@GB 'Good' tier — props where current-season
     form and the injury report point the same direction, plus the 1H-under expression."""
@@ -1052,6 +1125,8 @@ def main():
         made.append(card_sunday_best(args.week, str(out_dir / 'bk_sunday_best.png')))
     if 'atlgb' in want:
         made.append(card_atlgb_good(args.week, str(out_dir / 'bk_atlgb_good.png')))
+    if 'cfbwave' in want:
+        made.append(card_cfb_wave(args.week, str(out_dir / 'bk_cfb_wave.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
