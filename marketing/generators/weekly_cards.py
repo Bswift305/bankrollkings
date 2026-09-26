@@ -761,76 +761,55 @@ ATLGB_PERIOD = ("1st Half Team Total", "UNDER 20.5", "under",
                 "both run D's top-5 adj — slow, run-stuffed start; the total needs passing, which takes time to warm up")
 
 
-# CFB Wave Watch — Week 4. Rides = ATS coverers that are underrated (line lagging) AND
-# the model still likes this week's number. Fades = overrated teams laying points they
-# can't cover -> back the dog. (team, pick, kind, why)
+# CFB Wave Watch — Week 4. Full board of options. (team, pick, why)
+# RIDES: ATS coverers the model also likes this week. WAVE: the undefeated (3-0 ATS)
+# teams laying bigger numbers -- covering all year, but the model says the price is rich.
 CFBWAVE_RIDES = [
-    ("Penn State", "-10 vs Wisconsin", "over",
-     "2-1 ATS, rising in the polls · model projects them to cover by +4"),
-    ("New Mexico", "-11.2 vs NM State", "over",
-     "3-0 ATS, surging past its rating · model +3 on the number"),
-    ("Michigan State", "+5.8 vs Nebraska", "under",
-     "surging home dog the model under-rates · projects to lose by ~2, not 6"),
+    ("Penn State", "-10 vs Wisconsin", "2-1 ATS · rising · model +4"),
+    ("New Mexico", "-11.2 vs NM State", "3-0 ATS · surging · model +3"),
+    ("Michigan St", "+5.8 vs Nebraska", "surging home dog · model +4"),
+    ("Oklahoma St", "+1.8 vs W. Virginia", "2-1 ATS · dog + points · model +5"),
+    ("Colorado St", "+14 vs UTSA", "2-1 ATS · getting two scores · model +4"),
 ]
-CFBWAVE_FADES = [
-    ("Arizona", "-10.5 → back Washington St", "fade",
-     "0-3 ATS, overrated, laying two scores it hasn't earned"),
-    ("Washington", "-10.2 → back Minnesota", "fade",
-     "0-3 ATS, overrated · model says it doesn't cover the lay"),
+CFBWAVE_WAVE = [
+    ("Georgia", "-13.5 vs Oklahoma", "3-0 ATS, +8 · OU collapsed but the number's rich"),
+    ("Mississippi St", "-6 vs Missouri", "3-0 ATS, +18 · surging · both 3-0, coin flip"),
+    ("Utah", "-7.5 @ Iowa State", "3-0 ATS · surging · road, near-fair number"),
+    ("Louisville", "-12.5 vs Wake", "3-0 ATS · rising · the price has climbed"),
+    ("Ohio State", "-26.5 vs Illinois", "3-0 ATS · Illinois regressed · big lay"),
 ]
-CFBWAVE_TOSS = ("GEORGIA -13.5 vs OKLAHOMA: model likes Oklahoma +13.5, but OU collapsed",
-                "(AP #10 -> unranked, 10 & 14 pts last two). Toss-up -- lean the dog or pass.")
 
 
 def card_cfb_wave(week, out):
-    """CFB Wave Watch card: this week's model-confirmed rides (underrated ATS coverers)
-    and fades (overrated teams laying points), casino-ready."""
-    kcol = {'over': GREEN, 'under': GREEN, 'fade': RED}
+    """CFB Wave board: model-confirmed rides + the undefeated (3-0 ATS) wave laying
+    bigger numbers, honestly tagged. A real menu of options, casino-ready."""
     top = 250
-    ph = 92
-    H = top + 54 + len(CFBWAVE_RIDES) * (ph + 12) + 46 + len(CFBWAVE_FADES) * (ph + 12) + 92 + 116
+    ph = 76
+    def section(c, d, y, title, sub, col, rows, accent):
+        c.text(M, y, title, F['col'], col)
+        c.text(W - M, y + 2, sub, F['de'], FAINT, right=True)
+        y += 28; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 10
+        for team, pick, why in rows:
+            d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=12, fill=PANEL, outline=LINE, width=2)
+            d.rounded_rectangle([(M, y), (M + 9, y + ph)], radius=5, fill=accent)
+            c.text(M + 26, y + 11, team, F['blk'], INK)
+            c.text(W - M - 18, y + 13, pick, F['pl'], accent, right=True)
+            c.text(M + 26, y + 46, why, F['de'], FAINT)
+            y += ph + 10
+        return y + 8
+
+    H = top + 44 + (28 + 10 + len(CFBWAVE_RIDES) * (ph + 10) + 8) + (28 + 10 + len(CFBWAVE_WAVE) * (ph + 10) + 8) + 96
     c = Card(H); d = c.d
-    y = c.header(f"CFB {week.upper()} — WAVE WATCH", chip="RIDE / FADE")
+    y = c.header(f"CFB {week.upper()} — WAVE BOARD", chip="ATS OPTIONS")
+    d.rounded_rectangle([(M, y), (W - M, y + 38)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 15, y + 8, "The wave, sorted by whether the model likes THIS week's number", F['de'], INK)
+    y += 52
 
-    d.rounded_rectangle([(M, y), (W - M, y + 40)], radius=10, fill=PANEL, outline=LINE, width=1)
-    c.text(M + 16, y + 9, "Covering for a reason that PERSISTS + a number the model likes", F['de'], INK)
-    y += 58
+    y = section(c, d, y, "MODEL RIDES", "wave + a number the model likes", CY, CFBWAVE_RIDES, GREEN)
+    y = section(c, d, y, "THE 3-0 WAVE", "covering all year · number's rich (your read)", GOLD, CFBWAVE_WAVE, GOLD)
 
-    # Rides
-    c.text(M, y, "RIDE THE WAVE", F['col'], CY)
-    c.text(W - M, y + 2, "underrated + model-confirmed", F['de'], FAINT, right=True)
-    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
-    for team, pick, kind, why in CFBWAVE_RIDES:
-        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
-        d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=GREEN)
-        c.text(M + 30, y + 15, team, F['blk'], INK)
-        c.text(W - M - 20, y + 17, pick, F['pl'], GREEN, right=True)
-        c.text(M + 30, y + 54, why, F['de'], FAINT)
-        y += ph + 12
-    y += 6
-
-    # Fades
-    c.text(M, y, "FADE THE SINKERS", F['col'], RED)
-    c.text(W - M, y + 2, "overrated, laying points", F['de'], FAINT, right=True)
-    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 12
-    for team, pick, kind, why in CFBWAVE_FADES:
-        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=14, fill=PANEL, outline=LINE, width=2)
-        d.rounded_rectangle([(M, y), (M + 10, y + ph)], radius=6, fill=RED)
-        c.text(M + 30, y + 15, team, F['blk'], INK)
-        c.text(W - M - 20, y + 17, pick, F['de'], RED, right=True)
-        c.text(M + 30, y + 54, why, F['de'], FAINT)
-        y += ph + 12
-    y += 6
-
-    d.rounded_rectangle([(M, y), (W - M, y + 62)], radius=12,
-                        fill=(255//14, 176//14, 90//14), outline=(255, 176, 90), width=1)
-    c.text(M + 16, y + 9, "TOSS-UP", F['col'], GOLD)
-    c.text(M + 16, y + 30, CFBWAVE_TOSS[0], F['de'], INK)
-    c.text(M + 16, y + 44, CFBWAVE_TOSS[1], F['de'], INK)
-    y += 84
-
-    c.text(M, y, f"Week 4 lines, {_stamp()}. Cover streak = the START; these are model-confirmed.", F['ftb'], DIM); y += 30
-    c.text(M, y, "3-4 game sample. Spots, not locks. Bet responsibly. 21+", F['ft'], FAINT)
+    c.text(M, y, f"Week 4 lines, {_stamp()}. RIDES = model-confirmed. 3-0 WAVE = still covering,", F['ftb'], DIM); y += 28
+    c.text(M, y, "but laying a rich number -- your call. Spots, not locks. Bet responsibly. 21+", F['ft'], FAINT)
     return c.save(out)
 
 
