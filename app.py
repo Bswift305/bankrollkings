@@ -40383,6 +40383,157 @@ def cfb_matchup_tool():
     return render_template('cfb_matchup.html', **build_cfb_matchup_context())
 
 
+_CFB_WAVE_CACHE = {}
+_WAVE_TIERS = {0: 'Underrated — market lagging', 1: 'Genuinely strong — priced',
+               2: 'Soft schedule — regression risk'}
+_SINK_TIERS = {0: 'Overrated — fade persists', 1: 'Bad and priced'}
+
+
+def build_cfb_wave_context():
+    """Wave Watch: every FBS team covering ATS this year, sorted by WHY they're covering
+    (underrated / priced / soft), joined to this week's line and the model's edge. The
+    intersection — an underrated coverer into a number the model still likes — floats to
+    the top as the week's hits. Pulls together ATS record + SoS + divergence + rankings."""
+    import cfb_current_form as cff
+    scen = os.path.join(BASE_DIR, 'data', 'scenarios')
+    files = ['cfb_2026_results.json', 'cfb_2026_ats.json', 'cfb_line_moves.json',
+             'cfb_rankings.json', 'cfb_power.json']
+    paths = [os.path.join(scen, f) for f in files]
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in paths)
+    if _CFB_WAVE_CACHE.get('sig') == sig:
+        return _CFB_WAVE_CACHE['data']
+    cff.clear_cache()  # inputs changed -> recompute SoS ratings / divergence
+
+    def _j(p):
+        try:
+            with open(p, 'r', encoding='utf-8') as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return {}
+    ats = _j(paths[1]).get('teams', {})
+    moves = [g for g in _j(paths[2]).get('games', [])
+             if not g.get('completed') and g.get('spread_now') is not None]
+    wk = min((g['week'] for g in moves), default=None)
+    moves = [g for g in moves if g['week'] == wk] if wk is not None else []
+    game_of = {}
+    for g in moves:
+        game_of[str(g['home']).lower()] = (g, True)
+        game_of[str(g['away']).lower()] = (g, False)
+    ranks = _cfb_rankings()
+    rank_lc = {k.lower(): v for k, v in ranks.items()}
+    obs = cff._srs_observed()
+    obsrank = {t: i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
+
+    def _status(school):
+        lc = cff._resolve(school)
+        ap = rank_lc.get(lc)
+        if ap and ap.get('fell_out'):
+            return 'collapsed'
+        d = cff.prior_divergence(school)
+        if d and d['label'] == 'surging':
+            return 'surging'
+        if d and d['label'] == 'regressed':
+            return 'regressed'
+        if ap and ap.get('trend') == 'rising':
+            return 'rising'
+        return ''
+
+    plays = []
+    for school, a in ats.items():
+        if cff._resolve(school) not in cff._fbs_teams() or a.get('n', 0) < 3 or a.get('cover', 0) < 60:
+            continue
+        lc = cff._resolve(school)
+        st = _status(school)
+        orank = obsrank.get(lc, 999)
+        if st in ('surging', 'rising'):
+            tier = 0
+        elif orank <= 25:
+            tier = 1
+        else:
+            tier = 2
+        entry = {'team': school, 'ats': a['ats'], 'cover': a['cover'], 'acm': a['acm'],
+                 'tier': tier, 'tier_label': _WAVE_TIERS[tier], 'status': st,
+                 'sos_rank': orank if orank <= 138 else None, 'week': None}
+        g_ish = game_of.get(school.lower())
+        if g_ish:
+            g, ishome = g_ish
+            sp = g['spread_now']
+            try:
+                proj = cff.matchup_read(g['away'], g['home'], sp).get('proj_home_margin')
+            except Exception:
+                proj = None
+            if proj is not None:
+                their_line = round(sp if ishome else -sp, 1)
+                their_proj = proj if ishome else -proj
+                edge = round(their_proj + their_line, 1)  # >0 => model says they cover
+                opp = g['away'] if ishome else g['home']
+                entry['week'] = {
+                    'opp': opp, 'line': their_line, 'edge': edge, 'covers': edge > 0,
+                    'opp_status': _status(opp),
+                    'total_now': g.get('total_now'),
+                }
+        plays.append(entry)
+
+    # SINKERS: the anti-wave -- teams NOT covering (they're bad/overrated for a reason).
+    # An overrated non-coverer the model also fades this week = a fade (bet the opponent).
+    sinks = []
+    for school, a in ats.items():
+        if cff._resolve(school) not in cff._fbs_teams() or a.get('n', 0) < 3 or a.get('cover', 100) > 40:
+            continue
+        st = _status(school)
+        s_tier = 0 if st in ('collapsed', 'regressed') else 1  # 0 = overrated (fade persists)
+        entry = {'team': school, 'ats': a['ats'], 'cover': a['cover'], 'acm': a['acm'],
+                 'tier': s_tier, 'tier_label': _SINK_TIERS[s_tier], 'status': st, 'week': None}
+        g_ish = game_of.get(school.lower())
+        if g_ish:
+            g, ishome = g_ish
+            sp = g['spread_now']
+            try:
+                proj = cff.matchup_read(g['away'], g['home'], sp).get('proj_home_margin')
+            except Exception:
+                proj = None
+            if proj is not None:
+                their_line = round(sp if ishome else -sp, 1)
+                edge = round((proj if ishome else -proj) + their_line, 1)  # <0 => model fades them
+                opp = g['away'] if ishome else g['home']
+                entry['week'] = {'opp': opp, 'line': their_line, 'edge': edge,
+                                 'covers': edge > 0, 'opp_status': _status(opp)}
+        sinks.append(entry)
+
+    hits = sorted([p for p in plays if p['tier'] == 0 and p['week'] and p['week']['edge'] >= 2.5],
+                  key=lambda p: -p['week']['edge'])
+    fades = sorted([p for p in sinks if p['tier'] == 0 and p['week'] and p['week']['edge'] <= -2.5],
+                   key=lambda p: p['week']['edge'])
+    tiers = []
+    for t in (0, 1, 2):
+        members = sorted([p for p in plays if p['tier'] == t],
+                         key=lambda p: (-(p['week']['edge'] if p['week'] else -99), -p['cover']))
+        if members:
+            tiers.append({'tier': t, 'label': _WAVE_TIERS[t], 'plays': members})
+    sink_tiers = []
+    for t in (0, 1):
+        members = sorted([p for p in sinks if p['tier'] == t],
+                         key=lambda p: ((p['week']['edge'] if p['week'] else 99), p['cover']))
+        if members:
+            sink_tiers.append({'tier': t, 'label': _SINK_TIERS[t], 'plays': members})
+
+    data = {
+        'wave_week': wk, 'wave_hits': hits, 'wave_tiers': tiers,
+        'wave_fades': fades, 'wave_sink_tiers': sink_tiers,
+        'wave_count': len(plays), 'wave_available': bool(plays or sinks),
+    }
+    _CFB_WAVE_CACHE['sig'] = sig
+    _CFB_WAVE_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/cfb-wave')
+def cfb_wave_tool():
+    """Quick Tool: CFB Wave Watch — ATS coverers sorted by why (underrated / priced /
+    soft), joined to this week's line and model edge, hits on top."""
+    return render_template('cfb_wave.html', **build_cfb_wave_context())
+
+
 _NFL_MATCHUP_CACHE = {}
 
 

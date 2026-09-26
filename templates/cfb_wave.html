@@ -1,0 +1,125 @@
+{% set active_page = 'cfb_wave' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Wave Watch - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .wv-wrap{--wv-accent:#2dd4bf;}
+  .wv-sec{margin:0 0 26px;}
+  .wv-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 4px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+  .wv-h .n{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;}
+  .wv-h .d{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-left:auto;}
+  .wv-blurb{font:500 12px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:8px 0 12px;}
+  .wv-blurb b{color:var(--text);}
+  .wv-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .wv-row:last-child{border-bottom:0;}
+  .wv-team{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);min-width:150px;}
+  .wv-ats{font:700 12.5px ui-monospace,Consolas,monospace;color:var(--wv-accent);}
+  .wv-tag{display:inline-block;font:800 9px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;
+    padding:2px 6px;border-radius:5px;vertical-align:middle;}
+  .wv-tag.surging,.wv-tag.rising{color:#0b1118;background:#4ed48a;}
+  .wv-tag.collapsed,.wv-tag.regressed{color:#0b1118;background:#ff9f6a;}
+  .wv-wk{flex:1 1 100%;font:600 12px/1.5 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .wv-wk b{color:var(--text);}
+  .wv-wk .cov{color:#4ed48a;} .wv-wk .no{color:#ff8f9a;}
+  .wv-hit{border:1px solid rgba(45,212,191,.35);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:rgba(45,212,191,.05);}
+  .wv-hit .wv-team{color:var(--wv-accent);}
+  .wv-hit .wv-play{font:800 14px ui-monospace,Consolas,monospace;color:#4ed48a;margin-left:auto;}
+  .wv-hit .wv-why{flex:1 1 100%;font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:4px;}
+  .wv-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 2px;}
+  .wv-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(45,212,191,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:8px;}
+  .wv-tierlbl{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;}
+  .wv-tierlbl.t0{color:#4ed48a;} .wv-tierlbl.t1{color:var(--text);} .wv-tierlbl.t2{color:#ff9f6a;}
+</style>
+
+<div class="wv-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB</div>
+    <h1>Wave <span class="accent">Watch</span></h1>
+    <div class="page-subtitle">Every team covering ATS this year &mdash; but sorted by <b>why</b>. A cover streak alone gets priced; the edge is a team that&rsquo;s covering because it&rsquo;s genuinely underrated, into a number the model still likes. That intersection is the week&rsquo;s hits.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-matchup" class="btn btn-secondary btn-sm">Matchup Card</a></div>
+</div>
+
+{% if not wave_available %}
+<div class="wv-empty">No 2026 ATS wave data loaded yet &mdash; the board fills in once this season&rsquo;s games and lines are in. Check back after Week 1.</div>
+{% else %}
+
+<!-- ===== THIS WEEK'S HITS ===== -->
+<div class="wv-sec">
+  <div class="wv-h"><span class="n">&#9873; This Week&rsquo;s Hits</span><span class="d">Underrated coverers &times; a number the model likes{% if wave_week %} &middot; Week {{ wave_week }}{% endif %}</span></div>
+  <p class="wv-blurb">The intersection: teams covering ATS <b>because they&rsquo;re better than the market rated them</b> (surging / rising), <b>and</b> whose line this week the model still projects to cover. The wave with a reason that persists.</p>
+  {% if wave_hits %}
+  {% for p in wave_hits %}
+  <div class="wv-hit">
+    <div class="wv-row" style="border:0;padding:0;">
+      <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
+      <span class="wv-play">{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</span>
+      <span class="wv-why">2026 <b>{{ p.ats }} ATS</b> ({{ p.cover }}%, {{ '%+g'|format(p.acm) }} avg cover margin) &middot; model projects them to cover this number by <b>{{ '%+g'|format(p.week.edge) }}</b>{% if p.week.opp_status in ('collapsed','regressed') %} &middot; opponent {{ p.week.opp_status }} (worse than the number knows){% endif %}.</span>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="wv-empty">No clean intersection this week &mdash; the underrated coverers don&rsquo;t currently have a number the model likes. That&rsquo;s the market doing its job; don&rsquo;t force it.</div>
+  {% endif %}
+</div>
+
+<!-- ===== FULL WAVE BY TIER ===== -->
+{% for grp in wave_tiers %}
+<div class="wv-sec">
+  <div class="wv-h"><span class="n"><span class="wv-tierlbl t{{ grp.tier }}">{{ grp.label }}</span></span><span class="d">{{ grp.plays|length }} teams</span></div>
+  {% if grp.tier == 0 %}<p class="wv-blurb">Covering because the line hasn&rsquo;t caught up to their real strength. <b>Ride until it does.</b></p>
+  {% elif grp.tier == 1 %}<p class="wv-blurb">Genuinely strong, but the market knows &mdash; the cover is baked into the number now. Neutral.</p>
+  {% else %}<p class="wv-blurb">Big cover margins on a <b>soft schedule</b> &mdash; the opponent-adjusted rating says cupcakes, not quality. Regression risk as the schedule stiffens.</p>{% endif %}
+  {% for p in grp.plays %}
+  <div class="wv-row">
+    <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
+    <span class="wv-ats">{{ p.ats }} ATS ({{ p.cover }}%)</span>
+    {% if p.week %}
+    <span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">short {{ '%+g'|format(p.week.edge) }}</span>{% endif %}{% if p.week.opp_status %} &middot; opp {{ p.week.opp_status }}{% endif %}</span>
+    {% else %}
+    <span class="wv-wk">no line this week / off</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<!-- ===== FADE THE SINKERS (anti-wave) ===== -->
+<div class="wv-sec" style="border-top:2px solid var(--border);padding-top:20px;">
+  <div class="wv-h" style="border-bottom-color:rgba(255,159,106,.3);"><span class="n" style="color:#ff9f6a;">&#9660; Fade the Sinkers</span><span class="d">Can&rsquo;t cover for a reason &mdash; the other side of the wave</span></div>
+  <p class="wv-blurb">The mirror image: teams <b>not</b> covering because the market <b>overrates</b> them. When one is a fade AND the model says they lose this week&rsquo;s number too, that&rsquo;s a spot to <b>bet the opponent</b>.</p>
+  {% if wave_fades %}
+  {% for p in wave_fades %}
+  <div class="wv-hit" style="border-color:rgba(255,159,106,.35);background:rgba(255,159,106,.05);">
+    <div class="wv-row" style="border:0;padding:0;">
+      <span class="wv-team" style="color:#ff9f6a;">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
+      <span class="wv-play" style="color:#ff8f9a;">FADE {{ '%+g'|format(p.week.line) }} &rarr; back {{ p.week.opp }}</span>
+      <span class="wv-why">2026 <b>{{ p.ats }} ATS</b> ({{ p.cover }}%) &middot; overrated, and the model projects them to <b>miss this number by {{ '%+g'|format(p.week.edge) }}</b> &mdash; bet {{ p.week.opp }}.</span>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="wv-empty">No clean fade spot this week &mdash; the overrated sinkers don&rsquo;t have a number the model wants to bet against right now.</div>
+  {% endif %}
+  {% for grp in wave_sink_tiers %}
+  <div style="margin-top:12px;">
+    <div class="wv-tierlbl {% if grp.tier==0 %}t2{% else %}t1{% endif %}" style="margin-bottom:4px;">{{ grp.label }} <span style="color:var(--text-muted);font-weight:600;">&middot; {{ grp.plays|length }}</span></div>
+    {% for p in grp.plays %}
+    <div class="wv-row">
+      <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
+      <span class="wv-ats" style="color:#ff9f6a;">{{ p.ats }} ATS ({{ p.cover }}%)</span>
+      {% if p.week %}<span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">misses {{ '%+g'|format(p.week.edge) }} &rarr; back {{ p.week.opp }}</span>{% endif %}</span>{% else %}<span class="wv-wk">no line this week / off</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="wv-note"><b>How to read this:</b> a cover streak (or a losing one) is where you <i>start</i>, not the edge itself &mdash; the market prices streaks. The edge is the <b>underrated</b> tier (covering for a reason that persists) crossed with a line the model still likes &mdash; and its mirror, an <b>overrated</b> sinker the model fades. &ldquo;Priced&rdquo; and &ldquo;soft&rdquo; teams move for reasons the number already knows or that regress. Model projections are on a 3&ndash;4 game sample &mdash; spots, not locks. Bet what you can afford to lose.</div>
+
+{% endif %}
+</div>
+{% endblock %}
