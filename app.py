@@ -40180,6 +40180,36 @@ def cfb_situational_tool():
 
 _CFB_MU_CACHE = {}
 
+_CFB_MOVES_CACHE = {}
+
+
+def _cfb_line_move(away, home):
+    """Open->current line movement for a CFB game (cfb_line_moves.json). Matches the
+    odds-feed team names to CFBD school names via cfb_current_form._resolve."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_line_moves.json')
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_MOVES_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            idx = {}
+            for g in data.get('games', []):
+                if g.get('completed'):
+                    continue
+                idx[(str(g.get('home')).strip().lower(), str(g.get('away')).strip().lower())] = g
+            _CFB_MOVES_CACHE['idx'] = idx
+            _CFB_MOVES_CACHE['mtime'] = mtime
+        idx = _CFB_MOVES_CACHE.get('idx', {})
+    except (OSError, ValueError):
+        return None
+    try:
+        import cfb_current_form as _cff
+        rh, ra = _cff._resolve(home), _cff._resolve(away)
+    except Exception:
+        rh, ra = str(home).strip().lower(), str(away).strip().lower()
+    return idx.get((rh, ra))
+
+
 def build_cfb_matchup_context():
     """Quick Tool: CFB Matchup Edge Card. Per-team dossier (ATS splits + current
     coach's career ATS + 2026 returning production); the page compares any two teams
@@ -40216,6 +40246,11 @@ def build_cfb_matchup_context():
                                   ('proj_home_margin', 'lean', 'note', 'away_form', 'home_form', 'commons')}
                 except Exception:
                     pass
+                # Open->current line movement (readily handy, not a predictive edge).
+                try:
+                    wg['move'] = _cfb_line_move(a, h)
+                except Exception:
+                    wg['move'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []

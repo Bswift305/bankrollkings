@@ -42,6 +42,9 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # games, not last year's ATS). One CFBD call; powers cfb_current_form.py.
         ("CFB current-season results", ["build_cfb_2026_results.py",
                                         "--season", str(season)], 180),
+        # Open->current line movement (CFBD returns both), so the matchup card can show
+        # a number's history instead of us reconstructing it live. Committable JSON.
+        ("CFB line movement", ["fetch_cfb_line_moves.py", "--season", str(season)], 180),
         # Rebuild the graded game-lines history (rolling window ending at the current
         # season) so the ATS/O-U Pattern Board folds in THIS week's finished games.
         # Called with no year args -> the fetcher self-computes the rolling window.
