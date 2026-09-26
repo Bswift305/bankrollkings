@@ -69,6 +69,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # live hit-rate log the calibration story needs. See grade_nfl_week.py.
         ("NFL board snapshot", _python("grade_nfl_week.py", "--snapshot"), 180),
         ("NFL board grade (resolve)", _python("grade_nfl_week.py", "--resolve"), 300),
+        # Same-day final scores (NFL + CFB) from ESPN -- a fresh results source that
+        # doesn't lag like nflverse/CFBD box scores, so finals are readily on hand for
+        # grading and display instead of a manual fetch. Cheap; one scoreboard call each.
+        ("Final scores (NFL+CFB)", _python("fetch_final_scores.py", "--sport", "all"), 180),
         ("NFL current rosters", _python("fetch_nfl_current_roster.py"), 180),
         # Prior-season team map for the early-season usage gate (flags movers whose
         # PropScore is projected on last year's role). Cheap; static once built.
