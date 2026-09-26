@@ -40365,6 +40365,11 @@ def build_cfb_matchup_context():
                     wg['prior_ctx'] = _cfb_prior_context(a, h)
                 except Exception:
                     wg['prior_ctx'] = None
+                # Totals: opponent-adjusted projected total vs the line (over/under lean).
+                try:
+                    wg['total'] = _cff.total_read(a, h, g.get('total'))
+                except Exception:
+                    wg['total'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []

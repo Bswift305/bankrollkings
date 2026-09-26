@@ -35,6 +35,8 @@ def clear_cache():
     _srs.cache_clear()
     _srs_observed.cache_clear()
     _priors.cache_clear()
+    _off_def_priors.cache_clear()
+    _off_def_ratings.cache_clear()
     _fbs_teams.cache_clear()
     _cfbd_names.cache_clear()
 
@@ -225,6 +227,103 @@ def _divergence_ranks() -> dict:
     pri_rank = {t: i + 1 for i, t in enumerate(sorted(common, key=lambda x: -priors[x]))}
     return {t: {"obs_rank": obs_rank[t], "prior_rank": pri_rank[t],
                 "obs": obs[t], "prior": round(priors[t], 1)} for t in common}
+
+
+TOTAL_CAP = 45.0       # cap points scored in a game so a 70-burger can't warp the ratings
+ANCHOR_OFF = 17.0       # a non-FBS opponent's offense/defense is worth ~this many points
+ANCHOR_DEF = 17.0
+
+
+@lru_cache(maxsize=1)
+def _off_def_priors() -> dict:
+    """SP+ Offense/Defense per team (points scored / allowed vs an average opponent),
+    the prior for the totals model. From cfb_power.json."""
+    if not POWER_PATH.exists():
+        return {}
+    try:
+        board = json.loads(POWER_PATH.read_text(encoding="utf-8")).get("board", {})
+        cols = [c["label"] for c in board.get("columns", [])]
+        oi = cols.index("Offense") if "Offense" in cols else 3
+        di = cols.index("Defense") if "Defense" in cols else 4
+        return {_norm(r[0]): (float(r[oi]), float(r[di])) for r in board.get("rows", []) if r}
+    except Exception:
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _off_def_ratings() -> tuple:
+    """Opponent-adjusted offensive and defensive point ratings (iterative), blended with
+    the SP+ off/def prior and anchored on non-FBS opponents -- the totals sibling of the
+    margin SRS. Returns (off, deff, league_pts): off[t] = points t scores vs an average
+    defense, deff[t] = points t allows vs an average offense. A game's projected total is
+    off[A]+deff[B]-LP + off[B]+deff[A]-LP."""
+    from collections import defaultdict
+    fbs = _fbs_teams()
+    priors = _off_def_priors()
+    games = [g for g in _games() if g.get("home_pts") is not None]
+    if not fbs or not games:
+        return ({}, {}, 0.0)
+    lp = sum(min(g["home_pts"], TOTAL_CAP) for g in games) / len(games)
+    sched = defaultdict(list)  # team -> [(opp_or_None, scored, allowed)]
+    for g in games:
+        h, a = _norm(g["home"]), _norm(g["away"])
+        hp, ap = min(g["home_pts"], TOTAL_CAP), min(g["away_pts"], TOTAL_CAP)
+        if h in fbs:
+            sched[h].append((a if a in fbs else None, hp, ap))
+        if a in fbs:
+            sched[a].append((h if h in fbs else None, ap, hp))
+    off = {t: priors.get(t, (lp, lp))[0] for t in sched}
+    deff = {t: priors.get(t, (lp, lp))[1] for t in sched}
+    for _ in range(40):
+        no, nd = {}, {}
+        for t, gs in sched.items():
+            os_ = sum(sc - ((deff.get(o, lp) if o else ANCHOR_DEF) - lp) for o, sc, al in gs)
+            ds = sum(al - ((off.get(o, lp) if o else ANCHOR_OFF) - lp) for o, sc, al in gs)
+            po, pd = priors.get(t, (lp, lp))
+            no[t] = (os_ + PRIOR_GAMES * po) / (len(gs) + PRIOR_GAMES)
+            nd[t] = (ds + PRIOR_GAMES * pd) / (len(gs) + PRIOR_GAMES)
+        off, deff = no, nd
+    return (off, deff, round(lp, 1))
+
+
+def projected_total(away: str, home: str):
+    """Opponent-adjusted projected total for a game (neutral of venue -- HFA barely
+    moves a total). None if either side is unrated."""
+    off, deff, lp = _off_def_ratings()
+    a, h = _resolve(away), _resolve(home)
+    if a not in off or h not in off:
+        return None
+    a_pts = off[a] + deff[h] - lp
+    h_pts = off[h] + deff[a] - lp
+    return round(a_pts + h_pts, 1)
+
+
+def total_read(away: str, home: str, line=None) -> dict | None:
+    """Totals read: projected total, each side's scoring profile, and a lean vs the line."""
+    proj = projected_total(away, home)
+    if proj is None:
+        return None
+    off, deff, lp = _off_def_ratings()
+    a, h = _resolve(away), _resolve(home)
+    read = {"proj_total": proj, "league_pts": lp,
+            "away_off": round(off[a], 1), "away_def": round(deff[a], 1),
+            "home_off": round(off[h], 1), "home_def": round(deff[h], 1),
+            "line": None, "edge": None, "lean": None}
+    if line is not None:
+        try:
+            line = float(line)
+            edge = round(proj - line, 1)
+            read["line"] = line
+            read["edge"] = edge
+            if edge >= 3:
+                read["lean"] = "OVER"
+            elif edge <= -3:
+                read["lean"] = "UNDER"
+            else:
+                read["lean"] = "line ~fair"
+        except (TypeError, ValueError):
+            pass
+    return read
 
 
 def prior_divergence(team: str) -> dict | None:
