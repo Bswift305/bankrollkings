@@ -78,7 +78,7 @@
     <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
     <span class="wv-ats">{{ p.ats }} ATS ({{ p.cover }}%)</span>
     {% if p.week %}
-    <span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">short {{ '%+g'|format(p.week.edge) }}</span>{% endif %}{% if p.week.opp_status %} &middot; opp {{ p.week.opp_status }}{% endif %}</span>
+    <span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">short {{ '%+g'|format(p.week.edge) }}</span>{% endif %}{% if p.week.opp_status %} &middot; opp {{ p.week.opp_status }}{% endif %}{% if p.week.total_lean in ('OVER','UNDER') %} &middot; total <b style="color:var(--wv-accent);">{{ p.week.total_lean }} {{ '%g'|format(p.week.total_now) }}</b> (proj {{ '%g'|format(p.week.total_proj) }}){% endif %}</span>
     {% else %}
     <span class="wv-wk">no line this week / off</span>
     {% endif %}

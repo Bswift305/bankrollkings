@@ -780,6 +780,53 @@ CFBWAVE_WAVE = [
 ]
 
 
+# CFB Totals — Week 4. Only plays where the model AND the line move agree (the market
+# isn't fighting it). Totals are the noisiest market, so confirmation matters most.
+CFBTOT_OVERS = [
+    ("Kansas St @ Cincinnati", "OVER 55.5", "model 60 · line rose to meet it · two soft D's"),
+]
+CFBTOT_UNDERS = [
+    ("Oklahoma @ Georgia", "UNDER 43.8", "model 40 · OU offense broken (10 & 14 pts), two good D's"),
+    ("Texas A&M @ LSU", "UNDER 51.8", "model 48 · line fell, market agrees"),
+    ("Wisconsin @ Penn St", "UNDER 43.8", "model 40 · pairs with the PSU -10 ride"),
+    ("Wake Forest @ Louisville", "UNDER 57.2", "model 54 · move agrees"),
+]
+
+
+def card_cfb_totals(week, out):
+    """CFB totals card: over/under plays where the opponent-adjusted total projection
+    AND the line movement agree -- the market isn't fighting the model."""
+    top = 250
+    ph = 76
+
+    def section(c, d, y, title, sub, rows, accent):
+        c.text(M, y, title, F['col'], accent)
+        c.text(W - M, y + 2, sub, F['de'], FAINT, right=True)
+        y += 28; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 10
+        for game, pick, why in rows:
+            d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=12, fill=PANEL, outline=LINE, width=2)
+            d.rounded_rectangle([(M, y), (M + 9, y + ph)], radius=5, fill=accent)
+            c.text(M + 26, y + 11, game, F['blk'], INK)
+            c.text(W - M - 18, y + 13, pick, F['pl'], accent, right=True)
+            c.text(M + 26, y + 46, why, F['de'], FAINT)
+            y += ph + 10
+        return y + 8
+
+    H = top + 44 + (28 + 10 + len(CFBTOT_OVERS) * (ph + 10) + 8) + (28 + 10 + len(CFBTOT_UNDERS) * (ph + 10) + 8) + 96
+    c = Card(H); d = c.d
+    y = c.header(f"CFB {week.upper()} — TOTALS", chip="O/U READS")
+    d.rounded_rectangle([(M, y), (W - M, y + 38)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 15, y + 8, "Only where the model AND the line move agree (market not fighting it)", F['de'], INK)
+    y += 52
+
+    y = section(c, d, y, "OVERS", "offenses outrun the number", CFBTOT_OVERS, GREEN)
+    y = section(c, d, y, "UNDERS", "defense / broken offense < the number", CFBTOT_UNDERS, RED)
+
+    c.text(M, y, f"Week 4 lines, {_stamp()}. Totals are the noisiest market -- these have model +", F['ftb'], DIM); y += 28
+    c.text(M, y, "line-move agreeing. Cross-check weather at kick. Spots, not locks. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_wave(week, out):
     """CFB Wave board: model-confirmed rides + the undefeated (3-0 ATS) wave laying
     bigger numbers, honestly tagged. A real menu of options, casino-ready."""
@@ -1106,6 +1153,8 @@ def main():
         made.append(card_atlgb_good(args.week, str(out_dir / 'bk_atlgb_good.png')))
     if 'cfbwave' in want:
         made.append(card_cfb_wave(args.week, str(out_dir / 'bk_cfb_wave.png')))
+    if 'cfbtotals' in want:
+        made.append(card_cfb_totals(args.week, str(out_dir / 'bk_cfb_totals.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:

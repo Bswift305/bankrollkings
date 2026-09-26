@@ -40472,10 +40472,18 @@ def build_cfb_wave_context():
                 their_proj = proj if ishome else -proj
                 edge = round(their_proj + their_line, 1)  # >0 => model says they cover
                 opp = g['away'] if ishome else g['home']
+                tr = None
+                try:
+                    tr = cff.total_read(g['away'], g['home'], g.get('total_now'))
+                except Exception:
+                    tr = None
                 entry['week'] = {
                     'opp': opp, 'line': their_line, 'edge': edge, 'covers': edge > 0,
                     'opp_status': _status(opp),
                     'total_now': g.get('total_now'),
+                    'total_proj': (tr or {}).get('proj_total'),
+                    'total_lean': (tr or {}).get('lean'),
+                    'total_edge': (tr or {}).get('edge'),
                 }
         plays.append(entry)
 
