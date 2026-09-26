@@ -32,6 +32,9 @@ def _games() -> tuple:
 
 def clear_cache():
     _games.cache_clear()
+    _srs.cache_clear()
+    _fbs_teams.cache_clear()
+    _cfbd_names.cache_clear()
 
 
 def _norm(t) -> str:
@@ -82,6 +85,99 @@ def team_games(team: str) -> list:
     return sorted(out, key=lambda x: x["week"])
 
 
+MOV_CAP = 24.0     # cap blowout margins so a 60-point win over a cupcake can't dominate the rating
+FCS_ANCHOR = -26.0  # a non-FBS opponent is worth this (neutral) -- beating one by the cap ~= average
+PRIOR_GAMES = 5.0   # SP+ preseason prior worth this many games; decays as real games accumulate
+POWER_PATH = BASE_DIR / "data" / "scenarios" / "cfb_power.json"
+FBS_CONFS = {
+    "big ten", "acc", "big 12", "sec", "american athletic", "sun belt",
+    "mid-american", "conference usa", "mountain west", "pac-12", "pac-12 conference",
+    "fbs independents", "independent",
+}
+
+
+@lru_cache(maxsize=1)
+def _fbs_teams() -> frozenset:
+    """FBS team set: anyone whose conference is an FBS league, plus independents
+    (Notre Dame et al., no FBS conf label) caught by having played >=3 FBS teams."""
+    from collections import defaultdict
+    confs = defaultdict(set)
+    for g in _games():
+        confs[_norm(g["home"])].add(str(g.get("home_conf") or "").strip().lower())
+        confs[_norm(g["away"])].add(str(g.get("away_conf") or "").strip().lower())
+    base = {t for t, cs in confs.items() if cs & FBS_CONFS}
+    played = defaultdict(int)
+    for g in _games():
+        h, a = _norm(g["home"]), _norm(g["away"])
+        if a in base:
+            played[h] += 1
+        if h in base:
+            played[a] += 1
+    indep = {t for t, n in played.items() if n >= 3}
+    return frozenset(base | indep)
+
+
+@lru_cache(maxsize=1)
+def _priors() -> dict:
+    """Preseason SP+ rating per team (points vs an average FBS team) -- the prior that
+    keeps early-season ratings sane before schedules connect. From cfb_power.json."""
+    if not POWER_PATH.exists():
+        return {}
+    try:
+        board = json.loads(POWER_PATH.read_text(encoding="utf-8")).get("board", {})
+        cols = [c["label"] for c in board.get("columns", [])]
+        si = cols.index("SP+") if "SP+" in cols else 2
+        return {_norm(r[0]): float(r[si]) for r in board.get("rows", []) if r and r[si] is not None}
+    except Exception:
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _srs() -> dict:
+    """Opponent-adjusted power rating (Simple Rating System), FBS only, with a decaying
+    SP+ preseason prior. Each team's rating is the average of its neutral, MOV-capped
+    margins PLUS each opponent's rating, blended with PRIOR_GAMES virtual games at its
+    SP+ prior. Non-FBS opponents are pinned at FCS_ANCHOR so a cupcake blowout can't
+    inflate a rating (the strength-of-schedule fix). Early season the prior dominates;
+    it fades as real games accumulate. Ratings are points vs an average FBS team.
+    """
+    from collections import defaultdict
+    fbs = _fbs_teams()
+    if not fbs:
+        return {}
+    priors = _priors()
+    sched = defaultdict(list)  # fbs team -> [(opp_or_None, neutral capped margin)]
+    for g in _games():
+        hp, ap = g.get("home_pts"), g.get("away_pts")
+        if hp is None or ap is None:
+            continue
+        h, a = _norm(g["home"]), _norm(g["away"])
+        if h not in fbs and a not in fbs:
+            continue
+        m = hp - ap
+        if not g.get("neutral"):
+            m -= HOME_EDGE
+        m = max(-MOV_CAP, min(MOV_CAP, m))
+        if h in fbs:
+            sched[h].append((a if a in fbs else None, m))
+        if a in fbs:
+            sched[a].append((h if h in fbs else None, -m))
+    rating = {t: priors.get(t, 0.0) for t in sched}
+    for _ in range(40):
+        nxt = {}
+        for t, gs in sched.items():
+            obs = sum(mar + (rating.get(opp, 0.0) if opp else FCS_ANCHOR) for opp, mar in gs)
+            p = priors.get(t, 0.0)
+            nxt[t] = (obs + PRIOR_GAMES * p) / (len(gs) + PRIOR_GAMES)  # prior as virtual games
+        mean = sum(nxt.values()) / len(nxt)
+        rating = {t: round(nxt[t] - mean, 2) for t in nxt}  # recenter to FBS average = 0
+    return rating
+
+
+def srs_rating(team: str):
+    return _srs().get(_resolve(team))
+
+
 def team_form(team: str) -> dict:
     gs = team_games(team)
     if not gs:
@@ -90,6 +186,7 @@ def team_form(team: str) -> dict:
     return {
         "team": team, "games": len(gs), "record": f"{w}-{len(gs) - w}",
         "avg_margin": round(sum(g["margin"] for g in gs) / len(gs), 1),
+        "srs": srs_rating(team),  # opponent-adjusted power rating (points vs an avg team)
         "ppg": round(sum(g["pf"] for g in gs) / len(gs), 1),
         "papg": round(sum(g["pa"] for g in gs) / len(gs), 1),
         "log": gs,
@@ -118,28 +215,44 @@ def common_opponents(team_a: str, team_b: str) -> list:
 
 
 def matchup_read(away: str, home: str, spread_home=None) -> dict:
-    """Current-form + common-opponent read for a game. spread_home is the HOME
-    team's spread (negative = home favored). Returns a projected home margin from
-    common opponents (when available) and a plain-English note."""
+    """Opponent-adjusted read for a game. spread_home is the HOME team's spread
+    (negative = home favored). The projection now comes from the SRS power ratings
+    (strength-of-schedule adjusted), with common opponents as corroboration when they
+    exist. Returns a projected home margin, a lean vs the line, and a plain-English note."""
     fa, fh = team_form(away), team_form(home)
     commons = common_opponents(home, away)  # positive gap => home looks better
     read = {"away": away, "home": home, "away_form": fa, "home_form": fh,
-            "commons": commons, "proj_home_margin": None, "note": None, "lean": None}
-    if commons:
-        gap = sum(c["neutral_gap"] for c in commons) / len(commons)  # home minus away, neutral
-        proj = round(gap + HOME_EDGE, 1)  # add home field for tonight
+            "commons": commons, "proj_home_margin": None, "proj_source": None,
+            "note": None, "lean": None}
+    rh, ra = srs_rating(home), srs_rating(away)
+    proj = None
+    if rh is not None and ra is not None:
+        proj = round(rh - ra + HOME_EDGE, 1)  # SRS gap + home field
+        read["proj_source"] = "SRS (opponent-adjusted)"
+    elif commons:
+        gap = sum(c["neutral_gap"] for c in commons) / len(commons)
+        proj = round(gap + HOME_EDGE, 1)
+        read["proj_source"] = "common opponents"
+
+    if proj is not None:
         read["proj_home_margin"] = proj
         if spread_home is not None:
-            edge = round(proj - (-spread_home), 1)  # proj margin vs the number the home team must cover
+            edge = round(proj - (-spread_home), 1)  # proj margin vs what the home team must cover
             if abs(edge) >= 3:
                 side = home if edge > 0 else away
-                read["lean"] = f"{side} (common-opp projects {proj:+.0f}, line asks {-spread_home:+.0f})"
+                read["lean"] = f"{side} (form projects home {proj:+.0f}, line asks {-spread_home:+.0f} — edge {edge:+.0f})"
             else:
-                read["lean"] = f"line ~fair (common-opp projects home {proj:+.0f} vs {-spread_home:+.0f} needed)"
-        via = ", ".join(f"both played {c['opp']}" for c in commons[:2])
-        read["note"] = f"Common opponents ({via}) project {home} by ~{proj:+.0f} on a neutral-adjusted basis."
+                read["lean"] = f"line ~fair (form projects home {proj:+.0f} vs {-spread_home:+.0f} needed)"
+        srs_bit = ""
+        if rh is not None and ra is not None:
+            srs_bit = f" Power ratings: {home} {rh:+.0f} vs {away} {ra:+.0f} (points vs an average team)."
+        common_bit = ""
+        if commons:
+            via = ", ".join(f"both played {c['opp']}" for c in commons[:2])
+            common_bit = f" Corroborated by common opponents ({via})."
+        read["note"] = (f"Opponent-adjusted form projects {home} by ~{proj:+.0f}.{srs_bit}{common_bit}").strip()
     else:
-        read["note"] = "No shared 2026 opponents yet — read off form only."
+        read["note"] = "No 2026 rating yet for one side — read off the board."
     return read
 
 
