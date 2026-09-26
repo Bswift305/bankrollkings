@@ -45,6 +45,9 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # Open->current line movement (CFBD returns both), so the matchup card can show
         # a number's history instead of us reconstructing it live. Committable JSON.
         ("CFB line movement", ["fetch_cfb_line_moves.py", "--season", str(season)], 180),
+        # Kickoff weather (wind/rain) from free sources (CFBD venues + Open-Meteo), since
+        # CFBD's weather endpoint is paywalled. Context on the matchup card, not an edge.
+        ("CFB weather", ["fetch_cfb_weather.py"], 240),
         # Rebuild the graded game-lines history (rolling window ending at the current
         # season) so the ATS/O-U Pattern Board folds in THIS week's finished games.
         # Called with no year args -> the fetcher self-computes the rolling window.

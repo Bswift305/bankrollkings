@@ -40210,6 +40210,42 @@ def _cfb_line_move(away, home):
     return idx.get((rh, ra))
 
 
+_CFB_WX_CACHE = {}
+
+
+def _cfb_weather(away, home):
+    """Kickoff weather for a CFB game (cfb_weather.json), matched by team names.
+    Returns a dict only when it's worth surfacing (windy, rain, or a dome)."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_weather.json')
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_WX_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            idx = {}
+            for g in data.get('games', []):
+                idx[(str(g.get('home')).strip().lower(), str(g.get('away')).strip().lower())] = g
+            _CFB_WX_CACHE['idx'] = idx
+            _CFB_WX_CACHE['flag'] = data.get('wind_flag_mph', 15)
+            _CFB_WX_CACHE['mtime'] = mtime
+        idx = _CFB_WX_CACHE.get('idx', {})
+    except (OSError, ValueError):
+        return None
+    g = idx.get((str(home).strip().lower(), str(away).strip().lower()))
+    if not g:
+        return None
+    flag = _CFB_WX_CACHE.get('flag', 15)
+    wind, precip, dome = g.get('wind'), g.get('precip'), g.get('dome')
+    if dome:
+        return {'dome': True}
+    windy = wind is not None and wind >= flag
+    rainy = precip is not None and precip >= 1.0
+    if not windy and not rainy:
+        return None  # calm/dry -> not worth cluttering
+    return {'wind': wind, 'temp': g.get('temp'), 'precip': precip,
+            'windy': windy, 'rainy': rainy}
+
+
 def build_cfb_matchup_context():
     """Quick Tool: CFB Matchup Edge Card. Per-team dossier (ATS splits + current
     coach's career ATS + 2026 returning production); the page compares any two teams
@@ -40251,6 +40287,11 @@ def build_cfb_matchup_context():
                     wg['move'] = _cfb_line_move(a, h)
                 except Exception:
                     wg['move'] = None
+                # Kickoff weather (wind/rain) as context -- not a proven CFB edge.
+                try:
+                    wg['wx'] = _cfb_weather(a, h)
+                except Exception:
+                    wg['wx'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []
