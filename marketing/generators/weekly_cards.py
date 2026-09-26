@@ -793,6 +793,43 @@ CFBTOT_UNDERS = [
 ]
 
 
+# CFB Week 4 — five diversified 3-leg tickets ($5 each), built from the clean board.
+CFB_PARLAYS = [
+    ("1 · MODEL ATS RIDES", CY, [("Penn State", "-10"), ("Oklahoma St", "+1.8"), ("New Mexico", "-11.2")]),
+    ("2 · UNDERS", RED, [("Okla @ Georgia", "U 43.8"), ("A&M @ LSU", "U 51.8"), ("Wake @ Louisville", "U 57.2")]),
+    ("3 · DOGS + OVER", GREEN, [("Michigan St", "+5.8"), ("Colorado St", "+14"), ("KSU @ Cincy", "O 55.5")]),
+    ("4 · THE 3-0 WAVE", GOLD, [("Georgia", "-13.5"), ("Utah", "-7.5"), ("Miss State", "-6")]),
+    ("5 · PENN STATE STACK", CY, [("Penn State", "-10"), ("Wisc @ PSU", "U 43.8"), ("Michigan St", "+5.8")]),
+]
+
+
+def card_cfb_parlays(week, out):
+    """Five diversified 3-leg CFB tickets ($5 each), casino-ready."""
+    top = 250
+    lh = 34
+    bh_of = lambda legs: 46 + len(legs) * lh
+    H = top + 44 + sum(bh_of(l) + 14 for _, _, l in CFB_PARLAYS) + 96
+    c = Card(H); d = c.d
+    y = c.header(f"CFB {week.upper()} — 5 TICKETS", chip="$5 EACH · 3-LEG")
+    d.rounded_rectangle([(M, y), (W - M, y + 38)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 15, y + 8, "Diversified 3-leggers from the clean board · $25 total risk", F['de'], INK)
+    y += 52
+    for title, accent, legs in CFB_PARLAYS:
+        bh = bh_of(legs)
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=14, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 10, y + bh)], radius=6, fill=accent)
+        c.text(M + 28, y + 13, title, F['blk'], accent)
+        ry = y + 48
+        for team, pick in legs:
+            c.text(M + 30, ry, team, F['pl'], INK)
+            c.text(W - M - 20, ry + 2, pick, F['pl'], accent, right=True)
+            ry += lh
+        y += bh + 14
+    c.text(M, y, f"Week 4 lines, {_stamp()}. Parlays compound the vig -- 3-leggers are lottery", F['ftb'], DIM); y += 28
+    c.text(M, y, "tickets even off good legs. $5 fun money. Spots, not locks. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_totals(week, out):
     """CFB totals card: over/under plays where the opponent-adjusted total projection
     AND the line movement agree -- the market isn't fighting the model."""
@@ -1155,6 +1192,8 @@ def main():
         made.append(card_cfb_wave(args.week, str(out_dir / 'bk_cfb_wave.png')))
     if 'cfbtotals' in want:
         made.append(card_cfb_totals(args.week, str(out_dir / 'bk_cfb_totals.png')))
+    if 'cfbparlays' in want:
+        made.append(card_cfb_parlays(args.week, str(out_dir / 'bk_cfb_parlays.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
