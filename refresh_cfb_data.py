@@ -54,6 +54,9 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # Current-season (2026) ATS cover record per team -- LEADS the coach/fav trend,
         # because recent form can diverge from the multi-year history. Cheap CFBD call.
         ("CFB 2026 ATS", ["build_cfb_2026_ats.py", "--season", str(season)], 120),
+        # AP poll trajectory -- the human-readable stale-prior signal (a team collapsing
+        # out of the top 25 vs rising). Pairs with the SRS-vs-prior divergence flag.
+        ("CFB rankings", ["build_cfb_rankings.py", "--season", str(season)], 120),
         # Rebuild the graded game-lines history (rolling window ending at the current
         # season) so the ATS/O-U Pattern Board folds in THIS week's finished games.
         # Called with no year args -> the fetcher self-computes the rolling window.

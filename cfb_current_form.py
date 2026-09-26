@@ -33,6 +33,8 @@ def _games() -> tuple:
 def clear_cache():
     _games.cache_clear()
     _srs.cache_clear()
+    _srs_observed.cache_clear()
+    _priors.cache_clear()
     _fbs_teams.cache_clear()
     _cfbd_names.cache_clear()
 
@@ -176,6 +178,74 @@ def _srs() -> dict:
 
 def srs_rating(team: str):
     return _srs().get(_resolve(team))
+
+
+@lru_cache(maxsize=1)
+def _srs_observed() -> dict:
+    """Each FBS team's PRIOR-FREE observed rating: avg(neutral capped margin + opponent's
+    blended rating), with no SP+ prior in the numerator. Comparing this to the prior shows
+    whether a team is playing ABOVE or BELOW preseason expectation -- the signal that the
+    blended projection may be leaning on a stale prior (Oklahoma collapsed; Georgia surged)."""
+    from collections import defaultdict
+    fbs = _fbs_teams()
+    rating = _srs()  # converged blended ratings, used for opponents
+    if not fbs or not rating:
+        return {}
+    sched = defaultdict(list)
+    for g in _games():
+        hp, ap = g.get("home_pts"), g.get("away_pts")
+        if hp is None or ap is None:
+            continue
+        h, a = _norm(g["home"]), _norm(g["away"])
+        if h not in fbs and a not in fbs:
+            continue
+        m = hp - ap
+        if not g.get("neutral"):
+            m -= HOME_EDGE
+        m = max(-MOV_CAP, min(MOV_CAP, m))
+        if h in fbs:
+            sched[h].append((a if a in fbs else None, m))
+        if a in fbs:
+            sched[a].append((h if h in fbs else None, -m))
+    return {t: round(sum(mar + (rating.get(opp, 0.0) if opp else FCS_ANCHOR) for opp, mar in gs) / len(gs), 2)
+            for t, gs in sched.items()}
+
+
+@lru_cache(maxsize=1)
+def _divergence_ranks() -> dict:
+    """Rank each FBS team by observed play and by SP+ prior; the gap between the two
+    ranks is the stale-prior signal. Rank comparison (not raw points) because the
+    MOV-capped observed ratings sit on a compressed early-season scale vs SP+."""
+    obs = _srs_observed()
+    priors = _priors()
+    common = [t for t in obs if t in priors]
+    if not common:
+        return {}
+    obs_rank = {t: i + 1 for i, t in enumerate(sorted(common, key=lambda x: -obs[x]))}
+    pri_rank = {t: i + 1 for i, t in enumerate(sorted(common, key=lambda x: -priors[x]))}
+    return {t: {"obs_rank": obs_rank[t], "prior_rank": pri_rank[t],
+                "obs": obs[t], "prior": round(priors[t], 1)} for t in common}
+
+
+def prior_divergence(team: str) -> dict | None:
+    """Whether a team is playing well above or below its preseason standing, by how far
+    it has moved in the pecking order (observed rank vs SP+ prior rank). A big DROP means
+    the blended projection is leaning on a prior the team's play contradicts (Oklahoma:
+    #10 preseason, playing far worse); a big RISE means the prior under-rates them."""
+    d = _divergence_ranks().get(_resolve(team))
+    if not d:
+        return None
+    drop = d["obs_rank"] - d["prior_rank"]  # +ve = fell in the order (playing worse)
+    # "surging" only when they've actually climbed into a good tier (not just less-bad);
+    # "regressed" when a preseason-decent team has slid out of the top tier.
+    if drop <= -15 and d["obs_rank"] <= 40:
+        label = "surging"
+    elif drop >= 15 and d["prior_rank"] <= 40:
+        label = "regressed"
+    else:
+        label = "as expected"
+    return {"obs_rank": d["obs_rank"], "prior_rank": d["prior_rank"],
+            "drop": drop, "label": label}
 
 
 def team_form(team: str) -> dict:

@@ -40246,6 +40246,61 @@ def _cfb_weather(away, home):
             'windy': windy, 'rainy': rainy}
 
 
+_CFB_RANK_CACHE = {}
+
+
+def _cfb_rankings():
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_rankings.json')
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_RANK_CACHE.get('mtime') != mtime:
+            with open(path, 'r', encoding='utf-8') as fh:
+                _CFB_RANK_CACHE['data'] = json.load(fh).get('teams', {})
+            _CFB_RANK_CACHE['mtime'] = mtime
+        return _CFB_RANK_CACHE.get('data', {})
+    except (OSError, ValueError):
+        return {}
+
+
+def _cfb_prior_context(away, home):
+    """Per-team 'form vs preseason' read: AP ranking trajectory + the SRS-vs-prior
+    divergence. Surfaces when the projection leans on a stale preseason prior (a team
+    that has collapsed out of the polls, or surged past its rating) so the reader weights
+    current form -- the 'truest number' layer."""
+    try:
+        import cfb_current_form as _cff
+    except Exception:
+        return None
+    ranks = _cfb_rankings()
+    rank_keys = list(ranks.keys())
+
+    def _one(team):
+        school = _cff._resolve(team)
+        rk = None
+        for k in rank_keys:
+            if k.lower() == school:
+                rk = ranks[k]; break
+        dv = _cff.prior_divergence(team)
+        note = None
+        if rk and rk.get('fell_out'):
+            note = f"collapsed — AP #{rk['peak']} → unranked"
+        elif rk and rk.get('trend') == 'rising' and rk.get('now'):
+            note = f"rising — AP #{rk['open']} → #{rk['now']}"
+        elif dv and dv['label'] == 'surging':
+            note = f"outplaying its preseason rating (now ~#{dv['obs_rank']}, prior #{dv['prior_rank']})"
+        elif dv and dv['label'] == 'regressed':
+            note = f"below its preseason rating (now ~#{dv['obs_rank']}, prior #{dv['prior_rank']})"
+        if not note:
+            return None
+        return {'team': team, 'rank': rk, 'div': dv, 'note': note,
+                'stale': bool((rk and rk.get('fell_out')) or (dv and dv['label'] in ('surging', 'regressed')))}
+
+    a_ctx, h_ctx = _one(away), _one(home)
+    if not a_ctx and not h_ctx:
+        return None
+    return {'away': a_ctx, 'home': h_ctx}
+
+
 def build_cfb_matchup_context():
     """Quick Tool: CFB Matchup Edge Card. Per-team dossier (ATS splits + current
     coach's career ATS + 2026 returning production); the page compares any two teams
@@ -40304,6 +40359,12 @@ def build_cfb_matchup_context():
                         wg['coach'] = None
                 except Exception:
                     wg['coach'] = None
+                # Form-vs-preseason: flags when the projection leans on a stale prior
+                # (a collapsed or surging team) so current form gets the weight.
+                try:
+                    wg['prior_ctx'] = _cfb_prior_context(a, h)
+                except Exception:
+                    wg['prior_ctx'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []

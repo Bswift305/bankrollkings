@@ -1,0 +1,387 @@
+{
+  "season": 2026,
+  "updated": "2026-09-26 11:38 UTC",
+  "last_poll_week": 4,
+  "teams": {
+    "Ohio State": {
+      "open": 1,
+      "now": 7,
+      "peak": 1,
+      "weeks": {
+        "1": 1,
+        "2": 1,
+        "3": 6,
+        "4": 7
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Oregon": {
+      "open": 2,
+      "now": 20,
+      "peak": 2,
+      "weeks": {
+        "1": 2,
+        "2": 6,
+        "3": 21,
+        "4": 20
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Georgia": {
+      "open": 3,
+      "now": 2,
+      "peak": 2,
+      "weeks": {
+        "1": 3,
+        "2": 2,
+        "3": 2,
+        "4": 2
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Notre Dame": {
+      "open": 4,
+      "now": 3,
+      "peak": 3,
+      "weeks": {
+        "1": 4,
+        "2": 3,
+        "3": 3,
+        "4": 3
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Texas": {
+      "open": 5,
+      "now": 1,
+      "peak": 1,
+      "weeks": {
+        "1": 5,
+        "2": 4,
+        "3": 1,
+        "4": 1
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Indiana": {
+      "open": 6,
+      "now": 5,
+      "peak": 4,
+      "weeks": {
+        "1": 6,
+        "2": 5,
+        "3": 4,
+        "4": 5
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Miami": {
+      "open": 7,
+      "now": 6,
+      "peak": 5,
+      "weeks": {
+        "1": 7,
+        "2": 7,
+        "3": 5,
+        "4": 6
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Texas A&M": {
+      "open": 8,
+      "now": 23,
+      "peak": 8,
+      "weeks": {
+        "1": 8,
+        "2": 10,
+        "3": 9,
+        "4": 23
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Ole Miss": {
+      "open": 9,
+      "now": 4,
+      "peak": 4,
+      "weeks": {
+        "1": 9,
+        "2": 9,
+        "3": 8,
+        "4": 4
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Oklahoma": {
+      "open": 10,
+      "now": null,
+      "peak": 10,
+      "weeks": {
+        "1": 10,
+        "2": 11,
+        "3": 24
+      },
+      "trend": "fell out",
+      "fell_out": true,
+      "last_ranked_week": 3
+    },
+    "LSU": {
+      "open": 11,
+      "now": 10,
+      "peak": 7,
+      "weeks": {
+        "1": 11,
+        "2": 8,
+        "3": 7,
+        "4": 10
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Texas Tech": {
+      "open": 12,
+      "now": 11,
+      "peak": 11,
+      "weeks": {
+        "1": 12,
+        "2": 13,
+        "3": 13,
+        "4": 11
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Alabama": {
+      "open": 13,
+      "now": 8,
+      "peak": 8,
+      "weeks": {
+        "1": 13,
+        "2": 12,
+        "3": 10,
+        "4": 8
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "USC": {
+      "open": 14,
+      "now": 12,
+      "peak": 12,
+      "weeks": {
+        "1": 14,
+        "2": 14,
+        "3": 12,
+        "4": 12
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "BYU": {
+      "open": 14,
+      "now": 9,
+      "peak": 9,
+      "weeks": {
+        "1": 14,
+        "2": 15,
+        "3": 11,
+        "4": 9
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Michigan": {
+      "open": 16,
+      "now": 18,
+      "peak": 16,
+      "weeks": {
+        "1": 16,
+        "3": 19,
+        "4": 18
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Washington": {
+      "open": 17,
+      "now": null,
+      "peak": 17,
+      "weeks": {
+        "1": 17,
+        "2": 19
+      },
+      "trend": "fell out",
+      "fell_out": true,
+      "last_ranked_week": 2
+    },
+    "Penn State": {
+      "open": 18,
+      "now": 13,
+      "peak": 13,
+      "weeks": {
+        "1": 18,
+        "2": 16,
+        "3": 14,
+        "4": 13
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "SMU": {
+      "open": 19,
+      "now": 22,
+      "peak": 16,
+      "weeks": {
+        "1": 19,
+        "2": 17,
+        "3": 16,
+        "4": 22
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Tennessee": {
+      "open": 20,
+      "now": 14,
+      "peak": 14,
+      "weeks": {
+        "1": 20,
+        "2": 18,
+        "3": 15,
+        "4": 14
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Utah": {
+      "open": 21,
+      "now": 15,
+      "peak": 15,
+      "weeks": {
+        "1": 21,
+        "2": 20,
+        "3": 17,
+        "4": 15
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Iowa": {
+      "open": 22,
+      "now": 17,
+      "peak": 17,
+      "weeks": {
+        "1": 22,
+        "2": 21,
+        "3": 18,
+        "4": 17
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Houston": {
+      "open": 23,
+      "now": 25,
+      "peak": 22,
+      "weeks": {
+        "1": 23,
+        "2": 22,
+        "3": 22,
+        "4": 25
+      },
+      "trend": "falling",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Louisville": {
+      "open": 24,
+      "now": 16,
+      "peak": 16,
+      "weeks": {
+        "1": 24,
+        "2": 24,
+        "3": 23,
+        "4": 16
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Missouri": {
+      "open": 25,
+      "now": 19,
+      "peak": 19,
+      "weeks": {
+        "1": 25,
+        "2": 23,
+        "3": 20,
+        "4": 19
+      },
+      "trend": "rising",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Florida": {
+      "open": 21,
+      "now": 21,
+      "peak": 21,
+      "weeks": {
+        "4": 21
+      },
+      "trend": "steady",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Mississippi State": {
+      "open": 24,
+      "now": 24,
+      "peak": 24,
+      "weeks": {
+        "4": 24
+      },
+      "trend": "steady",
+      "fell_out": false,
+      "last_ranked_week": 4
+    },
+    "Virginia": {
+      "open": 25,
+      "now": null,
+      "peak": 25,
+      "weeks": {
+        "2": 25,
+        "3": 25
+      },
+      "trend": "fell out",
+      "fell_out": true,
+      "last_ranked_week": 3
+    }
+  }
+}
