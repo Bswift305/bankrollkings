@@ -40292,6 +40292,18 @@ def build_cfb_matchup_context():
                     wg['wx'] = _cfb_weather(a, h)
                 except Exception:
                     wg['wx'] = None
+                # Coach / favorite ATS trend for the FAVORITE (research: coach > team,
+                # big favorites cover ~48%). Descriptive history, not a promised edge.
+                try:
+                    sp = g.get('spread')
+                    if sp is not None:
+                        import cfb_coach_trends as _cct
+                        fav, mag = (h, abs(sp)) if sp < 0 else (a, sp)
+                        wg['coach'] = _cct.favorite_trend(fav, mag)
+                    else:
+                        wg['coach'] = None
+                except Exception:
+                    wg['coach'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []

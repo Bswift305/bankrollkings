@@ -48,6 +48,9 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # Kickoff weather (wind/rain) from free sources (CFBD venues + Open-Meteo), since
         # CFBD's weather endpoint is paywalled. Context on the matchup card, not an edge.
         ("CFB weather", ["fetch_cfb_weather.py"], 240),
+        # Current head coach per team, so the coach/favorite ATS trend on the matchup
+        # card knows who's on the sideline now. Cheap; one CFBD call.
+        ("CFB coaches", ["build_cfb_coaches.py", "--season", str(season)], 120),
         # Rebuild the graded game-lines history (rolling window ending at the current
         # season) so the ATS/O-U Pattern Board folds in THIS week's finished games.
         # Called with no year args -> the fetcher self-computes the rolling window.
