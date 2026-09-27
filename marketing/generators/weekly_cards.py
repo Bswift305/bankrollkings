@@ -939,6 +939,36 @@ def card_nfl_top20_by_game(week, out):
     return c.save(out)
 
 
+def card_nfl_game_board(week, out):
+    """NFL Game Board card: every spread + total this week ranked best-to-worst by model
+    edge (build_nfl_game_board_context). Game lines only, no props. Honest: NFL has no
+    validated ATS edge; only the high-wind under is backtested — VOLATILE spreads sink."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    board = _app.build_nfl_game_board_context().get('board', [])[:20]
+    tcol = {'Validated': GREEN, 'Situational': GOLD, 'Model': FAINT}
+    rh = 40
+    H = 250 + 34 + max(len(board), 1) * rh + 96
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — GAME BOARD", chip="SPREADS + TOTALS")
+    c.text(M, y, "Every game line ranked by model edge — no props. You bring the eye test.", F['de'], DIM)
+    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 8
+    for c2 in board:
+        col = tcol.get(c2.get('tier'), INK)
+        c.text(M + 2, y + 10, f"{c2['rank']}", F['blk'], FAINT)
+        c.text(M + 46, y + 10, c2['play'], F['pl'], col)
+        if c2.get('flag'):
+            c.text(W - M - 150, y + 12, c2['flag'], F['ft'], AMBER, right=True)
+        c.text(W - M, y + 12, c2['market'].upper(), F['de'], FAINT, right=True)
+        d.line([(M, y + rh - 2), (W - M, y + rh - 2)], fill=(20, 32, 38), width=1)
+        y += rh
+    y += 8
+    c.text(M, y, f"Live lines pulled {_stamp()}. Green = wind under (validated). Gold = QB-out under.", F['ftb'], DIM); y += 28
+    c.text(M, y, "VOLATILE = big model spread the market disagrees with — a mirage, sunk on purpose. Spots, not locks. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_top20(week, out):
     """CFB Top-20 board as a card: the model's best spread + total plays this week,
     ranked by edge (pulled live from build_cfb_board_context). Honest: CFB has no
@@ -1351,6 +1381,8 @@ def main():
         made.append(card_nfl_top20(args.week, str(out_dir / 'bk_nfl_top20.png')))
     if 'nflbygame' in want:
         made.append(card_nfl_top20_by_game(args.week, str(out_dir / 'bk_nfl_by_game.png')))
+    if 'nflgameboard' in want:
+        made.append(card_nfl_game_board(args.week, str(out_dir / 'bk_nfl_game_board.png')))
     if 'cfbtop20' in want:
         made.append(card_cfb_top20(args.week, str(out_dir / 'bk_cfb_top20.png')))
     if 'cfbbygame' in want:

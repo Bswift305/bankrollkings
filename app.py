@@ -41126,6 +41126,119 @@ def nfl_board_tool():
     return render_template('nfl_board.html', **build_nfl_board_context())
 
 
+_NFL_GAME_BOARD_CACHE = {}
+
+
+def build_nfl_game_board_context():
+    """NFL GAME board: just the game lines -- every spread and every total this week,
+    ranked best-to-worst by the model's edge vs the posted number. No props (those live
+    on the Top Board). Honest: the NFL has no backtested ATS edge, and the only validated
+    total edge is a high-wind UNDER -- so spreads are all MODEL leans and a big model
+    spread edge in this market is usually the model missing news (flagged VOLATILE). A
+    QB-out is priced into the margin. Divergence-guarded like the totals board."""
+    import nfl_totals as _nt, nfl_current_form as _ncf
+    watch = [os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'),
+             DATA_DIR / 'odds' / 'NFL_Odds.csv',
+             DATA_DIR / 'context' / 'NFL_GameWeather.csv']
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    if _NFL_GAME_BOARD_CACHE.get('sig') == sig:
+        return _NFL_GAME_BOARD_CACHE['data']
+    _nt.clear_cache()
+    cands = []
+    try:
+        off, dff, lp = _nt._ratings()
+        sc = json.load(open(watch[0], encoding='utf-8'))
+        from collections import defaultdict
+        act = defaultdict(list)
+        for hh, aa2, hs, as_ in sc.get('games', []):
+            act[hh].append(hs); act[aa2].append(as_)
+
+        def _div(*teams):  # how far the rating sits from the team's actual scoring
+            d = 0
+            for t in teams:
+                if act.get(t):
+                    d = max(d, abs(off.get(t, lp) - sum(act[t]) / len(act[t])))
+            return d
+        try:
+            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
+            wind_home = dict(zip(wx['HomeTeam'], wx['WindMph']))
+        except Exception:
+            wind_home = {}
+        odds = load_nfl_game_market_odds()
+        for g in build_football_live_games(odds, load_nfl_schedule(), date_filter='week'):
+            a, h, sp, tot = g.get('away'), g.get('home'), g.get('spread'), g.get('total')
+            if not a or not h:
+                continue
+            aa, ha = _ncf.resolve(a), _ncf.resolve(h)
+            game = f"{aa} @ {ha}"
+            div = _div(aa, ha)
+            wind = wind_home.get(h, 0) or 0
+            # --- spread ---
+            try:
+                pm = _nt.projected_margin(aa, ha)  # projected HOME margin (QB-out already in it)
+                if pm is not None and sp is not None:
+                    edge = round(pm + float(sp), 1)  # >0 home covers, <0 away covers
+                    if abs(edge) >= 3:
+                        side = ha if edge > 0 else aa
+                        line = float(sp) if edge > 0 else -float(sp)
+                        big = abs(edge) >= 6      # a 6+ pt model ATS edge in this market = news it can't see
+                        # heavy de-rate: a huge model ATS edge is a mirage in this market,
+                        # so it sinks toward the bottom (worst) even though the raw edge is big.
+                        base = 16 + min(abs(edge), 6) - max(0, div - 6) * 1.5 - (11 if big else 0)
+                        tr0 = _nt.total_read(aa, ha, tot)
+                        qb = (tr0 or {}).get('away_qb_out') or (tr0 or {}).get('home_qb_out')
+                        cands.append({
+                            'base': base, 'market': 'Spread', 'tier': 'Model',
+                            'play': f"{side} {'%+g' % line}", 'game': game,
+                            'why': f"model margin {pm:+g} vs {'%+g' % float(sp)} (home), edge {edge:+g}"
+                                   + (f", {qb} out" if qb else ''),
+                            'flag': 'VOLATILE' if big else ''})
+            except Exception:
+                pass
+            # --- total ---
+            try:
+                tr = _nt.total_read(aa, ha, tot) if tot is not None else None
+                if tr and tr.get('lean') in ('OVER', 'UNDER', 'UNDER (QB out)'):
+                    edge = abs(tr.get('edge') or 0)
+                    side = 'UNDER' if 'UNDER' in tr['lean'] else 'OVER'
+                    if 'QB out' in tr['lean']:
+                        tier, base = 'Situational', 24 + edge
+                    elif wind >= 15 and side == 'UNDER':
+                        tier, base = 'Validated', 36 + (wind - 15)
+                    else:
+                        tier, base = 'Model', 18 + min(edge, 6)
+                    base -= max(0, div - 6) * 1.5
+                    why = f"model {tr['proj_total']} vs {'%g' % float(tot)}"
+                    if wind >= 15:
+                        why += f", wind {'%g' % wind}"
+                    if 'QB out' in tr['lean']:
+                        why += ", QB out"
+                    cands.append({'base': base, 'market': 'Total', 'tier': tier,
+                                  'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
+                                  'game': game, 'why': why,
+                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else ''})
+            except Exception:
+                pass
+    except Exception:
+        pass
+    cands.sort(key=lambda x: -x['base'])
+    top = cands[:20]
+    for i, c in enumerate(top, 1):
+        c['rank'] = i
+    data = {'board': top, 'board_available': bool(top),
+            'board_updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_GAME_BOARD_CACHE['sig'] = sig
+    _NFL_GAME_BOARD_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/nfl-game-board')
+def nfl_game_board_tool():
+    """Quick Tool: NFL Game Board — every spread and total this week ranked best to
+    worst by model edge. Game lines only (props are on the Top Board)."""
+    return render_template('nfl_game_board.html', **build_nfl_game_board_context())
+
+
 _NFL_WAVE_CACHE = {}
 
 
