@@ -39,10 +39,19 @@ REMOTE=$(git rev-parse "origin/$BRANCH")
 
 echo "deploy: ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
-# --ff-only so a diverged or dirty tree fails loudly instead of silently
-# merging. Leave the service running on the old code if the pull fails.
+# Prod's OWN refresh jobs write to tracked files (data/scenarios/*.json and other
+# regenerable data), which leaves the working tree dirty. `git pull --ff-only` then
+# fails on that dirty tree EVERY tick and silently strands the deploy on old code --
+# the exact failure this line fixes. That data is regenerable, so discard uncommitted
+# working-tree changes before pulling. This does NOT paper over a real DIVERGENCE:
+# local *commits* still make --ff-only fail loudly below, which is the case we do want
+# to catch. (`checkout -- .` only touches uncommitted changes, never committed history.)
+git checkout -- . 2>/dev/null || true
+
+# --ff-only so a diverged tree still fails loudly instead of silently merging.
+# Leave the service running on the old code if the pull fails.
 if ! git pull --ff-only --quiet origin "$BRANCH"; then
-    echo "pull failed (diverged or dirty tree) - service left on ${LOCAL:0:7}"
+    echo "pull failed (diverged tree) - service left on ${LOCAL:0:7}"
     exit 1
 fi
 
