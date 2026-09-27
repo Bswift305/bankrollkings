@@ -41033,6 +41033,70 @@ def nfl_board_tool():
     return render_template('nfl_board.html', **build_nfl_board_context())
 
 
+_NFL_WAVE_CACHE = {}
+
+
+def build_nfl_wave_watch_context():
+    """NFL Wave Watch: teams covering ATS this year, joined to this week's spread and the
+    model's margin -- does the wave continue? Honest by design: NFL is a 2-3 game sample
+    in the most efficient market, so cover streaks are largely priced. First filter, not
+    an edge. Also the mirror: winless-ATS teams the model also fades."""
+    import nfl_totals as _nt, nfl_current_form as _ncf
+    watch = [os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'),
+             DATA_DIR / 'odds' / 'NFL_Odds.csv']
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    if _NFL_WAVE_CACHE.get('sig') == sig:
+        return _NFL_WAVE_CACHE['data']
+    _nt.clear_cache()
+    try:
+        ats = json.load(open(watch[0], encoding='utf-8')).get('ats', {})
+    except Exception:
+        ats = {}
+    rides, priced, fades = [], [], []
+    try:
+        odds = load_nfl_game_market_odds()
+        for g in build_football_live_games(odds, load_nfl_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            sp = g.get('spread')  # home-perspective (negative = home favored)
+            if not a or not h or sp is None:
+                continue
+            aa, ha = _ncf.resolve(a), _ncf.resolve(h)
+            pm = _nt.projected_margin(aa, ha)  # home margin
+            if pm is None:
+                continue
+            for team, is_home in ((aa, False), (ha, True)):
+                rec = ats.get(team)
+                if not rec or rec.get('cover') is None or (rec['w'] + rec['l']) < 2:
+                    continue
+                opp = ha if not is_home else aa
+                team_spread = sp if is_home else -sp
+                team_margin = pm if is_home else -pm
+                edge = round(team_margin + team_spread, 1)  # >0 = model says team covers
+                entry = {'team': team, 'ats': rec['rec'], 'cover': rec['cover'],
+                         'opp': opp, 'spread': round(team_spread, 1), 'edge': edge,
+                         'covers': edge > 0}
+                if rec['w'] >= 2 and rec['l'] == 0:       # undefeated ATS = the wave
+                    (rides if edge >= 1.5 else priced).append(entry)
+                elif rec['l'] >= 2 and rec['w'] == 0:     # winless ATS = the sinkers
+                    if edge <= -1.5:
+                        fades.append(entry)
+    except Exception:
+        pass
+    rides.sort(key=lambda x: -x['edge']); priced.sort(key=lambda x: -x['cover'])
+    fades.sort(key=lambda x: x['edge'])
+    data = {'wave_rides': rides, 'wave_priced': priced, 'wave_fades': fades,
+            'wave_available': bool(rides or priced or fades)}
+    _NFL_WAVE_CACHE['sig'] = sig
+    _NFL_WAVE_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/nfl-wave')
+def nfl_wave_tool():
+    """Quick Tool: NFL Wave Watch — ATS coverers vs this week's number (and fades)."""
+    return render_template('nfl_wave.html', **build_nfl_wave_watch_context())
+
+
 def build_nfl_ats_context(default_tab='teams'):
     """NFL Team ATS Trends + per-team profile, from the same dossier as the matchup
     card. Teams ranked best-first (highest ATS%). League table + coaches + a team

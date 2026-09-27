@@ -180,6 +180,42 @@ def projected_total(away: str, home: str, apply_qb_veto: bool = True) -> dict | 
             "away_skill_out": a_skill, "home_skill_out": h_skill}
 
 
+HFA = 1.6  # NFL home-field, in points of margin
+
+
+def projected_margin(away: str, home: str) -> float | None:
+    """Projected HOME margin from the off/def ratings (positive = home wins by), with a
+    QB-out/skill penalty applied. Reuses the totals engine's ratings for an ATS read."""
+    p = projected_total(away, home)  # applies QB/skill penalties to off
+    if p is None:
+        return None
+    off, deff, lp = _ratings()
+    a, h = _team(away), _team(home)
+    a_off, h_off = off[a], off[h]
+    if p.get("away_qb_out"):
+        try:
+            import nfl_backup
+            im = nfl_backup.impact(a)
+            a_off -= (im["total_penalty"] if im else QB_OUT_PENALTY)
+        except Exception:
+            a_off -= QB_OUT_PENALTY
+    elif p.get("away_skill_out"):
+        a_off -= p["away_skill_out"]["penalty"]
+    if p.get("home_qb_out"):
+        try:
+            import nfl_backup
+            im = nfl_backup.impact(h)
+            h_off -= (im["total_penalty"] if im else QB_OUT_PENALTY)
+        except Exception:
+            h_off -= QB_OUT_PENALTY
+    elif p.get("home_skill_out"):
+        h_off -= p["home_skill_out"]["penalty"]
+    h_pts = h_off + deff[a] - lp
+    a_pts = a_off + deff[h] - lp
+    m = h_pts - a_pts + HFA
+    return round(max(-20.0, min(20.0, m)), 1)  # clamp: a 2-game margin model shouldn't project blowouts
+
+
 def total_read(away: str, home: str, line=None) -> dict | None:
     p = projected_total(away, home)
     if p is None:

@@ -1,0 +1,93 @@
+{% set active_page = 'nfl_wave' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Wave Watch - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .nw-wrap{--nw-accent:#3fbf7f;max-width:680px;}
+  .nw-sec{margin:0 0 24px;}
+  .nw-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 4px;padding-bottom:8px;border-bottom:2px solid var(--border);}
+  .nw-h .n{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-transform:uppercase;letter-spacing:.04em;}
+  .nw-h .d{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-left:auto;}
+  .nw-blurb{font:500 12px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:8px 0 12px;}
+  .nw-blurb b{color:var(--text);}
+  .nw-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .nw-row:last-child{border-bottom:0;}
+  .nw-team{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);min-width:52px;}
+  .nw-ats{font:700 12.5px ui-monospace,Consolas,monospace;color:var(--nw-accent);}
+  .nw-wk{flex:1 1 100%;font:600 12px/1.5 ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:2px;}
+  .nw-wk b{color:var(--text);} .nw-wk .cov{color:#4ed48a;} .nw-wk .no{color:#ff8f9a;}
+  .nw-warn{font:600 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:#ffb05a;background:rgba(255,176,90,.06);
+    border:1px solid rgba(255,176,90,.3);border-radius:11px;padding:12px 14px;margin:0 0 18px;}
+  .nw-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:10px 2px;}
+  .nw-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:8px;}
+</style>
+
+<div class="nw-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Wave <span class="accent">Watch</span></h1>
+    <div class="page-subtitle">Teams covering ATS this year, joined to this week&rsquo;s number and the model&rsquo;s margin. Does the wave keep rolling, or has the line caught up?</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-board" class="btn btn-secondary btn-sm">Top Board</a></div>
+</div>
+
+<div class="nw-warn">&#9888; Honest heads-up: the NFL is only 2&ndash;3 games in and it&rsquo;s the most efficient market there is, so these ATS records are a tiny sample and cover streaks get priced fast. This is a <b>starting filter</b>, not a proven edge &mdash; lean on the plays where the model agrees, and bring your eye test.</div>
+
+{% if not wave_available %}
+<div class="nw-empty">No wave yet &mdash; fills in once teams have a 2026 ATS record and this week&rsquo;s lines are posted.</div>
+{% else %}
+
+<!-- Rides: covering AND model likes this week's number -->
+<div class="nw-sec">
+  <div class="nw-h"><span class="n">&#9873; Wave + Model Agrees</span><span class="d">covering ATS &amp; the model likes this week</span></div>
+  <p class="nw-blurb">Undefeated ATS teams whose spread this week the model <b>also</b> projects to cover &mdash; the wave with a second reason behind it.</p>
+  {% if wave_rides %}
+  {% for p in wave_rides %}
+  <div class="nw-row">
+    <span class="nw-team">{{ p.team }}</span>
+    <span class="nw-ats">{{ p.ats }} ATS ({{ p.cover }}%)</span>
+    <span class="nw-wk">this wk: <b>{{ '%+g'|format(p.spread) }} vs {{ p.opp }}</b> &middot; model <span class="cov">covers {{ '%+g'|format(p.edge) }}</span></span>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="nw-empty">No undefeated-ATS team has a number the model likes this week &mdash; the market&rsquo;s done its job. Don&rsquo;t force it.</div>
+  {% endif %}
+</div>
+
+<!-- Priced: covering but model neutral/against -->
+{% if wave_priced %}
+<div class="nw-sec">
+  <div class="nw-h"><span class="n">Covering, but Priced</span><span class="d">the number has caught up</span></div>
+  <p class="nw-blurb">Still undefeated ATS, but the model says this week&rsquo;s number is fair-to-rich &mdash; the streak is baked in. Ride on your read, not ours.</p>
+  {% for p in wave_priced %}
+  <div class="nw-row">
+    <span class="nw-team">{{ p.team }}</span>
+    <span class="nw-ats">{{ p.ats }} ATS ({{ p.cover }}%)</span>
+    <span class="nw-wk">this wk: <b>{{ '%+g'|format(p.spread) }} vs {{ p.opp }}</b> &middot; model <span class="no">short {{ '%+g'|format(p.edge) }}</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Fades -->
+{% if wave_fades %}
+<div class="nw-sec">
+  <div class="nw-h" style="border-bottom-color:rgba(255,159,106,.3);"><span class="n" style="color:#ff9f6a;">&#9660; Fade the Sinkers</span><span class="d">winless ATS &amp; the model fades them too</span></div>
+  <p class="nw-blurb">Teams that can&rsquo;t cover, and the model doesn&rsquo;t like their number this week either &mdash; lean the opponent.</p>
+  {% for p in wave_fades %}
+  <div class="nw-row">
+    <span class="nw-team" style="color:#ff9f6a;">{{ p.team }}</span>
+    <span class="nw-ats" style="color:#ff9f6a;">{{ p.ats }} ATS ({{ p.cover }}%)</span>
+    <span class="nw-wk">this wk: <b>{{ '%+g'|format(p.spread) }} vs {{ p.opp }}</b> &middot; model <span class="no">misses {{ '%+g'|format(p.edge) }} &rarr; back {{ p.opp }}</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="nw-note"><b>How to read this:</b> a 2&ndash;3 game ATS record is a story starter, not an edge &mdash; the NFL market prices cover streaks within a week. The signal is where the streak <i>and</i> the model agree on this week&rsquo;s number, or where a sinker is a fade both ways. Everything here is a candidate for your eye test. Spots, not locks.</div>
+{% endif %}
+</div>
+{% endblock %}
