@@ -42,24 +42,42 @@ def _games(rows, season):
     return out
 
 
-def _qb1(season):
-    """Leading passer (by attempts) per team from nflverse weekly stats."""
+def _skill_leaders(season):
+    """Per team: leading passer (QB1), receiver (WR1, by rec yds) and rusher (RB1, by
+    carries), so QB/WR1/RB1 injuries can be weighted. From nflverse weekly stats."""
     try:
         import pandas as pd
         tmp = BASE_DIR / "data" / "scenarios" / f"_nflqb_{season}.parquet"
         urllib.request.urlretrieve(STATS_URL.format(season=season), tmp)
         df = pd.read_parquet(tmp)
         tmp.unlink(missing_ok=True)
-        df = df[df["attempts"].fillna(0) > 0]
-        g = df.groupby(["team", "player_display_name"]).agg(att=("attempts", "sum")).reset_index()
-        out = {}
-        for team, grp in g.groupby("team"):
-            top = grp.sort_values("att", ascending=False).iloc[0]
-            out[_norm(team)] = {"name": str(top["player_display_name"]), "att": int(top["att"])}
-        return out
+        for c in ("attempts", "receiving_yards", "receptions", "carries", "rushing_yards"):
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
+        def _qb(team_df):
+            g = df[df["attempts"] > 0].groupby(["team", "player_display_name"]).agg(
+                v=("attempts", "sum")).reset_index()
+            out = {}
+            for team, grp in g.groupby("team"):
+                t = grp.sort_values("v", ascending=False).iloc[0]
+                out[_norm(team)] = {"name": str(t["player_display_name"]), "att": int(t["v"])}
+            return out
+
+        def _corps(mask_col, val_col, topn):
+            """Per team: [[name, production], ...] for the top contributors -- so an
+            injury can be weighted by the SHARE of production that's out, not just #1."""
+            g = df[df[mask_col] > 0].groupby(["team", "player_display_name"]).agg(
+                v=(val_col, "sum")).reset_index()
+            out = {}
+            for team, grp in g.groupby("team"):
+                top = grp.sort_values("v", ascending=False).head(topn)
+                out[_norm(team)] = [[str(r.player_display_name), int(r.v)] for r in top.itertuples()]
+            return out
+        return _qb(df), _corps("receptions", "receiving_yards", 8), _corps("carries", "carries", 4)
     except Exception as e:
-        print(f"  qb1 skipped: {e}")
-        return {}
+        print(f"  skill leaders skipped: {e}")
+        return {}, {}, {}
 
 
 def build(season: int, prior_season: int) -> dict:
@@ -73,10 +91,12 @@ def build(season: int, prior_season: int) -> dict:
     prior = {t: [round(sum(poff[t]) / len(poff[t]), 2), round(sum(pdef[t]) / len(pdef[t]), 2)] for t in poff}
     allpts = [hs for _, _, hs, _ in g_now] + [as_ for _, _, _, as_ in g_now]
     lp = round(sum(allpts) / len(allpts), 2) if allpts else 22.5
+    qb1, recv, rush = _skill_leaders(season)
     return {
         "season": season, "prior_season": prior_season,
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "league_pts": lp, "prior": prior, "games": g_now, "qb1": _qb1(season),
+        "league_pts": lp, "prior": prior, "games": g_now,
+        "qb1": qb1, "recv": recv, "rush": rush,
     }
 
 

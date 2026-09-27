@@ -44,6 +44,11 @@ def _scores() -> dict:
         return {}
 
 
+RECV_SCALE = 6.5   # points lost per full share of receiving production out
+RUSH_SCALE = 3.5   # rushing is more replaceable
+SKILL_CAP = 4.5    # cap the non-QB skill penalty
+
+
 @lru_cache(maxsize=1)
 def _out_qbs() -> frozenset:
     """Normalized names of players listed OUT/DOUBTFUL."""
@@ -81,6 +86,29 @@ def qb_out(team: str):
     if q and _nm(q.get("name")) in _out_qbs():
         return q.get("name")
     return None
+
+
+def skill_out(team: str) -> dict | None:
+    """Weight receiving/rushing injuries by the SHARE of production that's OUT -- so a
+    star who's been hurt and non-productive (A.J. Brown, 26 yds) counts little, while a
+    real chunk of the offense missing counts a lot. Returns the penalty + who's out."""
+    s = _scores()
+    tm = _team(team)
+    recv = s.get("recv", {}).get(tm, [])
+    rush = s.get("rush", {}).get(tm, [])
+    out = _out_qbs()
+    rt = sum(y for _, y in recv) or 1
+    ct = sum(c for _, c in rush) or 1
+    recv_out = [(n, y) for n, y in recv if _nm(n) in out]
+    rush_out = [(n, c) for n, c in rush if _nm(n) in out]
+    recv_share = sum(y for _, y in recv_out) / rt
+    rush_share = sum(c for _, c in rush_out) / ct
+    pen = min(recv_share * RECV_SCALE + rush_share * RUSH_SCALE, SKILL_CAP)
+    if pen < 0.75:
+        return None  # not enough production out to matter
+    names = [n for n, _ in recv_out] + [n for n, _ in rush_out if n not in [x for x, _ in recv_out]]
+    return {"penalty": round(pen, 1), "players": names,
+            "recv_share": round(recv_share, 2), "rush_share": round(rush_share, 2)}
 
 
 @lru_cache(maxsize=1)
@@ -126,7 +154,7 @@ def projected_total(away: str, home: str, apply_qb_veto: bool = True) -> dict | 
     a_off, h_off = off[a], off[h]
     a_out, h_out = qb_out(a), qb_out(h)
 
-    def _penalty(team):
+    def _qb_penalty(team):
         try:
             import nfl_backup
             im = nfl_backup.impact(team)
@@ -135,14 +163,21 @@ def projected_total(away: str, home: str, apply_qb_veto: bool = True) -> dict | 
         except Exception:
             pass
         return QB_OUT_PENALTY
+    a_skill = skill_out(a) if apply_qb_veto else None
+    h_skill = skill_out(h) if apply_qb_veto else None
     if apply_qb_veto and a_out:
-        a_off -= _penalty(a)
+        a_off -= _qb_penalty(a)
+    elif a_skill:                       # QB-out already downgrades the offense; don't stack
+        a_off -= a_skill["penalty"]
     if apply_qb_veto and h_out:
-        h_off -= _penalty(h)
+        h_off -= _qb_penalty(h)
+    elif h_skill:
+        h_off -= h_skill["penalty"]
     a_pts = a_off + deff[h] - lp
     h_pts = h_off + deff[a] - lp
     return {"total": round(a_pts + h_pts, 1),
-            "away_qb_out": a_out, "home_qb_out": h_out}
+            "away_qb_out": a_out, "home_qb_out": h_out,
+            "away_skill_out": a_skill, "home_skill_out": h_skill}
 
 
 def total_read(away: str, home: str, line=None) -> dict | None:
@@ -150,7 +185,8 @@ def total_read(away: str, home: str, line=None) -> dict | None:
     if p is None:
         return None
     read = {"proj_total": p["total"], "away_qb_out": p["away_qb_out"],
-            "home_qb_out": p["home_qb_out"], "line": None, "edge": None, "lean": None}
+            "home_qb_out": p["home_qb_out"], "away_skill_out": p.get("away_skill_out"),
+            "home_skill_out": p.get("home_skill_out"), "line": None, "edge": None, "lean": None}
     if line is not None:
         try:
             line = float(line)
@@ -165,6 +201,14 @@ def total_read(away: str, home: str, line=None) -> dict | None:
         read["qb_note"] = f"{who} (starting QB) OUT — offense downgraded, leans UNDER"
         if read["edge"] is not None and read["edge"] < 2.5:
             read["lean"] = "UNDER (QB out)"
+    else:
+        sk = []
+        for side in ("away_skill_out", "home_skill_out"):
+            s = read.get(side)
+            if s:
+                sk.append(f"{', '.join(s['players'][:2])} OUT (-{s['penalty']})")
+        if sk:
+            read["skill_note"] = "Production out: " + "; ".join(sk)
     return read
 
 

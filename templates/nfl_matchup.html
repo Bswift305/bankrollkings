@@ -117,6 +117,7 @@
         <span class="d" style="color:{% if g.total.qb_note %}#ff6f7e{% elif g.total.lean in ('OVER','UNDER') %}#2dd4bf{% else %}var(--text-muted){% endif %};">
           Total: model {{ '%g'|format(g.total.proj_total) }} vs {{ '%g'|format(g.total.line) }} &mdash; <b>{{ g.total.lean }}</b>{% if g.total.edge is not none %} ({{ '%+g'|format(g.total.edge) }}){% endif %}
           {% if g.total.qb_note %}<br><b>&#9888; {{ g.total.qb_note }}</b>{% endif %}
+          {% if g.total.skill_note %}<br><span style="color:var(--text-muted);">{{ g.total.skill_note }}</span>{% endif %}
         </span>
         {% endif %}
         {% if g.move %}

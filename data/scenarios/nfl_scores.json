@@ -1,7 +1,7 @@
 {
   "season": 2026,
   "prior_season": 2025,
-  "updated": "2026-09-27 10:09 UTC",
+  "updated": "2026-09-27 10:34 UTC",
   "league_pts": 22.53,
   "prior": {
     "PHI": [
@@ -462,5 +462,1629 @@
       "name": "Jayden Daniels",
       "att": 51
     }
+  },
+  "recv": {
+    "ARI": [
+      [
+        "Trey McBride",
+        136
+      ],
+      [
+        "Kendrick Bourne",
+        86
+      ],
+      [
+        "Michael Wilson",
+        74
+      ],
+      [
+        "Marvin Harrison Jr.",
+        33
+      ],
+      [
+        "Jeremiyah Love",
+        25
+      ],
+      [
+        "Tyler Allgeier",
+        18
+      ]
+    ],
+    "ATL": [
+      [
+        "Drake London",
+        274
+      ],
+      [
+        "Bijan Robinson",
+        118
+      ],
+      [
+        "Jahan Dotson",
+        41
+      ],
+      [
+        "Austin Hooper",
+        31
+      ],
+      [
+        "Zachariah Branch",
+        21
+      ],
+      [
+        "Kyle Pitts",
+        20
+      ],
+      [
+        "Olamide Zaccheaus",
+        17
+      ],
+      [
+        "Brian Robinson",
+        16
+      ]
+    ],
+    "BAL": [
+      [
+        "Zay Flowers",
+        150
+      ],
+      [
+        "Mark Andrews",
+        98
+      ],
+      [
+        "Rashod Bateman",
+        88
+      ],
+      [
+        "Chris Moore",
+        59
+      ],
+      [
+        "Devontez Walker",
+        47
+      ],
+      [
+        "Derrick Henry",
+        38
+      ],
+      [
+        "LaJohntay Wester",
+        29
+      ],
+      [
+        "Justice Hill",
+        22
+      ]
+    ],
+    "BUF": [
+      [
+        "Dalton Kincaid",
+        225
+      ],
+      [
+        "DJ Moore",
+        100
+      ],
+      [
+        "Khalil Shakir",
+        88
+      ],
+      [
+        "Josh Palmer",
+        77
+      ],
+      [
+        "Keon Coleman",
+        64
+      ],
+      [
+        "James Cook",
+        16
+      ],
+      [
+        "Dawson Knox",
+        12
+      ]
+    ],
+    "CAR": [
+      [
+        "Jalen Coker",
+        204
+      ],
+      [
+        "Tetairoa McMillan",
+        176
+      ],
+      [
+        "Xavier Legette",
+        64
+      ],
+      [
+        "Darren Waller",
+        61
+      ],
+      [
+        "Chuba Hubbard",
+        49
+      ],
+      [
+        "Jonathon Brooks",
+        43
+      ],
+      [
+        "Tommy Tremble",
+        29
+      ],
+      [
+        "Mitchell Evans",
+        22
+      ]
+    ],
+    "CHI": [
+      [
+        "Kalif Raymond",
+        124
+      ],
+      [
+        "Rome Odunze",
+        95
+      ],
+      [
+        "Luther Burden III",
+        95
+      ],
+      [
+        "D'Andre Swift",
+        64
+      ],
+      [
+        "Cole Kmet",
+        35
+      ],
+      [
+        "Kyle Monangai",
+        35
+      ],
+      [
+        "Sam Roush",
+        9
+      ],
+      [
+        "Colston Loveland",
+        3
+      ]
+    ],
+    "CIN": [
+      [
+        "Tee Higgins",
+        154
+      ],
+      [
+        "Ja'Marr Chase",
+        87
+      ],
+      [
+        "Mike Gesicki",
+        78
+      ],
+      [
+        "Samaje Perine",
+        46
+      ],
+      [
+        "Chase Brown",
+        24
+      ],
+      [
+        "Drew Sample",
+        19
+      ],
+      [
+        "Andrei Iosivas",
+        19
+      ],
+      [
+        "Dohnte Meyers",
+        18
+      ]
+    ],
+    "CLE": [
+      [
+        "Denzel Boston",
+        154
+      ],
+      [
+        "Harold Fannin Jr.",
+        75
+      ],
+      [
+        "KC Concepcion",
+        71
+      ],
+      [
+        "Quinshon Judkins",
+        44
+      ],
+      [
+        "Raheim Sanders",
+        32
+      ],
+      [
+        "Blake Whiteheart",
+        31
+      ],
+      [
+        "Jerry Jeudy",
+        26
+      ],
+      [
+        "Isaiah Bond",
+        10
+      ]
+    ],
+    "DAL": [
+      [
+        "CeeDee Lamb",
+        197
+      ],
+      [
+        "George Pickens",
+        68
+      ],
+      [
+        "Javonte Williams",
+        51
+      ],
+      [
+        "Jake Ferguson",
+        49
+      ],
+      [
+        "Ryan Flournoy",
+        45
+      ],
+      [
+        "Brevyn Spann-Ford",
+        14
+      ],
+      [
+        "Luke Schoonmaker",
+        12
+      ],
+      [
+        "Jonathan Mingo",
+        10
+      ]
+    ],
+    "DEN": [
+      [
+        "Jaylen Waddle",
+        140
+      ],
+      [
+        "Evan Engram",
+        60
+      ],
+      [
+        "Pat Bryant",
+        42
+      ],
+      [
+        "Courtland Sutton",
+        36
+      ],
+      [
+        "Nate Adkins",
+        32
+      ],
+      [
+        "Tyler Badie",
+        28
+      ],
+      [
+        "Troy Franklin",
+        27
+      ],
+      [
+        "RJ Harvey",
+        23
+      ]
+    ],
+    "DET": [
+      [
+        "Amon-Ra St. Brown",
+        209
+      ],
+      [
+        "Sam LaPorta",
+        100
+      ],
+      [
+        "Jahmyr Gibbs",
+        91
+      ],
+      [
+        "Jameson Williams",
+        78
+      ],
+      [
+        "Isaac TeSlaa",
+        26
+      ],
+      [
+        "Sione Vaki",
+        24
+      ],
+      [
+        "Brock Wright",
+        5
+      ]
+    ],
+    "GB": [
+      [
+        "Christian Watson",
+        284
+      ],
+      [
+        "Matthew Golden",
+        253
+      ],
+      [
+        "Tucker Kraft",
+        106
+      ],
+      [
+        "Jonnu Smith",
+        66
+      ],
+      [
+        "Skyy Moore",
+        37
+      ],
+      [
+        "Jayden Reed",
+        24
+      ],
+      [
+        "J. Michael Sturdivant",
+        22
+      ],
+      [
+        "Chris Brooks",
+        19
+      ]
+    ],
+    "HOU": [
+      [
+        "Dalton Schultz",
+        175
+      ],
+      [
+        "Jaylin Noel",
+        84
+      ],
+      [
+        "Nico Collins",
+        75
+      ],
+      [
+        "Xavier Hutchinson",
+        69
+      ],
+      [
+        "Kayshon Boutte",
+        58
+      ],
+      [
+        "Foster Moreau",
+        49
+      ],
+      [
+        "Jared Wayne",
+        45
+      ],
+      [
+        "David Montgomery",
+        33
+      ]
+    ],
+    "IND": [
+      [
+        "Josh Downs",
+        109
+      ],
+      [
+        "Alec Pierce",
+        72
+      ],
+      [
+        "Jonathan Taylor",
+        63
+      ],
+      [
+        "Laquon Treadwell",
+        61
+      ],
+      [
+        "Keenan Allen",
+        37
+      ],
+      [
+        "Tyler Warren",
+        34
+      ],
+      [
+        "Seth McGowan",
+        0
+      ]
+    ],
+    "JAX": [
+      [
+        "Parker Washington",
+        181
+      ],
+      [
+        "Brian Thomas Jr.",
+        80
+      ],
+      [
+        "Jakobi Meyers",
+        68
+      ],
+      [
+        "Brenton Strange",
+        40
+      ],
+      [
+        "Josh Cameron",
+        20
+      ],
+      [
+        "Bhayshul Tuten",
+        19
+      ],
+      [
+        "Nate Boerkircher",
+        9
+      ],
+      [
+        "Travis Hunter",
+        8
+      ]
+    ],
+    "KC": [
+      [
+        "Travis Kelce",
+        172
+      ],
+      [
+        "Rashee Rice",
+        102
+      ],
+      [
+        "Tyquan Thornton",
+        86
+      ],
+      [
+        "Kenneth Walker III",
+        79
+      ],
+      [
+        "Emmett Johnson",
+        64
+      ],
+      [
+        "Xavier Worthy",
+        43
+      ],
+      [
+        "Jake Briningstool",
+        9
+      ],
+      [
+        "Jalen Royals",
+        6
+      ]
+    ],
+    "LAR": [
+      [
+        "Davante Adams",
+        221
+      ],
+      [
+        "Puka Nacua",
+        74
+      ],
+      [
+        "Terrance Ferguson",
+        54
+      ],
+      [
+        "Kyren Williams",
+        36
+      ],
+      [
+        "Colby Parkinson",
+        21
+      ],
+      [
+        "Davis Allen",
+        20
+      ],
+      [
+        "Tutu Atwell",
+        19
+      ],
+      [
+        "Blake Corum",
+        13
+      ]
+    ],
+    "LAC": [
+      [
+        "Ladd McConkey",
+        117
+      ],
+      [
+        "Tre Harris",
+        73
+      ],
+      [
+        "David Njoku",
+        67
+      ],
+      [
+        "Oronde Gadsden II",
+        50
+      ],
+      [
+        "Quentin Johnston",
+        24
+      ],
+      [
+        "Omarion Hampton",
+        21
+      ],
+      [
+        "Charlie Kolar",
+        21
+      ],
+      [
+        "Keaton Mitchell",
+        15
+      ]
+    ],
+    "LV": [
+      [
+        "Tre Tucker",
+        146
+      ],
+      [
+        "Ashton Jeanty",
+        60
+      ],
+      [
+        "Michael Mayer",
+        55
+      ],
+      [
+        "Jack Bech",
+        48
+      ],
+      [
+        "Jalen Nailor",
+        36
+      ],
+      [
+        "Dareke Young",
+        27
+      ],
+      [
+        "Cody White",
+        24
+      ],
+      [
+        "Ian Thomas",
+        11
+      ]
+    ],
+    "MIA": [
+      [
+        "Caleb Douglas",
+        113
+      ],
+      [
+        "Malik Washington",
+        96
+      ],
+      [
+        "Ryan Miller",
+        77
+      ],
+      [
+        "De'Von Achane",
+        49
+      ],
+      [
+        "Greg Dulcich",
+        35
+      ],
+      [
+        "Chris Bell",
+        25
+      ],
+      [
+        "DJ Herman",
+        18
+      ],
+      [
+        "Will Kacmarek",
+        4
+      ]
+    ],
+    "MIN": [
+      [
+        "Justin Jefferson",
+        147
+      ],
+      [
+        "T.J. Hockenson",
+        65
+      ],
+      [
+        "Josh Oliver",
+        46
+      ],
+      [
+        "Jordan Addison",
+        21
+      ],
+      [
+        "DeeJay Dallas",
+        13
+      ],
+      [
+        "Demond Claiborne",
+        2
+      ]
+    ],
+    "NE": [
+      [
+        "Romeo Doubs",
+        96
+      ],
+      [
+        "Mack Hollins",
+        69
+      ],
+      [
+        "Hunter Henry",
+        66
+      ],
+      [
+        "Rhamondre Stevenson",
+        47
+      ],
+      [
+        "Eli Raridon",
+        32
+      ],
+      [
+        "DeMario Douglas",
+        29
+      ],
+      [
+        "A.J. Brown",
+        26
+      ],
+      [
+        "Kyle Williams",
+        10
+      ]
+    ],
+    "NO": [
+      [
+        "Chris Olave",
+        268
+      ],
+      [
+        "Devaughn Vele",
+        133
+      ],
+      [
+        "Juwan Johnson",
+        120
+      ],
+      [
+        "Bryce Lance",
+        50
+      ],
+      [
+        "Travis Etienne",
+        38
+      ],
+      [
+        "Noah Fant",
+        33
+      ],
+      [
+        "Oscar Delp",
+        8
+      ],
+      [
+        "Alvin Kamara",
+        7
+      ]
+    ],
+    "NYG": [
+      [
+        "Isaiah Likely",
+        111
+      ],
+      [
+        "Darnell Mooney",
+        75
+      ],
+      [
+        "Malik Nabers",
+        70
+      ],
+      [
+        "Malachi Fields",
+        55
+      ],
+      [
+        "Devin Singletary",
+        22
+      ],
+      [
+        "Cam Skattebo",
+        19
+      ],
+      [
+        "Theo Johnson",
+        9
+      ]
+    ],
+    "NYJ": [
+      [
+        "Garrett Wilson",
+        136
+      ],
+      [
+        "Adonai Mitchell",
+        123
+      ],
+      [
+        "Breece Hall",
+        79
+      ],
+      [
+        "Isaiah Williams",
+        41
+      ],
+      [
+        "Kenyon Sadiq",
+        38
+      ],
+      [
+        "Omar Cooper Jr.",
+        30
+      ],
+      [
+        "Jeremy Ruckert",
+        9
+      ],
+      [
+        "Braelon Allen",
+        8
+      ]
+    ],
+    "PHI": [
+      [
+        "DeVonta Smith",
+        170
+      ],
+      [
+        "Dontayvion Wicks",
+        147
+      ],
+      [
+        "Dallas Goedert",
+        81
+      ],
+      [
+        "Darius Cooper",
+        26
+      ],
+      [
+        "Will Shipley",
+        13
+      ],
+      [
+        "Makai Lemon",
+        9
+      ],
+      [
+        "Johnny Mundt",
+        8
+      ],
+      [
+        "Saquon Barkley",
+        8
+      ]
+    ],
+    "PIT": [
+      [
+        "Pat Freiermuth",
+        78
+      ],
+      [
+        "DK Metcalf",
+        67
+      ],
+      [
+        "Jaylen Warren",
+        61
+      ],
+      [
+        "Michael Pittman",
+        58
+      ],
+      [
+        "Roman Wilson",
+        54
+      ],
+      [
+        "Germie Bernard",
+        35
+      ],
+      [
+        "Rico Dowdle",
+        28
+      ],
+      [
+        "Darnell Washington",
+        25
+      ]
+    ],
+    "SEA": [
+      [
+        "Jaxon Smith-Njigba",
+        277
+      ],
+      [
+        "Cooper Kupp",
+        55
+      ],
+      [
+        "Rashid Shaheed",
+        39
+      ],
+      [
+        "AJ Barner",
+        21
+      ],
+      [
+        "Brady Russell",
+        20
+      ],
+      [
+        "Elijah Arroyo",
+        17
+      ],
+      [
+        "Jadarian Price",
+        14
+      ],
+      [
+        "George Holani",
+        2
+      ]
+    ],
+    "SF": [
+      [
+        "Mike Evans",
+        103
+      ],
+      [
+        "George Kittle",
+        92
+      ],
+      [
+        "Demarcus Robinson",
+        84
+      ],
+      [
+        "Deebo Samuel Sr.",
+        79
+      ],
+      [
+        "Christian McCaffrey",
+        63
+      ],
+      [
+        "Kyle Juszczyk",
+        27
+      ],
+      [
+        "Luke Farrell",
+        19
+      ],
+      [
+        "KhaDarel Hodge",
+        18
+      ]
+    ],
+    "TB": [
+      [
+        "Chris Godwin Jr.",
+        86
+      ],
+      [
+        "Emeka Egbuka",
+        79
+      ],
+      [
+        "Cade Otton",
+        64
+      ],
+      [
+        "Ted Hurst III",
+        63
+      ],
+      [
+        "Bucky Irving",
+        49
+      ],
+      [
+        "Tez Johnson",
+        49
+      ],
+      [
+        "Kenny Gainwell",
+        8
+      ]
+    ],
+    "TEN": [
+      [
+        "Elic Ayomanor",
+        80
+      ],
+      [
+        "Carnell Tate",
+        65
+      ],
+      [
+        "Wan'Dale Robinson",
+        47
+      ],
+      [
+        "Tyjae Spears",
+        41
+      ],
+      [
+        "Gunnar Helm",
+        41
+      ],
+      [
+        "Calvin Ridley",
+        35
+      ],
+      [
+        "Chimere Dike",
+        7
+      ],
+      [
+        "Daniel Bellinger",
+        7
+      ]
+    ],
+    "WAS": [
+      [
+        "Stefon Diggs",
+        102
+      ],
+      [
+        "Antonio Williams",
+        88
+      ],
+      [
+        "Terry McLaurin",
+        64
+      ],
+      [
+        "Rachaad White",
+        45
+      ],
+      [
+        "Dyami Brown",
+        21
+      ],
+      [
+        "Chig Okonkwo",
+        16
+      ],
+      [
+        "Colson Yankoff",
+        14
+      ],
+      [
+        "John Bates",
+        13
+      ]
+    ]
+  },
+  "rush": {
+    "ARI": [
+      [
+        "Tyler Allgeier",
+        22
+      ],
+      [
+        "Jeremiyah Love",
+        20
+      ],
+      [
+        "Jacoby Brissett",
+        7
+      ],
+      [
+        "Bam Knight",
+        2
+      ]
+    ],
+    "ATL": [
+      [
+        "Bijan Robinson",
+        66
+      ],
+      [
+        "Brian Robinson",
+        30
+      ],
+      [
+        "Cooper Rush",
+        2
+      ],
+      [
+        "Drake London",
+        2
+      ]
+    ],
+    "BAL": [
+      [
+        "Derrick Henry",
+        40
+      ],
+      [
+        "Lamar Jackson",
+        11
+      ],
+      [
+        "Justice Hill",
+        8
+      ]
+    ],
+    "BUF": [
+      [
+        "James Cook",
+        34
+      ],
+      [
+        "Josh Allen",
+        20
+      ],
+      [
+        "DJ Moore",
+        1
+      ],
+      [
+        "Frank Gore Jr.",
+        1
+      ]
+    ],
+    "CAR": [
+      [
+        "Chuba Hubbard",
+        22
+      ],
+      [
+        "Jonathon Brooks",
+        9
+      ],
+      [
+        "AJ Dillon",
+        8
+      ],
+      [
+        "Bryce Young",
+        3
+      ]
+    ],
+    "CHI": [
+      [
+        "D'Andre Swift",
+        34
+      ],
+      [
+        "Kyle Monangai",
+        20
+      ],
+      [
+        "Caleb Williams",
+        15
+      ],
+      [
+        "Luther Burden III",
+        1
+      ]
+    ],
+    "CIN": [
+      [
+        "Chase Brown",
+        36
+      ],
+      [
+        "Samaje Perine",
+        7
+      ],
+      [
+        "Joe Burrow",
+        6
+      ],
+      [
+        "Dohnte Meyers",
+        1
+      ]
+    ],
+    "CLE": [
+      [
+        "Quinshon Judkins",
+        24
+      ],
+      [
+        "Deshaun Watson",
+        13
+      ],
+      [
+        "KC Concepcion",
+        4
+      ],
+      [
+        "Raheim Sanders",
+        3
+      ]
+    ],
+    "DAL": [
+      [
+        "Javonte Williams",
+        24
+      ],
+      [
+        "Dak Prescott",
+        6
+      ],
+      [
+        "Emari Demercado",
+        5
+      ],
+      [
+        "Hunter Luepke",
+        2
+      ]
+    ],
+    "DEN": [
+      [
+        "J.K. Dobbins",
+        18
+      ],
+      [
+        "Jonah Coleman",
+        10
+      ],
+      [
+        "Bo Nix",
+        8
+      ],
+      [
+        "RJ Harvey",
+        3
+      ]
+    ],
+    "DET": [
+      [
+        "Jahmyr Gibbs",
+        45
+      ],
+      [
+        "Jared Goff",
+        5
+      ],
+      [
+        "Sione Vaki",
+        3
+      ]
+    ],
+    "GB": [
+      [
+        "MarShawn Lloyd",
+        23
+      ],
+      [
+        "Kaleb Johnson",
+        12
+      ],
+      [
+        "Chris Brooks",
+        11
+      ],
+      [
+        "Jordan Love",
+        2
+      ]
+    ],
+    "HOU": [
+      [
+        "David Montgomery",
+        26
+      ],
+      [
+        "Woody Marks",
+        17
+      ],
+      [
+        "C.J. Stroud",
+        5
+      ],
+      [
+        "Jaylin Noel",
+        1
+      ]
+    ],
+    "IND": [
+      [
+        "Jonathan Taylor",
+        43
+      ],
+      [
+        "Daniel Jones",
+        4
+      ],
+      [
+        "Deion Burks",
+        2
+      ],
+      [
+        "Seth McGowan",
+        2
+      ]
+    ],
+    "JAX": [
+      [
+        "Bhayshul Tuten",
+        28
+      ],
+      [
+        "Chris Rodriguez Jr.",
+        12
+      ],
+      [
+        "Ameer Abdullah",
+        7
+      ],
+      [
+        "Trevor Lawrence",
+        4
+      ]
+    ],
+    "KC": [
+      [
+        "Kenneth Walker III",
+        47
+      ],
+      [
+        "Emmett Johnson",
+        10
+      ],
+      [
+        "Patrick Mahomes",
+        9
+      ],
+      [
+        "Khyiris Tonga",
+        1
+      ]
+    ],
+    "LAR": [
+      [
+        "Kyren Williams",
+        23
+      ],
+      [
+        "Blake Corum",
+        22
+      ],
+      [
+        "Matthew Stafford",
+        6
+      ],
+      [
+        "Ronnie Rivers",
+        5
+      ]
+    ],
+    "LAC": [
+      [
+        "Omarion Hampton",
+        35
+      ],
+      [
+        "Keaton Mitchell",
+        9
+      ],
+      [
+        "Justin Herbert",
+        8
+      ],
+      [
+        "Quentin Johnston",
+        1
+      ]
+    ],
+    "LV": [
+      [
+        "Ashton Jeanty",
+        44
+      ],
+      [
+        "Mike Washington Jr.",
+        10
+      ],
+      [
+        "Kirk Cousins",
+        9
+      ],
+      [
+        "Connor Heyward",
+        2
+      ]
+    ],
+    "MIA": [
+      [
+        "De'Von Achane",
+        31
+      ],
+      [
+        "Malik Willis",
+        8
+      ],
+      [
+        "Ollie Gordon II",
+        3
+      ],
+      [
+        "Jaylen Wright",
+        3
+      ]
+    ],
+    "MIN": [
+      [
+        "Aaron Jones",
+        35
+      ],
+      [
+        "Jordan Mason",
+        15
+      ],
+      [
+        "Carson Wentz",
+        8
+      ],
+      [
+        "DeeJay Dallas",
+        2
+      ]
+    ],
+    "NE": [
+      [
+        "Rhamondre Stevenson",
+        24
+      ],
+      [
+        "TreVeyon Henderson",
+        16
+      ],
+      [
+        "Drake Maye",
+        11
+      ],
+      [
+        "Corey Kiner",
+        8
+      ]
+    ],
+    "NO": [
+      [
+        "Travis Etienne",
+        17
+      ],
+      [
+        "Tyler Shough",
+        13
+      ],
+      [
+        "Kendre Miller",
+        9
+      ],
+      [
+        "Alvin Kamara",
+        9
+      ]
+    ],
+    "NYG": [
+      [
+        "Cam Skattebo",
+        30
+      ],
+      [
+        "Jaxson Dart",
+        11
+      ],
+      [
+        "Devin Singletary",
+        9
+      ],
+      [
+        "Najee Harris",
+        4
+      ]
+    ],
+    "NYJ": [
+      [
+        "Breece Hall",
+        38
+      ],
+      [
+        "Braelon Allen",
+        15
+      ],
+      [
+        "Geno Smith",
+        11
+      ],
+      [
+        "Isaiah Williams",
+        1
+      ]
+    ],
+    "PHI": [
+      [
+        "Saquon Barkley",
+        19
+      ],
+      [
+        "Tank Bigsby",
+        14
+      ],
+      [
+        "Jalen Hurts",
+        12
+      ],
+      [
+        "Will Shipley",
+        9
+      ]
+    ],
+    "PIT": [
+      [
+        "Jaylen Warren",
+        21
+      ],
+      [
+        "Rico Dowdle",
+        15
+      ],
+      [
+        "Aaron Rodgers",
+        4
+      ],
+      [
+        "Travis Homer",
+        2
+      ]
+    ],
+    "SEA": [
+      [
+        "Jadarian Price",
+        23
+      ],
+      [
+        "Emanuel Wilson",
+        23
+      ],
+      [
+        "George Holani",
+        12
+      ],
+      [
+        "Drew Lock",
+        2
+      ]
+    ],
+    "SF": [
+      [
+        "Kaelon Black",
+        21
+      ],
+      [
+        "Christian McCaffrey",
+        20
+      ],
+      [
+        "Brock Purdy",
+        8
+      ],
+      [
+        "Jordan James",
+        4
+      ]
+    ],
+    "TB": [
+      [
+        "Bucky Irving",
+        25
+      ],
+      [
+        "Baker Mayfield",
+        9
+      ],
+      [
+        "Kenny Gainwell",
+        7
+      ],
+      [
+        "Chris Godwin Jr.",
+        2
+      ]
+    ],
+    "TEN": [
+      [
+        "Tony Pollard",
+        21
+      ],
+      [
+        "Tyjae Spears",
+        10
+      ],
+      [
+        "Cam Ward",
+        8
+      ],
+      [
+        "Nicholas Singleton",
+        4
+      ]
+    ],
+    "WAS": [
+      [
+        "Jacory Croskey-Merritt",
+        28
+      ],
+      [
+        "Rachaad White",
+        14
+      ],
+      [
+        "Jayden Daniels",
+        12
+      ],
+      [
+        "Kaytron Allen",
+        9
+      ]
+    ]
   }
 }
