@@ -45,6 +45,31 @@
     </div>
 </div>
 
+{% if not preseason_mode %}
+{# Prominent board selector -- the market boards used to be tiny links buried at the
+   bottom; this puts them up top as obvious tabs so the slate is one clear click away. #}
+<div class="card mb-24 panel-glow board-jump" style="border-color:rgba(45,212,191,0.30);">
+    <div class="p-16">
+        <div class="page-kicker" style="margin-bottom:10px;">Open today&rsquo;s board &mdash; tap a market</div>
+        <div class="board-jump-row" style="display:flex;flex-wrap:wrap;gap:10px;">
+            <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
+                Game Lines <span style="display:block;font-size:11px;font-weight:600;opacity:.8;margin-top:2px;">spreads &middot; start here</span>
+            </a>
+            <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
+                Totals <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">over / under</span>
+            </a>
+            <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
+                Streak Patterns <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">trends</span>
+            </a>
+            <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
+                Props <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">players</span>
+            </a>
+        </div>
+        <div class="cell-meta" style="margin-top:10px;line-height:1.55;">Today&rsquo;s spreads and over/unders live under <strong style="color:var(--text-bright);">Game Lines</strong> &mdash; that&rsquo;s the default read for the slate.</div>
+    </div>
+</div>
+{% endif %}
+
 {% if preseason_mode %}
 <div id="preseason-intelligence" class="card mb-24 panel-glow" style="border-color:rgba(45,212,191,0.28);">
     <div class="card-header panel-header-gloss">
