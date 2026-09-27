@@ -1002,6 +1002,100 @@ def card_nfl_singles(week, out, stake=3.0, n=5):
     return c.save(out)
 
 
+def _parlay_american(legs_prices):
+    """Combined American odds for a parlay from a list of American leg prices."""
+    d = 1.0
+    for pr in legs_prices:
+        try:
+            p = float(pr)
+        except (TypeError, ValueError):
+            return None, None
+        d *= 1 + (p / 100 if p > 0 else 100 / abs(p))
+    am = round((d - 1) * 100) if d >= 2 else round(-100 / (d - 1))
+    return am, d
+
+
+# 5 three-leg NFL parlays: each leg a different game (no same-game on props), every
+# ticket MIXES overs and unders (all-over parlays were the documented out-of-sample
+# loser, -22% to -61%). Legs keyed by player -> looked up live in the validated pool.
+NFL_PARLAY_TICKETS = [
+    ('A', ['Jameson Williams', 'Isaiah Likely', 'Dak Prescott']),
+    ('B', ['David Montgomery', 'Drake Maye', 'Patrick Mahomes']),
+    ('C', ['Bryce Young', 'Kyler Murray', 'DK Metcalf']),
+    ('D', ['Matthew Stafford', 'Dalton Kincaid', 'Austin Hooper']),
+    ('E', ['Dontayvion Wicks', 'Brock Purdy', 'Kirk Cousins']),
+]
+
+
+def card_nfl_parlays(week, out, stake=3.0):
+    """Five 3-leg NFL parlays, $stake each, casino-ready. Each leg is a different game
+    (this book has no same-game parlays on props); every ticket mixes overs and unders.
+    Legs are the best validated PropScore play in their game."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    ctx = _app.build_nfl_spots_context(limit=300)
+    top = [p for p in (ctx.get('sp_top') or []) if (p.get('prop_score') or 0) >= 10]
+    best = {}
+    for p in sorted(top, key=lambda x: -(x.get('prop_score') or 0)):
+        mu = p.get('matchup') or ''
+        if mu and mu not in best:
+            best[mu] = p
+    byname = {p['player']: p for p in best.values()}
+    full2abbr = {v: k for k, v in getattr(_app, 'NFL_ABBR_TO_FULL', {}).items()}
+
+    def _abbr(mu):
+        if ' @ ' not in mu:
+            return mu[:14]
+        a, h = mu.split(' @ ', 1)
+        return f"{full2abbr.get(a.strip(), a[:3].upper())} @ {full2abbr.get(h.strip(), h[:3].upper())}"
+
+    tickets = []
+    for tid, names in NFL_PARLAY_TICKETS:
+        legs = [byname[n] for n in names if n in byname]
+        if len(legs) < 3:
+            continue
+        am, _ = _parlay_american([l.get('price') for l in legs])
+        tickets.append((tid, legs, am))
+
+    top0 = 250
+    lh = 26
+    def th(t):  # ticket block height
+        return 40 + len(t[1]) * lh + 14
+    H = top0 + 56 + sum(th(t) + 12 for t in tickets) + 96
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — 5 PARLAYS", chip=f"3 LEGS · ${stake:g} EACH")
+    d.rounded_rectangle([(M, y), (W - M, y + 40)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 15, y + 9, f"Every leg a different game · overs & unders mixed · "
+                          f"${stake * len(tickets):g} across all five", F['de'], INK)
+    y += 56
+    for tid, legs, am in tickets:
+        bh = 40 + len(legs) * lh + 14
+        payout = round(stake * (1 + (am / 100 if am > 0 else 100 / abs(am))), 2) if am else None
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=12, fill=PANEL, outline=CY, width=2)
+        d.rounded_rectangle([(M, y), (M + 9, y + bh)], radius=5, fill=CY)
+        c.text(M + 26, y + 10, f"TICKET {tid}", F['blk'], CY)
+        head = f"parlay {'+' if (am or 0) > 0 else ''}{am}"
+        if payout:
+            head += f"   ·   ${stake:g} → ${payout:g}"
+        c.text(W - M - 16, y + 12, head, F['pl'], INK, right=True)
+        ry = y + 44
+        for p in legs:
+            ln = p.get('line'); ln = ('%g' % ln) if isinstance(ln, (int, float)) else ln
+            over = str(p.get('direction')).upper() == 'OVER'
+            dot = GREEN if over else RED
+            d.ellipse([(M + 28, ry + 5), (M + 36, ry + 13)], fill=dot)
+            c.text(M + 46, ry, f"{p.get('direction')} {p.get('player')} {ln} {p.get('stat')}", F['de'], INK)
+            c.text(W - M - 16, ry, _abbr(p.get('matchup') or ''), F['ft'], FAINT, right=True)
+            ry += lh
+        y += bh + 12
+    c.text(M, y, f"Best validated PropScore play per game, {_stamp()}. Overs & unders mixed on purpose.",
+           F['ftb'], DIM); y += 28
+    c.text(M, y, "A parlay compounds the vig — even validated legs aren't +EV as a ticket. "
+                 "Lottery money. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_nfl_game_board(week, out):
     """NFL Game Board card: every spread + total this week ranked best-to-worst by model
     edge (build_nfl_game_board_context). Game lines only, no props. Honest: NFL has no
@@ -1448,6 +1542,8 @@ def main():
         made.append(card_nfl_game_board(args.week, str(out_dir / 'bk_nfl_game_board.png')))
     if 'nflsingles' in want:
         made.append(card_nfl_singles(args.week, str(out_dir / 'bk_nfl_singles.png')))
+    if 'nflparlays' in want:
+        made.append(card_nfl_parlays(args.week, str(out_dir / 'bk_nfl_parlays.png')))
     if 'cfbtop20' in want:
         made.append(card_cfb_top20(args.week, str(out_dir / 'bk_cfb_top20.png')))
     if 'cfbbygame' in want:
