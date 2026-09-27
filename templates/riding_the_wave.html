@@ -61,12 +61,30 @@
 
 <div class="rw-filter">
   <button class="rw-chip active" data-f="all">All</button>
+  {% if rw_hot %}<button class="rw-chip" data-f="hot">Heating Up</button>{% endif %}
   <button class="rw-chip" data-f="props">Player Props</button>
   <button class="rw-chip" data-f="ats">Covering</button>
   <button class="rw-chip" data-f="su">Winning</button>
   <button class="rw-chip" data-f="ou">Totals</button>
   <button class="rw-chip" data-f="situ">Situational</button>
 </div>
+
+{% if rw_hot %}
+<div class="rw-card rw-card-wide" data-cat="hot" style="margin-bottom:16px;">
+  <h3><span class="dot" style="background:var(--rw-hot)"></span>Heating Up &mdash; hitting their mark every game this season
+    <small>{{ rw_meta.hot_total }} player&middot;stats{% if rw_meta.hot_week %} &middot; through Week {{ rw_meta.hot_week }}{% endif %}</small></h3>
+  <div class="rw-note" style="margin:0 16px 4px;">
+    Every player landing on the <b>same side</b> of a prop line in every game so far this season &mdash; overs <i>and</i> unders, from real graded results. Early on, a run of <b>2 is a hot start, not a trend</b>, and the market prices hot starts fast. This is context and a watchlist, not an edge &mdash; ride with your own read.
+  </div>
+  <div class="rw-props">
+    {% for r in rw_hot %}
+    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.player }}<small>{{ r.side }} {{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.avg_margin %} &middot; by ~{{ r.avg_margin }} avg{% endif %}</small></span>
+      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'over' }}"><span class="n">{{ r.run }}</span><span class="u">straight</span></span></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% if rw_boards.props %}
 <div class="rw-card rw-card-wide" data-cat="props" style="margin-bottom:16px;">

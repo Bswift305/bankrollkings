@@ -41315,6 +41315,82 @@ def _season_num_top(s):
         return 0
 
 
+def build_nfl_prop_hot_start(min_run=2, limit=400):
+    """This-season 'Heating Up' board: EVERY player landing on the SAME side of their prop
+    line every game so far this season -- an active trailing run of overs OR unders --
+    pulled from the live graded results (data/tracking/NFL_AllPropResults.csv), which grows
+    week to week. Both directions count: a receiver over his yards every week and a back
+    under his rush line every week are both hitting a mark. Unlike the 3+ history streaks,
+    this starts at 2 so a hot start -- same side in each of the first two games -- gets
+    mentioned. Honest: two games is a hot START, not a trend, and the market prices hot
+    starts fast. Context, not an edge. Every player, every stat, no cherry-pick."""
+    path = DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv'
+    if not path.exists():
+        return {'rows': [], 'season': None, 'through_week': None}
+    df = _load_cached_csv(path, default=pd.DataFrame())
+    need = {'Player', 'Stat', 'Direction', 'Line', 'ResultValue', 'Season', 'Week'}
+    if df is None or df.empty or not need.issubset(df.columns):
+        return {'rows': [], 'season': None, 'through_week': None}
+    d = df.copy()
+    if 'Sport' in d.columns:
+        d = d[d['Sport'].astype(str).str.upper() == 'NFL']
+    if 'SeasonType' in d.columns:
+        d = d[d['SeasonType'].astype(str).str.upper().isin(('REG', ''))]
+    d['Season'] = pd.to_numeric(d['Season'], errors='coerce')
+    if not d['Season'].notna().any():
+        return {'rows': [], 'season': None, 'through_week': None}
+    season = int(d['Season'].max())
+    d = d[d['Season'] == season]
+    d = d[d['Direction'].astype(str).str.upper() == 'OVER']  # one row per prop (dedupe O/U pair)
+    d['Line'] = pd.to_numeric(d['Line'], errors='coerce')
+    d['ResultValue'] = pd.to_numeric(d['ResultValue'], errors='coerce')
+    d['Week'] = pd.to_numeric(d['Week'], errors='coerce')
+    d = d.dropna(subset=['Player', 'Stat', 'Line', 'ResultValue', 'Week'])
+    if d.empty:
+        return {'rows': [], 'season': season, 'through_week': None}
+    through_week = int(d['Week'].max())
+    # one graded outcome per player-stat-week (consensus line across books)
+    g = (d.groupby(['Player', 'Stat', 'Week'])
+           .agg(line=('Line', 'median'), res=('ResultValue', 'first'),
+                team=('Team', 'first') if 'Team' in d.columns else ('ResultValue', 'size'))
+           .reset_index())
+    # +1 = went over the line that week, -1 = under, 0 = landed exactly on it (push)
+    g['sign'] = (g['res'] > g['line']).astype(int) - (g['res'] < g['line']).astype(int)
+    out = []
+    for (player, stat), grp in g.groupby(['Player', 'Stat']):
+        grp = grp.sort_values('Week')
+        weeks = grp['Week'].tolist()
+        signs = grp['sign'].tolist()
+        # active only: the run must reach the latest graded week and not be a push
+        if not weeks or weeks[-1] != through_week or signs[-1] == 0:
+            continue
+        side_sign = signs[-1]
+        run = 0
+        margins = []
+        for sg, ln, rs in zip(reversed(signs), reversed(grp['line'].tolist()),
+                              reversed(grp['res'].tolist())):
+            if sg == side_sign:
+                run += 1
+                margins.append(abs(float(rs) - float(ln)))
+            else:
+                break
+        if run < min_run:
+            continue
+        last = grp.iloc[-1]
+        out.append({
+            'player': str(player), 'stat': str(stat), 'run': int(run),
+            'side': 'Over' if side_sign > 0 else 'Under',
+            'games': int(len(weeks)),
+            'team': (str(last['team']) if 'team' in grp.columns and pd.notna(last.get('team')) else ''),
+            'line': (round(float(last['line']), 1) if pd.notna(last['line']) else None),
+            'avg_margin': round(sum(margins) / len(margins), 1) if margins else 0.0,
+        })
+    # longest run first, then by how comfortably they've been clearing the number
+    out.sort(key=lambda x: (-x['run'], -x['avg_margin']))
+    return {'rows': out[:limit], 'season': season, 'through_week': through_week,
+            'total': len(out)}
+
+
 def build_nfl_wave_context():
     """Riding the Wave — every ACTIVE streak computed by walking each team's real graded
     games in date order (2011-2025 game-lines history). ATS cover streaks, straight-up
@@ -41401,8 +41477,9 @@ def build_nfl_wave_context():
         'ats': _collect(ats, pos_only=True),   # riding = covering
         'su': _collect(su, pos_only=True),     # riding = winning
         'ou': _collect(ou, pos_only=False, over_labels=True),  # either direction is a run
-        'props': build_nfl_prop_streaks(),     # player over/under line streaks
+        'props': build_nfl_prop_streaks(),     # player over/under line streaks (3+, history)
     }
+    hot = build_nfl_prop_hot_start()           # this-season hot starts, every player, 2+
 
     # ---- situational hot hands: season openers (Week 1), team + starting QB ----
     situational = []
@@ -41448,13 +41525,16 @@ def build_nfl_wave_context():
     asof = df['_d'].max()
     data = {
         'rw_boards': boards,
+        'rw_hot': hot.get('rows', []),
         'rw_situational': situational,
         'rw_meta': {
             'seasons': (min(seasons) + '-' + max(seasons)) if seasons else '',
             'asof': (asof.strftime('%b ') + str(asof.day) + asof.strftime(', %Y')) if pd.notna(asof) else '',
             'min_streak': _WAVE_MIN_STREAK,
+            'hot_season': hot.get('season'), 'hot_week': hot.get('through_week'),
+            'hot_total': hot.get('total', 0),
         },
-        'rw_available': any(boards.values()) or bool(situational),
+        'rw_available': any(boards.values()) or bool(situational) or bool(hot.get('rows')),
     }
     _NFL_WAVE_CACHE['sig'] = sig
     _NFL_WAVE_CACHE['data'] = data
