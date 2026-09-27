@@ -864,6 +864,35 @@ def card_cfb_totals(week, out):
     return c.save(out)
 
 
+def card_nfl_top20(week, out):
+    """NFL Top-20 board as a card: best plays across every market, ranked by evidence
+    (pulled live from build_nfl_board_context). Candidates, not locks."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    board = _app.build_nfl_board_context().get('board', [])[:20]
+    tcol = {'Validated': GREEN, 'Situational': GOLD, 'Model': FAINT}
+    rh = 40
+    H = 250 + 34 + len(board) * rh + 96
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — TOP 20", chip="ALL MARKETS")
+    c.text(M, y, "Ranked by evidence — you bring the eye test. Candidates, not locks.", F['de'], DIM)
+    y += 30; d.line([(M, y), (W - M, y)], fill=LINE, width=2); y += 8
+    for c2 in board:
+        col = tcol.get(c2.get('tier'), INK)
+        c.text(M + 2, y + 10, f"{c2['rank']}", F['blk'], FAINT)
+        c.text(M + 46, y + 10, c2['play'], F['pl'], col)
+        if c2.get('flag'):
+            c.text(W - M - 150, y + 12, c2['flag'], F['ft'], AMBER, right=True)
+        c.text(W - M, y + 12, f"{c2['tier'][:4].upper()}·{c2['market'][:4]}", F['de'], FAINT, right=True)
+        d.line([(M, y + rh - 2), (W - M, y + rh - 2)], fill=(20, 32, 38), width=1)
+        y += rh
+    y += 8
+    c.text(M, y, f"Live board pulled {_stamp()}. Green=validated edge, gold=injury spot, grey=model lean.", F['ftb'], DIM); y += 28
+    c.text(M, y, "Flags (VOLATILE/NEW TEAM) = the data distrusts it. Spots, not locks. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_wave(week, out):
     """CFB Wave board: model-confirmed rides + the undefeated (3-0 ATS) wave laying
     bigger numbers, honestly tagged. A real menu of options, casino-ready."""
@@ -1194,6 +1223,8 @@ def main():
         made.append(card_cfb_totals(args.week, str(out_dir / 'bk_cfb_totals.png')))
     if 'cfbparlays' in want:
         made.append(card_cfb_parlays(args.week, str(out_dir / 'bk_cfb_parlays.png')))
+    if 'nfltop20' in want:
+        made.append(card_nfl_top20(args.week, str(out_dir / 'bk_nfl_top20.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
