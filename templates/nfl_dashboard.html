@@ -85,31 +85,49 @@
 </div>
 
 {% if live_slate %}
+<style>
+  .bk-slate{width:100%;max-width:760px;border-collapse:collapse;}
+  .bk-slate th{text-align:left;padding:7px 12px;font:800 10.5px 'Helvetica Neue',Arial,sans-serif;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);}
+  .bk-slate td{padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle;}
+  .bk-slate tr:last-child td{border-bottom:0;}
+  .bk-slate .num{text-align:right;font-family:ui-monospace,Consolas,monospace;font-weight:700;
+    color:var(--text-bright);white-space:nowrap;width:74px;}
+  .bk-slate .wx{text-align:left;width:118px;white-space:nowrap;font-size:12px;color:var(--text-muted);}
+  .bk-slate .wx .u{display:inline-block;margin-left:4px;font:800 9px ui-monospace,monospace;
+    color:#0b1118;background:#ffb05a;border-radius:4px;padding:1px 5px;vertical-align:middle;}
+  .bk-slate .mu{white-space:nowrap;font-weight:700;color:var(--text-bright);}
+  .bk-slate .mu .at{color:var(--text-muted);font-weight:500;margin:0 3px;}
+  .bk-slate .act{width:64px;text-align:right;}
+  .bk-slate .dim{color:var(--text-muted);}
+</style>
 <div class="card mb-24">
     <div class="card-header panel-header-gloss">
         <div>
             <div class="card-title">Today&rsquo;s Slate</div>
-            <div class="cell-meta" style="margin-top:4px;">Every game with its current spread and over/under. Spread is the home team&rsquo;s number.</div>
+            <div class="cell-meta" style="margin-top:4px;">Spread is the home team&rsquo;s number &middot; wind flags a high-wind UNDER spot.</div>
         </div>
         <span class="badge badge-accent">{{ live_slate|length }} games</span>
     </div>
     <div class="p-16" style="overflow-x:auto;">
-        <table class="data-table" style="width:100%;">
+        <table class="bk-slate">
             <thead>
                 <tr>
                     <th>Matchup</th>
-                    <th style="text-align:right;white-space:nowrap;">Spread <span style="font-weight:600;color:var(--text-muted);">(home)</span></th>
+                    <th style="text-align:right;">Spread</th>
                     <th style="text-align:right;">Total</th>
-                    <th style="text-align:right;"></th>
+                    <th>Weather</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
                 {% for g in live_slate %}
                 <tr>
-                    <td style="white-space:nowrap;"><strong style="color:var(--text-bright);">{{ g.away }}</strong> <span style="color:var(--text-muted);">@</span> <strong style="color:var(--text-bright);">{{ g.home }}</strong></td>
-                    <td style="text-align:right;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;">{% if g.spread is not none %}{{ '%+g'|format(g.spread) }}{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
-                    <td style="text-align:right;font-family:ui-monospace,Consolas,monospace;">{% if g.total is not none %}{{ '%g'|format(g.total) }}{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
-                    <td style="text-align:right;"><a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open</a></td>
+                    <td class="mu">{{ g.away_abbr }}<span class="at">@</span>{{ g.home_abbr }}</td>
+                    <td class="num">{% if g.spread is not none %}{{ '%+g'|format(g.spread) }}{% else %}<span class="dim">&mdash;</span>{% endif %}</td>
+                    <td class="num">{% if g.total is not none %}{{ '%g'|format(g.total) }}{% else %}<span class="dim">&mdash;</span>{% endif %}</td>
+                    <td class="wx">{% if g.wind is not none %}&#128168; {{ g.wind }} mph{% if g.high_wind %}<span class="u">UNDER</span>{% endif %}{% else %}<span class="dim">&mdash; indoor/calm</span>{% endif %}</td>
+                    <td class="act"><a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

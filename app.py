@@ -29082,16 +29082,16 @@ def inject_globals():
 
     def sport_home_href(sport_key):
         sport_key = str(sport_key or '').strip().lower()
-        # Football opens straight to the Game Lines board (the full week's slate, shown
-        # automatically) instead of the Command Center hub -- that's the "Live Board &
-        # Lines" click. The Command Center stays reachable via its own top-nav tab.
+        # Clicking a sport lands on its Command Center home -- that's where the top part
+        # belongs (highlighted board pills + Today's Slate showing the game lines by
+        # default). The individual boards open from the highlighted pills there.
         return {
             'nba': '/sports/nba',
             'wnba': '/sports/wnba',
             'mlb': '/sports/mlb',
-            'nfl': '/sports/nfl/game-lines',
-            'ncaaf': '/sports/ncaaf/game-lines',
-            'cfb': '/sports/ncaaf/game-lines',
+            'nfl': '/sports/nfl',
+            'ncaaf': '/sports/ncaaf',
+            'cfb': '/sports/ncaaf',
             'ncaamb': '/sports/ncaamb',
             'ncaawb': '/sports/ncaawb',
         }.get(sport_key, '/dashboard')
@@ -29687,6 +29687,54 @@ def build_nfl_dashboard_runtime_bundle():
     )
 
 
+def build_football_home_slate(sport_key='nfl'):
+    """This week's UPCOMING games for the home-page quick-glance slate: matchup (abbrev),
+    home spread, total, and wind with the high-wind UNDER flag. Only games from today
+    (Eastern) forward -- a finished game shouldn't sit in 'today's slate' -- and only this
+    week, so it never balloons to a multi-week list. NFL pulls wind from NFL_GameWeather;
+    CFB shows lines only for now."""
+    sk = str(sport_key or 'nfl').strip().lower()
+    is_cfb = sk in ('cfb', 'ncaaf')
+    try:
+        if is_cfb:
+            odds, sched = load_ncaaf_game_market_odds(), load_ncaaf_schedule()
+        else:
+            odds, sched = load_nfl_game_market_odds(), load_nfl_schedule()
+        games = build_football_live_games(odds, sched, date_filter='week')
+    except Exception:
+        return []
+    wind_home = {}
+    if not is_cfb:
+        try:
+            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
+            for hm, w in zip(wx['HomeTeam'], pd.to_numeric(wx['WindMph'], errors='coerce')):
+                if pd.notna(w):
+                    wind_home[str(hm)] = int(round(float(w)))
+        except Exception:
+            pass
+    full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()} if not is_cfb else {}
+    today = sports_today_date()
+    out = []
+    for g in games:
+        if g.get('spread') is None and g.get('total') is None:
+            continue
+        try:
+            gd = pd.to_datetime(g.get('date'), errors='coerce')
+            if pd.notna(gd) and gd.date() < today:
+                continue  # already played -- keep the slate to what's still ahead
+        except Exception:
+            pass
+        a, h = g.get('away'), g.get('home')
+        wind = wind_home.get(h)
+        out.append({
+            'away': a, 'home': h,
+            'away_abbr': full2abbr.get(a, a), 'home_abbr': full2abbr.get(h, h),
+            'spread': g.get('spread'), 'total': g.get('total'),
+            'wind': wind, 'high_wind': bool(wind and wind >= 15),
+        })
+    return out
+
+
 @app.route('/sports/nfl')
 def nfl_page():
     postseason_only = postseason_only_enabled()
@@ -29727,9 +29775,7 @@ def nfl_page():
                 # live_slate is computed FRESH (not from the cached snapshot) so today's
                 # spreads/totals on the home page are current even when the prop board is
                 # served from a 12h snapshot.
-                live_slate=[g for g in build_football_live_games(
-                    load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week')
-                    if g.get('spread') is not None or g.get('total') is not None],
+                live_slate=build_football_home_slate('nfl'),
             )
     sport_profile = get_sport_model_profile('nfl')
     market_groups = get_nfl_market_groups()
@@ -29771,8 +29817,7 @@ def nfl_page():
         refresh_meta=live_refresh_meta,
         history_status=runtime_bundle['history_status'],
         preseason_markets=build_football_preseason_markets('nfl'),
-        live_slate=[g for g in (runtime_bundle.get('live_games') or [])
-                    if g.get('spread') is not None or g.get('total') is not None],
+        live_slate=build_football_home_slate('nfl'),
     )
 
 
@@ -29841,8 +29886,7 @@ def ncaaf_page():
         current_season_context=current_season_context,
         history_status=build_football_history_status(build_football_history_lab('ncaaf')),
         preseason_markets=build_football_preseason_markets('ncaaf'),
-        live_slate=[g for g in (live_games or [])
-                    if g.get('spread') is not None or g.get('total') is not None],
+        live_slate=build_football_home_slate('ncaaf'),
     )
 
 
