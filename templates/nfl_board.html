@@ -1,0 +1,67 @@
+{% set active_page = 'nfl_board' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Top Board - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .nb-wrap{--nb-accent:#3fbf7f;max-width:720px;}
+  .nb-blurb{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:8px 0 16px;}
+  .nb-blurb b{color:var(--text);}
+  .nb-row{display:flex;align-items:baseline;gap:10px;padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .nb-row:last-child{border-bottom:0;}
+  .nb-rank{font:800 15px ui-monospace,Consolas,monospace;color:var(--text-muted);min-width:26px;text-align:right;}
+  .nb-main{flex:1 1 auto;min-width:0;}
+  .nb-play{font:800 14.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .nb-play .fl{font:800 9px ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ff9f6a;border-radius:4px;padding:1px 5px;vertical-align:middle;margin-left:5px;}
+  .nb-sub{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
+  .nb-tags{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:0 0 auto;}
+  .nb-mkt{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;
+    border:1px solid var(--border);border-radius:5px;padding:2px 6px;color:var(--text-muted);}
+  .nb-tier{font:800 9px ui-monospace,monospace;letter-spacing:.04em;border-radius:4px;padding:1px 6px;}
+  .nb-tier.validated{color:#0b1118;background:#4ed48a;}
+  .nb-tier.situational{color:#0b1118;background:#ffd166;}
+  .nb-tier.model{color:var(--text-muted);border:1px solid var(--border);}
+  .nb-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:16px;}
+  .nb-key{display:flex;gap:14px;flex-wrap:wrap;font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:12px;}
+  .nb-key span b{color:var(--text);}
+</style>
+
+<div class="nb-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Top <span class="accent">Board</span></h1>
+    <div class="page-subtitle">The best plays across every market &mdash; props, totals, wind, injury spots &mdash; ranked by how strong the <b>evidence</b> is. We surface and rank the options; you bring the eye test. Candidates, not locks.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-matchup" class="btn btn-secondary btn-sm">Matchup Card</a></div>
+</div>
+
+{% if not board_available %}
+<div class="nb-blurb">No board yet &mdash; it fills in once this week&rsquo;s props and lines are loaded. Check back closer to kickoff.</div>
+{% else %}
+<div class="nb-key">
+  <span><b class="nb-tier validated" style="padding:1px 5px;">VALID</b> backtested edge (PropScore, wind)</span>
+  <span><b class="nb-tier situational" style="padding:1px 5px;">SITU</b> injury-driven</span>
+  <span><b class="nb-tier model" style="padding:1px 5px;">MODEL</b> a model lean</span>
+</div>
+<p class="nb-blurb">Ranked by evidence strength, best first. <b>Validated</b> plays have a real backtested ROI; <b>model</b> leans are context, not proven. Flags (VOLATILE / NEW TEAM) mark plays the data distrusts. Pick the ones your read agrees with.</p>
+
+{% for c in board %}
+<div class="nb-row">
+  <span class="nb-rank">{{ c.rank }}</span>
+  <div class="nb-main">
+    <div class="nb-play">{{ c.play }}{% if c.flag %}<span class="fl">{{ c.flag }}</span>{% endif %}</div>
+    <div class="nb-sub">{{ c.why }}{% if c.matchup %} &middot; {{ c.matchup }}{% endif %}</div>
+  </div>
+  <div class="nb-tags">
+    <span class="nb-tier {{ c.tier|lower }}">{{ c.tier[:5]|upper }}</span>
+    <span class="nb-mkt">{{ c.market }}</span>
+  </div>
+</div>
+{% endfor %}
+
+<div class="nb-note"><b>How to use this:</b> it&rsquo;s a ranked menu of the strongest options we can find, not a slip to copy. The order reflects our <i>evidence</i> &mdash; a validated PropScore play or a wind-under outranks a model total, because one is proven and the other is context. Your eye test (a QB you trust, a spot the numbers can&rsquo;t see) is the last filter. Spots, not locks. Bet what you can afford to lose.</div>
+{% endif %}
+</div>
+{% endblock %}

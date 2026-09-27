@@ -40932,6 +40932,107 @@ def nfl_matchup_tool():
     return render_template('nfl_matchup.html', **build_nfl_matchup_context())
 
 
+_NFL_BOARD_CACHE = {}
+_BOARD_TIERS = {'Validated': 0, 'Situational': 1, 'Model': 2}
+
+
+def build_nfl_board_context():
+    """The Top-20 board: the best plays across EVERY market (props, totals, wind,
+    injury-driven), ranked by EVIDENCE strength -- validated edges (PropScore, wind)
+    first, then situational, then model leans. It ranks candidates; the bettor brings
+    the eye test. Never a 'lock' list. Refreshes when the underlying data changes."""
+    import nfl_totals as _nt, nfl_current_form as _ncf
+    scen = os.path.join(BASE_DIR, 'data', 'scenarios')
+    watch = [os.path.join(scen, 'nfl_scores.json'),
+             DATA_DIR / 'props' / 'NFL_Props.csv', DATA_DIR / 'odds' / 'NFL_Odds.csv',
+             DATA_DIR / 'context' / 'NFL_GameWeather.csv']
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    if _NFL_BOARD_CACHE.get('sig') == sig:
+        return _NFL_BOARD_CACHE['data']
+    _nt.clear_cache()
+    cands = []
+
+    # 1) PropScore plays -- the validated NFL edge
+    try:
+        for p in (build_nfl_spots_context(limit=30).get('sp_top') or []):
+            flag = ('VOLATILE' if p.get('archetype_flag') == 'deep_threat'
+                    else ('NEW TEAM' if p.get('usage_flag') == 'new_team' else ''))
+            base = (p.get('prop_score') or 0) - (9 if flag else 0)
+            ln = p.get('line')
+            cands.append({'base': base, 'market': 'Prop', 'tier': 'Validated',
+                          'play': f"{p.get('player')} {p.get('direction')} "
+                                  f"{('%g' % ln) if isinstance(ln, (int, float)) else ln} {p.get('stat')}",
+                          'matchup': p.get('matchup') or '', 'why': f"PropScore {p.get('prop_score')}",
+                          'flag': flag})
+    except Exception:
+        pass
+
+    # 2) Totals -- wind (validated), QB-out (situational), else model; divergence-guarded
+    try:
+        off, dff, lp = _nt._ratings()
+        sc = json.load(open(os.path.join(scen, 'nfl_scores.json'), encoding='utf-8'))
+        from collections import defaultdict
+        act = defaultdict(list)
+        for hh, aa2, hs, as_ in sc.get('games', []):
+            act[hh].append(hs); act[aa2].append(as_)
+        try:
+            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
+            wind_home = dict(zip(wx['HomeTeam'], wx['WindMph']))
+        except Exception:
+            wind_home = {}
+        odds = load_nfl_game_market_odds()
+        for g in build_football_live_games(odds, load_nfl_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            tot = g.get('total')
+            if not a or not h or tot is None:
+                continue
+            aa, ha = _ncf.resolve(a), _ncf.resolve(h)
+            tr = _nt.total_read(aa, ha, tot)
+            if not tr or tr.get('lean') not in ('OVER', 'UNDER', 'UNDER (QB out)'):
+                continue
+            edge = abs(tr.get('edge') or 0)
+            wind = wind_home.get(h, 0) or 0
+            div = 0
+            if act.get(aa) and act.get(ha):
+                div = max(abs(off.get(aa, lp) - sum(act[aa]) / len(act[aa])),
+                          abs(off.get(ha, lp) - sum(act[ha]) / len(act[ha])))
+            side = 'UNDER' if 'UNDER' in tr['lean'] else 'OVER'
+            if 'QB out' in tr['lean']:
+                tier, base = 'Situational', 24 + edge
+            elif wind >= 15 and side == 'UNDER':
+                tier, base = 'Validated', 36 + (wind - 15)
+            else:
+                tier, base = 'Model', 18 + min(edge, 6)
+            base -= max(0, div - 6) * 1.5  # penalize a projection that fights actual scoring (LV@NO)
+            why = f"model {tr['proj_total']} vs {'%g' % float(tot)}"
+            if wind >= 15:
+                why += f", wind {'%g' % wind}"
+            if 'QB out' in tr['lean']:
+                why += ", QB out"
+            cands.append({'base': base, 'market': 'Total', 'tier': tier,
+                          'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
+                          'matchup': '', 'why': why, 'flag': ''})
+    except Exception:
+        pass
+
+    cands.sort(key=lambda x: (-x['base']))
+    top = cands[:20]
+    for i, c in enumerate(top, 1):
+        c['rank'] = i
+    data = {'board': top, 'board_available': bool(top),
+            'board_updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_BOARD_CACHE['sig'] = sig
+    _NFL_BOARD_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/nfl-board')
+def nfl_board_tool():
+    """Quick Tool: NFL Top-20 Board — best plays across every market, ranked by
+    evidence. You bring the eye test."""
+    return render_template('nfl_board.html', **build_nfl_board_context())
+
+
 def build_nfl_ats_context(default_tab='teams'):
     """NFL Team ATS Trends + per-team profile, from the same dossier as the matchup
     card. Teams ranked best-first (highest ATS%). League table + coaches + a team
