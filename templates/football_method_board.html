@@ -24,6 +24,15 @@
   /* In-place pill swap: fade the board while the next method loads. */
   #fmb-swap{transition:opacity .12s ease;}
   #fmb-swap.fmb-loading{opacity:.45;pointer-events:none;}
+  /* Lead with the board: keep the hero + method pills up top, but drop the summary
+     stat cards and the "how to read" explainer BELOW the matchups table so the slate
+     is the first thing you see. CSS order only -- the DOM stays the same. */
+  #fmb-swap{display:flex;flex-direction:column;align-items:stretch;}
+  #fmb-swap>.page-hero{order:-3;}
+  #fmb-swap>.fmb-tabs{order:-2;}
+  #fmb-swap>.fmb-warn{order:-1;}
+  #fmb-swap>.fmb-summary{order:80;}
+  #fmb-swap>.fmb-howto{order:90;}
 </style>
 <div id="fmb-swap">
 <div class="page-hero">
@@ -41,7 +50,7 @@
     </div>
 </div>
 
-<div class="card mb-24">
+<div class="card mb-24 fmb-tabs">
     <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         {% for item in football_methods %}
         <a href="/sports/{{ sport_key }}/{{ item.key }}?postseason={{ 1 if postseason_only else 0 }}" class="btn fmb-pill {% if active_method == item.key %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ item.title }}</a>
@@ -51,7 +60,7 @@
 </div>
 
 {% if method_view.live_refresh_meta and method_view.live_refresh_meta.warning %}
-<div class="card mb-24 panel-glow" style="border-color: rgba(201,128,58,0.28);">
+<div class="card mb-24 panel-glow fmb-warn" style="border-color: rgba(201,128,58,0.28);">
     <div class="card-header panel-header-gloss">
         <div class="card-title">Live Feed Warning</div>
         <span class="badge">Stale Feed</span>
@@ -157,7 +166,7 @@
 </details>
 
 {% if method_view.summary_cards %}
-<div class="grid-3 mb-24" style="gap: 12px;">
+<div class="grid-3 mb-24 fmb-summary" style="gap: 12px;">
     {% for card in method_view.summary_cards %}
     <div class="parlay-surface-soft" style="padding: 12px;">
         <div class="page-kicker" style="margin-bottom: 6px;">{{ card.label }}</div>

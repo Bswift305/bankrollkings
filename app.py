@@ -29082,13 +29082,16 @@ def inject_globals():
 
     def sport_home_href(sport_key):
         sport_key = str(sport_key or '').strip().lower()
+        # Football opens straight to the Game Lines board (the full week's slate, shown
+        # automatically) instead of the Command Center hub -- that's the "Live Board &
+        # Lines" click. The Command Center stays reachable via its own top-nav tab.
         return {
             'nba': '/sports/nba',
             'wnba': '/sports/wnba',
             'mlb': '/sports/mlb',
-            'nfl': '/sports/nfl',
-            'ncaaf': '/sports/ncaaf',
-            'cfb': '/sports/ncaaf',
+            'nfl': '/sports/nfl/game-lines',
+            'ncaaf': '/sports/ncaaf/game-lines',
+            'cfb': '/sports/ncaaf/game-lines',
             'ncaamb': '/sports/ncaamb',
             'ncaawb': '/sports/ncaawb',
         }.get(sport_key, '/dashboard')
