@@ -65,9 +65,43 @@
                 Props <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">players</span>
             </a>
         </div>
-        <div class="cell-meta" style="margin-top:10px;line-height:1.55;">Today&rsquo;s spreads and over/unders live under <strong style="color:var(--text-bright);">Game Lines</strong> &mdash; that&rsquo;s the default read for the slate.</div>
+        <div class="cell-meta" style="margin-top:10px;line-height:1.55;">Full detail (line movement, wind, model) lives under <strong style="color:var(--text-bright);">Game Lines</strong>. The slate below is the quick glance.</div>
     </div>
 </div>
+
+{% if live_slate %}
+<div class="card mb-24">
+    <div class="card-header panel-header-gloss">
+        <div>
+            <div class="card-title">Today&rsquo;s Slate</div>
+            <div class="cell-meta" style="margin-top:4px;">Every game with its current spread and over/under. Spread is the home team&rsquo;s number.</div>
+        </div>
+        <span class="badge badge-accent">{{ live_slate|length }} games</span>
+    </div>
+    <div class="p-16" style="overflow-x:auto;">
+        <table class="data-table" style="width:100%;">
+            <thead>
+                <tr>
+                    <th>Matchup</th>
+                    <th style="text-align:right;white-space:nowrap;">Spread <span style="font-weight:600;color:var(--text-muted);">(home)</span></th>
+                    <th style="text-align:right;">Total</th>
+                    <th style="text-align:right;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in live_slate %}
+                <tr>
+                    <td style="white-space:nowrap;"><strong style="color:var(--text-bright);">{{ g.away }}</strong> <span style="color:var(--text-muted);">@</span> <strong style="color:var(--text-bright);">{{ g.home }}</strong></td>
+                    <td style="text-align:right;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;">{% if g.spread is not none %}{{ '%+g'|format(g.spread) }}{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
+                    <td style="text-align:right;font-family:ui-monospace,Consolas,monospace;">{% if g.total is not none %}{{ '%g'|format(g.total) }}{% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}</td>
+                    <td style="text-align:right;"><a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 {% if preseason_mode %}

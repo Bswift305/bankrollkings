@@ -29762,6 +29762,8 @@ def nfl_page():
         refresh_meta=live_refresh_meta,
         history_status=runtime_bundle['history_status'],
         preseason_markets=build_football_preseason_markets('nfl'),
+        live_slate=[g for g in (runtime_bundle.get('live_games') or [])
+                    if g.get('spread') is not None or g.get('total') is not None],
     )
 
 
@@ -29830,6 +29832,8 @@ def ncaaf_page():
         current_season_context=current_season_context,
         history_status=build_football_history_status(build_football_history_lab('ncaaf')),
         preseason_markets=build_football_preseason_markets('ncaaf'),
+        live_slate=[g for g in (live_games or [])
+                    if g.get('spread') is not None or g.get('total') is not None],
     )
 
 
