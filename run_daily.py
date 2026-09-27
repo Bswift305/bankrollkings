@@ -69,6 +69,17 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # live hit-rate log the calibration story needs. See grade_nfl_week.py.
         ("NFL board snapshot", _python("grade_nfl_week.py", "--snapshot"), 180),
         ("NFL board grade (resolve)", _python("grade_nfl_week.py", "--resolve"), 300),
+        # Archive this week's football props into the cross-sport candidate archive.
+        # That archive is what refresh_all_prop_results.py grades into
+        # NFL_AllPropResults.csv -- the graded prop record behind Riding-the-Wave's
+        # "Heating Up" board and the calibration log. This MUST run on its own in
+        # football season: it used to ride ONLY as a side effect of the WNBA block's
+        # archive call, so the moment WNBA went off-season, NFL/NCAAF prop archiving
+        # silently stopped and the graded record stalled. Self-gating -- no-ops when
+        # the football props file is empty (offseason). --skip-routes: route render
+        # checks are a WNBA/MLB concern handled in that block, not needed here.
+        ("Football candidate archive",
+         _python("archive_daily_candidates.py", "--sports", "nfl,ncaaf", "--skip-routes"), 900),
         # Same-day final scores (NFL + CFB) from ESPN -- a fresh results source that
         # doesn't lag like nflverse/CFBD box scores, so finals are readily on hand for
         # grading and display instead of a manual fetch. Cheap; one scoreboard call each.
@@ -138,7 +149,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
             ("WNBA game lines", _python("fetch_wnba_game_lines.py", "--days", "5"), 300),
             ("WNBA player props", _python("fetch_wnba_player_props.py", "--days", "5"), 300),
             ("WNBA player logs", _python("refresh_wnba_player_logs.py"), 300),
-            ("WNBA candidate archive", _python("archive_daily_candidates.py"), 300),
+            # wnba,nba,mlb only -- football is archived by its own always-on step above
+            # so it no longer depends on WNBA being in season. (nba/mlb still ride the
+            # WNBA block as before; generalizing them is a separate, larger change.)
+            ("WNBA candidate archive",
+             _python("archive_daily_candidates.py", "--sports", "wnba,nba,mlb"), 300),
             ("WNBA featured results", _python("refresh_wnba_featured_results.py"), 300),
             ("WNBA calibration", _python("calibrate_wnba_model.py"), 300),
             ("Runtime snapshots", _python("refresh_runtime_snapshots.py", "--sports", "wnba", "--skip-prewarm"), 300),
