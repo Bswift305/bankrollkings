@@ -909,10 +909,22 @@
     {% endfor %}
 </div>
 {% else %}
+{% if live_status.has_live_games or live_status.has_live_props %}
 <div class="card mb-24">
-    <div class="p-24" style="text-align: center; color: var(--text-muted);">
-        {{ sport_title }} workbook data is not available yet.
+    <div class="p-24" style="text-align: center; color: var(--text-muted); line-height: 1.6;">
+        This board is running on the <strong style="color: var(--text-bright);">live feed</strong> above &mdash; the historical {{ sport_title }} workbook (a static preseason seed) isn&rsquo;t loaded here, which is expected in-season.
+        <div style="margin-top: 12px;">
+            <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Game Lines</a>
+            <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Props</a>
+        </div>
     </div>
 </div>
+{% else %}
+<div class="card mb-24">
+    <div class="p-24" style="text-align: center; color: var(--text-muted);">
+        {{ sport_title }} board data isn&rsquo;t loaded yet &mdash; live lines post on game day.
+    </div>
+</div>
+{% endif %}
 {% endif %}
 {% endblock %}
