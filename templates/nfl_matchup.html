@@ -105,8 +105,14 @@
         <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
       </button>
       {% set has_form = g.form and g.form.away_def_note and g.form.home_def_note %}
-      {% if has_form or g.tackles or g.periods or g.move %}
+      {% if has_form or g.tackles or g.periods or g.move or (g.total and g.total.lean) %}
       <div class="mu-wk-form">
+        {% if g.total and g.total.lean %}
+        <span class="d" style="color:{% if g.total.qb_note %}#ff6f7e{% elif g.total.lean in ('OVER','UNDER') %}#2dd4bf{% else %}var(--text-muted){% endif %};">
+          Total: model {{ '%g'|format(g.total.proj_total) }} vs {{ '%g'|format(g.total.line) }} &mdash; <b>{{ g.total.lean }}</b>{% if g.total.edge is not none %} ({{ '%+g'|format(g.total.edge) }}){% endif %}
+          {% if g.total.qb_note %}<br><b>&#9888; {{ g.total.qb_note }}</b>{% endif %}
+        </span>
+        {% endif %}
         {% if g.move %}
         <span class="d per">
           <span class="per-tag">MOVE</span>

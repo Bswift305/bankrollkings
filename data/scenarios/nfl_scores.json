@@ -1,0 +1,466 @@
+{
+  "season": 2026,
+  "prior_season": 2025,
+  "updated": "2026-09-27 10:09 UTC",
+  "league_pts": 22.53,
+  "prior": {
+    "PHI": [
+      22.29,
+      19.12
+    ],
+    "DAL": [
+      27.71,
+      30.06
+    ],
+    "LAC": [
+      21.65,
+      20.0
+    ],
+    "KC": [
+      21.29,
+      19.29
+    ],
+    "ATL": [
+      20.76,
+      23.59
+    ],
+    "TB": [
+      22.35,
+      24.18
+    ],
+    "CLE": [
+      16.41,
+      22.29
+    ],
+    "CIN": [
+      24.35,
+      28.94
+    ],
+    "IND": [
+      27.41,
+      24.24
+    ],
+    "MIA": [
+      20.41,
+      24.94
+    ],
+    "JAX": [
+      27.88,
+      19.76
+    ],
+    "CAR": [
+      18.29,
+      22.35
+    ],
+    "NE": [
+      28.82,
+      18.82
+    ],
+    "LV": [
+      14.18,
+      25.41
+    ],
+    "NO": [
+      18.0,
+      22.53
+    ],
+    "ARI": [
+      20.88,
+      28.71
+    ],
+    "NYJ": [
+      17.65,
+      29.59
+    ],
+    "PIT": [
+      23.35,
+      22.76
+    ],
+    "WAS": [
+      20.94,
+      26.53
+    ],
+    "NYG": [
+      22.41,
+      25.82
+    ],
+    "DEN": [
+      23.59,
+      18.29
+    ],
+    "TEN": [
+      16.71,
+      28.12
+    ],
+    "SEA": [
+      28.41,
+      17.18
+    ],
+    "SF": [
+      25.71,
+      21.82
+    ],
+    "GB": [
+      23.0,
+      21.18
+    ],
+    "DET": [
+      28.29,
+      24.29
+    ],
+    "LAR": [
+      30.47,
+      20.35
+    ],
+    "HOU": [
+      23.76,
+      17.35
+    ],
+    "BUF": [
+      28.29,
+      21.47
+    ],
+    "BAL": [
+      24.94,
+      23.41
+    ],
+    "CHI": [
+      25.94,
+      24.41
+    ],
+    "MIN": [
+      20.24,
+      19.59
+    ]
+  },
+  "games": [
+    [
+      "SEA",
+      "NE",
+      13,
+      10
+    ],
+    [
+      "LAR",
+      "SF",
+      7,
+      27
+    ],
+    [
+      "CAR",
+      "CHI",
+      37,
+      59
+    ],
+    [
+      "CIN",
+      "TB",
+      33,
+      27
+    ],
+    [
+      "DET",
+      "NO",
+      31,
+      30
+    ],
+    [
+      "HOU",
+      "BUF",
+      31,
+      36
+    ],
+    [
+      "IND",
+      "BAL",
+      23,
+      41
+    ],
+    [
+      "JAX",
+      "CLE",
+      34,
+      10
+    ],
+    [
+      "PIT",
+      "ATL",
+      20,
+      13
+    ],
+    [
+      "TEN",
+      "NYJ",
+      10,
+      23
+    ],
+    [
+      "LAC",
+      "ARI",
+      14,
+      26
+    ],
+    [
+      "LV",
+      "MIA",
+      27,
+      13
+    ],
+    [
+      "MIN",
+      "GB",
+      39,
+      22
+    ],
+    [
+      "PHI",
+      "WAS",
+      24,
+      22
+    ],
+    [
+      "NYG",
+      "DAL",
+      28,
+      20
+    ],
+    [
+      "KC",
+      "DEN",
+      31,
+      10
+    ],
+    [
+      "BUF",
+      "DET",
+      41,
+      31
+    ],
+    [
+      "ATL",
+      "CAR",
+      3,
+      34
+    ],
+    [
+      "BAL",
+      "NO",
+      17,
+      24
+    ],
+    [
+      "CHI",
+      "MIN",
+      3,
+      9
+    ],
+    [
+      "HOU",
+      "CIN",
+      6,
+      20
+    ],
+    [
+      "NE",
+      "PIT",
+      20,
+      3
+    ],
+    [
+      "NYJ",
+      "GB",
+      17,
+      20
+    ],
+    [
+      "TB",
+      "CLE",
+      19,
+      23
+    ],
+    [
+      "TEN",
+      "PHI",
+      20,
+      24
+    ],
+    [
+      "DEN",
+      "JAX",
+      20,
+      13
+    ],
+    [
+      "LAC",
+      "LV",
+      14,
+      26
+    ],
+    [
+      "ARI",
+      "SEA",
+      7,
+      31
+    ],
+    [
+      "DAL",
+      "WAS",
+      37,
+      20
+    ],
+    [
+      "SF",
+      "MIA",
+      35,
+      13
+    ],
+    [
+      "KC",
+      "IND",
+      33,
+      30
+    ],
+    [
+      "LAR",
+      "NYG",
+      28,
+      6
+    ],
+    [
+      "GB",
+      "ATL",
+      14,
+      35
+    ]
+  ],
+  "qb1": {
+    "ARI": {
+      "name": "Jacoby Brissett",
+      "att": 65
+    },
+    "ATL": {
+      "name": "Cooper Rush",
+      "att": 39
+    },
+    "BAL": {
+      "name": "Lamar Jackson",
+      "att": 56
+    },
+    "BUF": {
+      "name": "Josh Allen",
+      "att": 60
+    },
+    "CAR": {
+      "name": "Bryce Young",
+      "att": 73
+    },
+    "CHI": {
+      "name": "Caleb Williams",
+      "att": 55
+    },
+    "CIN": {
+      "name": "Joe Burrow",
+      "att": 66
+    },
+    "CLE": {
+      "name": "Deshaun Watson",
+      "att": 52
+    },
+    "DAL": {
+      "name": "Dak Prescott",
+      "att": 65
+    },
+    "DEN": {
+      "name": "Bo Nix",
+      "att": 59
+    },
+    "DET": {
+      "name": "Jared Goff",
+      "att": 77
+    },
+    "GB": {
+      "name": "Jordan Love",
+      "att": 124
+    },
+    "HOU": {
+      "name": "C.J. Stroud",
+      "att": 93
+    },
+    "IND": {
+      "name": "Daniel Jones",
+      "att": 62
+    },
+    "JAX": {
+      "name": "Trevor Lawrence",
+      "att": 52
+    },
+    "KC": {
+      "name": "Patrick Mahomes",
+      "att": 74
+    },
+    "LAR": {
+      "name": "Matthew Stafford",
+      "att": 56
+    },
+    "LAC": {
+      "name": "Justin Herbert",
+      "att": 54
+    },
+    "LV": {
+      "name": "Kirk Cousins",
+      "att": 59
+    },
+    "MIA": {
+      "name": "Malik Willis",
+      "att": 50
+    },
+    "MIN": {
+      "name": "Carson Wentz",
+      "att": 39
+    },
+    "NE": {
+      "name": "Drake Maye",
+      "att": 55
+    },
+    "NO": {
+      "name": "Tyler Shough",
+      "att": 90
+    },
+    "NYG": {
+      "name": "Jaxson Dart",
+      "att": 34
+    },
+    "NYJ": {
+      "name": "Geno Smith",
+      "att": 65
+    },
+    "PHI": {
+      "name": "Jalen Hurts",
+      "att": 62
+    },
+    "PIT": {
+      "name": "Aaron Rodgers",
+      "att": 79
+    },
+    "SEA": {
+      "name": "Drew Lock",
+      "att": 48
+    },
+    "SF": {
+      "name": "Brock Purdy",
+      "att": 56
+    },
+    "TB": {
+      "name": "Baker Mayfield",
+      "att": 62
+    },
+    "TEN": {
+      "name": "Cam Ward",
+      "att": 52
+    },
+    "WAS": {
+      "name": "Jayden Daniels",
+      "att": 51
+    }
+  }
+}

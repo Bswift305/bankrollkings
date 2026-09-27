@@ -92,6 +92,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # open->current movement accrues. Reads NFL_Odds.csv; never overwrites a game's
         # first-seen open. Cheap, no network.
         ("NFL line-open capture", _python("capture_nfl_line_open.py"), 120),
+        # NFL totals model inputs: team scoring (2025 prior + current) + each team's QB1,
+        # so the totals read can veto a game when the starting QB is OUT. One nflverse
+        # games pull + one weekly-stats pull.
+        ("NFL scores + QB1", _python("build_nfl_scores.py"), 180),
         # Rebuild the per-game NFL fantasy gamelog from the historical/current
         # player-stats extracts (preseason baselines on last season; converges as
         # the year plays out). Cheap; keeps NFL fantasy rankings fresh.

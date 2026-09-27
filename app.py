@@ -40857,6 +40857,14 @@ def build_nfl_matchup_context():
                     wg['move'] = _nfl_line_move(a, h)
                 except Exception:
                     wg['move'] = None
+                # Opponent-adjusted total projection with a starting-QB-out veto -- a
+                # scoring model is blind to its QB being done, so this pulls the total
+                # down (and kills any "over") when a team's QB1 is OUT.
+                try:
+                    import nfl_totals as _nt, nfl_current_form as _ncf
+                    wg['total'] = _nt.total_read(_ncf.resolve(a), _ncf.resolve(h), g.get('total'))
+                except Exception:
+                    wg['total'] = None
                 week_games.append(wg)
     except Exception:
         week_games = []
