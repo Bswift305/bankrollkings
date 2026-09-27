@@ -48,24 +48,39 @@
 {% if not preseason_mode %}
 {# Prominent board selector -- the market boards used to be tiny links buried at the
    bottom; this puts them up top as obvious tabs so the slate is one clear click away. #}
-<div class="card mb-24 panel-glow board-jump" style="border-color:rgba(45,212,191,0.30);">
+<style>
+  .board-jump{border-color:rgba(45,212,191,0.45)!important;
+    box-shadow:0 0 0 1px rgba(45,212,191,0.18), 0 12px 34px rgba(0,0,0,0.35);}
+  .board-jump .bj-kicker{display:flex;align-items:center;gap:8px;margin-bottom:14px;
+    font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);}
+  .board-jump-btn{flex:1 1 168px;text-align:center;padding:18px 16px 15px;border-radius:12px;
+    font:800 18px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.01em;line-height:1.1;}
+  .board-jump-btn .bj-sub{display:block;font:700 10.5px ui-monospace,Consolas,monospace;
+    letter-spacing:.06em;text-transform:uppercase;margin-top:5px;opacity:.85;}
+  /* the market NAME pops in accent on the outlined buttons; Game Lines is filled (primary) */
+  .board-jump-btn.btn-secondary{color:var(--accent);border-color:rgba(45,212,191,0.45);}
+  .board-jump-btn.btn-secondary .bj-sub{color:var(--text-muted);}
+  .board-jump-btn.bj-cfb{flex:0 1 130px;font-size:14px;color:var(--text-muted);}
+</style>
+<div class="card mb-24 panel-glow board-jump">
     <div class="p-16">
-        <div class="page-kicker" style="margin-bottom:10px;">Open today&rsquo;s board &mdash; tap a market</div>
-        <div class="board-jump-row" style="display:flex;flex-wrap:wrap;gap:10px;">
-            <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
-                Game Lines <span style="display:block;font-size:11px;font-weight:600;opacity:.8;margin-top:2px;">spreads &middot; start here</span>
+        <div class="bj-kicker">&#9656; Open today&rsquo;s board &mdash; tap a market</div>
+        <div class="board-jump-row" style="display:flex;flex-wrap:wrap;gap:12px;">
+            <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary board-jump-btn">
+                Game Lines <span class="bj-sub">spreads &middot; start here</span>
             </a>
-            <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
-                Totals <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">over / under</span>
+            <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn">
+                Totals <span class="bj-sub">over / under</span>
             </a>
-            <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
-                Streak Patterns <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">trends</span>
+            <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn">
+                Streak Patterns <span class="bj-sub">trends</span>
             </a>
-            <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn" style="flex:1 1 160px;text-align:center;padding:14px 16px;font-weight:800;">
-                Props <span style="display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px;">players</span>
+            <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn">
+                Props <span class="bj-sub">players</span>
             </a>
+            <a href="{{ other_sport_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary board-jump-btn bj-cfb">{{ other_sport_label }}</a>
         </div>
-        <div class="cell-meta" style="margin-top:10px;line-height:1.55;">Full detail (line movement, wind, model) lives under <strong style="color:var(--text-bright);">Game Lines</strong>. The slate below is the quick glance.</div>
+        <div class="cell-meta" style="margin-top:12px;line-height:1.55;">Full detail (line movement, wind, model) lives under <strong style="color:var(--accent);">Game Lines</strong>. The slate below is the quick glance.</div>
     </div>
 </div>
 
@@ -398,15 +413,8 @@
     </div>
 </div>
 
-<div class="card mb-24">
-    <div class="p-16" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-        <a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-primary btn-sm">Game Lines</a>
-        <a href="{{ totals_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Totals</a>
-        <a href="{{ trends_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Streak Patterns</a>
-        <a href="{{ props_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Props</a>
-        <a href="{{ other_sport_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm" style="margin-left:auto;">{{ other_sport_label }}</a>
-    </div>
-</div>
+{# The plain bottom market-nav row was removed -- the prominent board selector at the
+   top of the page (with highlighted labels) replaces it. #}
 
 {% if sport_title == 'College Football' and current_season_context %}
 <div id="college-roster-continuity" class="card mb-24 panel-glow" style="border-color: {% if current_season_context.state == 'ready' %}rgba(45,212,191,0.22){% elif current_season_context.state == 'partial' %}rgba(201,128,58,0.28){% else %}rgba(248,113,113,0.26){% endif %};">
