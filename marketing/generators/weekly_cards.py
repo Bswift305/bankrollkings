@@ -1096,6 +1096,66 @@ def card_nfl_parlays(week, out, stake=3.0):
     return c.save(out)
 
 
+def card_nfl_one_of_each(week, out):
+    """One pick from EVERY market we check, grouped by how much we trust it: validated
+    edges (PropScore, wind) on top, then situational (QB-out), then model leans, then a
+    spot (ATS wave). The whole board on one card. Period markets (1H/1Q/team) live on the
+    Period Board -- books post those near kickoff."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    gb = _app.build_nfl_game_board_context().get('board', [])
+    spots = [p for p in (_app.build_nfl_spots_context(limit=50).get('sp_top') or [])
+             if (p.get('prop_score') or 0) >= 10]
+    wv = _app.build_nfl_wave_watch_context()
+
+    def first(seq):
+        return seq[0] if seq else None
+    prop = first(spots)
+    wind = first([c for c in gb if c.get('flag') == 'WIND'])
+    qb = first([c for c in gb if 'QB out' in c.get('why', '')])
+    mtot = first([c for c in gb if c['market'] == 'Total' and c['tier'] == 'Model'])
+    spr = first([c for c in gb if c['market'] == 'Spread' and c.get('flag') != 'VOLATILE'])
+    ride = first(wv.get('wave_rides') or [])
+
+    rows = []  # (label, pick text, tier-color, tier-word)
+    if prop:
+        ln = prop.get('line'); ln = ('%g' % ln) if isinstance(ln, (int, float)) else ln
+        rows.append(("Player prop", f"{prop['player']} {prop['direction']} {ln} {prop['stat']}",
+                     GREEN, "VALIDATED", f"PropScore {prop['prop_score']}"))
+    if wind:
+        rows.append(("Wind under", wind['play'], GREEN, "VALIDATED", wind['why']))
+    if qb:
+        rows.append(("QB-out under", qb['play'], GOLD, "SITUATIONAL", qb['why']))
+    if mtot:
+        rows.append(("Game total", mtot['play'], FAINT, "MODEL", mtot['why']))
+    if spr:
+        rows.append(("Game spread", spr['play'], FAINT, "MODEL", spr['why']))
+    if ride:
+        rows.append(("ATS wave", f"{ride['team']} {'%+g' % ride['spread']} vs {ride['opp']}",
+                     AMBER, "SPOT", f"{ride['ats']} ATS, model agrees +{ride['edge']}"))
+
+    rh = 74
+    H = 250 + 60 + len(rows) * (rh + 10) + 110
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — ONE OF EACH", chip="EVERY MARKET")
+    c.text(M, y, "One pick from every market we check, ordered by how much we trust it.", F['de'], DIM)
+    y += 34
+    for label, pick, col, tier, why in rows:
+        d.rounded_rectangle([(M, y), (W - M, y + rh)], radius=12, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 9, y + rh)], radius=5, fill=col)
+        c.text(M + 26, y + 11, label.upper(), F['de'], FAINT)
+        c.text(W - M - 16, y + 11, tier, F['ft'], col, right=True)
+        c.text(M + 26, y + 30, pick, F['pl'], INK)
+        c.text(M + 26, y + 54, why, F['ft'], FAINT)
+        y += rh + 10
+    c.text(M, y, f"Live board {_stamp()}.  Green = validated · gold = situational · "
+                 f"grey = model · amber = spot.", F['ftb'], DIM); y += 28
+    c.text(M, y, "1H/1Q & team totals are on the Period Board (books post those near kickoff). "
+                 "Spots, not locks. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_nfl_game_board(week, out):
     """NFL Game Board card: every spread + total this week ranked best-to-worst by model
     edge (build_nfl_game_board_context). Game lines only, no props. Honest: NFL has no
@@ -1544,6 +1604,8 @@ def main():
         made.append(card_nfl_singles(args.week, str(out_dir / 'bk_nfl_singles.png')))
     if 'nflparlays' in want:
         made.append(card_nfl_parlays(args.week, str(out_dir / 'bk_nfl_parlays.png')))
+    if 'nfloneofeach' in want:
+        made.append(card_nfl_one_of_each(args.week, str(out_dir / 'bk_nfl_one_of_each.png')))
     if 'cfbtop20' in want:
         made.append(card_cfb_top20(args.week, str(out_dir / 'bk_cfb_top20.png')))
     if 'cfbbygame' in want:
