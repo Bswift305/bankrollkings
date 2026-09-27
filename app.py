@@ -40748,15 +40748,17 @@ def _nfl_player_team_pos():
     return _NFL_ROSTER_MAP.get('map', {})
 
 
-def _nfl_qb_out_impact(cat, pos):
-    """How a starting-QB-out reshapes a teammate's prop: pass-catchers downgrade, RBs get
-    a run-heavier volume bump, the backup QB is volatile."""
+def _nfl_qb_out_impact(cat, pos, backup_im):
+    """How a starting-QB-out reshapes a teammate's prop, WEIGHTED by who the backup is
+    (nfl_backup): a gunslinger keeps WR volume up, a game-manager craters it."""
+    if not backup_im:
+        return None
     if cat == 'Receiving':
-        return {'dir': 'down', 'note': 'QB out — backup lowers target quality'}
+        return backup_im.get('wr')
     if cat == 'Rushing' and pos in ('RB', 'FB'):
-        return {'dir': 'up', 'note': 'QB out — run-heavier script, volume up'}
+        return backup_im.get('rb')
     if cat == 'QB':
-        return {'dir': 'backup', 'note': 'backup QB — volatile, fresh line'}
+        return backup_im.get('qb')
     return None
 
 
@@ -40776,14 +40778,14 @@ def _nfl_game_prop_menu(away, home, props_df):
         import nfl_defense_form as _ndf
     except Exception:
         _ndf = None
-    # teams with their starting QB out -> reshape teammate props
-    qb_out_teams = set()
+    # teams with their starting QB out -> reshape teammate props, weighted by the backup
+    qb_out_teams = {}  # abbr -> backup impact
     try:
-        import nfl_totals as _nt, nfl_current_form as _ncf
+        import nfl_totals as _nt, nfl_current_form as _ncf, nfl_backup as _nb
         for full in (away, home):
             ab = _ncf.resolve(full)
             if _nt.qb_out(ab):
-                qb_out_teams.add(ab)
+                qb_out_teams[ab] = _nb.impact(ab)
     except Exception:
         pass
     p2tp = _nfl_player_team_pos() if qb_out_teams else {}
@@ -40802,7 +40804,7 @@ def _nfl_game_prop_menu(away, home, props_df):
         if qb_out_teams:
             team, pos = p2tp.get(str(pl).strip().lower(), (None, None))
             if team in qb_out_teams:
-                leg['inj'] = _nfl_qb_out_impact(cat, pos)
+                leg['inj'] = _nfl_qb_out_impact(cat, pos, qb_out_teams[team])
         legs_by_cat.setdefault(cat, []).append(leg)
     order = [c for c, _ in _SGP_CATEGORY] + ['Other']
     out = []

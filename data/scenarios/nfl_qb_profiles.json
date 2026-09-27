@@ -1,0 +1,771 @@
+{
+  "updated": "2026-09-27 10:19 UTC",
+  "seasons": [
+    2024,
+    2025,
+    2026
+  ],
+  "n": 95,
+  "qbs": {
+    "Aaron Rodgers": {
+      "att_pg": 33.2,
+      "ypa": 6.51,
+      "int_rate": 1.7,
+      "rush_pg": 1.3,
+      "games": 36,
+      "team": "PIT"
+    },
+    "Aidan O'Connell": {
+      "att_pg": 26.5,
+      "ypa": 6.47,
+      "int_rate": 1.5,
+      "rush_pg": 2.2,
+      "games": 10,
+      "team": "LV"
+    },
+    "Andy Dalton": {
+      "att_pg": 21.9,
+      "ypa": 6.51,
+      "int_rate": 3.6,
+      "rush_pg": 1.7,
+      "games": 9,
+      "team": "CAR"
+    },
+    "Anthony Richardson": {
+      "att_pg": 22.2,
+      "ypa": 6.85,
+      "int_rate": 4.5,
+      "rush_pg": 7.2,
+      "games": 12,
+      "team": "IND"
+    },
+    "Baker Mayfield": {
+      "att_pg": 32.2,
+      "ypa": 7.36,
+      "int_rate": 2.3,
+      "rush_pg": 3.5,
+      "games": 37,
+      "team": "TB"
+    },
+    "Bo Nix": {
+      "att_pg": 34.4,
+      "ypa": 6.55,
+      "int_rate": 2.0,
+      "rush_pg": 5.2,
+      "games": 38,
+      "team": "DEN"
+    },
+    "Brady Cook": {
+      "att_pg": 30.6,
+      "ypa": 4.83,
+      "int_rate": 4.6,
+      "rush_pg": 2.6,
+      "games": 5,
+      "team": "NYJ"
+    },
+    "Brandon Allen": {
+      "att_pg": 20.0,
+      "ypa": 4.52,
+      "int_rate": 5.0,
+      "rush_pg": 0.7,
+      "games": 3,
+      "team": "TEN"
+    },
+    "Brock Purdy": {
+      "att_pg": 30.5,
+      "ypa": 8.12,
+      "int_rate": 3.0,
+      "rush_pg": 4.3,
+      "games": 28,
+      "team": "SF"
+    },
+    "Bryan Anger": {
+      "att_pg": 1.0,
+      "ypa": 2.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "DAL"
+    },
+    "Bryce Young": {
+      "att_pg": 29.5,
+      "ypa": 6.49,
+      "int_rate": 2.3,
+      "rush_pg": 3.1,
+      "games": 33,
+      "team": "CAR"
+    },
+    "C.J. Stroud": {
+      "att_pg": 32.1,
+      "ypa": 7.06,
+      "int_rate": 2.2,
+      "rush_pg": 3.2,
+      "games": 37,
+      "team": "HOU"
+    },
+    "Caleb Williams": {
+      "att_pg": 33.6,
+      "ypa": 6.67,
+      "int_rate": 1.5,
+      "rush_pg": 4.8,
+      "games": 38,
+      "team": "CHI"
+    },
+    "Cam Ward": {
+      "att_pg": 31.2,
+      "ypa": 5.9,
+      "int_rate": 1.2,
+      "rush_pg": 2.5,
+      "games": 19,
+      "team": "TEN"
+    },
+    "Carson Wentz": {
+      "att_pg": 25.2,
+      "ypa": 7.09,
+      "int_rate": 2.2,
+      "rush_pg": 2.4,
+      "games": 9,
+      "team": "MIN"
+    },
+    "Chris Oladokun": {
+      "att_pg": 18.3,
+      "ypa": 4.27,
+      "int_rate": 0.0,
+      "rush_pg": 1.7,
+      "games": 3,
+      "team": "KC"
+    },
+    "Clayton Tune": {
+      "att_pg": 5.7,
+      "ypa": 2.94,
+      "int_rate": 5.9,
+      "rush_pg": 2.0,
+      "games": 3,
+      "team": "GB"
+    },
+    "Cooper Rush": {
+      "att_pg": 24.9,
+      "ypa": 5.95,
+      "int_rate": 3.3,
+      "rush_pg": 1.8,
+      "games": 16,
+      "team": "ATL"
+    },
+    "Courtland Sutton": {
+      "att_pg": 1.0,
+      "ypa": 15.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "DEN"
+    },
+    "DJ Moore": {
+      "att_pg": 1.0,
+      "ypa": 1.0,
+      "int_rate": 0.0,
+      "rush_pg": 1.0,
+      "games": 2,
+      "team": "CHI"
+    },
+    "Dak Prescott": {
+      "att_pg": 35.2,
+      "ypa": 7.34,
+      "int_rate": 2.0,
+      "rush_pg": 2.7,
+      "games": 27,
+      "team": "DAL"
+    },
+    "Daniel Jones": {
+      "att_pg": 31.5,
+      "ypa": 7.05,
+      "int_rate": 2.2,
+      "rush_pg": 4.6,
+      "games": 25,
+      "team": "IND"
+    },
+    "David Montgomery": {
+      "att_pg": 1.0,
+      "ypa": 6.5,
+      "int_rate": 0.0,
+      "rush_pg": 10.5,
+      "games": 4,
+      "team": "DET"
+    },
+    "Davis Mills": {
+      "att_pg": 19.5,
+      "ypa": 5.78,
+      "int_rate": 0.5,
+      "rush_pg": 1.6,
+      "games": 10,
+      "team": "HOU"
+    },
+    "Derek Carr": {
+      "att_pg": 27.9,
+      "ypa": 7.69,
+      "int_rate": 1.8,
+      "rush_pg": 1.7,
+      "games": 10,
+      "team": "NO"
+    },
+    "Deshaun Watson": {
+      "att_pg": 29.8,
+      "ypa": 5.94,
+      "int_rate": 1.5,
+      "rush_pg": 4.9,
+      "games": 9,
+      "team": "CLE"
+    },
+    "Desmond Ridder": {
+      "att_pg": 17.0,
+      "ypa": 5.39,
+      "int_rate": 2.4,
+      "rush_pg": 1.8,
+      "games": 5,
+      "team": "LV"
+    },
+    "Dillon Gabriel": {
+      "att_pg": 20.6,
+      "ypa": 5.06,
+      "int_rate": 1.1,
+      "rush_pg": 1.6,
+      "games": 9,
+      "team": "CLE"
+    },
+    "Dorian Thompson-Robinson": {
+      "att_pg": 19.7,
+      "ypa": 3.73,
+      "int_rate": 5.1,
+      "rush_pg": 3.5,
+      "games": 6,
+      "team": "CLE"
+    },
+    "Drake Maye": {
+      "att_pg": 27.9,
+      "ypa": 7.84,
+      "int_rate": 2.6,
+      "rush_pg": 5.5,
+      "games": 36,
+      "team": "NE"
+    },
+    "Drew Lock": {
+      "att_pg": 23.2,
+      "ypa": 6.5,
+      "int_rate": 2.2,
+      "rush_pg": 2.1,
+      "games": 10,
+      "team": "SEA"
+    },
+    "Dyami Brown": {
+      "att_pg": 1.0,
+      "ypa": 0.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.5,
+      "games": 2,
+      "team": "WAS"
+    },
+    "Gardner Minshew": {
+      "att_pg": 26.6,
+      "ypa": 6.43,
+      "int_rate": 3.4,
+      "rush_pg": 1.7,
+      "games": 12,
+      "team": "KC"
+    },
+    "Geno Smith": {
+      "att_pg": 32.1,
+      "ypa": 7.16,
+      "int_rate": 2.9,
+      "rush_pg": 3.1,
+      "games": 34,
+      "team": "NYJ"
+    },
+    "Gunner Olszewski": {
+      "att_pg": 1.0,
+      "ypa": 16.5,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "NYG"
+    },
+    "Hendon Hooker": {
+      "att_pg": 3.0,
+      "ypa": 6.89,
+      "int_rate": 0.0,
+      "rush_pg": 1.7,
+      "games": 3,
+      "team": "DET"
+    },
+    "J.J. McCarthy": {
+      "att_pg": 24.3,
+      "ypa": 6.72,
+      "int_rate": 4.9,
+      "rush_pg": 3.7,
+      "games": 10,
+      "team": "MIN"
+    },
+    "Jacoby Brissett": {
+      "att_pg": 32.3,
+      "ypa": 6.42,
+      "int_rate": 1.4,
+      "rush_pg": 2.7,
+      "games": 22,
+      "team": "ARI"
+    },
+    "Jake Browning": {
+      "att_pg": 25.0,
+      "ypa": 6.17,
+      "int_rate": 6.4,
+      "rush_pg": 1.8,
+      "games": 5,
+      "team": "CIN"
+    },
+    "Jake Haener": {
+      "att_pg": 7.8,
+      "ypa": 5.79,
+      "int_rate": 2.6,
+      "rush_pg": 1.0,
+      "games": 5,
+      "team": "NO"
+    },
+    "Jalen Hurts": {
+      "att_pg": 26.4,
+      "ypa": 7.47,
+      "int_rate": 1.4,
+      "rush_pg": 8.1,
+      "games": 38,
+      "team": "PHI"
+    },
+    "Jameis Winston": {
+      "att_pg": 29.9,
+      "ypa": 7.2,
+      "int_rate": 3.9,
+      "rush_pg": 2.3,
+      "games": 13,
+      "team": "NYG"
+    },
+    "Jared Goff": {
+      "att_pg": 33.4,
+      "ypa": 8.14,
+      "int_rate": 1.9,
+      "rush_pg": 1.6,
+      "games": 37,
+      "team": "DET"
+    },
+    "Jaxson Dart": {
+      "att_pg": 26.6,
+      "ypa": 6.76,
+      "int_rate": 1.3,
+      "rush_pg": 6.8,
+      "games": 14,
+      "team": "NYG"
+    },
+    "Jayden Daniels": {
+      "att_pg": 28.7,
+      "ypa": 7.1,
+      "int_rate": 1.6,
+      "rush_pg": 8.7,
+      "games": 29,
+      "team": "WAS"
+    },
+    "Joe Burrow": {
+      "att_pg": 36.2,
+      "ypa": 7.36,
+      "int_rate": 1.5,
+      "rush_pg": 2.3,
+      "games": 27,
+      "team": "CIN"
+    },
+    "Joe Flacco": {
+      "att_pg": 34.9,
+      "ypa": 6.39,
+      "int_rate": 2.6,
+      "rush_pg": 1.5,
+      "games": 19,
+      "team": "CIN"
+    },
+    "Joe Milton III": {
+      "att_pg": 10.6,
+      "ypa": 8.0,
+      "int_rate": 3.8,
+      "rush_pg": 3.0,
+      "games": 5,
+      "team": "DAL"
+    },
+    "Johnny Hekker": {
+      "att_pg": 1.0,
+      "ypa": 0.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "CAR"
+    },
+    "Jordan Love": {
+      "att_pg": 30.5,
+      "ypa": 7.64,
+      "int_rate": 2.1,
+      "rush_pg": 2.2,
+      "games": 35,
+      "team": "GB"
+    },
+    "Josh Allen": {
+      "att_pg": 29.7,
+      "ypa": 7.91,
+      "int_rate": 1.6,
+      "rush_pg": 7.3,
+      "games": 39,
+      "team": "BUF"
+    },
+    "Josh Johnson": {
+      "att_pg": 11.4,
+      "ypa": 6.82,
+      "int_rate": 3.5,
+      "rush_pg": 2.4,
+      "games": 5,
+      "team": "WAS"
+    },
+    "Joshua Dobbs": {
+      "att_pg": 9.5,
+      "ypa": 7.47,
+      "int_rate": 3.5,
+      "rush_pg": 3.2,
+      "games": 6,
+      "team": "NE"
+    },
+    "Justin Fields": {
+      "att_pg": 21.5,
+      "ypa": 6.46,
+      "int_rate": 0.5,
+      "rush_pg": 7.6,
+      "games": 17,
+      "team": "NYJ"
+    },
+    "Justin Herbert": {
+      "att_pg": 30.6,
+      "ypa": 7.41,
+      "int_rate": 2.0,
+      "rush_pg": 4.6,
+      "games": 37,
+      "team": "LAC"
+    },
+    "Kedon Slovis": {
+      "att_pg": 1.0,
+      "ypa": -1.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "ARI"
+    },
+    "Kenny Pickett": {
+      "att_pg": 7.4,
+      "ypa": 5.38,
+      "int_rate": 3.4,
+      "rush_pg": 1.3,
+      "games": 12,
+      "team": "CAR"
+    },
+    "Kirk Cousins": {
+      "att_pg": 30.0,
+      "ypa": 7.22,
+      "int_rate": 3.1,
+      "rush_pg": 1.8,
+      "games": 26,
+      "team": "LV"
+    },
+    "Kyle Allen": {
+      "att_pg": 1.5,
+      "ypa": 6.33,
+      "int_rate": 0.0,
+      "rush_pg": 0.5,
+      "games": 2,
+      "team": "DET"
+    },
+    "Kyler Murray": {
+      "att_pg": 30.7,
+      "ypa": 6.83,
+      "int_rate": 2.1,
+      "rush_pg": 4.7,
+      "games": 23,
+      "team": "MIN"
+    },
+    "Lamar Jackson": {
+      "att_pg": 25.8,
+      "ypa": 8.78,
+      "int_rate": 1.5,
+      "rush_pg": 7.0,
+      "games": 34,
+      "team": "BAL"
+    },
+    "Mac Jones": {
+      "att_pg": 29.2,
+      "ypa": 6.9,
+      "int_rate": 2.5,
+      "rush_pg": 3.0,
+      "games": 19,
+      "team": "SF"
+    },
+    "Malik Willis": {
+      "att_pg": 11.6,
+      "ypa": 9.99,
+      "int_rate": 0.7,
+      "rush_pg": 4.2,
+      "games": 12,
+      "team": "MIA"
+    },
+    "Marcus Mariota": {
+      "att_pg": 20.5,
+      "ypa": 7.56,
+      "int_rate": 2.4,
+      "rush_pg": 4.9,
+      "games": 14,
+      "team": "WAS"
+    },
+    "Mason Rudolph": {
+      "att_pg": 20.1,
+      "ypa": 6.53,
+      "int_rate": 3.9,
+      "rush_pg": 2.1,
+      "games": 14,
+      "team": "PIT"
+    },
+    "Matthew Stafford": {
+      "att_pg": 34.0,
+      "ypa": 7.66,
+      "int_rate": 1.4,
+      "rush_pg": 1.9,
+      "games": 40,
+      "team": "LA"
+    },
+    "Max Brosmer": {
+      "att_pg": 11.8,
+      "ypa": 4.62,
+      "int_rate": 5.6,
+      "rush_pg": 1.0,
+      "games": 6,
+      "team": "MIN"
+    },
+    "Michael Penix Jr.": {
+      "att_pg": 27.1,
+      "ypa": 7.42,
+      "int_rate": 1.7,
+      "rush_pg": 2.0,
+      "games": 15,
+      "team": "ATL"
+    },
+    "Mitchell Trubisky": {
+      "att_pg": 7.6,
+      "ypa": 8.07,
+      "int_rate": 0.0,
+      "rush_pg": 2.4,
+      "games": 8,
+      "team": "BUF"
+    },
+    "Nick Mullens": {
+      "att_pg": 1.2,
+      "ypa": 11.4,
+      "int_rate": 0.0,
+      "rush_pg": 1.5,
+      "games": 4,
+      "team": "JAX"
+    },
+    "Patrick Mahomes": {
+      "att_pg": 35.4,
+      "ypa": 7.06,
+      "int_rate": 2.0,
+      "rush_pg": 4.4,
+      "games": 35,
+      "team": "KC"
+    },
+    "Philip Rivers": {
+      "att_pg": 30.7,
+      "ypa": 5.91,
+      "int_rate": 3.3,
+      "rush_pg": 0.7,
+      "games": 3,
+      "team": "IND"
+    },
+    "Quinn Ewers": {
+      "att_pg": 20.8,
+      "ypa": 7.49,
+      "int_rate": 3.6,
+      "rush_pg": 2.0,
+      "games": 4,
+      "team": "MIA"
+    },
+    "Riley Dixon": {
+      "att_pg": 1.0,
+      "ypa": 9.0,
+      "int_rate": 0.0,
+      "rush_pg": 0.0,
+      "games": 2,
+      "team": "DEN"
+    },
+    "Riley Leonard": {
+      "att_pg": 13.4,
+      "ypa": 6.19,
+      "int_rate": 4.5,
+      "rush_pg": 1.2,
+      "games": 5,
+      "team": "IND"
+    },
+    "Russell Wilson": {
+      "att_pg": 26.9,
+      "ypa": 7.4,
+      "int_rate": 1.7,
+      "rush_pg": 3.6,
+      "games": 18,
+      "team": "NYG"
+    },
+    "Sam Darnold": {
+      "att_pg": 29.6,
+      "ypa": 8.05,
+      "int_rate": 2.3,
+      "rush_pg": 2.8,
+      "games": 39,
+      "team": "SEA"
+    },
+    "Shedeur Sanders": {
+      "att_pg": 26.5,
+      "ypa": 6.6,
+      "int_rate": 4.7,
+      "rush_pg": 2.6,
+      "games": 8,
+      "team": "CLE"
+    },
+    "Skylar Thompson": {
+      "att_pg": 16.5,
+      "ypa": 5.67,
+      "int_rate": 0.0,
+      "rush_pg": 0.5,
+      "games": 2,
+      "team": "MIA"
+    },
+    "Spencer Rattler": {
+      "att_pg": 30.3,
+      "ypa": 5.99,
+      "int_rate": 2.1,
+      "rush_pg": 3.1,
+      "games": 16,
+      "team": "NO"
+    },
+    "Tanner McKee": {
+      "att_pg": 22.0,
+      "ypa": 6.78,
+      "int_rate": 1.1,
+      "rush_pg": 2.0,
+      "games": 4,
+      "team": "PHI"
+    },
+    "Taylor Heinicke": {
+      "att_pg": 1.7,
+      "ypa": 5.6,
+      "int_rate": 0.0,
+      "rush_pg": 0.3,
+      "games": 3,
+      "team": "LAC"
+    },
+    "Taysom Hill": {
+      "att_pg": 1.2,
+      "ypa": 7.8,
+      "int_rate": 10.0,
+      "rush_pg": 6.9,
+      "games": 8,
+      "team": "NO"
+    },
+    "Teddy Bridgewater": {
+      "att_pg": 8.0,
+      "ypa": 4.06,
+      "int_rate": 0.0,
+      "rush_pg": 0.5,
+      "games": 2,
+      "team": "TB"
+    },
+    "Tim Boyle": {
+      "att_pg": 16.7,
+      "ypa": 5.52,
+      "int_rate": 2.0,
+      "rush_pg": 1.0,
+      "games": 3,
+      "team": "NYG"
+    },
+    "Tommy DeVito": {
+      "att_pg": 22.0,
+      "ypa": 5.84,
+      "int_rate": 0.0,
+      "rush_pg": 4.0,
+      "games": 2,
+      "team": "NYG"
+    },
+    "Trevor Lawrence": {
+      "att_pg": 30.9,
+      "ypa": 7.23,
+      "int_rate": 2.4,
+      "rush_pg": 3.9,
+      "games": 30,
+      "team": "JAX"
+    },
+    "Trey Lance": {
+      "att_pg": 14.0,
+      "ypa": 5.02,
+      "int_rate": 2.0,
+      "rush_pg": 3.9,
+      "games": 7,
+      "team": "LAC"
+    },
+    "Tua Tagovailoa": {
+      "att_pg": 31.3,
+      "ypa": 7.06,
+      "int_rate": 2.8,
+      "rush_pg": 1.5,
+      "games": 25,
+      "team": "MIA"
+    },
+    "Tyler Huntley": {
+      "att_pg": 22.2,
+      "ypa": 6.28,
+      "int_rate": 1.5,
+      "rush_pg": 5.2,
+      "games": 9,
+      "team": "BAL"
+    },
+    "Tyler Shough": {
+      "att_pg": 32.1,
+      "ypa": 7.3,
+      "int_rate": 1.9,
+      "rush_pg": 4.5,
+      "games": 13,
+      "team": "NO"
+    },
+    "Tyrod Taylor": {
+      "att_pg": 19.5,
+      "ypa": 5.76,
+      "int_rate": 3.2,
+      "rush_pg": 3.8,
+      "games": 8,
+      "team": "NYJ"
+    },
+    "Tyson Bagent": {
+      "att_pg": 3.0,
+      "ypa": 7.47,
+      "int_rate": 0.0,
+      "rush_pg": 0.4,
+      "games": 5,
+      "team": "CHI"
+    },
+    "Will Levis": {
+      "att_pg": 25.1,
+      "ypa": 6.95,
+      "int_rate": 4.0,
+      "rush_pg": 3.8,
+      "games": 12,
+      "team": "TEN"
+    },
+    "Zach Wilson": {
+      "att_pg": 3.7,
+      "ypa": 2.91,
+      "int_rate": 0.0,
+      "rush_pg": 0.3,
+      "games": 3,
+      "team": "MIA"
+    }
+  }
+}

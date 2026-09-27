@@ -125,10 +125,20 @@ def projected_total(away: str, home: str, apply_qb_veto: bool = True) -> dict | 
         return None
     a_off, h_off = off[a], off[h]
     a_out, h_out = qb_out(a), qb_out(h)
+
+    def _penalty(team):
+        try:
+            import nfl_backup
+            im = nfl_backup.impact(team)
+            if im:
+                return im["total_penalty"]  # backup-weighted (gunslinger < game-manager)
+        except Exception:
+            pass
+        return QB_OUT_PENALTY
     if apply_qb_veto and a_out:
-        a_off -= QB_OUT_PENALTY
+        a_off -= _penalty(a)
     if apply_qb_veto and h_out:
-        h_off -= QB_OUT_PENALTY
+        h_off -= _penalty(h)
     a_pts = a_off + deff[h] - lp
     h_pts = h_off + deff[a] - lp
     return {"total": round(a_pts + h_pts, 1),
