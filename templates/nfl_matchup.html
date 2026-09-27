@@ -79,6 +79,11 @@
   .mu-wk-sgp .sgp-lean{font:800 8.5px ui-monospace,monospace;border-radius:3px;padding:0 3px;vertical-align:middle;}
   .mu-wk-sgp .sgp-lean.over{color:#0b1118;background:#4ed48a;}
   .mu-wk-sgp .sgp-lean.under{color:#0b1118;background:#ff6f7e;}
+  .mu-wk-sgp .sgp-inj{font:800 9px ui-monospace,monospace;border-radius:3px;padding:0 3px;vertical-align:middle;}
+  .mu-wk-sgp .sgp-inj.down{color:#0b1118;background:#ff9f6a;}
+  .mu-wk-sgp .sgp-inj.up{color:#0b1118;background:#ffd166;}
+  .mu-wk-sgp .sgp-inj.backup{color:#0b1118;background:#8a94a6;}
+  .mu-wk-sgp .sgp-leg.inj-down{border-color:rgba(255,159,106,.4);}
 </style>
 
 <div class="mu-wrap">
@@ -166,7 +171,7 @@
             <div class="sgp-grp">
               <div class="sgp-cat">{{ grp.cat }} <span>{{ grp.legs|length }}</span></div>
               {% for l in grp.legs %}
-              <span class="sgp-leg">{% if l.lean %}<span class="sgp-lean {{ l.lean|lower }}">{{ l.lean }}</span> {% endif %}{{ l.player }} <em>{{ l.stat }} {{ '%g'|format(l.line) }}</em></span>
+              <span class="sgp-leg{% if l.inj %} inj-{{ l.inj.dir }}{% endif %}">{% if l.lean %}<span class="sgp-lean {{ l.lean|lower }}">{{ l.lean }}</span> {% endif %}{% if l.inj %}<span class="sgp-inj {{ l.inj.dir }}">{% if l.inj.dir=='down' %}&darr;{% elif l.inj.dir=='up' %}&uarr;{% else %}QB{% endif %}</span> {% endif %}{{ l.player }} <em>{{ l.stat }} {{ '%g'|format(l.line) }}</em></span>
               {% endfor %}
             </div>
             {% endfor %}

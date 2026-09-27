@@ -40727,9 +40727,43 @@ def _sgp_category(stat):
     return 'Other'
 
 
+_NFL_ROSTER_MAP = {}
+
+
+def _nfl_player_team_pos():
+    """player(lower) -> (team_abbr, position) from the current roster, mtime-cached."""
+    path = DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _NFL_ROSTER_MAP.get('mtime') != mtime:
+        try:
+            r = _load_cached_csv(path)
+            _NFL_ROSTER_MAP['map'] = {str(p).strip().lower(): (str(t).strip().upper(), str(pos).strip().upper())
+                                      for p, t, pos in zip(r['Player'], r['CurrentTeam'], r['Position'])}
+            _NFL_ROSTER_MAP['mtime'] = mtime
+        except Exception:
+            return {}
+    return _NFL_ROSTER_MAP.get('map', {})
+
+
+def _nfl_qb_out_impact(cat, pos):
+    """How a starting-QB-out reshapes a teammate's prop: pass-catchers downgrade, RBs get
+    a run-heavier volume bump, the backup QB is volatile."""
+    if cat == 'Receiving':
+        return {'dir': 'down', 'note': 'QB out — backup lowers target quality'}
+    if cat == 'Rushing' and pos in ('RB', 'FB'):
+        return {'dir': 'up', 'note': 'QB out — run-heavier script, volume up'}
+    if cat == 'QB':
+        return {'dir': 'backup', 'note': 'backup QB — volatile, fresh line'}
+    return None
+
+
 def _nfl_game_prop_menu(away, home, props_df):
     """The full per-game player-prop menu for SGP building -- every leg on the board,
-    grouped by category, with our tackle-volume lean tagged on the defensive legs.
+    grouped by category, with our tackle-volume lean tagged on the defensive legs and a
+    QB-out flag on teammates when a team's starting QB is out.
     'Every option on the table' in one place."""
     if props_df is None or props_df.empty:
         return []
@@ -40742,6 +40776,17 @@ def _nfl_game_prop_menu(away, home, props_df):
         import nfl_defense_form as _ndf
     except Exception:
         _ndf = None
+    # teams with their starting QB out -> reshape teammate props
+    qb_out_teams = set()
+    try:
+        import nfl_totals as _nt, nfl_current_form as _ncf
+        for full in (away, home):
+            ab = _ncf.resolve(full)
+            if _nt.qb_out(ab):
+                qb_out_teams.add(ab)
+    except Exception:
+        pass
+    p2tp = _nfl_player_team_pos() if qb_out_teams else {}
     # consensus line per player+stat
     legs_by_cat = {}
     for (pl, st), grp in gm.groupby(['Player', 'Stat']):
@@ -40749,11 +40794,15 @@ def _nfl_game_prop_menu(away, home, props_df):
         if pd.isna(line):
             continue
         cat = _sgp_category(st)
-        leg = {'player': pl, 'stat': st, 'line': float(line), 'lean': None}
+        leg = {'player': pl, 'stat': st, 'line': float(line), 'lean': None, 'inj': None}
         if _ndf is not None and cat == 'Defense' and ('Tackle' in st or 'Solo' in st or 'Assist' in st):
             rd = _ndf.tackle_lean(pl, st, float(line))
             if rd and rd['lean'] != 'COIN FLIP':
                 leg['lean'] = rd['lean']
+        if qb_out_teams:
+            team, pos = p2tp.get(str(pl).strip().lower(), (None, None))
+            if team in qb_out_teams:
+                leg['inj'] = _nfl_qb_out_impact(cat, pos)
         legs_by_cat.setdefault(cat, []).append(leg)
     order = [c for c, _ in _SGP_CATEGORY] + ['Other']
     out = []
