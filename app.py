@@ -41239,6 +41239,75 @@ def nfl_game_board_tool():
     return render_template('nfl_game_board.html', **build_nfl_game_board_context())
 
 
+_NFL_PERIOD_BOARD_CACHE = {}
+
+
+def build_nfl_period_board_context():
+    """NFL Period board: the first-half and first-quarter lines plus team totals that we
+    capture near kickoff (fetch_football_first_half.py -> data/odds/NFL_FirstHalf.csv),
+    shown next to each game with the FULL-GAME model read as context. Honest: books post
+    these late, and we have no validated 1H/1Q model -- so these are the numbers to shop
+    and a full-game reference, not a period edge. Only upcoming games are shown."""
+    import nfl_totals as _nt, nfl_current_form as _ncf
+    path = DATA_DIR / 'odds' / 'NFL_FirstHalf.csv'
+    sig = os.path.getmtime(path) if path.exists() else 0
+    sig = (sig, os.path.getmtime(os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'))
+           if os.path.exists(os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json')) else 0)
+    if _NFL_PERIOD_BOARD_CACHE.get('sig') == sig:
+        return _NFL_PERIOD_BOARD_CACHE['data']
+    _nt.clear_cache()
+    df = _load_cached_csv(path, default=pd.DataFrame()) if path.exists() else pd.DataFrame()
+    games = []
+    if not df.empty and 'Date' in df.columns:
+        today = sports_today_date()
+        full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
+        for _, r in df.iterrows():
+            try:
+                gd = pd.to_datetime(r.get('Date'), errors='coerce')
+                if pd.isna(gd) or gd.date() < today:
+                    continue  # only upcoming games
+            except Exception:
+                continue
+            a, h = str(r.get('Away') or ''), str(r.get('Home') or '')
+            aa, ha = _ncf.resolve(a), _ncf.resolve(h)
+
+            def _n(v):
+                try:
+                    f = float(v)
+                    return None if pd.isna(f) else f
+                except (TypeError, ValueError):
+                    return None
+            pt = _nt.projected_total(aa, ha)
+            pm = _nt.projected_margin(aa, ha)
+            games.append({
+                'away': full2abbr.get(a, aa), 'home': full2abbr.get(h, ha),
+                'date': str(r.get('Date') or ''), 'time': str(r.get('Time') or ''),
+                'spread_h1': _n(r.get('SpreadH1')), 'total_h1': _n(r.get('TotalH1')),
+                'spread_q1': _n(r.get('SpreadQ1')), 'total_q1': _n(r.get('TotalQ1')),
+                'tt_away': _n(r.get('TeamTotalAway')), 'tt_home': _n(r.get('TeamTotalHome')),
+                'books': _n(r.get('Books')),
+                'proj_total': (pt or {}).get('total'), 'proj_margin': pm,
+                # full-game model split as CONTEXT only (~52% of scoring lands in the 1H,
+                # ~23% in the 1Q) -- a reference for eyeballing the posted number, not a model edge
+                'ctx_h1_total': round((pt or {}).get('total') * 0.52, 1) if pt else None,
+                'ctx_q1_total': round((pt or {}).get('total') * 0.23, 1) if pt else None,
+                'ctx_h1_margin': round(pm * 0.5, 1) if pm is not None else None,
+            })
+        games.sort(key=lambda x: (x['date'], x['time']))
+    data = {'games': games, 'period_available': bool(games),
+            'period_updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_PERIOD_BOARD_CACHE['sig'] = sig
+    _NFL_PERIOD_BOARD_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/nfl-period-board')
+def nfl_period_board_tool():
+    """Quick Tool: NFL Period Board — 1st-half / 1st-quarter lines and team totals for
+    each game, with the full-game model read as context. Lines to shop, not a 1H edge."""
+    return render_template('nfl_period_board.html', **build_nfl_period_board_context())
+
+
 _NFL_WAVE_CACHE = {}
 
 

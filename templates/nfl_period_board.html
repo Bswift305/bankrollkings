@@ -1,0 +1,76 @@
+{% set active_page = 'nfl_period_board' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Period Board - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .pb-wrap{--pb-accent:#3fbf7f;max-width:760px;}
+  .pb-blurb{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:8px 0 16px;}
+  .pb-blurb b{color:var(--text);}
+  .pb-empty{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:linear-gradient(180deg,rgba(63,191,127,.06),transparent);border:1px dashed var(--border);
+    border-radius:12px;padding:16px 18px;}
+  .pb-empty b{color:var(--text-bright);}
+  .pb-game{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:14px;}
+  .pb-head{display:flex;align-items:baseline;gap:10px;padding:13px 16px 11px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .pb-match{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .pb-when{font:600 11px ui-monospace,Consolas,monospace;color:var(--text-muted);margin-left:auto;}
+  .pb-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:rgba(255,255,255,.05);}
+  @media (min-width:560px){ .pb-grid{grid-template-columns:repeat(4,1fr);} }
+  .pb-cell{background:var(--panel,#0f1a29);padding:11px 14px;}
+  .pb-cell .k{font:700 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);}
+  .pb-cell .v{font:800 16px ui-monospace,Consolas,monospace;color:var(--text-bright);margin-top:3px;}
+  .pb-cell .v small{font:600 10px ui-monospace,monospace;color:var(--text-muted);}
+  .pb-cell.dim .v{color:var(--text-muted);}
+  .pb-ctx{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);
+    font:600 11px/1.4 ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .pb-ctx b{color:var(--text);} .pb-ctx .tag{color:var(--pb-accent);font-weight:800;letter-spacing:.03em;text-transform:uppercase;font-size:9.5px;}
+  .pb-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:16px;}
+</style>
+
+<div class="pb-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Period <span class="accent">Board</span></h1>
+    <div class="page-subtitle">1st-half and 1st-quarter spreads &amp; totals, plus team totals, for every game &mdash; the extra ways to play the same read. Books post these near kickoff.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-game-board" class="btn btn-secondary btn-sm">Full-Game Board</a></div>
+</div>
+
+{% if not period_available %}
+<div class="pb-empty">No 1st-half / 1st-quarter lines loaded yet &mdash; sportsbooks post period markets <b>close to kickoff</b> (usually Saturday night into Sunday morning). This board fills in automatically once they&rsquo;re up. Check back nearer game time.</div>
+{% else %}
+<p class="pb-blurb"><b>Honest up front:</b> these are the <b>lines</b> we capture near kickoff, not a model edge &mdash; we don&rsquo;t have a validated 1st-half model the way we do for full-game wind unders. The faint line under each game is the <b>full-game</b> model read (and a rough ~52% / ~23% first-half / first-quarter split) &mdash; a reference for eyeballing whether a posted period number looks rich or cheap. Numbers to shop; you bring the read.</p>
+
+{% for g in games %}
+<div class="pb-game">
+  <div class="pb-head">
+    <span class="pb-match">{{ g.away }} @ {{ g.home }}</span>
+    <span class="pb-when">{{ g.date }}{% if g.time %} &middot; {{ g.time }}{% endif %}{% if g.books %} &middot; {{ g.books|int }} books{% endif %}</span>
+  </div>
+  <div class="pb-grid">
+    <div class="pb-cell{% if g.spread_h1 is none %} dim{% endif %}"><div class="k">1H Spread</div><div class="v">{% if g.spread_h1 is not none %}{{ '%+g'|format(g.spread_h1) }} <small>{{ g.home }}</small>{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell{% if g.total_h1 is none %} dim{% endif %}"><div class="k">1H Total</div><div class="v">{% if g.total_h1 is not none %}{{ '%g'|format(g.total_h1) }}{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell{% if g.spread_q1 is none %} dim{% endif %}"><div class="k">1Q Spread</div><div class="v">{% if g.spread_q1 is not none %}{{ '%+g'|format(g.spread_q1) }} <small>{{ g.home }}</small>{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell{% if g.total_q1 is none %} dim{% endif %}"><div class="k">1Q Total</div><div class="v">{% if g.total_q1 is not none %}{{ '%g'|format(g.total_q1) }}{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell{% if g.tt_away is none %} dim{% endif %}"><div class="k">Team Total {{ g.away }}</div><div class="v">{% if g.tt_away is not none %}{{ '%g'|format(g.tt_away) }}{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell{% if g.tt_home is none %} dim{% endif %}"><div class="k">Team Total {{ g.home }}</div><div class="v">{% if g.tt_home is not none %}{{ '%g'|format(g.tt_home) }}{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell dim"><div class="k">Model 1H Total</div><div class="v">{% if g.ctx_h1_total is not none %}~{{ '%g'|format(g.ctx_h1_total) }}{% else %}&mdash;{% endif %}</div></div>
+    <div class="pb-cell dim"><div class="k">Model 1Q Total</div><div class="v">{% if g.ctx_q1_total is not none %}~{{ '%g'|format(g.ctx_q1_total) }}{% else %}&mdash;{% endif %}</div></div>
+  </div>
+  <div class="pb-ctx">
+    <span class="tag">Full-game model</span>
+    {% if g.proj_total is not none %}<span>total <b>{{ '%g'|format(g.proj_total) }}</b></span>{% endif %}
+    {% if g.proj_margin is not none %}<span>margin <b>{{ '%+g'|format(g.proj_margin) }}</b> (home)</span>{% endif %}
+    {% if g.ctx_h1_margin is not none %}<span>~1H margin <b>{{ '%+g'|format(g.ctx_h1_margin) }}</b></span>{% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<div class="pb-note"><b>How to use this:</b> the top row is the real posted 1H/1Q/team-total lines &mdash; shop them across your books. The faint cells and the bottom strip are the <i>full-game</i> model split into rough period shares, so you can see if a posted first-half number is leaning with or against how the model sees the whole game. It is a reference, not a validated 1st-half edge. Spots, not locks. 21+</div>
+{% endif %}
+</div>
+{% endblock %}
