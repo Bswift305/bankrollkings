@@ -29721,6 +29721,12 @@ def nfl_page():
                 refresh_meta=payload.get('refresh_meta', {}),
                 history_status=payload.get('history_status', {}),
                 preseason_markets=build_football_preseason_markets('nfl'),
+                # live_slate is computed FRESH (not from the cached snapshot) so today's
+                # spreads/totals on the home page are current even when the prop board is
+                # served from a 12h snapshot.
+                live_slate=[g for g in build_football_live_games(
+                    load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week')
+                    if g.get('spread') is not None or g.get('total') is not None],
             )
     sport_profile = get_sport_model_profile('nfl')
     market_groups = get_nfl_market_groups()
