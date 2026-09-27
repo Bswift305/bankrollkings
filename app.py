@@ -40959,10 +40959,15 @@ def build_nfl_board_context():
                     else ('NEW TEAM' if p.get('usage_flag') == 'new_team' else ''))
             base = (p.get('prop_score') or 0) - (9 if flag else 0)
             ln = p.get('line')
+            mu = p.get('matchup') or ''
+            game = mu
+            if ' @ ' in mu:
+                aw, ho = mu.split(' @ ', 1)
+                game = f"{_ncf.resolve(aw)} @ {_ncf.resolve(ho)}"
             cands.append({'base': base, 'market': 'Prop', 'tier': 'Validated',
                           'play': f"{p.get('player')} {p.get('direction')} "
                                   f"{('%g' % ln) if isinstance(ln, (int, float)) else ln} {p.get('stat')}",
-                          'matchup': p.get('matchup') or '', 'why': f"PropScore {p.get('prop_score')}",
+                          'matchup': mu, 'game': game, 'why': f"PropScore {p.get('prop_score')}",
                           'flag': flag})
     except Exception:
         pass
@@ -41011,7 +41016,7 @@ def build_nfl_board_context():
                 why += ", QB out"
             cands.append({'base': base, 'market': 'Total', 'tier': tier,
                           'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
-                          'matchup': '', 'why': why, 'flag': ''})
+                          'matchup': '', 'game': f"{aa} @ {ha}", 'why': why, 'flag': ''})
     except Exception:
         pass
 

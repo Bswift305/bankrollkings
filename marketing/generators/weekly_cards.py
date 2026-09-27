@@ -893,6 +893,52 @@ def card_nfl_top20(week, out):
     return c.save(out)
 
 
+def card_nfl_top20_by_game(week, out):
+    """The Top-20 board regrouped BY GAME, so same-game tickets are easy to spot.
+    Games with 2+ ranked plays are the SGP candidates."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    board = _app.build_nfl_board_context().get('board', [])[:20]
+    from collections import defaultdict
+    by = defaultdict(list)
+    for c in board:
+        by[c.get('game') or 'Other'].append(c)
+    games = sorted(by.items(), key=lambda kv: min(p['rank'] for p in kv[1]))
+    tcol = {'Validated': GREEN, 'Situational': GOLD, 'Model': FAINT}
+    rh = 34
+    H = 250 + 30 + sum(40 + len(v) * rh + 12 for _, v in games) + 92
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — BY GAME", chip="BUILD TICKETS")
+    c.text(M, y, "Top-20 plays grouped by game — 2+ in a game = a same-game parlay candidate.", F['de'], DIM)
+    y += 34
+    for game, plays in games:
+        plays.sort(key=lambda x: x['rank'])
+        bh = 34 + len(plays) * rh
+        multi = len(plays) >= 2
+        d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=12, fill=PANEL,
+                            outline=(CY if multi else LINE), width=2)
+        d.rounded_rectangle([(M, y), (M + 9, y + bh)], radius=5, fill=(CY if multi else FAINT))
+        c.text(M + 26, y + 9, game, F['blk'], CY if multi else INK)
+        if multi:
+            c.text(W - M - 16, y + 11, f"{len(plays)}-leg SGP", F['de'], CY, right=True)
+        ry = y + 40
+        for p in plays:
+            col = tcol.get(p.get('tier'), INK)
+            txt = p['play']
+            if p['market'] == 'Total' and ' @ ' in txt:  # strip redundant game prefix
+                txt = txt.split(' @ ', 1)[1].split(' ', 1)[1] + " (game total)"
+            c.text(M + 28, ry, f"#{p['rank']}", F['de'], FAINT)
+            c.text(M + 74, ry, txt, F['pl'], col)
+            if p.get('flag'):
+                c.text(W - M - 16, ry + 2, p['flag'], F['ft'], AMBER, right=True)
+            ry += rh
+        y += bh + 12
+    c.text(M, y, f"Live board pulled {_stamp()}. Cyan games have multiple ranked plays — SGP material.", F['ftb'], DIM); y += 28
+    c.text(M, y, "Candidates, not locks. Your eye test picks the legs. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_cfb_wave(week, out):
     """CFB Wave board: model-confirmed rides + the undefeated (3-0 ATS) wave laying
     bigger numbers, honestly tagged. A real menu of options, casino-ready."""
@@ -1225,6 +1271,8 @@ def main():
         made.append(card_cfb_parlays(args.week, str(out_dir / 'bk_cfb_parlays.png')))
     if 'nfltop20' in want:
         made.append(card_nfl_top20(args.week, str(out_dir / 'bk_nfl_top20.png')))
+    if 'nflbygame' in want:
+        made.append(card_nfl_top20_by_game(args.week, str(out_dir / 'bk_nfl_by_game.png')))
     if 'sgplong' in want:
         made.append(card_game_longshot(args.week, str(out_dir / 'bk_tonight_longshot.png')))
     if 'floorshot2' in want:
