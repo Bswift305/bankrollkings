@@ -41780,11 +41780,25 @@ def build_nfl_wave_context():
     return data
 
 
+def build_nfl_upset_summary():
+    """This-season upset tracker (underdog SU wins) from nfl_scores.json, written by
+    build_nfl_scores.py in the daily refresh. Read fresh so it's not stuck behind the
+    wave-context cache. Situational context: how often the dog just wins outright."""
+    try:
+        p = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json')
+        with open(p, encoding='utf-8') as fh:
+            return json.load(fh).get('upset_summary') or {}
+    except Exception:
+        return {}
+
+
 @app.route('/tools/riding-the-wave')
 def riding_the_wave_tool():
     """Quick Tool: Riding the Wave — all active NFL streaks (ATS / straight-up / totals)
-    plus situational hot hands, computed from real graded games. Longest run on top."""
-    return render_template('riding_the_wave.html', **build_nfl_wave_context())
+    plus situational hot hands and the season upset tracker, from real graded games."""
+    return render_template('riding_the_wave.html',
+                           rw_upsets=build_nfl_upset_summary(),
+                           **build_nfl_wave_context())
 
 
 _CFB_TOT_CACHE = {}

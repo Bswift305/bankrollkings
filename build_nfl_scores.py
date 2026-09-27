@@ -92,25 +92,65 @@ def build(season: int, prior_season: int) -> dict:
     allpts = [hs for _, _, hs, _ in g_now] + [as_ for _, _, _, as_ in g_now]
     lp = round(sum(allpts) / len(allpts), 2) if allpts else 22.5
     # 2026 ATS record per team (spread_line = home favored amount; cover = margin - line)
+    # + upsets: a straight-up win by the underdog (the favorite lost). spread_line > 0
+    # means the HOME team was favored, so the dog is whichever side was not favored.
     ats_rec = defaultdict(lambda: [0, 0, 0])
+    upsets = []
+    played_by_week = defaultdict(int)
     for r in rows:
         if r.get("season") != str(season) or r.get("game_type") != "REG":
             continue
         if r.get("result") in (None, "", "NA") or r.get("spread_line") in (None, "", "NA"):
             continue
         h, a = _norm(r["home_team"]), _norm(r["away_team"])
-        cover = float(r["result"]) - float(r["spread_line"])
+        res = float(r["result"]); sp = float(r["spread_line"])
+        cover = res - sp
         for t, c in ((h, cover), (a, -cover)):
             ats_rec[t][0 if c > 0.01 else (1 if c < -0.01 else 2)] += 1
+        try:
+            wk = int(r.get("week"))
+        except (TypeError, ValueError):
+            wk = None
+        if wk is not None:
+            played_by_week[wk] += 1
+        if sp != 0 and res != 0:               # skip pick'em and ties -- no favorite / no winner
+            home_fav = sp > 0
+            if home_fav != (res > 0):           # the favored side lost => upset
+                upsets.append({
+                    "week": wk,
+                    "dog": h if not home_fav else a,
+                    "fav": h if home_fav else a,
+                    "spread": round(abs(sp), 1),   # points the dog was getting
+                    "margin": int(round(abs(res))),  # how much the dog won by
+                })
     ats = {t: {"w": v[0], "l": v[1], "p": v[2],
                "cover": round(100 * v[0] / (v[0] + v[1])) if (v[0] + v[1]) else None,
                "rec": f"{v[0]}-{v[1]}" + (f"-{v[2]}" if v[2] else "")} for t, v in ats_rec.items()}
+    upsets.sort(key=lambda u: (u["week"] or 0, -u["spread"]))
+    by_week = [{"week": w, "upsets": sum(1 for u in upsets if u["week"] == w),
+                "games": played_by_week[w]} for w in sorted(played_by_week)]
+    # Average over COMPLETE weeks only (a real slate, 12+ games) so a mid-week partial
+    # slate -- e.g. just the Thursday game -- doesn't drag the per-week number down.
+    full = [w for w in by_week if w["games"] >= 12]
+    full_upsets = sum(w["upsets"] for w in full)
+    full_games = sum(w["games"] for w in full)
+    upset_summary = {
+        "total": len(upsets),
+        "games": sum(played_by_week.values()),
+        "weeks_played": len(by_week),
+        "complete_weeks": len(full),
+        "avg_per_week": round(full_upsets / len(full), 1) if full else None,
+        "rate_pct": round(100 * full_upsets / full_games) if full_games else None,
+        "by_week": by_week,
+        "list": upsets,
+    }
     qb1, recv, rush = _skill_leaders(season)
     return {
         "season": season, "prior_season": prior_season,
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "league_pts": lp, "prior": prior, "games": g_now,
         "qb1": qb1, "recv": recv, "rush": rush, "ats": ats,
+        "upset_summary": upset_summary,
     }
 
 

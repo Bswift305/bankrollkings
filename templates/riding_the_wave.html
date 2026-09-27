@@ -62,6 +62,7 @@
 <div class="rw-filter">
   <button class="rw-chip active" data-f="all">All</button>
   {% if rw_hot %}<button class="rw-chip" data-f="hot">Heating Up</button>{% endif %}
+  {% if rw_upsets and rw_upsets.total %}<button class="rw-chip" data-f="upsets">Upsets</button>{% endif %}
   <button class="rw-chip" data-f="props">Player Props</button>
   <button class="rw-chip" data-f="ats">Covering</button>
   <button class="rw-chip" data-f="su">Winning</button>
@@ -81,6 +82,27 @@
     <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
       <span class="rw-name">{{ r.player }}<small>{{ r.side }} {{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.avg_margin %} &middot; by ~{{ r.avg_margin }} avg{% endif %}</small></span>
       <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'over' }}"><span class="n">{{ r.run }}</span><span class="u">straight</span></span></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if rw_upsets and rw_upsets.total %}
+<div class="rw-card rw-card-wide" data-cat="upsets" style="margin-bottom:16px;">
+  <h3><span class="dot" style="background:var(--rw-cold)"></span>Upsets This Season <small>underdogs that won straight up</small></h3>
+  <div class="rw-note" style="margin:0 16px 4px;">
+    <b>{{ rw_upsets.total }}</b> outright underdog wins so far{% if rw_upsets.avg_per_week is not none %} &mdash; about <b>{{ rw_upsets.avg_per_week }} a week</b> across {{ rw_upsets.complete_weeks }} complete week{{ 's' if rw_upsets.complete_weeks != 1 else '' }} ({{ rw_upsets.rate_pct }}% of games){% endif %}. Real graded results, favorite by the closing spread. A dog winning outright happens ~a quarter of the time &mdash; it&rsquo;s the base rate to keep in mind, not a system to chase.
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 10px;">
+    {% for w in rw_upsets.by_week %}
+    <span class="rw-ats" style="background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);border-radius:999px;padding:5px 11px;color:var(--rw-cold);">Wk {{ w.week }}: {{ w.upsets }}/{{ w.games }}</span>
+    {% endfor %}
+  </div>
+  <div class="rw-props">
+    {% for u in rw_upsets.list %}
+    <div class="rw-row">
+      <span class="rw-name">{{ u.dog }} <small>beat {{ u.fav }} &middot; Wk {{ u.week }} &middot; won by {{ u.margin }}</small></span>
+      <span class="rw-badge cold"><span class="n">+{{ u.spread }}</span><span class="u">dog</span></span></div>
     {% endfor %}
   </div>
 </div>

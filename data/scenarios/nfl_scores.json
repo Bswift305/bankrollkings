@@ -1,7 +1,7 @@
 {
   "season": 2026,
   "prior_season": 2025,
-  "updated": "2026-09-27 11:19 UTC",
+  "updated": "2026-09-27 16:04 UTC",
   "league_pts": 22.53,
   "prior": {
     "PHI": [
@@ -2312,5 +2312,102 @@
       "cover": 50,
       "rec": "1-1"
     }
+  },
+  "upset_summary": {
+    "total": 10,
+    "games": 33,
+    "weeks_played": 3,
+    "complete_weeks": 2,
+    "avg_per_week": 4.5,
+    "rate_pct": 28,
+    "by_week": [
+      {
+        "week": 1,
+        "upsets": 4,
+        "games": 16
+      },
+      {
+        "week": 2,
+        "upsets": 5,
+        "games": 16
+      },
+      {
+        "week": 3,
+        "upsets": 1,
+        "games": 1
+      }
+    ],
+    "list": [
+      {
+        "week": 1,
+        "dog": "ARI",
+        "fav": "LAC",
+        "spread": 8.5,
+        "margin": 12
+      },
+      {
+        "week": 1,
+        "dog": "SF",
+        "fav": "LAR",
+        "spread": 3.5,
+        "margin": 20
+      },
+      {
+        "week": 1,
+        "dog": "NYG",
+        "fav": "DAL",
+        "spread": 3.0,
+        "margin": 8
+      },
+      {
+        "week": 1,
+        "dog": "NYJ",
+        "fav": "TEN",
+        "spread": 1.5,
+        "margin": 13
+      },
+      {
+        "week": 2,
+        "dog": "NO",
+        "fav": "BAL",
+        "spread": 8.5,
+        "margin": 7
+      },
+      {
+        "week": 2,
+        "dog": "CLE",
+        "fav": "TB",
+        "spread": 8.5,
+        "margin": 4
+      },
+      {
+        "week": 2,
+        "dog": "LV",
+        "fav": "LAC",
+        "spread": 6.5,
+        "margin": 12
+      },
+      {
+        "week": 2,
+        "dog": "MIN",
+        "fav": "CHI",
+        "spread": 4.5,
+        "margin": 6
+      },
+      {
+        "week": 2,
+        "dog": "CIN",
+        "fav": "HOU",
+        "spread": 3.0,
+        "margin": 14
+      },
+      {
+        "week": 3,
+        "dog": "ATL",
+        "fav": "GB",
+        "spread": 4.5,
+        "margin": 21
+      }
+    ]
   }
 }
