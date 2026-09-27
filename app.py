@@ -40540,6 +40540,94 @@ def build_cfb_wave_context():
     return data
 
 
+_CFB_BOARD_CACHE = {}
+
+
+def build_cfb_board_context():
+    """CFB Top board: the model's best spread + total plays across the upcoming slate,
+    ranked by edge. Honest: CFB has no backtested edge (unlike NFL PropScore/wind), so
+    every play is a MODEL lean, not a validated edge -- spots, not locks. Stale-prior and
+    weather context carried through; you bring the eye test."""
+    import cfb_current_form as _cff
+    scen = os.path.join(BASE_DIR, 'data', 'scenarios')
+    watch = [os.path.join(scen, f) for f in ('cfb_2026_results.json', 'cfb_line_moves.json',
+                                             'cfb_weather.json', 'cfb_power.json')]
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    if _CFB_BOARD_CACHE.get('sig') == sig:
+        return _CFB_BOARD_CACHE['data']
+    _cff.clear_cache()
+
+    def _j(p):
+        try:
+            with open(p, 'r', encoding='utf-8') as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return {}
+    moves = [g for g in _j(watch[1]).get('games', [])
+             if not g.get('completed') and g.get('spread_now') is not None]
+    wk = min((g['week'] for g in moves), default=None)
+    moves = [g for g in moves if g['week'] == wk] if wk is not None else []
+    wx = {(g['home'], g['away']): g for g in _j(watch[2]).get('games', [])}
+    fbs = _cff._fbs_teams()
+    cands = []
+    for g in moves:
+        h, a, sp = g['home'], g['away'], g['spread_now']
+        if _cff._resolve(h) not in fbs or _cff._resolve(a) not in fbs:
+            continue
+        game = f"{a} @ {h}"
+        # spread
+        try:
+            mr = _cff.matchup_read(a, h, sp)
+            proj = mr.get('proj_home_margin')
+            if proj is not None:
+                edge = round(proj - (-sp), 1)
+                if abs(edge) >= 3:
+                    side = h if edge > 0 else a
+                    line = sp if edge > 0 else -sp
+                    # big-line-move guard: a large move is usually news the model can't
+                    # see (injury/QB), so de-rate a model edge built against that move.
+                    mv = (g.get('spread_now') or 0) - (g.get('spread_open') or g.get('spread_now') or 0)
+                    flag = 'LINE MOVED' if abs(mv) >= 4 else ''
+                    base = abs(edge) - (abs(mv) * 0.8 if abs(mv) >= 4 else 0)
+                    cands.append({'base': base, 'market': 'Spread', 'tier': 'Model',
+                                  'play': f"{side} {'%+g' % line}", 'game': game,
+                                  'why': f"proj margin {proj:+g}, edge {edge:+g}"
+                                         + (f", line moved {mv:+g}" if flag else ''),
+                                  'flag': flag})
+        except Exception:
+            pass
+        # total
+        try:
+            tot = g.get('total_now')
+            tr = _cff.total_read(a, h, tot) if tot is not None else None
+            if tr and tr.get('lean') in ('OVER', 'UNDER'):
+                w = wx.get((h, a))
+                windy = bool(w and w.get('wind') and w['wind'] >= 15)
+                cands.append({'base': abs(tr['edge']) + (2 if windy and tr['lean'] == 'UNDER' else 0),
+                              'market': 'Total', 'tier': 'Model',
+                              'play': f"{a} @ {h} {tr['lean']} {'%g' % float(tot)}", 'game': game,
+                              'why': f"model {tr['proj_total']} vs {'%g' % float(tot)}"
+                                     + (f", wind {'%g' % w['wind']}" if windy else ''),
+                              'flag': 'WIND' if windy and tr['lean'] == 'UNDER' else ''})
+        except Exception:
+            pass
+    cands.sort(key=lambda x: -x['base'])
+    top = cands[:20]
+    for i, c in enumerate(top, 1):
+        c['rank'] = i
+    data = {'board': top, 'board_available': bool(top), 'board_week': wk,
+            'board_updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _CFB_BOARD_CACHE['sig'] = sig
+    _CFB_BOARD_CACHE['data'] = data
+    return data
+
+
+@app.route('/tools/cfb-board')
+def cfb_board_tool():
+    """Quick Tool: CFB Top Board — the model's best spread + total plays this week."""
+    return render_template('cfb_board.html', **build_cfb_board_context())
+
+
 @app.route('/tools/cfb-wave')
 def cfb_wave_tool():
     """Quick Tool: CFB Wave Watch — ATS coverers sorted by why (underrated / priced /
