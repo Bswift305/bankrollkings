@@ -939,6 +939,69 @@ def card_nfl_top20_by_game(week, out):
     return c.save(out)
 
 
+def _am_profit(price, stake):
+    """Profit on a straight bet at an American price."""
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return None
+    return round(stake * (p / 100.0 if p > 0 else 100.0 / abs(p)), 2)
+
+
+def card_nfl_singles(week, out, stake=3.0, n=5):
+    """Casino-ready straight tickets: the best PropScore play in each of the top N games,
+    ONE per game (this book has no same-game parlays on props), sized at $stake each.
+    Validated NFL edge only (PropScore); not a parlay -- five independent bets."""
+    import sys as _sys
+    _sys.path.insert(0, str(BASE))
+    import app as _app
+    ctx = _app.build_nfl_spots_context(limit=300)
+    top = [p for p in (ctx.get('sp_top') or []) if (p.get('prop_score') or 0) >= 10]
+    best = {}
+    for p in sorted(top, key=lambda x: -(x.get('prop_score') or 0)):
+        mu = p.get('matchup') or ''
+        if mu and mu not in best:
+            best[mu] = p
+    picks = sorted(best.values(), key=lambda x: -(x.get('prop_score') or 0))[:n]
+
+    top0 = 250
+    ph = 92
+    H = top0 + 60 + len(picks) * (ph + 12) + 118
+    c = Card(H); d = c.d
+    y = c.header(f"NFL {week.upper()} — {len(picks)} SINGLES",
+                 chip=f"${stake:g} EACH · ONE PER GAME")
+    d.rounded_rectangle([(M, y), (W - M, y + 40)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 15, y + 9, f"One pick per game (no same-game parlays on props here) · "
+                          f"${stake * len(picks):g} total · five independent bets", F['de'], INK)
+    y += 56
+    tot_win = 0.0
+    for i, p in enumerate(picks, 1):
+        ln = p.get('line'); ln = ('%g' % ln) if isinstance(ln, (int, float)) else ln
+        over = str(p.get('direction')).upper() == 'OVER'
+        prof = _am_profit(p.get('price'), stake)
+        if prof:
+            tot_win += prof + stake
+        d.rounded_rectangle([(M, y), (W - M, y + ph)], radius=12, fill=PANEL, outline=LINE, width=2)
+        d.rounded_rectangle([(M, y), (M + 9, y + ph)], radius=5, fill=(GREEN if over else RED))
+        c.text(M + 26, y + 11, f"{i}. {p.get('player')}  {p.get('direction')} {ln} {p.get('stat')}",
+               F['pl'], INK)
+        mu = (p.get('matchup') or '').replace(' @ ', ' @ ')
+        c.text(M + 26, y + 44, f"{mu}  ·  PropScore {p.get('prop_score')}", F['de'], FAINT)
+        price = p.get('price'); book = p.get('best_book') or ''
+        payline = f"{price} {book}".strip()
+        if prof:
+            payline += f"   ·   ${stake:g} to win ${prof:g}  (${prof + stake:g} back)"
+        c.text(M + 26, y + 66, payline, F['de'], AMBER)
+        y += ph + 12
+    if tot_win:
+        c.text(M, y, f"Risk ${stake * len(picks):g} to win ${round(tot_win - stake * len(picks), 2):g} "
+                     f"if all five hit. Live board {_stamp()}.", F['ftb'], DIM)
+        y += 28
+    c.text(M, y, "PropScore = the validated NFL edge (backtested +9-16% ROI). Five independent bets, "
+                 "still variance. 21+", F['ft'], FAINT)
+    return c.save(out)
+
+
 def card_nfl_game_board(week, out):
     """NFL Game Board card: every spread + total this week ranked best-to-worst by model
     edge (build_nfl_game_board_context). Game lines only, no props. Honest: NFL has no
@@ -1383,6 +1446,8 @@ def main():
         made.append(card_nfl_top20_by_game(args.week, str(out_dir / 'bk_nfl_by_game.png')))
     if 'nflgameboard' in want:
         made.append(card_nfl_game_board(args.week, str(out_dir / 'bk_nfl_game_board.png')))
+    if 'nflsingles' in want:
+        made.append(card_nfl_singles(args.week, str(out_dir / 'bk_nfl_singles.png')))
     if 'cfbtop20' in want:
         made.append(card_cfb_top20(args.week, str(out_dir / 'bk_cfb_top20.png')))
     if 'cfbbygame' in want:
