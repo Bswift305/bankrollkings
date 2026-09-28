@@ -29687,6 +29687,30 @@ def build_nfl_dashboard_runtime_bundle():
     )
 
 
+def nfl_key_number(spread):
+    """Key-number context for an NFL spread. Margins cluster hard on 3 and 7 (and to a
+    lesser degree 6, 10, 14, 4), so the EXACT number and the half-point around it carry
+    real value -- a -2.5 is very different from a -3.5. Returns a short tag or None.
+      'KEY 3'/'KEY 7'  -> sitting on the biggest key number (shop the ½ pt hardest here)
+      '→ 3'/'→ 7'  -> a half-point off 3/7 (buying/selling through the key number)
+    """
+    if spread is None:
+        return None
+    try:
+        s = abs(float(spread))
+    except (TypeError, ValueError):
+        return None
+    if s in (3.0, 7.0):
+        return f"KEY {int(s)}"
+    if s in (2.5, 3.5):
+        return "→ 3"      # a hook off the 3
+    if s in (6.5, 7.5):
+        return "→ 7"      # a hook off the 7
+    if s in (6.0, 10.0, 14.0, 4.0):
+        return f"key {int(s)}"  # secondary key numbers, lower-cased = softer signal
+    return None
+
+
 def build_football_home_slate(sport_key='nfl'):
     """This week's UPCOMING games for the home-page quick-glance slate: matchup (abbrev),
     home spread, total, and wind with the high-wind UNDER flag. Only games from today
@@ -29700,7 +29724,10 @@ def build_football_home_slate(sport_key='nfl'):
             odds, sched = load_ncaaf_game_market_odds(), load_ncaaf_schedule()
         else:
             odds, sched = load_nfl_game_market_odds(), load_nfl_schedule()
-        games = build_football_live_games(odds, sched, date_filter='week')
+        # 'all' (not 'week'): 'week' is a hard date window that goes empty between slates
+        # or when local odds are stale. We instead take the NEXT slate ourselves below,
+        # which also avoids the multi-week 29-game blob.
+        games = build_football_live_games(odds, sched, date_filter='all')
     except Exception:
         return []
     wind_home = {}
@@ -29714,25 +29741,42 @@ def build_football_home_slate(sport_key='nfl'):
             pass
     full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()} if not is_cfb else {}
     today = sports_today_date()
-    out = []
+    rows = []
     for g in games:
         if g.get('spread') is None and g.get('total') is None:
             continue
-        try:
-            gd = pd.to_datetime(g.get('date'), errors='coerce')
-            if pd.notna(gd) and gd.date() < today:
-                continue  # already played -- keep the slate to what's still ahead
-        except Exception:
-            pass
         a, h = g.get('away'), g.get('home')
         wind = wind_home.get(h)
-        out.append({
+        try:
+            gd = pd.to_datetime(g.get('date'), errors='coerce')
+            d = gd.date() if pd.notna(gd) else None
+        except Exception:
+            d = None
+        rows.append({
             'away': a, 'home': h,
             'away_abbr': full2abbr.get(a, a), 'home_abbr': full2abbr.get(h, h),
             'spread': g.get('spread'), 'total': g.get('total'),
             'wind': wind, 'high_wind': bool(wind and wind >= 15),
+            'key': (nfl_key_number(g.get('spread')) if not is_cfb else None),
+            '_d': d,
         })
-    return out
+    # Take the NEXT slate: upcoming games (today forward), limited to a 7-day window from
+    # the earliest upcoming date so it doesn't balloon across two weeks. If nothing is
+    # upcoming (between slates / stale feed), fall back to the most recent week present.
+    upcoming = [r for r in rows if r['_d'] and r['_d'] >= today]
+    if upcoming:
+        first = min(r['_d'] for r in upcoming)
+        slate = [r for r in upcoming if (r['_d'] - first).days <= 7]
+    elif rows:
+        dated = [r for r in rows if r['_d']]
+        last = max((r['_d'] for r in dated), default=None)
+        slate = [r for r in dated if last and (last - r['_d']).days <= 7] or rows
+    else:
+        slate = rows
+    slate.sort(key=lambda r: (r['_d'] or today))
+    for r in slate:
+        r.pop('_d', None)
+    return slate
 
 
 @app.route('/sports/nfl')
@@ -41244,11 +41288,13 @@ def build_nfl_game_board_context():
                         base = 16 + min(abs(edge), 6) - max(0, div - 6) * 1.5 - (11 if big else 0)
                         tr0 = _nt.total_read(aa, ha, tot)
                         qb = (tr0 or {}).get('away_qb_out') or (tr0 or {}).get('home_qb_out')
+                        kn = nfl_key_number(line)
                         cands.append({
                             'base': base, 'market': 'Spread', 'tier': 'Model',
                             'play': f"{side} {'%+g' % line}", 'game': game,
                             'why': f"model margin {pm:+g} vs {'%+g' % float(sp)} (home), edge {edge:+g}"
-                                   + (f", {qb} out" if qb else ''),
+                                   + (f", {qb} out" if qb else '')
+                                   + (f" · {kn} (shop the ½ pt)" if kn and kn.startswith('KEY') else ''),
                             'flag': 'VOLATILE' if big else ''})
             except Exception:
                 pass
