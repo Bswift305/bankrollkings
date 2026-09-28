@@ -1,0 +1,114 @@
+{% set active_page = 'unit_sizing' %}
+{% extends "bk_base.html" %}
+{% block title %}Unit Sizing & Bankroll - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .us-wrap{--us-accent:#3fbf7f;max-width:760px;}
+  .us-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+  @media(min-width:640px){.us-grid{grid-template-columns:1fr 1fr;}}
+  .us-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:16px;}
+  .us-card h3{margin:0 0 10px;font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .us-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+  .us-field label{font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .us-field input{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;
+    padding:11px 12px;color:var(--text-bright);font:700 15px ui-monospace,Consolas,monospace;}
+  .us-field input:focus{outline:none;border-color:var(--us-accent);}
+  .us-out{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);}
+  .us-out:last-child{border-bottom:0;}
+  .us-out .k{font:600 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .us-out .k b{color:var(--text);}
+  .us-out .v{font:800 17px ui-monospace,Consolas,monospace;color:var(--us-accent);}
+  .us-out .v.warn{color:#ff8f6a;}
+  .us-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:16px;}
+  .us-note b{color:var(--text-bright);}
+  .us-rule{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);font:500 12.5px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .us-rule:last-child{border-bottom:0;}
+  .us-rule .n{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:rgba(63,191,127,.14);color:var(--us-accent);
+    font:800 11px ui-monospace,monospace;display:flex;align-items:center;justify-content:center;}
+  .us-rule b{color:var(--text);}
+  .us-hint{font:500 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:-6px;margin-bottom:12px;}
+</style>
+
+<div class="us-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; All Sports</div>
+    <h1>Unit Sizing &amp; <span class="accent">Bankroll</span></h1>
+    <div class="page-subtitle">How much to actually bet. The edge means nothing if the stake blows up your roll on a normal losing streak &mdash; sizing is the discipline that keeps you in the game.</div>
+  </div>
+</div>
+
+<div class="us-grid">
+  <div class="us-card">
+    <h3>1 &middot; Flat unit sizing</h3>
+    <div class="us-field">
+      <label for="bk">Your bankroll ($)</label>
+      <input id="bk" type="number" inputmode="decimal" value="1000" min="0" step="50">
+    </div>
+    <div class="us-hint">A &ldquo;unit&rdquo; is one standard bet. Most bettors set 1 unit = 1&ndash;2% of the roll and bet the same size every play.</div>
+    <div class="us-out"><span class="k"><b>Conservative</b> &middot; 1% / unit</span><span class="v" id="u1">$10</span></div>
+    <div class="us-out"><span class="k"><b>Standard</b> &middot; 2% / unit</span><span class="v" id="u2">$20</span></div>
+    <div class="us-out"><span class="k"><b>Aggressive</b> &middot; 3% / unit</span><span class="v warn" id="u3">$30</span></div>
+    <div class="us-hint" style="margin-top:10px;margin-bottom:0;">Keep even your biggest single play at or under ~3%. Past that, a routine 5&ndash;6 loss run does real damage.</div>
+  </div>
+
+  <div class="us-card">
+    <h3>2 &middot; Fractional Kelly (edge-based)</h3>
+    <div class="us-field">
+      <label for="odds">Odds (American, e.g. -110 or +150)</label>
+      <input id="odds" type="number" inputmode="numeric" value="-110" step="5">
+    </div>
+    <div class="us-field">
+      <label for="wp">Your win probability (%)</label>
+      <input id="wp" type="number" inputmode="decimal" value="55" min="0" max="100" step="0.5">
+    </div>
+    <div class="us-out"><span class="k">Break-even at these odds</span><span class="v" id="be">52.4%</span></div>
+    <div class="us-out"><span class="k">Your edge</span><span class="v" id="edge">+2.6%</span></div>
+    <div class="us-out"><span class="k"><b>Full Kelly</b> (too volatile)</span><span class="v warn" id="kf">—</span></div>
+    <div class="us-out"><span class="k"><b>Half Kelly</b></span><span class="v" id="kh">—</span></div>
+    <div class="us-out"><span class="k"><b>Quarter Kelly</b> (recommended)</span><span class="v" id="kq">—</span></div>
+    <div class="us-hint" style="margin-top:10px;margin-bottom:0;">Kelly assumes your win% is <i>right</i>. It rarely is, so pros bet a fraction. Negative edge &rarr; Kelly says $0. Don&rsquo;t force it.</div>
+  </div>
+</div>
+
+<div class="us-card" style="margin-top:16px;">
+  <h3>The rules that actually protect the bankroll</h3>
+  <div class="us-rule"><span class="n">1</span><div><b>Flat-bet by default.</b> Same size every play (1&ndash;2%). Varying stakes by &ldquo;confidence&rdquo; feels smart and quietly wrecks records &mdash; your confidence isn&rsquo;t calibrated enough to trust.</div></div>
+  <div class="us-rule"><span class="n">2</span><div><b>Never chase.</b> Increasing size after losses to &ldquo;get it back&rdquo; is the #1 way bankrolls die. The math doesn&rsquo;t know you&rsquo;re owed.</div></div>
+  <div class="us-rule"><span class="n">3</span><div><b>Expect long losing runs.</b> Even a real +EV bettor hits 5, 6, 7-loss streaks routinely. Sizing that survives variance is the whole point &mdash; ruin is permanent, a drawdown isn&rsquo;t.</div></div>
+  <div class="us-rule"><span class="n">4</span><div><b>Parlays are entertainment stakes.</b> Compounding vig means smaller units on parlays than on your straight plays, not bigger.</div></div>
+  <div class="us-rule"><span class="n">5</span><div><b>Re-base occasionally, not every day.</b> Recompute your unit off the new bankroll weekly/monthly, not after every win or loss.</div></div>
+</div>
+
+<div class="us-note"><b>The honest bottom line:</b> we don&rsquo;t tell you <i>what</i> to bet here &mdash; that&rsquo;s the boards. This is <i>how much</i>, and the answer for almost everyone is &ldquo;less, and the same amount every time.&rdquo; A disciplined 1&ndash;2% flat stake (or quarter-Kelly on a real, measured edge) is what turns a good read into a bankroll that&rsquo;s still here next season. Bet what you can afford to lose. 21+</div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  function money(x){ return '$'+(Math.round(x*100)/100).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); }
+  function decFromAmerican(a){ a=parseFloat(a); if(isNaN(a)||a===0) return null; return a>0 ? 1+a/100 : 1+100/Math.abs(a); }
+  function calc(){
+    var bk=parseFloat($('bk').value)||0;
+    $('u1').textContent=money(bk*0.01); $('u2').textContent=money(bk*0.02); $('u3').textContent=money(bk*0.03);
+    var dec=decFromAmerican($('odds').value); var wp=(parseFloat($('wp').value)||0)/100;
+    if(dec===null){ return; }
+    var b=dec-1;                          // net decimal odds (profit per 1 staked)
+    var be=1/dec;                         // break-even win prob
+    $('be').textContent=(be*100).toFixed(1)+'%';
+    var edge=wp-be;
+    var eEl=$('edge'); eEl.textContent=(edge>=0?'+':'')+(edge*100).toFixed(1)+'%'; eEl.className='v'+(edge<0?' warn':'');
+    // Kelly fraction f* = (b*p - q)/b  = (dec*p - 1)/b
+    var f=(dec*wp-1)/b;
+    if(!isFinite(f)||f<0) f=0;
+    $('kf').textContent = f<=0 ? '$0' : money(bk*f);
+    $('kh').textContent = f<=0 ? '$0' : money(bk*f*0.5);
+    $('kq').textContent = f<=0 ? '$0' : money(bk*f*0.25);
+  }
+  ['bk','odds','wp'].forEach(function(id){ var el=$(id); if(el){ el.addEventListener('input',calc); } });
+  calc();
+})();
+</script>
+{% endblock %}

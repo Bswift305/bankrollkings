@@ -39956,6 +39956,14 @@ def injury_report_tool():
     return render_template('injury_report.html', **context)
 
 
+@app.route('/tools/unit-sizing')
+def unit_sizing_tool():
+    """Quick Tool: bankroll / unit sizing + fractional-Kelly calculator with the
+    discipline rules. Cross-sport, fully client-side -- no model, just the math and
+    the honesty (how MUCH to bet; the boards say what)."""
+    return render_template('unit_sizing.html')
+
+
 _SCENARIO_LAB_CACHE = {}
 
 def build_scenario_lab_context():
