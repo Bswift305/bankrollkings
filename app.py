@@ -29864,6 +29864,96 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
     return out
 
 
+_NFL_FLOOR_BOARD_CACHE = {}
+_NFL_PROP_STAT_MAP = {
+    'Pass Yds': 'passing_yards', 'Passing Yards': 'passing_yards',
+    'Rush Yds': 'rushing_yards', 'Rushing Yards': 'rushing_yards',
+    'Rec Yds': 'receiving_yards', 'Receiving Yards': 'receiving_yards',
+    'Receptions': 'receptions', 'Rush Att': 'carries', 'Rushing Attempts': 'carries',
+    'Pass Completions': 'completions', 'Completions': 'completions', 'Pass TDs': 'passing_tds',
+}
+
+
+def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
+    """Scan this week's live NFL props and surface the strongest FLOORS -- players who
+    clear the posted line at a high rate over an adequate sample. Ranked by hit rate,
+    then by how comfortably they clear it. Price shown for value context (a floor is
+    reliability first). Cached on the props-file mtime + player-log data."""
+    props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
+    sig = os.path.getmtime(props_path) if props_path.exists() else 0
+    if _NFL_FLOOR_BOARD_CACHE.get('sig') == sig and 'data' in _NFL_FLOOR_BOARD_CACHE:
+        return _NFL_FLOOR_BOARD_CACHE['data']
+    empty = {'floors': [], 'floor_count': 0, 'available': False,
+             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    log = _nfl_player_week_data()
+    if log.empty or not props_path.exists():
+        _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=empty)
+        return empty
+    cur = int(pd.to_numeric(log['season'], errors='coerce').max())
+    # one filter of the big log per PLAYER (not per prop): index games by full name
+    if _NFL_FLOOR_BOARD_CACHE.get('idx_id') != id(log):
+        _NFL_FLOOR_BOARD_CACHE['idx'] = {k: v for k, v in
+                                         log.groupby(log['_full'].astype(str).str.strip().str.lower())}
+        _NFL_FLOOR_BOARD_CACHE['idx_id'] = id(log)
+    idx = _NFL_FLOOR_BOARD_CACHE['idx']
+    try:
+        props = _load_cached_csv(props_path, default=pd.DataFrame())
+    except Exception:
+        props = pd.DataFrame()
+    if props.empty or not {'Player', 'Stat', 'Line'}.issubset(props.columns):
+        _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=empty)
+        return empty
+    p = props.copy()
+    p['_stat'] = p['Stat'].map(_NFL_PROP_STAT_MAP)
+    p = p[p['_stat'].notna()]
+    p['Line'] = pd.to_numeric(p['Line'], errors='coerce')
+    p['OverOdds'] = pd.to_numeric(p.get('OverOdds'), errors='coerce')
+    p = p.dropna(subset=['Line'])
+    full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
+    rows = []
+    for (player, stat), g in p.groupby(['Player', '_stat']):
+        sub = idx.get(str(player).strip().lower())
+        if sub is None or stat not in sub.columns:
+            continue
+        line = float(g['Line'].median())
+        valid = g['OverOdds'][g['OverOdds'].abs() >= 100]
+        price = int(round(valid.median())) if len(valid) else None
+        s = sub.copy()
+        s['_v'] = pd.to_numeric(s[stat], errors='coerce')
+        if _NFL_FLOOR_STATS.get(stat, (None, False))[1] and 'attempts' in s.columns:
+            s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
+        s = s.dropna(subset=['_v', 'season'])
+        if s.empty:
+            continue
+        wins = {'season': s[s['season'] == cur], 'l2y': s[s['season'] >= cur - 1], 'career': s}
+        ref = ('season' if len(wins['season']) >= min_games
+               else 'l2y' if len(wins['l2y']) >= min_games else 'career')
+        w = wins[ref]
+        if len(w) < min_games:
+            continue
+        hit = round(100 * (w['_v'] >= line).mean())
+        if hit < min_hit:
+            continue
+        clears = round(float(w['_v'].mean() - line), 1)
+        be = _american_to_prob(price)
+        game = str(g['Game'].iloc[0]) if 'Game' in g.columns else ''
+        if '@' in game:
+            a, h = game.split('@', 1)
+            game = f"{full2abbr.get(a.strip(), a.strip()[:3].upper())} @ {full2abbr.get(h.strip(), h.strip()[:3].upper())}"
+        rows.append({
+            'player': str(player), 'stat': _NFL_FLOOR_STATS[stat][0], 'stat_key': stat, 'line': line,
+            'price': price, 'hit': hit, 'n': int(len(w)), 'window': ref, 'clears': clears,
+            'breakeven': (round(100 * be) if be is not None else None),
+            'edge': (round(100 * ((w['_v'] >= line).mean() - be), 1) if be is not None else None),
+            'game': game,
+        })
+    rows.sort(key=lambda x: (-x['hit'], -x['clears']))
+    data = {'floors': rows[:limit], 'floor_count': len(rows), 'available': bool(rows),
+            'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=data)
+    return data
+
+
 def nfl_key_number(spread):
     """Key-number context for an NFL spread. Margins cluster hard on 3 and 7 (and to a
     lesser degree 6, 10, 14, 4), so the EXACT number and the half-point around it carry
@@ -40155,9 +40245,11 @@ def nfl_prop_floor_tool():
         line = float(line) if line not in (None, '') else None
     except (TypeError, ValueError):
         line = None
-    ctx = (build_nfl_prop_floor(player, stat, line, price) if player
-           else {'ok': False, 'player': '', 'stat': stat, 'line': line, 'price': price,
-                 'stats': list(_NFL_FLOOR_STATS.items())})
+    if player:
+        ctx = build_nfl_prop_floor(player, stat, line, price)
+    else:
+        ctx = {'ok': False, 'player': '', 'stat': stat, 'line': line, 'price': price,
+               'stats': list(_NFL_FLOOR_STATS.items()), 'board': build_nfl_floor_board()}
     return render_template('nfl_prop_floor.html', **ctx)
 
 

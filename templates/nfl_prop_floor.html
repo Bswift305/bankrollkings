@@ -66,7 +66,26 @@
 </form>
 
 {% if not player %}
-  <div class="pf-empty">Enter a player above &mdash; e.g. <b>Jalen Hurts</b>, Passing Yards, 197, &minus;200 &mdash; to see how often he actually gets there.</div>
+  {% if board and board.floors %}
+  <div class="pf-sec" style="display:flex;align-items:baseline;gap:10px;">Tonight&rsquo;s strongest floors <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-muted);">&mdash; this week&rsquo;s props, by how reliably the player clears the number</span></div>
+  <table class="pf-t">
+    <thead><tr><th>Play</th><th>Game</th><th>Hit rate</th><th>Clears by</th><th>Price</th></tr></thead>
+    <tbody>
+      {% for f in board.floors %}
+      <tr onclick="location.href='/tools/nfl-floor?player={{ f.player|urlencode }}&stat={{ f.stat_key }}&line={{ '%g'|format(f.line) }}{% if f.price %}&price={{ f.price }}{% endif %}'" style="cursor:pointer;">
+        <td><b style="color:var(--text-bright);">{{ f.player }}</b> <span style="color:var(--text-muted);">{{ f.stat }}</span> <b style="color:var(--pf-accent);">{{ '%g'|format(f.line) }}+</b></td>
+        <td style="color:var(--text-muted);font-size:12px;">{{ f.game }}</td>
+        <td class="{% if f.hit >= 85 %}pos{% elif f.hit >= 78 %}mid{% endif %}">{{ f.hit }}% <span style="color:var(--text-muted);font-size:11px;">{{ f.n }}g</span></td>
+        <td style="color:var(--text-muted);">+{{ f.clears }}</td>
+        <td>{% if f.price %}{{ '%+d'|format(f.price) }}{% else %}&mdash;{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="pf-note" style="margin-top:4px;">These are the props where the player has cleared the line most reliably (min 8 games). A floor is <b>reliability, not value</b> &mdash; low lines mean small payouts, and the alt-line price already reflects most of this. Tap any row to open the full breakdown and shop the number. Or enter your own player above. Recent form weighted; a thin sample is excluded. 21+</div>
+  {% else %}
+  <div class="pf-empty">Enter a player above &mdash; e.g. <b>Jalen Hurts</b>, Passing Yards, 197, &minus;200 &mdash; to see how often he actually gets there. (No live props loaded for a slate board right now.)</div>
+  {% endif %}
 {% elif not ok %}
   <div class="pf-empty">No game logs found for &ldquo;{{ player|e }}&rdquo; at that stat. Try the player&rsquo;s full name (e.g. &ldquo;Bijan Robinson&rdquo;) and a stat he records.</div>
 {% else %}
