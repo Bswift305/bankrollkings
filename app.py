@@ -29687,6 +29687,183 @@ def build_nfl_dashboard_runtime_bundle():
     )
 
 
+_NFL_PLAYER_WEEK_CACHE = {}
+_NFL_FLOOR_STATS = {
+    # key -> (display label, needs-QB-snaps filter, step for the ladder)
+    'passing_yards': ('Passing Yards', True, 10),
+    'completions': ('Completions', True, 1),
+    'attempts': ('Pass Attempts', True, 1),
+    'passing_tds': ('Passing TDs', True, 1),
+    'rushing_yards': ('Rushing Yards', False, 5),
+    'carries': ('Rush Attempts', False, 1),
+    'receiving_yards': ('Receiving Yards', False, 5),
+    'receptions': ('Receptions', False, 1),
+    'targets': ('Targets', False, 1),
+}
+
+
+def _nfl_player_week_data():
+    """All nflverse weekly player stats we have on disk (historical CSVs + the 2026
+    parquet), concatenated once and cached. Powers the prop-floor analyzer."""
+    if _NFL_PLAYER_WEEK_CACHE.get('df') is not None:
+        return _NFL_PLAYER_WEEK_CACHE['df']
+    import glob
+    frames = []
+    for f in sorted(glob.glob(str(DATA_DIR / 'historical' / 'NFL_PlayerStats_202*.csv'))):
+        try:
+            d = pd.read_csv(f, low_memory=False)
+            digits = ''.join(ch for ch in os.path.basename(f) if ch.isdigit())[:4]
+            d['season'] = int(digits) if digits else None
+            frames.append(d)
+        except Exception:
+            continue
+    for pf in (BASE_DIR / 'jw26.parquet', DATA_DIR / 'tracking' / '_nflverse_stats_2026.parquet'):
+        if os.path.exists(pf):
+            try:
+                d = pd.read_parquet(pf); d['season'] = 2026; frames.append(d); break
+            except Exception:
+                continue
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not df.empty:
+        # Names are inconsistent across our season files: most use the full 'Jalen Hurts',
+        # but the 2025 build uses the nflverse short form 'J.Hurts' in BOTH name columns.
+        disp = df['player_display_name'] if 'player_display_name' in df.columns else None
+        nm = df['player_name'] if 'player_name' in df.columns else None
+        if disp is not None and nm is not None:
+            df['_name'] = [max([str(a) for a in (x, y) if isinstance(a, str) and a], key=len, default='')
+                           for x, y in zip(disp, nm)]
+        else:
+            df['_name'] = (disp if disp is not None else nm if nm is not None else '')
+        df['_key'] = df['_name'].map(_nfl_name_key)
+        # Resolve a short form ('J.Hurts') to a full name ONLY when its initial+lastname
+        # key maps to exactly one full name in the fuller-named seasons -- so 'J.Hurts' ->
+        # 'Jalen Hurts', but ambiguous 'B.Robinson' (Bijan vs Brian) is left alone rather
+        # than silently grabbing the wrong player.
+        from collections import defaultdict as _dd
+        fulls = df.loc[df['_name'].astype(str).str.contains(' ', na=False), '_name'].astype(str)
+        key2full = _dd(set)
+        for fn in fulls.unique():
+            key2full[_nfl_name_key(fn)].add(fn)
+        resolve = {k: next(iter(v)) for k, v in key2full.items() if len(v) == 1}
+        df['_full'] = [n if ' ' in str(n) else resolve.get(k, n)
+                       for n, k in zip(df['_name'], df['_key'])]
+    _NFL_PLAYER_WEEK_CACHE['df'] = df
+    return df
+
+
+def _nfl_name_key(name):
+    """First-initial + last-name key, so 'Jalen Hurts' and 'J.Hurts' both -> 'j.hurts'."""
+    n = str(name or '').strip()
+    if not n:
+        return ''
+    toks = n.replace('.', ' ').split()
+    if len(toks) >= 2:
+        return f"{toks[0][:1]}.{toks[-1]}".lower()
+    return n.lower()
+
+
+def _american_to_prob(a):
+    try:
+        a = float(a)
+    except (TypeError, ValueError):
+        return None
+    return abs(a) / (abs(a) + 100) if a < 0 else 100 / (a + 100)
+
+
+def _prob_to_american(p):
+    if p is None or p <= 0 or p >= 1:
+        return None
+    return int(round(-100 * p / (1 - p))) if p >= 0.5 else int(round(100 * (1 - p) / p))
+
+
+def build_nfl_prop_floor(player, stat, line=None, price=None):
+    """Prop-floor analyzer: how often a player has actually cleared a line, from real
+    weekly game logs (career / last 2 yrs / this season), plus a 'shop the number'
+    ladder and the fair price at each line. Honest: a book's alt-line price already
+    reflects this -- we surface whether the number is a real floor or a priced trap."""
+    out = {'ok': False, 'player': player, 'stat': stat,
+           'stat_label': (_NFL_FLOOR_STATS.get(stat, (stat,))[0]),
+           'line': line, 'price': price, 'stats': list(_NFL_FLOOR_STATS.items())}
+    df = _nfl_player_week_data()
+    if df.empty or stat not in _NFL_FLOOR_STATS or stat not in df.columns or not player:
+        return out
+    qb_stat = _NFL_FLOOR_STATS[stat][1]
+    q = str(player).strip().lower()
+    # match on the resolved full name (exact), then a contains on it for partial input
+    d = df[df['_full'].astype(str).str.strip().str.lower() == q].copy()
+    if d.empty:
+        d = df[df['_full'].astype(str).str.contains(re.escape(str(player).strip()), case=False, na=False)].copy()
+    if d.empty and ' ' not in q:  # a bare initial.last query like 'j.hurts'
+        d = df[df['_key'] == _nfl_name_key(player)].copy()
+    if not d.empty:
+        out['player'] = max(d['_full'].astype(str).tolist(), key=len)
+    if d.empty:
+        out['not_found'] = True
+        return out
+    d['_v'] = pd.to_numeric(d[stat], errors='coerce')
+    if qb_stat and 'attempts' in d.columns:
+        d = d[pd.to_numeric(d['attempts'], errors='coerce').fillna(0) > 0]  # QB snaps only
+    d = d.dropna(subset=['_v', 'season'])
+    if d.empty:
+        out['not_found'] = True
+        return out
+    cur = int(d['season'].max())
+
+    def _rate(sub, ln):
+        return (sub['_v'] >= ln).mean() if len(sub) else None
+    windows = {
+        'career': d, 'l2y': d[d['season'] >= cur - 1], 'season': d[d['season'] == cur],
+    }
+    out['n'] = {k: int(len(v)) for k, v in windows.items()}
+    out['season_year'] = cur
+    out['avg'] = {k: (round(v['_v'].mean(), 1) if len(v) else None) for k, v in windows.items()}
+    # per-season breakdown
+    out['by_season'] = [{'year': int(y), 'games': int(len(g)),
+                         'avg': round(g['_v'].mean(), 1),
+                         'hit': (round(100 * _rate(g, line)) if line is not None else None)}
+                        for y, g in sorted(d.groupby('season'))]
+    if line is not None:
+        out['hit'] = {k: (round(100 * r) if (r := _rate(v, line)) is not None else None)
+                      for k, v in windows.items()}
+        # ladder: lines around the target so you can shop the number
+        step = _NFL_FLOOR_STATS[stat][2]
+        base = round(float(line) / step) * step
+        ladder = []
+        for ln in [base + step * k for k in range(-4, 5)]:
+            if ln <= 0:
+                continue
+            r2 = _rate(windows['l2y'], ln)
+            rc = _rate(windows['season'], ln)
+            ladder.append({'line': ln, 'l2y': (round(100 * r2) if r2 is not None else None),
+                           'season': (round(100 * rc) if rc is not None else None),
+                           'fair': _prob_to_american(r2) if r2 else None,
+                           'is_line': abs(ln - float(line)) < 1e-6})
+        out['ladder'] = ladder
+    if price not in (None, ''):
+        be = _american_to_prob(price)
+        out['breakeven'] = round(100 * be) if be is not None else None
+        # Judge on a window with enough sample -- prefer recent, but a 2-game season is
+        # noise, so fall back to last-2-years, then career, before calling anything.
+        if out['n'].get('season', 0) >= 8:
+            ref = 'season'
+        elif out['n'].get('l2y', 0) >= 8:
+            ref = 'l2y'
+        else:
+            ref = 'career'
+        rr = _rate(windows[ref], line) if line is not None else None
+        out['ref_window'] = ref
+        out['thin'] = out['n'].get(ref, 0) < 8
+        if rr is not None and be is not None:
+            out['edge'] = round(100 * (rr - be), 1)
+            if out['thin']:
+                out['verdict'] = 'THIN'  # not enough games to call it
+            else:
+                out['verdict'] = ('FLOOR' if rr - be >= 0.10 else
+                                  ('FAIR' if rr - be >= -0.03 else 'OVERPRICED'))
+    out['ok'] = True
+    return out
+
+
 def nfl_key_number(spread):
     """Key-number context for an NFL spread. Margins cluster hard on 3 and 7 (and to a
     lesser degree 6, 10, 14, 4), so the EXACT number and the half-point around it carry
@@ -39962,6 +40139,26 @@ def unit_sizing_tool():
     discipline rules. Cross-sport, fully client-side -- no model, just the math and
     the honesty (how MUCH to bet; the boards say what)."""
     return render_template('unit_sizing.html')
+
+
+@app.route('/tools/nfl-floor')
+def nfl_prop_floor_tool():
+    """Quick Tool: NFL prop-floor analyzer. Enter a player + stat + the line/price you
+    can set on the book; we show how often he's actually cleared it (career / L2Y / this
+    season) and a ladder to shop the number. Honest: the alt-line price already prices
+    this -- we flag real floors vs priced traps."""
+    player = (request.args.get('player') or '').strip()
+    stat = (request.args.get('stat') or 'passing_yards').strip()
+    line = request.args.get('line')
+    price = request.args.get('price')
+    try:
+        line = float(line) if line not in (None, '') else None
+    except (TypeError, ValueError):
+        line = None
+    ctx = (build_nfl_prop_floor(player, stat, line, price) if player
+           else {'ok': False, 'player': '', 'stat': stat, 'line': line, 'price': price,
+                 'stats': list(_NFL_FLOOR_STATS.items())})
+    return render_template('nfl_prop_floor.html', **ctx)
 
 
 _SCENARIO_LAB_CACHE = {}

@@ -1,0 +1,124 @@
+{% set active_page = 'nfl_floor' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Prop Floor - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .pf-wrap{--pf-accent:#3fbf7f;max-width:760px;}
+  .pf-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--panel,#0f1a29);
+    border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:18px;}
+  .pf-f{display:flex;flex-direction:column;gap:5px;}
+  .pf-f label{font:700 10.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .pf-f input,.pf-f select{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:9px;
+    padding:10px 11px;color:var(--text-bright);font:700 14px ui-monospace,Consolas,monospace;}
+  .pf-f input:focus,.pf-f select:focus{outline:none;border-color:var(--pf-accent);}
+  .pf-f.player input{width:170px;} .pf-f.line input{width:80px;} .pf-f.price input{width:80px;}
+  .pf-btn{background:var(--pf-accent);color:#0b1118;border:0;border-radius:9px;padding:11px 18px;
+    font:800 13px 'Helvetica Neue',Arial,sans-serif;cursor:pointer;}
+  .pf-verdict{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-radius:14px;padding:16px 18px;margin-bottom:16px;}
+  .pf-verdict.FLOOR{background:rgba(78,212,138,.1);border:1px solid rgba(78,212,138,.4);}
+  .pf-verdict.FAIR{background:rgba(255,209,102,.09);border:1px solid rgba(255,209,102,.35);}
+  .pf-verdict.OVERPRICED{background:rgba(255,107,107,.09);border:1px solid rgba(255,107,107,.4);}
+  .pf-verdict.THIN{background:rgba(255,255,255,.04);border:1px solid var(--border);}
+  .pf-tag{font:800 15px ui-monospace,monospace;letter-spacing:.04em;padding:6px 12px;border-radius:8px;}
+  .pf-tag.FLOOR{background:#4ed48a;color:#0b1118;} .pf-tag.FAIR{background:#ffd166;color:#0b1118;} .pf-tag.OVERPRICED{background:#ff6b6b;color:#0b1118;}
+  .pf-tag.THIN{background:var(--text-muted);color:#0b1118;}
+  .pf-verdict .m{font:600 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .pf-verdict .m b{color:var(--text-bright);}
+  .pf-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:18px;}
+  .pf-c{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .pf-c .k{font:700 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .pf-c .v{font:800 22px ui-monospace,monospace;color:var(--text-bright);margin-top:4px;}
+  .pf-c .v small{font-size:12px;color:var(--text-muted);}
+  table.pf-t{width:100%;border-collapse:collapse;margin-bottom:18px;}
+  table.pf-t th{text-align:right;padding:7px 10px;font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);}
+  table.pf-t th:first-child,table.pf-t td:first-child{text-align:left;}
+  table.pf-t td{padding:8px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);font:700 13px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  table.pf-t tr.hl td{background:rgba(63,191,127,.08);}
+  table.pf-t td.pos{color:#4ed48a;} table.pf-t td.mid{color:#ffd166;} table.pf-t td.neg{color:#ff8f9a;}
+  .pf-sec{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);margin:0 0 8px;}
+  .pf-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:6px;}
+  .pf-note b{color:var(--text-bright);}
+  .pf-empty{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:8px 2px;}
+</style>
+
+<div class="pf-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Prop <span class="accent">Floor</span></h1>
+    <div class="page-subtitle">Alt lines let you move the number &mdash; but a &ldquo;floor&rdquo; only counts if the player actually clears it more often than the price needs. Enter a player, stat, and the line/price you can set, and see the real hit rate from live game logs.</div>
+  </div>
+</div>
+
+<form class="pf-form" method="get" action="/tools/nfl-floor">
+  <div class="pf-f player"><label>Player</label><input type="text" name="player" value="{{ player|e }}" placeholder="Jalen Hurts" autocomplete="off"></div>
+  <div class="pf-f"><label>Stat</label>
+    <select name="stat">
+      {% for key, meta in stats %}<option value="{{ key }}"{% if key == stat %} selected{% endif %}>{{ meta[0] }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="pf-f line"><label>Line (+)</label><input type="number" step="0.5" name="line" value="{{ line if line is not none else '' }}" placeholder="197"></div>
+  <div class="pf-f price"><label>Price</label><input type="text" name="price" value="{{ price if price is not none else '' }}" placeholder="-200"></div>
+  <button class="pf-btn" type="submit">Check floor</button>
+</form>
+
+{% if not player %}
+  <div class="pf-empty">Enter a player above &mdash; e.g. <b>Jalen Hurts</b>, Passing Yards, 197, &minus;200 &mdash; to see how often he actually gets there.</div>
+{% elif not ok %}
+  <div class="pf-empty">No game logs found for &ldquo;{{ player|e }}&rdquo; at that stat. Try the player&rsquo;s full name (e.g. &ldquo;Bijan Robinson&rdquo;) and a stat he records.</div>
+{% else %}
+
+{% if verdict %}
+{% set wtxt = {'season':'this season','l2y':'the last 2 years','career':'his career'} %}
+<div class="pf-verdict {{ verdict }}">
+  <span class="pf-tag {{ verdict }}">{{ 'LOW DATA' if verdict == 'THIN' else verdict }}</span>
+  {% if verdict == 'THIN' %}
+  <span class="m"><b>{{ player }}</b> only has <b>{{ n[ref_window] }}</b> game{{ 's' if n[ref_window] != 1 else '' }} of {{ stat_label }} on record &mdash; too few to call {{ '%g'|format(line) }}+ a floor. Treat the rates below as a small sample, not a verdict.</span>
+  {% else %}
+  <span class="m"><b>{{ player }}</b> {{ stat_label }} <b>{{ '%g'|format(line) }}+</b> at <b>{{ price }}</b> &mdash;
+    needs <b>{{ breakeven }}%</b>, has hit it <b>{{ hit[ref_window] }}%</b> over {{ wtxt[ref_window] }} ({{ n[ref_window] }} g){% if edge is not none %} &middot; edge <b>{{ '%+g'|format(edge) }} pts</b>{% endif %}.</span>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="pf-cards">
+  <div class="pf-c"><div class="k">Hit {{ '%g'|format(line) if line is not none else '—' }}+ &middot; L2Y</div><div class="v">{% if line is not none and hit.l2y is not none %}{{ hit.l2y }}%{% else %}&mdash;{% endif %} <small>{{ n.l2y }}g</small></div></div>
+  <div class="pf-c"><div class="k">This season ({{ season_year }})</div><div class="v">{% if line is not none and hit.season is not none %}{{ hit.season }}%{% else %}&mdash;{% endif %} <small>{{ n.season }}g</small></div></div>
+  <div class="pf-c"><div class="k">Career</div><div class="v">{% if line is not none and hit.career is not none %}{{ hit.career }}%{% else %}&mdash;{% endif %} <small>{{ n.career }}g</small></div></div>
+  <div class="pf-c"><div class="k">Avg / game (L2Y)</div><div class="v">{{ avg.l2y if avg.l2y is not none else '—' }}</div></div>
+</div>
+
+{% if ladder %}
+<div class="pf-sec">Shop the number &mdash; {{ stat_label }} hit rate by line</div>
+<table class="pf-t">
+  <thead><tr><th>Line</th><th>Last 2 yrs</th><th>{{ season_year }}</th><th>Fair price</th></tr></thead>
+  <tbody>
+    {% for l in ladder %}
+    <tr class="{{ 'hl' if l.is_line else '' }}">
+      <td>{{ '%g'|format(l.line) }}+{% if l.is_line %} &larr;{% endif %}</td>
+      <td class="{% if l.l2y is not none and l.l2y >= 80 %}pos{% elif l.l2y is not none and l.l2y >= 60 %}mid{% elif l.l2y is not none %}neg{% endif %}">{% if l.l2y is not none %}{{ l.l2y }}%{% else %}&mdash;{% endif %}</td>
+      <td>{% if l.season is not none %}{{ l.season }}%{% else %}&mdash;{% endif %}</td>
+      <td>{% if l.fair is not none %}{{ '%+d'|format(l.fair) }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="pf-sec">Game-by-game history</div>
+<table class="pf-t">
+  <thead><tr><th>Season</th><th>Games</th><th>Avg</th>{% if line is not none %}<th>Hit {{ '%g'|format(line) }}+</th>{% endif %}</tr></thead>
+  <tbody>
+    {% for s in by_season %}
+    <tr><td>{{ s.year }}</td><td>{{ s.games }}</td><td>{{ s.avg }}</td>{% if line is not none %}<td class="{% if s.hit is not none and s.hit >= 80 %}pos{% elif s.hit is not none and s.hit >= 60 %}mid{% elif s.hit is not none %}neg{% endif %}">{{ s.hit }}%</td>{% endif %}</tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pf-note"><b>How to read it:</b> a true <b>floor</b> clears comfortably above what the price needs &mdash; we tag it <span style="color:#4ed48a;">FLOOR</span> only when the recent hit rate beats break-even by 10+ points. <span style="color:#ffd166;">FAIR</span> is roughly break-even, <span style="color:#ff8f9a;">OVERPRICED</span> means the number looks like a floor but the player misses it too often for the price. Alt-line prices already bake in most of this &mdash; the edge is finding where a soft number and a real hit rate line up. Recent form (last 2 yrs) is weighted over career; a 2-game season is noise. Spots, not locks. 21+</div>
+{% endif %}
+</div>
+{% endblock %}
