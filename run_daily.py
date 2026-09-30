@@ -103,6 +103,13 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # open->current movement accrues. Reads NFL_Odds.csv; never overwrites a game's
         # first-seen open. Cheap, no network.
         ("NFL line-open capture", _python("capture_nfl_line_open.py"), 120),
+        # Refresh the CURRENT-season nflverse weekly player stats that power the Prop
+        # Floor / Featured Players / Hot Hand engines AND the prop-line grader. nflverse
+        # rewrites the season file as each week finalizes; nothing refreshed our copy, so
+        # the in-season base was stuck on a one-time local build and everything downstream
+        # ran on stale weeks. Writes data/tracking/_nflverse_stats_<season>.parquet, which
+        # _nfl_player_week_data() reads. MUST run before the grade step below.
+        ("NFL weekly player stats", _python("fetch_nfl_player_week.py"), 300),
         # Forward-capture NFL player-prop lines daily (the Odds API only serves current),
         # so we accrue a real 2026 open->close prop-line history to grade "tickets we
         # could have hit" against. Idempotent one snapshot/day -> NFL_PropLines_Archive.csv.

@@ -29718,20 +29718,37 @@ def _nfl_player_week_data():
         return _NFL_PLAYER_WEEK_CACHE['df']
     import glob
     frames = []
+    csv_seasons = set()
     for f in sorted(glob.glob(str(DATA_DIR / 'historical' / 'NFL_PlayerStats_202*.csv'))):
         try:
             d = pd.read_csv(f, low_memory=False)
             digits = ''.join(ch for ch in os.path.basename(f) if ch.isdigit())[:4]
-            d['season'] = int(digits) if digits else None
+            season = int(digits) if digits else None
+            d['season'] = season
             frames.append(d)
+            if season:
+                csv_seasons.add(season)
         except Exception:
             continue
-    for pf in (BASE_DIR / 'jw26.parquet', DATA_DIR / 'tracking' / '_nflverse_stats_2026.parquet'):
-        if os.path.exists(pf):
-            try:
-                d = pd.read_parquet(pf); d['season'] = 2026; frames.append(d); break
-            except Exception:
-                continue
+    # Current/in-season nflverse weekly parquet(s). fetch_nfl_player_week.py refreshes
+    # data/tracking/_nflverse_stats_<season>.parquet daily on prod; jw26.parquet is the
+    # legacy one-time local build, used only if the refreshed file is absent. A closed
+    # season already has a historical CSV, so skip it here to avoid double-counting.
+    season_files = {}
+    for pf in sorted(glob.glob(str(DATA_DIR / 'tracking' / '_nflverse_stats_20*.parquet'))):
+        digits = ''.join(ch for ch in os.path.basename(pf) if ch.isdigit())[:4]
+        if digits:
+            season_files[int(digits)] = pf
+    legacy = BASE_DIR / 'jw26.parquet'
+    if 2026 not in season_files and os.path.exists(legacy):
+        season_files[2026] = str(legacy)
+    for season, pf in sorted(season_files.items()):
+        if season in csv_seasons:
+            continue
+        try:
+            d = pd.read_parquet(pf); d['season'] = season; frames.append(d)
+        except Exception:
+            continue
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if not df.empty:
         # Names are inconsistent across our season files: most use the full 'Jalen Hurts',
