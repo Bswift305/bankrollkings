@@ -63,7 +63,9 @@ def build(season: int, source: str | None = None) -> dict:
     df = _num(df, [
         "carries", "rushing_yards", "rushing_tds", "passing_yards", "passing_tds",
         "attempts", "passing_air_yards", "sacks_suffered", "def_sacks", "def_qb_hits",
-        "def_interceptions",
+        "def_interceptions", "fumble_recovery_opp",
+        "passing_interceptions", "rushing_fumbles_lost", "receiving_fumbles_lost",
+        "sack_fumbles_lost",
     ])
     df = df.dropna(subset=["team", "opponent_team"])
     df["team"] = df["team"].map(lambda t: TEAM_NORM.get(t, t))
@@ -111,7 +113,12 @@ def build(season: int, source: str | None = None) -> dict:
             "pass_ypg": round(own["passing_yards"].sum() / gms, 1),
             "rush_ypc": round(own["rushing_yards"].sum() / car_o, 2) if car_o else 0.0,
             "sacks_allowed": float(own["sacks_suffered"].sum()),
+            # turnovers: takeaways (defense forces) vs giveaways (offense loses)
+            "takeaways": float(own["def_interceptions"].sum() + own["fumble_recovery_opp"].sum()),
+            "giveaways": float(own["passing_interceptions"].sum() + own["rushing_fumbles_lost"].sum()
+                               + own["receiving_fumbles_lost"].sum() + own["sack_fumbles_lost"].sum()),
         }
+        rec[T]["to_margin"] = round(rec[T]["takeaways"] - rec[T]["giveaways"], 1)
 
     # --- Strength-of-schedule adjustment ---------------------------------------
     # A raw rank is flattered by an easy slate: ATL's #1 run D faced PIT + CAR. So
@@ -158,6 +165,14 @@ def build(season: int, source: str | None = None) -> dict:
         ("rush_ypg_allowed_adj", True, "rush_ypg_adj_rank"),
         ("pass_ypg_allowed_adj", True, "pass_ypg_adj_rank"),
         ("sos_pts", False, "sos_rank"),  # 1 = toughest schedule faced
+        # offense (1 = most yards) + turnovers (1 = best: most takeaways / fewest
+        # giveaways / best margin) + pass protection (1 = fewest sacks allowed)
+        ("rush_ypg", False, "off_rush_rank"),
+        ("pass_ypg", False, "off_pass_rank"),
+        ("sacks_allowed", True, "sacks_allowed_rank"),
+        ("takeaways", False, "takeaway_rank"),
+        ("giveaways", True, "giveaway_rank"),
+        ("to_margin", False, "to_margin_rank"),
     ]
     for col, asc, name in rank_specs:
         ranks = frame[col].rank(ascending=asc, method="min").astype(int)

@@ -40586,6 +40586,45 @@ def unit_sizing_tool():
     return render_template('unit_sizing.html')
 
 
+def build_nfl_team_rankings_context():
+    """Team Rankings board: all 32 teams' offense + defense + turnovers, league-ranked,
+    out of the matchup card into its own surface. Run / Pass / Sacks / Forced TOs, from
+    nfl_2026_form.json (build_nfl_team_form.py)."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_2026_form.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return {'tr_available': False, 'teams': []}
+    teams = []
+    for abbr, t in (d.get('teams') or {}).items():
+        teams.append({
+            'team': abbr, 'games': t.get('games'),
+            # offense
+            'rush_ypg': t.get('rush_ypg'), 'off_rush_rank': t.get('off_rush_rank'),
+            'pass_ypg': t.get('pass_ypg'), 'off_pass_rank': t.get('off_pass_rank'),
+            'sacks_allowed': t.get('sacks_allowed'), 'sacks_allowed_rank': t.get('sacks_allowed_rank'),
+            # defense
+            'rush_ypg_allowed': t.get('rush_ypg_allowed'), 'rush_d_rank': t.get('rush_ypg_adj_rank') or t.get('rush_ypg_rank'),
+            'pass_ypg_allowed': t.get('pass_ypg_allowed'), 'pass_d_rank': t.get('pass_ypg_adj_rank') or t.get('pass_ypg_rank'),
+            'def_sacks': t.get('def_sacks'), 'sack_rank': t.get('sack_rank'),
+            # turnovers
+            'takeaways': t.get('takeaways'), 'takeaway_rank': t.get('takeaway_rank'),
+            'giveaways': t.get('giveaways'), 'giveaway_rank': t.get('giveaway_rank'),
+            'to_margin': t.get('to_margin'), 'to_margin_rank': t.get('to_margin_rank'),
+        })
+    teams.sort(key=lambda x: (x.get('to_margin_rank') or 99))  # default: best turnover margin
+    return {'tr_available': bool(teams), 'teams': teams,
+            'tr_season': d.get('season'), 'tr_weeks': d.get('weeks'),
+            'tr_updated': d.get('updated'), 'tr_avg': d.get('league_avg') or {}}
+
+
+@app.route('/tools/nfl-rankings')
+def nfl_team_rankings_tool():
+    """Quick Tool: NFL Team Rankings -- offense, defense, and turnovers, league-ranked."""
+    return render_template('nfl_rankings.html', **build_nfl_team_rankings_context())
+
+
 def build_nfl_officiating_context():
     """NFL officiating read: this week's crew assignments (when nflverse posts them) +
     the referee totals-lean leaderboard, from data/scenarios/nfl_officiating.json

@@ -1,0 +1,102 @@
+{% set active_page = 'nfl_rankings' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Team Rankings - Bankroll Kings{% endblock %}
+
+{% block content %}
+{% macro cell(val, rank, unit='') -%}
+  <td class="tr-cell{% if rank and rank <= 8 %} good{% elif rank and rank >= 25 %} bad{% elif rank and rank >= 17 %} mid{% endif %}">
+    {%- if val is not none %}{{ val }}{{ unit }}{% if rank %}<span class="rk">{{ rank }}</span>{% endif %}{% else %}&mdash;{% endif -%}
+  </td>
+{%- endmacro %}
+<style>
+  .tr-wrap{--tr-accent:#3fbf7f;max-width:900px;}
+  .tr-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .tr-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;padding:8px 14px;font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
+  .tr-chip.active{color:#0b1118;background:var(--tr-accent);border-color:var(--tr-accent);}
+  .tr-scroll{overflow-x:auto;}
+  table.tr-t{border-collapse:collapse;width:100%;min-width:520px;}
+  table.tr-t th{padding:8px 9px;font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--text-muted);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;}
+  table.tr-t th:first-child,table.tr-t td:first-child{text-align:left;position:sticky;left:0;background:var(--bg,#0b1118);}
+  table.tr-t th.grp{color:var(--tr-accent);border-bottom:2px solid rgba(63,191,127,.3);}
+  .tr-cell{padding:8px 9px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);font:700 12.5px ui-monospace,Consolas,monospace;color:var(--text-bright);white-space:nowrap;}
+  .tr-cell .rk{display:inline-block;margin-left:5px;font:700 9px ui-monospace,monospace;color:var(--text-muted);}
+  .tr-cell.good{color:#4ed48a;} .tr-cell.good .rk{color:rgba(78,212,138,.7);}
+  .tr-cell.bad{color:#ff8f9a;} .tr-cell.bad .rk{color:rgba(255,143,154,.7);}
+  .tr-cell.mid{color:#ffd166;} .tr-cell.mid .rk{color:rgba(255,209,102,.7);}
+  .tr-team{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .tr-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:16px;}
+  .tr-note b{color:var(--text-bright);}
+  .hide{display:none;}
+</style>
+
+<div class="tr-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL{% if tr_season %} &middot; {{ tr_season }}{% endif %}</div>
+    <h1>Team <span class="accent">Rankings</span></h1>
+    <div class="page-subtitle">Every team&rsquo;s offense, defense, and turnovers &mdash; Run, Pass, Sacks, and Forced TOs &mdash; league-ranked in one place, so you don&rsquo;t have to open a matchup card to see how a side is playing now.</div>
+  </div>
+</div>
+
+{% if not tr_available %}
+  <div class="tr-note">Team form isn&rsquo;t loaded yet &mdash; it builds daily from the season&rsquo;s game logs.</div>
+{% else %}
+<div class="tr-filter">
+  <button class="tr-chip active" data-v="all">All</button>
+  <button class="tr-chip" data-v="off">Offense</button>
+  <button class="tr-chip" data-v="def">Defense</button>
+  <button class="tr-chip" data-v="to">Turnovers</button>
+</div>
+
+<div class="tr-scroll">
+<table class="tr-t">
+  <thead>
+    <tr>
+      <th>Team</th>
+      <th class="grp c-off">O Rush</th><th class="grp c-off">O Pass</th><th class="grp c-off">Sk All</th>
+      <th class="grp c-def">D Rush</th><th class="grp c-def">D Pass</th><th class="grp c-def">Sacks</th>
+      <th class="grp c-to">Forced TO</th><th class="grp c-to">Giveaways</th><th class="grp c-to">TO Marg</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in teams %}
+    <tr>
+      <td><span class="tr-team">{{ t.team }}</span></td>
+      <td class="c-off">{{ cell(t.rush_ypg, t.off_rush_rank) }}</td>
+      <td class="c-off">{{ cell(t.pass_ypg, t.off_pass_rank) }}</td>
+      <td class="c-off">{{ cell(t.sacks_allowed|round(0)|int if t.sacks_allowed is not none else none, t.sacks_allowed_rank) }}</td>
+      <td class="c-def">{{ cell(t.rush_ypg_allowed, t.rush_d_rank) }}</td>
+      <td class="c-def">{{ cell(t.pass_ypg_allowed, t.pass_d_rank) }}</td>
+      <td class="c-def">{{ cell(t.def_sacks|round(0)|int if t.def_sacks is not none else none, t.sack_rank) }}</td>
+      <td class="c-to">{{ cell(t.takeaways|round(0)|int if t.takeaways is not none else none, t.takeaway_rank) }}</td>
+      <td class="c-to">{{ cell(t.giveaways|round(0)|int if t.giveaways is not none else none, t.giveaway_rank) }}</td>
+      <td class="c-to">{{ cell('%+g'|format(t.to_margin) if t.to_margin is not none else none, t.to_margin_rank) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="tr-note"><b>Reading it:</b> big numbers are the per-game value; the small number is the <b>league rank</b> (1 = best). <span style="color:#4ed48a;">Green</span> = top-8, <span style="color:#ffd166;">gold</span> = middle, <span style="color:#ff8f9a;">red</span> = bottom-8. Offense yards are what the team gains; defense yards are what it allows (rank 1 = allows the fewest). <b>Forced TOs</b> = interceptions + fumble recoveries; TO margin = takeaways &minus; giveaways. Early season, so a two-to-three-game sample &mdash; ranks firm up weekly.{% if tr_weeks %} Through Week {{ tr_weeks[-1] }}.{% endif %}</div>
+{% endif %}
+</div>
+
+<script>
+(function(){
+  var chips=document.querySelectorAll('.tr-chip');
+  var groups={off:'.c-off',def:'.c-def',to:'.c-to'};
+  chips.forEach(function(c){ c.onclick=function(){
+    chips.forEach(function(x){x.classList.remove('active');}); c.classList.add('active');
+    var v=c.getAttribute('data-v');
+    ['off','def','to'].forEach(function(g){
+      var show=(v==='all'||v===g);
+      document.querySelectorAll(groups[g]).forEach(function(el){ el.classList.toggle('hide',!show); });
+    });
+  };});
+})();
+</script>
+{% endblock %}
