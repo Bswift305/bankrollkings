@@ -1,0 +1,130 @@
+{% set active_page = 'nfl_hub' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Hub - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930a">
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">NFL{% if season %} &middot; {{ season }}{% endif %} &middot; Intelligence Hub</div>
+    <h1>Everything, <span class="accent">organized</span></h1>
+    <div class="page-subtitle">Not a list of tools &mdash; a flow. Who&rsquo;s hot, whether the matchup&rsquo;s right, what the floor is, how to build the ticket, and the receipts. Each panel is live; open any for the full board.</div>
+  </div>
+</div>
+
+<!-- WHO'S HOT ------------------------------------------------------------- -->
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Who&rsquo;s Hot</h2><span class="sub">by opportunity &amp; streak</span><a class="all" href="/tools/nfl-featured">Featured &rarr;</a></div>
+  <div class="bkn-grid-2">
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">Top opportunity</span></div>
+      <div class="bkn-list">
+        {% for p in featured %}
+        <a class="bkn-row" href="/tools/nfl-floor?player={{ p.player|urlencode }}&stat={{ 'rushing_yards' if p.is_back else 'receiving_yards' }}">
+          <span class="bkn-tile accent"><span class="n">{{ p.score }}</span><span class="l">Opp</span></span>
+          <span class="lead"><span class="t">{{ p.player }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ p.team }}</span> <span class="bkn-tag {{ 'good' if p.role in ['Alpha','Bell-cow'] else 'mid' if p.role in ['Featured','Lead back'] else 'flat' }}">{{ p.role }}</span></span><span class="m">{{ p.why }}</span></span>
+        </a>
+        {% else %}<div class="bkn-empty">Usage loads once the week&rsquo;s stats are in.</div>{% endfor %}
+      </div>
+    </div>
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">&#9733; Streak + plus matchup</span><a class="all" href="/tools/nfl-heatmap">Heat map &rarr;</a></div>
+      <div class="bkn-list">
+        {% for r in hot_plus %}
+        {% set heat = '#ff3b30' if r.streak >= 8 else '#ff6b3d' if r.streak >= 5 else '#ff9f43' if r.streak >= 3 else '#ffd166' %}
+        <a class="bkn-row" href="/tools/nfl-floor?player={{ r.player|urlencode }}&stat={{ r.stat_key }}&line={{ '%g'|format(r.line) }}{% if r.price %}&price={{ r.price }}{% endif %}">
+          <span class="bkn-tile fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">str8</span></span>
+          <span class="lead"><span class="t">{{ r.player }} {% if r.matchup %}<span class="bkn-tag good">&#9733; {{ r.matchup.label }}</span>{% endif %}</span><span class="m">{{ r.stat }} <b>{{ '%g'|format(r.line) }}+</b> &middot; {{ r.game }} &middot; clears +{{ r.avg_clear }}</span></span>
+        </a>
+        {% else %}<div class="bkn-empty">No streak-plus-soft-matchup combos on the board right now.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FIND A PLAY ---------------------------------------------------------- -->
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#127919;</span><h2>Find a Play</h2><span class="sub">floors &amp; game lines</span></div>
+  <div class="bkn-grid-2">
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">Strongest prop floors</span><a class="all" href="/tools/nfl-floor">All floors &rarr;</a></div>
+      <div class="bkn-list">
+        {% for f in floors %}
+        <a class="bkn-row" href="/tools/nfl-floor?player={{ f.player|urlencode }}&stat={{ f.stat_key }}&line={{ '%g'|format(f.line) }}{% if f.price %}&price={{ f.price }}{% endif %}">
+          <span class="lead"><span class="t">{{ f.player }} <span style="color:var(--bkn-accent);">{{ f.stat }} {{ '%g'|format(f.line) }}+</span></span><span class="m">{{ f.game }} &middot; clears +{{ f.clears }}{% if f.price %} &middot; {{ '%+d'|format(f.price) }}{% endif %}</span></span>
+          <span class="trail">{{ f.hit }}%<small>{{ f.n }}g</small></span>
+        </a>
+        {% else %}<div class="bkn-empty">Floors load with this week&rsquo;s props.</div>{% endfor %}
+      </div>
+    </div>
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">Best game lines</span><a class="all" href="/tools/nfl-game-board">Game board &rarr;</a></div>
+      <div class="bkn-list">
+        {% for c in gameboard %}
+        <div class="bkn-row" style="cursor:default;">
+          <span class="lead"><span class="t">{{ c.play }} {% if c.flag %}<span class="bkn-tag bad">{{ c.flag }}</span>{% endif %}</span><span class="m">{{ c.why }}</span></span>
+          <span class="trail" style="font-size:11px;"><span class="bkn-tag {{ 'good' if c.tier=='Validated' else 'mid' if c.tier=='Situational' else 'flat' }}">{{ c.tier[:4] }}</span></span>
+        </div>
+        {% else %}<div class="bkn-empty">Game-line reads load with the slate.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BUILD A TICKET ------------------------------------------------------- -->
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#127915;</span><h2>Build a Ticket</h2><span class="sub">cross-game, priced</span><a class="all" href="/parlay-builder">Parlay builder &rarr;</a></div>
+  {% if parlay and parlay.available %}
+  <div class="bkn-card glow">
+    <div class="name" style="justify-content:space-between;"><span>&#9733; This Week&rsquo;s Featured Parlay</span><span style="color:var(--bkn-accent);font-family:ui-monospace,monospace;">+{{ parlay.american }} &middot; $5 &rarr; ${{ '%g'|format(parlay.payout_5) }}</span></div>
+    {% for l in parlay.legs %}
+    <div class="why" style="padding:6px 0;border-top:1px solid rgba(255,255,255,.06);margin-top:6px;"><b>{{ l.player }}</b> {{ l.stat }} <b style="color:var(--bkn-accent);">{{ '%g'|format(l.line) }}+</b> &middot; {{ l.game }} &middot; hits {{ l.hit }}%{% if l.price %} &middot; {{ '%+d'|format(l.price) }}{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% else %}<div class="bkn-empty">The featured parlay builds from the strongest floors once this week&rsquo;s props are in.</div>{% endif %}
+</div>
+
+<!-- HOMEWORK ------------------------------------------------------------- -->
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#128218;</span><h2>Do the Homework</h2><span class="sub">rankings &amp; officiating</span></div>
+  <div class="bkn-grid-2">
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:6px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">Team rankings</span><a class="all" href="/tools/nfl-rankings">All 32 &rarr;</a></div>
+      {% if rank_hi.to_margin %}
+      <div class="bkn-list">
+        <div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ rank_hi.to_margin.team }}</span><span class="m">best turnover margin</span></span><span class="trail" style="color:var(--bkn-good);">{{ '%+g'|format(rank_hi.to_margin.to_margin) }}<small>#{{ rank_hi.to_margin.to_margin_rank }}</small></span></div>
+        <div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ rank_hi.soft_pass_d.team }}</span><span class="m">softest pass defense</span></span><span class="trail" style="color:var(--bkn-bad);">{{ rank_hi.soft_pass_d.pass_ypg_allowed }}<small>#{{ rank_hi.soft_pass_d.pass_d_rank }}</small></span></div>
+        <div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ rank_hi.top_rush_o.team }}</span><span class="m">top rushing offense</span></span><span class="trail" style="color:var(--bkn-good);">{{ rank_hi.top_rush_o.rush_ypg }}<small>#{{ rank_hi.top_rush_o.off_rush_rank }}</small></span></div>
+      </div>
+      {% else %}<div class="bkn-empty">Rankings load daily from game logs.</div>{% endif %}
+    </div>
+    <div>
+      <div class="bkn-sec-h" style="border:0;margin-bottom:6px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">Officiating leans</span><a class="all" href="/tools/nfl-officiating">All crews &rarr;</a></div>
+      {% if refs_over %}
+      <div class="bkn-list">
+        {% for r in refs_over %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ r.name }}</span><span class="m">over-leaning &middot; avg {{ r.avg_total }}</span></span><span class="trail" style="color:var(--bkn-good);">{{ r.over_pct }}%<small>over</small></span></div>{% endfor %}
+        {% for r in refs_under %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ r.name }}</span><span class="m">under-leaning &middot; avg {{ r.avg_total }}</span></span><span class="trail" style="color:var(--bkn-mid);">{{ r.over_pct }}%<small>over</small></span></div>{% endfor %}
+      </div>
+      <div class="bkn-empty" style="font-size:11px;">Baseline {{ off_baseline.over_pct }}% overs &mdash; small, largely priced.</div>
+      {% else %}<div class="bkn-empty">Officiating loads daily.</div>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- RECEIPTS ------------------------------------------------------------- -->
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#129534;</span><h2>The Receipts</h2><span class="sub">tickets that hit</span><a class="all" href="/tools/nfl-scoreboard">Scoreboard &rarr;</a></div>
+  {% if sb_available %}
+  <div class="bkn-grid">
+    <div class="bkn-stat"><div class="v">{{ scoreboard.winning_parlays }}</div><div class="k">Winning 3-leg parlays</div></div>
+    <div class="bkn-stat"><div class="v">{{ scoreboard.hit_rate }}%</div><div class="k">Over-hit rate</div></div>
+    <div class="bkn-stat"><div class="v">{{ scoreboard.hit }}<span style="font-size:14px;color:var(--text-muted);">/{{ scoreboard.graded }}</span></div><div class="k">Props graded</div></div>
+    <div class="bkn-stat"><div class="v">{{ scoreboard.weeks }}</div><div class="k">Weeks tracked</div></div>
+  </div>
+  {% else %}<div class="bkn-note"><b>The record is building.</b> We capture and grade every prop line daily &mdash; the winning tickets that were on the board show up here as each week resolves.</div>{% endif %}
+</div>
+
+</div>
+{% endblock %}

@@ -80,7 +80,8 @@
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
-      <a href="{{ sport_home_href('nfl') }}" class="bk-sidebar-item {% if active_sport == 'nfl' and active_page not in ['fantasy','scenario_lab','nfl_spots','nfl_totals_today'] %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
+      <a href="/tools/nfl-hub" class="bk-sidebar-item {% if active_page == 'nfl_hub' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">NFL Hub</span></a>
+      <a href="{{ sport_home_href('nfl') }}" class="bk-sidebar-item {% if active_sport == 'nfl' and active_page not in ['fantasy','scenario_lab','nfl_spots','nfl_totals_today','nfl_hub'] %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
       <a href="/tools/nfl-board" class="bk-sidebar-item {% if active_page == 'nfl_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Top Board (all markets)</span></a>
       <a href="/tools/nfl-game-board" class="bk-sidebar-item {% if active_page == 'nfl_game_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Game Board (spreads/totals)</span></a>
       <a href="/tools/nfl-period-board" class="bk-sidebar-item {% if active_page == 'nfl_period_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Period Board (1H/1Q/team)</span></a>

@@ -1,0 +1,83 @@
+/* ==========================================================================
+   Bankroll Kings — NFL intelligence design language (v1, 2026-09-30)
+   One shared component set for the NFL hub + tools. Hybrid: dense tables for
+   boards/rankings, roomy cards for featured/hot/ticket views. Built on the
+   existing theme tokens (--accent, --panel, --border, --text*). Semantic
+   good/mid/bad = green/gold/red for league standing, hit rate, matchup.
+   ========================================================================== */
+.bkn{--bkn-accent:var(--accent,#3fbf7f);--bkn-good:#4ed48a;--bkn-mid:#ffd166;--bkn-bad:#ff8f9a;
+  --bkn-hot:#ff6b3d;--bkn-panel:var(--panel,#0f1a29);max-width:960px;}
+
+/* section shell ----------------------------------------------------------- */
+.bkn-sec{margin:0 0 26px;}
+.bkn-sec-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding-bottom:9px;
+  border-bottom:2px solid var(--border);}
+.bkn-sec-h .ic{font-size:15px;line-height:1;}
+.bkn-sec-h h2{margin:0;font:800 16px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.01em;color:var(--text-bright);text-transform:none;}
+.bkn-sec-h .sub{font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+.bkn-sec-h .all{margin-left:auto;font:800 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;
+  color:var(--bkn-accent);text-decoration:none;white-space:nowrap;}
+.bkn-sec-h .all:hover{opacity:.8;}
+
+/* layout ------------------------------------------------------------------ */
+.bkn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+.bkn-grid-2{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:640px){.bkn-grid-2{grid-template-columns:1fr 1fr;}}
+
+/* card (roomy) ------------------------------------------------------------ */
+.bkn-card{background:var(--bkn-panel);border:1px solid var(--border);border-radius:14px;padding:13px 15px;text-decoration:none;display:block;}
+a.bkn-card:hover{border-color:rgba(63,191,127,.35);}
+.bkn-card.glow{border-color:rgba(63,191,127,.4);box-shadow:0 0 0 1px rgba(63,191,127,.14),0 10px 30px rgba(0,0,0,.28);}
+.bkn-card .name{font:800 14.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.bkn-card .name .team{font:700 11px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+.bkn-card .why{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:3px;}
+.bkn-card .why b{color:var(--text);}
+
+/* compact row list -------------------------------------------------------- */
+.bkn-list{display:flex;flex-direction:column;}
+.bkn-row{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.06);text-decoration:none;}
+.bkn-row:last-child{border-bottom:0;}
+.bkn-row:hover{background:rgba(63,191,127,.05);}
+.bkn-row .lead{flex:1 1 auto;min-width:0;}
+.bkn-row .lead .t{font:700 13.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+.bkn-row .lead .m{font:500 11.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
+.bkn-row .lead .m b{color:var(--text);}
+.bkn-row .trail{flex:0 0 auto;text-align:right;font:800 14px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+.bkn-row .trail small{display:block;font:600 9.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
+
+/* dense table ------------------------------------------------------------- */
+.bkn-scroll{overflow-x:auto;}
+table.bkn-tbl{width:100%;border-collapse:collapse;}
+table.bkn-tbl th{text-align:right;padding:7px 10px;font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);white-space:nowrap;}
+table.bkn-tbl th:first-child,table.bkn-tbl td:first-child{text-align:left;}
+table.bkn-tbl td{padding:8px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);
+  font:700 12.5px ui-monospace,Consolas,monospace;color:var(--text-bright);white-space:nowrap;}
+table.bkn-tbl td.txt{font-family:'Helvetica Neue',Arial,sans-serif;}
+table.bkn-tbl td.good{color:var(--bkn-good);} table.bkn-tbl td.bad{color:var(--bkn-bad);} table.bkn-tbl td.mid{color:var(--bkn-mid);}
+
+/* pills, tags, heat tiles ------------------------------------------------- */
+.bkn-pill{display:inline-flex;align-items:baseline;gap:3px;font:800 11px ui-monospace,monospace;
+  border-radius:7px;padding:3px 8px;}
+.bkn-pill.hot{color:#0b1118;} /* bg set inline by heat */
+.bkn-pill.rank{background:rgba(255,255,255,.05);color:var(--text-muted);}
+.bkn-tag{font:800 9px ui-monospace,monospace;letter-spacing:.04em;border-radius:5px;padding:2px 6px;text-transform:uppercase;}
+.bkn-tag.good{background:var(--bkn-good);color:#0b1118;}
+.bkn-tag.mid{background:var(--bkn-mid);color:#0b1118;}
+.bkn-tag.bad{background:var(--bkn-bad);color:#0b1118;}
+.bkn-tag.flat{border:1px solid var(--border);color:var(--text-muted);}
+.bkn-tile{flex:0 0 auto;width:44px;height:44px;border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.bkn-tile .n{font:800 18px ui-monospace,monospace;line-height:1;}
+.bkn-tile .l{font:700 7px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-top:1px;}
+.bkn-tile.accent{background:rgba(63,191,127,.12);border:1px solid rgba(63,191,127,.3);}
+.bkn-tile.accent .n{color:var(--bkn-accent);} .bkn-tile.accent .l{color:var(--text-muted);}
+.bkn-tile.fire .n,.bkn-tile.fire .l{color:#0b1118;} .bkn-tile.fire .l{color:rgba(11,17,24,.7);}
+
+/* misc -------------------------------------------------------------------- */
+.bkn-stat{background:var(--bkn-panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+.bkn-stat .v{font:800 24px ui-monospace,Consolas,monospace;color:var(--bkn-accent);line-height:1;}
+.bkn-stat .k{font:700 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-top:6px;}
+.bkn-empty{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:8px 2px;}
+.bkn-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+  background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;}
+.bkn-note b{color:var(--text-bright);}

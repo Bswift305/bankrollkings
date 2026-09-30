@@ -29771,6 +29771,22 @@ def _nfl_name_key(name):
     return n.lower()
 
 
+_NFL_PLAYER_IDX_CACHE = {}
+
+
+def _nfl_player_index():
+    """The 100k-row player-week log grouped by lowercased full name, built ONCE and shared
+    by the floor board / hot-hand / usage previews (each used to rebuild it, ~3s apiece)."""
+    log = _nfl_player_week_data()
+    if log.empty:
+        return {}
+    if _NFL_PLAYER_IDX_CACHE.get('id') != id(log):
+        _NFL_PLAYER_IDX_CACHE['idx'] = {k: v for k, v in
+                                        log.groupby(log['_full'].astype(str).str.strip().str.lower())}
+        _NFL_PLAYER_IDX_CACHE['id'] = id(log)
+    return _NFL_PLAYER_IDX_CACHE['idx']
+
+
 def _american_to_prob(a):
     try:
         a = float(a)
@@ -29911,11 +29927,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
         return empty
     cur = int(pd.to_numeric(log['season'], errors='coerce').max())
     # one filter of the big log per PLAYER (not per prop): index games by full name
-    if _NFL_FLOOR_BOARD_CACHE.get('idx_id') != id(log):
-        _NFL_FLOOR_BOARD_CACHE['idx'] = {k: v for k, v in
-                                         log.groupby(log['_full'].astype(str).str.strip().str.lower())}
-        _NFL_FLOOR_BOARD_CACHE['idx_id'] = id(log)
-    idx = _NFL_FLOOR_BOARD_CACHE['idx']
+    idx = _nfl_player_index()
     try:
         props = _load_cached_csv(props_path, default=pd.DataFrame())
     except Exception:
@@ -30098,11 +30110,7 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
     if log.empty or not props_path.exists():
         _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
         return empty
-    if _NFL_HOTHAND_CACHE.get('idx_id') != id(log):
-        _NFL_HOTHAND_CACHE['idx'] = {k: v for k, v in
-                                     log.groupby(log['_full'].astype(str).str.strip().str.lower())}
-        _NFL_HOTHAND_CACHE['idx_id'] = id(log)
-    idx = _NFL_HOTHAND_CACHE['idx']
+    idx = _nfl_player_index()
     cur = int(pd.to_numeric(log['season'], errors='coerce').max())
     try:
         props = _load_cached_csv(props_path, default=pd.DataFrame())
@@ -40667,6 +40675,52 @@ def nfl_heatmap_tool():
     """Quick Tool: Hot Hand heat map -- every player with an ACTIVE over streak intact
     at this week's line, across every prop category. Who's hot right now."""
     return render_template('nfl_heatmap.html', **build_nfl_hot_hand())
+
+
+def build_nfl_hub_context():
+    """The NFL Hub: one front door that organizes every NFL tool by what a bettor is
+    looking for -- Who's Hot / Find a Play / Build a Ticket / Homework / Receipts -- each
+    section a LIVE preview (top few from the real builder) that links to the full tool."""
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception:
+            return default
+    featured = _safe(lambda: build_nfl_usage_board(limit=6).get('players', []), [])
+    hotdata = _safe(lambda: build_nfl_hot_hand(limit=60), {'streaks': []})
+    hot = hotdata.get('streaks', [])
+    hot_plus = [r for r in hot if r.get('matchup') and r['matchup'].get('tone') == 'soft']
+    floors = _safe(lambda: build_nfl_floor_board(limit=20).get('floors', []), [])
+    gameboard = _safe(lambda: build_nfl_game_board_context().get('board', []), [])
+    parlay = _safe(build_nfl_featured_parlay, {'available': False})
+    ranks = _safe(build_nfl_team_rankings_context, {'teams': []})
+    officiating = _safe(build_nfl_officiating_context, {'refs': []})
+    scoreboard = _safe(build_nfl_ticket_scoreboard, {'totals': {}})
+    slate = _safe(lambda: build_football_home_slate('nfl'), [])
+    # ranking highlights: best TO margin, softest pass D, top rush O
+    teams = ranks.get('teams', [])
+    rk = {}
+    if teams:
+        rk['to_margin'] = teams[0]  # already sorted by TO margin rank
+        rk['soft_pass_d'] = max(teams, key=lambda t: (t.get('pass_d_rank') or 0))
+        rk['top_rush_o'] = min(teams, key=lambda t: (t.get('off_rush_rank') or 99))
+    refs = officiating.get('refs', [])
+    return {
+        'featured': featured[:5],
+        'hot': hot[:5], 'hot_plus': hot_plus[:4],
+        'floors': floors[:5], 'gameboard': gameboard[:4],
+        'parlay': parlay, 'rank_hi': rk, 'refs_over': refs[:2],
+        'refs_under': refs[-2:] if len(refs) >= 2 else [],
+        'off_baseline': officiating.get('baseline', {}),
+        'scoreboard': scoreboard.get('totals', {}), 'sb_available': scoreboard.get('available'),
+        'slate': slate[:6], 'season': hotdata.get('season'),
+    }
+
+
+@app.route('/tools/nfl-hub')
+def nfl_hub_tool():
+    """Quick Tool: the NFL Hub -- everything organized by bettor intent, live previews."""
+    return render_template('nfl_hub.html', **build_nfl_hub_context())
 
 
 @app.route('/tools/nfl-featured')
