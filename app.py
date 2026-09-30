@@ -40902,16 +40902,18 @@ def _nfl_player_matchup_read(player, stat=None):
                          'tight coverage' if has_sep else None)}
 
 
-def build_nfl_matchup_edge(limit=40):
-    """Coverage-flavored matchup read for this week's pass-catchers: each receiver's usage
-    (target / air-yards share) + how much SEPARATION he actually gets (NGS) vs THIS WEEK's
-    opponent pass defense (current-form rank). The honest, own-data version of a 'target
-    share vs man coverage / team plays man at a high rate' note -- we don't have proprietary
-    man-zone charting, but this is the same matchup 'why', from data we can stand behind.
-    Best spots first."""
+def build_nfl_matchup_edge(limit=60):
+    """This week's matchup edges across prop types -- the honest, own-data version of a
+    'X vs man coverage, team plays man at a high rate' note (we don't license man/zone
+    charting). Three sides, each = the player's OWN skill/usage into THIS WEEK's matching
+    opponent rank, best spots first:
+      * Pass-catchers -> target/air-yards share + NGS separation vs opponent PASS defense.
+      * Backs -> backfield carry share (+ pass-game role) vs opponent RUN defense.
+      * Pass rushers -> pressure rate vs the opponent's PASS PROTECTION (sacks allowed).
+    Opponent rank convention throughout: 1 = toughest matchup, 32 = softest."""
     import nfl_current_form as _ncf
-    usage = build_nfl_usage_board(limit=250)
-    players = [p for p in usage.get('players', []) if not p.get('is_def') and not p.get('is_back')]
+    usage = build_nfl_usage_board(limit=400)
+    players = usage.get('players', [])
     if not players:
         return {'available': False, 'rows': [], 'season': usage.get('season')}
     ngs = _load_ngs_receiving_current()
@@ -40926,6 +40928,9 @@ def build_nfl_matchup_edge(limit=40):
             opp_of[a] = (h, False)   # a plays AT h
             opp_of[h] = (a, True)    # h hosts a
 
+    def _tone(rank):
+        return 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
+
     rows = []
     for p in players:
         team = p.get('team')
@@ -40936,34 +40941,55 @@ def build_nfl_matchup_edge(limit=40):
         tf = _ncf.team_form(opp)
         if not tf or int(tf.get('games', 0) or 0) < 1:
             continue
-        rank = int(_ncf._adj_pass_rank(tf))
-        tone = 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
-        n = ngs.get(str(p.get('player', '')).strip().lower(), {})
-        sep, cush = n.get('sep'), n.get('cush')
-        has_sep = sep is not None and not pd.isna(sep)
-        ts = p.get('target_share') or 0
-        ays = p.get('air_share') or 0
-        sep_tier = None
-        if has_sep:
-            sep_tier = 'creates separation' if sep >= 3.3 else 'gets open' if sep >= 2.9 else 'tight coverage'
-        # edge = soft matchup + separation + volume, best first
-        opp_c = (rank / 32.0) * 42
-        sep_c = (min(max((float(sep) - 2.4) / 1.4, 0), 1) * 28) if has_sep else 14
-        edge = round(opp_c + sep_c + min(ts / 30.0, 1) * 30)
-        bits = [f"{ts}% target share"]
-        if ays >= 25:
-            bits.append(f"{ays}% of the air yards")
-        if has_sep:
-            bits.append(f"{sep:.1f} yd sep ({sep_tier})")
-        why = ", ".join(bits) + f" — into {opp}'s pass D ranked {_ncf._ord(rank)}"
-        rows.append({
-            'player': p.get('player'), 'team': team, 'pos': p.get('pos'),
-            'opp': opp, 'home': home, 'target_share': ts, 'air_share': ays,
-            'sep': (round(float(sep), 2) if has_sep else None),
-            'cush': (round(float(cush), 1) if (cush is not None and not pd.isna(cush)) else None),
-            'sep_tier': sep_tier, 'opp_rank': rank, 'opp_ord': _ncf._ord(rank),
-            'tone': tone, 'edge': edge, 'why': why,
-        })
+        row = {'player': p.get('player'), 'team': team, 'pos': p.get('pos'),
+               'opp': opp, 'home': home}
+        if p.get('is_def'):
+            # pass rushers only -- their clean matchup is the opponent's pass protection
+            if p.get('role') != 'Pass rusher':
+                continue
+            rank = pd.to_numeric(pd.Series([tf.get('sacks_allowed_rank')]), errors='coerce').iloc[0]
+            if pd.isna(rank):
+                continue
+            rank = int(rank)
+            prs = p.get('prs_pg') or 0
+            edge = round((rank / 32.0) * 42 + min(prs / 8.0, 1) * 58)
+            why = f"{prs:.1f} pressures/gm — into {opp}'s pass protection ranked {_ncf._ord(rank)}"
+            row.update(cat='def', metric=f"{prs:.1f}", metric_lbl='prs/gm')
+        elif p.get('is_back'):
+            rank = int(_ncf._adj_run_rank(tf))
+            rs = p.get('rush_share') or 0
+            cpg = p.get('car_pg') or 0
+            tpg = p.get('tgt_pg') or 0
+            edge = round((rank / 32.0) * 42 + min(rs / 70.0, 1) * 28 + min(cpg / 22.0, 1) * 30)
+            bits = [f"{rs}% of the backfield carries ({cpg:.0f}/gm)"]
+            if tpg >= 3:
+                bits.append(f"{tpg:.0f} targets/gm")
+            why = ", ".join(bits) + f" — into {opp}'s run D ranked {_ncf._ord(rank)}"
+            row.update(cat='rush', metric=f"{rs}%", metric_lbl='carries')
+        else:
+            rank = int(_ncf._adj_pass_rank(tf))
+            n = ngs.get(str(p.get('player', '')).strip().lower(), {})
+            sep = n.get('sep')
+            has_sep = sep is not None and not pd.isna(sep)
+            ts = p.get('target_share') or 0
+            ays = p.get('air_share') or 0
+            sep_tier = ('creates separation' if has_sep and sep >= 3.3 else
+                        'gets open' if has_sep and sep >= 2.9 else
+                        'tight coverage' if has_sep else None)
+            sep_c = (min(max((float(sep) - 2.4) / 1.4, 0), 1) * 28) if has_sep else 14
+            edge = round((rank / 32.0) * 42 + sep_c + min(ts / 30.0, 1) * 30)
+            bits = [f"{ts}% target share"]
+            if ays >= 25:
+                bits.append(f"{ays}% of the air yards")
+            if has_sep:
+                bits.append(f"{sep:.1f} yd sep ({sep_tier})")
+            why = ", ".join(bits) + f" — into {opp}'s pass D ranked {_ncf._ord(rank)}"
+            row.update(cat='rec', sep=(round(float(sep), 2) if has_sep else None),
+                       sep_tier=sep_tier, target_share=ts, air_share=ays,
+                       metric=(f"{sep:.1f}" if has_sep else '—'), metric_lbl='yd sep')
+        row.update(opp_rank=rank, opp_ord=_ncf._ord(rank), tone=_tone(rank),
+                   edge=edge, why=why)
+        rows.append(row)
     rows.sort(key=lambda r: -r['edge'])
     return {'available': bool(rows), 'rows': rows[:limit], 'season': usage.get('season'),
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}

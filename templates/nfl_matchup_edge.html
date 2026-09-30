@@ -5,12 +5,18 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .me-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .me-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;padding:8px 14px;font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
+  .me-chip.active{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+</style>
 <div class="bkn">
 <div class="page-hero">
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL{% if season %} &middot; {{ season }}{% endif %}</div>
     <h1>Matchup <span class="accent">Edge</span></h1>
-    <div class="page-subtitle">This week&rsquo;s pass-catchers ranked by the spot they&rsquo;re walking into &mdash; their <b>usage</b> (target &amp; air-yards share) and how much <b>separation</b> they actually get, against the <b>pass defense</b> they draw. The honest &ldquo;why&rdquo; behind a receiver&rsquo;s week.</div>
+    <div class="page-subtitle">This week&rsquo;s players ranked by the spot they&rsquo;re walking into &mdash; each one&rsquo;s <b>own skill &amp; usage</b> against the <b>matching opponent rank</b>. Receivers vs the pass defense, backs vs the run defense, pass rushers vs the pass protection. The honest &ldquo;why&rdquo; behind a player&rsquo;s week.</div>
   </div>
   <div class="hero-actions"><a href="/tools/nfl-hub" class="btn btn-secondary btn-sm">&lsaquo; NFL Hub</a> <a href="/tools/nfl-featured" class="btn btn-secondary btn-sm">Featured Players</a></div>
 </div>
@@ -18,21 +24,38 @@
 {% if not available %}
   <div class="bkn-empty">Matchup edges load once this week&rsquo;s slate and the season&rsquo;s usage + separation data are in.</div>
 {% else %}
-<div class="bkn-list">
+<div class="me-filter">
+  <button class="me-chip active" data-f="all">All</button>
+  <button class="me-chip" data-f="rec">Pass-catchers</button>
+  <button class="me-chip" data-f="rush">Backs</button>
+  <button class="me-chip" data-f="def">Pass rush</button>
+</div>
+<div class="bkn-list" id="me-list">
 {% for r in rows %}
-<a class="bkn-row" href="/tools/nfl-floor?player={{ r.player|urlencode }}&stat=receiving_yards">
+<a class="bkn-row" data-cat="{{ r.cat }}" href="{% if r.cat == 'def' %}/tools/nfl-floor?player={{ r.player|urlencode }}&stat=sacks{% elif r.cat == 'rush' %}/tools/nfl-floor?player={{ r.player|urlencode }}&stat=rushing_yards{% else %}/tools/nfl-floor?player={{ r.player|urlencode }}&stat=receiving_yards{% endif %}">
   <span class="bkn-tile accent"><span class="n">{{ r.edge }}</span><span class="l">edge</span></span>
   <span class="lead">
     <span class="t">{{ r.player }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.team }} {{ 'vs' if r.home else '@' }} {{ r.opp }}</span>
       <span class="bkn-tag {{ 'good' if r.tone == 'soft' else 'bad' if r.tone == 'tough' else 'flat' }}">{{ 'PLUS SPOT' if r.tone == 'soft' else 'TOUGH D' if r.tone == 'tough' else 'NEUTRAL' }}</span></span>
     <span class="m">{{ r.why }}</span>
   </span>
-  <span class="trail">{% if r.sep is not none %}{{ '%.1f'|format(r.sep) }}<small>yd sep</small>{% else %}&mdash;<small>no ngs</small>{% endif %}</span>
+  <span class="trail">{{ r.metric }}<small>{{ r.metric_lbl }}</small></span>
 </a>
 {% endfor %}
 </div>
 
-<div class="bkn-note"><b>How to read it honestly:</b> this is the own-data version of a &ldquo;vs man coverage&rdquo; note. We don&rsquo;t license proprietary man/zone charting, so instead of claiming a coverage split we can&rsquo;t source, we combine three things we <i>can</i> stand behind: <b>usage</b> (how many targets and air yards a receiver commands), <b>separation</b> (NGS &mdash; how much room he actually gets open, league average ~3.0 yds), and the <b>opponent&rsquo;s pass-defense rank</b> this week (1 = toughest, 32 = softest). A high-usage receiver who creates separation into a soft pass D is the plus spot; the <b>edge</b> number weighs all three. It&rsquo;s context for a receiving prop, not a projection &mdash; early-season separation is a small sample and firms up weekly.{% if updated %} Updated {{ updated }}.{% endif %}</div>
+<div class="bkn-note"><b>How to read it honestly:</b> this is the own-data version of a &ldquo;vs man coverage&rdquo; note. We don&rsquo;t license proprietary man/zone charting, so instead of claiming a coverage split we can&rsquo;t source, we pair what a player <i>does</i> with the <b>matching opponent rank</b>: a receiver&rsquo;s usage + <b>separation</b> (NGS) vs the <b>pass defense</b>; a back&rsquo;s <b>carry share</b> vs the <b>run defense</b>; a rusher&rsquo;s <b>pressure rate</b> vs the <b>pass protection</b>. Opponent rank is always <b>1 = toughest, 32 = softest</b>, so a high-usage player into a soft matchup (a <span style="color:var(--bkn-good);">PLUS SPOT</span>) floats to the top; the <b>edge</b> number weighs skill, volume and matchup together. Context for a prop, not a projection &mdash; early-season ranks are a small sample and firm up weekly.{% if updated %} Updated {{ updated }}.{% endif %}</div>
 {% endif %}
 </div>
+
+<script>
+(function(){
+  var chips=document.querySelectorAll('.me-chip'), rows=document.querySelectorAll('#me-list .bkn-row');
+  chips.forEach(function(c){ c.onclick=function(){
+    chips.forEach(function(x){x.classList.remove('active');}); c.classList.add('active');
+    var f=c.getAttribute('data-f');
+    rows.forEach(function(r){ r.style.display=(f==='all'||r.getAttribute('data-cat')===f)?'':'none'; });
+  };});
+})();
+</script>
 {% endblock %}
