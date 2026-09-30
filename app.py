@@ -29976,6 +29976,126 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     return data
 
 
+_NFL_HOTHAND_CACHE = {}
+
+
+def _nfl_prop_matchup(opp_abbr, stat_key):
+    """Opponent-defense read for a prop category: is the matchup a plus spot or a wall?
+    High rank = soft defense = good look for the OVER. Returns None for stats with no
+    clean opponent rank (sacks/tackles)."""
+    try:
+        import nfl_current_form as _ncf
+        t = _ncf.team_form(opp_abbr)
+        if not t or int(t.get('games', 0) or 0) < 1:
+            return None
+        if stat_key in ('rushing_yards', 'carries', 'rushing_tds', 'rush_rec_yds'):
+            rank, side = _ncf._adj_run_rank(t), 'run D'
+        elif stat_key in ('passing_yards', 'completions', 'attempts', 'passing_tds',
+                          'receiving_yards', 'receptions', 'receiving_tds', 'targets'):
+            rank, side = _ncf._adj_pass_rank(t), 'pass D'
+        elif stat_key == 'anytime_td':
+            rank, side = max(_ncf._adj_run_rank(t), _ncf._adj_pass_rank(t)), 'D'
+        else:
+            return None
+        tone = 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
+        return {'rank': int(rank), 'opp': opp_abbr, 'side': side, 'tone': tone,
+                'label': f"{opp_abbr} {side} {_ncf._ord(int(rank))}"}
+    except Exception:
+        return None
+
+
+def build_nfl_hot_hand(limit=50, min_streak=2):
+    """Heat map -- who has the hot hand: players with an ACTIVE over streak intact. For
+    every prop on this week's board, walk the player's real game logs newest-first and
+    count how many straight he's cleared the current line. Every category (incl. computed
+    + defense). Ranked by streak length, then by how comfortably he's clearing. Honest:
+    a streak is a trend the market prices -- context, not a proven edge -- but 'who's hot
+    right now' is exactly what a bettor wants to see."""
+    props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
+    sig = os.path.getmtime(props_path) if props_path.exists() else 0
+    if _NFL_HOTHAND_CACHE.get('sig') == sig and 'data' in _NFL_HOTHAND_CACHE:
+        return _NFL_HOTHAND_CACHE['data']
+    empty = {'streaks': [], 'available': False, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    log = _nfl_player_week_data()
+    if log.empty or not props_path.exists():
+        _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
+        return empty
+    if _NFL_HOTHAND_CACHE.get('idx_id') != id(log):
+        _NFL_HOTHAND_CACHE['idx'] = {k: v for k, v in
+                                     log.groupby(log['_full'].astype(str).str.strip().str.lower())}
+        _NFL_HOTHAND_CACHE['idx_id'] = id(log)
+    idx = _NFL_HOTHAND_CACHE['idx']
+    cur = int(pd.to_numeric(log['season'], errors='coerce').max())
+    try:
+        props = _load_cached_csv(props_path, default=pd.DataFrame())
+    except Exception:
+        props = pd.DataFrame()
+    if props.empty or 'Player' not in props.columns:
+        _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
+        return empty
+    full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
+    rows, seen = [], set()
+    for (player, statlbl), g in props.groupby(['Player', 'Stat']):
+        stat_key = _NFL_PROP_STAT_MAP.get(str(statlbl))
+        meta = _NFL_FLOOR_STATS.get(stat_key) if stat_key else None
+        if not meta:
+            continue
+        line = pd.to_numeric(g['Line'], errors='coerce').median()
+        if pd.isna(line):
+            continue
+        sub = idx.get(str(player).strip().lower())
+        cols = [c for c in meta['cols'] if sub is not None and c in sub.columns]
+        if sub is None or not cols:
+            continue
+        s = sub.copy()
+        s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in cols)
+        if meta['qb'] and 'attempts' in s.columns:
+            s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
+        s = s.dropna(subset=['season'])
+        s['week'] = pd.to_numeric(s.get('week'), errors='coerce')
+        s = s.dropna(subset=['week']).sort_values(['season', 'week'], ascending=False)
+        if s.empty or int(s.iloc[0]['season']) != cur:   # last game must be current season = active
+            continue
+        vals = s['_v'].tolist()
+        streak, clears = 0, []
+        for v in vals:
+            if v > float(line):
+                streak += 1; clears.append(v - float(line))
+            else:
+                break
+        if streak < min_streak:
+            continue
+        key = (str(player), stat_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        game = str(g['Game'].iloc[0]) if 'Game' in g.columns else ''
+        p_team = str(s.iloc[0].get('team') or '').upper()
+        abbrs = []
+        if '@' in game:
+            a, h = game.split('@', 1)
+            aa = full2abbr.get(a.strip(), a.strip()[:3].upper())
+            hh = full2abbr.get(h.strip(), h.strip()[:3].upper())
+            abbrs = [aa, hh]
+            game = f"{aa} @ {hh}"
+        opp = next((x for x in abbrs if x != p_team), '')
+        matchup = _nfl_prop_matchup(opp, stat_key) if opp else None
+        pr = pd.to_numeric(g.get('OverOdds'), errors='coerce')
+        pr = pr[pr.abs() >= 100]
+        rows.append({
+            'player': str(player), 'stat': meta['label'], 'stat_key': stat_key,
+            'line': float(line), 'streak': int(streak),
+            'avg_clear': round(sum(clears) / len(clears), 1) if clears else 0,
+            'price': int(round(pr.median())) if len(pr) else None,
+            'game': game, 'team': p_team, 'opp': opp, 'matchup': matchup,
+        })
+    rows.sort(key=lambda x: (-x['streak'], -x['avg_clear']))
+    data = {'streaks': rows[:limit], 'count': len(rows), 'available': bool(rows),
+            'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_HOTHAND_CACHE.update(sig=sig, data=data)
+    return data
+
+
 _NFL_USAGE_CACHE = {}
 
 
@@ -40386,6 +40506,13 @@ def unit_sizing_tool():
     discipline rules. Cross-sport, fully client-side -- no model, just the math and
     the honesty (how MUCH to bet; the boards say what)."""
     return render_template('unit_sizing.html')
+
+
+@app.route('/tools/nfl-heatmap')
+def nfl_heatmap_tool():
+    """Quick Tool: Hot Hand heat map -- every player with an ACTIVE over streak intact
+    at this week's line, across every prop category. Who's hot right now."""
+    return render_template('nfl_heatmap.html', **build_nfl_hot_hand())
 
 
 @app.route('/tools/nfl-featured')

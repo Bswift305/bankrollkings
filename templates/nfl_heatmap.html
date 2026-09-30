@@ -1,0 +1,96 @@
+{% set active_page = 'nfl_heatmap' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Hot Hand Heat Map - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .hm-wrap{--hm-accent:#3fbf7f;max-width:840px;}
+  .hm-note{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(255,107,107,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin:8px 0 18px;}
+  .hm-note b{color:var(--text-bright);}
+  .hm-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .hm-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;padding:8px 13px;font:800 11.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
+  .hm-chip.active{color:#0b1118;background:var(--hm-accent);border-color:var(--hm-accent);}
+  .hm-row{display:flex;align-items:center;gap:13px;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.06);text-decoration:none;}
+  .hm-row:hover{background:rgba(255,107,107,.05);}
+  .hm-fire{flex:0 0 auto;width:52px;height:44px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .hm-fire .n{font:800 19px ui-monospace,Consolas,monospace;line-height:1;color:#0b1118;}
+  .hm-fire .l{font:700 7px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;margin-top:1px;color:rgba(11,17,24,.7);}
+  .hm-main{flex:1 1 auto;min-width:0;}
+  .hm-name{font:800 14.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .hm-name .p{font:700 11px ui-monospace,monospace;color:var(--text-muted);margin-left:6px;}
+  .hm-sub{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:2px;}
+  .hm-sub b{color:var(--text);}
+  .hm-mu{font:800 9.5px ui-monospace,monospace;letter-spacing:.03em;border-radius:5px;padding:2px 6px;margin-left:2px;white-space:nowrap;}
+  .hm-mu.soft{background:#4ed48a;color:#0b1118;} .hm-mu.tough{background:#ff6b6b;color:#0b1118;}
+  .hm-mu.neutral{border:1px solid var(--border);color:var(--text-muted);}
+  .hm-line{flex:0 0 auto;text-align:right;font:800 15px ui-monospace,monospace;color:var(--hm-accent);}
+  .hm-line small{display:block;font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
+  .hm-empty{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 2px;}
+</style>
+
+<div class="hm-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL{% if season %} &middot; {{ season }}{% endif %}</div>
+    <h1>Hot Hand <span class="accent">Heat Map</span></h1>
+    <div class="page-subtitle">Who has a streak intact &mdash; every player who&rsquo;s cleared this week&rsquo;s line in each of his last N games, across every prop category. Longest run on top, hottest colors are the deepest streaks.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-featured" class="btn btn-secondary btn-sm">Featured Players</a></div>
+</div>
+
+{% if not available %}
+  <div class="hm-empty">No active streaks loaded yet &mdash; fills in once this week&rsquo;s lines and the season&rsquo;s game logs are in.</div>
+{% else %}
+<div class="hm-note"><b>Read it honestly:</b> a streak is a <b>trend the market already prices</b> &mdash; it&rsquo;s "who&rsquo;s hot right now," a starting point and your eye test, not a proven edge. A long run at a low line (e.g. 7.5 rec yds, clearing by +40) is a <b>floor</b>, not a heater &mdash; the "clears by" number tells you which. Streaks are counted vs this week&rsquo;s posted line from real game logs, most-recent game first.</div>
+
+<div class="hm-filter">
+  <button class="hm-chip active" data-f="all">All</button>
+  <button class="hm-chip" data-f="plus" data-mode="tone">&#9733; Plus spots</button>
+  <button class="hm-chip" data-f="pass">Passing</button>
+  <button class="hm-chip" data-f="rush">Rushing</button>
+  <button class="hm-chip" data-f="rec">Receiving</button>
+  <button class="hm-chip" data-f="td">TDs</button>
+  <button class="hm-chip" data-f="def">Defense</button>
+</div>
+
+<div id="hm-list">
+{% for r in streaks %}
+{% set cat = 'pass' if r.stat_key in ['passing_yards','completions','attempts','passing_tds']
+   else 'td' if r.stat_key in ['anytime_td','rushing_tds','receiving_tds']
+   else 'def' if r.stat_key in ['solo_tackles','tackles_assists','sacks']
+   else 'rush' if r.stat_key in ['carries','rushing_yards','rush_rec_yds']
+   else 'rec' %}
+{% set heat = '#ff3b30' if r.streak >= 8 else '#ff6b3d' if r.streak >= 5 else '#ff9f43' if r.streak >= 3 else '#ffd166' %}
+<a class="hm-row" data-cat="{{ cat }}" data-tone="{{ r.matchup.tone if r.matchup else 'none' }}" href="/tools/nfl-floor?player={{ r.player|urlencode }}&stat={{ r.stat_key }}&line={{ '%g'|format(r.line) }}{% if r.price %}&price={{ r.price }}{% endif %}">
+  <span class="hm-fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">straight</span></span>
+  <span class="hm-main">
+    <span class="hm-name">{{ r.player }}<span class="p">{{ r.team }}</span>
+      {% if r.matchup %}<span class="hm-mu {{ r.matchup.tone }}">{% if r.matchup.tone == 'soft' %}&#9733; {% endif %}{{ r.matchup.label }}</span>{% endif %}</span>
+    <span class="hm-sub"><b>{{ r.stat }} {{ '%g'|format(r.line) }}+</b> &middot; {{ r.game }} &middot; clears by <b>+{{ r.avg_clear }}</b> avg</span>
+  </span>
+  <span class="hm-line">{% if r.price %}{{ '%+d'|format(r.price) }}{% else %}&mdash;{% endif %}<small>over</small></span>
+</a>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+
+<script>
+(function(){
+  var chips=document.querySelectorAll('.hm-chip'), rows=document.querySelectorAll('.hm-row');
+  chips.forEach(function(c){ c.onclick=function(){
+    chips.forEach(function(x){x.classList.remove('active');}); c.classList.add('active');
+    var f=c.getAttribute('data-f'), mode=c.getAttribute('data-mode');
+    rows.forEach(function(r){
+      var show = (f==='all') ? true
+        : (mode==='tone') ? (r.getAttribute('data-tone')==='soft')
+        : (r.getAttribute('data-cat')===f);
+      r.style.display=show?'':'none';
+    });
+  };});
+})();
+</script>
+{% endblock %}
