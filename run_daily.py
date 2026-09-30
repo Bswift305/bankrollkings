@@ -115,6 +115,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # ran on stale weeks. Writes data/tracking/_nflverse_stats_<season>.parquet, which
         # _nfl_player_week_data() reads. MUST run before the grade step below.
         ("NFL weekly player stats", _python("fetch_nfl_player_week.py"), 300),
+        # Next Gen Stats receiving (separation / cushion / air-yards share) for the current
+        # season -- the coverage-flavored signal behind the Matchup Edge board. Public NGS
+        # statboard, no key; defaults to the current NFL season.
+        ("NFL Next Gen receiving", _python("fetch_ngs_stats.py", "--categories", "receiving", "--aggregate"), 300),
         # Forward-capture NFL player-prop lines daily (the Odds API only serves current),
         # so we accrue a real 2026 open->close prop-line history to grade "tickets we
         # could have hit" against. Idempotent one snapshot/day -> NFL_PropLines_Archive.csv.

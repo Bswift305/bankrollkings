@@ -40809,6 +40809,105 @@ def nfl_heatmap_tool():
     return render_template('nfl_heatmap.html', **build_nfl_hot_hand())
 
 
+def _load_ngs_receiving_current():
+    """Current-season NGS receiving aggregate -> {name_lower: {sep, cush, tgt}}. Separation
+    and cushion are how much room a receiver actually gets -- coverage-flavored signal we
+    can source freely (no proprietary man/zone charting)."""
+    import glob
+    files = [f for f in sorted(glob.glob(str(DATA_DIR / 'ngs' / 'NGS_Receiving_20*_REG.csv')))
+             if 'Weekly' not in f]
+    if not files:
+        return {}
+    try:
+        df = pd.read_csv(files[-1])
+    except Exception:
+        return {}
+    out = {}
+    for r in df.to_dict('records'):
+        nm = str(r.get('player.displayName') or r.get('playerName') or '').strip().lower()
+        if not nm:
+            continue
+        def _n(v):
+            return pd.to_numeric(pd.Series([v]), errors='coerce').iloc[0]
+        out[nm] = {'sep': _n(r.get('avgSeparation')), 'cush': _n(r.get('avgCushion')),
+                   'tgt': _n(r.get('targets'))}
+    return out
+
+
+def build_nfl_matchup_edge(limit=40):
+    """Coverage-flavored matchup read for this week's pass-catchers: each receiver's usage
+    (target / air-yards share) + how much SEPARATION he actually gets (NGS) vs THIS WEEK's
+    opponent pass defense (current-form rank). The honest, own-data version of a 'target
+    share vs man coverage / team plays man at a high rate' note -- we don't have proprietary
+    man-zone charting, but this is the same matchup 'why', from data we can stand behind.
+    Best spots first."""
+    import nfl_current_form as _ncf
+    usage = build_nfl_usage_board(limit=250)
+    players = [p for p in usage.get('players', []) if not p.get('is_def') and not p.get('is_back')]
+    if not players:
+        return {'available': False, 'rows': [], 'season': usage.get('season')}
+    ngs = _load_ngs_receiving_current()
+    try:
+        slate = build_football_home_slate('nfl')
+    except Exception:
+        slate = []
+    opp_of = {}
+    for g in slate:
+        a, h = g.get('away_abbr'), g.get('home_abbr')
+        if a and h:
+            opp_of[a] = (h, False)   # a plays AT h
+            opp_of[h] = (a, True)    # h hosts a
+
+    rows = []
+    for p in players:
+        team = p.get('team')
+        og = opp_of.get(team)
+        if not og:
+            continue  # bye / not on this week's slate
+        opp, home = og
+        tf = _ncf.team_form(opp)
+        if not tf or int(tf.get('games', 0) or 0) < 1:
+            continue
+        rank = int(_ncf._adj_pass_rank(tf))
+        tone = 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
+        n = ngs.get(str(p.get('player', '')).strip().lower(), {})
+        sep, cush = n.get('sep'), n.get('cush')
+        has_sep = sep is not None and not pd.isna(sep)
+        ts = p.get('target_share') or 0
+        ays = p.get('air_share') or 0
+        sep_tier = None
+        if has_sep:
+            sep_tier = 'creates separation' if sep >= 3.3 else 'gets open' if sep >= 2.9 else 'tight coverage'
+        # edge = soft matchup + separation + volume, best first
+        opp_c = (rank / 32.0) * 42
+        sep_c = (min(max((float(sep) - 2.4) / 1.4, 0), 1) * 28) if has_sep else 14
+        edge = round(opp_c + sep_c + min(ts / 30.0, 1) * 30)
+        bits = [f"{ts}% target share"]
+        if ays >= 25:
+            bits.append(f"{ays}% of the air yards")
+        if has_sep:
+            bits.append(f"{sep:.1f} yd sep ({sep_tier})")
+        why = ", ".join(bits) + f" — into {opp}'s pass D ranked {_ncf._ord(rank)}"
+        rows.append({
+            'player': p.get('player'), 'team': team, 'pos': p.get('pos'),
+            'opp': opp, 'home': home, 'target_share': ts, 'air_share': ays,
+            'sep': (round(float(sep), 2) if has_sep else None),
+            'cush': (round(float(cush), 1) if (cush is not None and not pd.isna(cush)) else None),
+            'sep_tier': sep_tier, 'opp_rank': rank, 'opp_ord': _ncf._ord(rank),
+            'tone': tone, 'edge': edge, 'why': why,
+        })
+    rows.sort(key=lambda r: -r['edge'])
+    return {'available': bool(rows), 'rows': rows[:limit], 'season': usage.get('season'),
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
+@app.route('/tools/nfl-matchup-edge')
+def nfl_matchup_edge_tool():
+    """Quick Tool: NFL Matchup Edge -- this week's pass-catchers by usage + separation vs
+    the opponent pass defense. The honest, own-data version of a coverage-matchup note."""
+    return render_template('nfl_matchup_edge.html', **build_nfl_matchup_edge())
+
+
 def build_nfl_hub_context():
     """The NFL Hub: one front door that organizes every NFL tool by what a bettor is
     looking for -- Who's Hot / Find a Play / Build a Ticket / Homework / Receipts -- each

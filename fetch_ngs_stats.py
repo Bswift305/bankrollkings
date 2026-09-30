@@ -158,7 +158,7 @@ def fetch_weekly(category: str, season: int, season_type: str, weeks: list[int],
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch NFL Next Gen Stats statboards")
-    parser.add_argument("--season", type=int, default=2025, help="NFL season to fetch")
+    parser.add_argument("--season", type=int, default=None, help="NFL season to fetch (default: current)")
     parser.add_argument("--season-types", default="REG", help="Comma-separated season types, usually REG,POST")
     parser.add_argument("--categories", default=",".join(DEFAULT_CATEGORIES), help="Comma-separated categories: passing,receiving,rushing")
     parser.add_argument("--weeks", help="Comma-separated weeks or ranges. Defaults to 1-18 for REG and 19-23 for POST when --weekly is set.")
@@ -169,8 +169,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _current_nfl_season() -> int:
+    """NFL season N spans Sep N -> Feb N+1, so Jan/Feb still belongs to the prior year."""
+    now = datetime.now()
+    return now.year if now.month >= 3 else now.year - 1
+
+
 def main() -> int:
     args = parse_args()
+    if args.season is None:
+        args.season = _current_nfl_season()
     categories = [item.lower() for item in _parse_csv(args.categories, DEFAULT_CATEGORIES)]
     invalid = sorted(set(categories) - VALID_CATEGORIES)
     if invalid:
