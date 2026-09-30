@@ -40747,6 +40747,44 @@ def nfl_regression_tool():
     return render_template('nfl_regression.html', **build_nfl_regression_context())
 
 
+def build_nfl_power_context():
+    """NFL Power Ratings: our own MARKET-INDEPENDENT team strength (Elo from final scores
+    only, 1999-now, via power_ratings.py) -- so comparing it to the market is a genuine
+    model-vs-market read, not circular. All 32 teams ranked, with a league percentile +
+    strength tier. Only surfaced because NFL cleared the out-of-sample skill gate (unlike
+    MLB, which stays off). The per-game model-vs-market edge already rides the game-lines
+    board; this is the underlying number behind it."""
+    ratings, meta = load_power_ratings()
+    rs = ratings.get('nfl', {})
+    sm = meta.get('nfl', {})
+    if not rs or not sm.get('surfaced') or len(rs) < 4:
+        return {'pw_available': False, 'pw_rows': [], 'pw_meta': {}}
+    ordered = sorted(rs.items(), key=lambda kv: -kv[1])  # strongest first
+    n = len(ordered)
+    norm_fix = {'la': 'LAR'}  # nfldata uses LA for the Rams; our feeds use LAR
+    rows = []
+    for i, (norm, elo) in enumerate(ordered):
+        abbr = norm_fix.get(norm, norm.upper())
+        pct = round(100 * (n - 1 - i) / (n - 1)) if n > 1 else 50  # top team -> 100
+        full = NFL_ABBR_TO_FULL.get(abbr) or NFL_ABBR_TO_FULL.get(norm.upper()) or abbr
+        rows.append({'rank': i + 1, 'abbr': abbr, 'team': full,
+                     'elo': round(elo), 'pct': pct, 'label': _power_strength_label(pct)})
+    ppe = sm.get('ppe')
+    try:
+        hfa_pts = round(float(sm['hfa']) * float(ppe), 1) if ppe else None
+    except (TypeError, ValueError):
+        hfa_pts = None
+    return {'pw_available': True, 'pw_rows': rows,
+            'pw_meta': {'teams': n, 'hfa_pts': hfa_pts, 'hfa_elo': round(float(sm['hfa']), 1)}}
+
+
+@app.route('/tools/nfl-power')
+def nfl_power_tool():
+    """Quick Tool: NFL Power Ratings -- market-independent Elo team strength, all 32
+    teams ranked with a league percentile + tier."""
+    return render_template('nfl_power.html', **build_nfl_power_context())
+
+
 @app.route('/tools/nfl-scoreboard')
 def nfl_scoreboard_tool():
     """Quick Tool: 'Tickets We Could Have Hit' scoreboard -- from the graded prop-line

@@ -1,0 +1,42 @@
+{% set active_page = 'nfl_power' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Power Ratings - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .pwbar{display:inline-block;width:120px;max-width:40vw;height:5px;border-radius:3px;background:rgba(255,255,255,.08);vertical-align:middle;overflow:hidden;margin-right:7px;}
+  .pwbar > span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--bkn-mid),var(--bkn-good));}
+</style>
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL{% if pw_meta.teams %} &middot; {{ pw_meta.teams }} teams{% endif %}</div>
+    <h1>Power <span class="accent">Ratings</span></h1>
+    <div class="page-subtitle">How good each team actually is &mdash; our own <b>market-independent</b> rating, built from final scores only (no betting line anywhere in it). That&rsquo;s the whole point: a strength number that owes nothing to the market is the one honest thing you can hold <i>against</i> the market.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-hub" class="btn btn-secondary btn-sm">&lsaquo; NFL Hub</a> <a href="/tools/nfl-regression" class="btn btn-secondary btn-sm">Regression Watch</a></div>
+</div>
+
+{% if not pw_available %}
+  <div class="bkn-empty">Power ratings aren&rsquo;t loaded yet &mdash; they rebuild from game results daily once the season is under way.</div>
+{% else %}
+<div class="bkn-list">
+{% for r in pw_rows %}
+{% set tier = 'good' if r.label in ['Elite','Strong'] else 'mid' if r.label == 'Above Average' else 'bad' if r.label in ['Below Average','Weak'] else 'flat' %}
+<div class="bkn-row" style="cursor:default;">
+  <span class="bkn-tile accent"><span class="n">{{ r.rank }}</span><span class="l">rank</span></span>
+  <span class="lead">
+    <span class="t">{{ r.team }} <span class="bkn-tag {{ tier }}">{{ r.label }}</span></span>
+    <span class="m"><span class="pwbar"><span style="width:{{ r.pct }}%;"></span></span>{{ r.pct }}th percentile</span>
+  </span>
+  <span class="trail">{{ r.elo }}<small>Elo</small></span>
+</div>
+{% endfor %}
+</div>
+
+<div class="bkn-note" style="margin-top:16px;"><b>How to read it honestly:</b> this is an <b>Elo</b> rating &mdash; it only ever moves on <i>game results</i> (who beat whom, by how much), never on a betting line, so it&rsquo;s a clean yardstick to compare the market to. 1500 is league-average; the gap between two teams&rsquo; numbers is a strength gap, not a point spread. We only show NFL here because its model actually beat a coin flip picking winners out-of-sample &mdash; the same engine is gated OFF for sports where it didn&rsquo;t (e.g. MLB), so we never wave around an &ldquo;edge&rdquo; we can&rsquo;t back up. The per-game version of this &mdash; our model&rsquo;s win% vs the market&rsquo;s &mdash; already rides the Game Lines board.{% if pw_meta.hfa_pts %} Home edge in the model: ~{{ pw_meta.hfa_pts }} pts.{% endif %} Early in the year the numbers still carry last season&rsquo;s weight and firm up weekly.</div>
+{% endif %}
+</div>
+{% endblock %}
