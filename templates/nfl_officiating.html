@@ -1,0 +1,75 @@
+{% set active_page = 'nfl_officiating' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Officiating - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .of-wrap{--of-accent:#3fbf7f;max-width:800px;}
+  .of-sec{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);margin:6px 0 10px;}
+  .of-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin:8px 0 18px;}
+  .of-note b{color:var(--text-bright);}
+  .of-assign{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:12px;padding:11px 14px;margin-bottom:10px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .of-assign .g{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .of-assign .r{font:600 12px ui-monospace,monospace;color:var(--text-muted);}
+  .of-tag{font:800 10px ui-monospace,monospace;letter-spacing:.03em;border-radius:6px;padding:3px 8px;}
+  .of-tag.over{background:#4ed48a;color:#0b1118;} .of-tag.under{background:#ff9f6a;color:#0b1118;} .of-tag.neutral{border:1px solid var(--border);color:var(--text-muted);}
+  table.of-t{width:100%;border-collapse:collapse;max-width:640px;}
+  table.of-t th{text-align:right;padding:7px 10px;font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);}
+  table.of-t th:first-child,table.of-t td:first-child{text-align:left;}
+  table.of-t td{padding:8px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);font:700 13px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  table.of-t td.ref{font-family:'Helvetica Neue',Arial,sans-serif;font-weight:700;}
+  table.of-t td.o-over{color:#4ed48a;} table.of-t td.o-under{color:#ff9f6a;}
+  .of-base{font:600 11.5px ui-monospace,monospace;color:var(--text-muted);margin:2px 0 12px;}
+  .of-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:10px 2px;}
+</style>
+
+<div class="of-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL{% if off_season %} &middot; {{ off_season }}{% endif %}</div>
+    <h1>NFL <span class="accent">Officiating</span></h1>
+    <div class="page-subtitle">Who&rsquo;s working the game, and how his crew tends to call it &mdash; a referee&rsquo;s totals lean (penalties drive scoring, and it shows up in the O/U record) and home tendency, from every game since {{ off_since or 2019 }}.</div>
+  </div>
+</div>
+
+{% if not off_available %}
+  <div class="of-empty">Officiating data isn&rsquo;t loaded yet &mdash; it builds from nflverse each day.</div>
+{% else %}
+<div class="of-note"><b>Honest first:</b> referee totals leans are <b>small and largely priced</b> &mdash; the whole league sits near <b>{{ baseline.over_pct }}% overs</b>, and the spread between crews is only a handful of points on a modest sample. Treat this as one more piece of <b>context</b> for a total, not an edge on its own. Home straight-up rate is mostly the schedule, not the whistle.</div>
+
+{% if assignments %}
+<div class="of-sec">This week&rsquo;s crews</div>
+{% for a in assignments %}
+<div class="of-assign">
+  <span class="g">{{ a.away_abbr }} @ {{ a.home_abbr }}{% if a.total_line %} <span style="color:var(--text-muted);font-weight:600;font-size:12px;">O/U {{ '%g'|format(a.total_line) }}</span>{% endif %}</span>
+  <span class="r">{{ a.referee }}</span>
+  {% if a.profile %}<span class="of-tag {{ 'over' if a.profile.lean == 'Over-leaning' else 'under' if a.profile.lean == 'Under-leaning' else 'neutral' }}">{{ a.profile.over_pct }}% over &middot; {{ a.profile.n }}g</span>{% else %}<span class="of-tag neutral">thin sample</span>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="of-empty" style="margin-bottom:14px;">This week&rsquo;s crew assignments haven&rsquo;t been posted yet (nflverse lists them mid-week) &mdash; the referee tendencies below are ready to match up the moment they are.</div>
+{% endif %}
+
+<div class="of-sec">Referee totals leans <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-muted);">&mdash; since {{ off_since or 2019 }}, {{ refs|length }} crews</span></div>
+<div class="of-base">League baseline: {{ baseline.over_pct }}% overs &middot; avg total {{ baseline.avg_total }} &middot; home wins {{ baseline.home_su_pct }}% ({{ baseline.n }} games)</div>
+<table class="of-t">
+  <thead><tr><th>Referee</th><th>Games</th><th>Over %</th><th>Avg total</th><th>Home SU</th><th>Lean</th></tr></thead>
+  <tbody>
+    {% for r in refs %}
+    <tr>
+      <td class="ref">{{ r.name }}</td>
+      <td>{{ r.n }}</td>
+      <td class="{% if r.over_pct and r.over_pct >= 53 %}o-over{% elif r.over_pct and r.over_pct <= 46 %}o-under{% endif %}">{{ r.over_pct }}%</td>
+      <td>{{ r.avg_total }}</td>
+      <td>{{ r.home_su_pct }}%</td>
+      <td style="text-align:right;font-size:11px;color:{% if r.lean == 'Over-leaning' %}#4ed48a{% elif r.lean == 'Under-leaning' %}#ff9f6a{% else %}var(--text-muted){% endif %};">{{ r.lean }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</div>
+{% endblock %}

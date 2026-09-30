@@ -116,6 +116,9 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # so the totals read can veto a game when the starting QB is OUT. One nflverse
         # games pull + one weekly-stats pull.
         ("NFL scores + QB1", _python("build_nfl_scores.py"), 180),
+        # Referee tendencies (totals lean, home rate) + this week's crew assignments from
+        # nflverse games.csv. One network pull; self-updates as assignments post mid-week.
+        ("NFL officiating", _python("build_nfl_officiating.py"), 180),
         # Per-QB passing profiles (2024-26) so a QB-out is weighted by WHO the backup is
         # (gunslinger keeps WR volume up vs game-manager craters it). Feeds nfl_backup.
         ("NFL QB profiles", _python("build_nfl_qb_profiles.py"), 240),

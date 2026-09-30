@@ -40586,6 +40586,35 @@ def unit_sizing_tool():
     return render_template('unit_sizing.html')
 
 
+def build_nfl_officiating_context():
+    """NFL officiating read: this week's crew assignments (when nflverse posts them) +
+    the referee totals-lean leaderboard, from data/scenarios/nfl_officiating.json
+    (build_nfl_officiating.py). Honest: leans sit near the 49% baseline -- context."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_officiating.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return {'off_available': False, 'assignments': [], 'refs': [], 'baseline': {}}
+    refs = [{'name': k, **v} for k, v in (d.get('referees') or {}).items()]
+    refs.sort(key=lambda x: -(x.get('over_pct') or 0))
+    full = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
+    assigns = []
+    for a in (d.get('assignments') or []):
+        a = dict(a)
+        a['away_abbr'] = a.get('away'); a['home_abbr'] = a.get('home')
+        assigns.append(a)
+    return {'off_available': bool(refs), 'assignments': assigns, 'refs': refs,
+            'baseline': d.get('baseline') or {}, 'off_season': d.get('season'),
+            'off_since': d.get('since'), 'off_updated': d.get('updated')}
+
+
+@app.route('/tools/nfl-officiating')
+def nfl_officiating_tool():
+    """Quick Tool: NFL Officiating -- this week's crews + referee totals-lean tendencies."""
+    return render_template('nfl_officiating.html', **build_nfl_officiating_context())
+
+
 @app.route('/tools/nfl-scoreboard')
 def nfl_scoreboard_tool():
     """Quick Tool: 'Tickets We Could Have Hit' scoreboard -- from the graded prop-line
