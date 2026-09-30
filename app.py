@@ -29905,6 +29905,10 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
                 out['verdict'] = ('FLOOR' if rr - be >= 0.10 else
                                   ('FAIR' if rr - be >= -0.03 else 'OVERPRICED'))
     out['ok'] = True
+    try:
+        out['matchup'] = _nfl_player_matchup_read(out['player'], stat)
+    except Exception:
+        out['matchup'] = None
     return out
 
 
@@ -40809,17 +40813,27 @@ def nfl_heatmap_tool():
     return render_template('nfl_heatmap.html', **build_nfl_hot_hand())
 
 
+_NFL_NGS_REC_CACHE = {}
+
+
 def _load_ngs_receiving_current():
     """Current-season NGS receiving aggregate -> {name_lower: {sep, cush, tgt}}. Separation
     and cushion are how much room a receiver actually gets -- coverage-flavored signal we
-    can source freely (no proprietary man/zone charting)."""
+    can source freely (no proprietary man/zone charting). Cached by file mtime."""
     import glob
     files = [f for f in sorted(glob.glob(str(DATA_DIR / 'ngs' / 'NGS_Receiving_20*_REG.csv')))
              if 'Weekly' not in f]
     if not files:
         return {}
+    path = files[-1]
     try:
-        df = pd.read_csv(files[-1])
+        mt = os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _NFL_NGS_REC_CACHE.get('path') == path and _NFL_NGS_REC_CACHE.get('mt') == mt:
+        return _NFL_NGS_REC_CACHE['data']
+    try:
+        df = pd.read_csv(path)
     except Exception:
         return {}
     out = {}
@@ -40831,7 +40845,61 @@ def _load_ngs_receiving_current():
             return pd.to_numeric(pd.Series([v]), errors='coerce').iloc[0]
         out[nm] = {'sep': _n(r.get('avgSeparation')), 'cush': _n(r.get('avgCushion')),
                    'tgt': _n(r.get('targets'))}
+    _NFL_NGS_REC_CACHE.update(path=path, mt=mt, data=out)
     return out
+
+
+_NFL_RECEIVING_STATS = {'receiving_yards', 'receptions', 'receiving_tds', 'targets',
+                        'rush_rec_yds', 'anytime_td'}
+
+
+def _nfl_player_matchup_read(player, stat=None):
+    """One receiver's this-week matchup context -- opponent pass-D rank + tone, his NGS
+    separation, and usage -- for the Prop Floor page. Returns None unless it's a receiving
+    stat and the player is a pass-catcher on this week's slate. Same inputs as the Matchup
+    Edge board, for a single player."""
+    if stat is not None and stat not in _NFL_RECEIVING_STATS:
+        return None
+    if not player:
+        return None
+    import nfl_current_form as _ncf
+    key = str(player).strip().lower()
+    pl = None
+    for p in build_nfl_usage_board(limit=400).get('players', []):
+        if str(p.get('player', '')).strip().lower() == key:
+            pl = p
+            break
+    if not pl or pl.get('is_def') or pl.get('is_back'):
+        return None
+    team = pl.get('team')
+    try:
+        slate = build_football_home_slate('nfl')
+    except Exception:
+        slate = []
+    opp = home = None
+    for g in slate:
+        if g.get('away_abbr') == team:
+            opp, home = g.get('home_abbr'), False
+            break
+        if g.get('home_abbr') == team:
+            opp, home = g.get('away_abbr'), True
+            break
+    if not opp:
+        return None
+    tf = _ncf.team_form(opp)
+    if not tf or int(tf.get('games', 0) or 0) < 1:
+        return None
+    rank = int(_ncf._adj_pass_rank(tf))
+    tone = 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
+    n = _load_ngs_receiving_current().get(key, {})
+    sep = n.get('sep')
+    has_sep = sep is not None and not pd.isna(sep)
+    return {'opp': opp, 'home': home, 'opp_rank': rank, 'opp_ord': _ncf._ord(rank), 'tone': tone,
+            'target_share': pl.get('target_share') or 0, 'air_share': pl.get('air_share') or 0,
+            'sep': (round(float(sep), 2) if has_sep else None),
+            'sep_tier': ('creates separation' if has_sep and sep >= 3.3 else
+                         'gets open' if has_sep and sep >= 2.9 else
+                         'tight coverage' if has_sep else None)}
 
 
 def build_nfl_matchup_edge(limit=40):

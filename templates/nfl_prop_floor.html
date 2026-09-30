@@ -41,6 +41,13 @@
   .pf-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:6px;}
   .pf-note b{color:var(--text-bright);}
+  .pf-mu{border-radius:12px;padding:12px 15px;margin-bottom:16px;border:1px solid var(--border);background:rgba(255,255,255,.03);}
+  .pf-mu.soft{background:rgba(78,212,138,.08);border-color:rgba(78,212,138,.35);}
+  .pf-mu.tough{background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.35);}
+  .pf-mu-h{font:800 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .pf-mu-badge{font:800 9px ui-monospace,monospace;letter-spacing:.04em;border-radius:5px;padding:2px 6px;}
+  .pf-mu-badge.soft{background:#4ed48a;color:#0b1118;} .pf-mu-badge.tough{background:#ff6b6b;color:#0b1118;} .pf-mu-badge.neutral{border:1px solid var(--border);color:var(--text-muted);}
+  .pf-mu-b{font:600 13px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text);} .pf-mu-b b{color:var(--text-bright);}
   .pf-empty{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:8px 2px;}
 </style>
 
@@ -101,6 +108,13 @@
   <span class="m"><b>{{ player }}</b> {{ stat_label }} <b>{{ '%g'|format(line) }}+</b> at <b>{{ price }}</b> &mdash;
     needs <b>{{ breakeven }}%</b>, has hit it <b>{{ hit[ref_window] }}%</b> over {{ wtxt[ref_window] }} ({{ n[ref_window] }} g){% if edge is not none %} &middot; edge <b>{{ '%+g'|format(edge) }} pts</b>{% endif %}.</span>
   {% endif %}
+</div>
+{% endif %}
+
+{% if matchup %}
+<div class="pf-mu {{ matchup.tone }}">
+  <div class="pf-mu-h"><span class="pf-mu-badge {{ matchup.tone }}">{{ 'PLUS SPOT' if matchup.tone == 'soft' else 'TOUGH D' if matchup.tone == 'tough' else 'NEUTRAL' }}</span> Matchup this week</div>
+  <div class="pf-mu-b">{{ 'vs' if matchup.home else '@' }} <b>{{ matchup.opp }}</b> &middot; pass D ranked <b>{{ matchup.opp_ord }}</b> &middot; {{ matchup.target_share }}% target share{% if matchup.air_share >= 25 %}, {{ matchup.air_share }}% of the air yards{% endif %}{% if matchup.sep is not none %} &middot; {{ '%.1f'|format(matchup.sep) }} yd separation ({{ matchup.sep_tier }}){% endif %}</div>
 </div>
 {% endif %}
 
