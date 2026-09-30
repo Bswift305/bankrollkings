@@ -99,6 +99,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # matchup card can read tackle props vs real volume -- the offense-first
         # model's blind spot. One nflverse call; writes data/scenarios/nfl_2026_defense.json.
         ("NFL defense form", _python("build_nfl_defense_form.py"), 180),
+        # Regression Watch: who's outrunning/lagging their underlying play (record vs
+        # point diff, one-score-game luck, turnover margin) -> due to fall/rise. Reuses
+        # the turnover margins from team form above + nflverse games.csv. Runs after
+        # team form so to_margin is fresh. Writes data/scenarios/nfl_regression.json.
+        ("NFL regression watch", _python("build_nfl_regression.py"), 120),
         # Forward-capture NFL opening game lines (The Odds API only serves current), so
         # open->current movement accrues. Reads NFL_Odds.csv; never overwrites a game's
         # first-seen open. Cheap, no network.

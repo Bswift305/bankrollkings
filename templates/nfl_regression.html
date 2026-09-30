@@ -1,0 +1,52 @@
+{% set active_page = 'nfl_regression' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Regression Watch - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL{% if reg_meta.season %} &middot; {{ reg_meta.season }}{% endif %}{% if reg_meta.through_week %} &middot; through Wk {{ reg_meta.through_week }}{% endif %}</div>
+    <h1>Regression <span class="accent">Watch</span></h1>
+    <div class="page-subtitle">Records lie early. These teams are outrunning &mdash; or lagging &mdash; what their underlying play says, so the record is the thing most likely to move. Point differential, one-score-game luck, and turnover margin, all of which drift back toward the mean.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-hub" class="btn btn-secondary btn-sm">&lsaquo; NFL Hub</a> <a href="/tools/nfl-rankings" class="btn btn-secondary btn-sm">Team Rankings</a></div>
+</div>
+
+{% if not reg_available %}
+  <div class="bkn-empty">Regression data isn&rsquo;t loaded yet &mdash; it builds daily from the season&rsquo;s results once a couple of weeks are in the books.</div>
+{% else %}
+{% macro board(rows, kind) %}
+  <div class="bkn-list">
+  {% for r in rows %}
+    <div class="bkn-row" style="cursor:default;">
+      <span class="lead">
+        <span class="t">{{ r.team }}
+          <span style="color:var(--text-muted);font:700 11px ui-monospace,monospace;">{{ r.w }}&#8211;{{ r.l }}{% if r.t %}&#8211;{{ r.t }}{% endif %}</span>
+          <span class="bkn-tag {{ 'good' if r.pt_diff > 0 else 'bad' if r.pt_diff < 0 else 'flat' }}">{{ '%+d'|format(r.pt_diff) }} pt</span>
+        </span>
+        <span class="m">{{ r.note }}</span>
+      </span>
+      <span class="trail" style="color:{{ '#ff8f9a' if kind == 'fall' else '#4ed48a' }};">{{ '%+.1f'|format(r.win_luck) }}<small>vs exp {{ r.exp_wins }}</small></span>
+    </div>
+  {% else %}<div class="bkn-empty">Nobody meaningfully out of line right now.</div>{% endfor %}
+  </div>
+{% endmacro %}
+
+<div class="bkn-grid-2">
+  <div class="bkn-sec" style="margin-bottom:0;">
+    <div class="bkn-sec-h"><span class="ic">&#128201;</span><h2>Due to Fall</h2><span class="sub">winning above the underlying</span></div>
+    {{ board(reg_fall, 'fall') }}
+  </div>
+  <div class="bkn-sec" style="margin-bottom:0;">
+    <div class="bkn-sec-h"><span class="ic">&#128200;</span><h2>Due to Rise</h2><span class="sub">better than the record</span></div>
+    {{ board(reg_rise, 'rise') }}
+  </div>
+</div>
+
+<div class="bkn-note" style="margin-top:18px;"><b>How to read it honestly:</b> this is <i>regression to the mean</i>, not a pick. <b>Point differential</b> predicts a team&rsquo;s rest-of-season record better than its current W&ndash;L &mdash; a team winning more games than its scoring margin supports (the <span style="color:#ff8f9a;">&minus; number</span> here) has been getting the bounces, and a team with a fat differential and a poor record (the <span style="color:#4ed48a;">+ number</span>) has been unlucky. <b>One-score games</b> are close to a coin flip over time, so a gaudy close-game record rarely holds. <b>Turnover margin</b> swings hard week to week. None of this says who wins Sunday &mdash; it says which records are built on sand, so you don&rsquo;t overpay a lucky team or fade an unlucky one on name alone. Small early-season sample; it firms up weekly.{% if reg_meta.generated %} Built {{ reg_meta.generated }}.{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}

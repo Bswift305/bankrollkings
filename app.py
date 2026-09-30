@@ -40714,6 +40714,39 @@ def nfl_officiating_tool():
     return render_template('nfl_officiating.html', **build_nfl_officiating_context())
 
 
+_NFL_REG_CACHE = {}
+
+
+def build_nfl_regression_context():
+    """NFL Regression Watch: which teams are outrunning (or lagging) their underlying play
+    and are due to move toward it -- record vs point differential (Pythagorean), one-score
+    game luck, and turnover margin. From data/scenarios/nfl_regression.json
+    (build_nfl_regression.py). Honest: a regression-to-mean read, NOT a game prediction."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_regression.json')
+    data = {'meta': {}, 'boards': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _NFL_REG_CACHE.get('mtime') != mtime:
+            with open(path, encoding='utf-8') as fh:
+                _NFL_REG_CACHE['data'] = json.load(fh)
+            _NFL_REG_CACHE['mtime'] = mtime
+        data = _NFL_REG_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    boards = data.get('boards') or {}
+    return {'reg_meta': data.get('meta', {}),
+            'reg_fall': boards.get('due_to_fall', []),
+            'reg_rise': boards.get('due_to_rise', []),
+            'reg_available': bool(boards.get('due_to_fall') or boards.get('due_to_rise'))}
+
+
+@app.route('/tools/nfl-regression')
+def nfl_regression_tool():
+    """Quick Tool: NFL Regression Watch -- who's due to fall or rise off lucky/unlucky
+    records (point diff, one-score games, turnover margin)."""
+    return render_template('nfl_regression.html', **build_nfl_regression_context())
+
+
 @app.route('/tools/nfl-scoreboard')
 def nfl_scoreboard_tool():
     """Quick Tool: 'Tickets We Could Have Hit' scoreboard -- from the graded prop-line
