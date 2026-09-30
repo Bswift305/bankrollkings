@@ -1,0 +1,205 @@
+{
+  "season": 2026,
+  "updated": "2026-09-30 12:54 UTC",
+  "since": 2019,
+  "min_games": 20,
+  "baseline": {
+    "n": 2007,
+    "over_pct": 49,
+    "avg_total": 45.8,
+    "home_su_pct": 54
+  },
+  "referees": {
+    "Adrian Hill": {
+      "n": 116,
+      "over": 53,
+      "under": 63,
+      "push": 0,
+      "over_pct": 46,
+      "lean": "Under-leaning",
+      "avg_total": 44.3,
+      "home_su_pct": 47
+    },
+    "Alan Eck": {
+      "n": 53,
+      "over": 24,
+      "under": 29,
+      "push": 0,
+      "over_pct": 45,
+      "lean": "Under-leaning",
+      "avg_total": 44.5,
+      "home_su_pct": 68
+    },
+    "Alex Kemp": {
+      "n": 120,
+      "over": 59,
+      "under": 59,
+      "push": 2,
+      "over_pct": 50,
+      "lean": "Neutral",
+      "avg_total": 46.0,
+      "home_su_pct": 54
+    },
+    "Bill Vinovich": {
+      "n": 121,
+      "over": 53,
+      "under": 65,
+      "push": 3,
+      "over_pct": 45,
+      "lean": "Under-leaning",
+      "avg_total": 45.7,
+      "home_su_pct": 47
+    },
+    "Brad Allen": {
+      "n": 117,
+      "over": 59,
+      "under": 57,
+      "push": 1,
+      "over_pct": 51,
+      "lean": "Neutral",
+      "avg_total": 46.4,
+      "home_su_pct": 59
+    },
+    "Brad Rogers": {
+      "n": 96,
+      "over": 51,
+      "under": 45,
+      "push": 0,
+      "over_pct": 53,
+      "lean": "Over-leaning",
+      "avg_total": 45.7,
+      "home_su_pct": 55
+    },
+    "Carl Cheffers": {
+      "n": 120,
+      "over": 62,
+      "under": 58,
+      "push": 0,
+      "over_pct": 52,
+      "lean": "Neutral",
+      "avg_total": 45.9,
+      "home_su_pct": 59
+    },
+    "Clay Martin": {
+      "n": 116,
+      "over": 58,
+      "under": 57,
+      "push": 1,
+      "over_pct": 50,
+      "lean": "Neutral",
+      "avg_total": 46.6,
+      "home_su_pct": 51
+    },
+    "Clete Blakeman": {
+      "n": 120,
+      "over": 59,
+      "under": 61,
+      "push": 0,
+      "over_pct": 49,
+      "lean": "Neutral",
+      "avg_total": 46.2,
+      "home_su_pct": 57
+    },
+    "Craig Wrolstad": {
+      "n": 120,
+      "over": 60,
+      "under": 59,
+      "push": 1,
+      "over_pct": 50,
+      "lean": "Neutral",
+      "avg_total": 45.6,
+      "home_su_pct": 53
+    },
+    "Jerome Boger": {
+      "n": 65,
+      "over": 33,
+      "under": 31,
+      "push": 1,
+      "over_pct": 52,
+      "lean": "Neutral",
+      "avg_total": 46.4,
+      "home_su_pct": 55
+    },
+    "John Hussey": {
+      "n": 122,
+      "over": 62,
+      "under": 57,
+      "push": 3,
+      "over_pct": 52,
+      "lean": "Neutral",
+      "avg_total": 47.0,
+      "home_su_pct": 67
+    },
+    "Land Clark": {
+      "n": 99,
+      "over": 45,
+      "under": 52,
+      "push": 2,
+      "over_pct": 46,
+      "lean": "Under-leaning",
+      "avg_total": 45.0,
+      "home_su_pct": 42
+    },
+    "Ron Torbert": {
+      "n": 122,
+      "over": 52,
+      "under": 69,
+      "push": 1,
+      "over_pct": 43,
+      "lean": "Under-leaning",
+      "avg_total": 44.6,
+      "home_su_pct": 57
+    },
+    "Scott Novak": {
+      "n": 115,
+      "over": 55,
+      "under": 60,
+      "push": 0,
+      "over_pct": 48,
+      "lean": "Neutral",
+      "avg_total": 45.4,
+      "home_su_pct": 45
+    },
+    "Shawn Hochuli": {
+      "n": 119,
+      "over": 51,
+      "under": 66,
+      "push": 2,
+      "over_pct": 44,
+      "lean": "Under-leaning",
+      "avg_total": 45.4,
+      "home_su_pct": 50
+    },
+    "Shawn Smith": {
+      "n": 118,
+      "over": 56,
+      "under": 61,
+      "push": 1,
+      "over_pct": 48,
+      "lean": "Neutral",
+      "avg_total": 47.0,
+      "home_su_pct": 52
+    },
+    "Tony Corrente": {
+      "n": 48,
+      "over": 24,
+      "under": 23,
+      "push": 1,
+      "over_pct": 51,
+      "lean": "Neutral",
+      "avg_total": 47.5,
+      "home_su_pct": 52
+    },
+    "Tra Blake": {
+      "n": 48,
+      "over": 27,
+      "under": 21,
+      "push": 0,
+      "over_pct": 56,
+      "lean": "Over-leaning",
+      "avg_total": 44.4,
+      "home_su_pct": 52
+    }
+  },
+  "assignments": []
+}
