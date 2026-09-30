@@ -40,7 +40,7 @@ a.bkn-card:hover{border-color:rgba(63,191,127,.35);}
 .bkn-row:hover{background:rgba(63,191,127,.05);}
 .bkn-row .lead{flex:1 1 auto;min-width:0;}
 .bkn-row .lead .t{font:700 13.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
-.bkn-row .lead .m{font:500 11.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
+.bkn-row .lead .m{display:block;font:500 11.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:1px;}
 .bkn-row .lead .m b{color:var(--text);}
 .bkn-row .trail{flex:0 0 auto;text-align:right;font:800 14px ui-monospace,Consolas,monospace;color:var(--text-bright);}
 .bkn-row .trail small{display:block;font:600 9.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
