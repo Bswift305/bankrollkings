@@ -29689,16 +29689,25 @@ def build_nfl_dashboard_runtime_bundle():
 
 _NFL_PLAYER_WEEK_CACHE = {}
 _NFL_FLOOR_STATS = {
-    # key -> (display label, needs-QB-snaps filter, step for the ladder)
-    'passing_yards': ('Passing Yards', True, 10),
-    'completions': ('Completions', True, 1),
-    'attempts': ('Pass Attempts', True, 1),
-    'passing_tds': ('Passing TDs', True, 1),
-    'rushing_yards': ('Rushing Yards', False, 5),
-    'carries': ('Rush Attempts', False, 1),
-    'receiving_yards': ('Receiving Yards', False, 5),
-    'receptions': ('Receptions', False, 1),
-    'targets': ('Targets', False, 1),
+    # key -> {label, cols (game-log columns summed for the value), qb (needs pass snaps),
+    #         step (ladder increment)}. Covers EVERY prop category the board offers, incl.
+    #         computed stats (anytime TD, tackles+assists) and defense.
+    'passing_yards':   {'label': 'Passing Yards',   'cols': ['passing_yards'],   'qb': True,  'step': 10},
+    'completions':     {'label': 'Completions',     'cols': ['completions'],     'qb': True,  'step': 1},
+    'attempts':        {'label': 'Pass Attempts',   'cols': ['attempts'],        'qb': True,  'step': 1},
+    'passing_tds':     {'label': 'Passing TDs',     'cols': ['passing_tds'],     'qb': True,  'step': 1},
+    'rushing_yards':   {'label': 'Rushing Yards',   'cols': ['rushing_yards'],   'qb': False, 'step': 5},
+    'carries':         {'label': 'Rush Attempts',   'cols': ['carries'],         'qb': False, 'step': 1},
+    'rushing_tds':     {'label': 'Rushing TDs',     'cols': ['rushing_tds'],     'qb': False, 'step': 1},
+    'receiving_yards': {'label': 'Receiving Yards', 'cols': ['receiving_yards'], 'qb': False, 'step': 5},
+    'receptions':      {'label': 'Receptions',      'cols': ['receptions'],      'qb': False, 'step': 1},
+    'receiving_tds':   {'label': 'Receiving TDs',   'cols': ['receiving_tds'],   'qb': False, 'step': 1},
+    'targets':         {'label': 'Targets',         'cols': ['targets'],         'qb': False, 'step': 1},
+    'rush_rec_yds':    {'label': 'Rush + Rec Yards', 'cols': ['rushing_yards', 'receiving_yards'], 'qb': False, 'step': 5},
+    'anytime_td':      {'label': 'Anytime TD',      'cols': ['rushing_tds', 'receiving_tds'], 'qb': False, 'step': 1},
+    'solo_tackles':    {'label': 'Solo Tackles',    'cols': ['def_tackles_solo'], 'qb': False, 'step': 1},
+    'tackles_assists': {'label': 'Tackles + Assists', 'cols': ['def_tackles_solo', 'def_tackle_assists'], 'qb': False, 'step': 1},
+    'sacks':           {'label': 'Sacks',           'cols': ['def_sacks'],       'qb': False, 'step': 1},
 }
 
 
@@ -29782,12 +29791,14 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
     ladder and the fair price at each line. Honest: a book's alt-line price already
     reflects this -- we surface whether the number is a real floor or a priced trap."""
     out = {'ok': False, 'player': player, 'stat': stat,
-           'stat_label': (_NFL_FLOOR_STATS.get(stat, (stat,))[0]),
+           'stat_label': (_NFL_FLOOR_STATS.get(stat, {}).get('label', stat)),
            'line': line, 'price': price, 'stats': list(_NFL_FLOOR_STATS.items())}
     df = _nfl_player_week_data()
-    if df.empty or stat not in _NFL_FLOOR_STATS or stat not in df.columns or not player:
+    meta = _NFL_FLOOR_STATS.get(stat)
+    cols = [c for c in (meta or {}).get('cols', []) if c in df.columns]
+    if df.empty or not meta or not cols or not player:
         return out
-    qb_stat = _NFL_FLOOR_STATS[stat][1]
+    qb_stat = meta['qb']
     q = str(player).strip().lower()
     # match on the resolved full name (exact), then a contains on it for partial input
     d = df[df['_full'].astype(str).str.strip().str.lower() == q].copy()
@@ -29800,7 +29811,7 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
     if d.empty:
         out['not_found'] = True
         return out
-    d['_v'] = pd.to_numeric(d[stat], errors='coerce')
+    d['_v'] = sum(pd.to_numeric(d[c], errors='coerce').fillna(0) for c in cols)
     if qb_stat and 'attempts' in d.columns:
         d = d[pd.to_numeric(d['attempts'], errors='coerce').fillna(0) > 0]  # QB snaps only
     d = d.dropna(subset=['_v', 'season'])
@@ -29826,7 +29837,7 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
         out['hit'] = {k: (round(100 * r) if (r := _rate(v, line)) is not None else None)
                       for k, v in windows.items()}
         # ladder: lines around the target so you can shop the number
-        step = _NFL_FLOOR_STATS[stat][2]
+        step = meta['step']
         base = round(float(line) / step) * step
         ladder = []
         for ln in [base + step * k for k in range(-4, 5)]:
@@ -29865,12 +29876,21 @@ def build_nfl_prop_floor(player, stat, line=None, price=None):
 
 
 _NFL_FLOOR_BOARD_CACHE = {}
+# Every prop category the feed offers -> our floor-stat key. Add new feed labels here.
 _NFL_PROP_STAT_MAP = {
     'Pass Yds': 'passing_yards', 'Passing Yards': 'passing_yards',
+    'Pass Completions': 'completions', 'Completions': 'completions',
+    'Pass Attempts': 'attempts', 'Pass Att': 'attempts',
+    'Pass TDs': 'passing_tds', 'Passing TDs': 'passing_tds',
     'Rush Yds': 'rushing_yards', 'Rushing Yards': 'rushing_yards',
+    'Rush Att': 'carries', 'Rushing Attempts': 'carries',
+    'Rush TDs': 'rushing_tds', 'Rushing TDs': 'rushing_tds',
     'Rec Yds': 'receiving_yards', 'Receiving Yards': 'receiving_yards',
-    'Receptions': 'receptions', 'Rush Att': 'carries', 'Rushing Attempts': 'carries',
-    'Pass Completions': 'completions', 'Completions': 'completions', 'Pass TDs': 'passing_tds',
+    'Receptions': 'receptions', 'Rec TDs': 'receiving_tds', 'Receiving TDs': 'receiving_tds',
+    'Targets': 'targets', 'Rush + Rec Yds': 'rush_rec_yds', 'Rush+Rec Yds': 'rush_rec_yds',
+    'Anytime TD': 'anytime_td', 'Anytime Touchdown': 'anytime_td',
+    'Solo Tackles': 'solo_tackles', 'Tackles + Assists': 'tackles_assists',
+    'Tackles+Assists': 'tackles_assists', 'Sacks': 'sacks',
 }
 
 
@@ -29913,14 +29933,16 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     rows = []
     for (player, stat), g in p.groupby(['Player', '_stat']):
         sub = idx.get(str(player).strip().lower())
-        if sub is None or stat not in sub.columns:
+        meta = _NFL_FLOOR_STATS.get(stat)
+        scols = [c for c in (meta or {}).get('cols', []) if sub is not None and c in sub.columns]
+        if sub is None or not meta or not scols:
             continue
         line = float(g['Line'].median())
         valid = g['OverOdds'][g['OverOdds'].abs() >= 100]
         price = int(round(valid.median())) if len(valid) else None
         s = sub.copy()
-        s['_v'] = pd.to_numeric(s[stat], errors='coerce')
-        if _NFL_FLOOR_STATS.get(stat, (None, False))[1] and 'attempts' in s.columns:
+        s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in scols)
+        if meta['qb'] and 'attempts' in s.columns:
             s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
         s = s.dropna(subset=['_v', 'season'])
         if s.empty:
@@ -29941,7 +29963,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
             a, h = game.split('@', 1)
             game = f"{full2abbr.get(a.strip(), a.strip()[:3].upper())} @ {full2abbr.get(h.strip(), h.strip()[:3].upper())}"
         rows.append({
-            'player': str(player), 'stat': _NFL_FLOOR_STATS[stat][0], 'stat_key': stat, 'line': line,
+            'player': str(player), 'stat': meta['label'], 'stat_key': stat, 'line': line,
             'price': price, 'hit': hit, 'n': int(len(w)), 'window': ref, 'clears': clears,
             'breakeven': (round(100 * be) if be is not None else None),
             'edge': (round(100 * ((w['_v'] >= line).mean() - be), 1) if be is not None else None),

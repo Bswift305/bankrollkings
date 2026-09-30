@@ -57,7 +57,7 @@
   <div class="pf-f player"><label>Player</label><input type="text" name="player" value="{{ player|e }}" placeholder="Jalen Hurts" autocomplete="off"></div>
   <div class="pf-f"><label>Stat</label>
     <select name="stat">
-      {% for key, meta in stats %}<option value="{{ key }}"{% if key == stat %} selected{% endif %}>{{ meta[0] }}</option>{% endfor %}
+      {% for key, meta in stats %}<option value="{{ key }}"{% if key == stat %} selected{% endif %}>{{ meta.label }}</option>{% endfor %}
     </select>
   </div>
   <div class="pf-f line"><label>Line (+)</label><input type="number" step="0.5" name="line" value="{{ line if line is not none else '' }}" placeholder="197"></div>
