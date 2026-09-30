@@ -118,11 +118,12 @@
   <div class="bkn-sec-h"><span class="ic">&#129534;</span><h2>The Receipts</h2><span class="sub">tickets that hit</span><a class="all" href="/tools/nfl-scoreboard">Scoreboard &rarr;</a></div>
   {% if sb_available %}
   <div class="bkn-grid">
-    <div class="bkn-stat"><div class="v">{{ scoreboard.winning_parlays }}</div><div class="k">Winning 3-leg parlays</div></div>
-    <div class="bkn-stat"><div class="v">{{ scoreboard.hit_rate }}%</div><div class="k">Over-hit rate</div></div>
-    <div class="bkn-stat"><div class="v">{{ scoreboard.hit }}<span style="font-size:14px;color:var(--text-muted);">/{{ scoreboard.graded }}</span></div><div class="k">Props graded</div></div>
-    <div class="bkn-stat"><div class="v">{{ scoreboard.weeks }}</div><div class="k">Weeks tracked</div></div>
+    <div class="bkn-stat"><div class="v">{{ scoreboard.over_rate }}%</div><div class="k">Overs hit &middot; {{ scoreboard.over }}/{{ scoreboard.graded }}</div></div>
+    <div class="bkn-stat"><div class="v">{{ scoreboard.under_rate }}%</div><div class="k">Unders hit &middot; {{ scoreboard.under }}/{{ scoreboard.graded }}</div></div>
+    <div class="bkn-stat"><div class="v" style="color:{{ '#4ed48a' if (scoreboard.over_roi or 0) > 0 else '#ff8f9a' if scoreboard.over_roi is not none else 'var(--text-muted)' }};">{{ '%+.1f%%'|format(scoreboard.over_roi) if scoreboard.over_roi is not none else 'n/a' }}</div><div class="k">Over ROI &middot; real price</div></div>
+    <div class="bkn-stat"><div class="v" style="color:{{ '#4ed48a' if (scoreboard.under_roi or 0) > 0 else '#ff8f9a' if scoreboard.under_roi is not none else 'var(--text-muted)' }};">{{ '%+.1f%%'|format(scoreboard.under_roi) if scoreboard.under_roi is not none else 'n/a' }}</div><div class="k">Under ROI &middot; real price</div></div>
   </div>
+  <div class="bkn-empty" style="font-size:11px;">ROI = flat 1u at the real closing price &mdash; not a projection. The under is usually the juiced side, so ROI (not hit rate) is the honest read. Tiny sample; needs weeks.</div>
   {% else %}<div class="bkn-note"><b>The record is building.</b> We capture and grade every prop line daily &mdash; the winning tickets that were on the board show up here as each week resolves.</div>{% endif %}
 </div>
 

@@ -29992,12 +29992,13 @@ _NFL_SCOREBOARD_CACHE = {}
 
 
 def build_nfl_ticket_scoreboard(graded_df=None, legs=3):
-    """The 'tickets we could have hit' scoreboard: from the graded prop-line record
-    (NFL_PropLines_Graded.csv), for each week count how many winning cross-game N-leg
-    over-parlays were on the board, with a sample best (longest-odds) winning ticket.
-    Proof-of-work that featuring high-floor players cashes. Self-populates as the graded
-    record accrues on prod (PENDING games resolve week over week)."""
-    import itertools
+    """The 'tickets we could have hit' scoreboard, graded HONESTLY at real closing prices.
+    From the graded prop-line record (NFL_PropLines_Graded.csv): per week and overall, the
+    OVER / UNDER / PUSH breakdown, the ROI of flat-betting EACH side at its actual posted
+    price, the pool of winning over legs, and a sample best (longest-odds) winning over
+    ticket. A measured record, not a projection -- and because both sides are priced, a high
+    hit rate on the juiced (usually UNDER) side can't masquerade as an edge. Self-populates
+    as the graded record accrues on prod (PENDING games resolve week over week)."""
     path = DATA_DIR / 'tracking' / 'NFL_PropLines_Graded.csv'
     empty = {'available': False, 'weeks': [], 'totals': {},
              'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
@@ -30016,53 +30017,87 @@ def build_nfl_ticket_scoreboard(graded_df=None, legs=3):
         return empty
     df['Week'] = pd.to_numeric(df.get('Week'), errors='coerce')
     df['OverOdds'] = pd.to_numeric(df.get('OverOdds'), errors='coerce')
+    df['UnderOdds'] = pd.to_numeric(df.get('UnderOdds'), errors='coerce')
 
     def _dec(a):
         return (1 + a / 100) if a > 0 else (1 + 100 / abs(a)) if a else 1.9
 
-    weeks, tot_graded, tot_hit, tot_win = [], 0, 0, 0
-    for wk, g in df.groupby('Week'):
-        if pd.isna(wk):
-            continue
-        graded = len(g)
-        overs = g[g['Result'] == 'OVER']
-        hit = len(overs)
-        tot_graded += graded; tot_hit += hit
-        # winning cross-game N-leg over-parlays: one leg per game, distinct games
+    def _side_roi(sub, price_col, win):
+        """ROI of flat-staking one unit on this side at its REAL price, every priced prop.
+        Push refunds the stake. Returns (roi_pct or None, n_priced)."""
+        staked, profit = 0, 0.0
+        for r in sub.to_dict('records'):
+            od = pd.to_numeric(r.get(price_col), errors='coerce')
+            if pd.isna(od) or abs(od) < 100:
+                continue
+            staked += 1
+            res = r.get('Result')
+            if res == 'PUSH':
+                continue
+            profit += (_dec(float(od)) - 1) if res == win else -1.0
+        return (round(100 * profit / staked, 1) if staked else None, staked)
+
+    def _summary(sub):
+        graded = len(sub)
+        o = int((sub['Result'] == 'OVER').sum())
+        u = int((sub['Result'] == 'UNDER').sum())
+        p = int((sub['Result'] == 'PUSH').sum())
+        over_roi, over_n = _side_roi(sub, 'OverOdds', 'OVER')
+        under_roi, under_n = _side_roi(sub, 'UnderOdds', 'UNDER')
+        return {'graded': graded, 'over': o, 'under': u, 'push': p,
+                'over_rate': round(100 * o / graded) if graded else 0,
+                'under_rate': round(100 * u / graded) if graded else 0,
+                'push_rate': round(100 * p / graded) if graded else 0,
+                'over_roi': over_roi, 'over_roi_n': over_n,
+                'under_roi': under_roi, 'under_roi_n': under_n,
+                'hit': o, 'hit_rate': round(100 * o / graded) if graded else 0}  # back-compat
+
+    def _best_over_ticket(sub):
+        """The single best (longest-odds) winning OVER parlay: top-`legs` winning overs from
+        DISTINCT games, longest odds first. O(n) -- no combinatorial blow-up. Also returns
+        the count of distinct games with a winning over (the real parlay pool)."""
+        overs = sub[sub['Result'] == 'OVER']
         by_game = {}
         for r in overs.to_dict('records'):
             gm = str(r.get('Game') or r.get('Player'))
-            by_game.setdefault(gm, []).append(r)
-        gwin = list(by_game)
-        combos, best = 0, None
-        for trio in itertools.combinations(gwin, legs):
-            prod = 1
-            for gm in trio:
-                prod *= len(by_game[gm])
-            combos += prod
-            # best (longest-odds) winning ticket in this trio
-            picks = [max(by_game[gm], key=lambda r: (pd.to_numeric(r.get('OverOdds'), errors='coerce') or -1000)) for gm in trio]
-            dec = 1.0
-            for p in picks:
-                od = pd.to_numeric(p.get('OverOdds'), errors='coerce')
-                dec *= _dec(float(od)) if pd.notna(od) else 1.9
-            if best is None or dec > best['_dec']:
-                best = {'_dec': dec, 'legs': [{'player': p.get('Player'), 'stat': p.get('Stat'),
-                        'line': p.get('Line'), 'price': int(pd.to_numeric(p.get('OverOdds'), errors='coerce')) if pd.notna(pd.to_numeric(p.get('OverOdds'), errors='coerce')) else None,
-                        'actual': p.get('Actual')} for p in picks]}
-        tot_win += combos
-        wkrow = {'week': int(wk), 'graded': graded, 'hit': hit,
-                 'hit_rate': round(100 * hit / graded) if graded else 0,
-                 'winning_parlays': combos}
+            od = pd.to_numeric(r.get('OverOdds'), errors='coerce')
+            odv = float(od) if pd.notna(od) else -1000.0
+            if gm not in by_game or odv > by_game[gm][0]:
+                by_game[gm] = (odv, r)
+        over_legs = len(by_game)
+        pool = sorted(by_game.values(), key=lambda t: -t[0])
+        if len(pool) < legs:
+            return over_legs, None
+        picks = [t[1] for t in pool[:legs]]
+        dec = 1.0
+        for p in picks:
+            od = pd.to_numeric(p.get('OverOdds'), errors='coerce')
+            dec *= _dec(float(od)) if pd.notna(od) else 1.9
+        am = round((dec - 1) * 100) if dec >= 2 else round(-100 / (dec - 1))
+        best = {'american': int(am), 'payout_5': round(5 * dec, 2),
+                'legs': [{'player': p.get('Player'), 'stat': p.get('Stat'), 'line': p.get('Line'),
+                          'price': int(pd.to_numeric(p.get('OverOdds'), errors='coerce')) if pd.notna(pd.to_numeric(p.get('OverOdds'), errors='coerce')) else None,
+                          'actual': p.get('Actual')} for p in picks]}
+        return over_legs, best
+
+    weeks = []
+    for wk, g in df.groupby('Week'):
+        if pd.isna(wk):
+            continue
+        row = _summary(g)
+        row['week'] = int(wk)
+        over_legs, best = _best_over_ticket(g)
+        row['over_legs'] = over_legs
         if best:
-            am = round((best['_dec'] - 1) * 100) if best['_dec'] >= 2 else round(-100 / (best['_dec'] - 1))
-            wkrow['best'] = {'legs': best['legs'], 'american': int(am), 'payout_5': round(5 * best['_dec'], 2)}
-        weeks.append(wkrow)
+            row['best'] = best
+        weeks.append(row)
     weeks.sort(key=lambda x: -x['week'])
-    return {'available': bool(weeks), 'weeks': weeks,
-            'totals': {'graded': tot_graded, 'hit': tot_hit,
-                       'hit_rate': round(100 * tot_hit / tot_graded) if tot_graded else 0,
-                       'winning_parlays': tot_win, 'weeks': len(weeks), 'legs': legs},
+
+    totals = _summary(df)
+    totals['weeks'] = len(weeks)
+    totals['legs'] = legs
+    totals['over_legs'] = sum(w.get('over_legs', 0) for w in weeks)
+    return {'available': bool(weeks), 'weeks': weeks, 'totals': totals,
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 

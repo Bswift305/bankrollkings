@@ -22,6 +22,10 @@
   .sc-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:8px;}
   .sc-note b{color:var(--text-bright);}
+  .sc-stat .v.pos{color:#4ed48a;} .sc-stat .v.neg{color:#ff8f9a;} .sc-stat .v.flat{color:var(--text-muted);}
+  .sc-stat .s{font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:3px;}
+  .sc-split{display:flex;gap:4px;flex-wrap:wrap;font:700 12px ui-monospace,Consolas,monospace;color:var(--text-muted);margin-bottom:10px;}
+  .sc-split b{color:var(--sc-accent);}
   .sc-empty{font:500 12.5px/1.7 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:linear-gradient(180deg,rgba(63,191,127,.06),transparent);border:1px dashed var(--border);border-radius:12px;padding:16px 18px;}
   .sc-empty b{color:var(--text-bright);}
@@ -32,7 +36,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL</div>
     <h1>Tickets We Could <span class="accent">Have Hit</span></h1>
-    <div class="page-subtitle">Our receipts. From the prop lines we capture and grade every day, the winning cross-game 3-leg over-parlays that were sitting on the board each week &mdash; the proof that surfacing high-floor players cashes.</div>
+    <div class="page-subtitle">Our receipts. From the prop lines we capture and grade every day: how the OVER and the UNDER side each actually did &mdash; hit rate <i>and</i> ROI at the real posted price &mdash; plus the best winning over-parlay that was on the board each week.</div>
   </div>
   <div class="hero-actions"><a href="/tools/nfl-hub" class="btn btn-secondary btn-sm">&lsaquo; NFL Hub</a> <a href="/tools/nfl-heatmap" class="btn btn-secondary btn-sm">Hot Hand</a></div>
 </div>
@@ -40,22 +44,30 @@
 {% if not available %}
   <div class="sc-empty"><b>The record is building.</b> We started capturing and grading every NFL prop line daily this week &mdash; the Odds API only serves current lines, so the history accrues from here forward. As each week&rsquo;s games resolve, the winning tickets that were on the board show up here automatically. Check back after this slate settles.</div>
 {% else %}
+{% macro roi_tile(roi, n, label) %}
+  <div class="sc-stat">
+    {% if roi is none %}<div class="v flat">n/a</div>
+    {% else %}<div class="v {{ 'pos' if roi > 0 else 'neg' if roi < 0 else 'flat' }}">{{ '%+.1f'|format(roi) }}%</div>{% endif %}
+    <div class="k">{{ label }}</div><div class="s">{% if n %}flat 1u &middot; {{ n }} priced{% else %}no prices yet{% endif %}</div>
+  </div>
+{% endmacro %}
 <div class="sc-top">
-  <div class="sc-stat"><div class="v">{{ totals.winning_parlays }}</div><div class="k">Winning 3-leg parlays</div></div>
-  <div class="sc-stat"><div class="v">{{ totals.hit_rate }}%</div><div class="k">Over-hit rate</div></div>
-  <div class="sc-stat"><div class="v">{{ totals.hit }}<span style="font-size:15px;color:var(--text-muted);">/{{ totals.graded }}</span></div><div class="k">Props graded</div></div>
-  <div class="sc-stat"><div class="v">{{ totals.weeks }}</div><div class="k">Weeks tracked</div></div>
+  <div class="sc-stat"><div class="v">{{ totals.over_rate }}%</div><div class="k">Overs hit</div><div class="s">{{ totals.over }} of {{ totals.graded }}</div></div>
+  <div class="sc-stat"><div class="v">{{ totals.under_rate }}%</div><div class="k">Unders hit</div><div class="s">{{ totals.under }} of {{ totals.graded }}</div></div>
+  {{ roi_tile(totals.over_roi, totals.over_roi_n, 'Over side ROI') }}
+  {{ roi_tile(totals.under_roi, totals.under_roi_n, 'Under side ROI') }}
 </div>
+<div class="sc-split">{{ totals.graded }} props graded &middot; <b>{{ totals.over }}</b> over &middot; <b>{{ totals.under }}</b> under &middot; {{ totals.push }} push &middot; {{ totals.weeks }} week{{ 's' if totals.weeks != 1 else '' }}</div>
 
 {% for w in weeks %}
 <div class="sc-wk">
   <div class="sc-wk-head">
     <span class="sc-wk-title">Week {{ w.week }}</span>
-    <span class="sc-wk-meta">{{ w.hit }}/{{ w.graded }} overs hit ({{ w.hit_rate }}%) &middot; <b>{{ w.winning_parlays }}</b> winning 3-leg parlays on the board</span>
+    <span class="sc-wk-meta"><b>{{ w.over_rate }}%</b> over / {{ w.under_rate }}% under{% if w.push %} / {{ w.push_rate }}% push{% endif %} &middot; {{ w.graded }} props{% if w.over_roi is not none %} &middot; over {{ '%+.1f'|format(w.over_roi) }}%{% endif %}{% if w.under_roi is not none %} &middot; under {{ '%+.1f'|format(w.under_roi) }}%{% endif %}</span>
   </div>
   {% if w.best %}
   <div class="sc-best">
-    <div class="sc-best-lbl"><span>&#9733; Best ticket that hit</span><span>+{{ w.best.american }} &middot; $5 &rarr; ${{ '%g'|format(w.best.payout_5) }}</span></div>
+    <div class="sc-best-lbl"><span>&#9733; Best over ticket that hit ({{ w.over_legs }} over legs on the board)</span><span>+{{ w.best.american }} &middot; $5 &rarr; ${{ '%g'|format(w.best.payout_5) }}</span></div>
     {% for l in w.best.legs %}
     <div class="sc-leg"><b>{{ l.player }}</b> {{ l.stat }} <b>{{ '%g'|format(l.line) }}+</b>{% if l.actual is not none and l.actual != '' %} <span class="a">(hit {{ l.actual }})</span>{% endif %}{% if l.price %} <span style="color:var(--text-muted);">{{ '%+d'|format(l.price) }}</span>{% endif %}</div>
     {% endfor %}
@@ -64,7 +76,7 @@
 </div>
 {% endfor %}
 
-<div class="sc-note"><b>How to read it honestly:</b> these are winning tickets that <i>were on the board</i> &mdash; hindsight, not a promise you&rsquo;d have picked them. Losing weeks show too (the count is just lower). The point is to prove the high-floor, high-usage players we surface actually string together &mdash; and to keep ourselves honest with a real, graded record instead of cherry-picked screenshots. Parlays still compound the vig. 21+</div>
+<div class="sc-note"><b>How to read it honestly:</b> the ROI is a <i>flat 1-unit bet on every priced prop</i> at its real closing price &mdash; a measured record, not a projection. A high UNDER hit rate usually <i>doesn&rsquo;t</i> mean free money: the under is normally the juiced side (priced around &minus;130/&minus;150 <i>because</i> it hits more), so ROI &mdash; not hit rate &mdash; is what tells you if a side actually paid. This is a tiny sample right now; it needs several weeks before it means anything, and out-of-sample is the only version that counts. The best-ticket line is hindsight &mdash; winning overs that <i>were on the board</i>, not a promise you&rsquo;d have picked them. Parlays still compound the vig. 21+</div>
 {% endif %}
 </div>
 {% endblock %}
