@@ -31914,6 +31914,15 @@ def privacy():
     return render_legal_page('privacy')
 
 
+@app.route('/how-we-analyze')
+def how_we_analyze():
+    """Public methodology page: the five disciplines we use to analyze a bet, how each
+    is wired into the product, how we weight them, and the honesty doctrine on top. A
+    trust/marketing asset -- renders in the app shell for members, public shell for
+    visitors."""
+    return render_template('how_we_analyze.html')
+
+
 @app.route('/refund-policy')
 def refund_policy():
     return render_legal_page('refund')

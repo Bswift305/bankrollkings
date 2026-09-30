@@ -1,0 +1,151 @@
+{% set active_page = 'how_we_analyze' %}
+{% extends "bk_base.html" if current_user else "public_base.html" %}
+{% block title %}How We Analyze - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .hwa{--hwa-accent:var(--accent,#3fbf7f);--hwa-ink:var(--text-bright,#eaf2ee);
+    --hwa-body:var(--text,#c4d1ca);--hwa-mut:var(--text-muted,#8aa39a);
+    --hwa-panel:var(--panel,#0f1a29);--hwa-bd:var(--border,rgba(255,255,255,.1));
+    max-width:920px;margin:0 auto;padding:0 2px;}
+  .hwa-hero{padding:14px 0 26px;border-bottom:1px solid var(--hwa-bd);margin-bottom:30px;}
+  .hwa-kick{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--hwa-accent);}
+  .hwa-hero h1{font:800 clamp(30px,6vw,46px)/1.04 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-ink);margin:10px 0 0;letter-spacing:-.02em;text-wrap:balance;}
+  .hwa-hero h1 em{font-style:normal;color:var(--hwa-accent);}
+  .hwa-lede{font:400 16px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-body);margin-top:14px;max-width:62ch;}
+  .hwa-lede b{color:var(--hwa-ink);font-weight:700;}
+
+  .hwa-disc{display:flex;gap:20px;padding:24px 0;border-bottom:1px solid var(--hwa-bd);}
+  .hwa-num{flex:0 0 auto;font:800 30px ui-monospace,Consolas,monospace;color:var(--hwa-accent);
+    line-height:1;width:54px;opacity:.85;padding-top:3px;}
+  .hwa-body{flex:1 1 auto;min-width:0;}
+  .hwa-disc h2{font:800 20px 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-ink);margin:0 0 3px;letter-spacing:-.01em;}
+  .hwa-disc .what{font:600 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:9px;}
+  .hwa-disc p{font:400 14.5px/1.62 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-body);margin:0 0 12px;}
+  .hwa-disc p b{color:var(--hwa-ink);font-weight:700;}
+  .hwa-chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .hwa-chip{display:inline-flex;align-items:center;gap:5px;font:700 12px 'Helvetica Neue',Arial,sans-serif;
+    color:var(--hwa-ink);text-decoration:none;background:rgba(63,191,127,.08);border:1px solid rgba(63,191,127,.28);
+    border-radius:999px;padding:6px 12px;transition:background .12s;}
+  .hwa-chip:hover{background:rgba(63,191,127,.16);}
+  .hwa-chip .dot{width:5px;height:5px;border-radius:50%;background:var(--hwa-accent);}
+
+  .hwa-block{margin:34px 0;padding:22px 24px;border-radius:16px;background:var(--hwa-panel);border:1px solid var(--hwa-bd);}
+  .hwa-block h3{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-ink);margin:0 0 12px;}
+  .hwa-block p{font:400 14.5px/1.66 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-body);margin:0 0 10px;}
+  .hwa-block p:last-child{margin-bottom:0;} .hwa-block b{color:var(--hwa-ink);}
+  .hwa-honesty{background:linear-gradient(180deg,rgba(63,191,127,.08),transparent);border-color:rgba(63,191,127,.3);}
+  .hwa-honesty ul{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:9px;}
+  .hwa-honesty li{font:400 13.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-body);padding-left:22px;position:relative;}
+  .hwa-honesty li::before{content:"\2713";position:absolute;left:0;top:0;color:var(--hwa-accent);font-weight:800;}
+  .hwa-honesty li b{color:var(--hwa-ink);}
+  .hwa-cta{text-align:center;padding:30px 0 10px;}
+  .hwa-cta a{display:inline-block;font:800 14px 'Helvetica Neue',Arial,sans-serif;color:#07120c;background:var(--hwa-accent);
+    border-radius:999px;padding:12px 26px;text-decoration:none;}
+  .hwa-cta .sub{font:400 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--hwa-mut);margin-top:12px;}
+  @media(max-width:560px){.hwa-disc{gap:12px;}.hwa-num{width:38px;font-size:24px;}}
+</style>
+
+<div class="hwa">
+  <div class="hwa-hero">
+    <div class="hwa-kick">Our Methodology</div>
+    <h1>Five ways to analyze a bet. <em>We use all five.</em></h1>
+    <div class="hwa-lede">Most sites pick one angle and oversell it. A betting decision is only honest when you&rsquo;ve run it through every discipline that has real evidence behind it &mdash; and said out loud how much each one actually proves. Here&rsquo;s the framework the whole platform is built on, and exactly where each piece lives.</div>
+  </div>
+
+  <div class="hwa-disc">
+    <div class="hwa-num">01</div>
+    <div class="hwa-body">
+      <h2>Fundamental &amp; Situational</h2>
+      <div class="what">Read the game itself</div>
+      <p>Matchups, injuries, quarterback and backup tier, weather, rest, scheme, motivation &mdash; the <b>why</b> behind a number. Most &ldquo;situational angles&rdquo; (revenge, letdown, lookahead) are myths the market already priced, so we test them and refuse to sell the ones that don&rsquo;t hold. The ones that <b>do</b> &mdash; QB value, wind on totals &mdash; we surface.</p>
+      <div class="hwa-chips">
+        <a class="hwa-chip" href="/tools/nfl-matchup"><span class="dot"></span>Matchup Cards</a>
+        <a class="hwa-chip" href="/tools/injury-report"><span class="dot"></span>Injury Report</a>
+        <a class="hwa-chip" href="/tools/nfl-officiating"><span class="dot"></span>Officiating</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hwa-disc">
+    <div class="hwa-num">02</div>
+    <div class="hwa-body">
+      <h2>Quantitative &amp; Model-Based</h2>
+      <div class="what">Build our own number</div>
+      <p>A team-strength and prop model that owes <b>nothing to the betting line</b> &mdash; power ratings from game results only, and a prop score fit on real graded outcomes. Market-independent on purpose: it&rsquo;s the one number you can honestly hold <i>against</i> the market instead of just echoing it.</p>
+      <div class="hwa-chips">
+        <a class="hwa-chip" href="/tools/nfl-power"><span class="dot"></span>Power Ratings</a>
+        <a class="hwa-chip" href="/tools/nfl-board"><span class="dot"></span>PropScore Board</a>
+        <a class="hwa-chip" href="/tools/cfb-power"><span class="dot"></span>CFB Power</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hwa-disc">
+    <div class="hwa-num">03</div>
+    <div class="hwa-body">
+      <h2>Market &amp; Line Value</h2>
+      <div class="what">Respect the sharpest opponent in the room</div>
+      <p>The closing line is the best single estimate of a game that exists &mdash; so we track where the number moves, shop for the best price, and measure <b>closing-line value</b>. When our model and the market disagree, that gap is the only honest definition of an edge. We never claim to see &ldquo;sharp money&rdquo; we can&rsquo;t actually observe.</p>
+      <div class="hwa-chips">
+        <a class="hwa-chip" href="/tools/market-movers"><span class="dot"></span>Market Movers</a>
+        <a class="hwa-chip" href="/tools/best-lines"><span class="dot"></span>Best Lines</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hwa-disc">
+    <div class="hwa-num">04</div>
+    <div class="hwa-body">
+      <h2>Statistical, Trends &amp; Regression</h2>
+      <div class="what">Base rates, and luck vs. skill</div>
+      <p>What&rsquo;s sticky and what isn&rsquo;t. Records built on <b>turnover margin, one-score games and red-zone luck</b> regress; streaks and &ldquo;hot hands&rdquo; are usually already in the price. We show the trend &mdash; who&rsquo;s covering, who&rsquo;s due to fall &mdash; but label it as context, and we live by one rule: <b>out-of-sample or it doesn&rsquo;t count.</b></p>
+      <div class="hwa-chips">
+        <a class="hwa-chip" href="/tools/nfl-regression"><span class="dot"></span>Regression Watch</a>
+        <a class="hwa-chip" href="/tools/cfb-ats-streaks"><span class="dot"></span>ATS Streaks</a>
+        <a class="hwa-chip" href="/tools/nfl-heatmap"><span class="dot"></span>Hot Hand</a>
+        <a class="hwa-chip" href="/tools/riding-the-wave"><span class="dot"></span>Riding the Wave</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hwa-disc">
+    <div class="hwa-num">05</div>
+    <div class="hwa-body">
+      <h2>Risk &amp; Bankroll Management</h2>
+      <div class="what">The discipline that keeps you in the game</div>
+      <p>This one doesn&rsquo;t pick winners &mdash; it makes an edge survive variance. Flat unit sizing, expected value over hit rate, and the guardrails that stop the bets that quietly bleed you: long-odds overs, all-over parlays, single-book prices. The best handicap in the world loses if the staking blows up the roll on a normal cold streak.</p>
+      <div class="hwa-chips">
+        <a class="hwa-chip" href="/tools/unit-sizing"><span class="dot"></span>Unit Sizing</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hwa-block">
+    <h3>How we weight them</h3>
+    <p>They aren&rsquo;t equal. We <b>anchor on the market</b> (03) because it&rsquo;s the sharpest estimate available, and hold everything to the discipline of (04) &mdash; nothing counts until it survives out-of-sample. Our own model (02) is a market-independent second opinion, fundamentals (01) are the context that explains the number, and risk management (05) is baked into every guardrail so a good read isn&rsquo;t undone by a bad stake.</p>
+    <p>That&rsquo;s why you&rsquo;ll never see a single magic &ldquo;1&ndash;100&rdquo; score here. Different sports and different angles carry different amounts of evidence, so we report them as what they are &mdash; a <b>validated edge</b>, a <b>model lean</b>, or a <b>situational spot</b> &mdash; never flattened into one number that hides how much is actually known.</p>
+  </div>
+
+  <div class="hwa-block hwa-honesty">
+    <h3>The honesty layer on top of all five</h3>
+    <ul>
+      <li><b>Validated edge vs. model lean vs. situational spot</b> &mdash; every play is tiered by how much evidence backs it.</li>
+      <li><b>&ldquo;Assumes independence&rdquo;</b> on every combined-probability number &mdash; parlays compound the vig, and we say so.</li>
+      <li><b>Availability states</b> (Verified / Partial / Pending / Stale) so missing context never reads as neutral.</li>
+      <li><b>No &ldquo;sharp,&rdquo; &ldquo;steam,&rdquo; or &ldquo;lock&rdquo; language.</b> We don&rsquo;t claim to see money we can&rsquo;t.</li>
+      <li><b>Out-of-sample or it doesn&rsquo;t count.</b> The rules that looked unbeatable in-sample and reversed taught us this the expensive way.</li>
+    </ul>
+  </div>
+
+  <div class="hwa-cta">
+    {% if current_user %}
+    <a href="/tools/nfl-hub">Explore the tools &rarr;</a>
+    <div class="sub">This is an analytics platform, not a sportsbook &mdash; for research and entertainment. 21+</div>
+    {% else %}
+    <a href="/pricing">See it in action &rarr;</a>
+    <div class="sub">An analytics platform, not a sportsbook &mdash; for research and entertainment. 21+</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
