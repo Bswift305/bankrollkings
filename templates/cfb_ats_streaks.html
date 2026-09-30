@@ -1,0 +1,54 @@
+{% set active_page = 'cfb_ats_streaks' %}
+{% set active_sport = 'ncaaf' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB ATS Streaks - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .ats-res{font:800 11px ui-monospace,Consolas,monospace;letter-spacing:2px;}
+  .ats-res .c{color:var(--bkn-good);} .ats-res .l{color:var(--bkn-bad);} .ats-res .p{color:var(--text-muted);}
+</style>
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB{% if ats_season %} &middot; {{ ats_season }}{% endif %}{% if ats_week %} &middot; through Wk {{ ats_week }}{% endif %}</div>
+    <h1>ATS <span class="accent">Streaks</span></h1>
+    <div class="page-subtitle">Who&rsquo;s beating the number &mdash; every FBS team on an active run against the closing spread, hottest streak on top, joined to this week&rsquo;s line. College player props are thin, so this keys on the team side of the market.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">&lsaquo; CFB Hub</a> <a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">ATS Trends</a></div>
+</div>
+
+{% if not ats_available %}
+  <div class="bkn-empty">ATS streaks aren&rsquo;t loaded yet &mdash; they build from the season&rsquo;s spreads &amp; results once a couple of weeks are in.</div>
+{% else %}
+{% macro next_line(r) %}{% if r.next_opp and r.next_line is not none %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }} {{ '%+g'|format(r.next_line) }}{% elif r.next_opp %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% else %}&mdash;{% endif %}{% endmacro %}
+{% macro streak_board(rows, kind) %}
+  <div class="bkn-list">
+  {% for r in rows %}
+  {% set heat = ('#2f9e5f' if r.streak >= 4 else '#3fbf7f' if r.streak == 3 else '#4ed48a') if kind == 'cover' else ('#d84b57' if r.streak >= 4 else '#ff6b3d' if r.streak == 3 else '#ff9f43') %}
+  <div class="bkn-row" style="cursor:default;">
+    <span class="bkn-tile fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">{{ kind }}</span></span>
+    <span class="lead">
+      <span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.ats }} ATS &middot; {{ r.cover_pct }}%</span></span>
+      <span class="m"><span class="ats-res">{% for ch in r.last.split(' ') %}<span class="{{ ch|lower }}">{{ ch }}</span>{% if not loop.last %} {% endif %}{% endfor %}</span> &middot; {{ 'covering' if kind == 'cover' else 'missing' }} by {{ '%+.1f'|format(r.streak_acm) }} avg</span>
+    </span>
+    <span class="trail" style="font:700 12px ui-monospace,monospace;">{{ next_line(r) }}<small>this week</small></span>
+  </div>
+  {% else %}<div class="bkn-empty">No active {{ kind }} streaks of 2+ right now.</div>{% endfor %}
+  </div>
+{% endmacro %}
+
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Cover Streaks</h2><span class="sub">beating the spread</span></div>
+  {{ streak_board(ats_cover, 'cover') }}
+</div>
+<div class="bkn-sec">
+  <div class="bkn-sec-h"><span class="ic">&#129482;</span><h2>Fade Streaks</h2><span class="sub">can&rsquo;t cover</span></div>
+  {{ streak_board(ats_fade, 'fade') }}
+</div>
+
+<div class="bkn-note"><b>How to read it honestly:</b> an ATS streak is a <b>trend the market already prices</b> &mdash; our graded work shows streaks live in the number, so this is &ldquo;who&rsquo;s been beating the spread lately,&rdquo; a starting point and your eye test, <b>not</b> a proven edge. The <span style="color:var(--bkn-good);">C</span>/<span style="color:var(--bkn-bad);">L</span> string is the last few games (newest last); &ldquo;covering by&rdquo; is the average margin vs the closing consensus spread. A team crushing the number by 15+ a game is as likely to have been <i>underrated</i> as to be due for a market correction &mdash; the line moves to catch up. Use it as context into this week&rsquo;s number, not a signal on its own.{% if ats_updated %} Updated {{ ats_updated }}.{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}

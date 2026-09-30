@@ -41156,6 +41156,39 @@ def cfb_ats_tool():
     return render_template('cfb_ats.html', **build_cfb_ats_context())
 
 
+_CFB_ATS_STREAK_CACHE = {}
+
+
+def build_cfb_ats_streaks_context():
+    """CFB ATS cover streaks: which FBS teams are on an active run of covering (or failing
+    to cover) the closing spread this season, joined to this week's line. From
+    data/scenarios/cfb_ats_streaks.json (build_cfb_ats_streaks.py). Honest: a streak is a
+    trend the market prices -- context / eye-test, not a proven edge."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats_streaks.json')
+    data = {'boards': {}}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_ATS_STREAK_CACHE.get('mtime') != mtime:
+            with open(path, encoding='utf-8') as fh:
+                _CFB_ATS_STREAK_CACHE['data'] = json.load(fh)
+            _CFB_ATS_STREAK_CACHE['mtime'] = mtime
+        data = _CFB_ATS_STREAK_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    boards = data.get('boards') or {}
+    return {'ats_cover': boards.get('cover', []), 'ats_fade': boards.get('fade', []),
+            'ats_season': data.get('season'), 'ats_week': data.get('through_week'),
+            'ats_updated': data.get('updated'),
+            'ats_available': bool(boards.get('cover') or boards.get('fade'))}
+
+
+@app.route('/tools/cfb-ats-streaks')
+def cfb_ats_streaks_tool():
+    """Quick Tool: CFB ATS Streaks -- teams on an active cover (or fade) streak vs the
+    spread this season, with this week's line. Honest trend context, not an edge."""
+    return render_template('cfb_ats_streaks.html', **build_cfb_ats_streaks_context())
+
+
 _CFB_ATS_GAMES_CACHE = {}
 
 @app.route('/tools/cfb-ats/games')
