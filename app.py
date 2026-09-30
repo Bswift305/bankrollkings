@@ -40851,15 +40851,16 @@ def _load_ngs_receiving_current():
 
 _NFL_RECEIVING_STATS = {'receiving_yards', 'receptions', 'receiving_tds', 'targets',
                         'rush_rec_yds', 'anytime_td'}
+_NFL_RUSHING_STATS = {'rushing_yards', 'carries', 'rushing_tds', 'rush_rec_yds', 'anytime_td'}
+_NFL_PASSING_STATS = {'passing_yards', 'completions', 'attempts', 'passing_tds'}
 
 
 def _nfl_player_matchup_read(player, stat=None):
-    """One receiver's this-week matchup context -- opponent pass-D rank + tone, his NGS
-    separation, and usage -- for the Prop Floor page. Returns None unless it's a receiving
-    stat and the player is a pass-catcher on this week's slate. Same inputs as the Matchup
-    Edge board, for a single player."""
-    if stat is not None and stat not in _NFL_RECEIVING_STATS:
-        return None
+    """One player's this-week matchup context for the Prop Floor page -- the opponent rank
+    that matters for THIS stat plus a one-line skill/usage read, from the same inputs as the
+    Matchup Edge board. Receivers -> opp pass D + separation; backs -> opp run D + carry
+    share; pass rushers -> opp pass protection + pressure; QBs (passing props) -> opp pass D
+    + yards allowed. Returns None if we can't place the player on this week's slate."""
     if not player:
         return None
     import nfl_current_form as _ncf
@@ -40869,9 +40870,17 @@ def _nfl_player_matchup_read(player, stat=None):
         if str(p.get('player', '')).strip().lower() == key:
             pl = p
             break
-    if not pl or pl.get('is_def') or pl.get('is_back'):
+    team = pl.get('team') if pl else None
+    is_qb = stat in _NFL_PASSING_STATS
+    if team is None and is_qb:
+        # QBs aren't on the usage board -- pull their team from the player-week log
+        log = _nfl_player_week_data()
+        if not log.empty and '_full' in log.columns and 'team' in log.columns:
+            sub = log[log['_full'].astype(str).str.strip().str.lower() == key]
+            if len(sub) and len(sub['team'].mode()):
+                team = str(sub['team'].mode().iloc[0])
+    if not team:
         return None
-    team = pl.get('team')
     try:
         slate = build_football_home_slate('nfl')
     except Exception:
@@ -40889,17 +40898,45 @@ def _nfl_player_matchup_read(player, stat=None):
     tf = _ncf.team_form(opp)
     if not tf or int(tf.get('games', 0) or 0) < 1:
         return None
-    rank = int(_ncf._adj_pass_rank(tf))
-    tone = 'soft' if rank >= 24 else 'tough' if rank <= 9 else 'neutral'
-    n = _load_ngs_receiving_current().get(key, {})
-    sep = n.get('sep')
-    has_sep = sep is not None and not pd.isna(sep)
-    return {'opp': opp, 'home': home, 'opp_rank': rank, 'opp_ord': _ncf._ord(rank), 'tone': tone,
-            'target_share': pl.get('target_share') or 0, 'air_share': pl.get('air_share') or 0,
-            'sep': (round(float(sep), 2) if has_sep else None),
-            'sep_tier': ('creates separation' if has_sep and sep >= 3.3 else
-                         'gets open' if has_sep and sep >= 2.9 else
-                         'tight coverage' if has_sep else None)}
+
+    def _tone(rk):
+        return 'soft' if rk >= 24 else 'tough' if rk <= 9 else 'neutral'
+
+    if pl and pl.get('is_def') and pl.get('role') == 'Pass rusher' and (stat is None or stat == 'sacks'):
+        rk = pd.to_numeric(pd.Series([tf.get('sacks_allowed_rank')]), errors='coerce').iloc[0]
+        if pd.isna(rk):
+            return None
+        rk = int(rk)
+        detail = f"{(pl.get('prs_pg') or 0):.1f} pressures/gm"
+        side = 'pass protection'
+    elif pl and pl.get('is_back') and (stat is None or stat in _NFL_RUSHING_STATS):
+        rk = int(_ncf._adj_run_rank(tf))
+        detail = f"{pl.get('rush_share') or 0}% of the backfield carries ({(pl.get('car_pg') or 0):.0f}/gm)"
+        side = 'run D'
+    elif pl and not pl.get('is_back') and not pl.get('is_def') and (stat is None or stat in _NFL_RECEIVING_STATS):
+        rk = int(_ncf._adj_pass_rank(tf))
+        n = _load_ngs_receiving_current().get(key, {})
+        sep = n.get('sep')
+        has_sep = sep is not None and not pd.isna(sep)
+        ts = pl.get('target_share') or 0
+        ays = pl.get('air_share') or 0
+        bits = [f"{ts}% target share"]
+        if ays >= 25:
+            bits.append(f"{ays}% of the air yards")
+        if has_sep:
+            tier = ('creates separation' if sep >= 3.3 else 'gets open' if sep >= 2.9 else 'tight coverage')
+            bits.append(f"{sep:.1f} yd sep ({tier})")
+        detail = ", ".join(bits)
+        side = 'pass D'
+    elif is_qb:
+        rk = int(_ncf._adj_pass_rank(tf))
+        pya = pd.to_numeric(pd.Series([tf.get('pass_ypg_allowed')]), errors='coerce').iloc[0]
+        detail = (f"allowing {pya:.0f} pass yds/gm" if pd.notna(pya) else "opponent pass defense")
+        side = 'pass D'
+    else:
+        return None
+    return {'opp': opp, 'home': home, 'opp_rank': rk, 'opp_ord': _ncf._ord(rk),
+            'tone': _tone(rk), 'side': side, 'detail': detail}
 
 
 def build_nfl_matchup_edge(limit=60):
@@ -41021,6 +41058,8 @@ def build_nfl_hub_context():
     ranks = _safe(build_nfl_team_rankings_context, {'teams': []})
     officiating = _safe(build_nfl_officiating_context, {'refs': []})
     scoreboard = _safe(build_nfl_ticket_scoreboard, {'totals': {}})
+    edges = _safe(lambda: build_nfl_matchup_edge(limit=60).get('rows', []), [])
+    edge_plus = [e for e in edges if e.get('tone') == 'soft']
     slate = _safe(lambda: build_football_home_slate('nfl'), [])
     # ranking highlights: best TO margin, softest pass D, top rush O
     teams = ranks.get('teams', [])
@@ -41033,7 +41072,7 @@ def build_nfl_hub_context():
     return {
         'featured': featured[:5],
         'hot': hot[:5], 'hot_plus': hot_plus[:4],
-        'floors': floors[:5], 'gameboard': gameboard[:4],
+        'floors': floors[:5], 'gameboard': gameboard[:4], 'edges': (edge_plus or edges)[:4],
         'parlay': parlay, 'rank_hi': rk, 'refs_over': refs[:2],
         'refs_under': refs[-2:] if len(refs) >= 2 else [],
         'off_baseline': officiating.get('baseline', {}),

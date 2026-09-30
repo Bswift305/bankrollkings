@@ -114,7 +114,7 @@
 {% if matchup %}
 <div class="pf-mu {{ matchup.tone }}">
   <div class="pf-mu-h"><span class="pf-mu-badge {{ matchup.tone }}">{{ 'PLUS SPOT' if matchup.tone == 'soft' else 'TOUGH D' if matchup.tone == 'tough' else 'NEUTRAL' }}</span> Matchup this week</div>
-  <div class="pf-mu-b">{{ 'vs' if matchup.home else '@' }} <b>{{ matchup.opp }}</b> &middot; pass D ranked <b>{{ matchup.opp_ord }}</b> &middot; {{ matchup.target_share }}% target share{% if matchup.air_share >= 25 %}, {{ matchup.air_share }}% of the air yards{% endif %}{% if matchup.sep is not none %} &middot; {{ '%.1f'|format(matchup.sep) }} yd separation ({{ matchup.sep_tier }}){% endif %}</div>
+  <div class="pf-mu-b">{{ 'vs' if matchup.home else '@' }} <b>{{ matchup.opp }}</b> &middot; {{ matchup.side }} ranked <b>{{ matchup.opp_ord }}</b> &middot; {{ matchup.detail }}</div>
 </div>
 {% endif %}
 

@@ -71,6 +71,16 @@
       </div>
     </div>
   </div>
+  <div class="bkn-sec-h" style="border:0;margin:16px 0 4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">&#127919; Top matchup spots</span><a class="all" href="/tools/nfl-matchup-edge">Matchup edge &rarr;</a></div>
+  <div class="bkn-list">
+    {% for e in edges %}
+    <a class="bkn-row" href="/tools/nfl-floor?player={{ e.player|urlencode }}&stat={{ 'sacks' if e.cat == 'def' else 'rushing_yards' if e.cat == 'rush' else 'receiving_yards' }}">
+      <span class="bkn-tile accent"><span class="n">{{ e.edge }}</span><span class="l">edge</span></span>
+      <span class="lead"><span class="t">{{ e.player }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ e.team }} {{ 'vs' if e.home else '@' }} {{ e.opp }}</span> {% if e.tone == 'soft' %}<span class="bkn-tag good">PLUS SPOT</span>{% endif %}</span><span class="m">{{ e.why }}</span></span>
+      <span class="trail">{{ e.metric }}<small>{{ e.metric_lbl }}</small></span>
+    </a>
+    {% else %}<div class="bkn-empty">Matchup edges load with this week&rsquo;s slate.</div>{% endfor %}
+  </div>
 </div>
 
 <!-- BUILD A TICKET ------------------------------------------------------- -->
