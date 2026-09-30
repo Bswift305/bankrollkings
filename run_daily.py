@@ -107,6 +107,11 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # so we accrue a real 2026 open->close prop-line history to grade "tickets we
         # could have hit" against. Idempotent one snapshot/day -> NFL_PropLines_Archive.csv.
         ("NFL prop-line capture", _python("capture_nfl_prop_lines.py"), 180),
+        # Grade the archived prop lines against real results (all categories, incl. defense
+        # + computed props). Re-grades the whole archive each run so PENDING games resolve
+        # as gamelogs fill in -> NFL_PropLines_Graded.csv (the streak/heat-map + scoreboard
+        # record). Fetches nflverse games.csv for the game-date -> week join.
+        ("NFL prop-line grade", _python("grade_nfl_prop_lines.py"), 300),
         # NFL totals model inputs: team scoring (2025 prior + current) + each team's QB1,
         # so the totals read can veto a game when the starting QB is OUT. One nflverse
         # games pull + one weekly-stats pull.
