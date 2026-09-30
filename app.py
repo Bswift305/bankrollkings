@@ -41186,9 +41186,11 @@ def build_cfb_ats_streaks_context():
         pass
     boards = data.get('boards') or {}
     return {'ats_cover': boards.get('cover', []), 'ats_fade': boards.get('fade', []),
+            'ou_over': boards.get('over', []), 'ou_under': boards.get('under', []),
             'ats_season': data.get('season'), 'ats_week': data.get('through_week'),
             'ats_updated': data.get('updated'),
-            'ats_available': bool(boards.get('cover') or boards.get('fade'))}
+            'ats_available': bool(boards.get('cover') or boards.get('fade')
+                                  or boards.get('over') or boards.get('under'))}
 
 
 @app.route('/tools/cfb-ats-streaks')

@@ -1,54 +1,90 @@
 {% set active_page = 'cfb_ats_streaks' %}
 {% set active_sport = 'ncaaf' %}
 {% extends "bk_base.html" %}
-{% block title %}CFB ATS Streaks - Bankroll Kings{% endblock %}
+{% block title %}CFB Streaks vs the Number - Bankroll Kings{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
 <style>
   .ats-res{font:800 11px ui-monospace,Consolas,monospace;letter-spacing:2px;}
-  .ats-res .c{color:var(--bkn-good);} .ats-res .l{color:var(--bkn-bad);} .ats-res .p{color:var(--text-muted);}
+  .ats-res .c,.ats-res .o{color:var(--bkn-good);} .ats-res .l,.ats-res .u{color:var(--bkn-bad);} .ats-res .p{color:var(--text-muted);}
+  .ats-toggle{display:flex;gap:8px;margin-bottom:18px;}
+  .ats-tab{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;padding:9px 18px;font:800 12.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
+  .ats-tab.active{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+  .ats-view.hide{display:none;}
 </style>
 <div class="bkn">
 <div class="page-hero">
   <div>
     <div class="page-kicker">Quick Tools &middot; CFB{% if ats_season %} &middot; {{ ats_season }}{% endif %}{% if ats_week %} &middot; through Wk {{ ats_week }}{% endif %}</div>
-    <h1>ATS <span class="accent">Streaks</span></h1>
-    <div class="page-subtitle">Who&rsquo;s beating the number &mdash; every FBS team on an active run against the closing spread, hottest streak on top, joined to this week&rsquo;s line. College player props are thin, so this keys on the team side of the market.</div>
+    <h1>Streaks vs <span class="accent">the Number</span></h1>
+    <div class="page-subtitle">Who&rsquo;s beating the market lately &mdash; every FBS team on an active run against the closing <b>spread</b> or <b>total</b>, hottest streak on top, joined to this week&rsquo;s line. College player props are thin, so this keys on the team side of the market.</div>
   </div>
   <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">&lsaquo; CFB Hub</a> <a href="/tools/cfb-ats" class="btn btn-secondary btn-sm">ATS Trends</a></div>
 </div>
 
 {% if not ats_available %}
-  <div class="bkn-empty">ATS streaks aren&rsquo;t loaded yet &mdash; they build from the season&rsquo;s spreads &amp; results once a couple of weeks are in.</div>
+  <div class="bkn-empty">Streaks aren&rsquo;t loaded yet &mdash; they build from the season&rsquo;s spreads, totals &amp; results once a couple of weeks are in.</div>
 {% else %}
-{% macro next_line(r) %}{% if r.next_opp and r.next_line is not none %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }} {{ '%+g'|format(r.next_line) }}{% elif r.next_opp %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% else %}&mdash;{% endif %}{% endmacro %}
-{% macro streak_board(rows, kind) %}
+{% macro next_ref(r, mode) %}{% if r.next_opp %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% if mode == 'ats' and r.next_line is not none %} {{ '%+g'|format(r.next_line) }}{% elif mode == 'ou' and r.next_total is not none %} &middot; o/u {{ r.next_total }}{% endif %}{% else %}&mdash;{% endif %}{% endmacro %}
+{% macro board(rows, kind, mode) %}
   <div class="bkn-list">
   {% for r in rows %}
-  {% set heat = ('#2f9e5f' if r.streak >= 4 else '#3fbf7f' if r.streak == 3 else '#4ed48a') if kind == 'cover' else ('#d84b57' if r.streak >= 4 else '#ff6b3d' if r.streak == 3 else '#ff9f43') %}
+  {% set heat = ({'cover':['#2f9e5f','#3fbf7f','#4ed48a'],'fade':['#d84b57','#ff6b3d','#ff9f43'],'over':['#e8813a','#ff9f43','#ffb865'],'under':['#3a7bd5','#4a90d9','#6aa7e0']}[kind]) %}
+  {% set col = heat[0] if r.streak >= 4 else heat[1] if r.streak == 3 else heat[2] %}
+  {% set verb = {'cover':'covering by','fade':'missing by','over':'over by','under':'under by'}[kind] %}
   <div class="bkn-row" style="cursor:default;">
-    <span class="bkn-tile fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">{{ kind }}</span></span>
+    <span class="bkn-tile fire" style="background:{{ col }};"><span class="n">{{ r.streak }}</span><span class="l">{{ kind }}</span></span>
     <span class="lead">
-      <span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.ats }} ATS &middot; {{ r.cover_pct }}%</span></span>
-      <span class="m"><span class="ats-res">{% for ch in r.last.split(' ') %}<span class="{{ ch|lower }}">{{ ch }}</span>{% if not loop.last %} {% endif %}{% endfor %}</span> &middot; {{ 'covering' if kind == 'cover' else 'missing' }} by {{ '%+.1f'|format(r.streak_acm) }} avg</span>
+      <span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.rec }} {{ 'ATS' if mode == 'ats' else 'O/U' }} &middot; {{ r.pct }}%</span></span>
+      <span class="m"><span class="ats-res">{% for ch in r.last.split(' ') %}<span class="{{ ch|lower }}">{{ ch }}</span>{% if not loop.last %} {% endif %}{% endfor %}</span> &middot; {{ verb }} {{ '%+.1f'|format(r.streak_acm) }} avg</span>
     </span>
-    <span class="trail" style="font:700 12px ui-monospace,monospace;">{{ next_line(r) }}<small>this week</small></span>
+    <span class="trail" style="font:700 12px ui-monospace,monospace;">{{ next_ref(r, mode) }}<small>this week</small></span>
   </div>
   {% else %}<div class="bkn-empty">No active {{ kind }} streaks of 2+ right now.</div>{% endfor %}
   </div>
 {% endmacro %}
 
-<div class="bkn-sec">
-  <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Cover Streaks</h2><span class="sub">beating the spread</span></div>
-  {{ streak_board(ats_cover, 'cover') }}
-</div>
-<div class="bkn-sec">
-  <div class="bkn-sec-h"><span class="ic">&#129482;</span><h2>Fade Streaks</h2><span class="sub">can&rsquo;t cover</span></div>
-  {{ streak_board(ats_fade, 'fade') }}
+<div class="ats-toggle">
+  <button class="ats-tab active" data-view="ats">Against the Spread</button>
+  <button class="ats-tab" data-view="ou">Totals (O/U)</button>
 </div>
 
-<div class="bkn-note"><b>How to read it honestly:</b> an ATS streak is a <b>trend the market already prices</b> &mdash; our graded work shows streaks live in the number, so this is &ldquo;who&rsquo;s been beating the spread lately,&rdquo; a starting point and your eye test, <b>not</b> a proven edge. The <span style="color:var(--bkn-good);">C</span>/<span style="color:var(--bkn-bad);">L</span> string is the last few games (newest last); &ldquo;covering by&rdquo; is the average margin vs the closing consensus spread. A team crushing the number by 15+ a game is as likely to have been <i>underrated</i> as to be due for a market correction &mdash; the line moves to catch up. Use it as context into this week&rsquo;s number, not a signal on its own.{% if ats_updated %} Updated {{ ats_updated }}.{% endif %}</div>
+<div class="ats-view" data-view="ats">
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Cover Streaks</h2><span class="sub">beating the spread</span></div>
+    {{ board(ats_cover, 'cover', 'ats') }}
+  </div>
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#129482;</span><h2>Fade Streaks</h2><span class="sub">can&rsquo;t cover</span></div>
+    {{ board(ats_fade, 'fade', 'ats') }}
+  </div>
+</div>
+
+<div class="ats-view hide" data-view="ou">
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#11014;</span><h2>Over Streaks</h2><span class="sub">clearing the total</span></div>
+    {{ board(ou_over, 'over', 'ou') }}
+  </div>
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#11015;</span><h2>Under Streaks</h2><span class="sub">staying below</span></div>
+    {{ board(ou_under, 'under', 'ou') }}
+  </div>
+</div>
+
+<div class="bkn-note"><b>How to read it honestly:</b> a streak is a <b>trend the market already prices</b> &mdash; our graded work shows streaks live in the number, so this is &ldquo;who&rsquo;s been beating the spread (or total) lately,&rdquo; a starting point and your eye test, <b>not</b> a proven edge. The result string is the last few games (newest last); &ldquo;by&rdquo; is the average margin vs the closing consensus number. A team crushing the number every week is as likely to have been <i>underrated</i> as to be due for a market correction &mdash; the line moves to catch up. Use it as context into this week&rsquo;s number, not a signal on its own.{% if ats_updated %} Updated {{ ats_updated }}.{% endif %}</div>
 {% endif %}
 </div>
+
+<script>
+(function(){
+  var tabs=document.querySelectorAll('.ats-tab'), views=document.querySelectorAll('.ats-view');
+  tabs.forEach(function(t){ t.onclick=function(){
+    tabs.forEach(function(x){x.classList.remove('active');}); t.classList.add('active');
+    var v=t.getAttribute('data-view');
+    views.forEach(function(el){ el.classList.toggle('hide', el.getAttribute('data-view')!==v); });
+  };});
+})();
+</script>
 {% endblock %}
