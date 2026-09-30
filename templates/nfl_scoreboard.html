@@ -1,0 +1,70 @@
+{% set active_page = 'nfl_scoreboard' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Tickets We Could Have Hit - Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .sc-wrap{--sc-accent:#3fbf7f;max-width:800px;}
+  .sc-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;}
+  .sc-stat{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:13px;padding:14px 16px;}
+  .sc-stat .v{font:800 26px ui-monospace,Consolas,monospace;color:var(--sc-accent);line-height:1;}
+  .sc-stat .k{font:700 10.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-top:6px;}
+  .sc-wk{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px;}
+  .sc-wk-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .sc-wk-title{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .sc-wk-meta{font:700 12px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .sc-wk-meta b{color:var(--sc-accent);}
+  .sc-best{background:rgba(63,191,127,.06);border:1px solid rgba(63,191,127,.28);border-radius:10px;padding:11px 13px;}
+  .sc-best-lbl{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--sc-accent);margin-bottom:6px;display:flex;justify-content:space-between;}
+  .sc-leg{font:600 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .sc-leg b{color:var(--text-bright);} .sc-leg .a{color:var(--sc-accent);font-family:ui-monospace,monospace;font-size:11px;}
+  .sc-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:8px;}
+  .sc-note b{color:var(--text-bright);}
+  .sc-empty{font:500 12.5px/1.7 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
+    background:linear-gradient(180deg,rgba(63,191,127,.06),transparent);border:1px dashed var(--border);border-radius:12px;padding:16px 18px;}
+  .sc-empty b{color:var(--text-bright);}
+</style>
+
+<div class="sc-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL</div>
+    <h1>Tickets We Could <span class="accent">Have Hit</span></h1>
+    <div class="page-subtitle">Our receipts. From the prop lines we capture and grade every day, the winning cross-game 3-leg over-parlays that were sitting on the board each week &mdash; the proof that surfacing high-floor players cashes.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/nfl-heatmap" class="btn btn-secondary btn-sm">Hot Hand</a></div>
+</div>
+
+{% if not available %}
+  <div class="sc-empty"><b>The record is building.</b> We started capturing and grading every NFL prop line daily this week &mdash; the Odds API only serves current lines, so the history accrues from here forward. As each week&rsquo;s games resolve, the winning tickets that were on the board show up here automatically. Check back after this slate settles.</div>
+{% else %}
+<div class="sc-top">
+  <div class="sc-stat"><div class="v">{{ totals.winning_parlays }}</div><div class="k">Winning 3-leg parlays</div></div>
+  <div class="sc-stat"><div class="v">{{ totals.hit_rate }}%</div><div class="k">Over-hit rate</div></div>
+  <div class="sc-stat"><div class="v">{{ totals.hit }}<span style="font-size:15px;color:var(--text-muted);">/{{ totals.graded }}</span></div><div class="k">Props graded</div></div>
+  <div class="sc-stat"><div class="v">{{ totals.weeks }}</div><div class="k">Weeks tracked</div></div>
+</div>
+
+{% for w in weeks %}
+<div class="sc-wk">
+  <div class="sc-wk-head">
+    <span class="sc-wk-title">Week {{ w.week }}</span>
+    <span class="sc-wk-meta">{{ w.hit }}/{{ w.graded }} overs hit ({{ w.hit_rate }}%) &middot; <b>{{ w.winning_parlays }}</b> winning 3-leg parlays on the board</span>
+  </div>
+  {% if w.best %}
+  <div class="sc-best">
+    <div class="sc-best-lbl"><span>&#9733; Best ticket that hit</span><span>+{{ w.best.american }} &middot; $5 &rarr; ${{ '%g'|format(w.best.payout_5) }}</span></div>
+    {% for l in w.best.legs %}
+    <div class="sc-leg"><b>{{ l.player }}</b> {{ l.stat }} <b>{{ '%g'|format(l.line) }}+</b>{% if l.actual is not none and l.actual != '' %} <span class="a">(hit {{ l.actual }})</span>{% endif %}{% if l.price %} <span style="color:var(--text-muted);">{{ '%+d'|format(l.price) }}</span>{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="sc-note"><b>How to read it honestly:</b> these are winning tickets that <i>were on the board</i> &mdash; hindsight, not a promise you&rsquo;d have picked them. Losing weeks show too (the count is just lower). The point is to prove the high-floor, high-usage players we surface actually string together &mdash; and to keep ourselves honest with a real, graded record instead of cherry-picked screenshots. Parlays still compound the vig. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

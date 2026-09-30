@@ -29976,6 +29976,84 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     return data
 
 
+_NFL_SCOREBOARD_CACHE = {}
+
+
+def build_nfl_ticket_scoreboard(graded_df=None, legs=3):
+    """The 'tickets we could have hit' scoreboard: from the graded prop-line record
+    (NFL_PropLines_Graded.csv), for each week count how many winning cross-game N-leg
+    over-parlays were on the board, with a sample best (longest-odds) winning ticket.
+    Proof-of-work that featuring high-floor players cashes. Self-populates as the graded
+    record accrues on prod (PENDING games resolve week over week)."""
+    import itertools
+    path = DATA_DIR / 'tracking' / 'NFL_PropLines_Graded.csv'
+    empty = {'available': False, 'weeks': [], 'totals': {},
+             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    if graded_df is None:
+        if not path.exists():
+            return empty
+        try:
+            graded_df = _load_cached_csv(path, default=pd.DataFrame())
+        except Exception:
+            return empty
+    df = graded_df
+    if df is None or df.empty or 'Result' not in df.columns:
+        return empty
+    df = df[df['Result'].isin(['OVER', 'UNDER', 'PUSH'])].copy()  # resolved only
+    if df.empty:
+        return empty
+    df['Week'] = pd.to_numeric(df.get('Week'), errors='coerce')
+    df['OverOdds'] = pd.to_numeric(df.get('OverOdds'), errors='coerce')
+
+    def _dec(a):
+        return (1 + a / 100) if a > 0 else (1 + 100 / abs(a)) if a else 1.9
+
+    weeks, tot_graded, tot_hit, tot_win = [], 0, 0, 0
+    for wk, g in df.groupby('Week'):
+        if pd.isna(wk):
+            continue
+        graded = len(g)
+        overs = g[g['Result'] == 'OVER']
+        hit = len(overs)
+        tot_graded += graded; tot_hit += hit
+        # winning cross-game N-leg over-parlays: one leg per game, distinct games
+        by_game = {}
+        for r in overs.to_dict('records'):
+            gm = str(r.get('Game') or r.get('Player'))
+            by_game.setdefault(gm, []).append(r)
+        gwin = list(by_game)
+        combos, best = 0, None
+        for trio in itertools.combinations(gwin, legs):
+            prod = 1
+            for gm in trio:
+                prod *= len(by_game[gm])
+            combos += prod
+            # best (longest-odds) winning ticket in this trio
+            picks = [max(by_game[gm], key=lambda r: (pd.to_numeric(r.get('OverOdds'), errors='coerce') or -1000)) for gm in trio]
+            dec = 1.0
+            for p in picks:
+                od = pd.to_numeric(p.get('OverOdds'), errors='coerce')
+                dec *= _dec(float(od)) if pd.notna(od) else 1.9
+            if best is None or dec > best['_dec']:
+                best = {'_dec': dec, 'legs': [{'player': p.get('Player'), 'stat': p.get('Stat'),
+                        'line': p.get('Line'), 'price': int(pd.to_numeric(p.get('OverOdds'), errors='coerce')) if pd.notna(pd.to_numeric(p.get('OverOdds'), errors='coerce')) else None,
+                        'actual': p.get('Actual')} for p in picks]}
+        tot_win += combos
+        wkrow = {'week': int(wk), 'graded': graded, 'hit': hit,
+                 'hit_rate': round(100 * hit / graded) if graded else 0,
+                 'winning_parlays': combos}
+        if best:
+            am = round((best['_dec'] - 1) * 100) if best['_dec'] >= 2 else round(-100 / (best['_dec'] - 1))
+            wkrow['best'] = {'legs': best['legs'], 'american': int(am), 'payout_5': round(5 * best['_dec'], 2)}
+        weeks.append(wkrow)
+    weeks.sort(key=lambda x: -x['week'])
+    return {'available': bool(weeks), 'weeks': weeks,
+            'totals': {'graded': tot_graded, 'hit': tot_hit,
+                       'hit_rate': round(100 * tot_hit / tot_graded) if tot_graded else 0,
+                       'winning_parlays': tot_win, 'weeks': len(weeks), 'legs': legs},
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
 _NFL_HOTHAND_CACHE = {}
 
 
@@ -40506,6 +40584,14 @@ def unit_sizing_tool():
     discipline rules. Cross-sport, fully client-side -- no model, just the math and
     the honesty (how MUCH to bet; the boards say what)."""
     return render_template('unit_sizing.html')
+
+
+@app.route('/tools/nfl-scoreboard')
+def nfl_scoreboard_tool():
+    """Quick Tool: 'Tickets We Could Have Hit' scoreboard -- from the graded prop-line
+    record, the winning cross-game 3-leg over-parlays that were on the board each week.
+    Proof-of-work; self-populates as the graded archive accrues."""
+    return render_template('nfl_scoreboard.html', **build_nfl_ticket_scoreboard())
 
 
 @app.route('/tools/nfl-heatmap')
