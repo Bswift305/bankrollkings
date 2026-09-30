@@ -32,6 +32,18 @@
     background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:16px;}
   .fp-note b{color:var(--text-bright);}
   .fp-empty{font:500 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 2px;}
+  .fp-parlay{background:linear-gradient(180deg,rgba(63,191,127,.09),rgba(63,191,127,.02));
+    border:1px solid rgba(63,191,127,.4);border-radius:14px;padding:14px 16px;margin-bottom:20px;}
+  .fp-p-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+  .fp-p-title{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .fp-p-odds{font:800 15px ui-monospace,Consolas,monospace;color:var(--fp-accent);}
+  .fp-p-leg{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    padding:7px 0;border-top:1px solid rgba(255,255,255,.06);}
+  .fp-p-pick{font:600 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .fp-p-pick b{color:var(--text-bright);}
+  .fp-p-meta{font:600 11.5px ui-monospace,Consolas,monospace;color:var(--text-muted);}
+  .fp-p-meta b{color:var(--fp-accent);}
+  .fp-p-note{font:500 11px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.06);}
 </style>
 
 <div class="fp-wrap">
@@ -42,6 +54,22 @@
     <div class="page-subtitle">Who to put in the forefront &mdash; ranked by <b>opportunity</b>, not by a hot streak. A receiver&rsquo;s target &amp; air-yards share, a back&rsquo;s share of the carries and pass-game role. This is the sticky <i>why</i> behind the players clearing their overs.</div>
   </div>
 </div>
+
+{% if parlay and parlay.available %}
+<div class="fp-parlay">
+  <div class="fp-p-head">
+    <span class="fp-p-title">&#9733; This Week&rsquo;s Featured Parlay</span>
+    <span class="fp-p-odds">+{{ parlay.american }} &middot; $5 &rarr; ${{ '%g'|format(parlay.payout_5) }}</span>
+  </div>
+  {% for l in parlay.legs %}
+  <div class="fp-p-leg">
+    <span class="fp-p-pick"><b>{{ l.player }}</b> {{ l.stat }} <b>{{ '%g'|format(l.line) }}+</b></span>
+    <span class="fp-p-meta">{{ l.game }} &middot; hits <b>{{ l.hit }}%</b>{% if l.price %} &middot; {{ '%+d'|format(l.price) }}{% endif %}</span>
+  </div>
+  {% endfor %}
+  <div class="fp-p-note">The three highest-floor legs on the board, each a different game (low correlation). Combined ~{{ parlay.indep_pct }}% if the legs were independent &mdash; a parlay still compounds the vig, so it&rsquo;s a value-shaped swing, not a lock. 21+</div>
+</div>
+{% endif %}
 
 {% if not available %}
   <div class="fp-empty">No current-season usage loaded yet &mdash; this fills in once the season&rsquo;s weekly stats are in.</div>

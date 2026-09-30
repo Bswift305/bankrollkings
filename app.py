@@ -30057,6 +30057,38 @@ def build_nfl_usage_board(limit=40, min_games=1):
     return data
 
 
+def build_nfl_featured_parlay(legs=3):
+    """Auto-build this week's Featured Parlay: the strongest FLOORS from distinct games
+    (cross-game = low correlation, parlay-legal), one leg per game, priced. Reuses the
+    floor board's reliability ranking. Honest: still a parlay -- compounds the vig -- but
+    built from the highest-floor legs on the board, not a longshot."""
+    board = build_nfl_floor_board(limit=60)
+    picked, games = [], set()
+    for f in board.get('floors', []):
+        if f.get('price') is None:
+            continue
+        g = f.get('game') or f.get('player')
+        if g in games:
+            continue
+        picked.append(f); games.add(g)
+        if len(picked) >= legs:
+            break
+    if len(picked) < legs:
+        return {'available': False}
+    dec = 1.0
+    for f in picked:
+        p = f['price']
+        dec *= (1 + p / 100) if p > 0 else (1 + 100 / abs(p))
+    am = round((dec - 1) * 100) if dec >= 2 else round(-100 / (dec - 1))
+    # naive all-independent combined hit prob (labeled as such -- legs are cross-game)
+    indep = 1.0
+    for f in picked:
+        indep *= (f['hit'] / 100.0)
+    return {'available': True, 'legs': picked, 'american': int(am), 'decimal': round(dec, 2),
+            'payout_5': round(5 * dec, 2), 'indep_pct': round(100 * indep),
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
 def nfl_key_number(spread):
     """Key-number context for an NFL spread. Margins cluster hard on 3 and 7 (and to a
     lesser degree 6, 10, 14, 4), so the EXACT number and the half-point around it carry
@@ -40339,7 +40371,9 @@ def nfl_featured_players_tool():
     """Quick Tool: Featured Players -- NFL skill players ranked by OPPORTUNITY (target
     share / air-yards for pass-catchers, backfield carry share + pass role for backs).
     The sticky 'why' behind a hot player, front and center."""
-    return render_template('nfl_featured.html', **build_nfl_usage_board())
+    ctx = build_nfl_usage_board()
+    ctx['parlay'] = build_nfl_featured_parlay()
+    return render_template('nfl_featured.html', **ctx)
 
 
 @app.route('/tools/nfl-floor')
