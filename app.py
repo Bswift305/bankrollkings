@@ -29954,6 +29954,109 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     return data
 
 
+_NFL_USAGE_CACHE = {}
+
+
+def build_nfl_usage_board(limit=40, min_games=1):
+    """Featured Players by OPPORTUNITY, not by streak. From nflverse weekly data: target
+    share + air-yards share for pass-catchers, backfield carry share + pass-game role for
+    backs. This is the sticky 'why' behind a hot player -- JSN clears overs because he
+    sees ~45% of the targets; Kenneth Walker because he owns the KC backfield. Ranked by
+    a transparent opportunity score with the components shown. Current season only."""
+    log = _nfl_player_week_data()
+    if log.empty:
+        return {'players': [], 'available': False, 'season': None}
+    cur = int(pd.to_numeric(log['season'], errors='coerce').max())
+    sig = (cur, len(log))
+    if _NFL_USAGE_CACHE.get('sig') == sig and 'data' in _NFL_USAGE_CACHE:
+        return _NFL_USAGE_CACHE['data']
+    d = log[pd.to_numeric(log['season'], errors='coerce') == cur].copy()
+    for c in ('carries', 'targets', 'receptions', 'target_share', 'air_yards_share',
+              'rushing_yards', 'receiving_yards', 'def_tackles_solo', 'def_tackle_assists',
+              'def_sacks', 'def_qb_hits', 'def_tackles_for_loss'):
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors='coerce').fillna(0.0)
+        else:
+            d[c] = 0.0
+    _DEF_POS = {'LB', 'ILB', 'OLB', 'MLB', 'DE', 'DT', 'EDGE', 'NT', 'DL',
+                'CB', 'SAF', 'FS', 'SS', 'S', 'DB'}
+    pos_col = 'position' if 'position' in d.columns else ('position_group' if 'position_group' in d.columns else None)
+    team_col = 'team' if 'team' in d.columns else 'recent_team'
+    # team backfield carries per season, to get each back's share of the run game
+    team_car = d.groupby(team_col)['carries'].sum().to_dict()
+    rows = []
+    for name, g in d.groupby('_full'):
+        gp = int(len(g))
+        if gp < min_games or not str(name).strip():
+            continue
+        pos = str(g[pos_col].mode().iloc[0]).upper() if pos_col and len(g[pos_col].mode()) else ''
+        team = str(g[team_col].mode().iloc[0]) if len(g[team_col].mode()) else ''
+        car = g['carries'].sum(); tgt = g['targets'].sum()
+        # --- Defense: rank by tackle volume (tackle props) or pass-rush pressure (sacks) ---
+        tackles = g['def_tackles_solo'].sum() + g['def_tackle_assists'].sum()
+        dsacks = g['def_sacks'].sum(); qbh = g['def_qb_hits'].sum(); tfl = g['def_tackles_for_loss'].sum()
+        if pos in _DEF_POS or (tackles >= 3 and car == 0 and tgt == 0):
+            tk_pg = tackles / gp; solo_pg = g['def_tackles_solo'].sum() / gp
+            prs_pg = (dsacks + qbh + tfl) / gp
+            if tk_pg < 3 and prs_pg < 0.8:
+                continue
+            tackle_score = min(tk_pg / 14.0, 1) * 100   # ~14 tkl/gm = elite ceiling
+            rush_score = min(prs_pg / 8.0, 1) * 100      # ~8 pressures/gm = elite ceiling
+            if prs_pg >= 1.5 and rush_score >= tackle_score:
+                role = 'Pass rusher'; metric = f"{prs_pg:.1f} prs"; score = round(rush_score)
+                why = f"{dsacks:.0f} sacks + {qbh:.0f} QB hits, {tfl:.0f} TFL over {gp} gm ({prs_pg:.1f} pressures/gm)"
+            else:
+                role = ('Tackle machine' if tk_pg >= 8 else 'Every-down' if tk_pg >= 5 else 'Rotational')
+                metric = f"{tk_pg:.1f} tkl"; score = round(tackle_score)
+                why = f"{tk_pg:.1f} tackles/gm ({solo_pg:.1f} solo) — {role.lower()}"
+            rows.append({
+                'player': str(name), 'team': team, 'pos': pos or 'DEF', 'games': gp,
+                'score': int(score), 'role': role, 'metric': metric, 'why': why,
+                'cat': 'def', 'is_back': False, 'is_def': True, 'yds_pg': None,
+                'tk_pg': round(tk_pg, 1), 'prs_pg': round(prs_pg, 1),
+            })
+            continue
+        car_pg = car / gp; tgt_pg = tgt / gp
+        ts = g['target_share'].mean(skipna=True) or 0.0
+        ays = g['air_yards_share'].mean(skipna=True) or 0.0
+        rec_pg = g['receptions'].sum() / gp
+        ryd_pg = (g['rushing_yards'].sum() + g['receiving_yards'].sum()) / gp
+        rush_share = (car / team_car[team]) if team_car.get(team) else 0.0
+        is_back = pos in ('RB', 'FB', 'HB') or (car_pg >= 8 and tgt_pg < 6)
+        if is_back:
+            if car_pg < 6:
+                continue
+            score = round(min(rush_share, 1) * 68 + min(tgt_pg, 7) / 7 * 32)
+            role = ('Bell-cow' if rush_share >= 0.62 else 'Lead back' if rush_share >= 0.45 else 'Committee')
+            why = f"{round(rush_share * 100)}% of the backfield carries ({car_pg:.0f}/gm)"
+            if tgt_pg >= 3:
+                why += f" + {tgt_pg:.0f} targets/gm (dual-threat)"
+            metric = f"{round(rush_share * 100)}% rush"
+        else:
+            if pos not in ('WR', 'TE') and tgt_pg < 4:
+                continue
+            score = round(min(ts * 2, 1) * 70 + min(ays * 2, 1) * 30)
+            role = ('Alpha' if ts >= 0.28 else 'Featured' if ts >= 0.20 else 'Rotational')
+            why = f"{round(ts * 100)}% target share ({tgt_pg:.0f}/gm)"
+            if ays >= 0.25:
+                why += f", {round(ays * 100)}% of the air yards"
+            metric = f"{round(ts * 100)}% tgt"
+        rows.append({
+            'player': str(name), 'team': team, 'pos': pos or ('RB' if is_back else 'WR'),
+            'games': gp, 'score': int(score), 'role': role, 'metric': metric, 'why': why,
+            'car_pg': round(car_pg, 1), 'tgt_pg': round(tgt_pg, 1),
+            'target_share': round(ts * 100), 'air_share': round(ays * 100),
+            'rush_share': round(rush_share * 100), 'yds_pg': round(ryd_pg),
+            'is_back': bool(is_back), 'is_def': False, 'cat': ('rb' if is_back else 'wr'),
+        })
+    rows.sort(key=lambda x: -x['score'])
+    data = {'players': rows[:limit], 'available': bool(rows), 'season': cur,
+            'count': len(rows), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_USAGE_CACHE['sig'] = sig
+    _NFL_USAGE_CACHE['data'] = data
+    return data
+
+
 def nfl_key_number(spread):
     """Key-number context for an NFL spread. Margins cluster hard on 3 and 7 (and to a
     lesser degree 6, 10, 14, 4), so the EXACT number and the half-point around it carry
@@ -40229,6 +40332,14 @@ def unit_sizing_tool():
     discipline rules. Cross-sport, fully client-side -- no model, just the math and
     the honesty (how MUCH to bet; the boards say what)."""
     return render_template('unit_sizing.html')
+
+
+@app.route('/tools/nfl-featured')
+def nfl_featured_players_tool():
+    """Quick Tool: Featured Players -- NFL skill players ranked by OPPORTUNITY (target
+    share / air-yards for pass-catchers, backfield carry share + pass role for backs).
+    The sticky 'why' behind a hot player, front and center."""
+    return render_template('nfl_featured.html', **build_nfl_usage_board())
 
 
 @app.route('/tools/nfl-floor')
