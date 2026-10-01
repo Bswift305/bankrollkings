@@ -29,7 +29,7 @@
   .dc-tag.swing{background:var(--bkn-mid,#ffd166);color:#0b1118;}
   .dc-tag.edge{background:#6aa7e0;color:#0b1118;}
   .dc-sp{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;}
-  .dc-save{display:inline-block;margin:-4px 0 12px;font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-accent,#3fbf7f);text-decoration:none;border:1px solid rgba(63,191,127,.3);border-radius:999px;padding:4px 12px;}
+  .dc-save{display:inline-block;margin:-4px 0 12px;font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-accent,#3fbf7f);text-decoration:none;background:transparent;cursor:pointer;border:1px solid rgba(63,191,127,.3);border-radius:999px;padding:5px 13px;}
   .dc-save:hover{background:rgba(63,191,127,.1);}
   .dc-ctrl{display:flex;flex-wrap:wrap;gap:16px 22px;align-items:center;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:13px 16px;margin-bottom:20px;}
   .dc-cg{display:flex;align-items:center;gap:7px;}
@@ -71,7 +71,8 @@
 <div class="dc-card {{ 'hero' if c.n == 3 else '' }}">
   <div class="dc-h"><span class="n">{{ c.n }}-Leg</span><span class="od">{{ '%+d'|format(c.american) }}</span></div>
   <div class="dc-pay"><b>$5</b> &rarr; <b>$<span class="dc-paynum">{{ '%g'|format(c.payout_5) }}</span></b> &middot; <span class="dc-mix">{{ c.n - 1 }} floors + 1 swing</span></div>
-  <a class="dc-save" href="/tools/daily-card.png?n={{ c.n }}&risk={{ prefs.risk }}&legs={{ prefs.legs }}" download="bankrollkings_card_{{ c.n }}leg.png">&#128229; Save card image</a>
+  <button type="button" class="dc-save dc-saveimg">&#128229; Save card image</button>
+  <button type="button" class="dc-save dc-reroll" style="margin-left:7px;">&#8635; Reroll</button>
   {% for l in c.legs %}
   <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}">
     <span class="dc-tag {{ l.tier }}">{{ 'SWING' if l.tier in ['swing','edge'] else 'FLOOR' }}</span>
@@ -115,18 +116,48 @@
     leg.querySelector('.rs').textContent=b.game+' · '+(b.reason||'');
     leg.querySelector('.pr').textContent=sgn(+b.price);
   }
+  var CSRF="{{ csrf_token() }}";
+  document.querySelectorAll('.dc-saveimg').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var card=btn.closest('.dc-card');
+      var legs=[].map.call(card.querySelectorAll('.dc-leg'), function(l){
+        return {label:l.dataset.label, price:+l.dataset.price, tier:l.dataset.tier,
+                sport:l.dataset.sport, game:l.dataset.game, reason:l.dataset.reason};
+      });
+      var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
+      fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({legs:legs})})
+        .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+        .then(function(blob){
+          var url=URL.createObjectURL(blob), a=document.createElement('a');
+          a.href=url; a.download='bankrollkings_card_'+legs.length+'leg.png';
+          document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+          btn.disabled=false; btn.innerHTML=orig;
+        })
+        .catch(function(){ btn.disabled=false; btn.innerHTML=orig; alert('Could not render the card image.'); });
+    });
+  });
+  function swapLeg(leg, card){
+    var onCard=[].map.call(card.querySelectorAll('.dc-leg'), function(x){return x.dataset.game;});
+    var want=leg.dataset.tier;
+    var i=bench.findIndex(function(b){ return onCard.indexOf(b.game)<0 && tierClass(b.tier)===tierClass(want); });
+    if(i<0) i=bench.findIndex(function(b){ return onCard.indexOf(b.game)<0; });
+    if(i<0) return false;
+    var nb=bench.splice(i,1)[0];
+    bench.push({sport:leg.dataset.sport, tier:leg.dataset.tier, label:leg.dataset.label,
+                game:leg.dataset.game, price:+leg.dataset.price, reason:leg.dataset.reason});
+    writeLeg(leg, nb); return true;
+  }
   document.querySelectorAll('.dc-swap').forEach(function(btn){
     btn.addEventListener('click', function(){
       var leg=btn.closest('.dc-leg'), card=btn.closest('.dc-card');
-      var onCard=[].map.call(card.querySelectorAll('.dc-leg'), function(x){return x.dataset.game;});
-      var want=leg.dataset.tier;
-      var i=bench.findIndex(function(b){ return onCard.indexOf(b.game)<0 && tierClass(b.tier)===tierClass(want); });
-      if(i<0) i=bench.findIndex(function(b){ return onCard.indexOf(b.game)<0; });
-      if(i<0){ btn.disabled=true; return; }
-      var nb=bench.splice(i,1)[0];
-      bench.push({sport:leg.dataset.sport, tier:leg.dataset.tier, label:leg.dataset.label,
-                  game:leg.dataset.game, price:+leg.dataset.price, reason:leg.dataset.reason});
-      writeLeg(leg, nb); reprice(card);
+      if(swapLeg(leg, card)) reprice(card); else btn.disabled=true;
+    });
+  });
+  document.querySelectorAll('.dc-reroll').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var card=btn.closest('.dc-card'), any=false;
+      [].forEach.call(card.querySelectorAll('.dc-leg'), function(leg){ if(swapLeg(leg, card)) any=true; });
+      if(any) reprice(card);
     });
   });
 })();

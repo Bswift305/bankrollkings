@@ -30614,19 +30614,44 @@ def daily_card_tool():
     return render_template('daily_cards.html', **ctx)
 
 
-@app.route('/tools/daily-card.png')
+@app.route('/tools/daily-card.png', methods=['GET', 'POST'])
 def daily_card_image():
-    """Render one Daily Card (?n=3/4/5) as a shareable Bankroll Kings PNG ticket, via the
-    marketing card generator. Live from the current slate."""
+    """Render one Daily Card as a shareable Bankroll Kings PNG ticket, via the marketing card
+    generator. GET ?n=3/4/5 renders the auto card; POST {legs:[...]} renders the user's CURRENT
+    card (after live swaps), repriced server-side."""
     import io
     from flask import send_file, abort
     n = request.args.get('n', type=int) or 3
-    risk = request.args.get('risk')
-    legs = request.args.get('legs')
-    data = build_daily_cards(sizes=[n],
-                             risk=risk if risk in _SWINGS_BY_RISK else 'balanced',
-                             legs=legs if legs in ('all', 'props', 'lines') else 'all')
-    card = next((c for c in data.get('cards', []) if c.get('n') == n), None)
+    if request.method == 'POST':
+        payload = request.get_json(silent=True) or {}
+        raw = payload.get('legs') or []
+        legs = []
+        for l in raw[:8]:
+            if not isinstance(l, dict) or not l.get('label'):
+                continue
+            try:
+                p = int(l.get('price'))
+            except (TypeError, ValueError):
+                continue
+            if abs(p) < 100:
+                continue
+            legs.append({'label': str(l.get('label'))[:60], 'price': p,
+                         'tier': 'floor' if l.get('tier') == 'floor' else 'swing',
+                         'sport': str(l.get('sport') or '')[:4],
+                         'game': str(l.get('game') or '')[:40],
+                         'reason': str(l.get('reason') or '')[:110]})
+        if len(legs) < 3:
+            abort(400)
+        am, dec, pay = _card_price(legs)
+        card = {'n': len(legs), 'legs': legs, 'american': am, 'payout_5': pay}
+        n = len(legs)
+    else:
+        risk = request.args.get('risk')
+        legs = request.args.get('legs')
+        data = build_daily_cards(sizes=[n],
+                                 risk=risk if risk in _SWINGS_BY_RISK else 'balanced',
+                                 legs=legs if legs in ('all', 'props', 'lines') else 'all')
+        card = next((c for c in data.get('cards', []) if c.get('n') == n), None)
     if not card:
         abort(404)
     try:
