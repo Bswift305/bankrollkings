@@ -30532,7 +30532,19 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
         am, dec, pay = _card_price(picked)
         cards.append({'n': len(picked), 'legs': picked, 'american': am, 'decimal': dec,
                       'payout_5': pay, 'swing': (swing[0]['label'] if swing else None)})
-    return {'available': bool(cards), 'cards': cards, 'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs},
+    # bench: next-best alternates not on the biggest card, for the swap-a-leg control
+    on_cards = {l['game'] for c in cards for l in c['legs']}
+    bench, seen = [], set()
+    for l in floors + swings:
+        g = l['game']
+        if g in on_cards or g in seen:
+            continue
+        seen.add(g)
+        bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price', 'reason')})
+        if len(bench) >= 10:
+            break
+    return {'available': bool(cards), 'cards': cards, 'bench': bench,
+            'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs},
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
             'n_floors': len(floors), 'n_swings': len(swings)}
 
