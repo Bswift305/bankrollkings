@@ -1,0 +1,64 @@
+{% set active_page = 'daily_card' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Today's Cards - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .dc-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+  @media(min-width:820px){.dc-grid{grid-template-columns:repeat(3,1fr);}}
+  .dc-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:16px 16px 14px;display:flex;flex-direction:column;}
+  .dc-card.hero{border-color:rgba(63,191,127,.45);box-shadow:0 0 0 1px rgba(63,191,127,.14),0 10px 30px rgba(0,0,0,.28);}
+  .dc-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+  .dc-h .n{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .dc-h .od{font:800 15px ui-monospace,Consolas,monospace;color:var(--bkn-accent,#3fbf7f);}
+  .dc-pay{font:600 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-6px 0 12px;}
+  .dc-pay b{color:var(--text-bright);}
+  .dc-leg{display:flex;gap:9px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .dc-leg:last-child{border-bottom:0;}
+  .dc-leg .bd{flex:1 1 auto;min-width:0;}
+  .dc-leg .tp{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .dc-leg .rs{font:500 11px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:2px;}
+  .dc-leg .pr{flex:0 0 auto;font:800 12.5px ui-monospace,Consolas,monospace;color:var(--text-bright);text-align:right;}
+  .dc-tag{font:800 8px ui-monospace,monospace;letter-spacing:.04em;border-radius:4px;padding:2px 5px;text-transform:uppercase;white-space:nowrap;}
+  .dc-tag.floor{background:var(--bkn-good,#4ed48a);color:#0b1118;}
+  .dc-tag.swing{background:var(--bkn-mid,#ffd166);color:#0b1118;}
+  .dc-tag.edge{background:#6aa7e0;color:#0b1118;}
+  .dc-sp{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;}
+</style>
+<div class="bkn" style="max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; Auto-generated{% if generated %} &middot; {{ generated }}{% endif %}</div>
+    <h1>Today&rsquo;s <span class="accent">Cards</span></h1>
+    <div class="page-subtitle">Built for you, automatically &mdash; the strongest 3, 4, and 5-leg tickets from this slate: mostly high-floor legs that <b>reliably clear the number</b>, plus one plus-money <b>swing</b> for payout. Cross-game, best of the board, every leg with a real reason. The finished ticket, on arrival.</div>
+  </div>
+</div>
+
+{% if not available %}
+  <div class="bkn-empty">Cards generate once this slate&rsquo;s props and lines are loaded. Check back closer to game day.</div>
+{% else %}
+<div class="dc-grid">
+{% for c in cards %}
+<div class="dc-card {{ 'hero' if c.n == 3 else '' }}">
+  <div class="dc-h"><span class="n">{{ c.n }}-Leg</span><span class="od">{{ '%+d'|format(c.american) }}</span></div>
+  <div class="dc-pay"><b>$5</b> &rarr; <b>${{ '%g'|format(c.payout_5) }}</b> &middot; {{ c.n - 1 }} floors + 1 swing</div>
+  {% for l in c.legs %}
+  <div class="dc-leg">
+    <span class="dc-tag {{ l.tier }}">{{ 'SWING' if l.tier in ['swing','edge'] else 'FLOOR' }}</span>
+    <span class="bd">
+      <span class="tp">{{ l.label }} <span class="dc-sp">{{ l.sport }}</span></span>
+      <span class="rs">{{ l.game }} &middot; {{ l.reason }}</span>
+    </span>
+    <span class="pr">{{ '%+d'|format(l.price) }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+</div>
+
+<div class="bkn-note" style="margin-top:18px;"><b>How these are built &mdash; honestly:</b> every card is <b>{{ cards[0].n if cards }}&ndash;5 legs, one per game</b> (cross-game, so the legs aren&rsquo;t correlated), weighted toward <b>floors</b> &mdash; props a player clears a high % of the time from real game logs &mdash; with a single <b>plus-money swing</b> for upside. The payout assumes the legs are <b>independent</b>; a parlay still <b>compounds the vig</b>, so even strong legs stacked are a value-shaped swing, not a lock. Floor % is each leg&rsquo;s real historical hit rate at that number, not a projection. Shop the price &mdash; a half-point or a better book changes the math. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

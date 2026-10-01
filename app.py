@@ -715,6 +715,7 @@ FREE_ENDPOINTS = {
 }
 
 PRO_ENDPOINTS = {
+    'daily_card_tool',  # the auto-generated best-bet cards -- the premium capstone
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -30378,6 +30379,130 @@ def build_nfl_featured_parlay(legs=3):
     return {'available': True, 'legs': picked, 'american': int(am), 'decimal': round(dec, 2),
             'payout_5': round(5 * dec, 2), 'indep_pct': round(100 * indep),
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
+def _cfb_form_legs(limit=8):
+    """Clean CFB game-line legs for the card engine: this week's games where THIS-YEAR
+    opponent-adjusted form diverges from the market, emitted as a priced side (-110) with a
+    one-line reason. The honest team-side 'swing' material. Strongest leans first."""
+    import cfb_current_form as _cff
+    try:
+        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week')
+    except Exception:
+        return []
+    legs = []
+    for g in games:
+        sp = pd.to_numeric(g.get('spread'), errors='coerce')
+        a, h = g.get('away'), g.get('home')
+        if pd.isna(sp) or not a or not h:
+            continue
+        try:
+            fr = _cff.matchup_read(a, h, float(sp))
+        except Exception:
+            continue
+        pm = fr.get('proj_home_margin')
+        if pm is None:
+            continue
+        mkt = -float(sp)                 # market's implied home margin
+        edge = float(pm) - mkt           # + => form likes HOME more than the market
+        if abs(edge) < 6:                # only meaningful divergence
+            continue
+        if edge > 0:
+            side, line = h, float(sp)          # home covers -> lay/take home at its spread
+        else:
+            side, line = a, -float(sp)         # away covers -> away at its spread
+        legs.append({
+            'sport': 'CFB', 'kind': 'line', 'tier': 'edge',
+            'label': f"{side} {line:+g}", 'pick': side, 'line': round(line, 1),
+            'game': f"{a} @ {h}", 'price': -110,
+            'reason': f"this-year form projects {h} {pm:+.0f} vs the market's {mkt:+.0f} — ~{abs(edge):.0f} pts the other way",
+            'score': 50 + abs(edge)})
+    legs.sort(key=lambda x: -x['score'])
+    return legs[:limit]
+
+
+def _card_price(legs):
+    dec = 1.0
+    for l in legs:
+        p = l['price']
+        dec *= (1 + p / 100) if p > 0 else (1 + 100 / abs(p))
+    am = round((dec - 1) * 100) if dec >= 2 else round(-100 / (dec - 1))
+    return int(am), round(dec, 2), round(5 * dec, 2)
+
+
+def build_daily_cards():
+    """Auto-generate the day/weekend best-bet cards to the house profile: mostly high-floor
+    legs + one upside SWING, cross-game (low correlation), best of NFL props + CFB team-line,
+    every leg honestly tiered with a one-line reason. Returns a 3-, 4- and 5-leg card. This is
+    the capstone -- the tools (floors, matchup edge, best spots, form) are the inputs; this is
+    the finished ticket."""
+    # --- pull the floor board once (low hit floor), then split into reliable floors and
+    # plus-money swings. A valid American price has |odds| >= 100; anything smaller (-34,
+    # -2) is a feed artifact and must be dropped or it fabricates the parlay payout. ---
+    floors, nfl_swings = [], []
+    try:
+        board = build_nfl_floor_board(limit=90, min_hit=52).get('floors', [])
+    except Exception:
+        board = []
+    for f in board:
+        p = f.get('price')
+        hit = f.get('hit') or 0
+        if p is None or abs(p) < 100:          # invalid American odds -> drop
+            continue
+        leg = {'sport': 'NFL', 'kind': 'prop',
+               'label': f"{f['player']} {f['stat']} {f['line']:g}+",
+               'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
+               'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit}
+        if hit >= 80 and -185 <= p <= 115:     # reliable, sensibly priced -> FLOOR
+            leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
+                       score=hit + (f.get('edge') or 0) * 0.3)
+            floors.append(leg)
+        elif p >= 120 and hit >= 55:           # plus-money with a real shot -> SWING
+            dec = 1 + p / 100.0
+            leg.update(tier='swing', reason=f"{hit}% to clear ({f['n']} g) at plus money",
+                       score=hit * (dec - 1))  # reward hit rate AND payout
+            nfl_swings.append(leg)
+    floors.sort(key=lambda x: -x['score'])
+    # --- swing material: plus-money NFL props + CFB form-lean team sides (variety + edge) ---
+    swings = sorted(nfl_swings + _cfb_form_legs(8), key=lambda x: -x['score'])
+
+    def _distinct(pool, used, n):
+        out = []
+        for l in pool:
+            if l['game'] in used:
+                continue
+            out.append(l)
+            used.add(l['game'])
+            if len(out) >= n:
+                break
+        return out
+
+    cards = []
+    for N in (3, 4, 5):
+        used = set()
+        core = _distinct(floors, used, N - 1)              # N-1 safest floors
+        swing = _distinct(swings, used, 1)                 # 1 team-side swing
+        if not swing:                                      # fall back to the next floor
+            swing = _distinct(floors, used, 1)
+        legs = core + swing
+        if len(legs) < N:                                  # backfill with floors if short
+            legs += _distinct(floors, used, N - len(legs))
+        if len(legs) < 3:
+            continue
+        am, dec, pay = _card_price(legs)
+        cards.append({'n': len(legs), 'legs': legs, 'american': am, 'decimal': dec,
+                      'payout_5': pay,
+                      'swing': (swing[0]['label'] if swing else None)})
+    return {'available': bool(cards), 'cards': cards,
+            'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+            'n_floors': len(floors), 'n_swings': len(swings)}
+
+
+@app.route('/tools/daily-card')
+def daily_card_tool():
+    """Quick Tool: Daily Card -- the auto-generated 3/4/5-leg best-bet cards (floors + one
+    swing, cross-game, NFL props + CFB team-line). The finished ticket on arrival."""
+    return render_template('daily_cards.html', **build_daily_cards())
 
 
 def nfl_key_number(spread):
