@@ -41600,6 +41600,38 @@ def _cfb_prior_context(away, home):
     return {'away': a_ctx, 'home': h_ctx}
 
 
+_CFB_STREAK_IDX_CACHE = {}
+
+
+def _cfb_streaks_by_team():
+    """Index cfb_ats_streaks.json by lowercased team -> {ats:{type,len,rec}, ou:{type,len,rec}},
+    so the matchup card can show each side's active cover/fade + over/under run. mtime-cached."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats_streaks.json')
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _CFB_STREAK_IDX_CACHE.get('mt') == mt:
+        return _CFB_STREAK_IDX_CACHE['idx']
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    idx = {}
+    b = data.get('boards', {})
+    for board in ('cover', 'fade'):
+        for r in b.get(board, []):
+            idx.setdefault(str(r['team']).strip().lower(), {})['ats'] = {
+                'type': r['streak_type'], 'len': r['streak'], 'rec': r.get('rec')}
+    for board in ('over', 'under'):
+        for r in b.get(board, []):
+            idx.setdefault(str(r['team']).strip().lower(), {})['ou'] = {
+                'type': r['streak_type'], 'len': r['streak'], 'rec': r.get('rec')}
+    _CFB_STREAK_IDX_CACHE.update(mt=mt, idx=idx)
+    return idx
+
+
 def build_cfb_matchup_context():
     """Quick Tool: CFB Matchup Edge Card. Per-team dossier (ATS splits + current
     coach's career ATS + 2026 returning production); the page compares any two teams
@@ -41618,6 +41650,7 @@ def build_cfb_matchup_context():
     # This week's actual CFB slate, so the page can list the matchups (Team vs Team)
     # and open any one -- not just hand-pick two teams from the dropdowns.
     week_games = []
+    sidx = _cfb_streaks_by_team()
     try:
         for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
@@ -41669,6 +41702,10 @@ def build_cfb_matchup_context():
                     wg['total'] = _cff.total_read(a, h, g.get('total'))
                 except Exception:
                     wg['total'] = None
+                # Active ATS cover/fade + over/under streaks for each side (this-season,
+                # in order) -- trend context the market already prices, labeled as such.
+                wg['streaks'] = {'away': sidx.get(str(a).strip().lower(), {}),
+                                 'home': sidx.get(str(h).strip().lower(), {})}
                 week_games.append(wg)
     except Exception:
         week_games = []
