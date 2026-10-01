@@ -41432,6 +41432,37 @@ def cfb_ats_streaks_tool():
     return render_template('cfb_ats_streaks.html', **build_cfb_ats_streaks_context())
 
 
+_CFB_KEYNUM_CACHE = {}
+
+
+def build_cfb_key_numbers_context():
+    """CFB Key Numbers & Line Value: this week's spreads read against the margins CFB games
+    actually land on (3 and 7 above all), and where the line has moved across a key. From
+    data/scenarios/cfb_key_numbers.json (build_cfb_key_numbers.py). Honest: informs point-
+    buying / teaser decisions, not a predictive edge."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_key_numbers.json')
+    data = {'games': [], 'margin_freq': []}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_KEYNUM_CACHE.get('mtime') != mtime:
+            with open(path, encoding='utf-8') as fh:
+                _CFB_KEYNUM_CACHE['data'] = json.load(fh)
+            _CFB_KEYNUM_CACHE['mtime'] = mtime
+        data = _CFB_KEYNUM_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {'kn_games': data.get('games', []), 'kn_freq': data.get('margin_freq', []),
+            'kn_season': data.get('season'), 'kn_sampled': data.get('games_sampled'),
+            'kn_updated': data.get('updated'), 'kn_available': bool(data.get('games'))}
+
+
+@app.route('/tools/cfb-key-numbers')
+def cfb_key_numbers_tool():
+    """Quick Tool: CFB Key Numbers & Line Value -- this week's spreads on/near/across the
+    margins CFB games actually land on (3, 7 ...). Point-buying context, not an edge."""
+    return render_template('cfb_key_numbers.html', **build_cfb_key_numbers_context())
+
+
 _CFB_ATS_GAMES_CACHE = {}
 
 @app.route('/tools/cfb-ats/games')

@@ -1,0 +1,57 @@
+{% set active_page = 'cfb_key_numbers' %}
+{% set active_sport = 'ncaaf' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Key Numbers - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .kn-ev{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:4px 0 20px;}
+  .kn-k{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:11px;padding:9px 13px;text-align:center;min-width:62px;}
+  .kn-k .n{font:800 20px ui-monospace,Consolas,monospace;color:var(--bkn-accent,#3fbf7f);line-height:1;}
+  .kn-k .p{font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin-top:4px;}
+  .kn-k .l{font:700 8px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-top:2px;}
+  .kn-k.hot .n{color:#ffb05a;} .kn-k.hot{border-color:rgba(255,176,90,.4);}
+</style>
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB{% if kn_season %} &middot; {{ kn_season }}{% endif %}</div>
+    <h1>Key Numbers <span class="accent">&amp; Line Value</span></h1>
+    <div class="page-subtitle">The margins CFB games actually land on &mdash; and this week&rsquo;s spreads sitting on, beside, or moving across them. Where a half-point is worth the most, and where the market has already moved.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">&lsaquo; CFB Hub</a> <a href="/tools/cfb-ats-streaks" class="btn btn-secondary btn-sm">ATS &amp; O/U Streaks</a></div>
+</div>
+
+{% if not kn_available %}
+  <div class="bkn-empty">Key-number reads load once this week&rsquo;s lines are in.</div>
+{% else %}
+{% if kn_freq %}
+<div class="bkn-sec-h" style="border:0;margin:0 0 6px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">How often CFB games land exactly here{% if kn_sampled %} &middot; {{ '{:,}'.format(kn_sampled) }} games{% endif %}</span></div>
+<div class="kn-ev">
+  {% for f in kn_freq %}
+  <div class="kn-k {{ 'hot' if f.margin in [3, 7] else '' }}"><div class="n">{{ f.margin }}</div><div class="p">{{ f.pct }}%</div><div class="l">of games</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="bkn-sec-h"><span class="ic">&#127919;</span><h2>This Week on the Key Numbers</h2><span class="sub">highest leverage first</span></div>
+<div class="bkn-list">
+{% for g in kn_games %}
+{% set badge = 'ON ' ~ g.key if g.situation == 'on' else ('½ OFF ' ~ g.key if g.situation == 'near' else ('CROSSED ' ~ g.crossed if g.crossed else 'LINE MOVE')) %}
+{% set tone = 'good' if g.situation == 'on' else 'mid' if g.situation == 'near' else 'flat' %}
+<div class="bkn-row" style="cursor:default;">
+  <span class="bkn-tile accent" style="{% if g.situation == 'on' and g.key in [3, 7] %}background:rgba(255,176,90,.14);border-color:rgba(255,176,90,.4);{% endif %}"><span class="n" style="{% if g.situation == 'on' and g.key in [3, 7] %}color:#ffb05a;{% endif %}">{{ g.key if g.key else g.crossed }}</span><span class="l">key</span></span>
+  <span class="lead">
+    <span class="t">{{ g.away }} <span style="color:var(--text-muted);">@</span> {{ g.home }} <span class="bkn-tag {{ tone }}">{{ badge }}</span></span>
+    <span class="m">{{ g.note or g.move_note }}{% if g.note and g.move_note %} {{ g.move_note }}{% endif %}</span>
+  </span>
+  <span class="trail">{{ '%+g'|format(g.spread) }}{% if g.spread_open is not none and g.spread_open != g.spread %}<small>open {{ '%+g'|format(g.spread_open) }}</small>{% else %}<small>spread</small>{% endif %}</span>
+</div>
+{% endfor %}
+</div>
+
+<div class="bkn-note"><b>How to read it honestly:</b> this is <b>point-buying context, not a predictive edge</b> &mdash; the market knows about key numbers too. CFB margins spike at <b>3</b> and <b>7</b> (the field goal and the touchdown), then 10/14/17/21, but the curve is <b>flatter than the NFL</b> &mdash; college has more blowouts, so a half-point matters, just less than in the pros. A spread <b>on</b> a key is where buying or selling that half-point is worth the most (and where a <b>push</b> is live); a line that has <b>moved across</b> a key tells you the market already paid for it. Use it to decide whether to buy through 3, take a teaser, or shop an alt line &mdash; not as a reason to pick the side.{% if kn_updated %} Updated {{ kn_updated }}.{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}
