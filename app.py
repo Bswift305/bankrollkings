@@ -715,6 +715,13 @@ FREE_ENDPOINTS = {
 }
 
 PRO_ENDPOINTS = {
+    # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
+    'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
+    'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
+    'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
+    'nfl_team_rankings_tool', 'nfl_wave_tool',
+    'cfb_ats_streaks_tool', 'cfb_key_numbers_tool', 'cfb_pace_tool', 'cfb_board_tool',
+    'cfb_wave_tool',
     'dashboard',
     'method_hub',
     'injury_report_tool',
