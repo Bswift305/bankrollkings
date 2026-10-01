@@ -43296,7 +43296,7 @@ def _cfb_coach_bigfav_map():
     return out
 
 
-def _cfb_analyze_game(g, teams, coach_fav, totals, power):
+def _cfb_analyze_game(g, teams, coach_fav, totals, power, kn_idx=None, streak_idx=None):
     """Return (headline, bullets, strength) — plain-English angles for one game."""
     away, home = g.get('away'), g.get('home')
     A, H = teams.get(away), teams.get(home)
@@ -43352,6 +43352,43 @@ def _cfb_analyze_game(g, teams, coach_fav, totals, power):
             side = home if diff < 0 else away
             bullets.append(f"SP+ makes it about {abs(model_home_spread):.0f} — ~{abs(diff):.0f} points off the market, leaning {side}.")
             strength += min(abs(diff), 14)
+
+    # 5) This-YEAR form vs the line — the opponent-adjusted "think like this" read
+    try:
+        import cfb_current_form as _cff
+        fr = _cff.matchup_read(away, home, float(spread))
+        pm = fr.get('proj_home_margin')
+        if pm is not None:
+            mkt_home_margin = -float(spread)           # market's implied home margin
+            fdiff = float(pm) - mkt_home_margin        # + => form likes HOME more than market
+            if abs(fdiff) >= 5:
+                side = home if fdiff > 0 else away
+                bullets.append(f"This year's form (opponent-adjusted) projects {home} {pm:+.0f} vs the market's {mkt_home_margin:+.0f} — ~{abs(fdiff):.0f} pts, leaning {side}.")
+                strength += min(abs(fdiff), 14)
+    except Exception:
+        pass
+
+    # 6) Active ATS cover/fade + over/under streaks — trend CONTEXT (priced; no strength)
+    if streak_idx:
+        sa = streak_idx.get(str(away).strip().lower(), {})
+        sh = streak_idx.get(str(home).strip().lower(), {})
+        parts = []
+        for tm, s in ((away, sa), (home, sh)):
+            seg = []
+            if s.get('ats'):
+                seg.append(f"{s['ats']['len']}x {s['ats']['type']} ATS")
+            if s.get('ou'):
+                seg.append(f"{s['ou']['len']}x {s['ou']['type']}")
+            if seg:
+                parts.append(f"{tm} {', '.join(seg)}")
+        if parts:
+            bullets.append("Streaks: " + " · ".join(parts) + " (trend the market prices — context).")
+
+    # 7) Key number — point-buying CONTEXT (not an edge)
+    if kn_idx:
+        kg = kn_idx.get((str(away).strip().lower(), str(home).strip().lower()))
+        if kg and (kg.get('note') or kg.get('move_note')):
+            bullets.append("Key number: " + (kg.get('note') or kg.get('move_note')))
 
     if not headline and bullets:
         headline = f"{away} @ {home}: a spot to watch"
@@ -43414,6 +43451,11 @@ def build_cfb_best_spots_context(date_filter='week'):
     coach_fav = _cfb_coach_bigfav_map()
     totals = {r[0]: r for r in _load_scenario_json(_CFB_TOT_CACHE2, 'cfb_totals.json').get('board', {}).get('rows', [])}
     power = {r[0]: r for r in _load_scenario_json(_CFB_POW_CACHE2, 'cfb_power.json').get('board', {}).get('rows', [])}
+    streak_idx = _cfb_streaks_by_team()
+    kn_idx = {}
+    for kg in build_cfb_key_numbers_context().get('kn_games', []):
+        if kg.get('away') and kg.get('home'):
+            kn_idx[(str(kg['away']).strip().lower(), str(kg['home']).strip().lower())] = kg
 
     live_cards = []
     try:
@@ -43421,7 +43463,7 @@ def build_cfb_best_spots_context(date_filter='week'):
     except Exception:
         games = []
     for g in games:
-        headline, bullets, strength = _cfb_analyze_game(g, teams, coach_fav, totals, power)
+        headline, bullets, strength = _cfb_analyze_game(g, teams, coach_fav, totals, power, kn_idx, streak_idx)
         if bullets:
             live_cards.append({
                 'matchup': f"{g.get('away')} @ {g.get('home')}",
