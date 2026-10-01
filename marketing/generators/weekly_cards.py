@@ -48,8 +48,17 @@ BG=(7,14,20); PANEL=(13,25,34); INK=(238,245,247); DIM=(157,176,187); FAINT=(99,
 CY=(45,212,191); GOLD=(255,206,106); GREEN=(78,212,138); RED=(255,111,126); AMBER=(255,176,90); LINE=(30,46,54)
 W = 1080; M = 44
 
+_DEJAVU = {"arialbd.ttf": "DejaVuSans-Bold.ttf", "arial.ttf": "DejaVuSans.ttf"}
+
+
 def _font(name, size):
-    for p in (f"C:/Windows/Fonts/{name}", f"/usr/share/fonts/truetype/dejavu/{name}"):
+    cands = [f"C:/Windows/Fonts/{name}"]
+    dv = _DEJAVU.get(name)
+    if dv:  # prod is Linux -> map Arial to the DejaVu equivalent so cards still render clean
+        cands += [f"/usr/share/fonts/truetype/dejavu/{dv}",
+                  f"/usr/share/fonts/dejavu/{dv}"]
+    cands.append(f"/usr/share/fonts/truetype/dejavu/{name}")
+    for p in cands:
         if os.path.exists(p):
             return ImageFont.truetype(p, size)
     return ImageFont.load_default()
@@ -1534,6 +1543,49 @@ def card_parlay(week, out):
     return c.save(out)
 
 # --------------------------------------------------------------------------- #
+# Daily Card ticket image -- renders one card dict from app.build_daily_cards()
+# into a shareable PNG, in the Bankroll Kings brand. Returns a PIL Image.
+# --------------------------------------------------------------------------- #
+def render_daily_card(card):
+    legs = card.get('legs', [])
+    n = card.get('n', len(legs))
+    lh = 66
+    bh = 30 + len(legs) * lh
+    H = 250 + 64 + bh + 150
+    c = Card(H)
+    d = c.d
+    am = card.get('american', 0)
+    y = c.header(f"TODAY'S CARD — {n}-LEG", chip=f"{'+' if am > 0 else ''}{am}", chip_fill=(28, 36, 20), chip_col=GOLD)
+    d.rounded_rectangle([(M, y), (W - M, y + 44)], radius=10, fill=PANEL, outline=LINE, width=1)
+    c.text(M + 16, y + 9, f"$5  →  ${card.get('payout_5', 0):g}", F['sub'], GOLD)
+    c.text(W - M - 16, y + 12, f"{n - 1} floors + 1 swing · cross-game", F['de'], DIM, right=True)
+    y += 60
+    d.rounded_rectangle([(M, y), (W - M, y + bh)], radius=16, fill=PANEL, outline=LINE, width=2)
+    ry = y + 22
+    for l in legs:
+        tier = l.get('tier', 'floor')
+        floor = tier == 'floor'
+        accent = GREEN if floor else GOLD
+        tag = "FLOOR" if floor else "SWING"
+        tw = d.textlength(tag, font=F['psu']) + 22
+        d.rounded_rectangle([(M + 26, ry + 3), (M + 26 + tw, ry + 29)], radius=8, fill=accent)
+        c.text(M + 26 + tw / 2, ry + 6, tag, F['psu'], BG, center=True)
+        c.text(M + 26 + tw + 16, ry - 1, l.get('label', ''), F['plr'], INK)
+        pr = l.get('price', 0)
+        c.text(W - M - 26, ry + 1, f"{'+' if pr > 0 else ''}{pr}", F['plr'], accent, right=True)
+        ry += 36
+        reason = f"{l.get('game', '')} · {l.get('reason', '')}"
+        if d.textlength(reason, font=F['de']) > W - 2 * M - 60:
+            reason = reason[:88] + "…"
+        c.text(M + 28, ry, reason, F['de'], DIM)
+        ry += lh - 36
+    y += bh + 22
+    c.text(M, y, "Floors = real historical hit rate at that number. One leg per game (cross-game).", F['ftb'], DIM)
+    y += 28
+    c.text(M, y, "Parlays compound the vig — a value-shaped swing, not a lock. Shop the price. 21+", F['ft'], FAINT)
+    return c.img
+
+
 def _stamp():
     return datetime.now().strftime('%a ') + datetime.now().strftime('%-I:%M%p ET').lstrip('0') \
         if os.name != 'nt' else datetime.now().strftime('%a ') + f"{datetime.now().hour % 12 or 12}:{datetime.now():%M%p} ET"

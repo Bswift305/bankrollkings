@@ -715,7 +715,7 @@ FREE_ENDPOINTS = {
 }
 
 PRO_ENDPOINTS = {
-    'daily_card_tool',  # the auto-generated best-bet cards -- the premium capstone
+    'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -30503,6 +30503,29 @@ def daily_card_tool():
     """Quick Tool: Daily Card -- the auto-generated 3/4/5-leg best-bet cards (floors + one
     swing, cross-game, NFL props + CFB team-line). The finished ticket on arrival."""
     return render_template('daily_cards.html', **build_daily_cards())
+
+
+@app.route('/tools/daily-card.png')
+def daily_card_image():
+    """Render one Daily Card (?n=3/4/5) as a shareable Bankroll Kings PNG ticket, via the
+    marketing card generator. Live from the current slate."""
+    import io
+    from flask import send_file, abort
+    n = request.args.get('n', type=int) or 3
+    data = build_daily_cards()
+    card = next((c for c in data.get('cards', []) if c.get('n') == n), None)
+    if not card:
+        abort(404)
+    try:
+        from marketing.generators import weekly_cards as _wc
+        img = _wc.render_daily_card(card)
+    except Exception:
+        abort(500)
+    buf = io.BytesIO()
+    img.save(buf, 'PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png', max_age=0,
+                     download_name=f'bankrollkings_card_{n}leg.png')
 
 
 def nfl_key_number(spread):
