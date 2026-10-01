@@ -43921,11 +43921,35 @@ def nfl_spots_tool():
     return render_template('nfl_spots.html', **build_nfl_spots_context())
 
 
+def build_cfb_hub_context():
+    """The CFB Hub, NFL-hub style: live previews from the real CFB builders organized by
+    bettor intent -- This Week's Edges (Best Spots), Hot & Cold (streaks), The Number (key
+    numbers + pace), and Regression -- each linking to its full tool, over the tool grid."""
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception:
+            return default
+    best = _safe(lambda: build_cfb_best_spots_context('week').get('bs_live', []), [])
+    streaks = _safe(build_cfb_ats_streaks_context, {})
+    keynums = _safe(lambda: build_cfb_key_numbers_context().get('kn_games', []), [])
+    pace = _safe(lambda: build_cfb_pace_context().get('pc_games', []), [])
+    return {
+        'h_best': best[:4],
+        'h_cover': streaks.get('ats_cover', [])[:3], 'h_fade': streaks.get('ats_fade', [])[:3],
+        'h_over': streaks.get('ou_over', [])[:3], 'h_under': streaks.get('ou_under', [])[:3],
+        'h_keynums': [g for g in keynums if g.get('situation') == 'on'][:4] or keynums[:4],
+        'h_pace': [g for g in pace if g.get('total') is not None][:4],
+        'h_has_live': bool(best or streaks.get('ats_cover') or keynums),
+        'h_season': streaks.get('ats_season'), 'h_week': streaks.get('ats_week'),
+    }
+
+
 @app.route('/tools/cfb-hub')
 def cfb_hub_tool():
-    """CFB Hub: a novice-friendly landing that organizes every college-football tool
-    into categories (This Week / Trends / Ratings / Learn) with a Start Here banner."""
-    return render_template('cfb_hub.html')
+    """CFB Hub: live previews by bettor intent (This Week's Edges / Hot & Cold / The Number
+    / Regression) over the full tool grid -- the NFL-hub treatment for college."""
+    return render_template('cfb_hub.html', **build_cfb_hub_context())
 
 
 @app.route('/tools/cfb-101')

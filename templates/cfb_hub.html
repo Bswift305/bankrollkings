@@ -36,13 +36,60 @@
   </div>
 </div>
 
-<a href="/tools/cfb-best-spots" class="hb-start" style="text-decoration:none;background:linear-gradient(120deg, rgba(224,179,74,.14), rgba(224,179,74,.03));border-color:rgba(224,179,74,.35);">
-  <div>
-    <div class="t" style="color:#e0b34a;">This Week&rsquo;s Best Spots &rsaquo;</div>
-    <div class="s">The plain-English weekly read: we run this week&rsquo;s actual slate against a decade of our trends and hand you the spots worth a look &mdash; ranked, with the reason in one line.</div>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+{% if h_has_live %}
+<div class="bkn" style="--bkn-accent:#2dd4bf;--accent:#2dd4bf;max-width:none;margin-bottom:8px;">
+
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#127919;</span><h2>This Week&rsquo;s Edges</h2><span class="sub">our one ranked board{% if h_week %} &middot; Wk {{ h_week }}{% endif %}</span><a class="all" href="/tools/cfb-best-spots">Best Spots &rarr;</a></div>
+    <div class="bkn-list">
+      {% for c in h_best %}
+      <a class="bkn-row" href="/tools/cfb-best-spots">
+        <span class="bkn-tile accent"><span class="n">{{ c.strength|round|int }}</span><span class="l">edge</span></span>
+        <span class="lead"><span class="t">{{ c.headline }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ c.matchup }} {{ c.spread }}</span></span><span class="m">{{ c.bullets[0] }}</span></span>
+      </a>
+      {% else %}<div class="bkn-empty">This week&rsquo;s spots load with the slate.</div>{% endfor %}
+    </div>
   </div>
-  <span class="hb-btn" style="background:#e0b34a;">See this week</span>
-</a>
+
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Hot &amp; Cold</h2><span class="sub">streaks vs the number</span><a class="all" href="/tools/cfb-ats-streaks">All streaks &rarr;</a></div>
+    <div class="bkn-grid-2">
+      <div>
+        <div class="bkn-sec-h" style="border:0;padding:0;margin-bottom:4px;"><span class="sub" style="text-transform:uppercase;font-weight:800;letter-spacing:.04em;">Covering the spread</span></div>
+        <div class="bkn-list">
+          {% for r in h_cover %}<div class="bkn-row" style="cursor:default;"><span class="bkn-tile fire" style="background:#2f9e5f;"><span class="n">{{ r.streak }}</span><span class="l">cover</span></span><span class="lead"><span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.rec }} ATS</span></span><span class="m">{% if r.next_opp %}next {{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% if r.next_line is not none %} {{ '%+g'|format(r.next_line) }}{% endif %}{% endif %}</span></span></div>{% else %}<div class="bkn-empty">&mdash;</div>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="bkn-sec-h" style="border:0;padding:0;margin-bottom:4px;"><span class="sub" style="text-transform:uppercase;font-weight:800;letter-spacing:.04em;">Can&rsquo;t cover</span></div>
+        <div class="bkn-list">
+          {% for r in h_fade %}<div class="bkn-row" style="cursor:default;"><span class="bkn-tile fire" style="background:#d84b57;"><span class="n">{{ r.streak }}</span><span class="l">fade</span></span><span class="lead"><span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.rec }} ATS</span></span><span class="m">{% if r.next_opp %}next {{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% if r.next_line is not none %} {{ '%+g'|format(r.next_line) }}{% endif %}{% endif %}</span></span></div>{% else %}<div class="bkn-empty">&mdash;</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#127922;</span><h2>The Number</h2><span class="sub">line value &amp; tempo</span></div>
+    <div class="bkn-grid-2">
+      <div>
+        <div class="bkn-sec-h" style="border:0;padding:0;margin-bottom:4px;"><span class="sub" style="text-transform:uppercase;font-weight:800;letter-spacing:.04em;">Key numbers</span><a class="all" href="/tools/cfb-key-numbers">All &rarr;</a></div>
+        <div class="bkn-list">
+          {% for g in h_keynums %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ g.away }} <span style="color:var(--text-muted);">@</span> {{ g.home }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ '%+g'|format(g.spread) }}</span></span><span class="m">{{ (g.note or g.move_note)|truncate(72) }}</span></span><span class="trail"><span class="bkn-tag good">{{ ('ON ' ~ g.key) if g.situation == 'on' else (('½OFF ' ~ g.key) if g.situation == 'near' else ('X' ~ g.crossed)) }}</span></span></div>{% else %}<div class="bkn-empty">&mdash;</div>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="bkn-sec-h" style="border:0;padding:0;margin-bottom:4px;"><span class="sub" style="text-transform:uppercase;font-weight:800;letter-spacing:.04em;">Totals &amp; pace</span><a class="all" href="/tools/cfb-pace">All &rarr;</a></div>
+        <div class="bkn-list">
+          {% for g in h_pace %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ g.away }} <span style="color:var(--text-muted);">@</span> {{ g.home }} <span class="bkn-tag {{ 'good' if g.tempo == 'fast' else 'flat' }}">{{ g.tempo|upper }}</span></span><span class="m">{{ g.combo_pace }} plays/gm{% if g.env_proj %} &middot; games avg ~{{ g.env_proj }} pts{% endif %}</span></span><span class="trail">{{ g.total }}<small>total</small></span></div>{% else %}<div class="bkn-empty">&mdash;</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
 
 <div class="hb-start">
   <div>
