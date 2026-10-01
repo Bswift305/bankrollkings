@@ -30451,11 +30451,59 @@ def _card_price(legs):
     return int(am), round(dec, 2), round(5 * dec, 2)
 
 
-DEFAULT_CARD_PREFS = {'sizes': [3, 4, 5], 'risk': 'balanced', 'legs': 'all'}
+DEFAULT_CARD_PREFS = {'sizes': [3, 4, 5], 'risk': 'balanced', 'legs': 'all', 'timeframe': 'smart'}
 _SWINGS_BY_RISK = {'safe': 0, 'balanced': 1, 'aggressive': 2}
+_CARD_TIMEFRAMES = ('smart', 'today', 'weekend', 'week')
 
 
-def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
+def _card_today_eastern():
+    try:
+        from services.timeutils import to_eastern_date_str
+        return to_eastern_date_str(datetime.utcnow().isoformat() + 'Z')[:10]
+    except Exception:
+        return datetime.now().strftime('%Y-%m-%d')
+
+
+def _game_date_map():
+    """{'<away> @ <home>'(lower): 'YYYY-MM-DD'} for this week's NFL + CFB games, so card
+    legs can be filtered by day. Keys match the leg 'game' strings (NFL abbrev, CFB names)."""
+    m = {}
+    rev = {v.strip().lower(): k for k, v in NFL_ABBR_TO_FULL.items()}  # full name -> abbrev
+    try:
+        for _, r in load_nfl_schedule().iterrows():
+            a, h, dt = str(r.get('Away') or ''), str(r.get('Home') or ''), str(r.get('Date') or '')[:10]
+            if not (a and h and dt):
+                continue
+            m[f"{a} @ {h}".strip().lower()] = dt                       # full-name key
+            aa, ha = rev.get(a.strip().lower(), a), rev.get(h.strip().lower(), h)
+            m[f"{aa} @ {ha}".strip().lower()] = dt                     # abbrev key (floor-board legs)
+    except Exception:
+        pass
+    try:
+        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+            a, h, dt = g.get('away'), g.get('home'), str(g.get('date') or '')[:10]
+            if a and h and dt:
+                m[f"{a} @ {h}".strip().lower()] = dt
+    except Exception:
+        pass
+    return m
+
+
+def _passes_timeframe(dstr, timeframe, today):
+    if timeframe in (None, 'week') or not dstr:
+        return True                                    # no filter / keep undated legs
+    try:
+        wd = datetime.strptime(dstr, '%Y-%m-%d').weekday()   # Mon=0 .. Sun=6
+    except (TypeError, ValueError):
+        return True
+    if timeframe == 'today':
+        return dstr == today
+    if timeframe == 'weekend':
+        return wd in (4, 5, 6)                          # Fri / Sat / Sun
+    return True
+
+
+def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='smart'):
     """Auto-generate the day/weekend best-bet cards to the user's profile: high-floor legs
     that reliably clear the number + a plus-money SWING for upside, cross-game (low
     correlation), honestly tiered. Knobs: `sizes` (which of 3/4/5), `risk` (safe=all floors,
@@ -30502,6 +30550,22 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
 
+    # --- timeframe filter: keep legs whose game is in the window (undated legs kept). 'smart'
+    # = the weekend card on Fri-Sun, the full week otherwise. Falls back to 'week' if the
+    # window leaves too few games to build the biggest requested card. ---
+    tf_req = timeframe if timeframe in _CARD_TIMEFRAMES else 'smart'
+    tf = tf_req
+    if tf == 'smart':
+        tf = 'weekend' if datetime.strptime(_card_today_eastern(), '%Y-%m-%d').weekday() in (4, 5, 6) else 'week'
+    if tf != 'week':
+        dmap, today = _game_date_map(), _card_today_eastern()
+        f2 = [l for l in floors if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
+        s2 = [l for l in swings if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
+        if len(f2) + len(s2) >= max(sizes):
+            floors, swings = f2, s2
+        else:
+            tf = 'week'
+
     def _distinct(pool, used, n):
         if n <= 0:
             return []
@@ -30544,7 +30608,8 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
         if len(bench) >= 10:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
-            'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs},
+            'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
+            'window': tf,
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
             'n_floors': len(floors), 'n_swings': len(swings)}
 
@@ -30568,7 +30633,8 @@ def load_card_prefs(uid):
             c = (json.load(fh) or {}).get('card') or {}
         return {'sizes': [n for n in (c.get('sizes') or []) if n in (3, 4, 5)] or DEFAULT_CARD_PREFS['sizes'],
                 'risk': c.get('risk') if c.get('risk') in _SWINGS_BY_RISK else 'balanced',
-                'legs': c.get('legs') if c.get('legs') in ('all', 'props', 'lines') else 'all'}
+                'legs': c.get('legs') if c.get('legs') in ('all', 'props', 'lines') else 'all',
+                'timeframe': c.get('timeframe') if c.get('timeframe') in _CARD_TIMEFRAMES else 'smart'}
     except (OSError, ValueError):
         return dict(DEFAULT_CARD_PREFS)
 
@@ -30594,7 +30660,8 @@ def _card_prefs_from_request(saved):
     sizes = src.getlist('sizes', type=int)
     return {'sizes': [n for n in sizes if n in (3, 4, 5)] or saved['sizes'],
             'risk': src.get('risk') if src.get('risk') in _SWINGS_BY_RISK else saved['risk'],
-            'legs': src.get('legs') if src.get('legs') in ('all', 'props', 'lines') else saved['legs']}
+            'legs': src.get('legs') if src.get('legs') in ('all', 'props', 'lines') else saved['legs'],
+            'timeframe': src.get('timeframe') if src.get('timeframe') in _CARD_TIMEFRAMES else saved.get('timeframe', 'smart')}
 
 
 @app.route('/tools/daily-card', methods=['GET', 'POST'])

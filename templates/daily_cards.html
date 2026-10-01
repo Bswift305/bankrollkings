@@ -60,6 +60,9 @@
   <div class="dc-cg"><span class="lb">From</span>
     {% for s, lbl in [('all','Everything'),('props','Props'),('lines','Team lines')] %}<label class="dc-pill {{ 'on' if prefs.legs == s }}"><input type="radio" name="legs" value="{{ s }}" {{ 'checked' if prefs.legs == s }}>{{ lbl }}</label>{% endfor %}
   </div>
+  <div class="dc-cg"><span class="lb">When</span>
+    {% for t, lbl in [('smart','Smart'),('weekend','Weekend'),('week','Week')] %}<label class="dc-pill {{ 'on' if prefs.timeframe == t }}"><input type="radio" name="timeframe" value="{{ t }}" {{ 'checked' if prefs.timeframe == t }}>{{ lbl }}</label>{% endfor %}
+  </div>
   {% if is_saved_view %}<span class="dc-savedtag dc-savebtn" style="margin-left:auto;cursor:default;border-style:dashed;">&#10003; Your default</span>{% else %}<button class="dc-savebtn" type="submit" formmethod="post">&#11088; Save as my default</button>{% endif %}
 </form>
 
