@@ -63,11 +63,13 @@
   <div class="hb-h"><span class="n">This Week</span><span class="d">the games happening now</span></div>
   <div class="hb-grid">
     {{ card('/sports/ncaaf/game-lines', 'game-context', 'Game Lines', "This week's slate with live spreads, totals & moneylines. Filter by day, week, or weekend.", true) }}
-    {{ card('/tools/cfb-best-spots?fav=20', 'cfb-best-spots', "Big Favorites", "Every heavy favorite this week (20+/30+/40+) vs how that team & coach actually cover big numbers — now folded into Best Spots.", true) }}
-    {{ card('/sports/ncaaf/totals', 'cfb-totals-today', "Totals", "The whole card by over/under — posted total, 1H total, each team's scoring environment and pace — inside the Live Board.", true) }}
-    {{ card('/tools/cfb-team', 'cfb-team', 'Team Profile', 'One team, everything we have — ATS splits, coach, power, talent, and a weekly log graded against the number.') }}
-    {{ card('/tools/cfb-matchup', 'cfb-matchup', 'Matchup Edge Card', 'Pick any two teams — ATS profiles, coach tendencies, experience & totals lean, side by side.') }}
+    {{ card('/tools/cfb-best-spots', 'cfb-best-spots', 'Best Spots', "The one ranked board — every game scored on this-year form vs the line, coach & situational ATS, SP+, plus streaks and key-number context. Start here.", true) }}
+    {{ card('/tools/cfb-matchup', 'cfb-matchup', 'Matchup Edge Card', 'Any two teams side by side — this-year form & projected margin, coach tendencies, totals lean, line moves, and each side\'s active streaks.', true) }}
+    {{ card('/tools/cfb-ats-streaks', 'cfb-ats', 'ATS & O/U Streaks', "Who's beating the number lately — active cover/fade runs vs the spread and over/under runs vs the total, with this week's line.", true) }}
+    {{ card('/tools/cfb-key-numbers', 'cfb-ats', 'Key Numbers & Line Value', "This week's spreads on, beside, or moving across the margins CFB games actually land on (3, 7 …) — where a half-point is worth the most.", true) }}
+    {{ card('/tools/cfb-pace', 'cfb-totals', 'Totals & Pace', "Team tempo (plays/game) + scoring environment vs this week's totals — the context behind every over/under.", true) }}
     {{ card('/tools/cfb-wave', 'cfb-ats', 'Wave Watch', "Every team covering ATS this year, sorted by WHY — underrated (ride), priced, or soft — joined to this week's line, model edge and total. Plus fades.", true) }}
+    {{ card('/tools/cfb-team', 'cfb-team', 'Team Profile', 'One team, everything we have — ATS splits, coach, power, talent, and a weekly log graded against the number.') }}
     {{ card('/sports/ncaaf/props', 'game-context', 'Player Props', 'Anytime TD and yardage props, with our longshot-over guardrail flagging the traps.', true) }}
   </div>
 </div>
@@ -77,7 +79,7 @@
   <div class="hb-grid">
     {{ card('/tools/cfb-ats', 'cfb-ats', 'Team & Situational ATS', "Every team's record vs the spread — overall, home/away, fav/dog, by coach, and 14 situational spots (off a bye, road fav, big fav...). Filter any year window.") }}
     {{ card('/tools/cfb-favorites', 'cfb-favorites', 'Big-Favorite Trends', "Do heavy favorites cover? Mostly a coin flip — and some coaches never do.") }}
-    {{ card('/tools/cfb-totals', 'cfb-totals', 'Totals & Pace', 'Team tempo, scoring environment, and over/under record — who pushes the total.') }}
+    {{ card('/tools/cfb-totals', 'cfb-totals', 'Totals Trends', "Every team's over/under record and scoring environment across the season — who pushes the total (this-week pace is in Totals & Pace above).") }}
     {{ card('/tools/cfb-regression', 'cfb-regression', 'Regression Watch', "Who's due to fall or rise based on last year's luck, plus returning production.") }}
   </div>
 </div>
