@@ -30421,6 +30421,27 @@ def _cfb_form_legs(limit=8):
     return legs[:limit]
 
 
+def _nfl_line_legs(limit=8):
+    """Clean NFL game-line + total legs for the card engine, from the model-edge game board
+    (spread/total where our number diverges from the market). Priced -110, VOLATILE flags
+    dropped. Strongest edges first."""
+    out = []
+    try:
+        board = build_nfl_game_board_context().get('board', [])
+    except Exception:
+        return []
+    for r in board:
+        play, game = r.get('play'), r.get('game')
+        if not play or not game or 'VOLATILE' in str(r.get('flag') or '').upper():
+            continue
+        label = str(play).replace(str(game), '').strip() or str(play)
+        out.append({'sport': 'NFL', 'kind': 'line', 'tier': 'edge', 'label': label,
+                    'game': game, 'price': -110, 'reason': r.get('why', ''),
+                    'score': 60 + (6 if r.get('tier') == 'Validated' else 0) - (r.get('rank', 10) * 0.2)})
+    out.sort(key=lambda x: -x['score'])
+    return out[:limit]
+
+
 def _card_price(legs):
     dec = 1.0
     for l in legs:
@@ -30471,12 +30492,14 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
                 leg.update(tier='swing', reason=f"{hit}% to clear ({f['n']} g) at plus money",
                            score=hit * (dec - 1))
                 nfl_swings.append(leg)
-    cfb = _cfb_form_legs(10) if legs in ('all', 'lines') else []
+    linepool = []
+    if legs in ('all', 'lines'):
+        linepool = sorted(_cfb_form_legs(10) + _nfl_line_legs(8), key=lambda x: -x['score'])
     if legs == 'lines':
-        floors = cfb                                   # lines-only: CFB team sides are the core
-        swings = cfb
+        floors = linepool                              # lines-only: NFL + CFB sides/totals are the core
+        swings = linepool
     else:
-        swings = sorted(nfl_swings + cfb, key=lambda x: -x['score'])
+        swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
 
     def _distinct(pool, used, n):
