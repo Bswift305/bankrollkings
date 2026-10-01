@@ -62,6 +62,9 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # games actually land on (3, 7 ...), + line moves across a key. Same CFBD lines
         # feed; margin frequencies from the historical games. Cheap CFBD call.
         ("CFB key numbers", ["build_cfb_key_numbers.py", "--season", str(season)], 120),
+        # Totals & Pace: team tempo (plays/game) + scoring environment vs this week's
+        # totals -> the over/under context board. 3 CFBD calls (advanced, games, lines).
+        ("CFB totals pace", ["build_cfb_pace.py", "--season", str(season)], 180),
         # AP poll trajectory -- the human-readable stale-prior signal (a team collapsing
         # out of the top 25 vs rising). Pairs with the SRS-vs-prior divergence flag.
         ("CFB rankings", ["build_cfb_rankings.py", "--season", str(season)], 120),

@@ -1,0 +1,60 @@
+{% set active_page = 'cfb_pace' %}
+{% set active_sport = 'ncaaf' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Totals & Pace - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .pc-lead{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:20px;}
+  @media(min-width:640px){.pc-lead{grid-template-columns:1fr 1fr;}}
+  .pc-col h3{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);margin:0 0 8px;}
+  .pc-t{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05);font:600 12.5px 'Helvetica Neue',Arial,sans-serif;}
+  .pc-t .r{width:22px;color:var(--text-muted);font:700 11px ui-monospace,monospace;}
+  .pc-t .nm{flex:1 1 auto;color:var(--text-bright);}
+  .pc-t .v{font:800 13px ui-monospace,monospace;}
+</style>
+<div class="bkn">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB{% if pc_season %} &middot; {{ pc_season }}{% endif %}</div>
+    <h1>Totals &amp; <span class="accent">Pace</span></h1>
+    <div class="page-subtitle">Totals live and die on tempo. A fast team runs more plays &mdash; more scoring chances &mdash; and pushes the over; a grind-it-out team does the opposite. Here&rsquo;s every team&rsquo;s plays-per-game and this week&rsquo;s games read against the posted total.</div>
+  </div>
+  <div class="hero-actions"><a href="/tools/cfb-hub" class="btn btn-secondary btn-sm">&lsaquo; CFB Hub</a> <a href="/tools/cfb-totals" class="btn btn-secondary btn-sm">Totals Trends</a></div>
+</div>
+
+{% if not pc_available %}
+  <div class="bkn-empty">Pace data loads once the season&rsquo;s play counts and this week&rsquo;s totals are in.</div>
+{% else %}
+{% if pc_fastest or pc_slowest %}
+<div class="pc-lead">
+  <div class="pc-col"><h3>&#9889; Fastest {% if pc_teams %}&middot; of {{ pc_teams }}{% endif %}</h3>
+    {% for t in pc_fastest %}<div class="pc-t"><span class="r">{{ t.rank }}</span><span class="nm">{{ t.team }}</span><span class="v" style="color:var(--bkn-good);">{{ t.plays_pg }}</span><span style="font:600 9px 'Helvetica Neue';color:var(--text-muted);text-transform:uppercase;">pl/gm</span></div>{% endfor %}
+  </div>
+  <div class="pc-col"><h3>&#128012; Slowest</h3>
+    {% for t in pc_slowest %}<div class="pc-t"><span class="r">{{ t.rank }}</span><span class="nm">{{ t.team }}</span><span class="v" style="color:var(--bkn-bad);">{{ t.plays_pg }}</span><span style="font:600 9px 'Helvetica Neue';color:var(--text-muted);text-transform:uppercase;">pl/gm</span></div>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="bkn-sec-h"><span class="ic">&#127944;</span><h2>This Week &middot; Tempo vs the Total</h2><span class="sub">clearest tempo spots first</span></div>
+<div class="bkn-list">
+{% for g in pc_games %}
+{% set col = '#4ed48a' if g.tempo == 'fast' else '#6aa7e0' if g.tempo == 'slow' else '#8aa39a' %}
+<div class="bkn-row" style="cursor:default;">
+  <span class="bkn-tile" style="background:rgba(255,255,255,.04);border:1px solid var(--border);"><span class="n" style="color:{{ col }};">{{ g.combo_pace|round|int if g.combo_pace else '—' }}</span><span class="l">pl/gm</span></span>
+  <span class="lead">
+    <span class="t">{{ g.away }} <span style="color:var(--text-muted);">@</span> {{ g.home }}
+      <span class="bkn-tag {{ 'good' if g.tempo == 'fast' else 'flat' }}" style="{% if g.tempo == 'slow' %}background:#6aa7e0;color:#0b1118;{% endif %}">{{ g.tempo|upper }} TEMPO</span>{% if g.lean %} <span class="bkn-tag {{ 'good' if g.lean == 'over' else 'bad' }}">LEANS {{ g.lean|upper }}</span>{% endif %}</span>
+    <span class="m">{% if g.away_pace %}{{ g.away }} {{ g.away_pace }} ({{ g.away_tier }}){% endif %}{% if g.away_pace and g.home_pace %} · {% endif %}{% if g.home_pace %}{{ g.home }} {{ g.home_pace }} ({{ g.home_tier }}){% endif %} plays/gm{% if g.env_proj %} &middot; their games avg ~{{ g.env_proj }} pts{% endif %}</span>
+  </span>
+  <span class="trail">{% if g.total is not none %}{{ g.total }}<small>total</small>{% else %}&mdash;<small>no total</small>{% endif %}</span>
+</div>
+{% endfor %}
+</div>
+
+<div class="bkn-note"><b>How to read it honestly:</b> pace is <b>context for a total, not a projection or an edge</b> &mdash; the market prices tempo, and this read is <i>not</i> opponent-adjusted (the matchup card&rsquo;s totals read does the adjusted number). The league averages about <b>{{ pc_avg_env }}</b> combined points a game. &ldquo;Plays/gm&rdquo; is each offense&rsquo;s snap volume (higher = faster); &ldquo;their games avg&rdquo; is how many combined points this team&rsquo;s games have actually produced. When two fast, high-scoring teams meet into a total that <i>hasn&rsquo;t</i> caught up, that&rsquo;s an over-leaning environment &mdash; but most totals already bake the pace in, which is why few games lean. Use it to understand the number, then confirm with the opponent-adjusted read.{% if pc_updated %} Updated {{ pc_updated }}.{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}

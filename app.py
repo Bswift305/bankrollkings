@@ -41463,6 +41463,38 @@ def cfb_key_numbers_tool():
     return render_template('cfb_key_numbers.html', **build_cfb_key_numbers_context())
 
 
+_CFB_PACE_CACHE = {}
+
+
+def build_cfb_pace_context():
+    """CFB Totals & Pace: each team's offensive tempo (plays/game) + scoring environment,
+    and this week's games read against the posted total. From data/scenarios/cfb_pace.json
+    (build_cfb_pace.py). Honest: pace is CONTEXT for a total, not a projection -- the market
+    prices tempo, and this read is not opponent-adjusted."""
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_pace.json')
+    data = {'games': [], 'fastest': [], 'slowest': []}
+    try:
+        mtime = os.path.getmtime(path)
+        if _CFB_PACE_CACHE.get('mtime') != mtime:
+            with open(path, encoding='utf-8') as fh:
+                _CFB_PACE_CACHE['data'] = json.load(fh)
+            _CFB_PACE_CACHE['mtime'] = mtime
+        data = _CFB_PACE_CACHE['data']
+    except (OSError, ValueError):
+        pass
+    return {'pc_games': data.get('games', []), 'pc_fastest': data.get('fastest', []),
+            'pc_slowest': data.get('slowest', []), 'pc_season': data.get('season'),
+            'pc_avg_env': data.get('avg_env'), 'pc_teams': data.get('teams_rated'),
+            'pc_updated': data.get('updated'), 'pc_available': bool(data.get('games'))}
+
+
+@app.route('/tools/cfb-pace')
+def cfb_pace_tool():
+    """Quick Tool: CFB Totals & Pace -- team tempo (plays/game) + scoring environment vs
+    this week's totals. Context for the over/under, not a projection."""
+    return render_template('cfb_pace.html', **build_cfb_pace_context())
+
+
 _CFB_ATS_GAMES_CACHE = {}
 
 @app.route('/tools/cfb-ats/games')
