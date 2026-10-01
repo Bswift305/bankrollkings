@@ -121,6 +121,17 @@
       {% else %}<div class="bkn-empty">Officiating loads daily.</div>{% endif %}
     </div>
   </div>
+  {% if reg_fall or reg_rise %}
+  <div class="bkn-sec-h" style="border:0;margin:14px 0 4px;padding:0;"><span class="sub" style="text-transform:uppercase;letter-spacing:.04em;font-weight:800;">&#128201; Regression watch</span><a class="all" href="/tools/nfl-regression">Due to fall / rise &rarr;</a></div>
+  <div class="bkn-grid-2">
+    <div class="bkn-list">
+      {% for r in reg_fall %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.w }}&#8211;{{ r.l }} &middot; {{ '%+d'|format(r.pt_diff) }}</span></span><span class="m">due to fall &mdash; {{ r.note|truncate(58) }}</span></span><span class="trail" style="color:var(--bkn-bad);">{{ '%+.1f'|format(r.win_luck) }}<small>vs exp</small></span></div>{% endfor %}
+    </div>
+    <div class="bkn-list">
+      {% for r in reg_rise %}<div class="bkn-row" style="cursor:default;"><span class="lead"><span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.w }}&#8211;{{ r.l }} &middot; {{ '%+d'|format(r.pt_diff) }}</span></span><span class="m">due to rise &mdash; {{ r.note|truncate(58) }}</span></span><span class="trail" style="color:var(--bkn-good);">{{ '%+.1f'|format(r.win_luck) }}<small>vs exp</small></span></div>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- RECEIPTS ------------------------------------------------------------- -->

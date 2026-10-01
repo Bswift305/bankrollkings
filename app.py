@@ -41067,6 +41067,7 @@ def build_nfl_hub_context():
     scoreboard = _safe(build_nfl_ticket_scoreboard, {'totals': {}})
     edges = _safe(lambda: build_nfl_matchup_edge(limit=60).get('rows', []), [])
     edge_plus = [e for e in edges if e.get('tone') == 'soft']
+    reg = _safe(build_nfl_regression_context, {})
     slate = _safe(lambda: build_football_home_slate('nfl'), [])
     # ranking highlights: best TO margin, softest pass D, top rush O
     teams = ranks.get('teams', [])
@@ -41084,6 +41085,7 @@ def build_nfl_hub_context():
         'refs_under': refs[-2:] if len(refs) >= 2 else [],
         'off_baseline': officiating.get('baseline', {}),
         'scoreboard': scoreboard.get('totals', {}), 'sb_available': scoreboard.get('available'),
+        'reg_fall': reg.get('reg_fall', [])[:2], 'reg_rise': reg.get('reg_rise', [])[:2],
         'slate': slate[:6], 'season': hotdata.get('season'),
     }
 
