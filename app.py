@@ -30430,43 +30430,58 @@ def _card_price(legs):
     return int(am), round(dec, 2), round(5 * dec, 2)
 
 
-def build_daily_cards():
-    """Auto-generate the day/weekend best-bet cards to the house profile: mostly high-floor
-    legs + one upside SWING, cross-game (low correlation), best of NFL props + CFB team-line,
-    every leg honestly tiered with a one-line reason. Returns a 3-, 4- and 5-leg card. This is
-    the capstone -- the tools (floors, matchup edge, best spots, form) are the inputs; this is
+DEFAULT_CARD_PREFS = {'sizes': [3, 4, 5], 'risk': 'balanced', 'legs': 'all'}
+_SWINGS_BY_RISK = {'safe': 0, 'balanced': 1, 'aggressive': 2}
+
+
+def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all'):
+    """Auto-generate the day/weekend best-bet cards to the user's profile: high-floor legs
+    that reliably clear the number + a plus-money SWING for upside, cross-game (low
+    correlation), honestly tiered. Knobs: `sizes` (which of 3/4/5), `risk` (safe=all floors,
+    balanced=+1 swing, aggressive=+2 swings), `legs` ('all' = NFL props + CFB team-line,
+    'props' = props only, 'lines' = CFB team sides only). The tools are the inputs; this is
     the finished ticket."""
-    # --- pull the floor board once (low hit floor), then split into reliable floors and
-    # plus-money swings. A valid American price has |odds| >= 100; anything smaller (-34,
-    # -2) is a feed artifact and must be dropped or it fabricates the parlay payout. ---
+    sizes = [n for n in (sizes or [3, 4, 5]) if n in (3, 4, 5)] or [3, 4, 5]
+    risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
+    legs = legs if legs in ('all', 'props', 'lines') else 'all'
+    # --- NFL prop pool (floors + plus-money swings). A valid American price has |odds|>=100;
+    # anything smaller (-34, -2) is a feed artifact and must be dropped or it fabricates the
+    # parlay payout. ---
     floors, nfl_swings = [], []
-    try:
-        board = build_nfl_floor_board(limit=90, min_hit=52).get('floors', [])
-    except Exception:
-        board = []
-    for f in board:
-        p = f.get('price')
-        hit = f.get('hit') or 0
-        if p is None or abs(p) < 100:          # invalid American odds -> drop
-            continue
-        leg = {'sport': 'NFL', 'kind': 'prop',
-               'label': f"{f['player']} {f['stat']} {f['line']:g}+",
-               'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
-               'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit}
-        if hit >= 80 and -185 <= p <= 115:     # reliable, sensibly priced -> FLOOR
-            leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
-                       score=hit + (f.get('edge') or 0) * 0.3)
-            floors.append(leg)
-        elif p >= 120 and hit >= 55:           # plus-money with a real shot -> SWING
-            dec = 1 + p / 100.0
-            leg.update(tier='swing', reason=f"{hit}% to clear ({f['n']} g) at plus money",
-                       score=hit * (dec - 1))  # reward hit rate AND payout
-            nfl_swings.append(leg)
+    if legs in ('all', 'props'):
+        try:
+            board = build_nfl_floor_board(limit=90, min_hit=52).get('floors', [])
+        except Exception:
+            board = []
+        for f in board:
+            p = f.get('price')
+            hit = f.get('hit') or 0
+            if p is None or abs(p) < 100:
+                continue
+            leg = {'sport': 'NFL', 'kind': 'prop',
+                   'label': f"{f['player']} {f['stat']} {f['line']:g}+",
+                   'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
+                   'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit}
+            if hit >= 80 and -185 <= p <= 115:
+                leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
+                           score=hit + (f.get('edge') or 0) * 0.3)
+                floors.append(leg)
+            elif p >= 120 and hit >= 55:
+                dec = 1 + p / 100.0
+                leg.update(tier='swing', reason=f"{hit}% to clear ({f['n']} g) at plus money",
+                           score=hit * (dec - 1))
+                nfl_swings.append(leg)
+    cfb = _cfb_form_legs(10) if legs in ('all', 'lines') else []
+    if legs == 'lines':
+        floors = cfb                                   # lines-only: CFB team sides are the core
+        swings = cfb
+    else:
+        swings = sorted(nfl_swings + cfb, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
-    # --- swing material: plus-money NFL props + CFB form-lean team sides (variety + edge) ---
-    swings = sorted(nfl_swings + _cfb_form_legs(8), key=lambda x: -x['score'])
 
     def _distinct(pool, used, n):
+        if n <= 0:
+            return []
         out = []
         for l in pool:
             if l['game'] in used:
@@ -30477,32 +30492,91 @@ def build_daily_cards():
                 break
         return out
 
+    nsw = _SWINGS_BY_RISK[risk]
     cards = []
-    for N in (3, 4, 5):
+    for N in sorted(set(sizes)):
         used = set()
-        core = _distinct(floors, used, N - 1)              # N-1 safest floors
-        swing = _distinct(swings, used, 1)                 # 1 team-side swing
-        if not swing:                                      # fall back to the next floor
-            swing = _distinct(floors, used, 1)
-        legs = core + swing
-        if len(legs) < N:                                  # backfill with floors if short
-            legs += _distinct(floors, used, N - len(legs))
-        if len(legs) < 3:
+        k = min(nsw, N - 1)                             # swing legs (always >=1 floor)
+        core = _distinct(floors, used, N - k)
+        swing = _distinct(swings, used, k)
+        picked = core + swing
+        if len(picked) < N:                            # backfill from the other pool
+            picked += _distinct(swings if len(core) >= len(floors) else floors, used, N - len(picked))
+        if len(picked) < N:
+            picked += _distinct(floors + swings, used, N - len(picked))
+        if len(picked) < 3:
             continue
-        am, dec, pay = _card_price(legs)
-        cards.append({'n': len(legs), 'legs': legs, 'american': am, 'decimal': dec,
-                      'payout_5': pay,
-                      'swing': (swing[0]['label'] if swing else None)})
-    return {'available': bool(cards), 'cards': cards,
+        am, dec, pay = _card_price(picked)
+        cards.append({'n': len(picked), 'legs': picked, 'american': am, 'decimal': dec,
+                      'payout_5': pay, 'swing': (swing[0]['label'] if swing else None)})
+    return {'available': bool(cards), 'cards': cards, 'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs},
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
             'n_floors': len(floors), 'n_swings': len(swings)}
 
 
-@app.route('/tools/daily-card')
+_CARD_PREFS_DIR = os.path.join(BASE_DIR, 'data', 'user_prefs')
+
+
+def _card_prefs_uid():
+    try:
+        return str((current_user or {}).get('user_id', '') or '').strip()
+    except Exception:
+        return ''
+
+
+def load_card_prefs(uid):
+    """One user's saved Daily Card profile (sizes / risk / legs), or the house default."""
+    if not uid:
+        return dict(DEFAULT_CARD_PREFS)
+    try:
+        with open(os.path.join(_CARD_PREFS_DIR, f'{uid}.json'), encoding='utf-8') as fh:
+            c = (json.load(fh) or {}).get('card') or {}
+        return {'sizes': [n for n in (c.get('sizes') or []) if n in (3, 4, 5)] or DEFAULT_CARD_PREFS['sizes'],
+                'risk': c.get('risk') if c.get('risk') in _SWINGS_BY_RISK else 'balanced',
+                'legs': c.get('legs') if c.get('legs') in ('all', 'props', 'lines') else 'all'}
+    except (OSError, ValueError):
+        return dict(DEFAULT_CARD_PREFS)
+
+
+def save_card_prefs(uid, prefs):
+    if not uid:
+        return
+    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
+    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh) or {}
+    except (OSError, ValueError):
+        d = {}
+    d['card'] = prefs
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(d, fh)
+
+
+def _card_prefs_from_request(saved):
+    """Query/form knobs override the saved profile for this view; saved is the fallback."""
+    src = request.form if request.method == 'POST' else request.args
+    sizes = src.getlist('sizes', type=int)
+    return {'sizes': [n for n in sizes if n in (3, 4, 5)] or saved['sizes'],
+            'risk': src.get('risk') if src.get('risk') in _SWINGS_BY_RISK else saved['risk'],
+            'legs': src.get('legs') if src.get('legs') in ('all', 'props', 'lines') else saved['legs']}
+
+
+@app.route('/tools/daily-card', methods=['GET', 'POST'])
 def daily_card_tool():
     """Quick Tool: Daily Card -- the auto-generated 3/4/5-leg best-bet cards (floors + one
-    swing, cross-game, NFL props + CFB team-line). The finished ticket on arrival."""
-    return render_template('daily_cards.html', **build_daily_cards())
+    swing, cross-game, NFL props + CFB team-line), tuned to the user's saved profile. POST
+    with ?save persists the current knobs as the default."""
+    uid = _card_prefs_uid()
+    saved = load_card_prefs(uid)
+    prefs = _card_prefs_from_request(saved)
+    if request.method == 'POST':
+        save_card_prefs(uid, prefs)
+        return redirect(url_for('daily_card_tool'))
+    ctx = build_daily_cards(**prefs)
+    ctx['saved'] = saved
+    ctx['is_saved_view'] = (prefs == saved)
+    return render_template('daily_cards.html', **ctx)
 
 
 @app.route('/tools/daily-card.png')
@@ -30512,7 +30586,11 @@ def daily_card_image():
     import io
     from flask import send_file, abort
     n = request.args.get('n', type=int) or 3
-    data = build_daily_cards()
+    risk = request.args.get('risk')
+    legs = request.args.get('legs')
+    data = build_daily_cards(sizes=[n],
+                             risk=risk if risk in _SWINGS_BY_RISK else 'balanced',
+                             legs=legs if legs in ('all', 'props', 'lines') else 'all')
     card = next((c for c in data.get('cards', []) if c.get('n') == n), None)
     if not card:
         abort(404)

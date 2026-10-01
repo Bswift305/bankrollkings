@@ -28,6 +28,15 @@
   .dc-sp{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;}
   .dc-save{display:inline-block;margin:-4px 0 12px;font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-accent,#3fbf7f);text-decoration:none;border:1px solid rgba(63,191,127,.3);border-radius:999px;padding:4px 12px;}
   .dc-save:hover{background:rgba(63,191,127,.1);}
+  .dc-ctrl{display:flex;flex-wrap:wrap;gap:16px 22px;align-items:center;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:13px 16px;margin-bottom:20px;}
+  .dc-cg{display:flex;align-items:center;gap:7px;}
+  .dc-cg .lb{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .dc-pill{position:relative;cursor:pointer;font:700 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 12px;}
+  .dc-pill input{position:absolute;opacity:0;inset:0;cursor:pointer;}
+  .dc-pill.on{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+  .dc-savebtn{margin-left:auto;cursor:pointer;font:800 12px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-accent,#3fbf7f);background:transparent;border:1px solid rgba(63,191,127,.4);border-radius:999px;padding:7px 15px;}
+  .dc-savebtn:hover{background:rgba(63,191,127,.1);}
+  .dc-savedtag{font:700 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
 </style>
 <div class="bkn" style="max-width:none;">
 <div class="page-hero">
@@ -38,15 +47,28 @@
   </div>
 </div>
 
+<form class="dc-ctrl" method="get" action="/tools/daily-card" onchange="this.submit()">
+  <div class="dc-cg"><span class="lb">Sizes</span>
+    {% for n in [3,4,5] %}<label class="dc-pill {{ 'on' if n in prefs.sizes }}"><input type="checkbox" name="sizes" value="{{ n }}" {{ 'checked' if n in prefs.sizes }}>{{ n }}-leg</label>{% endfor %}
+  </div>
+  <div class="dc-cg"><span class="lb">Risk</span>
+    {% for r, lbl in [('safe','Safe'),('balanced','Balanced'),('aggressive','Aggressive')] %}<label class="dc-pill {{ 'on' if prefs.risk == r }}"><input type="radio" name="risk" value="{{ r }}" {{ 'checked' if prefs.risk == r }}>{{ lbl }}</label>{% endfor %}
+  </div>
+  <div class="dc-cg"><span class="lb">From</span>
+    {% for s, lbl in [('all','Everything'),('props','Props'),('lines','Team lines')] %}<label class="dc-pill {{ 'on' if prefs.legs == s }}"><input type="radio" name="legs" value="{{ s }}" {{ 'checked' if prefs.legs == s }}>{{ lbl }}</label>{% endfor %}
+  </div>
+  {% if is_saved_view %}<span class="dc-savedtag dc-savebtn" style="margin-left:auto;cursor:default;border-style:dashed;">&#10003; Your default</span>{% else %}<button class="dc-savebtn" type="submit" formmethod="post">&#11088; Save as my default</button>{% endif %}
+</form>
+
 {% if not available %}
-  <div class="bkn-empty">Cards generate once this slate&rsquo;s props and lines are loaded. Check back closer to game day.</div>
+  <div class="bkn-empty">No card could be built from the current slate for these settings &mdash; try <b>Everything</b> for the source, or widen the sizes. Cards fill in as this slate&rsquo;s props and lines load.</div>
 {% else %}
 <div class="dc-grid">
 {% for c in cards %}
 <div class="dc-card {{ 'hero' if c.n == 3 else '' }}">
   <div class="dc-h"><span class="n">{{ c.n }}-Leg</span><span class="od">{{ '%+d'|format(c.american) }}</span></div>
   <div class="dc-pay"><b>$5</b> &rarr; <b>${{ '%g'|format(c.payout_5) }}</b> &middot; {{ c.n - 1 }} floors + 1 swing</div>
-  <a class="dc-save" href="/tools/daily-card.png?n={{ c.n }}" download="bankrollkings_card_{{ c.n }}leg.png">&#128229; Save card image</a>
+  <a class="dc-save" href="/tools/daily-card.png?n={{ c.n }}&risk={{ prefs.risk }}&legs={{ prefs.legs }}" download="bankrollkings_card_{{ c.n }}leg.png">&#128229; Save card image</a>
   {% for l in c.legs %}
   <div class="dc-leg">
     <span class="dc-tag {{ l.tier }}">{{ 'SWING' if l.tier in ['swing','edge'] else 'FLOOR' }}</span>
