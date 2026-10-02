@@ -55,6 +55,7 @@ data/schedules/
 data/tracking/
 data/user_notes/
 data/user_prefs/
+data/user_bets/
 
 # Local exports, spreadsheets, docs, archives
 *.zip

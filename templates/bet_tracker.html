@@ -1,0 +1,185 @@
+{% set active_page = 'bet_tracker' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Bet Tracker - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .bt-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
+  @media(min-width:720px){.bt-sum{grid-template-columns:repeat(4,1fr);}}
+  .bt-stat{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:14px 15px;}
+  .bt-stat .k{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);}
+  .bt-stat .v{font:800 24px ui-monospace,Consolas,monospace;color:var(--text-bright);margin-top:4px;}
+  .bt-stat .v.pos{color:var(--bkn-good,#4ed48a);} .bt-stat .v.neg{color:#ff6b6b;}
+  .bt-stat .sub{font:600 10.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:3px;}
+  .bt-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:16px 16px 6px;margin-bottom:18px;}
+  .bt-card h3{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 4px;}
+  .bt-card .hint{font:500 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:12px;}
+  .bt-form{display:grid;grid-template-columns:1fr;gap:10px;}
+  @media(min-width:760px){.bt-form{grid-template-columns:repeat(12,1fr);align-items:end;}}
+  .bt-fg{display:flex;flex-direction:column;gap:4px;}
+  .bt-fg .lb{font:700 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .bt-fg input,.bt-fg select{background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:9px;color:var(--text-bright);font:600 13px 'Helvetica Neue',Arial,sans-serif;padding:9px 10px;width:100%;box-sizing:border-box;}
+  .bt-fg input::placeholder{color:var(--text-muted);opacity:.7;}
+  .c2{grid-column:span 2;} .c3{grid-column:span 3;} .c4{grid-column:span 4;} .c5{grid-column:span 5;} .c12{grid-column:span 12;}
+  .bt-add{cursor:pointer;font:800 13px 'Helvetica Neue',Arial,sans-serif;color:#0b1118;background:var(--bkn-accent,#3fbf7f);border:1px solid var(--bkn-accent,#3fbf7f);border-radius:999px;padding:10px 18px;white-space:nowrap;}
+  .bt-row{display:flex;gap:11px;align-items:center;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;}
+  .bt-row:last-child{border-bottom:0;}
+  .bt-meta{flex:1 1 230px;min-width:0;}
+  .bt-sel{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .bt-desc{font:500 11px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:2px;}
+  .bt-chip{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 5px;margin-right:5px;text-transform:uppercase;}
+  .bt-odds{flex:0 0 auto;text-align:right;font:800 13px ui-monospace,Consolas,monospace;color:var(--text-bright);min-width:56px;}
+  .bt-odds .s{display:block;font:600 9px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .bt-clv{flex:0 0 auto;text-align:right;min-width:60px;font:800 12px ui-monospace,monospace;}
+  .bt-clv.pos{color:var(--bkn-good,#4ed48a);} .bt-clv.neg{color:#ff6b6b;} .bt-clv.na{color:var(--text-muted);font-weight:600;}
+  .bt-clv .s{display:block;font:600 9px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;}
+  .bt-prof{flex:0 0 auto;text-align:right;min-width:64px;font:800 14px ui-monospace,Consolas,monospace;}
+  .bt-prof.pos{color:var(--bkn-good,#4ed48a);} .bt-prof.neg{color:#ff6b6b;} .bt-prof.push{color:var(--text-muted);}
+  .bt-settle{display:flex;gap:6px;align-items:center;flex:0 0 auto;flex-wrap:wrap;}
+  .bt-settle input{width:74px;background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:8px;color:var(--text-bright);font:600 12px ui-monospace,monospace;padding:7px 8px;}
+  .bt-sb{cursor:pointer;font:800 11px 'Helvetica Neue',Arial,sans-serif;border-radius:8px;padding:7px 11px;border:1px solid var(--border);background:transparent;color:var(--text-muted);}
+  .bt-sb.win:hover{background:var(--bkn-good,#4ed48a);color:#0b1118;border-color:var(--bkn-good,#4ed48a);}
+  .bt-sb.loss:hover{background:#ff6b6b;color:#0b1118;border-color:#ff6b6b;}
+  .bt-sb.push:hover{background:var(--text-muted);color:#0b1118;}
+  .bt-x{cursor:pointer;background:transparent;border:0;color:var(--text-muted);font:800 15px ui-monospace,monospace;padding:0 4px;}
+  .bt-x:hover{color:#ff6b6b;}
+  .bt-rtag{font:800 9px ui-monospace,monospace;border-radius:5px;padding:3px 7px;text-transform:uppercase;}
+  .bt-rtag.win{background:var(--bkn-good,#4ed48a);color:#0b1118;} .bt-rtag.loss{background:#ff6b6b;color:#0b1118;}
+  .bt-rtag.push{background:var(--text-muted);color:#0b1118;}
+</style>
+
+<div class="bkn" style="max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; Your record</div>
+    <h1>Bet <span class="accent">Tracker</span></h1>
+    <div class="page-subtitle">Your own graded record &mdash; what you bet, the price you got, how it settled, and whether you <b>beat the closing line</b> (CLV, the one number that actually predicts long-run results). Flat-stake, honest math, nothing hidden. This is your data; it never leaves your account.</div>
+  </div>
+</div>
+
+{% if not signed_in %}
+  <div class="bkn-empty">Sign in to start logging bets &mdash; your tracker is tied to your account.</div>
+{% else %}
+
+<div class="bt-sum">
+  <div class="bt-stat">
+    <div class="k">Record</div>
+    <div class="v">{{ summary.record if summary.settled else '&ndash;'|safe }}</div>
+    <div class="sub">{% if summary.win_pct is not none %}{{ summary.win_pct }}% win{% else %}no settled bets{% endif %}{% if summary.pending %} &middot; {{ summary.pending }} open{% endif %}</div>
+  </div>
+  <div class="bt-stat">
+    <div class="k">Net (flat $)</div>
+    <div class="v {{ 'pos' if summary.net > 0 else ('neg' if summary.net < 0 else '') }}">{{ '%+g'|format(summary.net) if summary.settled else '&ndash;'|safe }}</div>
+    <div class="sub">{{ '$%g staked'|format(summary.staked) if summary.staked else 'nothing risked yet' }}</div>
+  </div>
+  <div class="bt-stat">
+    <div class="k">ROI</div>
+    <div class="v {{ 'pos' if (summary.roi or 0) > 0 else ('neg' if (summary.roi or 0) < 0 else '') }}">{% if summary.roi is not none %}{{ '%+.1f'|format(summary.roi) }}%{% else %}&ndash;{% endif %}</div>
+    <div class="sub">flat stake, net / risked</div>
+  </div>
+  <div class="bt-stat">
+    <div class="k">CLV (beat close)</div>
+    {% if summary.clv_avg is not none %}
+    <div class="v {{ 'pos' if summary.clv_avg > 0 else ('neg' if summary.clv_avg < 0 else '') }}">{{ '%+.1f'|format(summary.clv_avg) }}<span style="font-size:13px;color:var(--text-muted);">pts</span></div>
+    <div class="sub">{{ summary.beat_rate }}% beat close &middot; {{ summary.clv_n }} w/ line</div>
+    {% else %}
+    <div class="v" style="color:var(--text-muted);">&ndash;</div>
+    <div class="sub">add closing lines to track</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bt-card">
+  <h3>Log a bet</h3>
+  <div class="hint">Odds are American (e.g. <b>-120</b>, <b>+150</b>). Add the <b>closing line</b> now or when you settle &mdash; that&rsquo;s what powers CLV.</div>
+  <form class="bt-form" method="post" action="/tools/tracker/add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="bt-fg c2"><span class="lb">Sport</span>
+      <select name="sport">{% for s in sports %}<option value="{{ s }}" {{ 'selected' if s == 'NFL' }}>{{ s }}</option>{% endfor %}</select>
+    </div>
+    <div class="bt-fg c5"><span class="lb">Selection</span><input type="text" name="selection" placeholder="e.g. Jaylen Warren 60+ rush yds" required></div>
+    <div class="bt-fg c5"><span class="lb">Game / note <span style="opacity:.6;">(optional)</span></span><input type="text" name="description" placeholder="PIT @ CLE"></div>
+    <div class="bt-fg c2"><span class="lb">Odds</span><input type="text" name="odds" placeholder="-120" inputmode="numeric" required></div>
+    <div class="bt-fg c2"><span class="lb">Stake $</span><input type="text" name="stake" placeholder="50" inputmode="decimal" required></div>
+    <div class="bt-fg c2"><span class="lb">Close <span style="opacity:.6;">(opt)</span></span><input type="text" name="closing_odds" placeholder="-140" inputmode="numeric"></div>
+    <div class="bt-fg c2"><span class="lb">Book <span style="opacity:.6;">(opt)</span></span><input type="text" name="book" placeholder="DK"></div>
+    <div class="bt-fg c2"><span class="lb">Date</span><input type="date" name="placed"></div>
+    <div class="bt-fg c2" style="align-self:end;"><button type="submit" class="bt-add">+ Add bet</button></div>
+  </form>
+</div>
+
+{% set open_bets = bets|selectattr('result','equalto','pending')|list %}
+{% set done_bets = bets|rejectattr('result','equalto','pending')|list %}
+
+{% if open_bets %}
+<div class="bt-card">
+  <h3>Open &middot; {{ open_bets|length }}</h3>
+  <div class="hint">Settle each when it&rsquo;s graded. Enter where it <b>closed</b> (optional) to lock in CLV.</div>
+  {% for b in open_bets %}
+  <div class="bt-row">
+    <div class="bt-meta">
+      <div class="bt-sel">{{ b.selection or b.description }}</div>
+      <div class="bt-desc"><span class="bt-chip">{{ b.sport }}</span>{% if b.description and b.selection %}{{ b.description }} &middot; {% endif %}{{ b.placed }}{% if b.book %} &middot; {{ b.book }}{% endif %}</div>
+    </div>
+    <div class="bt-odds">{{ '%+d'|format(b.odds) }}<span class="s">${{ '%g'|format(b.stake) }}</span></div>
+    <div class="bt-clv {{ 'na' if b.clv is none else ('pos' if b.clv > 0 else 'neg') }}">
+      {% if b.clv is not none %}{{ '%+.1f'|format(b.clv) }}<span class="s">CLV</span>{% else %}&ndash;<span class="s">no close</span>{% endif %}
+    </div>
+    <form method="post" action="/tools/tracker/settle" class="bt-settle">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id" value="{{ b.id }}">
+      {% if b.closing_odds is none %}<input type="text" name="closing_odds" placeholder="close" inputmode="numeric" title="Closing line (optional)">{% endif %}
+      <button class="bt-sb win" name="result" value="win">Win</button>
+      <button class="bt-sb loss" name="result" value="loss">Loss</button>
+      <button class="bt-sb push" name="result" value="push">Push</button>
+    </form>
+    <form method="post" action="/tools/tracker/delete" onsubmit="return confirm('Delete this bet?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id" value="{{ b.id }}">
+      <button class="bt-x" title="Delete">&times;</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if done_bets %}
+<div class="bt-card">
+  <h3>Settled &middot; {{ done_bets|length }}</h3>
+  {% if summary.by_sport %}<div class="hint">By sport: {% for r in summary.by_sport %}<b>{{ r.sport }}</b> {{ r.record }}{% if r.roi is not none %} ({{ '%+.1f'|format(r.roi) }}%){% endif %}{% if not loop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
+  {% for b in done_bets %}
+  <div class="bt-row">
+    <div class="bt-meta">
+      <div class="bt-sel">{{ b.selection or b.description }}</div>
+      <div class="bt-desc"><span class="bt-chip">{{ b.sport }}</span>{% if b.description and b.selection %}{{ b.description }} &middot; {% endif %}{{ b.placed }}{% if b.book %} &middot; {{ b.book }}{% endif %}</div>
+    </div>
+    <div class="bt-odds">{{ '%+d'|format(b.odds) }}<span class="s">${{ '%g'|format(b.stake) }}</span></div>
+    <div class="bt-clv {{ 'na' if b.clv is none else ('pos' if b.clv > 0 else 'neg') }}">
+      {% if b.clv is not none %}{{ '%+.1f'|format(b.clv) }}<span class="s">CLV</span>{% else %}&ndash;<span class="s">no close</span>{% endif %}
+    </div>
+    {% if b.result == 'push' %}
+      <div class="bt-prof push">push</div>
+    {% else %}
+      <div class="bt-prof {{ 'pos' if b.profit > 0 else 'neg' }}">{{ '%+g'|format(b.profit) }}</div>
+    {% endif %}
+    <span class="bt-rtag {{ b.result }}">{{ b.result }}</span>
+    <form method="post" action="/tools/tracker/delete" onsubmit="return confirm('Delete this bet?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id" value="{{ b.id }}">
+      <button class="bt-x" title="Delete">&times;</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not bets %}
+  <div class="bkn-empty">No bets logged yet. Add your first above &mdash; log the <b>price you got</b> and the <b>closing line</b>, and over time the tracker shows whether you&rsquo;re genuinely beating the market (CLV), not just whether last week ran hot.</div>
+{% endif %}
+
+<div class="bkn-note" style="margin-top:18px;"><b>How this is scored &mdash; honestly:</b> <b>ROI</b> is flat-stake: net profit divided by total dollars risked (pushes excluded from risk). <b>CLV</b> is the gap between the implied probability of the price <i>you</i> got and the price the market <b>closed</b> at &mdash; positive means you locked a better number than the close. CLV is the most reliable long-run signal there is, but it needs a real sample; a handful of bets tells you little. Win rate and a hot week don&rsquo;t prove an edge &mdash; beating the close consistently does. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

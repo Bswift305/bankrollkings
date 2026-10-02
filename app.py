@@ -718,6 +718,7 @@ PRO_ENDPOINTS = {
     'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
     'menu_board_tool',  # The Menu -- full board of options, build-your-own ticket
     'my_view_tool',  # "how do you bet?" -- pick your post-sign-in landing surface
+    'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -30921,6 +30922,63 @@ def my_view_tool():
         return redirect(url_for('my_view_tool'))
     return render_template('my_view.html', views=HOME_VIEWS,
                            current=(load_home_view(uid) or DEFAULT_HOME_VIEW))
+
+
+@app.route('/tools/tracker', methods=['GET'])
+def bet_tracker_tool():
+    """Bet Tracker -- your own graded record: what you bet, at what price, how it settled, and
+    whether you beat the closing line (CLV). Per-user, honest flat-stake ROI. The credibility
+    piece the grinder/sharp crowd wants."""
+    from services import bet_tracker as bt
+    uid = _card_prefs_uid()
+    bets = bt.load_bets(DATA_DIR, uid)
+    return render_template('bet_tracker.html',
+                           bets=bt.decorate(bets),
+                           summary=bt.summarize(bets),
+                           sports=bt.VALID_SPORTS,
+                           signed_in=bool(uid))
+
+
+@app.route('/tools/tracker/add', methods=['POST'])
+def bet_tracker_add():
+    from services import bet_tracker as bt
+    uid = _card_prefs_uid()
+    if uid:
+        f = request.form
+        bt.add_bet(DATA_DIR, uid,
+                   sport=f.get('sport', 'Other'),
+                   description=f.get('description', ''),
+                   selection=f.get('selection', ''),
+                   odds=f.get('odds'),
+                   stake=f.get('stake'),
+                   closing_odds=f.get('closing_odds'),
+                   placed=f.get('placed'),
+                   book=f.get('book', ''))
+    return redirect(url_for('bet_tracker_tool'))
+
+
+@app.route('/tools/tracker/settle', methods=['POST'])
+def bet_tracker_settle():
+    from services import bet_tracker as bt
+    uid = _card_prefs_uid()
+    if uid:
+        bet_id = request.form.get('id', '')
+        result = request.form.get('result', '')
+        closing = request.form.get('closing_odds')
+        if closing not in (None, ''):
+            bt.set_closing(DATA_DIR, uid, bet_id, closing)
+        if result:
+            bt.settle_bet(DATA_DIR, uid, bet_id, result)
+    return redirect(url_for('bet_tracker_tool'))
+
+
+@app.route('/tools/tracker/delete', methods=['POST'])
+def bet_tracker_delete():
+    from services import bet_tracker as bt
+    uid = _card_prefs_uid()
+    if uid:
+        bt.delete_bet(DATA_DIR, uid, request.form.get('id', ''))
+    return redirect(url_for('bet_tracker_tool'))
 
 
 @app.route('/tools/daily-card.png', methods=['GET', 'POST'])
