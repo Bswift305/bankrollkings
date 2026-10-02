@@ -52,7 +52,7 @@
 
 <form class="dc-ctrl" method="get" action="/tools/daily-card" onchange="this.submit()">
   <div class="dc-cg"><span class="lb">Sizes</span>
-    {% for n in [3,4,5] %}<label class="dc-pill {{ 'on' if n in prefs.sizes }}"><input type="checkbox" name="sizes" value="{{ n }}" {{ 'checked' if n in prefs.sizes }}>{{ n }}-leg</label>{% endfor %}
+    {% for n in [2,3,4,5] %}<label class="dc-pill {{ 'on' if n in prefs.sizes }}"><input type="checkbox" name="sizes" value="{{ n }}" {{ 'checked' if n in prefs.sizes }}>{{ n }}-leg</label>{% endfor %}
   </div>
   <div class="dc-cg"><span class="lb">Risk</span>
     {% for r, lbl in [('safe','Safe'),('balanced','Balanced'),('aggressive','Aggressive')] %}<label class="dc-pill {{ 'on' if prefs.risk == r }}"><input type="radio" name="risk" value="{{ r }}" {{ 'checked' if prefs.risk == r }}>{{ lbl }}</label>{% endfor %}

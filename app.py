@@ -30442,6 +30442,87 @@ def _nfl_line_legs(limit=8):
     return out[:limit]
 
 
+_MLB_HIT_CACHE = {}
+
+
+def _mlb_hitter_rates():
+    """{(team_abbr, player): {hit, hrr, g}} -- each batter's 2026 base rate of recording a
+    hit, and of a hit-or-run-or-RBI, from the game logs. mtime-cached (big file)."""
+    path = DATA_DIR / 'gamelogs' / 'MLB_GameLogs.csv'
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _MLB_HIT_CACHE.get('mt') == mt:
+        return _MLB_HIT_CACHE['d']
+    try:
+        gl = load_mlb_gamelogs()
+    except Exception:
+        return {}
+    if gl is None or gl.empty or 'Team' not in gl.columns:
+        return {}
+    g = gl.copy()
+    g['Date'] = g['Date'].astype(str)
+    g = g[g['Date'] >= '2026-03-01']
+    for c in ('AB', 'H', 'R', 'RBI'):
+        g[c] = pd.to_numeric(g.get(c), errors='coerce').fillna(0)
+    g = g[g['AB'] > 0]
+    out = {}
+    for (tm, pl), sub in g.groupby(['Team', 'Player']):
+        gp = sub['Date'].nunique()
+        if gp < 25:
+            continue
+        out[(str(tm), str(pl))] = {
+            'hit': float((sub['H'] >= 1).mean()),
+            'hrr': float(((sub['H'] + sub['R'] + sub['RBI']) >= 1).mean()),
+            'g': int(gp)}
+    _MLB_HIT_CACHE.update(mt=mt, d=out)
+    return out
+
+
+def _mlb_hit_price(rate):
+    """Estimated 'to record a hit' price for a base rate (real feed is often stale; the RATE
+    is real, the price is a confirm-at-your-book estimate)."""
+    return -210 if rate >= 0.72 else -185 if rate >= 0.68 else -160 if rate >= 0.64 else -140 if rate >= 0.60 else -125
+
+
+def _mlb_floor_legs(limit=12):
+    """MLB high-floor legs for this period's games -- the top hitters by 'records a hit' rate,
+    one price-estimated leg per batter, keyed by the game so cross-game dedup keeps one per
+    matchup. The honest baseball floor (prices are estimates; rates are from real logs)."""
+    rates = _mlb_hitter_rates()
+    if not rates:
+        return []
+    today = _card_today_eastern()
+    try:
+        odds = load_mlb_game_market_odds()
+    except Exception:
+        return []
+    if odds is None or not hasattr(odds, 'iterrows'):
+        return []
+    legs = []
+    for _, r in odds.iterrows():
+        dt = str(r.get('Date') or '')[:10]
+        if dt and dt < today:
+            continue
+        aa = MLB_TEAM_NAME_TO_ABBR.get(str(r.get('Away') or ''))
+        ha = MLB_TEAM_NAME_TO_ABBR.get(str(r.get('Home') or ''))
+        if not aa or not ha:
+            continue
+        gk = f"{aa} @ {ha}"
+        for tm in (aa, ha):
+            cand = sorted([(pl, v) for (t, pl), v in rates.items() if t == tm],
+                          key=lambda x: -x[1]['hit'])[:2]
+            for pl, v in cand:
+                legs.append({'sport': 'MLB', 'kind': 'prop', 'tier': 'floor',
+                             'label': f"{pl} to record a hit", 'game': gk, 'date': dt,
+                             'price': _mlb_hit_price(v['hit']), 'hit': round(v['hit'] * 100),
+                             'reason': f"records a hit {round(v['hit'] * 100)}% of games (2026, {v['g']}g) · est. price",
+                             'score': round(v['hit'] * 100)})
+    legs.sort(key=lambda x: -x['score'])
+    return legs[:limit]
+
+
 def _card_price(legs):
     dec = 1.0
     for l in legs:
@@ -30486,6 +30567,17 @@ def _game_date_map():
                 m[f"{a} @ {h}".strip().lower()] = dt
     except Exception:
         pass
+    try:
+        od = load_mlb_game_market_odds()
+        if od is not None and hasattr(od, 'iterrows'):
+            for _, r in od.iterrows():
+                aa = MLB_TEAM_NAME_TO_ABBR.get(str(r.get('Away') or ''))
+                ha = MLB_TEAM_NAME_TO_ABBR.get(str(r.get('Home') or ''))
+                dt = str(r.get('Date') or '')[:10]
+                if aa and ha and dt:
+                    m[f"{aa} @ {ha}".lower()] = dt
+    except Exception:
+        pass
     return m
 
 
@@ -30510,7 +30602,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
     balanced=+1 swing, aggressive=+2 swings), `legs` ('all' = NFL props + CFB team-line,
     'props' = props only, 'lines' = CFB team sides only). The tools are the inputs; this is
     the finished ticket."""
-    sizes = [n for n in (sizes or [3, 4, 5]) if n in (3, 4, 5)] or [3, 4, 5]
+    sizes = [n for n in (sizes or [3, 4, 5]) if n in (2, 3, 4, 5)] or [3, 4, 5]
     risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
     legs = legs if legs in ('all', 'props', 'lines') else 'all'
     # --- NFL prop pool (floors + plus-money swings). A valid American price has |odds|>=100;
@@ -30543,6 +30635,8 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
     linepool = []
     if legs in ('all', 'lines'):
         linepool = sorted(_cfb_form_legs(10) + _nfl_line_legs(8), key=lambda x: -x['score'])
+    if legs in ('all', 'props'):
+        floors += _mlb_floor_legs(12)                  # MLB 'to record a hit' floors
     if legs == 'lines':
         floors = linepool                              # lines-only: NFL + CFB sides/totals are the core
         swings = linepool
@@ -30561,7 +30655,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         dmap, today = _game_date_map(), _card_today_eastern()
         f2 = [l for l in floors if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
         s2 = [l for l in swings if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
-        if len(f2) + len(s2) >= max(sizes):
+        if len({l['game'] for l in f2 + s2}) >= max(sizes):   # enough DISTINCT games to build
             floors, swings = f2, s2
         else:
             tf = 'week'
@@ -30591,7 +30685,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
             picked += _distinct(swings if len(core) >= len(floors) else floors, used, N - len(picked))
         if len(picked) < N:
             picked += _distinct(floors + swings, used, N - len(picked))
-        if len(picked) < 3:
+        if len(picked) < min(N, 2):
             continue
         am, dec, pay = _card_price(picked)
         cards.append({'n': len(picked), 'legs': picked, 'american': am, 'decimal': dec,
@@ -30631,7 +30725,7 @@ def load_card_prefs(uid):
     try:
         with open(os.path.join(_CARD_PREFS_DIR, f'{uid}.json'), encoding='utf-8') as fh:
             c = (json.load(fh) or {}).get('card') or {}
-        return {'sizes': [n for n in (c.get('sizes') or []) if n in (3, 4, 5)] or DEFAULT_CARD_PREFS['sizes'],
+        return {'sizes': [n for n in (c.get('sizes') or []) if n in (2, 3, 4, 5)] or DEFAULT_CARD_PREFS['sizes'],
                 'risk': c.get('risk') if c.get('risk') in _SWINGS_BY_RISK else 'balanced',
                 'legs': c.get('legs') if c.get('legs') in ('all', 'props', 'lines') else 'all',
                 'timeframe': c.get('timeframe') if c.get('timeframe') in _CARD_TIMEFRAMES else 'smart'}
@@ -30658,7 +30752,7 @@ def _card_prefs_from_request(saved):
     """Query/form knobs override the saved profile for this view; saved is the fallback."""
     src = request.form if request.method == 'POST' else request.args
     sizes = src.getlist('sizes', type=int)
-    return {'sizes': [n for n in sizes if n in (3, 4, 5)] or saved['sizes'],
+    return {'sizes': [n for n in sizes if n in (2, 3, 4, 5)] or saved['sizes'],
             'risk': src.get('risk') if src.get('risk') in _SWINGS_BY_RISK else saved['risk'],
             'legs': src.get('legs') if src.get('legs') in ('all', 'props', 'lines') else saved['legs'],
             'timeframe': src.get('timeframe') if src.get('timeframe') in _CARD_TIMEFRAMES else saved.get('timeframe', 'smart')}
