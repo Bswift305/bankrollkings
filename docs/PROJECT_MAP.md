@@ -1,7 +1,38 @@
-# Bankroll Kings — Project Map
+# Bankroll Kings — Project Map & Developer Handoff
 
-> Living source-of-truth for how this project is wired. Read this first; update it
-> as things change. Goal: stop re-deriving the same facts every session.
+> **Last refreshed: 2026-10-02.** This is the single living source-of-truth for how the
+> project is wired — and the doc to hand a new developer. Read it first; keep it current as
+> things change (that is the whole point — it exists to stop re-deriving the same facts).
+> It supersedes the older root `DEVELOPER_HANDOFF.md` and `docs/developer_handoff.md`, which
+> are now stale stubs pointing here.
+
+**What the product is:** a Flask sports-betting **analytics** platform (`bankrollkings.com`).
+It is **not** a sportsbook — it accepts no wagers and custodies no funds. The core pipeline,
+true of every page: `game context → market context → prop context → confidence / risk label`.
+It should read like a betting-intelligence terminal, not a picks page. A strict honesty ethos
+runs through it (see §7b): validated edge vs model lean vs context, "out-of-sample or it does
+not count," and no fabricated signals.
+
+**Sport coverage:** NBA (flagship), MLB, WNBA, NFL, CFB/NCAAF — all full. Men's/Women's CBB —
+themed pre-season shells only (no real board data yet).
+
+**Stack:** Flask 3 · pandas 2.2 · numpy · gunicorn (Linux prod) / waitress (Windows dev) ·
+Stripe · `nba_api` · `pybaseball`. **Storage is CSV/JSON under `data/` — there is no database.**
+Runtime cache is pickle/JSON in `data/cache/`.
+
+**How to find deeper detail:** this map is the index. Per-feature depth lives in `docs/` (see the
+tables throughout) and in the repo's `CLAUDE.md` (the auto-loaded session rules, distilled from
+this file). When something here conflicts with the code, **trust the code and fix this doc.**
+`[[double-bracketed]]` markers are pointers to internal design notes kept outside the repo; an
+external reader can ignore them (or ask the maintainer) — the code and this doc are self-contained.
+
+**Orientation — where the big pieces live:**
+- `app.py` — the Flask monolith (~41k lines; routes, board builders, gating). Refactor gradually.
+- `services/` — extracted helpers (`timeutils`, `bet_tracker`, `review_center`, `model_calibration`, per-sport QC, loaders).
+- `sport_registry.py` — declares every sport's parts; start here to add a sport (§6b).
+- `fetch_*.py` → providers into `data/`; `refresh_*.py` → QC + clean files; `run_daily.py` → the prod daily operator (§6).
+- `templates/` — Jinja (`bk_base.html` authed shell, `public_base.html` public shell).
+- `qc_*.py` (33 scripts) — the test suite; `run_all_scorecards.py` is the runner (§8 has no pytest).
 
 ---
 
@@ -90,13 +121,18 @@ the unit files are in `ops/`; after editing, reinstall with:
 sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh
 ```
 
-Manual deploy (only needed if the timer is stopped, or to skip the ≤2min wait):
+Manual deploy / server access (only needed if the timer is stopped, to skip the ≤2min wait,
+or for hands-on server work like editing `/opt/bankrollkings/.env`):
+
+**Prefer AWS Session Manager, NOT SSH.** SSH is source-restricted in the security group to a
+stale /32 and keeps breaking as the operator travels (hotel/cellular IPs). SSM works from any
+IP: AWS console → Systems Manager → Session Manager → Start session (us-east-1); you land as
+`ssm-user` with passwordless sudo. SSH remains a fallback only when the SG rule happens to match
+your current IP: `ssh -i ~/.ssh/bankroll-key.pem ubuntu@32.195.123.245`.
 
 ```bash
-git push origin master
-ssh -i ~/.ssh/bankroll-key.pem ubuntu@32.195.123.245
 cd /opt/bankrollkings && git pull origin master
-sudo systemctl restart bankrollkings        # NOT reload
+sudo systemctl restart bankrollkings        # RESTART, not reload (preload_app; see below)
 ```
 
 A failed tick (network blip, diverged tree) exits non-zero and leaves the service
@@ -302,6 +338,22 @@ cache for those with `?v=...` and/or a service-worker version bump.
     - **Open:** matchup-adjust MLB floors vs tonight's pitcher + a live MLB prop-line feed (prices
       are season base-rate ESTIMATES today); CFB totals/pace/streak legs as swing sources; CSV
       export + auto-pulled closing lines for the tracker. MLB flagged a "gold mine" for next season.
+- **Other sport surfaces added Jul–Oct 2026** (compact index; depth in the named memory files):
+    - **Riding the Wave** `/tools/riding-the-wave` — cross-sport live streak/heat board (NFL team
+      v1 live; real graded streaks, as-of stamp, no-cherry-picking guardrails). [[project_riding_the_wave]]
+    - **NFL current-season form** (`build_nfl_team_form.py`, `nfl_current_form.py`) + **CFB
+      current-season form** (`cfb_current_form.py`, `build_cfb_2026_results.py`) — reason off how
+      teams play NOW (this-year run/pass D, pressure, opponent-adjusted margin vs the line) on the
+      matchup cards, not last-year ATS. [[project_nfl_current_form]] [[project_cfb_current_form]]
+    - **CFB ATS/O-U Streaks** `/tools/cfb-ats-streaks`, **Key Numbers & Line Value**
+      `/tools/cfb-key-numbers`, **Totals & Pace** `/tools/cfb-pace` — college direction is TEAM
+      props + game lines (college player props too thin). [[project_cfb_ats_streaks]]
+    - **NFL Regression Watch / Power Ratings / Matchup Edge** and an **honest ticket scoreboard**
+      (over/under/push + per-side ROI; killed a combinatorial "winning parlays" bug). [[project_nfl_board_model_read]]
+    - **Featured Players / Prop Floor** (surface players by OPPORTUNITY, not streak) + the daily
+      **prop-line archive** (`capture_nfl_prop_lines.py`). [[project_player_forefront]]
+    - **How We Analyze** `/how-we-analyze` — public methodology page (the 5 analysis ideologies:
+      Fundamental / Model / Market / Statistical / Risk). [[project_methodology_page]]
 - **Review Center** `/candidate-review` now shows **ROI beside hit rate** (2026-07-25):
   `summarize_candidate_archive` computes ROI at the archived `MarketPrice` for
   totals/by_sport/by_method/by_stat. Exposed that curated methods run ~break-even-to-
@@ -402,6 +454,12 @@ cache for those with `?v=...` and/or a service-worker version bump.
 - **Local:** Windows Scheduled Tasks ("Bankroll Kings - …"), batch files in `batch/`, registered by
   `install_task_schedules.ps1`. The path-with-spaces bug (unquoted `/TR` → `0x80070002`) is fixed.
   Live-scores task runs windowless via `run_live_scores_hidden.vbs`.
+  **⚠ Local "can't reach the data" is almost always STALE LOCAL FILES, not a code boundary.** All
+  the Bankroll Kings Scheduled Tasks were found **DISABLED since 2026-08-14** (fixed 2026-10-01:
+  in-season tasks re-enabled + `StartWhenAvailable` catch-up). The API keys are present locally, so
+  refresh on demand when a board looks empty: `fetch_game_lines.py --sport <key>` (e.g.
+  `americanfootball_nfl`, `baseball_mlb`) + `refresh_football_props.py`. This is a LOCAL-only
+  concern — prod runs its own systemd timers and is unaffected.
 - **Daily operator** (`run_daily.py`): runs refreshes + Edge Engine (`run_bk_edge_engine_pipeline.py`)
   + scorecards (`run_all_scorecards.py`) + `generate_run_status.py` → `Run_Status.json`
   ("Daily Engine Health"). Use `--skip-refresh` to run just analysis+status on already-fresh data.
@@ -523,9 +581,14 @@ What survives, and what is now enforced in code:
 4. **Prefer UNDER** — -0.6% vs -6.3% on identical streak logic.
 
 Deliberately NOT built: the same longshot guardrail on WNBA (verified inert — 2 of 5,773 graded
-WNBA overs fall under 25% implied, because WNBA offers no rare-event markets). Football is the
-real target for it (Anytime TD), but `build_football_live_prop_board` has no verdict/guardrail
-fields yet and props are 0 rows until the season starts.
+WNBA overs fall under 25% implied, because WNBA offers no rare-event markets). **Football
+guardrail — now BUILT (61df4ef, 2026-09-03).** `build_football_live_prop_board` flags overs under
+25% implied: sets `longshot_over`, prepends the `LONGSHOT OVER` method tag, appends the cost note,
+and applies `score -= 8.0` so long-odds overs don't headline the board. The football board has no
+`play_verdict` by design (`sport_registry.py` sets `requires_play_verdict=False` for NFL/NCAAF —
+only MLB/WNBA gate archiving on it). What genuinely remains is **evidence, not code**: the 25%
+threshold is MLB/WNBA-derived, and football needs its own graded ROI to confirm or kill it
+(out-of-sample or it does not count).
 
 **Method rule learned the hard way: out-of-sample or it does not count.** Four streak-parlay
 rules looked bulletproof in-sample (lower CI bounds +8.3 to +17.8) and every one reversed to
@@ -541,14 +604,14 @@ significantly negative out-of-sample. A 3-leg parlay showed +63% ROI at n=21 and
   WNBA** needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`
   (infer absence from missing rows, split teammates, gate by plausibility, match to
   current-team). Do MLB or WNBA next per user priority. See [[project_quick_tools]].
-- **NFL/CFB betting — pipeline-complete, waiting on the season (2026-07-22).** Grading
-  (football stat map), archiving (dry-run 24/24), game lines and player props (§6) are all
-  wired and self-gating on prod. The only wait is external: the Odds API posts NFL player
-  props ~early Aug (preseason) → early Sep (Week 1). Two things to FINISH once props flow
-  (cannot verify against an empty feed): (1) a **`LONGSHOT OVER` guardrail for football** —
-  `build_football_live_prop_board` has no verdict/guardrail fields yet, and Anytime TD
-  (+300..+900) is where the rule earns its keep; (2) confirm **`NFL_FeaturedResults.csv`**
-  archiving populates when real games resolve (the 99 scorecard flags it missing off-season).
+- **NFL/CFB betting — IN SEASON and live (as of 2026-10).** The football pipeline (grading via
+  the stat map, archiving, game lines, player props — §6) is running on real slates; the Odds API
+  is posting NFL props. The football `LONGSHOT OVER` guardrail is **built** (see §7b). What's left
+  here is **evidence, not code**: let the 2026 graded record accumulate to confirm/kill the
+  MLB/WNBA-derived 25% threshold for football, and confirm `NFL_FeaturedResults.csv` /
+  floor-reliability history populate as games resolve (they fill in automatically — nothing to
+  build). The **best-bets surfaces** that consume all this (Daily Card, The Menu, My View, Bet
+  Tracker) are live — see §4 and [[project_bettor_archetypes_surfaces]].
 - Parlay floor-reliability for football: the pipeline is fully multi-sport
   (`build_floor_play_index.py` merges all five sports' AllPropResults; buckets group by Sport;
   saved tickets carry a `Sport` column — legacy rows default NBA), but NFL/CFB have no logged
