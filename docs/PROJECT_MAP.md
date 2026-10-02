@@ -266,6 +266,42 @@ cache for those with `?v=...` and/or a service-worker version bump.
       hit" scoreboard. Idempotent one snapshot/day; `data/tracking` gitignored so prod owns
       the record. **Still to build: the grader** (join the archive to gamelogs for results)
       and the scoreboard UI.
+- **⭐ Best-Bets surfaces — the Daily Card arc (2026-10-01..02).** Darrel's "why I log in":
+  *"the best 3-5 leg bets for that day/week/weekend,"* and his loudest repeated feedback is
+  **"give me OPTIONS/menus, not one best pick"** (he builds parlays off heat maps, trends, and
+  Floor Plays by eye). Four linked surfaces, all `all_access`, top of the sidebar's Quick Tools
+  group, all covered by `qc_plan_access_matrix.py`:
+    - **Today's Cards** `/tools/daily-card` (`daily_card_tool` → `build_daily_cards`). Auto-builds
+      the 3/4/5-leg tickets to a saved per-user profile: mostly high-floor legs (reliably clear
+      the number) + one plus-money SWING, cross-game (uncorrelated), honestly tiered. Knobs
+      (sizes / risk / source / when) persist to `data/user_prefs/<uid>.json`. PNG export via
+      `/tools/daily-card.png` (marketing `render_daily_card`). Full detail in
+      [[project_daily_card_engine]]. ⚠ a code-only edit to `build_*_board` is invisible for the
+      cache TTL — see §3.
+    - **The Menu** `/tools/menu` (`menu_board_tool` → `build_menu_board`). The answer to "options":
+      the FULL board of every candidate leg for the window, **grouped by game, nothing de-duped to
+      one pick**, with a live **bet slip** — tap legs → re-prices as you build → "Save as card
+      image" (reuses the daily-card PNG POST). Filters: sport / type / source / window.
+    - **My View** `/my-view` (`my_view_tool`, `HOME_VIEWS`). A "how do you bet?" picker: choose one
+      archetype → saved per-user → **`_resolve_post_auth_target` lands you there after sign-in**
+      instead of the generic dashboard (an explicit `next` still wins). Keys: menu / cards / heat
+      (Riding the Wave) / matchup (NFL Hub) / classic (Dashboard).
+    - **Bet Tracker** `/tools/tracker` (+ `/add` `/settle` `/delete`); logic in pure, unit-tested
+      **`services/bet_tracker.py`**. Personal graded record: log bet → settle W/L/P → header shows
+      record, **flat-stake ROI**, net, and **CLV** (implied-prob gap between the price you got and
+      where the market CLOSED + beat-the-close rate). Honest labels: CLV needs a real sample; a hot
+      week proves nothing. The credibility piece for the grinder/sharp crowd.
+    - **Shared pool:** `_card_pools(legs, mlb_limit, cfb_limit, nfl_line_limit)` is the ONE source
+      of truth for the floor+swing leg pools (NFL floors/swings + MLB "to record a hit" floors +
+      NFL/CFB team lines); both the Menu and the Daily Card draw from it (Menu pulls wider).
+    - **Gotchas fixed in this arc:** `_card_prefs_uid()` referenced a non-existent `current_user`
+      module global → always `''` → **card profiles never actually saved**; now `get_current_user()`.
+      `data/user_prefs/` and `data/user_bets/` were **NOT gitignored** (public repo!) — now are.
+      Every plain-form POST needs a hidden `csrf_token` field (the app's own `_csrf_protect`
+      before_request, not Flask-WTF). Full context: [[project_bettor_archetypes_surfaces]].
+    - **Open:** matchup-adjust MLB floors vs tonight's pitcher + a live MLB prop-line feed (prices
+      are season base-rate ESTIMATES today); CFB totals/pace/streak legs as swing sources; CSV
+      export + auto-pulled closing lines for the tracker. MLB flagged a "gold mine" for next season.
 - **Review Center** `/candidate-review` now shows **ROI beside hit rate** (2026-07-25):
   `summarize_candidate_archive` computes ROI at the archived `MarketPrice` for
   totals/by_sport/by_method/by_stat. Exposed that curated methods run ~break-even-to-
