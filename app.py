@@ -716,6 +716,7 @@ FREE_ENDPOINTS = {
 
 PRO_ENDPOINTS = {
     'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
+    'menu_board_tool',  # The Menu -- full board of options, build-your-own ticket
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -30595,19 +30596,15 @@ def _passes_timeframe(dstr, timeframe, today):
     return True
 
 
-def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='smart'):
-    """Auto-generate the day/weekend best-bet cards to the user's profile: high-floor legs
-    that reliably clear the number + a plus-money SWING for upside, cross-game (low
-    correlation), honestly tiered. Knobs: `sizes` (which of 3/4/5), `risk` (safe=all floors,
-    balanced=+1 swing, aggressive=+2 swings), `legs` ('all' = NFL props + CFB team-line,
-    'props' = props only, 'lines' = CFB team sides only). The tools are the inputs; this is
-    the finished ticket."""
-    sizes = [n for n in (sizes or [3, 4, 5]) if n in (2, 3, 4, 5)] or [3, 4, 5]
-    risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
+def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
+    """Build the raw floor + swing candidate pools (pre-timeframe, pre-dedup) shared by the
+    Daily Card engine and the Menu board -- one source of truth for what legs are in play.
+    `legs`: 'all' = NFL props + MLB hit floors + NFL/CFB team lines, 'props' = props only,
+    'lines' = team sides/totals only. The *_limit knobs let the Menu pull a wider board than
+    the tight auto card. Returns (floors, swings), each sorted strongest-first. A valid
+    American price has |odds|>=100; anything smaller (-34, -2) is a feed artifact and is
+    dropped or it fabricates the parlay payout."""
     legs = legs if legs in ('all', 'props', 'lines') else 'all'
-    # --- NFL prop pool (floors + plus-money swings). A valid American price has |odds|>=100;
-    # anything smaller (-34, -2) is a feed artifact and must be dropped or it fabricates the
-    # parlay payout. ---
     floors, nfl_swings = [], []
     if legs in ('all', 'props'):
         try:
@@ -30634,15 +30631,86 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
                 nfl_swings.append(leg)
     linepool = []
     if legs in ('all', 'lines'):
-        linepool = sorted(_cfb_form_legs(10) + _nfl_line_legs(8), key=lambda x: -x['score'])
+        linepool = sorted(_cfb_form_legs(cfb_limit) + _nfl_line_legs(nfl_line_limit), key=lambda x: -x['score'])
     if legs in ('all', 'props'):
-        floors += _mlb_floor_legs(12)                  # MLB 'to record a hit' floors
+        floors += _mlb_floor_legs(mlb_limit)           # MLB 'to record a hit' floors
     if legs == 'lines':
-        floors = linepool                              # lines-only: NFL + CFB sides/totals are the core
-        swings = linepool
+        floors = list(linepool)                        # lines-only: NFL + CFB sides/totals are the core
+        swings = list(linepool)
     else:
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
+    return floors, swings
+
+
+def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all'):
+    """THE MENU -- the full board of candidate legs for the window, grouped by game, nothing
+    de-duped to one-per-game, so the bettor browses every option and builds his own ticket by
+    eye. Same pool the Daily Card draws from. Filter by sport (nfl/cfb/mlb) and tier
+    (floor/swing). Floors first within each game, then swings/edges."""
+    floors, swings = _card_pools(legs if legs in ('all', 'props', 'lines') else 'all',
+                                 mlb_limit=60, cfb_limit=20, nfl_line_limit=16)
+    pool, seen = [], set()
+    for l in floors + swings:                          # combine; 'lines' mode doubles floors==swings
+        key = (l.get('sport'), l.get('label'), l.get('game'))
+        if key in seen:
+            continue
+        seen.add(key)
+        pool.append(l)
+    # timeframe window (same 'smart' logic as the card engine)
+    tf_req = timeframe if timeframe in _CARD_TIMEFRAMES else 'smart'
+    tf = tf_req
+    if tf == 'smart':
+        tf = 'weekend' if datetime.strptime(_card_today_eastern(), '%Y-%m-%d').weekday() in (4, 5, 6) else 'week'
+    dmap, today = _game_date_map(), _card_today_eastern()
+    if tf != 'week':
+        p2 = [l for l in pool if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
+        if p2:
+            pool = p2
+        else:
+            tf = 'week'
+    # sport / tier filters
+    sport_f = (sport or 'all').lower()
+    if sport_f in ('nfl', 'cfb', 'mlb'):
+        pool = [l for l in pool if (l.get('sport') or '').lower() == sport_f]
+    tier_f = (tier or 'all').lower()
+    if tier_f == 'floor':
+        pool = [l for l in pool if l.get('tier') == 'floor']
+    elif tier_f == 'swing':
+        pool = [l for l in pool if l.get('tier') in ('swing', 'edge')]
+    # group by game, floors first within each
+    _rank = {'floor': 0, 'edge': 1, 'swing': 2}
+    games = {}
+    for l in pool:
+        g = str(l.get('game') or '')
+        gd = games.setdefault(g, {'game': g, 'date': dmap.get(g.strip().lower()), 'legs': []})
+        gd['legs'].append(l)
+    out = []
+    for g, gd in games.items():
+        gd['legs'].sort(key=lambda x: (_rank.get(x.get('tier'), 3), -x.get('score', 0)))
+        gd['sports'] = sorted({(l.get('sport') or '') for l in gd['legs']})
+        gd['n_floor'] = sum(1 for l in gd['legs'] if l.get('tier') == 'floor')
+        out.append(gd)
+    out.sort(key=lambda gd: (gd['date'] or '9999-99-99',
+                             -max((l.get('score', 0) for l in gd['legs']), default=0)))
+    return {'available': bool(out), 'games': out, 'window': tf,
+            'filters': {'legs': legs if legs in ('all', 'props', 'lines') else 'all',
+                        'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f},
+            'counts': {'games': len(out), 'legs': sum(len(gd['legs']) for gd in out)},
+            'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
+def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='smart'):
+    """Auto-generate the day/weekend best-bet cards to the user's profile: high-floor legs
+    that reliably clear the number + a plus-money SWING for upside, cross-game (low
+    correlation), honestly tiered. Knobs: `sizes` (which of 3/4/5), `risk` (safe=all floors,
+    balanced=+1 swing, aggressive=+2 swings), `legs` ('all' = NFL props + CFB team-line,
+    'props' = props only, 'lines' = CFB team sides only). The tools are the inputs; this is
+    the finished ticket."""
+    sizes = [n for n in (sizes or [3, 4, 5]) if n in (2, 3, 4, 5)] or [3, 4, 5]
+    risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
+    legs = legs if legs in ('all', 'props', 'lines') else 'all'
+    floors, swings = _card_pools(legs)
 
     # --- timeframe filter: keep legs whose game is in the window (undated legs kept). 'smart'
     # = the weekend card on Fri-Sun, the full week otherwise. Falls back to 'week' if the
@@ -30773,6 +30841,21 @@ def daily_card_tool():
     ctx['saved'] = saved
     ctx['is_saved_view'] = (prefs == saved)
     return render_template('daily_cards.html', **ctx)
+
+
+@app.route('/tools/menu', methods=['GET'])
+def menu_board_tool():
+    """Quick Tool: The Menu -- the full board of every candidate leg for the window, grouped
+    by game, so you browse all the options and build your own ticket by eye. Same pool the
+    Daily Card draws from; nothing narrowed to one pick. Pick legs -> live bet slip -> save as
+    a card image (reuses /tools/daily-card.png)."""
+    src = request.args
+    legs = src.get('legs') if src.get('legs') in ('all', 'props', 'lines') else 'all'
+    timeframe = src.get('timeframe') if src.get('timeframe') in _CARD_TIMEFRAMES else 'smart'
+    sport = src.get('sport') if src.get('sport') in ('all', 'nfl', 'cfb', 'mlb') else 'all'
+    tier = src.get('tier') if src.get('tier') in ('all', 'floor', 'swing') else 'all'
+    ctx = build_menu_board(legs=legs, timeframe=timeframe, sport=sport, tier=tier)
+    return render_template('menu_board.html', **ctx)
 
 
 @app.route('/tools/daily-card.png', methods=['GET', 'POST'])
