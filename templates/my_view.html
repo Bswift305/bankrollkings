@@ -1,0 +1,78 @@
+{% set active_page = 'my_view' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}My View - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .mv-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:4px;}
+  @media(min-width:720px){.mv-grid{grid-template-columns:1fr 1fr;}}
+  @media(min-width:1080px){.mv-grid{grid-template-columns:1fr 1fr 1fr;}}
+  .mv-opt{position:relative;display:flex;flex-direction:column;gap:9px;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:16px 16px 15px;cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+  .mv-opt:hover{border-color:rgba(63,191,127,.45);}
+  .mv-opt.on{border-color:rgba(63,191,127,.7);box-shadow:0 0 0 1px rgba(63,191,127,.3),0 10px 26px rgba(0,0,0,.28);}
+  .mv-opt input{position:absolute;opacity:0;inset:0;cursor:pointer;margin:0;}
+  .mv-top{display:flex;align-items:center;gap:11px;}
+  .mv-ic{flex:0 0 auto;width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;}
+  .mv-ic img{width:24px;height:24px;}
+  .mv-lb{font:800 16px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mv-sf{font:700 10px ui-monospace,Consolas,monospace;color:var(--bkn-accent,#3fbf7f);letter-spacing:.03em;text-transform:uppercase;margin-top:1px;}
+  .mv-tag{font:500 12.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mv-check{position:absolute;top:13px;right:14px;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font:800 11px ui-monospace,monospace;color:transparent;}
+  .mv-opt.on .mv-check{background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);color:#0b1118;}
+  .mv-cur{font:700 10px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:5px;padding:2px 6px;align-self:flex-start;}
+  .mv-bar{display:flex;align-items:center;gap:14px;margin-top:20px;flex-wrap:wrap;}
+  .mv-go{cursor:pointer;font:800 13px 'Helvetica Neue',Arial,sans-serif;color:#0b1118;background:var(--bkn-accent,#3fbf7f);border:1px solid var(--bkn-accent,#3fbf7f);border-radius:999px;padding:11px 22px;}
+  .mv-go:hover{filter:brightness(1.06);}
+  .mv-hint{font:500 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+</style>
+
+<div class="bkn" style="max-width:980px;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; Your setup</div>
+    <h1>How do you <span class="accent">bet</span>?</h1>
+    <div class="page-subtitle">Everyone reads a slate differently. Pick the surface you want to open to &mdash; after you sign in, Bankroll Kings drops you straight here instead of the generic dashboard. Change it any time; nothing is locked. All the tools stay one click away in the sidebar.</div>
+  </div>
+</div>
+
+<form method="post" action="/my-view">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="mv-grid">
+    {% for key, v in views.items() %}
+    <label class="mv-opt {{ 'on' if current == key }}">
+      <input type="radio" name="view" value="{{ key }}" {{ 'checked' if current == key }}>
+      <span class="mv-check">&#10003;</span>
+      <span class="mv-top">
+        <span class="mv-ic"><img loading="lazy" src="/static/logos/nav/tools/{{ v.icon }}.svg" alt=""></span>
+        <span>
+          <span class="mv-lb">{{ v.label }}</span>
+          <span class="mv-sf" style="display:block;">Opens: {{ v.surface }}</span>
+        </span>
+      </span>
+      <span class="mv-tag">{{ v.tag }}</span>
+      {% if current == key %}<span class="mv-cur">Current</span>{% endif %}
+    </label>
+    {% endfor %}
+  </div>
+  <div class="mv-bar">
+    <button type="submit" class="mv-go">Save &amp; open my view &rarr;</button>
+    <span class="mv-hint">Saving takes you straight into the surface you picked.</span>
+  </div>
+</form>
+
+<div class="bkn-note" style="margin-top:22px;"><b>Why this exists:</b> the same board serves a lot of different bettors &mdash; the eye-test builder, the floors-only grinder, the heat-and-trends reader, the matchup handicapper. This just sets your <b>front door</b>. Every tool is still in the sidebar, and your <a href="/tools/daily-card" style="color:var(--bkn-accent,#3fbf7f);">card profile</a> (sizes, risk, source) is a separate setting.</div>
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.mv-opt input').forEach(function(inp){
+    inp.addEventListener('change', function(){
+      document.querySelectorAll('.mv-opt').forEach(function(o){ o.classList.remove('on'); });
+      if(inp.checked) inp.closest('.mv-opt').classList.add('on');
+    });
+  });
+})();
+</script>
+{% endblock %}

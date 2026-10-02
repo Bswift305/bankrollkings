@@ -717,6 +717,7 @@ FREE_ENDPOINTS = {
 PRO_ENDPOINTS = {
     'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
     'menu_board_tool',  # The Menu -- full board of options, build-your-own ticket
+    'my_view_tool',  # "how do you bet?" -- pick your post-sign-in landing surface
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -10510,7 +10511,12 @@ def _resolve_post_auth_target(user, raw_next=''):
     if raw_next and raw_next not in {'/dashboard', '/dashboard?postseason=1', '/dashboard?postseason=0'}:
         return raw_next
     paid = bool(user) and (is_owner_user(user) or get_plan_rank(normalize_user_plan(user)) >= get_plan_rank('all_access'))
-    return '/dashboard?postseason=1' if paid else '/free'
+    if paid:
+        hv = load_home_view((user or {}).get('user_id'))   # "how do you bet?" landing, if set
+        if hv in HOME_VIEWS:
+            return HOME_VIEWS[hv]['path']
+        return '/dashboard?postseason=1'
+    return '/free'
 
 
 @app.before_request
@@ -30781,7 +30787,7 @@ _CARD_PREFS_DIR = os.path.join(BASE_DIR, 'data', 'user_prefs')
 
 def _card_prefs_uid():
     try:
-        return str((current_user or {}).get('user_id', '') or '').strip()
+        return str((get_current_user() or {}).get('user_id', '') or '').strip()
     except Exception:
         return ''
 
@@ -30812,6 +30818,50 @@ def save_card_prefs(uid, prefs):
     except (OSError, ValueError):
         d = {}
     d['card'] = prefs
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(d, fh)
+
+
+# --- Home view: "how do you bet?" -> the surface the user lands on after sign-in. Each key
+# maps an archetype to a real surface. Stored per-user alongside the card profile. ---
+HOME_VIEWS = {
+    'menu':    {'label': 'The whole board',    'tag': 'I scan every option and build my own ticket by eye.',
+                'path': '/tools/menu',            'icon': 'ticket-check', 'surface': 'The Menu'},
+    'cards':   {'label': 'The finished cards',  'tag': 'Hand me the auto-built 3, 4 and 5-leg best-bet cards.',
+                'path': '/tools/daily-card',      'icon': 'nfl-spots',    'surface': "Today's Cards"},
+    'heat':    {'label': 'Heat & trends',       'tag': "Show me who's rolling — live streaks, hot and cold.",
+                'path': '/tools/riding-the-wave', 'icon': 'slate-pulse',  'surface': 'Riding the Wave'},
+    'matchup': {'label': 'Matchups & spots',    'tag': 'I read the game first, then bet the best spot.',
+                'path': '/tools/nfl-hub',         'icon': 'nfl-matchup',  'surface': 'NFL Hub'},
+    'classic': {'label': 'The full dashboard',  'tag': 'Everything at once — the cross-sport overview.',
+                'path': '/dashboard?postseason=1','icon': 'track-record', 'surface': 'Dashboard'},
+}
+DEFAULT_HOME_VIEW = 'classic'
+
+
+def load_home_view(uid):
+    """The user's saved 'how do you bet?' landing surface key, or None if unset/invalid."""
+    if not uid:
+        return None
+    try:
+        with open(os.path.join(_CARD_PREFS_DIR, f'{uid}.json'), encoding='utf-8') as fh:
+            v = (json.load(fh) or {}).get('home')
+        return v if v in HOME_VIEWS else None
+    except (OSError, ValueError):
+        return None
+
+
+def save_home_view(uid, key):
+    if not uid or key not in HOME_VIEWS:
+        return
+    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
+    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh) or {}
+    except (OSError, ValueError):
+        d = {}
+    d['home'] = key
     with open(path, 'w', encoding='utf-8') as fh:
         json.dump(d, fh)
 
@@ -30856,6 +30906,21 @@ def menu_board_tool():
     tier = src.get('tier') if src.get('tier') in ('all', 'floor', 'swing') else 'all'
     ctx = build_menu_board(legs=legs, timeframe=timeframe, sport=sport, tier=tier)
     return render_template('menu_board.html', **ctx)
+
+
+@app.route('/my-view', methods=['GET', 'POST'])
+def my_view_tool():
+    """How do you bet? -- pick the surface you want to land on after sign-in. Saves per-user
+    and routes _resolve_post_auth_target. POST saves the choice and drops you straight into it."""
+    uid = _card_prefs_uid()
+    if request.method == 'POST':
+        key = request.form.get('view')
+        if key in HOME_VIEWS:
+            save_home_view(uid, key)
+            return redirect(HOME_VIEWS[key]['path'])
+        return redirect(url_for('my_view_tool'))
+    return render_template('my_view.html', views=HOME_VIEWS,
+                           current=(load_home_view(uid) or DEFAULT_HOME_VIEW))
 
 
 @app.route('/tools/daily-card.png', methods=['GET', 'POST'])
