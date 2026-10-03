@@ -1,0 +1,108 @@
+{% set active_page = 'nfl_buy_low' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Buy Low / Sell High - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .bl-grid{display:grid;grid-template-columns:1fr;gap:18px;}
+  @media(min-width:900px){.bl-grid{grid-template-columns:1fr 1fr;}}
+  .bl-col{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:15px 16px 8px;}
+  .bl-col.buy{border-color:rgba(78,212,138,.38);}
+  .bl-col.sell{border-color:rgba(255,209,102,.38);}
+  .bl-head{display:flex;align-items:baseline;gap:9px;margin-bottom:3px;}
+  .bl-head h2{font:800 16px 'Helvetica Neue',Arial,sans-serif;margin:0;color:var(--text-bright);}
+  .bl-head .dot{width:9px;height:9px;border-radius:50%;}
+  .bl-col.buy .dot{background:var(--bkn-good,#4ed48a);} .bl-col.sell .dot{background:var(--bkn-mid,#ffd166);}
+  .bl-sub{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:12px;}
+  .bl-row{padding:12px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .bl-row:last-child{border-bottom:0;}
+  .bl-top{display:flex;align-items:center;gap:9px;}
+  .bl-nm{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .bl-pos{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 5px;}
+  .bl-role{font:700 9px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;}
+  .bl-delta{margin-left:auto;font:800 14px ui-monospace,Consolas,monospace;}
+  .bl-delta.dn{color:var(--bkn-good,#4ed48a);}  /* a dip IS the buy-low signal -> green */
+  .bl-delta.up{color:var(--bkn-mid,#ffd166);}   /* a spike IS the sell-high signal -> amber */
+  .bl-nums{display:flex;gap:16px;margin:8px 0 6px;flex-wrap:wrap;}
+  .bl-stat{display:flex;flex-direction:column;}
+  .bl-stat .k{font:700 8.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .bl-stat .v{font:800 15px ui-monospace,Consolas,monospace;color:var(--text-bright);}
+  .bl-stat .v small{font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .bl-spark{display:flex;align-items:flex-end;gap:3px;height:30px;}
+  .bl-spark .b{width:12px;border-radius:2px 2px 0 0;background:rgba(255,255,255,.14);}
+  .bl-col.buy .bl-spark .b.last{background:var(--bkn-good,#4ed48a);}
+  .bl-col.sell .bl-spark .b.last{background:var(--bkn-mid,#ffd166);}
+  .bl-why{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:7px;}
+  .bl-empty{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 0;}
+</style>
+
+<div class="bkn" style="max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL &middot; Research{% if updated %} &middot; {{ updated }}{% endif %}</div>
+    <h1>Buy Low <span class="accent">/</span> Sell High</h1>
+    <div class="page-subtitle">Where a player&rsquo;s <b>role</b> and his recent <b>box score</b> disagree. <b>Buy Low</b> = the role is still strong but the yards are down lately &mdash; the number may be fading the outcomes, not the usage. <b>Sell High</b> = big recent yards on a thin role &mdash; production outrunning the opportunity that drives it. This is an <b>idea board</b>, not a &ldquo;he&rsquo;s due&rdquo; list.</div>
+  </div>
+</div>
+
+{% if not available %}
+  <div class="bkn-empty">No divergences to show yet &mdash; the board needs a few weeks of games to compare recent production against role. It fills in as the season goes (season {{ season or '2026' }}).</div>
+{% else %}
+<div class="bl-grid">
+  {# ---------- BUY LOW ---------- #}
+  <div class="bl-col buy">
+    <div class="bl-head"><span class="dot"></span><h2>Buy Low</h2><span class="bl-role" style="margin-left:auto;">{{ n_buy }} player{{ '' if n_buy == 1 else 's' }}</span></div>
+    <div class="bl-sub">Role intact, outcomes cold. The usage still says featured; the yards haven&rsquo;t followed <i>yet</i>.</div>
+    {% for x in buy_low %}
+    <div class="bl-row">
+      <div class="bl-top">
+        <span class="bl-nm">{{ x.player }}</span><span class="bl-pos">{{ x.pos }}</span>
+        <span class="bl-role">{{ x.role }} &middot; {{ x.opp_metric }}</span>
+        <span class="bl-delta dn">{{ x.delta_pct }}%</span>
+      </div>
+      <div class="bl-nums">
+        <div class="bl-stat"><span class="k">Last {{ x.recent_w }}</span><span class="v">{{ x.recent_pg }}<small> {{ x.unit }}</small></span></div>
+        <div class="bl-stat"><span class="k">Season avg</span><span class="v">{{ x.season_pg }}</span></div>
+        <div class="bl-stat"><span class="k">By week</span>
+          <span class="bl-spark">{% set mx = x.weekly|max or 1 %}{% for w in x.weekly %}<span class="b {{ 'last' if loop.last }}" style="height:{{ (6 + (w / mx * 24))|round|int }}px" title="{{ w }}"></span>{% endfor %}</span>
+        </div>
+      </div>
+      <div class="bl-why">{{ x.why }}</div>
+    </div>
+    {% else %}
+    <div class="bl-empty">No buy-low divergences on the board right now.</div>
+    {% endfor %}
+  </div>
+
+  {# ---------- SELL HIGH ---------- #}
+  <div class="bl-col sell">
+    <div class="bl-head"><span class="dot"></span><h2>Sell High</h2><span class="bl-role" style="margin-left:auto;">{{ n_sell }} player{{ '' if n_sell == 1 else 's' }}</span></div>
+    <div class="bl-sub">Hot yards on a thin role. The box score is outrunning the usage that would sustain it.</div>
+    {% for x in sell_high %}
+    <div class="bl-row">
+      <div class="bl-top">
+        <span class="bl-nm">{{ x.player }}</span><span class="bl-pos">{{ x.pos }}</span>
+        <span class="bl-role">{{ x.role }} &middot; {{ x.opp_metric }}</span>
+        <span class="bl-delta up">+{{ x.delta_pct }}%</span>
+      </div>
+      <div class="bl-nums">
+        <div class="bl-stat"><span class="k">Last {{ x.recent_w }}</span><span class="v">{{ x.recent_pg }}<small> {{ x.unit }}</small></span></div>
+        <div class="bl-stat"><span class="k">Season avg</span><span class="v">{{ x.season_pg }}</span></div>
+        <div class="bl-stat"><span class="k">By week</span>
+          <span class="bl-spark">{% set mx = x.weekly|max or 1 %}{% for w in x.weekly %}<span class="b {{ 'last' if loop.last }}" style="height:{{ (6 + (w / mx * 24))|round|int }}px" title="{{ w }}"></span>{% endfor %}</span>
+        </div>
+      </div>
+      <div class="bl-why">{{ x.why }}</div>
+    </div>
+    {% else %}
+    <div class="bl-empty">No sell-high divergences on the board right now.</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="bkn-note" style="margin-top:18px;"><b>How to use this &mdash; honestly:</b> this is a <b>Research Engine</b> idea board, not a prediction and <b>not</b> &ldquo;he&rsquo;s due.&rdquo; Role (opportunity) is stickier than week-to-week yards, so a dip on a strong role is often a <b>better number</b> than the box score suggests &mdash; and big yards on a thin role often <b>won&rsquo;t hold</b>. But the market prices role too: this only tells you where to <b>look</b>. Take the name to <b>Prop Floor</b> and <b>Ticket Check</b>, confirm the matchup and the injury picture, and shop a real line before you bet it. &ldquo;Recent&rdquo; is the last {{ (buy_low + sell_high)|map(attribute='recent_w')|first or 3 }} active games vs the season per-game; early-season samples are small. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

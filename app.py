@@ -720,7 +720,7 @@ PRO_ENDPOINTS = {
     'my_view_tool',  # "how do you bet?" -- pick your post-sign-in landing surface
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
-    'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
+    'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
     'nfl_team_rankings_tool', 'nfl_wave_tool',
@@ -30255,6 +30255,88 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
 
 
 _NFL_USAGE_CACHE = {}
+_NFL_BUYLOW_CACHE = {}
+
+
+def build_nfl_buy_low_board(limit=24):
+    """Buy Low / Sell High -- OPPORTUNITY vs recent PRODUCTION divergence, for skill players.
+    Research Engine idea board, straight out of the ethos (streaks are priced; opportunity is
+    sticky; production chases opportunity). NOT 'he's due':
+      - **Buy Low**  = role/opportunity still strong, recent box score DOWN -> the market may be
+        fading the outcomes, not the role, so you may get a better number.
+      - **Sell High** = recent box score HOT but the role doesn't back it -> the market may be
+        chasing production that isn't supported by usage.
+    Recent window is adaptive (last min(3, n-1) games) vs the player's season per-game, so it
+    works from week ~3 and sharpens as the season grows. Honest by construction: it surfaces a
+    DIVERGENCE to investigate, makes no prediction, and hands off to the Evaluate tools + a real
+    line. Opportunity score/role reused from build_nfl_usage_board."""
+    log = _nfl_player_week_data()
+    if log.empty:
+        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': None}
+    cur = int(pd.to_numeric(log['season'], errors='coerce').max())
+    usage = build_nfl_usage_board(limit=600)
+    if not usage.get('available'):
+        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': cur}
+    opp = {p['player']: p for p in usage['players'] if not p.get('is_def')}   # skill players only
+    sig = (cur, len(log), len(opp))
+    if _NFL_BUYLOW_CACHE.get('sig') == sig and 'data' in _NFL_BUYLOW_CACHE:
+        return _NFL_BUYLOW_CACHE['data']
+    d = log[pd.to_numeric(log['season'], errors='coerce') == cur].copy()
+    for c in ('week', 'rushing_yards', 'receiving_yards', 'receptions', 'targets', 'carries'):
+        d[c] = pd.to_numeric(d.get(c), errors='coerce').fillna(0.0)
+    buy, sell = [], []
+    for name, p in opp.items():
+        g = d[d['_full'] == name].sort_values('week')
+        is_back = bool(p.get('is_back'))
+        # ACTIVE games only: a DNP/inactive week (no targets and no carries) is not a cold game
+        # and must not deflate the baseline into a fake spike. Keep games the player was involved.
+        active = (g['targets'] > 0) | (g['carries'] > 0) if is_back else (g['targets'] > 0)
+        g = g[active]
+        n = len(g)
+        if n < 3:
+            continue
+        prod = ((g['rushing_yards'] + g['receiving_yards']) if is_back else g['receiving_yards']).tolist()
+        unit = 'scrimmage yds' if is_back else 'rec yds'
+        season_pg = sum(prod) / n
+        if season_pg < 18:                                  # not a bettable yardage profile
+            continue
+        rw = min(3, n - 1)                                  # recent window (keeps >=1 earlier game)
+        recent_pg = sum(prod[-rw:]) / rw
+        delta = (recent_pg - season_pg) / season_pg
+        opp_score = int(p.get('score') or 0)
+        row = {'player': name, 'team': p.get('team'), 'pos': p.get('pos'),
+               'role': p.get('role'), 'opp_metric': p.get('metric'), 'opp_score': opp_score,
+               'opp_why': p.get('why'), 'unit': unit, 'season_pg': round(season_pg),
+               'recent_pg': round(recent_pg), 'recent_w': rw, 'games': n,
+               'delta_pct': round(delta * 100), 'weekly': [round(x) for x in prod]}
+        # Buy Low: strong role (opp>=55) + recent output >=20% below the season anchor.
+        if opp_score >= 55 and delta <= -0.20:
+            row['kind'] = 'buy_low'
+            row['why'] = (f"Role intact — {p.get('metric')} — but last {rw} "
+                          f"{'games' if rw != 1 else 'game'} {round(recent_pg)} {unit} vs "
+                          f"{round(season_pg)} season avg ({round(delta * 100)}%). The number may "
+                          f"be fading the box score, not the role.")
+            row['score'] = opp_score + min(-delta * 100, 60) * 0.5     # strong role + bigger dip first
+            buy.append(row)
+        # Sell High: real RECENT yardage (>=55/gm) on a THIN role (opp<=40, rotational/weak). The
+        # production is outrunning the usage -- the number may chase the box score the role won't
+        # sustain. Keyed to absolute recent output + low role (not the noisy 3-game delta, which a
+        # single blank week distorts); only flag players not already trending down.
+        elif recent_pg >= 55 and opp_score <= 40 and delta >= -0.05:
+            row['kind'] = 'sell_high'
+            row['why'] = (f"Last {rw} {'games' if rw != 1 else 'game'} {round(recent_pg)} {unit} on "
+                          f"only {p.get('metric')} ({p.get('role', '').lower()} role). The "
+                          f"production is outrunning the usage — the number may be chasing a box "
+                          f"score the role won't sustain.")
+            row['score'] = recent_pg + (45 - opp_score) * 1.2        # more yardage + thinner role first
+            sell.append(row)
+    buy.sort(key=lambda x: -x['score'])
+    sell.sort(key=lambda x: -x['score'])
+    data = {'available': bool(buy or sell), 'buy_low': buy[:limit], 'sell_high': sell[:limit],
+            'season': cur, 'n_buy': len(buy), 'n_sell': len(sell),
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    _NFL_BUYLOW_CACHE.update(sig=sig, data=data)
+    return data
 
 
 def build_nfl_usage_board(limit=40, min_games=1):
@@ -41757,6 +41839,16 @@ def nfl_featured_players_tool():
     ctx = build_nfl_usage_board()
     ctx['parlay'] = build_nfl_featured_parlay()
     return render_template('nfl_featured.html', **ctx)
+
+
+@app.route('/tools/nfl-buy-low')
+def nfl_buy_low_tool():
+    """Quick Tool: Buy Low / Sell High -- NFL skill players where OPPORTUNITY (sticky role)
+    and recent PRODUCTION (box score) diverge. Research Engine idea board: buy-low = strong
+    role, cold outcomes (number may be fading the box score, not the role); sell-high = hot
+    outcomes on a thin role (production outrunning usage). Surfaces a divergence to investigate
+    -- not a prediction."""
+    return render_template('nfl_buy_low.html', **build_nfl_buy_low_board())
 
 
 @app.route('/tools/nfl-floor')
