@@ -1,0 +1,132 @@
+{% set active_page = 'start_here' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Start Here - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .sh-wrap{max-width:860px;}
+  .sh-idea{background:var(--panel,#0f1a29);border:1px solid rgba(63,191,127,.35);border-radius:16px;padding:16px 18px;margin:4px 0 24px;}
+  .sh-idea .t{font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--bkn-accent,#3fbf7f);margin-bottom:6px;}
+  .sh-idea .b{font:600 15px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .sh-idea .b b{color:var(--bkn-accent,#3fbf7f);}
+  .sh-steps{position:relative;}
+  .sh-step{display:flex;gap:16px;align-items:stretch;}
+  .sh-rail{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;width:34px;}
+  .sh-num{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font:800 15px ui-monospace,Consolas,monospace;color:#0b1118;background:var(--bkn-accent,#3fbf7f);}
+  .sh-line{flex:1 1 auto;width:2px;background:var(--border);margin:4px 0;}
+  .sh-step:last-child .sh-line{display:none;}
+  .sh-card{flex:1 1 auto;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:15px 17px;margin-bottom:16px;}
+  .sh-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .sh-h .nm{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .sh-h .lw{font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);border:1px solid var(--border);border-radius:5px;padding:2px 7px;}
+  .sh-desc{font:500 13.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:7px 0 12px;}
+  .sh-desc b{color:var(--text-bright);}
+  .sh-btns{display:flex;flex-wrap:wrap;gap:9px;}
+  .sh-btn{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font:800 13px 'Helvetica Neue',Arial,sans-serif;
+    border-radius:999px;padding:9px 16px;border:1px solid var(--border);color:var(--text-bright);background:rgba(255,255,255,.03);}
+  .sh-btn:hover{border-color:var(--bkn-accent,#3fbf7f);}
+  .sh-btn.go{background:var(--bkn-accent,#3fbf7f);color:#0b1118;border-color:var(--bkn-accent,#3fbf7f);}
+  .sh-btn.go:hover{filter:brightness(1.06);}
+  .sh-note{font:500 11px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;opacity:.85;}
+  .sh-note b{color:var(--text-bright);opacity:1;}
+  .sh-close{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;margin-top:8px;}
+  .sh-close h3{font:800 16px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 6px;}
+  .sh-close p{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 13px;}
+</style>
+
+<div class="bkn sh-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Welcome to Bankroll Kings</div>
+    <h1>Start <span class="accent">Here</span></h1>
+    <div class="page-subtitle">You don&rsquo;t need to learn 30 tools. The whole platform is one loop &mdash; find an idea, pressure-test it, build the ticket, then measure how you actually did. Here&rsquo;s the five-minute version. Every tool in the sidebar is grouped under these same five steps.</div>
+  </div>
+</div>
+
+<div class="sh-idea">
+  <div class="t">The one idea</div>
+  <div class="b">We help you make <b>better decisions</b> &mdash; not predict winners. Markets are mostly efficient, so the job isn&rsquo;t finding magic locks, it&rsquo;s building a <b>repeatable, defensible process</b>. You&rsquo;ll judge yourself by the <b>quality of the decision</b>, not last week&rsquo;s scoreboard. A good bet can lose; a bad bet can win.</div>
+</div>
+
+<div class="sh-steps">
+
+  <div class="sh-step">
+    <div class="sh-rail"><div class="sh-num">1</div><div class="sh-line"></div></div>
+    <div class="sh-card">
+      <div class="sh-h"><span class="nm">Discover</span><span class="lw">find a play</span></div>
+      <div class="sh-desc">Scan the whole board for ideas &mdash; <b>options, not one pick</b>. Browse every leg on <b>The Menu</b>, let <b>Today&rsquo;s Cards</b> auto-build a starting point, or work a sport from its <b>Hub</b>.</div>
+      <div class="sh-btns">
+        <a href="/tools/menu" class="sh-btn go">The Menu &rarr;</a>
+        <a href="/tools/daily-card" class="sh-btn">Today&rsquo;s Cards</a>
+        <a href="/tools/nfl-hub" class="sh-btn">NFL Hub</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh-step">
+    <div class="sh-rail"><div class="sh-num">2</div><div class="sh-line"></div></div>
+    <div class="sh-card">
+      <div class="sh-h"><span class="nm">Evaluate</span><span class="lw">pressure-test it</span></div>
+      <div class="sh-desc">Before you bet it, look for the reasons it&rsquo;s <b>wrong</b>. Is the number a real floor or a trap (<b>Prop Floor</b>)? Is your ticket all-overs or over-concentrated (<b>Ticket Check</b>)? What context are you missing (<b>Game Context</b>)?</div>
+      <div class="sh-btns">
+        <a href="/tools/ticket-check" class="sh-btn go">Ticket Check &rarr;</a>
+        <a href="/tools/nfl-floor" class="sh-btn">Prop Floor</a>
+        <a href="/tools/game-context" class="sh-btn">Game Context</a>
+      </div>
+      <div class="sh-note">This step is what makes us different from a picks site. A picks site says &ldquo;here&rsquo;s the play.&rdquo; We say &ldquo;here&rsquo;s the play &mdash; now let&rsquo;s look for why it&rsquo;s wrong.&rdquo;</div>
+    </div>
+  </div>
+
+  <div class="sh-step">
+    <div class="sh-rail"><div class="sh-num">3</div><div class="sh-line"></div></div>
+    <div class="sh-card">
+      <div class="sh-h"><span class="nm">Build</span><span class="lw">the ticket</span></div>
+      <div class="sh-desc">Assemble your parlay. Tap legs on <b>The Menu</b> and the price updates as you go, or take a ready-made <b>Daily Card</b> and swap legs by eye. The ticket &mdash; not the board &mdash; is the destination.</div>
+      <div class="sh-btns">
+        <a href="/tools/menu" class="sh-btn go">Build on The Menu &rarr;</a>
+        <a href="/tools/daily-card" class="sh-btn">Today&rsquo;s Cards</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh-step">
+    <div class="sh-rail"><div class="sh-num">4</div><div class="sh-line"></div></div>
+    <div class="sh-card">
+      <div class="sh-h"><span class="nm">Track</span><span class="lw">log what you bet</span></div>
+      <div class="sh-desc">Write down what you actually bet &mdash; the <b>price you got</b> and, when you can, the <b>closing line</b>. That one habit is what turns a hunch streak into a measurable record.</div>
+      <div class="sh-btns">
+        <a href="/tools/tracker" class="sh-btn go">Open Bet Tracker &rarr;</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="sh-step">
+    <div class="sh-rail"><div class="sh-num">5</div><div class="sh-line"></div></div>
+    <div class="sh-card">
+      <div class="sh-h"><span class="nm">Learn</span><span class="lw">measure reality</span></div>
+      <div class="sh-desc">Did you <b>beat the closing line</b> (CLV)? That&rsquo;s the honest read on whether your process is sound &mdash; more than any single week&rsquo;s win or loss. Your <b>Tracker</b> shows your CLV and ROI; <b>Track Record</b> shows how the boards themselves have graded.</div>
+      <div class="sh-btns">
+        <a href="/tools/tracker" class="sh-btn go">Your CLV &amp; ROI &rarr;</a>
+        <a href="/tools/track-record" class="sh-btn">Track Record</a>
+      </div>
+      <div class="sh-note">CLV needs a real sample &mdash; a hot handful of bets proves nothing. Beating the close <b>consistently</b> is the signal.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="sh-close">
+  <h3>Make it yours</h3>
+  <p>Pick the surface you want to open to every time &mdash; the whole board, the finished cards, heat &amp; trends, matchups, or the full dashboard. You can change it whenever. And every tool stays in the sidebar, grouped under these same five steps.</p>
+  <div class="sh-btns">
+    <a href="/my-view" class="sh-btn go">Set my default view &rarr;</a>
+    {% if current_home %}<a href="/dashboard?postseason=1" class="sh-btn">Go to my dashboard</a>{% endif %}
+  </div>
+</div>
+
+<div class="bkn-note" style="margin-top:20px;">Bankroll Kings is a betting <b>analytics</b> platform &mdash; it takes no wagers and holds no funds. Nothing here is a guaranteed winner or a &ldquo;lock,&rdquo; and we don&rsquo;t tell you how much to stake. The goal is a defensible process you can run for thousands of bets. 21+. Please bet responsibly.</div>
+</div>
+{% endblock %}

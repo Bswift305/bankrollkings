@@ -718,6 +718,7 @@ PRO_ENDPOINTS = {
     'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
     'menu_board_tool',  # The Menu -- full board of options, build-your-own ticket
     'my_view_tool',  # "how do you bet?" -- pick your post-sign-in landing surface
+    'start_here_tool',  # guided onboarding -- the loop walkthrough
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -10513,9 +10514,12 @@ def _resolve_post_auth_target(user, raw_next=''):
         return raw_next
     paid = bool(user) and (is_owner_user(user) or get_plan_rank(normalize_user_plan(user)) >= get_plan_rank('all_access'))
     if paid:
-        hv = load_home_view((user or {}).get('user_id'))   # "how do you bet?" landing, if set
+        uid = (user or {}).get('user_id')
+        hv = load_home_view(uid)                            # "how do you bet?" landing, if set
         if hv in HOME_VIEWS:
             return HOME_VIEWS[hv]['path']
+        if not load_seen_start(uid):                        # first-timer with no saved view -> onboarding
+            return '/start'
         return '/dashboard?postseason=1'
     return '/free'
 
@@ -30949,6 +30953,34 @@ def save_home_view(uid, key):
         json.dump(d, fh)
 
 
+def load_seen_start(uid):
+    """Has this user seen the Start Here onboarding? Anon -> True (never force). So a brand-new
+    member with no saved home view lands on /start exactly once, then on the dashboard after."""
+    if not uid:
+        return True
+    try:
+        with open(os.path.join(_CARD_PREFS_DIR, f'{uid}.json'), encoding='utf-8') as fh:
+            return bool((json.load(fh) or {}).get('seen_start'))
+    except (OSError, ValueError):
+        return False
+
+
+def mark_seen_start(uid):
+    if not uid:
+        return
+    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
+    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh) or {}
+    except (OSError, ValueError):
+        d = {}
+    if not d.get('seen_start'):
+        d['seen_start'] = True
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(d, fh)
+
+
 def _card_prefs_from_request(saved):
     """Query/form knobs override the saved profile for this view; saved is the fallback."""
     src = request.form if request.method == 'POST' else request.args
@@ -31004,6 +31036,17 @@ def my_view_tool():
         return redirect(url_for('my_view_tool'))
     return render_template('my_view.html', views=HOME_VIEWS,
                            current=(load_home_view(uid) or DEFAULT_HOME_VIEW))
+
+
+@app.route('/start')
+def start_here_tool():
+    """Start Here -- the guided onboarding that walks a new member through the loop
+    (Discover -> Evaluate -> Build -> Track -> Learn) with a primary action at each step.
+    Shown once automatically to a paid user who hasn't set a home view; reopenable any time
+    from the top of the sidebar."""
+    uid = _card_prefs_uid()
+    mark_seen_start(uid)
+    return render_template('start_here.html', current_home=load_home_view(uid))
 
 
 @app.route('/tools/tracker', methods=['GET'])
