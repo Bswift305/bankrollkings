@@ -218,3 +218,77 @@ def decorate(bets):
         d['clv'] = round(clv, 1) if clv is not None else None
         out.append(d)
     return out
+
+
+def _price_band(odds):
+    """Favorites / Even-ish / Longshots by implied win probability."""
+    ip = implied_prob(odds)
+    return 'Favorites' if ip >= 0.58 else ('Longshots' if ip <= 0.42 else 'Even-ish')
+
+
+def learnings(bets, min_settled=6, min_cohort=4):
+    """What the user's OWN logged history is teaching them -- process (CLV) over outcome, the
+    Learn layer of the loop. Honest by construction: each cut needs a minimum sample before it
+    shows (a read on four bets is noise), and it's derived ONLY from the fields we actually
+    capture (sport, odds, stake, closing line, result). Leg-count / play-type insights need
+    richer logging and are deliberately NOT faked here."""
+    settled = [b for b in bets if b.get('result') in SETTLED]
+    decided = [b for b in settled if b.get('result') in ('win', 'loss')]
+    clv_bets = [b for b in bets if b.get('closing_odds')]
+    cards = []
+
+    # headline: beat the close
+    if len(clv_bets) >= min_cohort:
+        vals = [_clv_points(b) for b in clv_bets]
+        rate = round(sum(1 for v in vals if v > 0) / len(vals) * 100, 1)
+        avg = round(sum(vals) / len(vals), 2)
+        cards.append({
+            'key': 'clv', 'label': 'You beat the close', 'value': f'{rate}%',
+            'sub': f'avg {avg:+g} pts · {len(clv_bets)} bets with a close',
+            'tone': ('good' if rate >= 55 else 'warn' if rate >= 45 else 'bad'),
+            'detail': 'Beating the closing line is the most reliable sign your process is sound '
+                      '— more than any week’s win-loss.'})
+
+    # process vs outcome -- the doctrine card
+    if len(decided) >= min_cohort and len(clv_bets) >= min_cohort:
+        winpct = round(sum(1 for b in decided if b['result'] == 'win') / len(decided) * 100)
+        beatpct = round(sum(1 for b in clv_bets if _clv_points(b) > 0) / len(clv_bets) * 100)
+        if beatpct >= 55 and winpct < 50:
+            read, tone = ('Your prices are good but the wins haven’t followed — that’s '
+                          'variance, not a broken process. Keep going.', 'good')
+        elif winpct >= 55 and beatpct < 50:
+            read, tone = ('You’re winning without beating the close — variance in your '
+                          'favor, not proven edge. Don’t over-trust the hot stretch.', 'warn')
+        elif beatpct < 45 and winpct < 45:
+            read, tone = ('Both your prices and your results are behind — worth slowing down '
+                          'and shopping harder for numbers.', 'bad')
+        else:
+            read, tone = ('Your win rate and your closing-line value are roughly in line — the '
+                          'honest baseline.', 'neutral')
+        cards.append({'key': 'process', 'label': 'Process vs outcome',
+                      'value': f'{winpct}% won · {beatpct}% beat close',
+                      'sub': 'good decisions ≠ good outcomes', 'tone': tone, 'detail': read})
+
+    def _cut(label_key, groups):
+        rows = []
+        for name, subset in groups:
+            ss = [b for b in settled if subset(b)]
+            if len(ss) < min_cohort:
+                continue
+            sc = [b for b in clv_bets if subset(b)]
+            staked = sum(float(b.get('stake') or 0) for b in ss if b['result'] != 'push')
+            net = sum(bet_profit(b) for b in ss)
+            clv = (sum(_clv_points(b) for b in sc) / len(sc)) if sc else None
+            rows.append({label_key: name, 'n': len(ss),
+                         'roi': (round(net / staked * 100, 1) if staked > 0 else None),
+                         'clv': (round(clv, 2) if clv is not None else None)})
+        return rows
+
+    sports = sorted({b.get('sport') or 'Other' for b in settled})
+    by_sport = _cut('sport', [(s, (lambda b, s=s: (b.get('sport') or 'Other') == s)) for s in sports])
+    by_band = _cut('band', [(nm, (lambda b, nm=nm: _price_band(b['odds']) == nm))
+                            for nm in ('Favorites', 'Even-ish', 'Longshots')])
+
+    return {'enough': len(settled) >= min_settled, 'n_settled': len(settled),
+            'n_clv': len(clv_bets), 'cards': cards, 'by_sport': by_sport, 'by_band': by_band,
+            'min_settled': min_settled}

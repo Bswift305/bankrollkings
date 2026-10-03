@@ -48,6 +48,26 @@
   .bt-rtag{font:800 9px ui-monospace,monospace;border-radius:5px;padding:3px 7px;text-transform:uppercase;}
   .bt-rtag.win{background:var(--bkn-good,#4ed48a);color:#0b1118;} .bt-rtag.loss{background:#ff6b6b;color:#0b1118;}
   .bt-rtag.push{background:var(--text-muted);color:#0b1118;}
+  /* What You've Learned */
+  .bt-learn{border-color:rgba(63,191,127,.35);}
+  .bt-lgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px;}
+  @media(min-width:680px){.bt-lgrid{grid-template-columns:1fr 1fr;}}
+  .bt-lcard{border:1px solid var(--border);border-radius:12px;padding:13px 15px;background:rgba(255,255,255,.015);border-left-width:3px;}
+  .bt-lcard.good{border-left-color:var(--bkn-good,#4ed48a);} .bt-lcard.warn{border-left-color:var(--bkn-mid,#ffd166);}
+  .bt-lcard.bad{border-left-color:#ff6b6b;} .bt-lcard.neutral{border-left-color:var(--text-muted);}
+  .bt-lcard .k{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .bt-lcard .v{font:800 19px ui-monospace,Consolas,monospace;color:var(--text-bright);margin:3px 0 1px;}
+  .bt-lcard .s{font:700 10.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:6px;}
+  .bt-lcard .d{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .bt-lcuts{display:grid;grid-template-columns:1fr;gap:14px;}
+  @media(min-width:680px){.bt-lcuts{grid-template-columns:1fr 1fr;}}
+  .bt-lcuts .ct{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;}
+  .bt-ltbl{width:100%;border-collapse:collapse;}
+  .bt-ltbl th{font:800 8.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);}
+  .bt-ltbl td{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .bt-ltbl td.num{font-family:ui-monospace,Consolas,monospace;}
+  .bt-ltbl td.pos{color:var(--bkn-good,#4ed48a);} .bt-ltbl td.neg{color:#ff6b6b;}
+  .bt-lnote{font:500 10.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:12px;opacity:.85;}
 </style>
 
 <div class="bkn" style="max-width:none;">
@@ -90,6 +110,51 @@
     {% endif %}
   </div>
 </div>
+
+{% if learnings.enough %}
+<div class="bt-card bt-learn">
+  <h3>What You&rsquo;ve Learned <span style="font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);">&middot; your own process, honestly</span></h3>
+  <div class="hint">From your <b>{{ learnings.n_settled }}</b> settled bets{% if learnings.n_clv %} ({{ learnings.n_clv }} with a closing line){% endif %}. Each read needs a real sample &mdash; small cuts stay hidden until they mean something.</div>
+  {% if learnings.cards %}
+  <div class="bt-lgrid">
+    {% for c in learnings.cards %}
+    <div class="bt-lcard {{ c.tone }}">
+      <div class="k">{{ c.label }}</div>
+      <div class="v">{{ c.value }}</div>
+      <div class="s">{{ c.sub }}</div>
+      <div class="d">{{ c.detail }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if learnings.by_sport or learnings.by_band %}
+  <div class="bt-lcuts">
+    {% if learnings.by_sport %}
+    <div>
+      <div class="ct">By sport</div>
+      <table class="bt-ltbl"><tr><th>Sport</th><th>n</th><th>ROI</th><th>CLV</th></tr>
+      {% for r in learnings.by_sport %}<tr><td>{{ r.sport }}</td><td class="num">{{ r.n }}</td><td class="num {{ 'pos' if (r.roi or 0) > 0 else ('neg' if (r.roi or 0) < 0 else '') }}">{% if r.roi is not none %}{{ '%+g'|format(r.roi) }}%{% else %}&ndash;{% endif %}</td><td class="num {{ 'pos' if (r.clv or 0) > 0 else ('neg' if (r.clv or 0) < 0 else '') }}">{% if r.clv is not none %}{{ '%+g'|format(r.clv) }}{% else %}&ndash;{% endif %}</td></tr>{% endfor %}
+      </table>
+    </div>
+    {% endif %}
+    {% if learnings.by_band %}
+    <div>
+      <div class="ct">By price</div>
+      <table class="bt-ltbl"><tr><th>Price</th><th>n</th><th>ROI</th><th>CLV</th></tr>
+      {% for r in learnings.by_band %}<tr><td>{{ r.band }}</td><td class="num">{{ r.n }}</td><td class="num {{ 'pos' if (r.roi or 0) > 0 else ('neg' if (r.roi or 0) < 0 else '') }}">{% if r.roi is not none %}{{ '%+g'|format(r.roi) }}%{% else %}&ndash;{% endif %}</td><td class="num {{ 'pos' if (r.clv or 0) > 0 else ('neg' if (r.clv or 0) < 0 else '') }}">{% if r.clv is not none %}{{ '%+g'|format(r.clv) }}{% else %}&ndash;{% endif %}</td></tr>{% endfor %}
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="bt-lnote"><b>&ldquo;Beat close&rdquo; (CLV)</b> is the share of your bets that locked a better price than the market&rsquo;s close &mdash; the most honest read on whether your <i>process</i> is sound, separate from whether a given week won. Leg-count and play-type breakdowns need richer logging and come later; nothing here is shown until the sample earns it.</div>
+</div>
+{% elif signed_in and summary.settled %}
+<div class="bt-card" style="border-style:dashed;">
+  <h3 style="margin-bottom:4px;">What You&rsquo;ll Learn</h3>
+  <div class="hint">Log &amp; settle about <b>{{ learnings.min_settled }}</b> bets with their closing lines and this unlocks &mdash; your real <b>CLV</b>, the sports and price ranges you&rsquo;re sharpest in, and whether your results are <b>process or variance</b>. ({{ learnings.n_settled }} settled so far.)</div>
+</div>
+{% endif %}
 
 <div class="bt-card">
   <h3>Log a bet</h3>

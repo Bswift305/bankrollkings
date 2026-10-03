@@ -31123,6 +31123,7 @@ def bet_tracker_tool():
     return render_template('bet_tracker.html',
                            bets=bt.decorate(bets),
                            summary=bt.summarize(bets),
+                           learnings=bt.learnings(bets),
                            sports=bt.VALID_SPORTS,
                            signed_in=bool(uid))
 
