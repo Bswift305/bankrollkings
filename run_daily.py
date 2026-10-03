@@ -123,6 +123,10 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # so we accrue a real 2026 open->close prop-line history to grade "tickets we
         # could have hit" against. Idempotent one snapshot/day -> NFL_PropLines_Archive.csv.
         ("NFL prop-line capture", _python("capture_nfl_prop_lines.py"), 180),
+        # Forward-capture the Buy Low / Sell High boards daily (NFL player lenses + CFB team
+        # lens) so the opportunity-vs-recent-production lens can be GRADED later -- the honest
+        # bridge to proving it works. Idempotent one snapshot/day -> BuyLow_Archive.csv.
+        ("Buy Low / Sell High capture", _python("capture_buy_low.py"), 240),
         # Grade the archived prop lines against real results (all categories, incl. defense
         # + computed props). Re-grades the whole archive each run so PENDING games resolve
         # as gamelogs fill in -> NFL_PropLines_Graded.csv (the streak/heat-map + scoreboard
