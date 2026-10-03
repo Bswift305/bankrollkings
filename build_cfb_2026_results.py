@@ -40,6 +40,9 @@ def fetch(season: int) -> list[dict]:
             "neutral": bool(g.get("neutralSite")),
             "home_elo": g.get("homePregameElo"), "away_elo": g.get("awayPregameElo"),
             "home_conf": g.get("homeConference"), "away_conf": g.get("awayConference"),
+            # quarter line scores -> powers the first-half / first-quarter board (who starts
+            # fast vs slow). Lists of per-quarter points; may be absent for some games.
+            "home_q": g.get("homeLineScores"), "away_q": g.get("awayLineScores"),
         })
     return rows
 

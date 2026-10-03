@@ -1,0 +1,90 @@
+{% set active_page = 'cfb_first_half' %}
+{% set active_sport = 'ncaaf' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB First-Half Starts - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .fh{--fh:#2dd4bf;}
+  .fh-row{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.055);flex-wrap:wrap;}
+  .fh-row:last-child{border-bottom:0;}
+  .fh-gm{flex:1 1 230px;min-width:0;}
+  .fh-gm .t{font:800 13.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .fh-gm .s{font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:2px;}
+  .fh-gm .ln{font:800 10px ui-monospace,Consolas,monospace;color:var(--fh);}
+  .fh-vs{flex:0 0 auto;display:flex;gap:14px;align-items:center;}
+  .fh-side{text-align:center;}
+  .fh-side .k{font:700 8px 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);}
+  .fh-side .v{font:800 16px ui-monospace,Consolas,monospace;}
+  .fh-side .v.pos{color:var(--bkn-good,#4ed48a);} .fh-side .v.neg{color:#ff6b6b;}
+  .fh-edge{flex:0 0 auto;text-align:right;min-width:70px;}
+  .fh-edge .v{font:800 16px ui-monospace,Consolas,monospace;color:var(--fh);}
+  .fh-edge .k{font:700 8px ui-monospace,monospace;text-transform:uppercase;color:var(--text-muted);}
+  .fh-flag{font:800 8px ui-monospace,monospace;letter-spacing:.03em;text-transform:uppercase;border-radius:4px;padding:2px 6px;background:rgba(45,212,191,.16);color:var(--fh);white-space:nowrap;}
+  .fh-grid{display:grid;grid-template-columns:1fr;gap:18px;}
+  @media(min-width:760px){.fh-grid{grid-template-columns:1fr 1fr;}}
+  .fh-col{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:13px 16px 6px;}
+  .fh-col h3{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 10px;}
+  .fh-trow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .fh-trow:last-child{border-bottom:0;}
+  .fh-trow .nm{flex:1 1 auto;font:700 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .fh-trow .mg{font:800 13px ui-monospace,monospace;}
+  .fh-trow .mg.pos{color:var(--bkn-good,#4ed48a);} .fh-trow .mg.neg{color:#ff6b6b;}
+  .fh-trow .hr{font:600 9.5px ui-monospace,monospace;color:var(--text-muted);white-space:nowrap;}
+</style>
+
+<div class="bkn fh" style="--bkn-accent:#2dd4bf;--accent:#2dd4bf;max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB &middot; Research{% if updated %} &middot; {{ updated }}{% endif %}</div>
+    <h1>First-Half <span class="accent">Starts</span></h1>
+    <div class="page-subtitle">Who comes out <b>fast</b> and who starts <b>slow</b> &mdash; from real quarter scores, and <b>venue-aware</b> (home starts and road starts tracked separately, because that&rsquo;s where it matters). A fast-starting home dog against a slow-starting road favorite can cover on cushion alone &mdash; the thing a talent-only rating can&rsquo;t see.</div>
+  </div>
+</div>
+
+{% if not available %}
+  <div class="bkn-empty">No quarter data yet &mdash; this fills in as the season&rsquo;s box scores accrue.</div>
+{% else %}
+
+<div class="bkn" style="--bkn-accent:#2dd4bf;max-width:none;margin-bottom:8px;">
+  <div class="bkn-sec">
+    <div class="bkn-sec-h"><span class="ic">&#9201;</span><h2>This Week &mdash; Start Mismatches</h2><span class="sub">each team&rsquo;s 1H margin AT ITS VENUE; dog starts faster = live for a cover or a 1H bet</span></div>
+    <div>
+      {% for m in matchups %}
+      <div class="fh-row">
+        <div class="fh-gm">
+          <div class="t">{{ m.away }} <span style="color:var(--text-muted);">@</span> {{ m.home }}</div>
+          <div class="s"><span class="ln">{{ m.home.split()[0] }} {{ '%+g'|format(m.spread) }}</span> &middot; dog: <b style="color:var(--text-bright);">{{ m.dog }}</b> {{ '(home)' if m.dog_home else '(road)' }}</div>
+        </div>
+        <div class="fh-vs">
+          <div class="fh-side"><div class="k">Dog start</div><div class="v {{ 'pos' if m.dog_start >= 0 else 'neg' }}">{{ '%+g'|format(m.dog_start) }}</div></div>
+          <div class="fh-side"><div class="k">Fav start</div><div class="v {{ 'pos' if m.fav_start >= 0 else 'neg' }}">{{ '%+g'|format(m.fav_start) }}</div></div>
+        </div>
+        <div class="fh-edge"><div class="v">{{ '%+g'|format(m.edge) }}</div><div class="k">1H edge</div></div>
+        {% if m.flag %}<span class="fh-flag">{{ m.flag }}</span>{% endif %}
+      </div>
+      {% else %}<div class="bkn-empty">No rated matchups this week.</div>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="fh-grid" style="margin-top:14px;">
+  <div class="fh-col">
+    <h3 style="color:var(--bkn-good,#4ed48a);">&#128293; Fastest Starters</h3>
+    {% for t in teams_fast %}
+    <div class="fh-trow"><span class="nm">{{ t.team }}</span><span class="hr">H {{ '%+g'|format(t.home_m) if t.home_m is not none else '&mdash;'|safe }} / R {{ '%+g'|format(t.away_m) if t.away_m is not none else '&mdash;'|safe }}</span><span class="mg pos">{{ '%+g'|format(t.h1_m) }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="fh-col">
+    <h3 style="color:#ff6b6b;">&#10052; Slowest Starters</h3>
+    {% for t in teams_slow %}
+    <div class="fh-trow"><span class="nm">{{ t.team }}</span><span class="hr">H {{ '%+g'|format(t.home_m) if t.home_m is not none else '&mdash;'|safe }} / R {{ '%+g'|format(t.away_m) if t.away_m is not none else '&mdash;'|safe }}</span><span class="mg neg">{{ '%+g'|format(t.h1_m) }}</span></div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="bkn-note" style="margin-top:18px;"><b>How to read it:</b> the number is a team&rsquo;s average <b>first-half point margin</b>; the H / R split is home vs road, and the matchup board uses each side at <b>its</b> venue. A big positive <b>1H edge</b> means the dog historically outscores early in the spot it&rsquo;s in &mdash; it can build a lead the points protect (Miss St +5 vs a road-slow Alabama was the case that prompted this). Honest: <b>early-season samples are small</b> (a team with one road game is noisy &mdash; check the H/R counts), and <b>first-half lines are priced</b>, so this is context and a 1H-bet finder, not a lock. Fastest/slowest built from {{ n_rated }} rated teams. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

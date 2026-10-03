@@ -726,7 +726,7 @@ PRO_ENDPOINTS = {
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
     'nfl_team_rankings_tool', 'nfl_wave_tool',
     'cfb_ats_streaks_tool', 'cfb_key_numbers_tool', 'cfb_pace_tool', 'cfb_board_tool',
-    'cfb_wave_tool', 'cfb_buy_low_tool',
+    'cfb_wave_tool', 'cfb_buy_low_tool', 'cfb_first_half_tool',
     'signal_report_tool',  # Learn layer -- how our captured signals actually graded
     'dashboard',
     'method_hub',
@@ -42252,6 +42252,104 @@ def cfb_buy_low_tool():
     (softer number); sell-high = weak team playing above it (inflated number). Regression read,
     not a prediction; joined to this week's line."""
     return render_template('cfb_buy_low.html', **build_cfb_buy_low_board())
+
+
+_CFB_PERIOD_CACHE = {}
+
+
+def build_cfb_period_context():
+    """CFB First-Half / First-Quarter board: who starts fast vs slow, from real quarter scores
+    -- the signal a talent-only model misses (a fast-starting home dog vs a slow-starting road
+    favorite, e.g. Miss St +5 vs Alabama). Reads the quarter line scores now captured in
+    cfb_2026_results.json; VENUE-AWARE (home vs road starts tracked separately, because that's
+    where the edge lives). This week's games are joined to each team's start profile at ITS
+    venue, and a dog that starts faster than the fav it's catching is flagged."""
+    import cfb_current_form as cff
+    from collections import defaultdict
+    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_2026_results.json')
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        return {'available': False, 'matchups': [], 'teams_fast': [], 'teams_slow': []}
+    if _CFB_PERIOD_CACHE.get('mt') != mt:
+        cff.clear_cache()
+        try:
+            games = json.load(open(path, encoding='utf-8')).get('games', [])
+        except (OSError, ValueError):
+            games = []
+        fbs = cff._fbs_teams()
+        agg = defaultdict(lambda: {'q1f': 0, 'q1a': 0, 'hf': 0, 'ha': 0, 'n': 0,
+                                   'home_m': 0, 'home_n': 0, 'away_m': 0, 'away_n': 0})
+        for g in games:
+            hq, aq = g.get('home_q'), g.get('away_q')
+            if not hq or not aq or len(hq) < 2 or len(aq) < 2:
+                continue
+            h, a = cff._norm(g['home']), cff._norm(g['away'])
+            for t, myq, opq, is_home in [(h, hq, aq, True), (a, aq, hq, False)]:
+                if t not in fbs:
+                    continue
+                d = agg[t]
+                hm = (myq[0] + myq[1]) - (opq[0] + opq[1])            # 1H margin this game
+                d['q1f'] += myq[0]; d['q1a'] += opq[0]
+                d['hf'] += myq[0] + myq[1]; d['ha'] += opq[0] + opq[1]; d['n'] += 1
+                if is_home:
+                    d['home_m'] += hm; d['home_n'] += 1
+                else:
+                    d['away_m'] += hm; d['away_n'] += 1
+        prof = {}
+        for t, d in agg.items():
+            if d['n'] < 2:
+                continue
+            n = d['n']
+            prof[t] = {'team': t.title(), 'n': n,
+                       'q1_m': round((d['q1f'] - d['q1a']) / n, 1),
+                       'h1_m': round((d['hf'] - d['ha']) / n, 1),
+                       'h1_for': round(d['hf'] / n, 1), 'h1_ag': round(d['ha'] / n, 1),
+                       'home_m': (round(d['home_m'] / d['home_n'], 1) if d['home_n'] else None),
+                       'away_m': (round(d['away_m'] / d['away_n'], 1) if d['away_n'] else None)}
+        _CFB_PERIOD_CACHE.update(mt=mt, prof=prof,
+                                 ranked=sorted(prof.values(), key=lambda x: -x['h1_m']))
+    prof = _CFB_PERIOD_CACHE['prof']
+    ranked = _CFB_PERIOD_CACHE['ranked']
+
+    matchups = []
+    try:
+        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+            sp = pd.to_numeric(g.get('spread'), errors='coerce')
+            if pd.isna(sp):
+                continue
+            a, h, hs = g.get('away'), g.get('home'), float(sp)
+            pa, ph = prof.get(cff._resolve(a)), prof.get(cff._resolve(h))
+            if not pa or not ph:
+                continue
+            dog_home = hs > 0
+            dog_name = (h if dog_home else a)
+            dp, fp = (ph, pa) if dog_home else (pa, ph)
+            # each side's start profile AT ITS VENUE (fall back to overall if no venue sample)
+            dog_start = (dp['home_m'] if dog_home else dp['away_m'])
+            fav_start = (fp['away_m'] if dog_home else fp['home_m'])
+            dog_start = dp['h1_m'] if dog_start is None else dog_start
+            fav_start = fp['h1_m'] if fav_start is None else fav_start
+            edge = round(dog_start - fav_start, 1)
+            matchups.append({
+                'away': a, 'home': h, 'spread': hs, 'dog': str(dog_name).split()[0],
+                'dog_home': dog_home, 'ap': pa, 'hp': ph,
+                'dog_start': dog_start, 'fav_start': fav_start, 'edge': edge,
+                'flag': ('dog starts faster' if edge >= 6 else ('fav starts faster' if edge <= -6 else ''))})
+    except Exception:
+        pass
+    matchups.sort(key=lambda x: -x['edge'])
+    return {'available': bool(ranked), 'matchups': matchups,
+            'teams_fast': ranked[:12], 'teams_slow': ranked[-12:][::-1],
+            'n_rated': len(prof), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
+@app.route('/tools/cfb-first-half')
+def cfb_first_half_tool():
+    """Quick Tool: CFB First-Half / First-Quarter board -- who starts fast vs slow (from real
+    quarter scores), venue-aware, with this week's start-profile mismatches flagged. The signal a
+    talent-only model misses; context, not a lock (1H lines are priced, early samples are small)."""
+    return render_template('cfb_first_half.html', **build_cfb_period_context())
 
 
 _SIGNAL_REPORT_CACHE = {}
