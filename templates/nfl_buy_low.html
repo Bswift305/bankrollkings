@@ -49,13 +49,13 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL &middot; Research{% if updated %} &middot; {{ updated }}{% endif %}</div>
     <h1>Buy Low <span class="accent">/</span> Sell High</h1>
-    <div class="page-subtitle">Where a player&rsquo;s <b>role</b> and his recent <b>box score</b> disagree &mdash; across <b>yards, catches, and carries</b> (each its own prop). <b>Buy Low</b> = the role is still strong but the recent numbers are down &mdash; the number may be fading the outcomes, not the usage. <b>Sell High</b> = big recent numbers on a thin role &mdash; production outrunning the opportunity that drives it. An <b>idea board</b>, not a &ldquo;he&rsquo;s due&rdquo; list.</div>
+    <div class="page-subtitle">Where a player&rsquo;s <b>role</b> and his recent <b>box score</b> disagree &mdash; across <b>passing, rushing/receiving yards, catches, and carries</b> (each its own prop). For a QB the &ldquo;role&rdquo; is pass <b>volume</b> (attempts/gm); for a skill player it&rsquo;s target or carry share. <b>Buy Low</b> = the role is still strong but the recent numbers are down &mdash; the number may be fading the outcomes, not the usage. <b>Sell High</b> = big recent numbers on a thin role &mdash; production outrunning the opportunity that drives it. An <b>idea board</b>, not a &ldquo;he&rsquo;s due&rdquo; list.</div>
   </div>
 </div>
 
 <div class="bl-ctrl">
   <span class="lb">Stat</span>
-  {% for s, lbl in [('all','All'),('yards','Yards'),('receptions','Receptions'),('carries','Carries')] %}<a class="bl-pill {{ 'on' if stat == s }}" href="/tools/nfl-buy-low?stat={{ s }}">{{ lbl }}</a>{% endfor %}
+  {% for s, lbl in [('all','All'),('passing','Passing'),('yards','Rush/Rec Yds'),('receptions','Receptions'),('carries','Carries')] %}<a class="bl-pill {{ 'on' if stat == s }}" href="/tools/nfl-buy-low?stat={{ s }}">{{ lbl }}</a>{% endfor %}
 </div>
 
 {% if not available %}

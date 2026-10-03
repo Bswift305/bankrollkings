@@ -30279,9 +30279,44 @@ _BL_LENSES = [
     {'key': 'rush_att', 'tag': 'Rush Att', 'unit': 'carries', 'role': 'back', 'dec': 1,
      'series': lambda g: g['carries'], 'active': lambda g: g['carries'] > 0,
      'min_season': 8.0, 'sell_recent': 12.0},
+    # QB lenses -- "opportunity" is pass VOLUME (attempts/gm); yards can diverge from it on
+    # efficiency swings, and attempts from the QB's own established volume on game script.
+    # buy_delta is gentler for QBs -- passing volume/yards swing less week-to-week than a
+    # receiver's, so a -20% dip almost never prints; -14/-15% is the comparable signal.
+    {'key': 'pass_yds', 'tag': 'Pass Yds', 'unit': 'pass yds', 'role': 'qb', 'dec': 0,
+     'series': lambda g: g['passing_yards'], 'active': lambda g: g['attempts'] > 0,
+     'min_season': 170, 'sell_recent': 260, 'buy_delta': -0.14},
+    {'key': 'pass_att', 'tag': 'Pass Att', 'unit': 'attempts', 'role': 'qb', 'dec': 1,
+     'series': lambda g: g['attempts'], 'active': lambda g: g['attempts'] > 0,
+     'min_season': 22, 'sell_recent': 34, 'buy_delta': -0.15},
 ]
-_BL_FILTERS = {'all': None, 'yards': {'rec_yds', 'scrim_yds'},
-               'receptions': {'receptions'}, 'carries': {'rush_att'}}
+_BL_FILTERS = {'all': None, 'yards': {'rec_yds', 'scrim_yds'}, 'receptions': {'receptions'},
+               'carries': {'rush_att'}, 'passing': {'pass_yds', 'pass_att'}}
+
+
+def _nfl_qb_opp(d):
+    """QB opportunity map for the Buy Low board -- QBs aren't on the usage board, so score the
+    sticky 'role' off pass VOLUME (attempts/gm): ~40 att = elite volume, ~18 = replacement. Same
+    0-100 scale as the usage score so it plugs into the same buy(>=55)/sell(<=40) gates."""
+    out = {}
+    pos_col = 'position' if 'position' in d.columns else None
+    team_col = 'team' if 'team' in d.columns else ('recent_team' if 'recent_team' in d.columns else None)
+    if not pos_col:
+        return out
+    qb = d[d[pos_col].astype(str).str.upper() == 'QB']
+    for name, g in qb.groupby('_full'):
+        ga = g[g['attempts'] > 0]
+        if len(ga) < 3 or not str(name).strip():
+            continue
+        att_pg = float(ga['attempts'].mean())
+        score = int(round(max(0.0, min(1.0, (att_pg - 18.0) / 22.0)) * 100))
+        role = 'High-volume' if att_pg >= 34 else ('Starter' if att_pg >= 27 else 'Low-volume')
+        team = str(g[team_col].mode().iloc[0]) if team_col and len(g[team_col].mode()) else ''
+        out[str(name)] = {'player': str(name), 'team': team, 'pos': 'QB', 'is_back': False,
+                          'is_qb': True, 'score': score, 'role': role,
+                          'metric': f'{att_pg:.0f} att/gm',
+                          'why': f'{att_pg:.0f} pass attempts/gm ({role.lower()})'}
+    return out
 
 
 def build_nfl_buy_low_board(limit=24, stat='all'):
@@ -30310,12 +30345,15 @@ def build_nfl_buy_low_board(limit=24, stat='all'):
     sig = (cur, len(log), len(opp))
     if _NFL_BUYLOW_CACHE.get('sig') != sig or 'buy_all' not in _NFL_BUYLOW_CACHE:
         d = log[pd.to_numeric(log['season'], errors='coerce') == cur].copy()
-        for c in ('week', 'rushing_yards', 'receiving_yards', 'receptions', 'targets', 'carries'):
+        for c in ('week', 'rushing_yards', 'receiving_yards', 'receptions', 'targets', 'carries',
+                  'passing_yards', 'attempts'):
             d[c] = pd.to_numeric(d.get(c), errors='coerce').fillna(0.0)
+        players = dict(opp)
+        players.update(_nfl_qb_opp(d))                     # add QBs (not on the usage board)
         buy_all, sell_all = [], []
-        for name, p in opp.items():
+        for name, p in players.items():
             g_all = d[d['_full'] == name].sort_values('week')
-            role = 'back' if p.get('is_back') else 'catch'
+            role = 'qb' if p.get('is_qb') else ('back' if p.get('is_back') else 'catch')
             opp_score = int(p.get('score') or 0)
             for lens in _BL_LENSES:
                 if lens['role'] != role:
@@ -30338,7 +30376,7 @@ def build_nfl_buy_low_board(limit=24, stat='all'):
                        'season_pg': fmt(season_pg), 'recent_pg': fmt(recent_pg), 'recent_w': rw,
                        'games': n, 'delta_pct': round(delta * 100), 'weekly': [fmt(x) for x in prod]}
                 gw = 'games' if rw != 1 else 'game'
-                if opp_score >= 55 and delta <= -0.20:
+                if opp_score >= 55 and delta <= lens.get('buy_delta', -0.20):
                     row['kind'] = 'buy_low'
                     row['why'] = (f"Role intact — {p.get('metric')} — but last {rw} {gw} "
                                   f"{fmt(recent_pg)} {lens['unit']} vs {fmt(season_pg)} season avg "
