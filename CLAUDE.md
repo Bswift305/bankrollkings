@@ -366,6 +366,7 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
 
 | Doc | For |
 |---|---|
+| `BANKROLL_KINGS_DOCTRINE.md` | **The why.** Product philosophy, the user loop, the four layers, the two feature filters, the do-not-build list. Judge new features against it |
 | `docs/PROJECT_MAP.md` | **Read first.** Living source-of-truth AND the shareable developer handoff; most of this file is distilled from it |
 | `DEVELOPER_HANDOFF.md`, `docs/developer_handoff.md` | **Retired → pointer stubs** to `docs/PROJECT_MAP.md` (were stale since June) |
 | `SITE_ARCHITECTURE.md` | Routes, templates, nav |

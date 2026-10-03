@@ -13,6 +13,11 @@ It should read like a betting-intelligence terminal, not a picks page. A strict 
 runs through it (see §7b): validated edge vs model lean vs context, "out-of-sample or it does
 not count," and no fabricated signals.
 
+> **The *why* lives in [`../BANKROLL_KINGS_DOCTRINE.md`](../BANKROLL_KINGS_DOCTRINE.md)** — the
+> product philosophy, the user loop (Discover → Evaluate → Build → Save → Track → Learn), the
+> four-layer architecture, and the two filters every feature must pass. Read it before proposing
+> features; this map is the *how it's wired*, the doctrine is the *why*.
+
 **Sport coverage:** NBA (flagship), MLB, WNBA, NFL, CFB/NCAAF — all full. Men's/Women's CBB —
 themed pre-season shells only (no real board data yet).
 
