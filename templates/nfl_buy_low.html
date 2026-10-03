@@ -57,6 +57,7 @@
   <span class="lb">Stat</span>
   {% for s, lbl in [('all','All'),('passing','Passing'),('yards','Rush/Rec Yds'),('receptions','Receptions'),('carries','Carries')] %}<a class="bl-pill {{ 'on' if stat == s }}" href="/tools/nfl-buy-low?stat={{ s }}">{{ lbl }}</a>{% endfor %}
 </div>
+<div style="font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-6px 0 18px;opacity:.9;">These are <b>opportunity lenses, not predictions</b> &mdash; a role/usage vs recent-output <b>divergence to investigate</b>, not a call that the next game clears. Take a name to Prop Floor &amp; a real line.</div>
 
 {% if not available %}
   <div class="bkn-empty">No divergences to show yet &mdash; the board needs a few weeks of games to compare recent production against role. It fills in as the season goes (season {{ season or '2026' }}).</div>
