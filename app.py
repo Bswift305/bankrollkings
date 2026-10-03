@@ -30262,85 +30262,109 @@ _NFL_USAGE_CACHE = {}
 _NFL_BUYLOW_CACHE = {}
 
 
-def build_nfl_buy_low_board(limit=24):
-    """Buy Low / Sell High -- OPPORTUNITY vs recent PRODUCTION divergence, for skill players.
-    Research Engine idea board, straight out of the ethos (streaks are priced; opportunity is
-    sticky; production chases opportunity). NOT 'he's due':
+# Buy Low / Sell High stat lenses -- each is a separately bettable prop. 'role': which players
+# it applies to; 'series': the per-game stat; 'active': a game the player was involved (so a DNP
+# week can't deflate the baseline into a fake spike); 'min_season': a bettable floor; 'sell_recent':
+# the absolute recent level that counts as "hot"; 'dec': display decimals (yards 0, counts 1).
+_BL_LENSES = [
+    {'key': 'rec_yds', 'tag': 'Rec Yds', 'unit': 'rec yds', 'role': 'catch', 'dec': 0,
+     'series': lambda g: g['receiving_yards'], 'active': lambda g: g['targets'] > 0,
+     'min_season': 18, 'sell_recent': 55},
+    {'key': 'receptions', 'tag': 'Receptions', 'unit': 'rec', 'role': 'catch', 'dec': 1,
+     'series': lambda g: g['receptions'], 'active': lambda g: g['targets'] > 0,
+     'min_season': 3.0, 'sell_recent': 5.0},
+    {'key': 'scrim_yds', 'tag': 'Scrim Yds', 'unit': 'scrimmage yds', 'role': 'back', 'dec': 0,
+     'series': lambda g: g['rushing_yards'] + g['receiving_yards'],
+     'active': lambda g: (g['targets'] > 0) | (g['carries'] > 0), 'min_season': 18, 'sell_recent': 55},
+    {'key': 'rush_att', 'tag': 'Rush Att', 'unit': 'carries', 'role': 'back', 'dec': 1,
+     'series': lambda g: g['carries'], 'active': lambda g: g['carries'] > 0,
+     'min_season': 8.0, 'sell_recent': 12.0},
+]
+_BL_FILTERS = {'all': None, 'yards': {'rec_yds', 'scrim_yds'},
+               'receptions': {'receptions'}, 'carries': {'rush_att'}}
+
+
+def build_nfl_buy_low_board(limit=24, stat='all'):
+    """Buy Low / Sell High -- OPPORTUNITY vs recent PRODUCTION divergence, for skill players,
+    across four stat lenses (rec yds / receptions for catchers, scrimmage yds / rush attempts for
+    backs -- each a separate prop). Research Engine idea board, straight out of the ethos (streaks
+    are priced; opportunity is sticky; production chases opportunity). NOT 'he's due':
       - **Buy Low**  = role/opportunity still strong, recent box score DOWN -> the market may be
         fading the outcomes, not the role, so you may get a better number.
       - **Sell High** = recent box score HOT but the role doesn't back it -> the market may be
         chasing production that isn't supported by usage.
-    Recent window is adaptive (last min(3, n-1) games) vs the player's season per-game, so it
-    works from week ~3 and sharpens as the season grows. Honest by construction: it surfaces a
-    DIVERGENCE to investigate, makes no prediction, and hands off to the Evaluate tools + a real
-    line. Opportunity score/role reused from build_nfl_usage_board."""
+    Recent window is adaptive (last min(3, n-1) active games) vs the player's season per-game, so
+    it works from week ~3 and sharpens as the season grows. A player can surface under more than
+    one stat (they're distinct bets). `stat` filters the view (all/yards/receptions/carries).
+    Honest by construction: surfaces a DIVERGENCE to investigate, makes no prediction, hands off
+    to the Evaluate tools + a real line. Opportunity score/role reused from build_nfl_usage_board."""
+    stat = stat if stat in _BL_FILTERS else 'all'
     log = _nfl_player_week_data()
     if log.empty:
-        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': None}
+        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': None, 'stat': stat}
     cur = int(pd.to_numeric(log['season'], errors='coerce').max())
     usage = build_nfl_usage_board(limit=600)
     if not usage.get('available'):
-        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': cur}
+        return {'available': False, 'buy_low': [], 'sell_high': [], 'season': cur, 'stat': stat}
     opp = {p['player']: p for p in usage['players'] if not p.get('is_def')}   # skill players only
     sig = (cur, len(log), len(opp))
-    if _NFL_BUYLOW_CACHE.get('sig') == sig and 'data' in _NFL_BUYLOW_CACHE:
-        return _NFL_BUYLOW_CACHE['data']
-    d = log[pd.to_numeric(log['season'], errors='coerce') == cur].copy()
-    for c in ('week', 'rushing_yards', 'receiving_yards', 'receptions', 'targets', 'carries'):
-        d[c] = pd.to_numeric(d.get(c), errors='coerce').fillna(0.0)
-    buy, sell = [], []
-    for name, p in opp.items():
-        g = d[d['_full'] == name].sort_values('week')
-        is_back = bool(p.get('is_back'))
-        # ACTIVE games only: a DNP/inactive week (no targets and no carries) is not a cold game
-        # and must not deflate the baseline into a fake spike. Keep games the player was involved.
-        active = (g['targets'] > 0) | (g['carries'] > 0) if is_back else (g['targets'] > 0)
-        g = g[active]
-        n = len(g)
-        if n < 3:
-            continue
-        prod = ((g['rushing_yards'] + g['receiving_yards']) if is_back else g['receiving_yards']).tolist()
-        unit = 'scrimmage yds' if is_back else 'rec yds'
-        season_pg = sum(prod) / n
-        if season_pg < 18:                                  # not a bettable yardage profile
-            continue
-        rw = min(3, n - 1)                                  # recent window (keeps >=1 earlier game)
-        recent_pg = sum(prod[-rw:]) / rw
-        delta = (recent_pg - season_pg) / season_pg
-        opp_score = int(p.get('score') or 0)
-        row = {'player': name, 'team': p.get('team'), 'pos': p.get('pos'),
-               'role': p.get('role'), 'opp_metric': p.get('metric'), 'opp_score': opp_score,
-               'opp_why': p.get('why'), 'unit': unit, 'season_pg': round(season_pg),
-               'recent_pg': round(recent_pg), 'recent_w': rw, 'games': n,
-               'delta_pct': round(delta * 100), 'weekly': [round(x) for x in prod]}
-        # Buy Low: strong role (opp>=55) + recent output >=20% below the season anchor.
-        if opp_score >= 55 and delta <= -0.20:
-            row['kind'] = 'buy_low'
-            row['why'] = (f"Role intact — {p.get('metric')} — but last {rw} "
-                          f"{'games' if rw != 1 else 'game'} {round(recent_pg)} {unit} vs "
-                          f"{round(season_pg)} season avg ({round(delta * 100)}%). The number may "
-                          f"be fading the box score, not the role.")
-            row['score'] = opp_score + min(-delta * 100, 60) * 0.5     # strong role + bigger dip first
-            buy.append(row)
-        # Sell High: real RECENT yardage (>=55/gm) on a THIN role (opp<=40, rotational/weak). The
-        # production is outrunning the usage -- the number may chase the box score the role won't
-        # sustain. Keyed to absolute recent output + low role (not the noisy 3-game delta, which a
-        # single blank week distorts); only flag players not already trending down.
-        elif recent_pg >= 55 and opp_score <= 40 and delta >= -0.05:
-            row['kind'] = 'sell_high'
-            row['why'] = (f"Last {rw} {'games' if rw != 1 else 'game'} {round(recent_pg)} {unit} on "
-                          f"only {p.get('metric')} ({p.get('role', '').lower()} role). The "
-                          f"production is outrunning the usage — the number may be chasing a box "
-                          f"score the role won't sustain.")
-            row['score'] = recent_pg + (45 - opp_score) * 1.2        # more yardage + thinner role first
-            sell.append(row)
-    buy.sort(key=lambda x: -x['score'])
-    sell.sort(key=lambda x: -x['score'])
-    data = {'available': bool(buy or sell), 'buy_low': buy[:limit], 'sell_high': sell[:limit],
-            'season': cur, 'n_buy': len(buy), 'n_sell': len(sell),
-            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
-    _NFL_BUYLOW_CACHE.update(sig=sig, data=data)
-    return data
+    if _NFL_BUYLOW_CACHE.get('sig') != sig or 'buy_all' not in _NFL_BUYLOW_CACHE:
+        d = log[pd.to_numeric(log['season'], errors='coerce') == cur].copy()
+        for c in ('week', 'rushing_yards', 'receiving_yards', 'receptions', 'targets', 'carries'):
+            d[c] = pd.to_numeric(d.get(c), errors='coerce').fillna(0.0)
+        buy_all, sell_all = [], []
+        for name, p in opp.items():
+            g_all = d[d['_full'] == name].sort_values('week')
+            role = 'back' if p.get('is_back') else 'catch'
+            opp_score = int(p.get('score') or 0)
+            for lens in _BL_LENSES:
+                if lens['role'] != role:
+                    continue
+                g = g_all[lens['active'](g_all)]
+                n = len(g)
+                if n < 3:
+                    continue
+                prod = lens['series'](g).tolist()
+                season_pg = sum(prod) / n
+                if season_pg < lens['min_season']:
+                    continue
+                rw = min(3, n - 1)
+                recent_pg = sum(prod[-rw:]) / rw
+                delta = (recent_pg - season_pg) / season_pg
+                fmt = (lambda v: int(round(v))) if lens['dec'] == 0 else (lambda v: round(v, 1))
+                row = {'player': name, 'team': p.get('team'), 'pos': p.get('pos'),
+                       'role': p.get('role'), 'opp_metric': p.get('metric'), 'opp_score': opp_score,
+                       'stat': lens['key'], 'stat_tag': lens['tag'], 'unit': lens['unit'],
+                       'season_pg': fmt(season_pg), 'recent_pg': fmt(recent_pg), 'recent_w': rw,
+                       'games': n, 'delta_pct': round(delta * 100), 'weekly': [fmt(x) for x in prod]}
+                gw = 'games' if rw != 1 else 'game'
+                if opp_score >= 55 and delta <= -0.20:
+                    row['kind'] = 'buy_low'
+                    row['why'] = (f"Role intact — {p.get('metric')} — but last {rw} {gw} "
+                                  f"{fmt(recent_pg)} {lens['unit']} vs {fmt(season_pg)} season avg "
+                                  f"({round(delta * 100)}%). The number may be fading the box score, "
+                                  f"not the role.")
+                    row['score'] = opp_score + min(-delta * 100, 60) * 0.5
+                    buy_all.append(row)
+                elif recent_pg >= lens['sell_recent'] and opp_score <= 40 and delta >= -0.05:
+                    row['kind'] = 'sell_high'
+                    row['why'] = (f"Last {rw} {gw} {fmt(recent_pg)} {lens['unit']} on only "
+                                  f"{p.get('metric')} ({p.get('role', '').lower()} role). The "
+                                  f"production is outrunning the usage — the number may be chasing a "
+                                  f"box score the role won't sustain.")
+                    # normalize sell score across stats so yards don't dwarf counts
+                    row['score'] = (recent_pg / lens['sell_recent']) * 40 + (45 - opp_score) * 1.2
+                    sell_all.append(row)
+        buy_all.sort(key=lambda x: -x['score'])
+        sell_all.sort(key=lambda x: -x['score'])
+        _NFL_BUYLOW_CACHE.update(sig=sig, buy_all=buy_all, sell_all=sell_all,
+                                 updated=datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'))
+    keys = _BL_FILTERS[stat]
+    buy = [r for r in _NFL_BUYLOW_CACHE['buy_all'] if keys is None or r['stat'] in keys]
+    sell = [r for r in _NFL_BUYLOW_CACHE['sell_all'] if keys is None or r['stat'] in keys]
+    return {'available': bool(buy or sell), 'buy_low': buy[:limit], 'sell_high': sell[:limit],
+            'season': cur, 'n_buy': len(buy), 'n_sell': len(sell), 'stat': stat,
+            'updated': _NFL_BUYLOW_CACHE.get('updated')}
 
 
 def build_nfl_usage_board(limit=40, min_games=1):
@@ -41890,8 +41914,9 @@ def nfl_buy_low_tool():
     and recent PRODUCTION (box score) diverge. Research Engine idea board: buy-low = strong
     role, cold outcomes (number may be fading the box score, not the role); sell-high = hot
     outcomes on a thin role (production outrunning usage). Surfaces a divergence to investigate
-    -- not a prediction."""
-    return render_template('nfl_buy_low.html', **build_nfl_buy_low_board())
+    -- not a prediction. `?stat=` filters the lens (all / yards / receptions / carries)."""
+    stat = request.args.get('stat') if request.args.get('stat') in _BL_FILTERS else 'all'
+    return render_template('nfl_buy_low.html', **build_nfl_buy_low_board(stat=stat))
 
 
 @app.route('/tools/nfl-floor')

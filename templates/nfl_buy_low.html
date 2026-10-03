@@ -36,6 +36,12 @@
   .bl-col.sell .bl-spark .b.last{background:var(--bkn-mid,#ffd166);}
   .bl-why{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:7px;}
   .bl-empty{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 0;}
+  .bl-ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:-2px 0 18px;}
+  .bl-ctrl .lb{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-right:3px;}
+  .bl-pill{font:700 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 13px;text-decoration:none;}
+  .bl-pill.on{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+  .bl-pill:hover{color:var(--text-bright);}
+  .bl-tag{font:800 8px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:2px 6px;background:rgba(255,255,255,.08);color:var(--text-bright);white-space:nowrap;}
 </style>
 
 <div class="bkn" style="max-width:none;">
@@ -43,8 +49,13 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL &middot; Research{% if updated %} &middot; {{ updated }}{% endif %}</div>
     <h1>Buy Low <span class="accent">/</span> Sell High</h1>
-    <div class="page-subtitle">Where a player&rsquo;s <b>role</b> and his recent <b>box score</b> disagree. <b>Buy Low</b> = the role is still strong but the yards are down lately &mdash; the number may be fading the outcomes, not the usage. <b>Sell High</b> = big recent yards on a thin role &mdash; production outrunning the opportunity that drives it. This is an <b>idea board</b>, not a &ldquo;he&rsquo;s due&rdquo; list.</div>
+    <div class="page-subtitle">Where a player&rsquo;s <b>role</b> and his recent <b>box score</b> disagree &mdash; across <b>yards, catches, and carries</b> (each its own prop). <b>Buy Low</b> = the role is still strong but the recent numbers are down &mdash; the number may be fading the outcomes, not the usage. <b>Sell High</b> = big recent numbers on a thin role &mdash; production outrunning the opportunity that drives it. An <b>idea board</b>, not a &ldquo;he&rsquo;s due&rdquo; list.</div>
   </div>
+</div>
+
+<div class="bl-ctrl">
+  <span class="lb">Stat</span>
+  {% for s, lbl in [('all','All'),('yards','Yards'),('receptions','Receptions'),('carries','Carries')] %}<a class="bl-pill {{ 'on' if stat == s }}" href="/tools/nfl-buy-low?stat={{ s }}">{{ lbl }}</a>{% endfor %}
 </div>
 
 {% if not available %}
@@ -54,12 +65,13 @@
   {# ---------- BUY LOW ---------- #}
   <div class="bl-col buy">
     <div class="bl-head"><span class="dot"></span><h2>Buy Low</h2><span class="bl-role" style="margin-left:auto;">{{ n_buy }} player{{ '' if n_buy == 1 else 's' }}</span></div>
-    <div class="bl-sub">Role intact, outcomes cold. The usage still says featured; the yards haven&rsquo;t followed <i>yet</i>.</div>
+    <div class="bl-sub">Role intact, outcomes cold. The usage still says featured; the production hasn&rsquo;t followed <i>yet</i>.</div>
     {% for x in buy_low %}
     <div class="bl-row">
       <div class="bl-top">
         <span class="bl-nm">{{ x.player }}</span><span class="bl-pos">{{ x.pos }}</span>
         <span class="bl-role">{{ x.role }} &middot; {{ x.opp_metric }}</span>
+        <span class="bl-tag">{{ x.stat_tag }}</span>
         <span class="bl-delta dn">{{ x.delta_pct }}%</span>
       </div>
       <div class="bl-nums">
@@ -79,13 +91,14 @@
   {# ---------- SELL HIGH ---------- #}
   <div class="bl-col sell">
     <div class="bl-head"><span class="dot"></span><h2>Sell High</h2><span class="bl-role" style="margin-left:auto;">{{ n_sell }} player{{ '' if n_sell == 1 else 's' }}</span></div>
-    <div class="bl-sub">Hot yards on a thin role. The box score is outrunning the usage that would sustain it.</div>
+    <div class="bl-sub">Hot production on a thin role. The box score is outrunning the usage that would sustain it.</div>
     {% for x in sell_high %}
     <div class="bl-row">
       <div class="bl-top">
         <span class="bl-nm">{{ x.player }}</span><span class="bl-pos">{{ x.pos }}</span>
         <span class="bl-role">{{ x.role }} &middot; {{ x.opp_metric }}</span>
-        <span class="bl-delta up">+{{ x.delta_pct }}%</span>
+        <span class="bl-tag">{{ x.stat_tag }}</span>
+        <span class="bl-delta up">{{ '%+d'|format(x.delta_pct) }}%</span>
       </div>
       <div class="bl-nums">
         <div class="bl-stat"><span class="k">Last {{ x.recent_w }}</span><span class="v">{{ x.recent_pg }}<small> {{ x.unit }}</small></span></div>
