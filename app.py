@@ -42152,6 +42152,9 @@ def cfb_regression_tool():
     return render_template('cfb_regression.html', **build_cfb_regression_context())
 
 
+_CFB_BUYLOW_MTIME = {}
+
+
 def build_cfb_buy_low_board(limit=18):
     """CFB Buy Low / Sell High at the TEAM level (college player props are too thin -- team
     props + game lines is the college lane). The lens analog: schedule-adjusted QUALITY (our
@@ -42167,6 +42170,14 @@ def build_cfb_buy_low_board(limit=18):
     recent slate isn't mistaken for a dip; early-season samples are small and the market prices
     quality too. Joined to this week's line where there's a game. Reuses cfb_current_form."""
     import cfb_current_form as cff
+    # cfb_current_form caches ratings with lru_cache -> clear it when the inputs change, or prod
+    # serves last-deploy ratings (same guard Wave Watch uses).
+    scen = os.path.join(BASE_DIR, 'data', 'scenarios')
+    sig = tuple(os.path.getmtime(os.path.join(scen, f)) if os.path.exists(os.path.join(scen, f)) else 0
+                for f in ('cfb_2026_results.json', 'cfb_power.json'))
+    if _CFB_BUYLOW_MTIME.get('sig') != sig:
+        cff.clear_cache()
+        _CFB_BUYLOW_MTIME['sig'] = sig
     teams = cff.rated_teams()
     if not teams:
         return {'available': False, 'buy_low': [], 'sell_high': []}
