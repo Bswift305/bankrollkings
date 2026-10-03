@@ -1,0 +1,100 @@
+{% set active_page = 'cfb_buy_low' %}
+{% set active_sport = 'ncaaf' %}
+{% extends "bk_base.html" %}
+{% block title %}CFB Buy Low / Sell High - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .cb{--cb-accent:#2dd4bf;}
+  .cb-grid{display:grid;grid-template-columns:1fr;gap:18px;}
+  @media(min-width:900px){.cb-grid{grid-template-columns:1fr 1fr;}}
+  .cb-col{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:15px 16px 8px;}
+  .cb-col.buy{border-color:rgba(45,212,191,.38);}
+  .cb-col.sell{border-color:rgba(255,209,102,.38);}
+  .cb-head{display:flex;align-items:baseline;gap:9px;margin-bottom:3px;}
+  .cb-head h2{font:800 16px 'Helvetica Neue',Arial,sans-serif;margin:0;color:var(--text-bright);}
+  .cb-head .dot{width:9px;height:9px;border-radius:50%;}
+  .cb-col.buy .dot{background:var(--cb-accent);} .cb-col.sell .dot{background:var(--bkn-mid,#ffd166);}
+  .cb-sub{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:12px;}
+  .cb-row{padding:12px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .cb-row:last-child{border-bottom:0;}
+  .cb-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .cb-nm{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .cb-rec{font:700 9px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 5px;}
+  .cb-srs{font:800 9px ui-monospace,monospace;letter-spacing:.03em;text-transform:uppercase;border-radius:4px;padding:2px 6px;background:rgba(255,255,255,.07);color:var(--text-bright);white-space:nowrap;}
+  .cb-tag{font:700 8px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:2px 5px;white-space:nowrap;}
+  .cb-tag.reg{background:rgba(255,209,102,.16);color:var(--bkn-mid,#ffd166);}
+  .cb-tag.sur{background:rgba(45,212,191,.16);color:var(--cb-accent);}
+  .cb-resid{margin-left:auto;font:800 14px ui-monospace,Consolas,monospace;}
+  .cb-resid.dn{color:var(--cb-accent);}  /* under its level = the buy-low signal */
+  .cb-resid.up{color:var(--bkn-mid,#ffd166);}  /* over its level = the sell-high signal */
+  .cb-resid small{display:block;font:600 8px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;text-align:right;}
+  .cb-next{font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:7px 0 0;}
+  .cb-next b{color:var(--text-bright);}
+  .cb-next .ln{font:800 11px ui-monospace,Consolas,monospace;color:var(--cb-accent);}
+  .cb-marg{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
+  .cb-marg .m{font:700 9px ui-monospace,monospace;border-radius:3px;padding:1px 4px;}
+  .cb-marg .m.w{background:rgba(45,212,191,.14);color:var(--cb-accent);}
+  .cb-marg .m.l{background:rgba(255,107,107,.14);color:#ff6b6b;}
+  .cb-why{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:7px;}
+  .cb-empty{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 0;}
+</style>
+
+<div class="bkn cb" style="--bkn-accent:#2dd4bf;--accent:#2dd4bf;max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; CFB &middot; Research{% if updated %} &middot; {{ updated }}{% endif %}</div>
+    <h1>Buy Low <span class="accent">/</span> Sell High <span style="font:700 14px ui-monospace,monospace;color:var(--text-muted);">&middot; teams</span></h1>
+    <div class="page-subtitle">College player props are thin, so this runs at the <b>team</b> level. The sticky signal is <b>quality</b> &mdash; our opponent-adjusted rating (SRS). The noisy one is how a team has played <b>against that rating</b> lately. <b>Buy Low</b> = a good team playing below its level recently (the number may come softer). <b>Sell High</b> = a weak team playing above it (the number may be inflated). A <b>regression read</b>, not a &ldquo;due&rdquo; call.</div>
+  </div>
+</div>
+
+{% if not available %}
+  <div class="bkn-empty">No divergences yet &mdash; this needs a few weeks of games to rate teams and compare recent play against the rating. It fills in as the season goes.</div>
+{% else %}
+<div class="cb-grid">
+  {# ---------- BUY LOW ---------- #}
+  <div class="cb-col buy">
+    <div class="cb-head"><span class="dot"></span><h2>Buy Low</h2><span class="cb-sub" style="margin:0 0 0 auto;">{{ n_buy }} team{{ '' if n_buy == 1 else 's' }}</span></div>
+    <div class="cb-sub">Good teams playing <i>below</i> their rating lately. The market may be fading recent results, not the team.</div>
+    {% for x in buy_low %}
+    <div class="cb-row">
+      <div class="cb-top">
+        <span class="cb-nm">{{ x.team }}</span><span class="cb-rec">{{ x.record }}</span>
+        <span class="cb-srs">SRS {{ '%+.0f'|format(x.srs) }}</span>
+        {% if x.prior_label == 'regressed' %}<span class="cb-tag reg">sliding</span>{% elif x.prior_label == 'surging' %}<span class="cb-tag sur">surging</span>{% endif %}
+        <span class="cb-resid dn">{{ '%+.0f'|format(x.recent_resid) }}<small>vs rating</small></span>
+      </div>
+      {% if x.next and x.next.spread is not none %}<div class="cb-next">This week: {{ 'vs' if x.next.home else '@' }} <b>{{ x.next.opp }}</b> <span class="ln">{{ '%+g'|format(x.next.spread) }}</span>{% if x.margins %}<span class="cb-marg">{% for m in x.margins[-4:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span>{% endif %}</div>{% elif x.margins %}<div class="cb-next">Recent margins: <span class="cb-marg">{% for m in x.margins[-5:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span></div>{% endif %}
+      <div class="cb-why">{{ x.why }}</div>
+    </div>
+    {% else %}
+    <div class="cb-empty">No buy-low teams on the board right now.</div>
+    {% endfor %}
+  </div>
+
+  {# ---------- SELL HIGH ---------- #}
+  <div class="cb-col sell">
+    <div class="cb-head"><span class="dot"></span><h2>Sell High</h2><span class="cb-sub" style="margin:0 0 0 auto;">{{ n_sell }} team{{ '' if n_sell == 1 else 's' }}</span></div>
+    <div class="cb-sub">Weak teams playing <i>above</i> their rating lately. The record may be flattering a level the underlying doesn&rsquo;t support.</div>
+    {% for x in sell_high %}
+    <div class="cb-row">
+      <div class="cb-top">
+        <span class="cb-nm">{{ x.team }}</span><span class="cb-rec">{{ x.record }}</span>
+        <span class="cb-srs">SRS {{ '%+.0f'|format(x.srs) }}</span>
+        <span class="cb-resid up">{{ '%+.0f'|format(x.recent_resid) }}<small>vs rating</small></span>
+      </div>
+      {% if x.next and x.next.spread is not none %}<div class="cb-next">This week: {{ 'vs' if x.next.home else '@' }} <b>{{ x.next.opp }}</b> <span class="ln">{{ '%+g'|format(x.next.spread) }}</span>{% if x.margins %}<span class="cb-marg">{% for m in x.margins[-4:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span>{% endif %}</div>{% elif x.margins %}<div class="cb-next">Recent margins: <span class="cb-marg">{% for m in x.margins[-5:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span></div>{% endif %}
+      <div class="cb-why">{{ x.why }}</div>
+    </div>
+    {% else %}
+    <div class="cb-empty">No sell-high teams on the board right now.</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="bkn-note" style="margin-top:18px;"><b>How to use this &mdash; honestly:</b> a <b>Research Engine</b> idea board, not a prediction. &ldquo;Quality&rdquo; is our opponent-adjusted <b>SRS</b> (points vs an average team, schedule-controlled); the recent read is each game&rsquo;s margin vs the <b>SRS-expected</b> margin, so a tough recent slate isn&rsquo;t mistaken for a slump. A team playing below its rating often gets a <b>softer number</b> than its real level &mdash; and a weak team on a hot run often gets an <b>inflated</b> one &mdash; but the market prices quality too, and <b>early-season samples are small</b>. Confirm on the <b>Matchup Edge Card</b> and <b>Best Spots</b>, and shop the number before you bet it. 21+</div>
+{% endif %}
+</div>
+{% endblock %}

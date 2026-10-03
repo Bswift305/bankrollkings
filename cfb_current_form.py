@@ -182,6 +182,12 @@ def srs_rating(team: str):
     return _srs().get(_resolve(team))
 
 
+def rated_teams() -> list:
+    """All FBS teams with a current SRS rating (normalized CFBD names), strongest first."""
+    r = _srs()
+    return sorted(r.keys(), key=lambda t: -r[t])
+
+
 @lru_cache(maxsize=1)
 def _srs_observed() -> dict:
     """Each FBS team's PRIOR-FREE observed rating: avg(neutral capped margin + opponent's

@@ -726,7 +726,7 @@ PRO_ENDPOINTS = {
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
     'nfl_team_rankings_tool', 'nfl_wave_tool',
     'cfb_ats_streaks_tool', 'cfb_key_numbers_tool', 'cfb_pace_tool', 'cfb_board_tool',
-    'cfb_wave_tool',
+    'cfb_wave_tool', 'cfb_buy_low_tool',
     'dashboard',
     'method_hub',
     'injury_report_tool',
@@ -42150,6 +42150,95 @@ def cfb_regression_tool():
     """Quick Tool: CFB Regression Watch — who's due to fall/rise after a lucky or
     unlucky 2025 (record vs yards, turnovers, one-score games) + 2026 experience."""
     return render_template('cfb_regression.html', **build_cfb_regression_context())
+
+
+def build_cfb_buy_low_board(limit=18):
+    """CFB Buy Low / Sell High at the TEAM level (college player props are too thin -- team
+    props + game lines is the college lane). The lens analog: schedule-adjusted QUALITY (our
+    SRS -- opponent-adjusted points vs an average team) is the sticky 'opportunity'; how a team
+    has played RELATIVE TO THAT RATING lately is the noisy 'production'.
+      - Buy Low  = a genuinely good team (top SRS) playing BELOW its rating the last few weeks
+        -> the market may be fading recent results, so the number could come softer than the
+        team's real level.
+      - Sell High = a weak/mid team playing ABOVE its rating lately (flattering results) -> the
+        market may warm to a run the underlying doesn't support.
+    Honest: a regression-to-the-mean read, NOT a prediction. The recent residual is
+    opponent-adjusted (each game's margin vs the SRS-expected margin, with HFA), so a tough
+    recent slate isn't mistaken for a dip; early-season samples are small and the market prices
+    quality too. Joined to this week's line where there's a game. Reuses cfb_current_form."""
+    import cfb_current_form as cff
+    teams = cff.rated_teams()
+    if not teams:
+        return {'available': False, 'buy_low': [], 'sell_high': []}
+    nq = len(teams)
+    qscore = {t: (round((1 - i / (nq - 1)) * 100) if nq > 1 else 50) for i, t in enumerate(teams)}
+    home_edge = getattr(cff, 'HOME_EDGE', 2.5)
+    fcs_anchor = getattr(cff, 'FCS_ANCHOR', -17.0)
+    slate = {}                                             # team -> {opp, home, spread(team's own)}
+    try:
+        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+            a, h = g.get('away'), g.get('home')
+            hs = pd.to_numeric(g.get('spread'), errors='coerce')   # home spread
+            hs = None if pd.isna(hs) else float(hs)
+            if h:
+                slate[cff._resolve(h)] = {'opp': a, 'home': True, 'spread': hs}
+            if a:
+                slate[cff._resolve(a)] = {'opp': h, 'home': False, 'spread': (None if hs is None else -hs)}
+    except Exception:
+        pass
+    buy, sell = [], []
+    for t in teams:
+        f = cff.team_form(t)
+        ng, srs = f.get('games', 0), f.get('srs')
+        if ng < 3 or srs is None:
+            continue
+        q = qscore.get(t, 50)
+        log = f['log']
+        rw = min(3, ng - 1)
+        resid = []
+        for gm in log[-rw:]:                               # opponent-adjusted recent residual
+            opp_srs = cff.srs_rating(gm['opp'])
+            if opp_srs is None:
+                opp_srs = fcs_anchor
+            hfa = 0.0 if gm['site'] == 'N' else (home_edge if gm['site'] == 'H' else -home_edge)
+            resid.append(gm['margin'] - (srs - opp_srs + hfa))
+        avg_resid = sum(resid) / len(resid)
+        nx = slate.get(t)
+        row = {'team': t.title(), 'srs': round(srs, 1), 'quality': q, 'record': f.get('record'),
+               'avg_margin': f.get('avg_margin'), 'recent_resid': round(avg_resid, 1),
+               'recent_w': rw, 'games': ng,
+               'prior_label': (cff.prior_divergence(t) or {}).get('label'),
+               'next': ({'opp': str(nx['opp']).title() if nx.get('opp') else None,
+                         'home': nx['home'], 'spread': nx['spread']} if nx else None),
+               'margins': [gm['margin'] for gm in log]}
+        if q >= 60 and avg_resid <= -7:
+            row['kind'] = 'buy_low'
+            row['why'] = (f"Top-tier by our ratings (SRS {srs:+.0f}) but the last {rw} games ran "
+                          f"~{abs(round(avg_resid))} pts UNDER that level. The number may be fading "
+                          f"the recent results, not the team.")
+            row['score'] = q + min(-avg_resid, 30)
+            buy.append(row)
+        elif q <= 45 and avg_resid >= 9:
+            row['kind'] = 'sell_high'
+            row['why'] = (f"Only mid/below by our ratings (SRS {srs:+.0f}) but the last {rw} games "
+                          f"ran ~{round(avg_resid)} pts OVER that level. The market may warm to a "
+                          f"run the underlying doesn't back.")
+            row['score'] = avg_resid + (55 - q)
+            sell.append(row)
+    buy.sort(key=lambda x: -x['score'])
+    sell.sort(key=lambda x: -x['score'])
+    return {'available': bool(buy or sell), 'buy_low': buy[:limit], 'sell_high': sell[:limit],
+            'n_buy': len(buy), 'n_sell': len(sell),
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
+@app.route('/tools/cfb-buy-low')
+def cfb_buy_low_tool():
+    """Quick Tool: CFB Buy Low / Sell High -- team-level quality (opponent-adjusted SRS) vs
+    recent performance against that rating. Buy-low = good team playing below its level lately
+    (softer number); sell-high = weak team playing above it (inflated number). Regression read,
+    not a prediction; joined to this week's line."""
+    return render_template('cfb_buy_low.html', **build_cfb_buy_low_board())
 
 
 @app.route('/tools/pick-analyzer')
