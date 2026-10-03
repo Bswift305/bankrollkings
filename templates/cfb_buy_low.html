@@ -37,6 +37,9 @@
   .cb-marg .m{font:700 9px ui-monospace,monospace;border-radius:3px;padding:1px 4px;}
   .cb-marg .m.w{background:rgba(45,212,191,.14);color:var(--cb-accent);}
   .cb-marg .m.l{background:rgba(255,107,107,.14);color:#ff6b6b;}
+  .cb-venue{font:600 10.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:6px;}
+  .cb-venue b{color:var(--text-bright);font-weight:800;}
+  .cb-venue b.hl{color:var(--cb-accent);border-bottom:1.5px solid var(--cb-accent);}
   .cb-why{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:7px;}
   .cb-empty{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 0;}
 </style>
@@ -69,6 +72,7 @@
         <span class="cb-resid dn">{{ '%+.0f'|format(x.recent_resid) }}<small>vs rating</small></span>
       </div>
       {% if x.next and x.next.spread is not none %}<div class="cb-next">This week: {{ 'vs' if x.next.home else '@' }} <b>{{ x.next.opp }}</b> <span class="ln">{{ '%+g'|format(x.next.spread) }}</span>{% if x.margins %}<span class="cb-marg">{% for m in x.margins[-4:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span>{% endif %}</div>{% elif x.margins %}<div class="cb-next">Recent margins: <span class="cb-marg">{% for m in x.margins[-5:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span></div>{% endif %}
+      {% if x.home_resid is not none or x.road_resid is not none %}<div class="cb-venue">By venue vs rating: <b class="{{ 'hl' if x.next and x.next.home }}">Home {{ '%+g'|format(x.home_resid) if x.home_resid is not none else '&ndash;'|safe }}</b> &middot; <b class="{{ 'hl' if x.next and not x.next.home }}">Road {{ '%+g'|format(x.road_resid) if x.road_resid is not none else '&ndash;'|safe }}</b>{% if x.venue_note %} &middot; {{ x.venue_note }}{% endif %}</div>{% endif %}
       <div class="cb-why">{{ x.why }}</div>
     </div>
     {% else %}
@@ -88,6 +92,7 @@
         <span class="cb-resid up">{{ '%+.0f'|format(x.recent_resid) }}<small>vs rating</small></span>
       </div>
       {% if x.next and x.next.spread is not none %}<div class="cb-next">This week: {{ 'vs' if x.next.home else '@' }} <b>{{ x.next.opp }}</b> <span class="ln">{{ '%+g'|format(x.next.spread) }}</span>{% if x.margins %}<span class="cb-marg">{% for m in x.margins[-4:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span>{% endif %}</div>{% elif x.margins %}<div class="cb-next">Recent margins: <span class="cb-marg">{% for m in x.margins[-5:] %}<span class="m {{ 'w' if m > 0 else 'l' }}">{{ '%+d'|format(m) }}</span>{% endfor %}</span></div>{% endif %}
+      {% if x.home_resid is not none or x.road_resid is not none %}<div class="cb-venue">By venue vs rating: <b class="{{ 'hl' if x.next and x.next.home }}">Home {{ '%+g'|format(x.home_resid) if x.home_resid is not none else '&ndash;'|safe }}</b> &middot; <b class="{{ 'hl' if x.next and not x.next.home }}">Road {{ '%+g'|format(x.road_resid) if x.road_resid is not none else '&ndash;'|safe }}</b>{% if x.venue_note %} &middot; {{ x.venue_note }}{% endif %}</div>{% endif %}
       <div class="cb-why">{{ x.why }}</div>
     </div>
     {% else %}

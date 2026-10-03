@@ -42216,10 +42216,30 @@ def build_cfb_buy_low_board(limit=18):
             hfa = 0.0 if gm['site'] == 'N' else (home_edge if gm['site'] == 'H' else -home_edge)
             resid.append(gm['margin'] - (srs - opp_srs + hfa))
         avg_resid = sum(resid) / len(resid)
+        # VENUE SPLIT: the same opponent-adjusted residual, but home games vs road games -- a
+        # slump/surge is often venue-specific, and what matters is where they play NEXT.
+        home_r, road_r = [], []
+        for gm in log:
+            o = cff.srs_rating(gm['opp'])
+            o = fcs_anchor if o is None else o
+            hfa = 0.0 if gm['site'] == 'N' else (home_edge if gm['site'] == 'H' else -home_edge)
+            r = gm['margin'] - (srs - o + hfa)
+            (home_r if gm['site'] == 'H' else road_r if gm['site'] == 'A' else []).append(r)
+        home_resid = round(sum(home_r) / len(home_r), 1) if home_r else None
+        road_resid = round(sum(road_r) / len(road_r), 1) if road_r else None
         nx = slate.get(t)
+        # the residual at the venue they play NEXT -- the relevant one
+        venue_resid, venue_note = None, None
+        if nx is not None:
+            venue_resid = home_resid if nx.get('home') else road_resid
+            if venue_resid is not None:
+                venue_note = (f"plays {'home' if nx.get('home') else 'on the road'} next, "
+                              f"where it's been {venue_resid:+g} vs its rating")
         row = {'team': t.title(), 'srs': round(srs, 1), 'quality': q, 'record': f.get('record'),
                'avg_margin': f.get('avg_margin'), 'recent_resid': round(avg_resid, 1),
                'recent_w': rw, 'games': ng,
+               'home_resid': home_resid, 'road_resid': road_resid, 'venue_resid': venue_resid,
+               'venue_note': venue_note,
                'prior_label': (cff.prior_divergence(t) or {}).get('label'),
                'next': ({'opp': str(nx['opp']).title() if nx.get('opp') else None,
                          'home': nx['home'], 'spread': nx['spread']} if nx else None),
