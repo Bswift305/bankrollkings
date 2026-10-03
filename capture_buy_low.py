@@ -25,9 +25,31 @@ from app import build_nfl_buy_low_board, build_cfb_buy_low_board
 BASE_DIR = Path(__file__).resolve().parent
 OUT_PATH = BASE_DIR / "data" / "tracking" / "BuyLow_Archive.csv"
 
-COLS = ["SnapshotDate", "Season", "Sport", "Kind", "Subject", "Team", "Stat", "Score",
-        "SeasonVal", "RecentVal", "RecentW", "Delta", "Note", "Opponent", "OppHome",
-        "Line", "Why"]
+COLS = ["SnapshotDate", "Season", "Sport", "Kind", "Subject", "Team", "Stat", "StatKey",
+        "AsOfWeek", "Score", "SeasonVal", "RecentVal", "RecentW", "Delta", "Note",
+        "Opponent", "OppHome", "Line", "Why"]
+
+
+def _nfl_asof_week() -> int:
+    """Latest NFL week present in the data at snapshot -- the grading cutoff (outcomes come
+    from weeks AFTER this)."""
+    try:
+        from app import _nfl_player_week_data
+        log = _nfl_player_week_data()
+        cur = int(pd.to_numeric(log["season"], errors="coerce").max())
+        sub = log[pd.to_numeric(log["season"], errors="coerce") == cur]
+        return int(pd.to_numeric(sub["week"], errors="coerce").max())
+    except Exception:
+        return 0
+
+
+def _cfb_asof_week() -> int:
+    try:
+        import cfb_current_form as cff
+        weeks = [g.get("week") for g in cff._games() if g.get("week") is not None]
+        return int(max(weeks)) if weeks else 0
+    except Exception:
+        return 0
 
 
 def _eastern_today() -> str:
@@ -46,11 +68,13 @@ def _nfl_rows(snap: str) -> list:
         print(f"[capture_buy_low] NFL board error: {exc}")
         return out
     season = b.get("season") or 2026
+    asof = _nfl_asof_week()
     for kind in ("buy_low", "sell_high"):
         for x in b.get("buy_low" if kind == "buy_low" else "sell_high", []):
             out.append({
                 "SnapshotDate": snap, "Season": season, "Sport": "NFL", "Kind": kind,
                 "Subject": x.get("player"), "Team": x.get("team"), "Stat": x.get("stat_tag"),
+                "StatKey": x.get("stat"), "AsOfWeek": asof,
                 "Score": x.get("opp_score"), "SeasonVal": x.get("season_pg"),
                 "RecentVal": x.get("recent_pg"), "RecentW": x.get("recent_w"),
                 "Delta": x.get("delta_pct"), "Note": x.get("role"),
@@ -66,12 +90,14 @@ def _cfb_rows(snap: str) -> list:
     except Exception as exc:
         print(f"[capture_buy_low] CFB board error: {exc}")
         return out
+    asof = _cfb_asof_week()
     for kind in ("buy_low", "sell_high"):
         for x in b.get("buy_low" if kind == "buy_low" else "sell_high", []):
             nx = x.get("next") or {}
             out.append({
                 "SnapshotDate": snap, "Season": 2026, "Sport": "CFB", "Kind": kind,
                 "Subject": x.get("team"), "Team": x.get("team"), "Stat": "Team",
+                "StatKey": "team", "AsOfWeek": asof,
                 "Score": x.get("quality"), "SeasonVal": x.get("srs"),
                 "RecentVal": x.get("recent_resid"), "RecentW": x.get("recent_w"),
                 "Delta": x.get("recent_resid"), "Note": x.get("prior_label"),

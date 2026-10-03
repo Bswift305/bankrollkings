@@ -127,6 +127,12 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # lens) so the opportunity-vs-recent-production lens can be GRADED later -- the honest
         # bridge to proving it works. Idempotent one snapshot/day -> BuyLow_Archive.csv.
         ("Buy Low / Sell High capture", _python("capture_buy_low.py"), 240),
+        # Grade every captured signal (reusable Signal->Resolve->Measure->Scoreboard framework):
+        # resolves each archived buy-low/sell-high against the subject's post-snapshot games
+        # (NFL stat reversion, CFB ATS cover) -> Signal_Grades.csv + _Summary.json. Re-grades the
+        # whole archive each run so PENDING resolves as games fill in. Nothing claimed until the
+        # sample is real and out-of-sample.
+        ("Signal grading", _python("grade_signals.py"), 240),
         # Grade the archived prop lines against real results (all categories, incl. defense
         # + computed props). Re-grades the whole archive each run so PENDING games resolve
         # as gamelogs fill in -> NFL_PropLines_Graded.csv (the streak/heat-map + scoreboard
