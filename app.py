@@ -42298,8 +42298,9 @@ def build_cfb_period_context():
         except (OSError, ValueError):
             games = []
         fbs = cff._fbs_teams()
-        agg = defaultdict(lambda: {'q1f': 0, 'q1a': 0, 'hf': 0, 'ha': 0, 'n': 0,
-                                   'home_m': 0, 'home_n': 0, 'away_m': 0, 'away_n': 0})
+        agg = defaultdict(lambda: {'q1': 0, 'h1': 0, 'h2': 0, 'q4': 0, 'n': 0, 'n2': 0,
+                                   'h1_home': 0, 'h1_home_n': 0, 'h1_away': 0, 'h1_away_n': 0,
+                                   'h2_home': 0, 'h2_home_n': 0, 'h2_away': 0, 'h2_away_n': 0})
         for g in games:
             hq, aq = g.get('home_q'), g.get('away_q')
             if not hq or not aq or len(hq) < 2 or len(aq) < 2:
@@ -42309,26 +42310,41 @@ def build_cfb_period_context():
                 if t not in fbs:
                     continue
                 d = agg[t]
-                hm = (myq[0] + myq[1]) - (opq[0] + opq[1])            # 1H margin this game
-                d['q1f'] += myq[0]; d['q1a'] += opq[0]
-                d['hf'] += myq[0] + myq[1]; d['ha'] += opq[0] + opq[1]; d['n'] += 1
+                h1 = (myq[0] + myq[1]) - (opq[0] + opq[1])            # 1H margin
+                d['q1'] += myq[0] - opq[0]; d['h1'] += h1; d['n'] += 1
                 if is_home:
-                    d['home_m'] += hm; d['home_n'] += 1
+                    d['h1_home'] += h1; d['h1_home_n'] += 1
                 else:
-                    d['away_m'] += hm; d['away_n'] += 1
+                    d['h1_away'] += h1; d['h1_away_n'] += 1
+                if len(myq) >= 4 and len(opq) >= 4:                   # 2H margin (regulation, excl OT)
+                    h2 = (myq[2] + myq[3]) - (opq[2] + opq[3])
+                    d['h2'] += h2; d['q4'] += myq[3] - opq[3]; d['n2'] += 1
+                    if is_home:
+                        d['h2_home'] += h2; d['h2_home_n'] += 1
+                    else:
+                        d['h2_away'] += h2; d['h2_away_n'] += 1
         prof = {}
         for t, d in agg.items():
             if d['n'] < 2:
                 continue
             n = d['n']
+            h1_m = d['h1'] / n
+            h2_m = (d['h2'] / d['n2']) if d['n2'] else None
             prof[t] = {'team': t.title(), 'n': n,
-                       'q1_m': round((d['q1f'] - d['q1a']) / n, 1),
-                       'h1_m': round((d['hf'] - d['ha']) / n, 1),
-                       'h1_for': round(d['hf'] / n, 1), 'h1_ag': round(d['ha'] / n, 1),
-                       'home_m': (round(d['home_m'] / d['home_n'], 1) if d['home_n'] else None),
-                       'away_m': (round(d['away_m'] / d['away_n'], 1) if d['away_n'] else None)}
-        _CFB_PERIOD_CACHE.update(mt=mt, prof=prof,
-                                 ranked=sorted(prof.values(), key=lambda x: -x['h1_m']))
+                       'q1_m': round(d['q1'] / n, 1), 'h1_m': round(h1_m, 1),
+                       'h2_m': (round(h2_m, 1) if h2_m is not None else None),
+                       'q4_m': (round(d['q4'] / d['n2'], 1) if d['n2'] else None),
+                       'finish': (round(h2_m - h1_m, 1) if h2_m is not None else None),
+                       'home_m': (round(d['h1_home'] / d['h1_home_n'], 1) if d['h1_home_n'] else None),
+                       'away_m': (round(d['h1_away'] / d['h1_away_n'], 1) if d['h1_away_n'] else None),
+                       'home_2h': (round(d['h2_home'] / d['h2_home_n'], 1) if d['h2_home_n'] else None),
+                       'away_2h': (round(d['h2_away'] / d['h2_away_n'], 1) if d['h2_away_n'] else None)}
+        with_fin = [p for p in prof.values() if p['finish'] is not None]
+        _CFB_PERIOD_CACHE.update(
+            mt=mt, prof=prof,
+            ranked=sorted(prof.values(), key=lambda x: -x['h1_m']),
+            finishers=sorted(with_fin, key=lambda x: -x['finish'])[:12],
+            faders=sorted([p for p in with_fin if p['h1_m'] > 0], key=lambda x: x['finish'])[:12])
     prof = _CFB_PERIOD_CACHE['prof']
     ranked = _CFB_PERIOD_CACHE['ranked']
 
@@ -42351,16 +42367,27 @@ def build_cfb_period_context():
             dog_start = dp['h1_m'] if dog_start is None else dog_start
             fav_start = fp['h1_m'] if fav_start is None else fav_start
             edge = round(dog_start - fav_start, 1)
+            # finish angle: a fav that fades late or a dog that finishes strong = live late
+            # (2H value on the dog, full-game cover risk for the fav).
+            fav_fin, dog_fin = fp.get('finish'), dp.get('finish')
+            late = []
+            if fav_fin is not None and fav_fin <= -7:
+                late.append('fav fades late')
+            if dog_fin is not None and dog_fin >= 7:
+                late.append('dog finishes')
             matchups.append({
                 'away': a, 'home': h, 'spread': hs, 'dog': str(dog_name).split()[0],
                 'dog_home': dog_home, 'ap': pa, 'hp': ph,
                 'dog_start': dog_start, 'fav_start': fav_start, 'edge': edge,
+                'fav_fin': fav_fin, 'dog_fin': dog_fin, 'late': ' + '.join(late),
                 'flag': ('dog starts faster' if edge >= 6 else ('fav starts faster' if edge <= -6 else ''))})
     except Exception:
         pass
-    matchups.sort(key=lambda x: -x['edge'])
+    matchups.sort(key=lambda x: (-(1 if x['flag'] or x['late'] else 0), -x['edge']))
     return {'available': bool(ranked), 'matchups': matchups,
             'teams_fast': ranked[:12], 'teams_slow': ranked[-12:][::-1],
+            'finishers': _CFB_PERIOD_CACHE.get('finishers', []),
+            'faders': _CFB_PERIOD_CACHE.get('faders', []),
             'n_rated': len(prof), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
