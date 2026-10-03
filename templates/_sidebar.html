@@ -23,6 +23,12 @@
   .bk-sport-links{display:none;padding:2px 0 8px;margin:2px 0 4px 21px;border-left:1px solid var(--border);}
   .bk-sport-group.open>.bk-sport-links{display:block;}
   .bk-sport-links .bk-sidebar-item{padding-top:7px;padding-bottom:7px;}
+  /* loop sub-labels: group a sport's tools by the Discover -> Evaluate -> Track loop so the
+     nav teaches the workflow, not a flat tool dump. Every tool stays one click away. */
+  .bk-loop-label{font:800 8.5px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--text-muted);opacity:.65;padding:10px 0 4px 2px;}
+  .bk-loop-label .lx{font-weight:600;opacity:.7;text-transform:none;letter-spacing:0;}
+  .bk-sport-links>.bk-loop-label:first-child{padding-top:3px;}
 </style>
 
 <!-- Member / Home -->
@@ -36,6 +42,11 @@
     <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/weekend.svg" alt=""></span>
     <span class="si-name">This Weekend</span>
   </a>
+  <a href="/my-view" class="bk-sidebar-item {% if active_page == 'my_view' %}active{% endif %}">
+    <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/track-record.svg" alt=""></span>
+    <span class="si-name">My View</span>
+  </a>
+  <div class="bk-loop-label" style="padding-left:12px;">Build <span class="lx">· the ticket</span></div>
   <a href="/tools/daily-card" class="bk-sidebar-item {% if active_page == 'daily_card' %}active{% endif %}">
     <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/nfl-spots.svg" alt=""></span>
     <span class="si-name">Today&rsquo;s Cards</span>
@@ -44,10 +55,7 @@
     <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/ticket-check.svg" alt=""></span>
     <span class="si-name">The Menu</span>
   </a>
-  <a href="/my-view" class="bk-sidebar-item {% if active_page == 'my_view' %}active{% endif %}">
-    <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/track-record.svg" alt=""></span>
-    <span class="si-name">My View</span>
-  </a>
+  <div class="bk-loop-label" style="padding-left:12px;">Track <span class="lx">· your record</span></div>
   <a href="/tools/tracker" class="bk-sidebar-item {% if active_page == 'bet_tracker' %}active{% endif %}">
     <span class="si-icon"><img loading="lazy" src="/static/logos/nav/tools/pick-analyzer.svg" alt=""></span>
     <span class="si-name">Bet Tracker</span>
@@ -68,23 +76,26 @@
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
+      <a href="/tools/cfb-hub" class="bk-sidebar-item {% if active_page == 'cfb_hub' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-hub.svg" loading="lazy" alt=""></span><span class="si-name">CFB Hub <span class="lx" style="font-weight:600;opacity:.6;">· start here</span></span></a>
+      <div class="bk-loop-label">Discover <span class="lx">· find a play</span></div>
       <a href="{{ sport_home_href('ncaaf') }}" class="bk-sidebar-item {% if active_sport in ['ncaaf','cfb'] and active_page not in ['cfb_hub','cfb_best_spots','cfb_101','cfb_team','cfb_matchup','cfb_favorites','cfb_ats','cfb_totals','cfb_power','cfb_talent','cfb_regression'] %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaaf') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
       <a href="/tools/cfb-best-spots" class="bk-sidebar-item {% if active_page == 'cfb_best_spots' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-best-spots.svg" loading="lazy" alt=""></span><span class="si-name">This Week's Best Spots</span></a>
-      <a href="/tools/cfb-hub" class="bk-sidebar-item {% if active_page == 'cfb_hub' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-hub.svg" loading="lazy" alt=""></span><span class="si-name">CFB Hub</span></a>
-      <a href="/tools/cfb-team" class="bk-sidebar-item {% if active_page == 'cfb_team' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-team.svg" loading="lazy" alt=""></span><span class="si-name">Team Profile</span></a>
-      <a href="/tools/cfb-matchup" class="bk-sidebar-item {% if active_page == 'cfb_matchup' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-matchup.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge Card</span></a>
-      <a href="/tools/cfb-ats" class="bk-sidebar-item {% if active_page == 'cfb_ats' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Team &amp; Situational ATS</span></a>
+      <a href="/tools/cfb-board" class="bk-sidebar-item {% if active_page == 'cfb_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Top Board (all markets)</span></a>
       <a href="/tools/cfb-ats-streaks" class="bk-sidebar-item {% if active_page == 'cfb_ats_streaks' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">ATS &amp; O/U Streaks</span></a>
+      <a href="/tools/cfb-wave" class="bk-sidebar-item {% if active_page == 'cfb_wave' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Wave Watch</span></a>
+      <a href="/tools/cfb-favorites" class="bk-sidebar-item {% if active_page == 'cfb_favorites' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-favorites.svg" loading="lazy" alt=""></span><span class="si-name">Big-Favorite Trends</span></a>
+      <div class="bk-loop-label">Evaluate <span class="lx">· pressure-test it</span></div>
+      <a href="/tools/cfb-matchup" class="bk-sidebar-item {% if active_page == 'cfb_matchup' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-matchup.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge Card</span></a>
+      <a href="/tools/cfb-team" class="bk-sidebar-item {% if active_page == 'cfb_team' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-team.svg" loading="lazy" alt=""></span><span class="si-name">Team Profile</span></a>
+      <a href="/tools/cfb-ats" class="bk-sidebar-item {% if active_page == 'cfb_ats' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Team &amp; Situational ATS</span></a>
       <a href="/tools/cfb-key-numbers" class="bk-sidebar-item {% if active_page == 'cfb_key_numbers' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Key Numbers</span></a>
       <a href="/tools/cfb-pace" class="bk-sidebar-item {% if active_page == 'cfb_pace' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Totals &amp; Pace</span></a>
-      <a href="/tools/cfb-wave" class="bk-sidebar-item {% if active_page == 'cfb_wave' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-ats.svg" loading="lazy" alt=""></span><span class="si-name">Wave Watch</span></a>
-      <a href="/tools/cfb-board" class="bk-sidebar-item {% if active_page == 'cfb_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Top Board (all markets)</span></a>
-      <a href="/tools/cfb-favorites" class="bk-sidebar-item {% if active_page == 'cfb_favorites' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-favorites.svg" loading="lazy" alt=""></span><span class="si-name">Big-Favorite Trends</span></a>
-      <a href="/tools/cfb-totals" class="bk-sidebar-item {% if active_page == 'cfb_totals' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Totals &amp; Pace</span></a>
+      <a href="/tools/cfb-totals" class="bk-sidebar-item {% if active_page == 'cfb_totals' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-totals.svg" loading="lazy" alt=""></span><span class="si-name">Totals Board</span></a>
       <a href="/tools/bk-power" class="bk-sidebar-item {% if active_page == 'bk_power' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/bk-power.svg" loading="lazy" alt=""></span><span class="si-name">BK Power (our data)</span></a>
       <a href="/tools/cfb-power" class="bk-sidebar-item {% if active_page == 'cfb_power' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-power.svg" loading="lazy" alt=""></span><span class="si-name">Power Rankings (SP+/FPI)</span></a>
       <a href="/tools/cfb-talent" class="bk-sidebar-item {% if active_page == 'cfb_talent' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-talent.svg" loading="lazy" alt=""></span><span class="si-name">Talent vs Performance</span></a>
       <a href="/tools/cfb-regression" class="bk-sidebar-item {% if active_page == 'cfb_regression' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-regression.svg" loading="lazy" alt=""></span><span class="si-name">Regression Watch</span></a>
+      <div class="bk-loop-label">Learn</div>
       <a href="/tools/cfb-101" class="bk-sidebar-item {% if active_page == 'cfb_101' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/cfb-101.svg" loading="lazy" alt=""></span><span class="si-name">CFB Betting 101</span></a>
     </div>
   </div>
@@ -99,29 +110,34 @@
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
-      <a href="/tools/nfl-hub" class="bk-sidebar-item {% if active_page == 'nfl_hub' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">NFL Hub</span></a>
+      <a href="/tools/nfl-hub" class="bk-sidebar-item {% if active_page == 'nfl_hub' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">NFL Hub <span class="lx" style="font-weight:600;opacity:.6;">· start here</span></span></a>
+      <div class="bk-loop-label">Discover <span class="lx">· find a play</span></div>
       <a href="{{ sport_home_href('nfl') }}" class="bk-sidebar-item {% if active_sport == 'nfl' and active_page not in ['fantasy','scenario_lab','nfl_spots','nfl_totals_today','nfl_hub'] %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
       <a href="/tools/nfl-board" class="bk-sidebar-item {% if active_page == 'nfl_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Top Board (all markets)</span></a>
       <a href="/tools/nfl-game-board" class="bk-sidebar-item {% if active_page == 'nfl_game_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Game Board (spreads/totals)</span></a>
       <a href="/tools/nfl-period-board" class="bk-sidebar-item {% if active_page == 'nfl_period_board' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Period Board (1H/1Q/team)</span></a>
       <a href="/tools/nfl-featured" class="bk-sidebar-item {% if active_page == 'nfl_featured' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Featured Players (usage)</span></a>
       <a href="/tools/nfl-buy-low" class="bk-sidebar-item {% if active_page == 'nfl_buy_low' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Buy Low / Sell High</span></a>
-      <a href="/tools/nfl-matchup-edge" class="bk-sidebar-item {% if active_page == 'nfl_matchup_edge' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge</span></a>
       <a href="/tools/nfl-heatmap" class="bk-sidebar-item {% if active_page == 'nfl_heatmap' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Hot Hand Heat Map</span></a>
-      <a href="/tools/nfl-scoreboard" class="bk-sidebar-item {% if active_page == 'nfl_scoreboard' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Tickets We Could've Hit</span></a>
-      <a href="/tools/nfl-floor" class="bk-sidebar-item {% if active_page == 'nfl_floor' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Prop Floor</span></a>
-      <a href="/tools/nfl-officiating" class="bk-sidebar-item {% if active_page == 'nfl_officiating' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Officiating (refs)</span></a>
-      <a href="/tools/nfl-rankings" class="bk-sidebar-item {% if active_page == 'nfl_rankings' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Team Rankings</span></a>
-      <a href="/tools/nfl-regression" class="bk-sidebar-item {% if active_page == 'nfl_regression' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Regression Watch</span></a>
-      <a href="/tools/nfl-power" class="bk-sidebar-item {% if active_page == 'nfl_power' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Power Ratings</span></a>
       <a href="/tools/nfl-wave" class="bk-sidebar-item {% if active_page == 'nfl_wave' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Wave Watch (ATS)</span></a>
       <a href="/tools/riding-the-wave" class="bk-sidebar-item {% if active_page == 'riding_the_wave' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Riding the Wave</span></a>
       <a href="/tools/nfl-spots" class="bk-sidebar-item {% if active_page == 'nfl_spots' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">NFL Spots</span></a>
-      <a href="/tools/nfl-totals-today" class="bk-sidebar-item {% if active_page == 'nfl_totals_today' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-totals-today.svg" loading="lazy" alt=""></span><span class="si-name">NFL Totals (Wind)</span></a>
+      <div class="bk-loop-label">Evaluate <span class="lx">· pressure-test it</span></div>
+      <a href="/tools/nfl-floor" class="bk-sidebar-item {% if active_page == 'nfl_floor' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Prop Floor</span></a>
+      <a href="/tools/nfl-matchup-edge" class="bk-sidebar-item {% if active_page == 'nfl_matchup_edge' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge</span></a>
       <a href="/tools/nfl-matchup" class="bk-sidebar-item {% if active_page == 'nfl_matchup' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-matchup.svg" loading="lazy" alt=""></span><span class="si-name">Matchup Edge Card</span></a>
+      <a href="/tools/nfl-totals-today" class="bk-sidebar-item {% if active_page == 'nfl_totals_today' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-totals-today.svg" loading="lazy" alt=""></span><span class="si-name">NFL Totals (Wind)</span></a>
+      <a href="/tools/nfl-rankings" class="bk-sidebar-item {% if active_page == 'nfl_rankings' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Team Rankings</span></a>
+      <a href="/tools/nfl-regression" class="bk-sidebar-item {% if active_page == 'nfl_regression' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Regression Watch</span></a>
+      <a href="/tools/nfl-power" class="bk-sidebar-item {% if active_page == 'nfl_power' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Power Ratings</span></a>
+      <a href="/tools/nfl-officiating" class="bk-sidebar-item {% if active_page == 'nfl_officiating' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Officiating (refs)</span></a>
       <a href="/tools/nfl-team" class="bk-sidebar-item {% if active_page == 'nfl_ats' and na_default_tab == 'profile' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-matchup.svg" loading="lazy" alt=""></span><span class="si-name">Team Profile</span></a>
       <a href="/tools/nfl-ats" class="bk-sidebar-item {% if active_page == 'nfl_ats' and na_default_tab != 'profile' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Team &amp; Situational ATS</span></a>
       <a href="/tools/scenario-lab" class="bk-sidebar-item {% if active_page == 'scenario_lab' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/scenario-lab.svg" loading="lazy" alt=""></span><span class="si-name">Scenario Lab</span></a>
+      <div class="bk-loop-label">Build <span class="lx">· see Today&rsquo;s Cards &middot; The Menu (top)</span></div>
+      <div class="bk-loop-label">Track <span class="lx">· the receipts</span></div>
+      <a href="/tools/nfl-scoreboard" class="bk-sidebar-item {% if active_page == 'nfl_scoreboard' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nfl-spots.svg" loading="lazy" alt=""></span><span class="si-name">Tickets We Could've Hit</span></a>
+      <div class="bk-loop-label">Fantasy <span class="lx">· separate from betting</span></div>
       <a href="/fantasy/nfl" class="bk-sidebar-item {% if active_page == 'fantasy' and active_sport == 'nfl' %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('nfl') }}" alt=""></span><span class="si-name">Fantasy Rankings</span></a>
     </div>
   </div>
@@ -136,10 +152,12 @@
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
+      <div class="bk-loop-label">Discover <span class="lx">· find a play</span></div>
       <a href="{{ sport_home_href('mlb') }}" class="bk-sidebar-item {% if active_sport == 'mlb' and active_page not in ['real_vs_luck','mlb_situational','nrfi'] %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('mlb') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
+      <a href="/tools/nrfi" class="bk-sidebar-item {% if active_page == 'nrfi' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nrfi.svg" loading="lazy" alt=""></span><span class="si-name">NRFI / First Inning</span></a>
+      <div class="bk-loop-label">Evaluate <span class="lx">· pressure-test it</span></div>
       <a href="/tools/real-vs-luck" class="bk-sidebar-item {% if active_page == 'real_vs_luck' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/real-vs-luck.svg" loading="lazy" alt=""></span><span class="si-name">Real vs Luck</span></a>
       <a href="/tools/mlb-situational" class="bk-sidebar-item {% if active_page == 'mlb_situational' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/mlb-situational.svg" loading="lazy" alt=""></span><span class="si-name">Situational Lab</span></a>
-      <a href="/tools/nrfi" class="bk-sidebar-item {% if active_page == 'nrfi' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/nrfi.svg" loading="lazy" alt=""></span><span class="si-name">NRFI / First Inning</span></a>
     </div>
   </div>
 
@@ -202,17 +220,20 @@
 <!-- Cross-sport utilities -->
 <div class="bk-sidebar-section">
   <div class="bk-sidebar-heading">Quick Tools &middot; All Sports</div>
-  <a href="/tools/pick-analyzer" class="bk-sidebar-item {% if active_page == 'pick_analyzer' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/pick-analyzer.svg" loading="lazy" alt=""></span><span class="si-name">Pick Analyzer</span></a>
-  <a href="/tools/unit-sizing" class="bk-sidebar-item {% if active_page == 'unit_sizing' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/pick-analyzer.svg" loading="lazy" alt=""></span><span class="si-name">Unit Sizing</span></a>
+  <div class="bk-loop-label" style="padding-left:12px;">Discover <span class="lx">· find a play</span></div>
   <a href="/tools/slate-pulse" class="bk-sidebar-item {% if active_page == 'slate' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/slate-pulse.svg" loading="lazy" alt=""></span><span class="si-name">Slate Pulse</span></a>
   <a href="/tools/market-movers" class="bk-sidebar-item {% if active_page == 'market_movers' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Market Movers</span></a>
-  <a href="/tools/best-lines" class="bk-sidebar-item {% if active_page == 'best_lines' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/best-lines.svg" loading="lazy" alt=""></span><span class="si-name">Best Lines</span></a>
-  <a href="/tools/risk-radar" class="bk-sidebar-item {% if active_page == 'risk_radar' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/risk-radar.svg" loading="lazy" alt=""></span><span class="si-name">Risk Radar</span></a>
-  <a href="/tools/ticket-check" class="bk-sidebar-item {% if active_page == 'ticket_check' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/ticket-check.svg" loading="lazy" alt=""></span><span class="si-name">Ticket Check</span></a>
-  <a href="/tools/game-context" class="bk-sidebar-item {% if active_page == 'game_context' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/game-context.svg" loading="lazy" alt=""></span><span class="si-name">Game Context</span></a>
-  <a href="/tools/track-record" class="bk-sidebar-item {% if active_page == 'track_record' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/track-record.svg" loading="lazy" alt=""></span><span class="si-name">Track Record</span></a>
   <a href="/tools/season-markets" class="bk-sidebar-item {% if active_page == 'season_markets' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/market-movers.svg" loading="lazy" alt=""></span><span class="si-name">Season Markets</span></a>
   <a href="/tools/injury-report" class="bk-sidebar-item {% if active_page == 'injuries' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/injury-report.svg" loading="lazy" alt=""></span><span class="si-name">Injuries</span></a>
+  <div class="bk-loop-label" style="padding-left:12px;">Evaluate <span class="lx">· pressure-test it</span></div>
+  <a href="/tools/best-lines" class="bk-sidebar-item {% if active_page == 'best_lines' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/best-lines.svg" loading="lazy" alt=""></span><span class="si-name">Best Lines <span class="lx" style="font-weight:600;opacity:.55;">· shop the number</span></span></a>
+  <a href="/tools/pick-analyzer" class="bk-sidebar-item {% if active_page == 'pick_analyzer' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/pick-analyzer.svg" loading="lazy" alt=""></span><span class="si-name">Pick Analyzer</span></a>
+  <a href="/tools/ticket-check" class="bk-sidebar-item {% if active_page == 'ticket_check' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/ticket-check.svg" loading="lazy" alt=""></span><span class="si-name">Ticket Check</span></a>
+  <a href="/tools/risk-radar" class="bk-sidebar-item {% if active_page == 'risk_radar' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/risk-radar.svg" loading="lazy" alt=""></span><span class="si-name">Risk Radar</span></a>
+  <a href="/tools/game-context" class="bk-sidebar-item {% if active_page == 'game_context' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/game-context.svg" loading="lazy" alt=""></span><span class="si-name">Game Context</span></a>
+  <a href="/tools/unit-sizing" class="bk-sidebar-item {% if active_page == 'unit_sizing' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/pick-analyzer.svg" loading="lazy" alt=""></span><span class="si-name">Unit Sizing <span class="lx" style="font-weight:600;opacity:.55;">· exposure, not stakes</span></span></a>
+  <div class="bk-loop-label" style="padding-left:12px;">Track <span class="lx">· measure reality</span></div>
+  <a href="/tools/track-record" class="bk-sidebar-item {% if active_page == 'track_record' %}active{% endif %}"><span class="si-icon"><img src="/static/logos/nav/tools/track-record.svg" loading="lazy" alt=""></span><span class="si-name">Track Record</span></a>
 </div>
 
 <!-- Game -->
