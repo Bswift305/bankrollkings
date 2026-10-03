@@ -727,6 +727,7 @@ PRO_ENDPOINTS = {
     'nfl_team_rankings_tool', 'nfl_wave_tool',
     'cfb_ats_streaks_tool', 'cfb_key_numbers_tool', 'cfb_pace_tool', 'cfb_board_tool',
     'cfb_wave_tool', 'cfb_buy_low_tool',
+    'signal_report_tool',  # Learn layer -- how our captured signals actually graded
     'dashboard',
     'method_hub',
     'injury_report_tool',
@@ -42250,6 +42251,56 @@ def cfb_buy_low_tool():
     (softer number); sell-high = weak team playing above it (inflated number). Regression read,
     not a prediction; joined to this week's line."""
     return render_template('cfb_buy_low.html', **build_cfb_buy_low_board())
+
+
+_SIGNAL_REPORT_CACHE = {}
+
+
+def build_signal_report_context():
+    """Learn layer -- how our own captured signals have actually graded after the fact (the
+    Buy Low / Sell High lens today; more as signal archives are added). Reads grade_signals.py
+    output (Signal_Grades_Summary.json + a few resolved examples). Honest by construction:
+    pending signals are uncounted, cohorts under the sample floor read 'too few', nothing is an
+    edge claim until it's real and out-of-sample. data/tracking is gitignored -> prod owns the
+    record, local shows what its own run_daily graded."""
+    track = os.path.join(BASE_DIR, 'data', 'tracking')
+    summ_path = os.path.join(track, 'Signal_Grades_Summary.json')
+    data = {'totals': {}, 'by_sport_kind': [], 'by_sport_kind_stat': [], 'min_sample': 20}
+    try:
+        mt = os.path.getmtime(summ_path)
+        if _SIGNAL_REPORT_CACHE.get('mt') != mt:
+            with open(summ_path, encoding='utf-8') as fh:
+                _SIGNAL_REPORT_CACHE['data'] = json.load(fh)
+            _SIGNAL_REPORT_CACHE['mt'] = mt
+        data = _SIGNAL_REPORT_CACHE.get('data', data)
+    except (OSError, ValueError):
+        pass
+    totals = data.get('totals', {})
+    examples = []
+    if totals.get('resolved'):
+        try:
+            df = pd.read_csv(os.path.join(track, 'Signal_Grades.csv'))
+            hit = pd.to_numeric(df.get('Hit'), errors='coerce')     # 0/1 round-trip as float via CSV
+            res = df[(pd.to_numeric(df.get('Resolved'), errors='coerce') == 1) & hit.isin([0, 1])]
+            res = res.sort_values('SnapshotDate', ascending=False).head(14)
+            for _, r in res.iterrows():
+                examples.append({'sport': r.get('Sport'), 'kind': r.get('Kind'),
+                                 'subject': r.get('Subject'), 'stat': r.get('Stat'),
+                                 'hit': int(float(r.get('Hit'))), 'detail': r.get('GradeDetail')})
+        except Exception:
+            pass
+    return {'sr_totals': totals, 'sr_cohorts': data.get('by_sport_kind', []),
+            'sr_bystat': data.get('by_sport_kind_stat', []), 'sr_examples': examples,
+            'sr_min_sample': data.get('min_sample', 20), 'sr_note': data.get('note', ''),
+            'sr_available': bool(totals), 'sr_has_resolved': bool(totals.get('resolved'))}
+
+
+@app.route('/tools/signal-report')
+def signal_report_tool():
+    """Quick Tool: Signal Report Card -- the Truth layer for our own ideas. How the captured
+    Buy Low / Sell High signals have actually graded (reversion for NFL, ATS cover for CFB),
+    by cohort, honestly: pending uncounted, small samples flagged, no claim until out-of-sample."""
+    return render_template('signal_report.html', **build_signal_report_context())
 
 
 @app.route('/tools/pick-analyzer')

@@ -1,0 +1,115 @@
+{% set active_page = 'signal_report' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Signal Report Card - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .sr-wrap{max-width:900px;}
+  .sr-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:4px 0 20px;}
+  .sr-stat{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:15px 16px;}
+  .sr-stat .k{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);}
+  .sr-stat .v{font:800 26px ui-monospace,Consolas,monospace;color:var(--text-bright);margin-top:4px;}
+  .sr-stat .v.cy{color:var(--bkn-accent,#3fbf7f);}
+  .sr-build{background:var(--panel,#0f1a29);border:1px solid rgba(255,209,102,.4);border-radius:14px;padding:15px 17px;margin-bottom:22px;}
+  .sr-build .t{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-mid,#ffd166);margin-bottom:4px;}
+  .sr-build .b{font:500 13px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .sr-sec{font:800 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin:20px 0 10px;}
+  .sr-tbl{width:100%;border-collapse:collapse;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+  .sr-tbl th{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);}
+  .sr-tbl td{font:600 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .sr-tbl tr:last-child td{border-bottom:0;}
+  .sr-tbl td.num{font-family:ui-monospace,Consolas,monospace;}
+  .sr-chip{font:800 8px ui-monospace,monospace;letter-spacing:.03em;text-transform:uppercase;border-radius:4px;padding:2px 6px;}
+  .sr-chip.buy{background:rgba(78,212,138,.16);color:var(--bkn-good,#4ed48a);}
+  .sr-chip.sell{background:rgba(255,209,102,.16);color:var(--bkn-mid,#ffd166);}
+  .sr-read{font:700 9px ui-monospace,monospace;color:var(--text-muted);}
+  .sr-hr{font:800 13px ui-monospace,monospace;}
+  .sr-hr.pos{color:var(--bkn-good,#4ed48a);} .sr-hr.neg{color:#ff6b6b;} .sr-hr.na{color:var(--text-muted);font-weight:600;}
+  .sr-ex{display:flex;gap:9px;align-items:baseline;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+  .sr-ex:last-child{border-bottom:0;}
+  .sr-ex .mk{font:800 12px ui-monospace,monospace;flex:0 0 auto;width:16px;}
+  .sr-ex .mk.y{color:var(--bkn-good,#4ed48a);} .sr-ex .mk.n{color:#ff6b6b;}
+  .sr-ex .tx{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .sr-ex .dt{font:500 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+</style>
+
+<div class="bkn sr-wrap">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Learn &middot; the Truth layer</div>
+    <h1>Signal <span class="accent">Report Card</span></h1>
+    <div class="page-subtitle">The honest part: how our own ideas have actually graded <b>after the fact</b>. Every day we snapshot the <a href="/tools/nfl-buy-low" style="color:var(--bkn-accent,#3fbf7f);">Buy Low / Sell High</a> board, then grade each one once its games are played &mdash; for NFL, did the stat <b>revert</b> toward the role; for CFB, did the team <b>cover</b> the number. Nothing here is a claim; it&rsquo;s the record, and it only counts <b>out-of-sample</b>.</div>
+  </div>
+</div>
+
+{% if not sr_available %}
+  <div class="bkn-empty">The grader hasn&rsquo;t run here yet. Signals are captured daily and graded daily; this fills in once <code>grade_signals.py</code> has run. (On prod it runs every day via run_daily.)</div>
+{% else %}
+
+<div class="sr-sum">
+  <div class="sr-stat"><div class="k">Signals captured</div><div class="v">{{ sr_totals.rows }}</div></div>
+  <div class="sr-stat"><div class="k">Resolved</div><div class="v cy">{{ sr_totals.resolved }}</div></div>
+  <div class="sr-stat"><div class="k">Still pending</div><div class="v">{{ sr_totals.pending }}</div></div>
+</div>
+
+{% if not sr_has_resolved %}
+<div class="sr-build">
+  <div class="t">&#9203; The record is building</div>
+  <div class="b">We&rsquo;ve captured <b>{{ sr_totals.rows }}</b> signal{{ '' if sr_totals.rows == 1 else 's' }}, but none of their games have been played since the snapshot yet &mdash; so there&rsquo;s nothing to grade. Results appear here as games resolve. This empty state is the point: we don&rsquo;t show a hit rate until there&rsquo;s a real, out-of-sample sample behind it.</div>
+</div>
+{% endif %}
+
+<div class="sr-sec">By lens &amp; direction</div>
+<table class="sr-tbl">
+  <tr><th>Sport</th><th>Lens</th><th>Signals</th><th>Resolved</th><th>Hit rate</th><th>Avg move</th><th>Read</th></tr>
+  {% for c in sr_cohorts %}
+  <tr>
+    <td>{{ c.Sport }}</td>
+    <td><span class="sr-chip {{ 'buy' if c.Kind == 'buy_low' else 'sell' }}">{{ 'Buy Low' if c.Kind == 'buy_low' else 'Sell High' }}</span></td>
+    <td class="num">{{ c.n }}</td>
+    <td class="num">{{ c.resolved }}{% if c.pending %} <span style="color:var(--text-muted);font-size:11px;">(+{{ c.pending }} pending)</span>{% endif %}</td>
+    <td class="num">{% if c.hit_rate is not none %}<span class="sr-hr {{ 'pos' if c.hit_rate >= 50 else 'neg' }}">{{ c.hit_rate }}%</span> <span style="color:var(--text-muted);font-size:11px;">({{ c.hits }}/{{ c.decided }})</span>{% else %}<span class="sr-hr na">&mdash;</span>{% endif %}</td>
+    <td class="num">{% if c.avg_move is not none %}{{ '%+g'|format(c.avg_move) }}{% else %}&mdash;{% endif %}</td>
+    <td><span class="sr-read">{{ c.read }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% if sr_bystat and sr_bystat|selectattr('resolved')|list %}
+<div class="sr-sec">By stat (resolved only)</div>
+<table class="sr-tbl">
+  <tr><th>Sport</th><th>Lens</th><th>Stat</th><th>Resolved</th><th>Hit rate</th><th>Avg move</th></tr>
+  {% for c in sr_bystat if c.resolved %}
+  <tr>
+    <td>{{ c.Sport }}</td>
+    <td><span class="sr-chip {{ 'buy' if c.Kind == 'buy_low' else 'sell' }}">{{ 'Buy' if c.Kind == 'buy_low' else 'Sell' }}</span></td>
+    <td>{{ c.Stat }}</td>
+    <td class="num">{{ c.resolved }}</td>
+    <td class="num">{% if c.hit_rate is not none %}<span class="sr-hr {{ 'pos' if c.hit_rate >= 50 else 'neg' }}">{{ c.hit_rate }}%</span>{% else %}&mdash;{% endif %}</td>
+    <td class="num">{% if c.avg_move is not none %}{{ '%+g'|format(c.avg_move) }}{% else %}&mdash;{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if sr_examples %}
+<div class="sr-sec">Recently graded</div>
+<div style="background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:6px 16px;">
+  {% for e in sr_examples %}
+  <div class="sr-ex">
+    <span class="mk {{ 'y' if e.hit else 'n' }}">{{ '&#10003;'|safe if e.hit else '&#10007;'|safe }}</span>
+    <span>
+      <span class="tx">{{ e.subject }} <span class="sr-chip {{ 'buy' if e.kind == 'buy_low' else 'sell' }}">{{ 'Buy' if e.kind == 'buy_low' else 'Sell' }}</span> <span style="color:var(--text-muted);font-size:11px;">{{ e.stat }}</span></span>
+      <span class="dt" style="display:block;">{{ e.detail }}</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="bkn-note" style="margin-top:20px;">{{ sr_note or 'A graded record, not an edge claim.' }} A cohort reads <b>&ldquo;too few&rdquo;</b> until it clears {{ sr_min_sample }} resolved results &mdash; a hit rate on five bets means nothing. <b>&ldquo;Hit&rdquo;</b> means the outcome moved the way the lens implied (NFL: the stat reverted toward the role; CFB: the team covered, or for a sell, failed to). This is the same standard every future signal we capture will be judged by. 21+</div>
+{% endif %}
+</div>
+{% endblock %}
