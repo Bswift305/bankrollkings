@@ -302,9 +302,24 @@ refinement on top.
 **Revised priority (for the next confer with CoCo):**
 1. **Switch counting metrics → rate metrics** site-wide (the 80/20 of the volume artifact).
 2. **Flag script-dependent players** from A1 (the targeted game-script lens), not a blanket split.
-3. **A3 — de-blend the hit-profile `AvgLine` by line level** (still a live correctness issue).
+3. **A3 — de-blend the hit-profile `AvgLine`** — ✅ **DONE** (below).
 Full game-state conditioning drops from "foundational sprint" to "targeted refinement" —
 because the data said so.
+
+**A3 — hit-profile AvgLine de-blend** (`build_nfl_hit_profile_linemeta.py` +
+`build_nfl_historical_calibration` + `calculate_nfl_prop_score`, commit 99eb701):
+- `AvgLine` is the mean of *every* line a player was ever graded at. **68% of multi-line
+  profiles are phantoms** (line range > 40% of the mean): Rico Dowdle's rush line spans
+  15.5→91.5 (backup→bell-cow) blended to 58.2; Jauan Jennings rec 17.5→79.5.
+- `calculate_line_value`'s "soft number" bonus (up to **+6** score pts) fired on **25% of
+  props — 72% of those off a phantom AvgLine.** So most of the time it rewarded "this line
+  is soft vs his usual," it was comparing to fiction.
+- **Fix:** added `LineBlend` (TIGHT/MODERATE/WIDE/THIN) to the profile; the bonus now applies
+  at full weight only for TIGHT, half for MODERATE, **zero for WIDE/THIN**. Verified: Dowdle
+  (WIDE) line_value 10→4; Mahomes (TIGHT) bonus kept.
+- **Honest note:** this is a *correctness* fix, not new edge — lines are priced ~50% at every
+  level, so de-blending reveals nothing hidden; it stops the score (and the line-delta gate we
+  used to vet cards) from comparing today's number to a reference that never existed.
 
 ---
 
