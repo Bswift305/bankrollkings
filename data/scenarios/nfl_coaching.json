@@ -1,0 +1,142 @@
+{
+ "CIN": {
+  "note": "throws in the red zone",
+  "fourth_go": 0.34,
+  "early_pass": 0.588,
+  "rz_pass": 0.617,
+  "no_huddle": 0.028
+ },
+ "DAL": {
+  "note": "aggressive on 4th down (63% go in goable spots)",
+  "fourth_go": 0.632,
+  "early_pass": 0.512,
+  "rz_pass": 0.559,
+  "no_huddle": 0.067
+ },
+ "MIN": {
+  "note": "throws in the red zone",
+  "fourth_go": 0.432,
+  "early_pass": 0.509,
+  "rz_pass": 0.626,
+  "no_huddle": 0.111
+ },
+ "WAS": {
+  "note": "aggressive on 4th down (59% go in goable spots); up-tempo (43% no-huddle)",
+  "fourth_go": 0.585,
+  "early_pass": 0.495,
+  "rz_pass": 0.462,
+  "no_huddle": 0.434
+ },
+ "HOU": {
+  "note": "conservative on 4th down",
+  "fourth_go": 0.25,
+  "early_pass": 0.488,
+  "rz_pass": 0.497,
+  "no_huddle": 0.055
+ },
+ "IND": {
+  "note": "aggressive on 4th down (55% go in goable spots)",
+  "fourth_go": 0.552,
+  "early_pass": 0.481,
+  "rz_pass": 0.435,
+  "no_huddle": 0.111
+ },
+ "MIA": {
+  "note": "run-first on early downs (48% pass)",
+  "fourth_go": 0.433,
+  "early_pass": 0.48,
+  "rz_pass": 0.534,
+  "no_huddle": 0.042
+ },
+ "TB": {
+  "note": "run-first on early downs (48% pass)",
+  "fourth_go": 0.395,
+  "early_pass": 0.479,
+  "rz_pass": 0.555,
+  "no_huddle": 0.063
+ },
+ "BUF": {
+  "note": "run-first on early downs (48% pass)",
+  "fourth_go": 0.533,
+  "early_pass": 0.477,
+  "rz_pass": 0.441,
+  "no_huddle": 0.087
+ },
+ "NE": {
+  "note": "run-first on early downs (48% pass)",
+  "fourth_go": 0.34,
+  "early_pass": 0.476,
+  "rz_pass": 0.505,
+  "no_huddle": 0.063
+ },
+ "NYJ": {
+  "note": "run-first on early downs (47% pass)",
+  "fourth_go": 0.435,
+  "early_pass": 0.474,
+  "rz_pass": 0.585,
+  "no_huddle": 0.064
+ },
+ "PHI": {
+  "note": "up-tempo (21% no-huddle); run-first on early downs (46% pass); runs it in the red zone",
+  "fourth_go": 0.4,
+  "early_pass": 0.463,
+  "rz_pass": 0.391,
+  "no_huddle": 0.215
+ },
+ "CAR": {
+  "note": "aggressive on 4th down (62% go in goable spots); run-first on early downs (46% pass)",
+  "fourth_go": 0.625,
+  "early_pass": 0.459,
+  "rz_pass": 0.496,
+  "no_huddle": 0.058
+ },
+ "CHI": {
+  "note": "run-first on early downs (46% pass)",
+  "fourth_go": 0.54,
+  "early_pass": 0.459,
+  "rz_pass": 0.494,
+  "no_huddle": 0.11
+ },
+ "ATL": {
+  "note": "aggressive on 4th down (56% go in goable spots); run-first on early downs (45% pass)",
+  "fourth_go": 0.558,
+  "early_pass": 0.454,
+  "rz_pass": 0.47,
+  "no_huddle": 0.118
+ },
+ "GB": {
+  "note": "run-first on early downs (45% pass)",
+  "fourth_go": 0.435,
+  "early_pass": 0.451,
+  "rz_pass": 0.493,
+  "no_huddle": 0.08
+ },
+ "TEN": {
+  "note": "run-first on early downs (45% pass)",
+  "fourth_go": 0.44,
+  "early_pass": 0.449,
+  "rz_pass": 0.485,
+  "no_huddle": 0.05
+ },
+ "NYG": {
+  "note": "run-first on early downs (45% pass)",
+  "fourth_go": 0.462,
+  "early_pass": 0.449,
+  "rz_pass": 0.458,
+  "no_huddle": 0.145
+ },
+ "PIT": {
+  "note": "conservative on 4th down; run-first on early downs (44% pass)",
+  "fourth_go": 0.298,
+  "early_pass": 0.444,
+  "rz_pass": 0.48,
+  "no_huddle": 0.134
+ },
+ "BAL": {
+  "note": "conservative on 4th down; run-first on early downs (44% pass)",
+  "fourth_go": 0.293,
+  "early_pass": 0.44,
+  "rz_pass": 0.444,
+  "no_huddle": 0.058
+ }
+}
