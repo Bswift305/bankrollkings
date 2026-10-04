@@ -431,6 +431,25 @@ def build_player_profiles(df: pd.DataFrame) -> pd.DataFrame:
         misses = int((group["OutcomeState"] == "Miss").sum())
         hit_rate = round(float(hits / sample) * 100, 1) if sample else ""
         avg_conf = group["ConfidenceNum"].mean()
+        # Averaging Audit A3: line-dispersion meta so downstream can tell a real AvgLine
+        # from a phantom blend across many line levels. See docs/averaging_audit.md (A3).
+        lines = group["LineNum"].dropna()
+        line_n = int(lines.nunique())
+        line_min = round(float(lines.min()), 1) if len(lines) else ""
+        line_max = round(float(lines.max()), 1) if len(lines) else ""
+        line_mean = float(lines.mean()) if len(lines) else None
+        line_median = round(float(lines.median()), 1) if len(lines) else ""
+        line_std = round(float(lines.std()), 1) if len(lines) > 1 else 0.0
+        line_range = round(float(line_max) - float(line_min), 1) if len(lines) else ""
+        line_range_pct = round(line_range / line_mean, 3) if line_mean else ""
+        if line_n < 3 or not line_mean:
+            line_blend = "THIN"
+        elif line_range_pct != "" and line_range_pct > 0.40:
+            line_blend = "WIDE"
+        elif line_range_pct != "" and line_range_pct <= 0.20:
+            line_blend = "TIGHT"
+        else:
+            line_blend = "MODERATE"
         rows.append({
             "Player": player,
             "Team": team,
@@ -440,10 +459,18 @@ def build_player_profiles(df: pd.DataFrame) -> pd.DataFrame:
             "Hits": hits,
             "Misses": misses,
             "HitRate": hit_rate,
-            "AvgLine": round(float(group["LineNum"].mean()), 1) if not pd.isna(group["LineNum"].mean()) else "",
+            "AvgLine": round(float(line_mean), 1) if line_mean is not None else "",
             "AvgConfidence": round(float(avg_conf), 1) if not pd.isna(avg_conf) else "",
             "Reliability": reliability_label(sample, hit_rate),
             "ModelAccuracy": model_accuracy_label(avg_conf, hit_rate),
+            "LineN": line_n,
+            "LineStd": line_std,
+            "LineMin": line_min,
+            "LineMax": line_max,
+            "LineMedian": line_median,
+            "LineRange": line_range,
+            "LineRangePct": line_range_pct,
+            "LineBlend": line_blend,
         })
     if not rows:
         return pd.DataFrame()

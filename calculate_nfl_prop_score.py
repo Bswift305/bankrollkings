@@ -166,11 +166,18 @@ def calculate_line_value(row: pd.Series, profile: dict) -> float:
     elif market_price >= 150:
         score -= 2.0
 
-    if avg_line and line:
+    # Averaging Audit A3: AvgLine is the mean of EVERY line this player was graded at.
+    # When those lines span a wide range (role changed, backup->starter), AvgLine is a
+    # phantom midpoint that matches no real bet, so "today's line vs AvgLine" is fiction.
+    # Trust the term only when AvgLine is a real reference (LineBlend TIGHT/MODERATE);
+    # suppress it for WIDE/THIN/missing meta. See docs/averaging_audit.md (A3).
+    blend = str(profile.get("LineBlend") or "").upper()
+    blend_weight = {"TIGHT": 1.0, "MODERATE": 0.5}.get(blend, 0.0)
+    if avg_line and line and blend_weight:
         if direction == "OVER" and line < avg_line:
-            score += clamp((avg_line - line) * 1.2, 0.0, 6.0)
+            score += clamp((avg_line - line) * 1.2, 0.0, 6.0) * blend_weight
         if direction == "UNDER" and line > avg_line:
-            score += clamp((line - avg_line) * 1.2, 0.0, 6.0)
+            score += clamp((line - avg_line) * 1.2, 0.0, 6.0) * blend_weight
 
     return clamp(score, -20.0, 20.0)
 
