@@ -721,7 +721,7 @@ PRO_ENDPOINTS = {
     'start_here_tool',  # guided onboarding -- the loop walkthrough
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
-    'kings_wisdomism_tool',  # the convergence assembly engine -- premium destination
+    'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
@@ -30676,8 +30676,11 @@ def _wisdom_market_gate(pr):
     return True, "number stable since open — convergence not yet priced"
 
 
-def build_kings_wisdom(limit=40):
-    """Kings Wisdomism -- the convergence assembly engine (NFL v1).
+def build_green_light(limit=40):
+    """Green Light -- the convergence assembly engine (NFL v1).
+
+    Named for the gate: a play goes GREEN when the independent lenses agree AND the market
+    hasn't priced it in yet (eligible). Formerly 'Kings Wisdomism'.
 
     Not a score, not a pick. For each featured player's primary over, it counts how many
     INDEPENDENT lenses agree (the ratified set: Opportunity, Matchup, Game Identity, Coaching,
@@ -42221,13 +42224,13 @@ def nfl_featured_players_tool():
     return render_template('nfl_featured.html', **ctx)
 
 
-@app.route('/tools/wisdomism')
-def kings_wisdomism_tool():
-    """Kings Wisdomism -- the convergence assembly engine. Ranks plays by how many
-    INDEPENDENT lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the
-    Concentration TD angle), gated by the market (un-priced first). Evidence assembly,
-    not a score. The destination the whole averaging audit earned the right to build."""
-    return render_template('kings_wisdomism.html', **build_kings_wisdom())
+@app.route('/tools/green-light')
+def green_light_tool():
+    """Green Light -- the convergence assembly engine. Ranks plays by how many INDEPENDENT
+    lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the Concentration TD
+    angle), gated by the market (a play goes green only when it's also un-priced). Evidence
+    assembly, not a score. The destination the whole averaging audit earned the right to build."""
+    return render_template('green_light.html', **build_green_light())
 
 
 @app.route('/tools/nfl-buy-low')

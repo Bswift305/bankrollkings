@@ -1,11 +1,11 @@
-{% set active_page = 'kings_wisdomism' %}
+{% set active_page = 'green_light' %}
 {% extends "bk_base.html" %}
-{% block title %}Kings Wisdomism - Bankroll Kings{% endblock %}
+{% block title %}Green Light - Bankroll Kings{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
 <style>
-  .kw{--kw:#f2c14e;--kw-dim:rgba(242,193,78,.16);}
+  .kw{--kw:#4ed48a;--kw-dim:rgba(78,212,138,.16);}
   .kw-how{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-4px 0 18px;}
   .kw-how b{color:var(--text-bright);}
   .kw-lens-key{display:inline-flex;align-items:center;gap:5px;}
@@ -14,7 +14,7 @@
   .kw-tier-h{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;padding-bottom:7px;border-bottom:1px solid var(--border);}
   .kw-tier-h .n{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
   .kw-tier-h .c{font:700 10px ui-monospace,monospace;color:var(--text-muted);}
-  .kw-tier.t4 .n{color:var(--bkn-good,#4ed48a);} .kw-tier.t3 .n{color:var(--kw);}
+  .kw-tier.t4 .n{color:var(--bkn-good,#4ed48a);} .kw-tier.t3 .n{color:#f2c14e;}
   .kw-tier.t2 .n{color:#2dd4bf;} .kw-tier.t1 .n{color:var(--text-muted);}
   .kw-row{display:flex;gap:13px;align-items:flex-start;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.055);}
   .kw-row:last-child{border-bottom:0;}
@@ -40,12 +40,12 @@
   .kw-gate .game{font:700 9px ui-monospace,monospace;color:var(--text-muted);margin-top:4px;display:block;}
 </style>
 
-<div class="bkn kw" style="--bkn-accent:#f2c14e;--accent:#f2c14e;max-width:none;">
+<div class="bkn kw" style="--bkn-accent:#4ed48a;--accent:#4ed48a;max-width:none;">
 <div class="page-hero">
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL &middot; Evidence Assembly{% if updated %} &middot; {{ updated }}{% endif %}</div>
-    <h1>Kings <span class="accent">Wisdomism</span></h1>
-    <div class="page-subtitle">The destination the inputs feed. It does <b>not</b> rank plays by &ldquo;goodness&rdquo; or spit out a score &mdash; it ranks them by how many <b>independent lenses</b> point the same way, then lets the <b>market</b> check whether that agreement is already in the number. Evidence convergence, not a prediction.</div>
+    <h1>Green <span class="accent">Light</span></h1>
+    <div class="page-subtitle">The destination the inputs feed. It does <b>not</b> rank plays by &ldquo;goodness&rdquo; or spit out a score &mdash; it ranks them by how many <b>independent lenses</b> point the same way, then lets the <b>market</b> check whether that agreement is already in the number. A play gets the <b style="color:var(--bkn-good,#4ed48a);">green light</b> when the angles agree <i>and</i> the number hasn&rsquo;t caught up. Evidence convergence, not a prediction.</div>
   </div>
 </div>
 
