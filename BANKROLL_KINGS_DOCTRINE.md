@@ -1,6 +1,6 @@
 # Bankroll Kings — Development Doctrine
 
-> **Last updated: 2026-10-02.** This is the *why* behind the product — the stable philosophy
+> **Last updated: 2026-10-04** (added §10, the research method). This is the *why* behind the product — the stable philosophy
 > every feature is checked against. Read it alongside [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md)
 > (the *how it's wired*) and [`CLAUDE.md`](CLAUDE.md) (the enforced session rules; §10 is the
 > honesty/guardrail rulebook this doctrine is the reasoning for). Internal doctrine — **not**
@@ -142,7 +142,56 @@ hold up are *avoidance* rules, and they are enforced in code:
 
 Full study and caveats: `docs/` + the market-efficiency research notes.
 
+## 10. The research method — "what is this average hiding?"
+
+The two filters (§6) decide *what to build*. The beliefs (§8) say *what we hold true.* This is
+*how we discover* — the repeatable method behind every recent breakthrough. It is first-class
+doctrine, not a one-off exercise.
+
+> **The method is one question, asked of every number on the site:**
+> ### "What context is this average hiding?"
+
+An average collapses a distribution to a single number, and **the signal is almost always in
+what got collapsed.** Every recent advance came from this move — not new math:
+
+| Breakthrough | The average it broke open |
+|---|---|
+| Opportunity vs production | "yards/game" hid *role and usage* |
+| Buy Low / Sell High | "record" hid *performance vs opponent-adjusted level* |
+| 1Q/1H behavior | "31 PPG" hid *when* the points happen |
+| CLV vs win rate | "win %" hid *whether you beat the number* |
+| Process vs outcome | "did it hit?" hid *whether the decision was sound* |
+
+**An average hides one of five things** — the checklist to run against any metric: **WHEN**
+(within-game time), **CONDITION** (game-state / script), **WHO** (concentration), **VS WHOM**
+(opponent / venue), **HOW RELIABLY** (the shape, not the mean).
+
+Four disciplines keep the method honest — each a scar, not a theory:
+
+1. **De-averaging trades bias for variance.** Slice finely enough and the sample vanishes; a
+   conditional point estimate on a handful of plays is a mirage (§8.2). Stop when the context
+   appears, and trust *direction and shape* over a precise conditional number.
+2. **It usually reveals correctness, not edge.** The market prices most context (§8.1), so
+   de-averaging most often removes a *misleading* number rather than uncovering money — and that
+   is still worth doing (A3 de-blended a phantom `AvgLine` that fed the score off fiction).
+3. **Volume hides context: prefer rate over counting.** A per-game / total / win-count stat
+   embeds volume driven by game-script, pace, games played, or price. Rate stats (per-play,
+   per-opportunity, per-possession, ROI) divide it back out. (`docs/rate_over_counting.md`.)
+4. **Correlated signals are not independent votes.** Before counting that several factors "agree,"
+   confirm they aren't one argument wearing many hats (Target Share, Air Yards, Targets/Game are
+   one lens, not three). Convergence of correlated lenses is false conviction.
+
+The method is auditable and ongoing: `docs/averaging_audit.md` (the grounded inventory and the
+A1/A2/A3 findings), `docs/rate_over_counting.md` (the counting→rate migration), and
+`docs/wisdomism_lens_families.md` (the independent-lens map it produced). A recurring product of
+this method is a cleaner, smaller set of genuinely independent signals — which is what the
+ranking engine is allowed to treat as separate evidence.
+
+> This may be the most durable thing we build: a discovery engine a competitor can't copy, because
+> it requires the graded history *and* the willingness to disprove our own narrative. Every future
+> idea gets tested against it.
+
 ---
 
-*This doctrine is stable on purpose. Features change; the two filters and the beliefs do not,
-unless new out-of-sample evidence forces a documented change here.*
+*This doctrine is stable on purpose. Features change; the two filters, the beliefs, and the
+research method do not, unless new out-of-sample evidence forces a documented change here.*
