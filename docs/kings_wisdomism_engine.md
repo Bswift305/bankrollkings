@@ -132,9 +132,11 @@ bets" generator, which is exactly the kind of thing most sites fake.
 
 ## 5. Open questions for the brainstorm (CoCo — have at it)
 
-1. **Ranking without a banned score.** Is "tiers + transparent sort keys" enough, or do
-   we want a visible, explainable ordinal (e.g. "3 of 3 lenses agree") that stops short
-   of a 1–100 composite? Where exactly is the honest line?
+1. **Ranking without a banned score.** *Leading answer (see §7): rank by evidence
+   convergence, not goodness.* The two unresolved pieces for CoCo: how do we **measure
+   lens independence** (so "4 lenses agree" isn't one signal counted four times), and
+   how do we wire in the **un-priced gate** (convergence the market already sees is
+   context, not opportunity)?
 2. **The "knock" generator.** Auto-write each play's one-line caveat from the drivers
    (big-fav blowout risk, high-line variance, role change, heat-vs-script conflict), or
    keep a curated caveat library? How do we keep it from reading like boilerplate?
@@ -167,5 +169,102 @@ bets" generator, which is exactly the kind of thing most sites fake.
 
 ---
 
-*Written 2026-10-03 off the NFL Week 5 working session. Start at the doctrine, keep the
-line-delta gate, keep it independent, make no profit claim, and grade what it says.*
+---
+
+## 7. The ranking model — convergence, not goodness (Darrel's answer to the core tension)
+
+Kings Wisdomism should **not rank by how good a play is.** It should rank by **how much
+independent evidence converges on it.** That surfaces a real hierarchy without ever
+claiming edge:
+
+- **Highest conviction** — multiple independent lenses agree
+- **Strong context** — three agree
+- **Worth investigating** — two agree
+- **Single-lens idea** — one lens only
+
+This avoids "94/100 BEST PLAY OF THE DAY" while still giving the user a top-to-bottom
+list. You're ranking **evidence convergence, not predicted profit** — a very different,
+and doctrine-safe, claim.
+
+**Two fixes this needs to actually be honest** (or it recreates the very trap the engine
+exists to kill):
+
+1. **Lens independence is the whole game.** Four lenses agreeing only means something if
+   the four are *independent*. If current-form, matchup, and the line all encode the same
+   underlying "this team is good," then "4 lenses agree" is **one signal counted four
+   times** — false conviction. This is the three-Gibbs-cards trap one level up. The engine
+   must track *which lenses are independent of each other*, not just count how many fired.
+2. **Convergence the market can see is already priced.** Tonight's heat-map finding,
+   restated: lenses agreeing **and** the number moved to match = *context*. Lenses
+   agreeing **and** the number didn't move = the real flag. So the top tier is
+   "independent lenses converge **AND** the line hasn't priced it," not convergence alone.
+
+---
+
+## 8. The dimensions frontier — what we're still averaging away
+
+The sharper question than "what feature next?" is **"what important variable are we not
+inviting into the room?"** Every recent breakthrough (opportunity vs production, buy-low
+vs sell-high, 1Q/1H behavior, process vs outcome, CLV vs win rate) came not from new math
+but from **refusing to let an average hide context.** An average collapses a distribution
+to one number; the signal is in what got collapsed. There are five ways it hides:
+
+| An average can hide... | Example | Where we are |
+|---|---|---|
+| **When** (within-game time) | 1Q/1H, fast vs slow starters | started — CFB period board |
+| **Under what conditions** (game state) | pass-when-trailing *identity* | **frontier — strongest** |
+| **To whom** (concentration) | red-zone TD / target concentration | **frontier** |
+| **Vs whom** (opponent / venue) | SRS opponent adjustment | mostly done |
+| **How reliably** (shape, not mean) | floors vs production | started — hit profiles |
+
+The two untouched frontiers — **game-state conditionality** and **concentration** — are
+exactly the ones that *manufacture props*, which is why they matter most.
+
+**Ranked by the only test that counts (survives "already priced / out-of-sample"):**
+
+1. **Game-script identity** — the best, because it's a *conditional*, not a prediction:
+   "IF the game goes this way, THIS player's volume spikes." Plugs straight into the
+   game-line read (spread/total predicts the script → identity names who benefits). Fully
+   measurable from the 7 seasons of nflverse PBP we already have (`NFL Scenario Engine`).
+2. **Coaching behavior** (4th-down aggression, pace, red-zone run/pass) — underrated,
+   because *the market prices the star QB, not the OC's tendencies.* Structural, boring,
+   roster-stable → the least-priced thing on the list. Same PBP source.
+3. **Red-zone concentration** — won't move a spread, but **destroys the anytime-TD
+   market**: casual money spreads TD bets across names while one back gets 80% of the
+   goal-line work. Underpriced because it's unglamorous.
+4. **Market-shock events** (injury happened + line barely moved, *or* moved a lot) — keep
+   it, but as a **"go investigate" flag**, never a bet. By construction it's a
+   priced-vs-unpriced detector — the Research Engine layer, not a pick.
+5. **Time-slicing (1Q/1H)** — real but with a known ceiling: 1H/1Q lines are *themselves*
+   priced, so it's a context + period-bet finder, not an edge.
+
+**The guardrail on this whole thesis:** every time you de-average, you **trade bias for
+variance.** Slice 3 games into halves → 3 half-samples; condition on "trailing in the 4th"
+→ maybe 2 plays. The 1Q/1H insight was trustworthy because the *direction* was large and
+consistent (Alabama slow, Miss State fast at home), not because a precise conditional
+number was reliable. **De-average until the context appears, then stop before the sample
+vanishes — trust direction and shape over fragile conditional point estimates.** (Same
+lesson as the 3-leg parlay: +63% at n=21, −29% at n=2,861.)
+
+---
+
+## 9. The synthesis + the next step (not a board)
+
+**"Find what's averaged away" and "rank by agreement" are the same project.**
+De-averaging is how we *manufacture new independent lenses*; convergence ranking is how
+Wisdomism *consumes* them. We only earn the right to rank by agreement by doing the work
+to add lenses that are genuinely independent — each one a different thing the market
+averaged away. **The audit feeds the engine.**
+
+So the next step is not another score, board, or trend page. It's an **averaging audit**,
+made concrete and cheap: one document that inventories every aggregate stat the site
+currently shows, tags each with *which of the five dimensions it collapses*, and marks
+whether a conditional version is buildable with data we already hold. That document is
+both the "what are we washing out" map **and** the lens catalog Wisdomism ranks over.
+
+---
+
+*Written 2026-10-03 off the NFL Week 5 working session; §§7–9 added after the strategy
+brainstorm with Darrel. Start at the doctrine, keep the line-delta gate, rank by
+independent convergence (not goodness), keep it independent, make no profit claim, and
+grade what it says. The audit feeds the engine.*
