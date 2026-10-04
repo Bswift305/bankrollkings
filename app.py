@@ -41526,9 +41526,13 @@ def build_nfl_team_rankings_context():
             'rush_ypg': t.get('rush_ypg'), 'off_rush_rank': t.get('off_rush_rank'),
             'pass_ypg': t.get('pass_ypg'), 'off_pass_rank': t.get('off_pass_rank'),
             'sacks_allowed': t.get('sacks_allowed'), 'sacks_allowed_rank': t.get('sacks_allowed_rank'),
-            # defense
-            'rush_ypg_allowed': t.get('rush_ypg_allowed'), 'rush_d_rank': t.get('rush_ypg_adj_rank') or t.get('rush_ypg_rank'),
-            'pass_ypg_allowed': t.get('pass_ypg_allowed'), 'pass_d_rank': t.get('pass_ypg_adj_rank') or t.get('pass_ypg_rank'),
+            # defense -- rank by per-play efficiency (A2), per-game yards kept for context
+            'rush_ypg_allowed': t.get('rush_ypg_allowed'),
+            'rush_d_rank': (t.get('rush_ypc_adj_rank') or t.get('rush_ypc_rank')
+                            or t.get('rush_ypg_adj_rank') or t.get('rush_ypg_rank')),
+            'pass_ypg_allowed': t.get('pass_ypg_allowed'),
+            'pass_d_rank': (t.get('pass_ya_adj_rank') or t.get('pass_ya_rank')
+                            or t.get('pass_ypg_adj_rank') or t.get('pass_ypg_rank')),
             'def_sacks': t.get('def_sacks'), 'sack_rank': t.get('sack_rank'),
             # turnovers
             'takeaways': t.get('takeaways'), 'takeaway_rank': t.get('takeaway_rank'),

@@ -92,11 +92,19 @@ def _tier(rank: int) -> str:
 
 
 def _adj_run_rank(t: dict) -> int:
-    return int(t.get("rush_ypg_adj_rank") or t.get("rush_ypg_rank") or 16)
+    # Averaging Audit A2: rank by per-CARRY efficiency, not per-game yards. A trailing
+    # defense faces more rushes (opponent runs clock), inflating yds/game -- yds/carry
+    # strips that volume out. Fall back to per-game only if the rate rank is absent.
+    return int(t.get("rush_ypc_adj_rank") or t.get("rush_ypc_rank")
+               or t.get("rush_ypg_adj_rank") or t.get("rush_ypg_rank") or 16)
 
 
 def _adj_pass_rank(t: dict) -> int:
-    return int(t.get("pass_ypg_adj_rank") or t.get("pass_ypg_rank") or 16)
+    # A2: rank by per-DROPBACK efficiency (Y/A), not per-game yards. A leading defense
+    # faces more passing (opponent throws to catch up), inflating yds/game -- Y/A is the
+    # pass defense itself. Fall back to per-game only if the rate rank is absent.
+    return int(t.get("pass_ya_adj_rank") or t.get("pass_ya_rank")
+               or t.get("pass_ypg_adj_rank") or t.get("pass_ypg_rank") or 16)
 
 
 def _sched_tag(t: dict) -> str:
@@ -124,14 +132,22 @@ def defense_note(team: str) -> str | None:
         return None
     ab = t["abbr"]
     rr, pr = _adj_run_rank(t), _adj_pass_rank(t)
-    run_adj = t.get("rush_ypg_allowed_adj", t["rush_ypg_allowed"])
-    pass_adj = t.get("pass_ypg_allowed_adj", t["pass_ypg_allowed"])
-    return (
-        f"{ab} D ({t['games']}g, {_sched_tag(t)}): run {run_adj}/gm adj "
-        f"({_ord(rr)}{_rawtag(t['rush_ypg_rank'], rr)}) — {_tier(rr)} vs run; "
-        f"pass {pass_adj}/gm adj ({_ord(pr)}{_rawtag(t['pass_ypg_rank'], pr)}) — {_tier(pr)}; "
-        f"pressure {int(t['def_sacks'])} sacks ({_ord(t['sack_rank'])})."
-    )
+    # Lead with per-PLAY efficiency allowed (A2): yds/carry and yds/dropback, which the
+    # ranks now reflect. Per-game yards kept as context so the volume is still visible.
+    run_eff = t.get("rush_ypc_allowed_adj") or t.get("rush_ypc_allowed")
+    pass_eff = t.get("pass_ya_allowed_adj") or t.get("pass_ya_allowed")
+    if run_eff and pass_eff:
+        run_s = (f"run {run_eff}/car adj ({_ord(rr)}) — {_tier(rr)} vs run "
+                 f"[{t.get('rush_ypg_allowed_adj', t['rush_ypg_allowed'])}/gm]")
+        pass_s = (f"pass {pass_eff}/att adj ({_ord(pr)}) — {_tier(pr)} "
+                  f"[{t.get('pass_ypg_allowed_adj', t['pass_ypg_allowed'])}/gm]")
+    else:  # stale form file without per-play fields -> per-game display
+        run_s = (f"run {t.get('rush_ypg_allowed_adj', t['rush_ypg_allowed'])}/gm adj "
+                 f"({_ord(rr)}) — {_tier(rr)} vs run")
+        pass_s = (f"pass {t.get('pass_ypg_allowed_adj', t['pass_ypg_allowed'])}/gm adj "
+                  f"({_ord(pr)}) — {_tier(pr)}")
+    return (f"{ab} D ({t['games']}g, {_sched_tag(t)}): {run_s}; {pass_s}; "
+            f"pressure {int(t['def_sacks'])} sacks ({_ord(t['sack_rank'])}).")
 
 
 def passer_note(team: str) -> str | None:
@@ -178,17 +194,24 @@ def matchup_read(away: str, home: str, spread_home=None, total=None) -> dict:
     ha_rr, ha_pr = _adj_run_rank(fa), _adj_pass_rank(fa)
     hh_rr, hh_pr = _adj_run_rank(fh), _adj_pass_rank(fh)
     # run reads: away rushing attack vs home run D, and vice versa (opponent-adjusted)
+    # per-play efficiency allowed (A2), with per-game fallback for a stale form file
+    def _run_d(f):
+        return (f"{f.get('rush_ypc_allowed_adj') or f.get('rush_ypc_allowed')}/car adj"
+                if (f.get('rush_ypc_allowed_adj') or f.get('rush_ypc_allowed'))
+                else f"{f.get('rush_ypg_allowed_adj', f['rush_ypg_allowed'])}/gm adj")
+
+    def _pass_d(f):
+        return (f"{f.get('pass_ya_allowed_adj') or f.get('pass_ya_allowed')}/att adj"
+                if (f.get('pass_ya_allowed_adj') or f.get('pass_ya_allowed'))
+                else f"{f.get('pass_ypg_allowed_adj', f['pass_ypg_allowed'])}/gm adj")
+
     read["run_reads"] = [
-        f"{fa['abbr']} run game meets {fh['abbr']}'s run D "
-        f"({fh.get('rush_ypg_allowed_adj', fh['rush_ypg_allowed'])}/gm adj, {_ord(hh_rr)})",
-        f"{fh['abbr']} run game meets {fa['abbr']}'s run D "
-        f"({fa.get('rush_ypg_allowed_adj', fa['rush_ypg_allowed'])}/gm adj, {_ord(ha_rr)})",
+        f"{fa['abbr']} run game meets {fh['abbr']}'s run D ({_run_d(fh)}, {_ord(hh_rr)})",
+        f"{fh['abbr']} run game meets {fa['abbr']}'s run D ({_run_d(fa)}, {_ord(ha_rr)})",
     ]
     read["pass_reads"] = [
-        f"{fa['abbr']} passing vs {fh['abbr']} pass D "
-        f"({fh.get('pass_ypg_allowed_adj', fh['pass_ypg_allowed'])}/gm adj, {_ord(hh_pr)})",
-        f"{fh['abbr']} passing vs {fa['abbr']} pass D "
-        f"({fa.get('pass_ypg_allowed_adj', fa['pass_ypg_allowed'])}/gm adj, {_ord(ha_pr)})",
+        f"{fa['abbr']} passing vs {fh['abbr']} pass D ({_pass_d(fh)}, {_ord(hh_pr)})",
+        f"{fh['abbr']} passing vs {fa['abbr']} pass D ({_pass_d(fa)}, {_ord(ha_pr)})",
     ]
 
     # total lean from where both defenses are strong/soft (opponent-adjusted ranks)

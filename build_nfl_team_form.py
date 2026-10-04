@@ -106,12 +106,18 @@ def build(season: int, source: str | None = None) -> dict:
             "rush_ypc_allowed": round(rush_a / car_a, 2) if car_a else 0.0,
             "rush_ypg_allowed": round(rush_a / gms, 1),
             "pass_ypg_allowed": round(opp["passing_yards"].sum() / gms, 1),
+            # per-DROPBACK efficiency allowed (Averaging Audit A2): per-game pass yds
+            # allowed is inflated by VOLUME a lead creates (trailing offenses throw more);
+            # yards/attempt strips that volume out and measures the pass defense itself.
+            "pass_att_allowed": float(opp["attempts"].sum()),
+            "pass_ya_allowed": round(opp["passing_yards"].sum() / opp["attempts"].sum(), 2) if opp["attempts"].sum() else 0.0,
             "rush_td_allowed": float(opp["rushing_tds"].sum()),
             "pass_td_allowed": float(opp["passing_tds"].sum()),
             # offense: what T does
             "rush_ypg": round(own["rushing_yards"].sum() / gms, 1),
             "pass_ypg": round(own["passing_yards"].sum() / gms, 1),
             "rush_ypc": round(own["rushing_yards"].sum() / car_o, 2) if car_o else 0.0,
+            "pass_ya": round(own["passing_yards"].sum() / own["attempts"].sum(), 2) if own["attempts"].sum() else 0.0,
             "sacks_allowed": float(own["sacks_suffered"].sum()),
             # turnovers: takeaways (defense forces) vs giveaways (offense loses)
             "takeaways": float(own["def_interceptions"].sum() + own["fumble_recovery_opp"].sum()),
@@ -128,6 +134,9 @@ def build(season: int, source: str | None = None) -> dict:
     # strong ones -> adjust down. Single-pass SoS, not a full iterative rating.
     league_off_rush = sum(rec[t]["rush_ypg"] for t in rec) / len(rec)
     league_off_pass = sum(rec[t]["pass_ypg"] for t in rec) / len(rec)
+    # per-play league baselines (for the per-dropback / per-carry SoS adjustment)
+    league_off_pass_ya = sum(rec[t]["pass_ya"] for t in rec) / len(rec)
+    league_off_rush_ypc = sum(rec[t]["rush_ypc"] for t in rec) / len(rec)
 
     def _opp_off(team, exclude, col):
         """Opponent `team`'s offensive yds/game in `col`, excluding games vs `exclude`."""
@@ -136,6 +145,14 @@ def build(season: int, source: str | None = None) -> dict:
         if not n:
             return league_off_rush if "rush" in col else league_off_pass
         return g[col].sum() / n
+
+    def _opp_off_rate(team, exclude, num_col, den_col, fallback):
+        """Opponent `team`'s offensive RATE (num/den), excluding games vs `exclude`."""
+        g = df[(df["team"] == team) & (df["opponent_team"] != exclude)]
+        den = g[den_col].sum()
+        if not den:
+            return fallback
+        return g[num_col].sum() / den
 
     for T in rec:
         faced = rec[T]["opps_faced"] or []
@@ -150,6 +167,16 @@ def build(season: int, source: str | None = None) -> dict:
         rec[T]["sos_pass"] = round(league_off_pass - fp, 1)
         rec[T]["rush_ypg_allowed_adj"] = round(rec[T]["rush_ypg_allowed"] + rec[T]["sos_rush"], 1)
         rec[T]["pass_ypg_allowed_adj"] = round(rec[T]["pass_ypg_allowed"] + rec[T]["sos_pass"], 1)
+        # per-play (per-dropback / per-carry) SoS adjustment -- same logic, rate basis
+        if faced:
+            fp_ya = sum(_opp_off_rate(o, T, "passing_yards", "attempts", league_off_pass_ya) for o in faced) / len(faced)
+            fr_ypc = sum(_opp_off_rate(o, T, "rushing_yards", "carries", league_off_rush_ypc) for o in faced) / len(faced)
+        else:
+            fp_ya, fr_ypc = league_off_pass_ya, league_off_rush_ypc
+        rec[T]["sos_pass_ya"] = round(league_off_pass_ya - fp_ya, 2)
+        rec[T]["sos_rush_ypc"] = round(league_off_rush_ypc - fr_ypc, 2)
+        rec[T]["pass_ya_allowed_adj"] = round(rec[T]["pass_ya_allowed"] + rec[T]["sos_pass_ya"], 2)
+        rec[T]["rush_ypc_allowed_adj"] = round(rec[T]["rush_ypc_allowed"] + rec[T]["sos_rush_ypc"], 2)
         # combined schedule strength (avg of the two offensive sides faced), for a label
         strength = ((fr - league_off_rush) + (fp - league_off_pass)) / 2  # +ve => tough slate
         rec[T]["sos_pts"] = round(strength, 1)
@@ -164,6 +191,10 @@ def build(season: int, source: str | None = None) -> dict:
         ("pass_ypg_allowed", True, "pass_ypg_rank"),
         ("rush_ypg_allowed_adj", True, "rush_ypg_adj_rank"),
         ("pass_ypg_allowed_adj", True, "pass_ypg_adj_rank"),
+        # per-play (A2): rank the defense by efficiency allowed, not volume allowed
+        ("pass_ya_allowed", True, "pass_ya_rank"),
+        ("pass_ya_allowed_adj", True, "pass_ya_adj_rank"),
+        ("rush_ypc_allowed_adj", True, "rush_ypc_adj_rank"),
         ("sos_pts", False, "sos_rank"),  # 1 = toughest schedule faced
         # offense (1 = most yards) + turnovers (1 = best: most takeaways / fewest
         # giveaways / best margin) + pass protection (1 = fewest sacks allowed)
