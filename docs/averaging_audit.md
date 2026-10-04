@@ -134,35 +134,140 @@ breakthrough — and the next Wisdomism lens.
 
 ---
 
-## 6. Grounded inventory
+## 6. The dominant finding (read this first)
 
-> *Populated from the codebase sweep now running (game/team, player, market-trends-truth).
-> Filled in below when the sweep lands.*
+> **Nearly every number on the site collapses GAME-STATE** — leading / trailing / tied,
+> and its cousin, garbage-time. And game-state is not just *one* hidden dimension. It is
+> the hidden **common cause** that makes our supposedly-separate lenses secretly the same
+> signal:
+>
+> - **Usage** (`target_share`, `rush_share`) is *created by* game-script — trailing teams
+>   throw, leading teams run — so our "opportunity" number already has game-script baked in.
+> - **Defensive ranks** (pass/run ypg allowed) are *inflated by* game-script — a defense
+>   that's often led looks "soft vs the pass" because it faced catch-up throwing.
+> - **Totals, quarter margins, streaks** are distorted by garbage-time.
+>
+> **Therefore: conditioning on game-state is the single highest-leverage move we can make.**
+> It reveals the most hidden context (CONDITION — our #1 frontier) **and** it's what
+> *disentangles the lenses* so Wisdomism's convergence counting is honest. One fix, both
+> payoffs. If we do nothing else from this audit, we do this.
 
-### 6a. Game / Team level
-*(pending sweep)*
+A second cross-cutting pattern: **opponent-quality is collapsed across the entire NFL
+player/trends stack** (hit profiles, floor board, hot-hand, buy-low) — while the **CFB**
+side already opponent-adjusts (SRS) and venue-splits. CFB is the template; NFL is behind.
 
-### 6b. Player level
-*(pending sweep)*
-
-### 6c. Market / Trends / Truth
-*(pending sweep)*
+A third: **line-level blending.** Every streak/hit number is measured against a *single
+fixed line* (today's posted number, applied to past games), and the hit-profile `AvgLine`
+blends every line a player was ever graded at into one figure that matches no real bet.
 
 ---
 
-## 7. Output of the audit
+## 7. Grounded inventory — where context is hidden
 
-Two deliverables, in order:
+Only the context-*hiding* metrics are listed (the ones already split well are called out
+as templates). Lens-family codes: **OPP** opportunity · **SCRIPT** game-state · **MATCH**
+opponent/matchup · **MKT** market · **TIME** quarter/half · **SHAPE** reliability/floor ·
+**COACH** coaching (not yet built) · **CONC** concentration (not yet built).
 
-1. **The hidden-context shortlist** — ranked by (collapses a frontier dimension) ×
-   (buildable now) × (not already priced). This is where the next insight is most likely
-   sitting.
-2. **The Wisdomism lens catalog** — the subset of findings that are genuinely *independent*
-   lenses, which the Evidence Assembly engine ranks convergence over. The audit is what
-   earns Wisdomism the right to rank by agreement at all.
+### 7a. Game / Team
+| Metric | Where | Collapses | Lens |
+|---|---|---|---|
+| Pass/run ypg-allowed (adj) **def ranks** | `nfl_current_form` `_adj_*_rank`/`defense_note` | game-state, garbage-time | MATCH⊗SCRIPT |
+| Raw **ppg/papg/avg_margin** (NOT opp-adj, beside adjusted SRS) | `cfb_current_form.team_form:356` | opponent, home/road, game-state | MATCH |
+| Projected **total** (per-game pts, not per-drive) | `cfb_current_form._off_def_ratings:259` | pace/possessions | MATCH |
+| Elo rating w/ **single league-wide HFA** | `power_ratings.compute_elo:173` | per-team/venue HFA, garbage-time | MATCH |
+| ATS/OU cover% + **coach** ATS | `build_nfl_matchup_dossier:43208`, `build_bk_power_context:44379` | recency, opponent | MKT/COACH |
+
+### 7b. Player
+| Metric | Where | Collapses | Lens |
+|---|---|---|---|
+| **HitRate / AvgLine** (biggest single collapse) | `build_nfl_historical_calibration.build_player_profiles:415` | **line level**, recency, opponent, game-state | SHAPE |
+| **target_share / rush_share** / opportunity score | `build_nfl_usage_board:30469` | **game-script (its own creator)**, opponent | OPP⊗SCRIPT |
+| Prop-floor / floor-board **clear rate** | `build_nfl_prop_floor:29842`, `build_nfl_floor_board:29955` | opponent, home/road, game-state | SHAPE |
+| Hot-hand **streak / avg_clear** | `build_nfl_hot_hand:30174` | opponent, game-state, **line level** (past games vs today's line) | SHAPE |
+| **FloorHitRate / Follow3 / ConsistencyIndex** (archive) | `build_trend_board:27728` | opponent, home/road, game-state, real market line | SHAPE |
+| Buy-low **delta_pct** | `build_nfl_buy_low_board:30323` | opponent (NOT schedule-adj), game-state | OPP |
+
+### 7c. Market / Trends / Truth
+| Metric | Where | Collapses | Lens |
+|---|---|---|---|
+| Market-Movers **consensus delta** | `_build_market_movers_snapshot:18464` | time-to-kickoff, book disagreement | MKT |
+| ATS **cover_rate_5y/last5** + continuation | `build_football_historical_market_rows:8394` | home/road, fav/dog, opponent | MKT/MATCH |
+| CFB Game-Flow **quarter/half margins** | `build_cfb_period_context:42280` | opponent (raw), score-state/garbage-time | TIME |
+| Calibration **overall hit rate** + signal cohort hit_rate | `model_calibration.run_calibration:334`, `grade_signals._cohort:142` | **price/odds** (calibrated can still lose money) | SHAPE/MKT |
+
+**Already split well — copy these patterns:** CFB buy-low (opp-adjusted residual + venue
+split), CFB period board (venue), `build_nfl_ats_context` / `build_cfb_ats_context`
+(home/away/fav/dog), `model_calibration` buckets, candidate-archive (hit rate **paired with
+ROI**), featured-archive (CLV).
 
 ---
 
-*Written 2026-10-03 after the strategy brainstorm with Darrel + CoCo. The method is the
-product: keep asking what the average hides, keep the lens-independence test honest, and
-let the findings — not another board — decide what gets built next.*
+## 8. The hidden-context shortlist (the payoff)
+
+Ranked by *collapses a frontier dimension × buildable now × not already priced.* Split into
+**(A) de-collapse an existing number** and **(B) net-new lenses the site doesn't compute at
+all** (the sweeps confirmed coaching + concentration don't exist today).
+
+### A — De-collapse (reveal context inside numbers we already show)
+1. **Usage × game-script** — split `target_share` / `rush_share` by leading/trailing/tied.
+   *Highest leverage on the board:* reveals the #1 frontier AND decouples Opportunity from
+   Game-Script for honest convergence. Buildable from nflverse PBP (+ the projected-state
+   tags `build_nfl_historical_calibration` already computes). Un-priced.
+2. **Defensive ranks × neutral-script** — recompute ypg-allowed on neutral / pre-garbage
+   plays. Kills the "soft pass D is an artifact of trailing opponents" problem that shaped
+   tonight's shootout reads. Buildable from PBP. Largely un-priced.
+3. **Hit-profile / floor rates de-blended by line level (+ opponent)** — fixes the biggest
+   single collapse (`AvgLine` blends line levels) that feeds the prop score **and tonight's
+   line-delta gate.** More correctness than new edge, but high trust. Regrade
+   `NFL_AllPropResults` into line buckets.
+4. **NFL buy-low schedule-adjust + venue split** — quick win: the pattern already exists in
+   `build_cfb_buy_low_board` (opp-adjusted residual + home/road). Just port it.
+5. **CFB Game-Flow opponent-adjust + close-game-only** — port SRS into the quarter margins,
+   filter garbage-time. (Venue split already done.)
+6. **Price/ROI in the truth layer** — pair every calibration + signal hit rate with ROI and
+   split fav/dog. Mirror candidate-archive's existing ROI pairing. Honesty fix: a calibrated
+   hit rate can still lose money.
+
+### B — Net-new independent lenses (greenfield, genuinely un-priced)
+7. **Coaching / structural tendencies** — 4th-down aggression, pace, red-zone run/pass
+   philosophy. Nothing computes these today. Buildable from the 7-yr nflverse PBP. **Least
+   priced on the whole list** (the market prices the QB, not the OC). Strongest new lens.
+8. **Red-zone concentration** — who actually gets the goal-line carries / RZ targets. Not
+   computed today. Buildable from PBP. Destroys the anytime-TD market; independent of
+   yardage usage.
+
+---
+
+## 9. The lens-independence verdict (Wisdomism's catalog)
+
+CoCo's question — *are these independent lenses or one argument in many hats?* — now has a
+grounded answer: **today they are more entangled than the hypothesis, and the common cause
+is game-state.**
+- Opportunity ⟂ Game-Script → **no** (usage bakes in script)
+- Matchup/def-ranks ⟂ Game-Script → **no** (ranks inflated by script)
+- Form/Matchup ⟂ Market → **partly** (both encode team strength the line already knows)
+
+So the honest independent lens set — **after the Type-A fixes** — is roughly:
+
+| Lens | Earned by |
+|---|---|
+| Script-conditioned usage | fix #1 (decouples OPP from SCRIPT) |
+| Neutral-script matchup | fix #2 (decouples MATCH from SCRIPT) |
+| Market / line-delta | already independent (it's the price) |
+| Time-sliced behavior | fix #5 (opp-adjusted periods) |
+| Coaching / structural | new lens #7 |
+| Red-zone concentration | new lens #8 |
+| Reliability / shape (de-blended by line) | fix #3 |
+
+**The headline, restated:** conditioning on game-state is the one move that both reveals
+the most hidden context *and* earns Wisdomism honest lens independence. The audit didn't
+just find fixes — it found that the fix and the independence requirement are the **same
+move.**
+
+---
+
+*Written 2026-10-03 after the strategy brainstorm with Darrel + CoCo; inventory grounded in
+a three-domain codebase sweep. The method is the product: keep asking what the average
+hides, keep the lens-independence test honest, and let the findings — not another board —
+decide what gets built next. **Next move: game-state conditioning (shortlist A1/A2).***
