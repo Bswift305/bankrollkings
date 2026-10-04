@@ -721,6 +721,7 @@ PRO_ENDPOINTS = {
     'start_here_tool',  # guided onboarding -- the loop walkthrough
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
+    'kings_wisdomism_tool',  # the convergence assembly engine -- premium destination
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
@@ -30567,6 +30568,213 @@ def build_nfl_usage_board(limit=40, min_games=1):
     return data
 
 
+_WISDOM_LENS_CACHE = {}
+
+
+def _load_wisdom_lens(fname, rekey=False):
+    """Load a committed lens JSON (data/scenarios/*.json), mtime-cached. rekey=True turns
+    PBP 'F.Last' keys into (init,last) tuples for name joins (Concentration)."""
+    import os as _os
+    base = globals().get('BASE_DIR', '.')
+    path = _os.path.join(base, 'data', 'scenarios', fname)
+    try:
+        mt = _os.path.getmtime(path)
+    except OSError:
+        return {}
+    ck = (fname, rekey)
+    if _WISDOM_LENS_CACHE.get(ck, {}).get('mt') == mt:
+        return _WISDOM_LENS_CACHE[ck]['data']
+    try:
+        with open(path, encoding='utf-8') as fh:
+            raw = json.load(fh)
+    except Exception:
+        return {}
+    data = {}
+    if rekey:
+        for name, info in raw.items():
+            k = _usage_name_key(name, dotted=True)
+            if k:
+                data[k] = info
+    else:
+        data = raw
+    _WISDOM_LENS_CACHE[ck] = {'mt': mt, 'data': data}
+    return data
+
+
+def _nfl_game_scripts():
+    """Per-team game script from the market: favored/dog + spread magnitude + total, keyed
+    by team abbr. The spread is the market's expected script -- a favorite is expected to
+    lead (run), an underdog to trail (throw). This is what the Game Identity lens reads."""
+    try:
+        import nfl_current_form as _ncf
+        odds = load_nfl_game_market_odds()
+    except Exception:
+        return {}
+    if odds is None or getattr(odds, 'empty', True):
+        return {}
+    out = {}
+    try:
+        for gid, g in odds.groupby('GameID'):
+            r = g.iloc[0]
+            away, home = _ncf.resolve(str(r['Away'])), _ncf.resolve(str(r['Home']))
+            sp = pd.to_numeric(g['Spread'], errors='coerce').median()
+            tot = pd.to_numeric(g['Total'], errors='coerce').median()
+            aml = pd.to_numeric(g['AwayML'], errors='coerce').median()
+            hml = pd.to_numeric(g['HomeML'], errors='coerce').median()
+            fav = away if (pd.notna(aml) and pd.notna(hml) and aml < hml) else home
+            mag = abs(float(sp)) if pd.notna(sp) else None
+            for team, opp, is_home in ((away, home, False), (home, away, True)):
+                out[team] = {'opp': opp, 'favored': team == fav, 'spread_mag': mag,
+                             'total': float(tot) if pd.notna(tot) else None, 'home': is_home}
+    except Exception:
+        return {}
+    return out
+
+
+def _nfl_wisdom_props():
+    """Primary over lines per (player, stat) from NFL_Props (FanDuel), with the open line
+    for the market gate. Returns {(player, stat): {line, open, odds, open_odds, game}}."""
+    try:
+        import os as _os
+        base = globals().get('BASE_DIR', '.')
+        df = pd.read_csv(_os.path.join(base, 'data', 'props', 'NFL_Props.csv'))
+    except Exception:
+        return {}
+    df = df[df['Book'] == 'FanDuel'] if 'Book' in df.columns else df
+    out = {}
+    for _, r in df.iterrows():
+        stat = str(r.get('Stat'))
+        cur = pd.to_numeric(r.get('CurrentLine'), errors='coerce')
+        if pd.isna(cur):
+            cur = pd.to_numeric(r.get('Line'), errors='coerce')
+        if pd.isna(cur):
+            continue
+        out[(str(r.get('Player')), stat)] = {
+            'line': float(cur),
+            'open': pd.to_numeric(r.get('OpenLine'), errors='coerce'),
+            'odds': pd.to_numeric(r.get('OverOdds'), errors='coerce'),
+            'open_odds': pd.to_numeric(r.get('OpenOverOdds'), errors='coerce'),
+            'game': str(r.get('Game') or ''),
+        }
+    return out
+
+
+def _wisdom_market_gate(pr):
+    """Market = the referee, not a vote (ratified). For an OVER, the convergence is already
+    PRICED if the line has risen off its open (the market moved toward the play) or the price
+    shortened. Un-priced (ELIGIBLE) if the number is flat or softer. Returns (eligible, note)."""
+    open_line, cur = pr.get('open'), pr.get('line')
+    if open_line is not None and pd.notna(open_line) and cur is not None:
+        move = round(float(cur) - float(open_line), 1)
+        if move >= 0.5:
+            return False, f"line up {move:+g} off open — market already moved to it"
+        if move <= -0.5:
+            return True, f"line down {move:+g} off open — number softened, not priced"
+    odds, oo = pr.get('odds'), pr.get('open_odds')
+    if odds is not None and oo is not None and pd.notna(odds) and pd.notna(oo) and float(odds) < float(oo) - 15:
+        return False, "over price shortened — market moved to it"
+    return True, "number stable since open — convergence not yet priced"
+
+
+def build_kings_wisdom(limit=40):
+    """Kings Wisdomism -- the convergence assembly engine (NFL v1).
+
+    Not a score, not a pick. For each featured player's primary over, it counts how many
+    INDEPENDENT lenses agree (the ratified set: Opportunity, Matchup, Game Identity, Coaching,
+    + Concentration on the scoring angle), then the MARKET gate asks whether that agreement is
+    already in the number. Ranked by convergence TIER, eligible (un-priced) first. The whole
+    point of the audit was to purify the lenses so 'N independent arguments agree' means
+    something. See docs/wisdomism_lens_families.md + docs/kings_wisdomism_engine.md."""
+    import nfl_current_form as _ncf
+    usage = build_nfl_usage_board(limit=600)
+    if not usage.get('available'):
+        return {'available': False, 'plays': [], 'tiers': [], 'season': usage.get('season')}
+    props = _nfl_wisdom_props()
+    scripts = _nfl_game_scripts()
+    conc = _load_wisdom_lens('nfl_concentration.json', rekey=True)
+    coach = _load_wisdom_lens('nfl_coaching.json')
+
+    OPP_ROLES = {'Alpha', 'Featured', 'Bell-cow', 'Lead back'}
+    plays = []
+    for p in usage['players']:
+        if p.get('is_def'):
+            continue
+        is_back = bool(p.get('is_back'))
+        stat = 'Rush Yds' if is_back else 'Rec Yds'
+        pr = props.get((p['player'], stat))
+        if not pr:
+            continue
+        team = p['team']
+        gs = scripts.get(team)
+        lenses = []   # independent lenses that AGREE with the over
+
+        # 1. Opportunity -- volume access (cleaned: share-based, script-decoupled)
+        if p.get('role') in OPP_ROLES:
+            lenses.append({'lens': 'Opportunity', 'why': p.get('why') or p.get('role')})
+
+        # 2. Matchup -- opposing defense efficiency allowed (per-dropback / per-carry)
+        opp_abbr = None
+        if gs:
+            opp_form = _ncf.team_form(gs['opp'])
+            if opp_form.get('games'):
+                opp_abbr = opp_form.get('abbr', gs['opp'])
+                rk = _ncf._adj_run_rank(opp_form) if is_back else _ncf._adj_pass_rank(opp_form)
+                if rk >= 20:
+                    side = 'run' if is_back else 'pass'
+                    lenses.append({'lens': 'Matchup', 'why': f"{opp_abbr} {side} D ranks {rk}th per-play (soft)"})
+
+        # 3. Game Identity -- does the projected script feed this usage?
+        if gs and gs.get('spread_mag') and gs['spread_mag'] >= 3:
+            if is_back and gs['favored']:
+                lenses.append({'lens': 'Game Identity', 'why': f"favored by {gs['spread_mag']:g} → leading script → carries"})
+            elif (not is_back) and (not gs['favored']):
+                lenses.append({'lens': 'Game Identity', 'why': f"dog by {gs['spread_mag']:g} → trailing script → targets"})
+            elif p.get('script_dependent'):
+                # script-dependent player whose flip direction matches the game script
+                note = str(p.get('script_note') or '')
+                if (is_back and 'leading' in note and gs['favored']) or \
+                   ((not is_back) and 'trailing' in note and (not gs['favored'])):
+                    lenses.append({'lens': 'Game Identity', 'why': note})
+
+        # 4. Coaching -- does the team's structural tendency support it?
+        ct = coach.get(team)
+        if ct:
+            note = str(ct.get('note') or '')
+            if (is_back and 'run-first' in note) or ((not is_back) and 'pass-first' in note) or ('up-tempo' in note):
+                lenses.append({'lens': 'Coaching', 'why': note})
+
+        # 5. Concentration -- scoring-market angle only (the anytime-TD corroborator)
+        cc = conc.get(_usage_name_key(p['player']))
+        td_angle = cc.get('note') if cc else None
+
+        eligible, gate_note = _wisdom_market_gate(pr)
+        conv = len(lenses)
+        if conv == 0 and not td_angle:
+            continue
+        plays.append({
+            'player': p['player'], 'team': team, 'pos': p.get('pos'), 'is_back': is_back,
+            'stat': stat, 'line': pr['line'], 'odds': (int(pr['odds']) if pd.notna(pr['odds']) else None),
+            'game': pr.get('game'), 'opp': opp_abbr,
+            'lenses': lenses, 'convergence': conv,
+            'eligible': eligible, 'gate_note': gate_note,
+            'td_angle': td_angle, 'opp_score': p.get('score', 0),
+        })
+
+    # rank: eligible (un-priced) first, then convergence, then opportunity score
+    plays.sort(key=lambda x: (x['eligible'], x['convergence'], x['opp_score']), reverse=True)
+    for pl in plays:
+        pl['tier'] = ('Highest conviction' if pl['convergence'] >= 4 else
+                      'Strong context' if pl['convergence'] == 3 else
+                      'Worth investigating' if pl['convergence'] == 2 else
+                      'Single-lens idea')
+    TIERS = ['Highest conviction', 'Strong context', 'Worth investigating', 'Single-lens idea']
+    tiers = [{'name': t, 'plays': [pl for pl in plays[:limit] if pl['tier'] == t]} for t in TIERS]
+    tiers = [t for t in tiers if t['plays']]
+    return {'available': bool(plays), 'plays': plays[:limit], 'tiers': tiers,
+            'season': usage.get('season'), 'count': len(plays),
+            'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+
 def build_nfl_featured_parlay(legs=3):
     """Auto-build this week's Featured Parlay: the strongest FLOORS from distinct games
     (cross-game = low correlation, parlay-legal), one leg per game, priced. Reuses the
@@ -42011,6 +42219,15 @@ def nfl_featured_players_tool():
     ctx = build_nfl_usage_board()
     ctx['parlay'] = build_nfl_featured_parlay()
     return render_template('nfl_featured.html', **ctx)
+
+
+@app.route('/tools/wisdomism')
+def kings_wisdomism_tool():
+    """Kings Wisdomism -- the convergence assembly engine. Ranks plays by how many
+    INDEPENDENT lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the
+    Concentration TD angle), gated by the market (un-priced first). Evidence assembly,
+    not a score. The destination the whole averaging audit earned the right to build."""
+    return render_template('kings_wisdomism.html', **build_kings_wisdom())
 
 
 @app.route('/tools/nfl-buy-low')

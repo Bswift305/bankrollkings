@@ -1,0 +1,95 @@
+{% set active_page = 'kings_wisdomism' %}
+{% extends "bk_base.html" %}
+{% block title %}Kings Wisdomism - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .kw{--kw:#f2c14e;--kw-dim:rgba(242,193,78,.16);}
+  .kw-how{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-4px 0 18px;}
+  .kw-how b{color:var(--text-bright);}
+  .kw-lens-key{display:inline-flex;align-items:center;gap:5px;}
+  .kw-dot{width:8px;height:8px;border-radius:2px;display:inline-block;background:var(--kw);}
+  .kw-tier{margin:0 0 20px;}
+  .kw-tier-h{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+  .kw-tier-h .n{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .kw-tier-h .c{font:700 10px ui-monospace,monospace;color:var(--text-muted);}
+  .kw-tier.t4 .n{color:var(--bkn-good,#4ed48a);} .kw-tier.t3 .n{color:var(--kw);}
+  .kw-tier.t2 .n{color:#2dd4bf;} .kw-tier.t1 .n{color:var(--text-muted);}
+  .kw-row{display:flex;gap:13px;align-items:flex-start;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .kw-row:last-child{border-bottom:0;}
+  .kw-conv{flex:0 0 auto;width:48px;height:48px;border-radius:12px;background:var(--panel,#0f1a29);border:1.5px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .kw-conv .n{font:800 20px ui-monospace,monospace;line-height:1;color:var(--kw);}
+  .kw-conv .l{font:700 6.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-top:2px;}
+  .kw-row.t4 .kw-conv{border-color:rgba(78,212,138,.5);} .kw-row.t4 .kw-conv .n{color:var(--bkn-good,#4ed48a);}
+  .kw-main{flex:1 1 auto;min-width:0;}
+  .kw-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+  .kw-name{font:800 14.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .kw-meta{font:600 10.5px ui-monospace,monospace;color:var(--text-muted);}
+  .kw-play{font:800 12.5px ui-monospace,Consolas,monospace;color:var(--text-bright);background:var(--kw-dim);border-radius:5px;padding:1px 7px;}
+  .kw-chips{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0 4px;}
+  .kw-chip{font:700 8.5px ui-monospace,monospace;letter-spacing:.03em;text-transform:uppercase;border-radius:4px;padding:2px 6px;background:var(--kw-dim);color:var(--kw);white-space:nowrap;}
+  .kw-chip.td{background:rgba(45,212,191,.16);color:#2dd4bf;}
+  .kw-why{font:500 11px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .kw-why b{color:var(--text-bright);font-weight:700;}
+  .kw-gate{flex:0 0 auto;text-align:right;min-width:94px;}
+  .kw-badge{font:800 8px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:3px 7px;white-space:nowrap;}
+  .kw-badge.elig{background:rgba(78,212,138,.16);color:var(--bkn-good,#4ed48a);}
+  .kw-badge.priced{background:rgba(255,255,255,.07);color:var(--text-muted);}
+  .kw-gate .g{font:500 9.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:5px;}
+  .kw-gate .game{font:700 9px ui-monospace,monospace;color:var(--text-muted);margin-top:4px;display:block;}
+</style>
+
+<div class="bkn kw" style="--bkn-accent:#f2c14e;--accent:#f2c14e;max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL &middot; Evidence Assembly{% if updated %} &middot; {{ updated }}{% endif %}</div>
+    <h1>Kings <span class="accent">Wisdomism</span></h1>
+    <div class="page-subtitle">The destination the inputs feed. It does <b>not</b> rank plays by &ldquo;goodness&rdquo; or spit out a score &mdash; it ranks them by how many <b>independent lenses</b> point the same way, then lets the <b>market</b> check whether that agreement is already in the number. Evidence convergence, not a prediction.</div>
+  </div>
+</div>
+
+<div class="kw-how">
+  <span class="kw-lens-key"><span class="kw-dot"></span><b>5 independent lenses</b> can agree:</span>
+  <span>Opportunity</span><span>&middot;</span><span>Matchup</span><span>&middot;</span><span>Game Identity</span><span>&middot;</span><span>Coaching</span><span>&middot;</span><span>Concentration <span style="opacity:.7;">(scoring angle)</span></span>
+  <span style="flex-basis:100%;height:0;"></span>
+  <span><b>Market is the referee, not a vote</b> &mdash; a play is <b style="color:var(--bkn-good,#4ed48a);">eligible</b> when the lenses agree <i>and</i> the number hasn&rsquo;t moved to price it in.</span>
+</div>
+
+{% if not available %}
+  <div class="bkn-empty">No current-season board loaded yet &mdash; Wisdomism assembles once the week&rsquo;s props and form are in.</div>
+{% else %}
+
+{% for tier in tiers %}
+{% set ti = 4 if tier.name == 'Highest conviction' else 3 if tier.name == 'Strong context' else 2 if tier.name == 'Worth investigating' else 1 %}
+<div class="kw-tier t{{ ti }}">
+  <div class="kw-tier-h"><span class="n">{{ tier.name }}</span><span class="c">{{ tier.plays|length }} play{{ '' if tier.plays|length == 1 else 's' }} &middot; {{ ti }}{{ '+' if ti == 4 else '' }} lens{{ 'es' if ti != 1 else '' }} agree</span></div>
+  {% for pl in tier.plays %}
+  <div class="kw-row t{{ ti }}">
+    <div class="kw-conv"><span class="n">{{ pl.convergence }}</span><span class="l">{{ 'Lens' if pl.convergence == 1 else 'Lenses' }}</span></div>
+    <div class="kw-main">
+      <div class="kw-top">
+        <span class="kw-name">{{ pl.player }}</span>
+        <span class="kw-meta">{{ pl.team }}{% if pl.pos %} &middot; {{ pl.pos }}{% endif %}</span>
+        <span class="kw-play">{{ pl.stat }} O{{ '%g'|format(pl.line) }}{% if pl.odds %} ({{ '%+d'|format(pl.odds) }}){% endif %}</span>
+      </div>
+      <div class="kw-chips">
+        {% for l in pl.lenses %}<span class="kw-chip">{{ l.lens }}</span>{% endfor %}
+        {% if pl.td_angle %}<span class="kw-chip td">+ TD angle</span>{% endif %}
+      </div>
+      <div class="kw-why">{% for l in pl.lenses %}<b>{{ l.lens }}:</b> {{ l.why }}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% if pl.td_angle %}<br><b style="color:#2dd4bf;">Concentration:</b> {{ pl.td_angle }} &mdash; <i>scoring-market angle</i>{% endif %}</div>
+    </div>
+    <div class="kw-gate">
+      <span class="kw-badge {{ 'elig' if pl.eligible else 'priced' }}">{{ 'Eligible' if pl.eligible else 'Priced in' }}</span>
+      <div class="g">{{ pl.gate_note }}</div>
+      {% if pl.game %}<span class="game">{{ pl.game.replace('@',' @ ') if pl.game else '' }}</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<div class="bkn-note" style="margin-top:20px;"><b>How to read it &mdash; honestly:</b> each lens is a genuinely <b>independent</b> argument the market tends to average away &mdash; Opportunity (volume access), Matchup (per-dropback efficiency allowed), Game Identity (the game&rsquo;s script), Coaching (structural tendency), and Concentration (who gets the scoring, on TD markets only). We <b>count agreement</b>, we don&rsquo;t blend a score, because sports don&rsquo;t share one scale. More lenses = more corroboration, <b>not</b> a bigger edge &mdash; and <b>&ldquo;eligible&rdquo;</b> only means the number hasn&rsquo;t yet moved to it, not that it will hit. <b>Market is the gate, never a vote.</b> Shop every line. This is the honest version of a &ldquo;best bets&rdquo; board: convergence of evidence, no lock, no composite score, no claim we can&rsquo;t defend. 21+</div>
+{% endif %}
+</div>
+{% endblock %}
