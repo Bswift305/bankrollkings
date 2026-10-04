@@ -1,0 +1,207 @@
+{
+ "A.Cooper": {
+  "kind": "tgt",
+  "flip": -0.078,
+  "note": "targets fade when trailing (-8pts) \u2014 front-running usage"
+ },
+ "A.Ekeler": {
+  "kind": "rush",
+  "flip": -0.05,
+  "note": "more work when trailing (+5pts) \u2014 passing-down back"
+ },
+ "A.Jeanty": {
+  "kind": "rush",
+  "flip": -0.07,
+  "note": "more work when trailing (+7pts) \u2014 passing-down back"
+ },
+ "A.Kamara": {
+  "kind": "rush",
+  "flip": 0.104,
+  "note": "carries concentrate when leading (+10pts) \u2014 early-down role"
+ },
+ "B.Cooks": {
+  "kind": "tgt",
+  "flip": -0.059,
+  "note": "targets fade when trailing (-6pts) \u2014 front-running usage"
+ },
+ "Bre.Hall": {
+  "kind": "rush",
+  "flip": 0.082,
+  "note": "carries concentrate when leading (+8pts) \u2014 early-down role"
+ },
+ "C.Brown": {
+  "kind": "rush",
+  "flip": -0.114,
+  "note": "more work when trailing (+11pts) \u2014 passing-down back"
+ },
+ "C.Olave": {
+  "kind": "tgt",
+  "flip": 0.062,
+  "note": "targets climb when trailing (+6pts) \u2014 chase-script dependent"
+ },
+ "C.Skattebo": {
+  "kind": "rush",
+  "flip": 0.118,
+  "note": "carries concentrate when leading (+12pts) \u2014 early-down role"
+ },
+ "C.Sutton": {
+  "kind": "tgt",
+  "flip": 0.051,
+  "note": "targets climb when trailing (+5pts) \u2014 chase-script dependent"
+ },
+ "C.Williams": {
+  "kind": "rush",
+  "flip": -0.086,
+  "note": "more work when trailing (+9pts) \u2014 passing-down back"
+ },
+ "D.Moore": {
+  "kind": "tgt",
+  "flip": -0.109,
+  "note": "targets fade when trailing (-11pts) \u2014 front-running usage"
+ },
+ "D.Swift": {
+  "kind": "rush",
+  "flip": -0.106,
+  "note": "more work when trailing (+11pts) \u2014 passing-down back"
+ },
+ "I.Pacheco": {
+  "kind": "rush",
+  "flip": 0.087,
+  "note": "carries concentrate when leading (+9pts) \u2014 early-down role"
+ },
+ "J.Chase": {
+  "kind": "tgt",
+  "flip": -0.056,
+  "note": "targets fade when trailing (-6pts) \u2014 front-running usage"
+ },
+ "J.Daniels": {
+  "kind": "rush",
+  "flip": 0.059,
+  "note": "carries concentrate when leading (+6pts) \u2014 early-down role"
+ },
+ "J.Dobbins": {
+  "kind": "rush",
+  "flip": 0.052,
+  "note": "carries concentrate when leading (+5pts) \u2014 early-down role"
+ },
+ "J.Fields": {
+  "kind": "rush",
+  "flip": 0.053,
+  "note": "carries concentrate when leading (+5pts) \u2014 early-down role"
+ },
+ "J.Jacobs": {
+  "kind": "rush",
+  "flip": 0.083,
+  "note": "carries concentrate when leading (+8pts) \u2014 early-down role"
+ },
+ "J.Mason": {
+  "kind": "rush",
+  "flip": -0.06,
+  "note": "more work when trailing (+6pts) \u2014 passing-down back"
+ },
+ "J.McNichols": {
+  "kind": "rush",
+  "flip": 0.051,
+  "note": "carries concentrate when leading (+5pts) \u2014 early-down role"
+ },
+ "J.Meyers": {
+  "kind": "tgt",
+  "flip": 0.057,
+  "note": "targets climb when trailing (+6pts) \u2014 chase-script dependent"
+ },
+ "K.Walker": {
+  "kind": "rush",
+  "flip": -0.087,
+  "note": "more work when trailing (+9pts) \u2014 passing-down back"
+ },
+ "K.Williams": {
+  "kind": "rush",
+  "flip": 0.1,
+  "note": "carries concentrate when leading (+10pts) \u2014 early-down role"
+ },
+ "M.Harrison": {
+  "kind": "tgt",
+  "flip": -0.082,
+  "note": "targets fade when trailing (-8pts) \u2014 front-running usage"
+ },
+ "M.Nabers": {
+  "kind": "tgt",
+  "flip": 0.086,
+  "note": "targets climb when trailing (+9pts) \u2014 chase-script dependent"
+ },
+ "M.Sanders": {
+  "kind": "rush",
+  "flip": -0.065,
+  "note": "more work when trailing (+6pts) \u2014 passing-down back"
+ },
+ "P.Freiermuth": {
+  "kind": "tgt",
+  "flip": 0.053,
+  "note": "targets climb when trailing (+5pts) \u2014 chase-script dependent"
+ },
+ "Q.Johnston": {
+  "kind": "tgt",
+  "flip": -0.054,
+  "note": "targets fade when trailing (-5pts) \u2014 front-running usage"
+ },
+ "R.Dowdle": {
+  "kind": "rush",
+  "flip": 0.072,
+  "note": "carries concentrate when leading (+7pts) \u2014 early-down role"
+ },
+ "R.Rice": {
+  "kind": "tgt",
+  "flip": 0.06,
+  "note": "targets climb when trailing (+6pts) \u2014 chase-script dependent"
+ },
+ "R.Stevenson": {
+  "kind": "rush",
+  "flip": -0.071,
+  "note": "more work when trailing (+7pts) \u2014 passing-down back"
+ },
+ "S.Barkley": {
+  "kind": "rush",
+  "flip": 0.12,
+  "note": "carries concentrate when leading (+12pts) \u2014 early-down role"
+ },
+ "S.LaPorta": {
+  "kind": "tgt",
+  "flip": -0.057,
+  "note": "targets fade when trailing (-6pts) \u2014 front-running usage"
+ },
+ "T.Bigsby": {
+  "kind": "rush",
+  "flip": -0.079,
+  "note": "more work when trailing (+8pts) \u2014 passing-down back"
+ },
+ "T.Etienne": {
+  "kind": "rush",
+  "flip": 0.096,
+  "note": "carries concentrate when leading (+10pts) \u2014 early-down role"
+ },
+ "T.Henderson": {
+  "kind": "rush",
+  "flip": 0.152,
+  "note": "carries concentrate when leading (+15pts) \u2014 early-down role"
+ },
+ "T.Higbee": {
+  "kind": "tgt",
+  "flip": -0.05,
+  "note": "targets fade when trailing (-5pts) \u2014 front-running usage"
+ },
+ "T.Tracy": {
+  "kind": "rush",
+  "flip": -0.067,
+  "note": "more work when trailing (+7pts) \u2014 passing-down back"
+ },
+ "W.Robinson": {
+  "kind": "tgt",
+  "flip": -0.068,
+  "note": "targets fade when trailing (-7pts) \u2014 front-running usage"
+ },
+ "Z.Charbonnet": {
+  "kind": "rush",
+  "flip": 0.095,
+  "note": "carries concentrate when leading (+10pts) \u2014 early-down role"
+ }
+}

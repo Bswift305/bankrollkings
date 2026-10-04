@@ -20,6 +20,7 @@ It also prints:
 Doctrine: this de-averages, it does not predict. See docs/averaging_audit.md (A1).
 """
 from __future__ import annotations
+import json
 import sys
 from pathlib import Path
 import numpy as np
@@ -28,6 +29,10 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent
 PBP_PATH = BASE / "data" / "pbp" / "nfl_pbp_2019_2025_slim.parquet"
 OUT_PATH = BASE / "data" / "tracking" / "NFL_Usage_By_State.csv"
+# compact per-player FLAG file -- committed (data/scenarios/*.json is tracked) so the
+# usage board's script-dependence flag works on prod without the (gitignored) PBP source.
+FLAGS_PATH = BASE / "data" / "scenarios" / "nfl_usage_by_state.json"
+FLIP_THRESH = 0.05        # a >=5-share-pt swing between leading and trailing = script-dependent
 
 # --- knobs (kept explicit; the audit's bias-variance guardrail lives here) ---
 RECENT_SEASONS = [2023, 2024, 2025]   # role-relevant window; stable sample, not stale
@@ -148,11 +153,56 @@ def report(df: pd.DataFrame) -> None:
     print("  captured by raw usage). High corr / low move = it was the same signal.\n")
 
 
+def compute_flags(df: pd.DataFrame) -> dict:
+    """Per-player game-script-dependence flag from the state rows (aggregated across teams).
+    Only the players who actually flip (>= FLIP_THRESH) are emitted, keyed by their PBP
+    'F.Last' name -- the ~90% who don't flip get no flag, keeping the Opportunity read clean.
+    This is the committed artifact the live usage board reads (A1)."""
+    flags = {}
+    for name, g in df.groupby("player"):
+        agg = {}
+        for st in ("leading", "trailing"):
+            s = g[g["state"] == st]
+            agg[st] = {c: float(pd.to_numeric(s.get(c), errors="coerce").fillna(0).sum())
+                       for c in ("tgt_n", "tgt_team", "rush_n", "rush_team")}
+        is_back = sum(agg[st]["rush_n"] for st in agg) > sum(agg[st]["tgt_n"] for st in agg)
+
+        def _share(st, n, t):
+            v = agg[st]
+            return (v[n] / v[t]) if v[t] else None
+
+        note = flip = None
+        kind = "rush" if is_back else "tgt"
+        if is_back:
+            lead, trail = _share("leading", "rush_n", "rush_team"), _share("trailing", "rush_n", "rush_team")
+            if lead is not None and trail is not None:
+                flip = round(lead - trail, 3)
+                if flip >= FLIP_THRESH:
+                    note = f"carries concentrate when leading (+{round(flip*100)}pts) — early-down role"
+                elif flip <= -FLIP_THRESH:
+                    note = f"more work when trailing (+{round(-flip*100)}pts) — passing-down back"
+        else:
+            lead, trail = _share("leading", "tgt_n", "tgt_team"), _share("trailing", "tgt_n", "tgt_team")
+            if lead is not None and trail is not None:
+                flip = round(trail - lead, 3)
+                if flip >= FLIP_THRESH:
+                    note = f"targets climb when trailing (+{round(flip*100)}pts) — chase-script dependent"
+                elif flip <= -FLIP_THRESH:
+                    note = f"targets fade when trailing ({round(flip*100)}pts) — front-running usage"
+        if note:
+            flags[str(name)] = {"kind": kind, "flip": flip, "note": note}
+    return flags
+
+
 def main() -> None:
     df = build()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUT_PATH, index=False)
+    flags = compute_flags(df)
+    FLAGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FLAGS_PATH.write_text(json.dumps(flags, indent=1), encoding="utf-8")
     print(f"Wrote {OUT_PATH}  ({len(df)} player-state rows)")
+    print(f"Wrote {FLAGS_PATH}  ({len(flags)} script-dependent players flagged)")
     report(df)
 
 

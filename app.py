@@ -30260,6 +30260,55 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
 
 
 _NFL_USAGE_CACHE = {}
+_NFL_USAGE_STATE_CACHE = {}
+
+
+def _usage_name_key(name, dotted=False):
+    """(first-initial, LAST) key to join full names to PBP 'F.Last' names. Strips suffixes."""
+    s = str(name or '').strip()
+    if not s:
+        return None
+    if dotted and '.' in s:          # PBP form: "J.Gibbs" / "J.Smith-Njigba"
+        init, _, last = s.partition('.')
+        return (init[:1].upper(), last.strip().upper()) if init and last else None
+    parts = s.split()
+    if len(parts) < 2:
+        return None
+    last = parts[-1].upper().rstrip('.')
+    if last in ('JR', 'SR', 'II', 'III', 'IV', 'V') and len(parts) >= 3:
+        last = parts[-2].upper().rstrip('.')
+    return (parts[0][:1].upper(), last)
+
+
+def _nfl_usage_state_flags():
+    """Averaging Audit A1: players whose target/rush SHARE flips materially between leading
+    and trailing game-states -- where raw season usage is game-script contaminated. Reads
+    the committed flag file (data/scenarios/nfl_usage_by_state.json, built by
+    build_nfl_usage_by_state.py) and re-keys by (init,last) to join full names. Returns
+    {(init,last): {note, flip, kind}}. The ~90% who don't flip aren't in the file, so the
+    Opportunity read stays clean for them (no double-count with the game-script lens)."""
+    import os as _os
+    base = globals().get('BASE_DIR', '.')
+    path = os.path.join(base, 'data', 'scenarios', 'nfl_usage_by_state.json')
+    try:
+        mt = _os.path.getmtime(path)
+    except OSError:
+        return {}
+    if _NFL_USAGE_STATE_CACHE.get('mt') == mt and 'data' in _NFL_USAGE_STATE_CACHE:
+        return _NFL_USAGE_STATE_CACHE['data']
+    try:
+        with open(path, encoding='utf-8') as fh:
+            raw = json.load(fh)
+    except Exception:
+        return {}
+    flags = {}
+    for name, info in raw.items():
+        key = _usage_name_key(name, dotted=True)
+        if key:
+            flags[key] = info
+    _NFL_USAGE_STATE_CACHE['mt'] = mt
+    _NFL_USAGE_STATE_CACHE['data'] = flags
+    return flags
 _NFL_BUYLOW_CACHE = {}
 
 
@@ -30498,6 +30547,18 @@ def build_nfl_usage_board(limit=40, min_games=1):
             'rush_share': round(rush_share * 100), 'yds_pg': round(ryd_pg),
             'is_back': bool(is_back), 'is_def': False, 'cat': ('rb' if is_back else 'wr'),
         })
+    # Averaging Audit A1 + rate-over-counting: annotate each skill player with (a) the
+    # game-script-dependence flag (raw share is contaminated for the ~10% who flip), and
+    # (b) yards per OPPORTUNITY (the rate behind the per-game counting number).
+    state_flags = _nfl_usage_state_flags()
+    for r in rows:
+        if r.get('is_def'):
+            continue
+        fl = state_flags.get(_usage_name_key(r.get('player')))
+        r['script_dependent'] = bool(fl)
+        r['script_note'] = fl['note'] if fl else None
+        touch_pg = (r.get('car_pg') or 0) + (r.get('tgt_pg') or 0)
+        r['yds_per_touch'] = round(r['yds_pg'] / touch_pg, 1) if (touch_pg and r.get('yds_pg') is not None) else None
     rows.sort(key=lambda x: -x['score'])
     data = {'players': rows[:limit], 'available': bool(rows), 'season': cur,
             'count': len(rows), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
