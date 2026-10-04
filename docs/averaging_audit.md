@@ -267,7 +267,48 @@ move.**
 
 ---
 
+---
+
+## 10. Results — what building A1 + A2 actually found (2026-10-03)
+
+We built A1 and A2 as proofs. Both came back **more honest than the hypothesis**, and
+together they redirected the sprint.
+
+**A1 — usage × game-state** (`build_nfl_usage_by_state.py`, 2019-25 PBP):
+- For the *typical* player, game-state is **NOT a separable lens**: corr(leading, trailing)
+  = **0.93** target share / **0.96** rush share; the median player moves ~1% between states.
+- But a **~7–12% minority flips hard** and intuitively: TreVeyon Henderson rush share
+  24%→8% (leading→trailing); Nabers targets 8%→16%; committee backs vanish when trailing.
+- **Verdict:** game-script is a **targeted** lens — independent evidence only for the
+  script-dependent minority, redundant with raw usage for everyone else. That's the
+  lens-independence discipline working *before* we wired a double-count into the engine.
+
+**A2 — defense ranks × game-state** (`build_nfl_defense_by_state.py`, 2019-25 PBP):
+- Mechanism confirmed but modest: a defense that **leads** faces a **61% pass rate** vs
+  55% when trailing — yet allows **fewer** yards per attempt (6.08 vs 6.48). So per-game
+  pass-yds-allowed is inflated by **volume the lead created**, not worse coverage.
+- 2025 reshuffle: switching per-GAME ranks → neutral-script per-DROPBACK moved **25% of
+  defenses ≥6 rank spots** (MIA looked 9th, is 27th; DEN looked 11th, is 1st). Real, but a
+  partial reorder, not wholesale.
+
+**The meta-finding that matters most:** most of the "game-state distortion" in the
+defensive ranks is really the **per-GAME vs per-PLAY** distinction. *Counting* stats
+(yards/game, targets/game) embed volume — which game-script drives — while *rate* stats
+(yards/dropback, yards/target, share-per-opportunity) don't. So the cheapest, broadest fix
+on the whole board may be **"rate stats, not counting stats,"** applied everywhere the
+inventory flagged a per-game number — with game-state conditioning as a smaller, targeted
+refinement on top.
+
+**Revised priority (for the next confer with CoCo):**
+1. **Switch counting metrics → rate metrics** site-wide (the 80/20 of the volume artifact).
+2. **Flag script-dependent players** from A1 (the targeted game-script lens), not a blanket split.
+3. **A3 — de-blend the hit-profile `AvgLine` by line level** (still a live correctness issue).
+Full game-state conditioning drops from "foundational sprint" to "targeted refinement" —
+because the data said so.
+
+---
+
 *Written 2026-10-03 after the strategy brainstorm with Darrel + CoCo; inventory grounded in
-a three-domain codebase sweep. The method is the product: keep asking what the average
-hides, keep the lens-independence test honest, and let the findings — not another board —
-decide what gets built next. **Next move: game-state conditioning (shortlist A1/A2).***
+a three-domain codebase sweep; §10 added after building A1/A2. The method is the product:
+keep asking what the average hides, keep the lens-independence test honest, and let the
+findings — not the hypothesis — decide what gets built next. **A1/A2 did exactly that.***
