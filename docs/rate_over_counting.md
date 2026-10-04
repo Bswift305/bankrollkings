@@ -92,9 +92,12 @@ divides price back in.
 
 1. **NFL def ranks → per-dropback / per-rush** (+ neutral-script from A2). Highest reach: feeds
    `build_nfl_matchup_edge`, `_nfl_prop_matchup`, `build_nfl_team_rankings_context`. Proven in A2.
-2. **Hit rate → ROI** in the calibration + signal layers. Price fields are already in the
-   results; highest *trust* payoff (a calibrated-looking model that loses money is the scariest
-   honesty gap). Copy the candidate-archive ROI pattern.
+2. **Hit rate → ROI** in the calibration + signal layers — ✅ **DONE** (commit baa1ddb).
+   `model_calibration.bucket_roi` adds ROI per bucket + overall; `grade_signals` adds ROI per
+   cohort (CFB ATS −110; stat-reversion lenses honestly show none); Signal Report Card renders
+   ROI beside hit rate. Verified on 32,944 real NFL rows: **50.0% hit rate but −5.9% ROI**, and
+   OVER −9.1% vs UNDER −2.7% (the "prefer UNDER" rule the hit rate masks). *Still open:* MLB
+   launch reliability (needs MLB price history).
 3. **Usage yds_pg → per-target / per-play** (+ the A1 script-dependence flag). Cleans the
    opportunity lens for Wisdomism.
 
