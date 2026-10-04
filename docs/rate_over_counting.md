@@ -102,8 +102,17 @@ divides price back in.
    ROI beside hit rate. Verified on 32,944 real NFL rows: **50.0% hit rate but −5.9% ROI**, and
    OVER −9.1% vs UNDER −2.7% (the "prefer UNDER" rule the hit rate masks). *Still open:* MLB
    launch reliability (needs MLB price history).
-3. **Usage yds_pg → per-target / per-play** (+ the A1 script-dependence flag). Cleans the
-   opportunity lens for Wisdomism.
+3. **Usage yds_pg → per-target / per-play** (+ the A1 script-dependence flag) — ✅ **DONE**
+   (commit 03fa925). The Featured Players board now carries the A1 script-dependence flag (the
+   ~1-in-7 skill players whose share swings leading↔trailing, e.g. Henry "concentrate when
+   leading", Chase "fade when trailing") plus **yards/touch**. Flags ship via a committed
+   `data/scenarios/nfl_usage_by_state.json` so they work on prod without the PBP source; the
+   other ~90% get no flag, so no double-count with the game-script lens. Cleans the Opportunity
+   lens for Wisdomism.
+
+**All three buildable-now migrations are done** (#1 def-per-dropback, #2 hit-rate→ROI, #3
+usage-per-opportunity). Remaining: MLB launch-reliability ROI (needs MLB price history); CFB
+per-possession + player per-snap/route (data-sourcing track); neutral-script def filter (2026 PBP).
 
 CFB per-possession and player per-snap/route are a **separate data-sourcing track** (CFBD
 drives fetch; nflverse participation) — real, but blocked until the feeds exist.
