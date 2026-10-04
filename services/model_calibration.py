@@ -23,6 +23,8 @@ class BucketResult:
     gap: float | None
     classification: str
     recommendation: str
+    roi: float | None = None        # ROI% over priced rows; hit rate alone hides price
+    priced_sample: int = 0          # how many rows carried a usable price (never assumed = sample)
 
 
 @dataclass
@@ -90,7 +92,8 @@ def classify_bucket(bucket_label: str, sample_size: int, actual_rate: float | No
 def to_dataframe(buckets: list[BucketResult]) -> pd.DataFrame:
     if not buckets:
         return pd.DataFrame(columns=[
-            "BucketType", "BucketLabel", "SampleSize", "ExpectedRate", "ActualRate", "Gap", "Classification", "Recommendation"
+            "BucketType", "BucketLabel", "SampleSize", "ExpectedRate", "ActualRate", "Gap",
+            "Roi", "PricedSample", "Classification", "Recommendation"
         ])
     return pd.DataFrame([{
         "BucketType": bucket.bucket_type,
@@ -99,6 +102,8 @@ def to_dataframe(buckets: list[BucketResult]) -> pd.DataFrame:
         "ExpectedRate": bucket.expected_rate,
         "ActualRate": bucket.actual_rate,
         "Gap": bucket.gap,
+        "Roi": bucket.roi,
+        "PricedSample": bucket.priced_sample,
         "Classification": bucket.classification,
         "Recommendation": bucket.recommendation,
     } for bucket in buckets])
@@ -223,13 +228,33 @@ def bucket_expected_rate(df: pd.DataFrame, config: CalibrationConfig, conf_band:
     return expected_hit_rate(conf_band)
 
 
+def bucket_roi(df: pd.DataFrame) -> tuple[float | None, int]:
+    """ROI% (mean profit per 1u) over resolved rows that carry a usable American MarketPrice.
+    Hit -> +payout, Miss -> -1u. A bucket can be well-CALIBRATED on hit rate and still lose
+    money (a book of heavy favorites), so ROI belongs beside every rate. Returns
+    (roi_pct, priced_count); priced_count is surfaced separately, never assumed = sample."""
+    if df is None or df.empty or "MarketPrice" not in df.columns:
+        return None, 0
+    price = pd.to_numeric(df["MarketPrice"], errors="coerce")
+    mask = price.notna() & (price.abs() >= 100) & (price.abs() < 100000)
+    if not bool(mask.any()):
+        return None, 0
+    import numpy as np
+    p = price[mask].to_numpy(dtype=float)
+    win_profit = np.where(p < 0, 100.0 / np.abs(p), p / 100.0)
+    hit = df.loc[mask, "OutcomeState"].eq("Hit").to_numpy()
+    profit = np.where(hit, win_profit, -1.0)
+    return round(float(profit.mean()) * 100, 1), int(mask.sum())
+
+
 def summarize_bucket(df: pd.DataFrame, label: str, config: CalibrationConfig) -> BucketResult:
     sample_size = int(len(df))
     conf_band = str(df["ConfidenceBand"].mode().iloc[0]) if "ConfidenceBand" in df.columns and not df.empty else "Unknown"
     expected_rate = bucket_expected_rate(df, config, conf_band)
     actual_rate = float(df["OutcomeState"].eq("Hit").mean()) if sample_size else None
     classification, recommendation, gap = classify_bucket(label, sample_size, actual_rate, expected_rate, config.recommendation_fn)
-    return BucketResult("", label, sample_size, expected_rate, actual_rate, gap, classification, recommendation)
+    roi, priced = bucket_roi(df)
+    return BucketResult("", label, sample_size, expected_rate, actual_rate, gap, classification, recommendation, roi, priced)
 
 
 def build_bucket_results(df: pd.DataFrame, config: CalibrationConfig) -> list[BucketResult]:
@@ -281,6 +306,8 @@ def run_calibration(config: CalibrationConfig) -> dict:
             "resolved_rows": 0,
             "pending_rows": 0,
             "overall_hit_rate": None,
+            "overall_roi": None,
+            "overall_priced_rows": 0,
             "lying_buckets": [],
             "strong_buckets": [],
             "watch_buckets": [],
@@ -303,6 +330,8 @@ def run_calibration(config: CalibrationConfig) -> dict:
             "resolved_rows": 0,
             "pending_rows": 0,
             "overall_hit_rate": None,
+            "overall_roi": None,
+            "overall_priced_rows": 0,
             "lying_buckets": [],
             "strong_buckets": [],
             "watch_buckets": [],
@@ -321,6 +350,8 @@ def run_calibration(config: CalibrationConfig) -> dict:
             "resolved_rows": 0,
             "pending_rows": 0,
             "overall_hit_rate": None,
+            "overall_roi": None,
+            "overall_priced_rows": 0,
             "lying_buckets": [],
             "strong_buckets": [],
             "watch_buckets": [],
@@ -332,6 +363,7 @@ def run_calibration(config: CalibrationConfig) -> dict:
     pending_rows = int((working["OutcomeState"] == "Pending").sum())
     resolved = resolved_only(working)
     overall_hit_rate = float(resolved["OutcomeState"].eq("Hit").mean()) if not resolved.empty else None
+    overall_roi, overall_priced = bucket_roi(resolved)
     buckets = build_bucket_results(resolved, config)
     bucket_df = to_dataframe(buckets)
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -354,6 +386,8 @@ def run_calibration(config: CalibrationConfig) -> dict:
         "resolved_rows": int(len(resolved)),
         "pending_rows": pending_rows,
         "overall_hit_rate": round(overall_hit_rate * 100, 1) if overall_hit_rate is not None else None,
+        "overall_roi": overall_roi,
+        "overall_priced_rows": overall_priced,
         "lying_buckets": lying_rows,
         "strong_buckets": strong_rows,
         "watch_buckets": watch_rows,

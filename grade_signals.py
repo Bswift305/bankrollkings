@@ -99,7 +99,11 @@ def resolve_cfb_team(row) -> dict | None:
                 "detail": f"wk{g['week']} vs {opp}: push"}
     covered = cover > 0
     hit = covered if kind == "buy_low" else (not covered)
+    # price = the ATS bet the signal implies (standard -110). Hit already encodes
+    # "the implied bet won" (cover for buy_low, no-cover for a sell-high fade), so ROI
+    # is honest at -110 for both sides. Lets the scoreboard show ROI, not just hit rate.
     return {"resolved": True, "hit": bool(hit), "outcome": g["margin"], "move": round(cover, 1),
+            "price": -110,
             "detail": f"wk{g['week']} vs {opp}: margin {g['margin']:+}, ATS {cover:+.1f}"}
 
 
@@ -114,17 +118,35 @@ def grade_archive(df: pd.DataFrame) -> pd.DataFrame:
         res = resolver(row) if resolver else None
         r = row.to_dict()
         if not res:
-            r.update(Resolved="", Hit="", Outcome="", Move="", GradeDetail="(no resolver)")
+            r.update(Resolved="", Hit="", Outcome="", Move="", BetPrice="", GradeDetail="(no resolver)")
         elif not res.get("resolved"):
-            r.update(Resolved=0, Hit="", Outcome="", Move="", GradeDetail="pending")
+            r.update(Resolved=0, Hit="", Outcome="", Move="", BetPrice="", GradeDetail="pending")
         elif res.get("push"):
             r.update(Resolved=1, Hit="push", Outcome=res.get("outcome"), Move=res.get("move"),
-                     GradeDetail=res.get("detail"))
+                     BetPrice=res.get("price", ""), GradeDetail=res.get("detail"))
         else:
             r.update(Resolved=1, Hit=int(bool(res["hit"])), Outcome=res.get("outcome"),
-                     Move=res.get("move"), GradeDetail=res.get("detail"))
+                     Move=res.get("move"), BetPrice=res.get("price", ""), GradeDetail=res.get("detail"))
         recs.append(r)
     return pd.DataFrame(recs)
+
+
+def _roi(decided: pd.DataFrame) -> tuple:
+    """ROI% (mean profit per 1u) over decided rows that carry a usable American BetPrice.
+    Hit -> +payout, Miss -> -1u. Hit rate alone lies: -110 ATS bets can hit 55% and lose.
+    Returns (roi_pct, priced_count); priced_count is surfaced so it's never assumed = decided."""
+    if decided is None or decided.empty or "BetPrice" not in decided.columns:
+        return None, 0
+    price = pd.to_numeric(decided["BetPrice"], errors="coerce")
+    mask = price.notna() & (price.abs() >= 100) & (price.abs() < 100000)
+    if not bool(mask.any()):
+        return None, 0
+    import numpy as np
+    p = price[mask].to_numpy(dtype=float)
+    win_profit = np.where(p < 0, 100.0 / np.abs(p), p / 100.0)
+    hit = pd.to_numeric(decided.loc[mask, "Hit"], errors="coerce").eq(1).to_numpy()
+    profit = np.where(hit, win_profit, -1.0)
+    return round(float(profit.mean()) * 100, 1), int(mask.sum())
 
 
 def _cohort(graded: pd.DataFrame, keys: list) -> list:
@@ -135,11 +157,13 @@ def _cohort(graded: pd.DataFrame, keys: list) -> list:
         n_hit = int((decided["Hit"] == 1).sum())
         n_dec = int(len(decided))
         moves = pd.to_numeric(g.loc[g["Resolved"] == 1, "Move"], errors="coerce").dropna()
+        roi, priced = _roi(decided)
         row = dict(zip(keys, vals if isinstance(vals, tuple) else (vals,)))
         row.update(
             n=int(len(g)), resolved=n_res, pending=int((g["Resolved"] == 0).sum()),
             decided=n_dec, hits=n_hit,
             hit_rate=(round(n_hit / n_dec * 100, 1) if n_dec else None),
+            roi=roi, priced=priced,
             avg_move=(round(float(moves.mean()), 1) if len(moves) else None),
             read=("too few to read" if n_dec < MIN_SAMPLE else "out-of-sample"),
         )
@@ -174,8 +198,9 @@ def main() -> int:
         },
         "min_sample": MIN_SAMPLE,
         "note": ("A graded record, not an edge claim. Pending rows have no post-snapshot game "
-                 "yet; cohorts under the sample floor read 'too few'. Out-of-sample or it does "
-                 "not count."),
+                 "yet; cohorts under the sample floor read 'too few'. ROI is shown beside hit "
+                 "rate where the signal implies a real bet (ATS at -110) -- a hit rate without "
+                 "price hides what each result pays. Out-of-sample or it does not count."),
     }
     with open(OUT_SUMMARY, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
@@ -184,8 +209,9 @@ def main() -> int:
     print(f"[grade_signals] {t['rows']} signals | {t['resolved']} resolved, {t['pending']} pending")
     for c in sorted(summary["by_sport_kind"], key=lambda x: (x["Sport"], x["Kind"])):
         hr = f"{c['hit_rate']}% ({c['hits']}/{c['decided']})" if c["hit_rate"] is not None else "--"
+        roi = f"{c['roi']:+}% (n={c['priced']})" if c.get("roi") is not None else "-- (no price)"
         print(f"  {c['Sport']:<3} {c['Kind']:<9} n={c['n']:<3} resolved={c['resolved']:<3} "
-              f"hit={hr:<14} avg_move={c['avg_move']} [{c['read']}]")
+              f"hit={hr:<14} roi={roi:<16} avg_move={c['avg_move']} [{c['read']}]")
     return 0
 
 

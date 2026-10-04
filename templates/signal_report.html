@@ -63,7 +63,7 @@
 
 <div class="sr-sec">By lens &amp; direction</div>
 <table class="sr-tbl">
-  <tr><th>Sport</th><th>Lens</th><th>Signals</th><th>Resolved</th><th>Hit rate</th><th>Avg move</th><th>Read</th></tr>
+  <tr><th>Sport</th><th>Lens</th><th>Signals</th><th>Resolved</th><th>Hit rate</th><th>ROI</th><th>Avg move</th><th>Read</th></tr>
   {% for c in sr_cohorts %}
   <tr>
     <td>{{ c.Sport }}</td>
@@ -71,6 +71,7 @@
     <td class="num">{{ c.n }}</td>
     <td class="num">{{ c.resolved }}{% if c.pending %} <span style="color:var(--text-muted);font-size:11px;">(+{{ c.pending }} pending)</span>{% endif %}</td>
     <td class="num">{% if c.hit_rate is not none %}<span class="sr-hr {{ 'pos' if c.hit_rate >= 50 else 'neg' }}">{{ c.hit_rate }}%</span> <span style="color:var(--text-muted);font-size:11px;">({{ c.hits }}/{{ c.decided }})</span>{% else %}<span class="sr-hr na">&mdash;</span>{% endif %}</td>
+    <td class="num">{% if c.roi is defined and c.roi is not none %}<span class="sr-hr {{ 'pos' if c.roi >= 0 else 'neg' }}">{{ '%+g'|format(c.roi) }}%</span>{% if c.priced %} <span style="color:var(--text-muted);font-size:11px;">(n={{ c.priced }})</span>{% endif %}{% else %}<span class="sr-hr na" title="no bet price captured for this lens">&mdash;</span>{% endif %}</td>
     <td class="num">{% if c.avg_move is not none %}{{ '%+g'|format(c.avg_move) }}{% else %}&mdash;{% endif %}</td>
     <td><span class="sr-read">{{ c.read }}</span></td>
   </tr>
@@ -80,7 +81,7 @@
 {% if sr_bystat and sr_bystat|selectattr('resolved')|list %}
 <div class="sr-sec">By stat (resolved only)</div>
 <table class="sr-tbl">
-  <tr><th>Sport</th><th>Lens</th><th>Stat</th><th>Resolved</th><th>Hit rate</th><th>Avg move</th></tr>
+  <tr><th>Sport</th><th>Lens</th><th>Stat</th><th>Resolved</th><th>Hit rate</th><th>ROI</th><th>Avg move</th></tr>
   {% for c in sr_bystat if c.resolved %}
   <tr>
     <td>{{ c.Sport }}</td>
@@ -88,6 +89,7 @@
     <td>{{ c.Stat }}</td>
     <td class="num">{{ c.resolved }}</td>
     <td class="num">{% if c.hit_rate is not none %}<span class="sr-hr {{ 'pos' if c.hit_rate >= 50 else 'neg' }}">{{ c.hit_rate }}%</span>{% else %}&mdash;{% endif %}</td>
+    <td class="num">{% if c.roi is defined and c.roi is not none %}<span class="sr-hr {{ 'pos' if c.roi >= 0 else 'neg' }}">{{ '%+g'|format(c.roi) }}%</span>{% else %}<span class="sr-hr na" title="no bet price captured">&mdash;</span>{% endif %}</td>
     <td class="num">{% if c.avg_move is not none %}{{ '%+g'|format(c.avg_move) }}{% else %}&mdash;{% endif %}</td>
   </tr>
   {% endfor %}
@@ -109,7 +111,7 @@
 </div>
 {% endif %}
 
-<div class="bkn-note" style="margin-top:20px;">{{ sr_note or 'A graded record, not an edge claim.' }} A cohort reads <b>&ldquo;too few&rdquo;</b> until it clears {{ sr_min_sample }} resolved results &mdash; a hit rate on five bets means nothing. <b>&ldquo;Hit&rdquo;</b> means the outcome moved the way the lens implied (NFL: the stat reverted toward the role; CFB: the team covered, or for a sell, failed to). This is the same standard every future signal we capture will be judged by. 21+</div>
+<div class="bkn-note" style="margin-top:20px;">{{ sr_note or 'A graded record, not an edge claim.' }} A cohort reads <b>&ldquo;too few&rdquo;</b> until it clears {{ sr_min_sample }} resolved results &mdash; a hit rate on five bets means nothing. <b>&ldquo;Hit&rdquo;</b> means the outcome moved the way the lens implied (NFL: the stat reverted toward the role; CFB: the team covered, or for a sell, failed to). <b>ROI</b> sits beside hit rate because a hit rate hides what each result pays &mdash; a 55% record at &minus;110 wins, a 50% one loses the vig. It&rsquo;s shown where the lens implies a real bet (CFB covers, graded at &minus;110); lenses with no captured price (the NFL stat-reversion read) show &ldquo;&mdash;&rdquo; rather than a fake number. This is the same standard every future signal we capture will be judged by. 21+</div>
 {% endif %}
 </div>
 {% endblock %}
