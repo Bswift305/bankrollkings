@@ -1,10 +1,13 @@
-# Wisdomism Lens Families — Alignment Draft
+# Wisdomism Lens Families — RATIFIED
 
-> **The deliverable of the one lens-family session.** Not metrics — *families.* Convergence
-> ranking only means something if the families are independent; otherwise Target Share + Air
-> Yards + Targets/Game count as three votes for one thing, "and that's how every bad model gets
-> built" (CoCo). This is a **draft for Darrel + CoCo to ratify or redline** — it fills the
-> whiteboard so the meeting decides, rather than starts cold.
+> **✅ Ratified 2026-10-04 (Darrel + CoCo).** The lens-family session is done. The audit,
+> migrations, doctrine, truth layer, and lens cleanup did their job; the lenses are purified
+> enough that evidence convergence can mean something. Research hands the baton to
+> implementation. **The locked set is below; the rest of this doc is the reasoning that got us
+> there.** Not metrics — *families.*
+>
+> **Voting lenses (5):** Opportunity · Game Identity · Matchup · Concentration · Coaching.
+> **Non-voting gate (1):** Market — the referee, not a vote.
 >
 > Pairs with `docs/averaging_audit.md`, `docs/rate_over_counting.md`, feeds
 > `docs/kings_wisdomism_engine.md`.
@@ -87,16 +90,36 @@ the feeds exist. (See `docs/rate_over_counting.md` data-gaps.)
 
 ---
 
-## The three decisions for the meeting
+## The three decisions — RESOLVED
 
-1. **Do we accept Market as the gate rather than a sixth voting lens?** (Changes convergence from
-   6-way agreement to 5-way agreement + an un-priced check.)
-2. **Coaching vs Game Identity boundary:** decisions vs outcomes — does pace/tempo live under
-   Coaching (as a choice) and realized rhythm under Game Identity? Ratify or redraw.
-3. **Concentration's scope:** scoring markets only, or do we try to make it vote on yardage too
-   (risking a double-count with Opportunity)?
+1. **Market as gate, not a vote** — ✅ **ratified.** Convergence = agreement among the 5 argument
+   lenses; Market is the referee that checks whether the agreement is already priced. ("4 lenses
+   agree → Market checks → eligible," never a 5th vote.)
+2. **Coaching vs Game Identity** — ✅ **kept separate.** Game Identity = *what happens* (fast
+   starts, trailing tendencies, pace). Coaching = *why it keeps happening* (coordinator
+   preference, 4th-down behavior, personnel/tempo choice). Observations vs cause.
+3. **Concentration's scope** — ✅ **ratified as a distinct family, scoring markets.** It asks a
+   question none of the others do: *when scoring happens, who gets it?* Votes on anytime-TD /
+   goal-line, not yardage (where it would collapse into Opportunity).
 
-Lock those three and the family set is final.
+The family set is final.
+
+## Implementation readiness (what exists vs what's left to build)
+
+The research is done; here's the honest state of each voting lens as code:
+
+| Lens | Status |
+|---|---|
+| **Opportunity** | ✅ built + cleaned — share-based, script-decoupled (rate migration #3) |
+| **Matchup** | ✅ built + cleaned — per-dropback / per-carry efficiency (migration #1) |
+| **Game Identity** | ◑ partial — A1 script-dependence + CFB period board; NFL team-identity to round out |
+| **Concentration** | ⬜ **net-new** — RZ / goal-line / target & TD share, buildable from PBP (yardline_100, TD) |
+| **Coaching** | ⬜ **net-new** — 4th-down aggression, pace, run/pass tendency, buildable from PBP (down, play_type) |
+| *Market (gate)* | ✅ live — line, movement, CLV, line-delta |
+
+So "build Wisdomism" = build the two net-new lenses (Concentration, Coaching), round out Game
+Identity, then the convergence **assembly** engine + page. A 3-lens v1 (Opportunity + Matchup +
+Game Identity, Market-gated) is a legitimate first cut while the last two land.
 
 ---
 

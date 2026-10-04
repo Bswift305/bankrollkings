@@ -1,0 +1,122 @@
+{
+ "A.Brown": {
+  "note": "red-zone target magnet (23% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.226,
+  "td_share": 0.14
+ },
+ "A.St. Brown": {
+  "note": "red-zone target magnet (34% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.34,
+  "td_share": 0.176
+ },
+ "B.Hall": {
+  "note": "owns the goal line (60% of inside-5 carries)",
+  "gl_rush_share": 0.6,
+  "rz_tgt_share": 0.087,
+  "td_share": 0.179
+ },
+ "C.Hubbard": {
+  "note": "owns the goal line (62% of inside-5 carries)",
+  "gl_rush_share": 0.618,
+  "rz_tgt_share": 0.089,
+  "td_share": 0.222
+ },
+ "C.Lamb": {
+  "note": "red-zone target magnet (24% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.245,
+  "td_share": 0.17
+ },
+ "C.McCaffrey": {
+  "note": "scores 31% of the team's TDs",
+  "gl_rush_share": 0.455,
+  "rz_tgt_share": 0.202,
+  "td_share": 0.309
+ },
+ "C.Sutton": {
+  "note": "red-zone target magnet (23% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.234,
+  "td_share": 0.221
+ },
+ "D.London": {
+  "note": "red-zone target magnet (33% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.331,
+  "td_share": 0.18
+ },
+ "D.Montgomery": {
+  "note": "owns the goal line (56% of inside-5 carries)",
+  "gl_rush_share": 0.561,
+  "rz_tgt_share": 0.019,
+  "td_share": 0.111
+ },
+ "D.Njoku": {
+  "note": "red-zone target magnet (27% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.268,
+  "td_share": 0.149
+ },
+ "G.Wilson": {
+  "note": "red-zone target magnet (25% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.248,
+  "td_share": 0.134
+ },
+ "H.Henry": {
+  "note": "red-zone target magnet (24% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.241,
+  "td_share": 0.126
+ },
+ "J.Chase": {
+  "note": "red-zone target magnet (27% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.27,
+  "td_share": 0.217
+ },
+ "J.Gibbs": {
+  "note": "scores 30% of the team's TDs",
+  "gl_rush_share": 0.367,
+  "rz_tgt_share": 0.147,
+  "td_share": 0.296
+ },
+ "J.Taylor": {
+  "note": "scores 30% of the team's TDs",
+  "gl_rush_share": 0.521,
+  "rz_tgt_share": 0.048,
+  "td_share": 0.297
+ },
+ "K.Williams": {
+  "note": "owns the goal line (64% of inside-5 carries); scores 32% of the team's TDs",
+  "gl_rush_share": 0.639,
+  "rz_tgt_share": 0.118,
+  "td_share": 0.317
+ },
+ "M.Andrews": {
+  "note": "red-zone target magnet (23% of RZ targets)",
+  "gl_rush_share": 0.041,
+  "rz_tgt_share": 0.228,
+  "td_share": 0.127
+ },
+ "M.Pittman": {
+  "note": "red-zone target magnet (25% of RZ targets)",
+  "gl_rush_share": null,
+  "rz_tgt_share": 0.253,
+  "td_share": 0.126
+ },
+ "T.Kelce": {
+  "note": "red-zone target magnet (23% of RZ targets)",
+  "gl_rush_share": 0.03,
+  "rz_tgt_share": 0.228,
+  "td_share": 0.128
+ },
+ "T.McBride": {
+  "note": "red-zone target magnet (31% of RZ targets)",
+  "gl_rush_share": 0.017,
+  "rz_tgt_share": 0.307,
+  "td_share": 0.138
+ }
+}
