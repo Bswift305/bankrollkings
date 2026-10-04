@@ -90,8 +90,12 @@ divides price back in.
 
 ## Priority order (buildable now, by reach × trust)
 
-1. **NFL def ranks → per-dropback / per-rush** (+ neutral-script from A2). Highest reach: feeds
-   `build_nfl_matchup_edge`, `_nfl_prop_matchup`, `build_nfl_team_rankings_context`. Proven in A2.
+1. **NFL def ranks → per-dropback / per-rush** — ✅ **DONE** (commit ffd2814). `build_nfl_team_form`
+   adds `pass_ya_allowed` (+SoS-adj) and `rush_ypc` SoS-adj with per-play ranks; `nfl_current_form`
+   `_adj_pass_rank`/`_adj_run_rank` now prefer them (per-game fallback), so `build_nfl_matchup_edge`,
+   `_nfl_prop_matchup`, `_nfl_player_matchup_read` and the team-rankings board all move. Live 2026
+   reshuffle: mean 5.6 rank spots; MIA pass D 7th (per-game) → 28th (per-dropback), DET 31st → 15th.
+   *Still a refinement on top:* neutral-script filtering (needs 2026 PBP, not just box stats).
 2. **Hit rate → ROI** in the calibration + signal layers — ✅ **DONE** (commit baa1ddb).
    `model_calibration.bucket_roi` adds ROI per bucket + overall; `grade_signals` adds ROI per
    cohort (CFB ATS −110; stat-reversion lenses honestly show none); Signal Report Card renders
