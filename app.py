@@ -722,6 +722,7 @@ PRO_ENDPOINTS = {
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
+    'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
@@ -30568,6 +30569,127 @@ def build_nfl_usage_board(limit=40, min_games=1):
     return data
 
 
+_NFL_DVP_CACHE = {}
+
+
+def _dvp_stats():
+    """Current-season weekly player stats (opponent-tagged), mtime-cached."""
+    import os as _os
+    base = globals().get('BASE_DIR', '.')
+    path = _os.path.join(base, 'data', 'tracking', '_nflverse_stats_2026.parquet')
+    try:
+        mt = _os.path.getmtime(path)
+    except OSError:
+        return pd.DataFrame()
+    if _NFL_DVP_CACHE.get('mt') == mt and 'df' in _NFL_DVP_CACHE:
+        return _NFL_DVP_CACHE['df']
+    try:
+        df = pd.read_parquet(path, columns=[
+            'player_display_name', 'position', 'team', 'opponent_team', 'week',
+            'carries', 'rushing_yards', 'rushing_tds', 'targets', 'receptions',
+            'receiving_yards', 'receiving_tds'])
+    except Exception:
+        return pd.DataFrame()
+    _NFL_DVP_CACHE['mt'] = mt
+    _NFL_DVP_CACHE['df'] = df
+    return df
+
+
+def _dvp_resolve_player(name):
+    """(next_opp_abbr, position) for a player -- resolves their upcoming opponent from the
+    slate, so a prop can open its Defense-vs-Position breakdown in one click."""
+    df = _dvp_stats()
+    if df.empty or not name:
+        return None, None
+    low = str(name).strip().lower()
+    row = df[df['player_display_name'].str.lower() == low]
+    if row.empty:
+        row = df[df['player_display_name'].str.lower().str.contains(low, na=False, regex=False)]
+    if row.empty:
+        return None, None
+    r = row.sort_values('week').iloc[-1]
+    team, pos = str(r['team']), str(r['position'])
+    try:
+        import nfl_current_form as _ncf
+        odds = load_nfl_game_market_odds()
+        for _, g in odds.iterrows():
+            aw, hm = _ncf.resolve(str(g['Away'])), _ncf.resolve(str(g['Home']))
+            if team in (aw, hm):
+                return (hm if team == aw else aw), pos
+    except Exception:
+        pass
+    return None, pos
+
+
+def build_nfl_dvp(opp=None, pos='RB', player=None):
+    """Defense vs Position -- de-averages the matchup. Instead of 'NO run D, 27th' (an
+    average that hides the shape), it shows what players at a position have ACTUALLY done
+    against this defense this season: the game log, efficiency allowed, and a league rank.
+    Answers 'what have RBs done against this run D?' in one view. See docs/averaging_audit.md."""
+    df = _dvp_stats()
+    if df.empty:
+        return {'available': False, 'reason': 'no current-season stats loaded'}
+    resolved_opp = None
+    if player:
+        ropp, rpos = _dvp_resolve_player(player)
+        resolved_opp = ropp
+        opp = opp or ropp
+        pos = (pos if (pos and not rpos) else rpos) or pos
+    teams = sorted(t for t in df['opponent_team'].dropna().unique() if str(t).strip())
+    if not opp:
+        return {'available': False, 'need_opp': True, 'teams': teams, 'pos': pos}
+    opp = str(opp).upper()
+    pos = (pos or 'RB').upper()
+    mode = 'rush' if pos in ('RB', 'FB', 'HB') else 'rec'
+    posset = ['RB', 'FB'] if mode == 'rush' else ([pos] if pos in ('WR', 'TE') else ['WR', 'TE'])
+    yds_col = 'rushing_yards' if mode == 'rush' else 'receiving_yards'
+    att_col = 'carries' if mode == 'rush' else 'targets'
+    td_col = 'rushing_tds' if mode == 'rush' else 'receiving_tds'
+    d = df[df['position'].isin(posset)].copy()
+    for c in (yds_col, att_col, td_col):
+        d[c] = pd.to_numeric(d[c], errors='coerce').fillna(0)
+    # league table: yards allowed to this position per game, by defense
+    lg = []
+    for dteam, g in d.groupby('opponent_team'):
+        wk = g['week'].nunique() or 1
+        att = g[att_col].sum()
+        lg.append({'def': dteam, 'ypg': g[yds_col].sum() / wk,
+                   'eff': (g[yds_col].sum() / att) if att else 0.0, 'games': int(wk)})
+    lg = pd.DataFrame(lg)
+    lg['rank'] = lg['ypg'].rank(ascending=True, method='min').astype(int)  # 1 = fewest allowed = toughest
+    n_def = int(len(lg))
+    me = lg[lg['def'] == opp]
+    if me.empty:
+        return {'available': False, 'opp': opp, 'pos': pos, 'teams': teams,
+                'reason': f'no games logged vs {opp}'}
+    me = me.iloc[0]
+    rk = int(me['rank'])
+    label = 'soft' if rk > n_def * 2 / 3 else 'tough' if rk <= n_def / 3 else 'average'
+    thr = 100 if mode == 'rush' else 75
+    min_att = 5 if mode == 'rush' else 3
+    sub = d[(d['opponent_team'] == opp) & (d[att_col] >= min_att)]
+    log = []
+    for _, r in sub.sort_values(['week', yds_col], ascending=[True, False]).iterrows():
+        att = int(r[att_col]); yds = int(r[yds_col])
+        log.append({'week': int(r['week']), 'player': str(r['player_display_name']),
+                    'team': str(r['team']), 'pos': str(r['position']), 'att': att, 'yds': yds,
+                    'eff': round(yds / att, 1) if att else 0.0, 'td': int(r[td_col]),
+                    'big': yds >= thr})
+    return {
+        'available': True, 'opp': opp, 'pos': pos, 'mode': mode, 'teams': teams,
+        'player': player, 'resolved_opp': resolved_opp,
+        'weeks': int(me['games']), 'ypg': round(float(me['ypg']), 1), 'eff': round(float(me['eff']), 2),
+        'rank': rk, 'n_def': n_def, 'label': label,
+        'league_avg': round(float(lg['ypg'].mean()), 1),
+        'big_games': sum(1 for x in log if x['big']), 'big_thr': thr,
+        'att_label': 'car' if mode == 'rush' else 'tgt',
+        'stat_label': 'rush yds' if mode == 'rush' else 'rec yds',
+        'eff_label': 'yds/car' if mode == 'rush' else 'yds/tgt',
+        'pos_label': 'RBs' if mode == 'rush' else (pos + 's'),
+        'log': log,
+    }
+
+
 _WISDOM_LENS_CACHE = {}
 
 
@@ -42231,6 +42353,17 @@ def green_light_tool():
     angle), gated by the market (a play goes green only when it's also un-priced). Evidence
     assembly, not a score. The destination the whole averaging audit earned the right to build."""
     return render_template('green_light.html', **build_green_light())
+
+
+@app.route('/tools/nfl-dvp')
+def nfl_dvp_tool():
+    """Defense vs Position -- what players at a position have actually done against the
+    upcoming defense this season (game log + efficiency + league rank). De-averages the
+    'run D, 27th' rank into the shape it hides. Accepts ?opp=&pos= or ?player= (resolves
+    the player's next opponent)."""
+    ctx = build_nfl_dvp(opp=request.args.get('opp'), pos=request.args.get('pos', 'RB'),
+                        player=request.args.get('player'))
+    return render_template('nfl_dvp.html', **ctx)
 
 
 @app.route('/tools/nfl-buy-low')

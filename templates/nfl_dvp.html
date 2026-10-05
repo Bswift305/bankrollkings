@@ -1,0 +1,76 @@
+{% set active_page = 'nfl_dvp' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Defense vs Position - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .dvp{--dvp:#2dd4bf;}
+  .dvp-pick{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:-4px 0 18px;}
+  .dvp-pick label{display:flex;flex-direction:column;gap:4px;font:700 9px 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);}
+  .dvp-pick select{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:8px;color:var(--text-bright);font:700 13px 'Helvetica Neue',Arial,sans-serif;padding:8px 10px;min-width:120px;}
+  .dvp-pick button{background:var(--dvp);color:#07211d;border:0;border-radius:8px;font:800 12px 'Helvetica Neue',Arial,sans-serif;padding:9px 16px;cursor:pointer;}
+  .dvp-head{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:15px 18px;margin-bottom:16px;}
+  .dvp-head .big{font:800 20px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .dvp-head .big .v{color:var(--dvp);}
+  .dvp-head .sub{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:5px;}
+  .dvp-tag{display:inline-block;font:800 9px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:2px 8px;margin-left:8px;vertical-align:middle;}
+  .dvp-tag.soft{background:rgba(78,212,138,.18);color:var(--bkn-good,#4ed48a);}
+  .dvp-tag.tough{background:rgba(255,107,107,.16);color:#ff6b6b;}
+  .dvp-tag.average{background:rgba(255,255,255,.08);color:var(--text-muted);}
+  table.dvp-t{width:100%;border-collapse:collapse;}
+  table.dvp-t th{font:700 9px 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);text-align:right;padding:8px 10px;border-bottom:1px solid var(--border);}
+  table.dvp-t th:first-child,table.dvp-t td:first-child{text-align:left;}
+  table.dvp-t td{font:600 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);text-align:right;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.05);}
+  table.dvp-t td.yds{font:800 14px ui-monospace,monospace;}
+  table.dvp-t tr.big td.yds{color:var(--dvp);}
+  .dvp-pos{font:700 10px ui-monospace,monospace;color:var(--text-muted);}
+  .dvp-td{font:800 9px ui-monospace,monospace;color:var(--bkn-good,#4ed48a);}
+</style>
+
+<div class="bkn dvp" style="--bkn-accent:#2dd4bf;--accent:#2dd4bf;max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL &middot; Evaluate</div>
+    <h1>Defense vs <span class="accent">Position</span></h1>
+    <div class="page-subtitle">A rank like &ldquo;run D, 27th&rdquo; is an <b>average</b> &mdash; it hides the shape. This shows what players at a position have <b>actually done</b> against this defense this season: the game log, the efficiency allowed, and where they rank. The de-averaged matchup, in one view.</div>
+  </div>
+</div>
+
+<form method="get" action="/tools/nfl-dvp" class="dvp-pick">
+  <label>Defense<select name="opp">{% for t in teams %}<option value="{{ t }}" {% if t == opp %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+  <label>Position<select name="pos">{% for p in ['RB','WR','TE'] %}<option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+  <button type="submit">Show</button>
+</form>
+
+{% if available %}
+<div class="dvp-head">
+  <div class="big"><span class="v">{{ opp }}</span> allows <span class="v">{{ ypg }}</span> {{ stat_label }}/gm to {{ pos_label }}
+    <span class="dvp-tag {{ label }}">{{ rank }} of {{ n_def }} &middot; {{ label }}</span></div>
+  <div class="sub">{{ eff }} {{ eff_label }} allowed &middot; league avg {{ league_avg }}/gm &middot; {{ big_games }} game{{ '' if big_games == 1 else 's' }} over {{ big_thr }} yds &middot; {{ weeks }} game sample{% if player %} &middot; next up for <b style="color:var(--text-bright);">{{ player }}</b>{% endif %}</div>
+</div>
+
+{% if log %}
+<table class="dvp-t">
+  <tr><th>Player</th><th>Wk</th><th>Tm</th><th>{{ att_label }}</th><th>{{ stat_label }}</th><th>{{ eff_label }}</th><th>TD</th></tr>
+  {% for x in log %}
+  <tr class="{{ 'big' if x.big }}">
+    <td>{{ x.player }} <span class="dvp-pos">{{ x.pos }}</span></td>
+    <td>{{ x.week }}</td><td>{{ x.team }}</td><td>{{ x.att }}</td>
+    <td class="yds">{{ x.yds }}{% if x.big %} &#9733;{% endif %}</td>
+    <td>{{ x.eff }}</td>
+    <td>{% if x.td %}<span class="dvp-td">{{ x.td }}</span>{% else %}&mdash;{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="bkn-empty">No qualifying games logged vs {{ opp }} yet.</div>
+{% endif %}
+
+<div class="bkn-note" style="margin-top:18px;"><b>How to read it:</b> this de-averages the matchup &mdash; the rank tells you it&rsquo;s a good/bad spot, the <b>log tells you why</b>. Watch the <b>shape</b>: a defense can allow a big game to a <i>volume</i> back (lots of carries) while holding lower-usage backs under, so a soft rank isn&rsquo;t a floor &mdash; it&rsquo;s a tailwind that still needs the volume. Honest: <b>early-season samples are small</b> ({{ weeks }} games), and yards allowed are raw (not opponent-adjusted). Context for a prop, not a prediction. 21+</div>
+{% else %}
+<div class="bkn-empty">{% if reason %}{{ reason }}{% else %}Pick a defense and a position above to see what they&rsquo;ve allowed.{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}
