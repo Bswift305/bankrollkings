@@ -10,7 +10,10 @@
   .fp-chip{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);
     border-radius:999px;padding:8px 14px;font:800 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
   .fp-chip.active{color:#0b1118;background:var(--fp-accent);border-color:var(--fp-accent);}
-  .fp-row{display:flex;align-items:center;gap:14px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06);text-decoration:none;}
+  .fp-row{display:flex;align-items:center;gap:8px;padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .fp-rowlink{display:flex;align-items:center;gap:14px;flex:1 1 auto;min-width:0;text-decoration:none;}
+  .fp-dvp{flex:0 0 auto;font:800 8.5px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;color:#2dd4bf;border:1px solid rgba(45,212,191,.42);border-radius:6px;padding:6px 9px;text-decoration:none;white-space:nowrap;}
+  .fp-dvp:hover{background:rgba(45,212,191,.14);}
   .fp-row:hover{background:rgba(63,191,127,.05);}
   .fp-rank{font:800 15px ui-monospace,Consolas,monospace;color:var(--text-muted);width:26px;text-align:right;flex:0 0 auto;}
   .fp-score{flex:0 0 auto;width:46px;height:46px;border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -87,7 +90,8 @@
 <div id="fp-list">
 {% for p in players %}
 {% set href = '' if p.is_def else '/tools/nfl-floor?player=' ~ (p.player|urlencode) ~ '&stat=' ~ ('rushing_yards' if p.is_back else 'receiving_yards') %}
-<a class="fp-row" data-cat="{{ p.cat }}"{% if href %} href="{{ href }}"{% else %} style="cursor:default;"{% endif %}>
+<div class="fp-row" data-cat="{{ p.cat }}">
+  <a class="fp-rowlink"{% if href %} href="{{ href }}"{% else %} style="cursor:default;"{% endif %}>
   <span class="fp-rank">{{ loop.index }}</span>
   <span class="fp-score"><span class="n">{{ p.score }}</span><span class="l">{{ 'Vol' if p.is_def else 'Opp' }}</span></span>
   <span class="fp-main">
@@ -96,7 +100,9 @@
     <span class="fp-why">{{ p.why }}{% if p.yds_per_touch is not none %} &middot; <b>{{ p.yds_per_touch }}</b> yds/touch{% if p.yds_pg is not none %} ({{ p.yds_pg }}/gm){% endif %}{% elif p.yds_pg is not none %} &middot; <b>{{ p.yds_pg }}</b> total yds/gm{% endif %}{% if p.script_note %}<br><span class="fp-script-note">&#8635; {{ p.script_note }}</span>{% endif %}</span>
   </span>
   <span class="fp-metric">{{ p.metric }}<small>{{ p.games }} g</small></span>
-</a>
+  </a>
+  {% if not p.is_def %}<a class="fp-dvp" href="/tools/nfl-dvp?player={{ p.player|urlencode }}" title="What this week's defense has allowed to {{ p.pos }}s this season">vs D</a>{% endif %}
+</div>
 {% endfor %}
 </div>
 
