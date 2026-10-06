@@ -43940,7 +43940,7 @@ def build_nfl_matchup_context():
                     import nfl_current_form as _ncf
                     fr = _ncf.matchup_read(a, h, g.get('spread'), g.get('total'))
                     wg['form'] = {k: fr.get(k) for k in
-                                  ('note', 'total_lean', 'run_reads', 'pass_reads',
+                                  ('note', 'total_lean', 'total_signals', 'run_reads', 'pass_reads',
                                    'away_def_note', 'home_def_note',
                                    'away_qb_note', 'home_qb_note',
                                    'away_injuries', 'home_injuries',

@@ -163,6 +163,71 @@ def passer_note(team: str) -> str | None:
             f"({t['qb1_att']} att" + (f", {adot} aDOT" if adot is not None else "") + ")" + tail)
 
 
+_COACH_CACHE: dict = {}
+
+
+def _coach_tendency(abbr: str) -> str | None:
+    """Coaching-lens note for a team (nfl_coaching.json), if present."""
+    p = BASE_DIR / "data" / "scenarios" / "nfl_coaching.json"
+    try:
+        mt = p.stat().st_mtime
+    except OSError:
+        return None
+    if _COACH_CACHE.get("mt") != mt:
+        try:
+            _COACH_CACHE["d"] = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            _COACH_CACHE["d"] = {}
+        _COACH_CACHE["mt"] = mt
+    info = _COACH_CACHE.get("d", {}).get(abbr)
+    return info.get("note") if info else None
+
+
+def total_read(away: str, home: str, total=None) -> dict:
+    """Game-script read of the TOTAL. The lesson it encodes (paid for on ATL@NO, where we
+    leaned the under and it sailed over): a team that CAN'T run doesn't score less -- it is
+    FORCED to throw, which means more plays, more pass volume, more points. 'Can't run' is
+    an OVER signal, not an under one. So this reads forced-pass scripts, soft pass D, and
+    weak pressure as over-pressure, and flags when leaning the under contradicts a pass-heavy
+    script. Over/under are *context*, not a prediction -- totals are priced."""
+    fa, fh = team_form(away), team_form(home)
+    if not fa.get("games") or not fh.get("games"):
+        return {"lean": None, "over": [], "under": [], "forced_pass": [], "contradiction": None}
+    aa, ab = fa["abbr"], fh["abbr"]
+    over, under, forced = [], [], []
+    for off, deff, oab in ((fa, fh, aa), (fh, fa, ab)):
+        run_d = _adj_run_rank(deff)      # opp run D (1 = toughest)
+        pass_d = _adj_pass_rank(deff)    # opp pass D (1 = toughest)
+        own_run = int(off.get("off_rush_rank") or 16)      # 1 = most rush yds
+        sack_rk = int(deff.get("sack_rank") or 16)         # opp pass rush (1 = most sacks)
+        if run_d <= 8 or own_run >= 25:
+            reason = f"opp run D {_ord(run_d)}" if run_d <= 8 else "weak ground game"
+            over.append(f"{oab} can't run ({reason}) → forced to throw, pass volume up")
+            forced.append(oab)
+        if pass_d >= 23:
+            over.append(f"{oab} into a soft pass D ({_ord(pass_d)})")
+        if sack_rk >= 22:
+            over.append(f"{oab}'s QB gets time (opp pass rush {_ord(sack_rk)})")
+        if pass_d <= 6 and sack_rk <= 8:
+            under.append(f"{oab} stifled (opp pass D {_ord(pass_d)} + pressure {_ord(sack_rk)})")
+    for ab2 in (aa, ab):
+        c = _coach_tendency(ab2) or ""
+        if "up-tempo" in c:
+            over.append(f"{ab2} plays up-tempo")
+        if "run-first" in c and ab2 not in forced:
+            under.append(f"{ab2} run-first (milks the clock)")
+    score = len(over) - len(under)
+    lean = ("OVER" if score >= 2 else "LEAN OVER" if score == 1 else
+            "UNDER" if score <= -2 else "LEAN UNDER" if score == -1 else "NEUTRAL")
+    contradiction = None
+    if forced and score >= 0:
+        who = ", ".join(sorted(set(forced)))
+        contradiction = (f"{who} is forced to pass — that argues FOR the over. Don't lean under "
+                         f"just because the run gets stuffed; stuffed run = more throws = more points.")
+    return {"lean": lean, "over": over, "under": under,
+            "forced_pass": sorted(set(forced)), "contradiction": contradiction, "total": total}
+
+
 def matchup_read(away: str, home: str, spread_home=None, total=None) -> dict:
     """Current-season form read for a game. Returns each side's defense note plus a
     plain-English read of what the form implies for the run games, passing games, and
@@ -214,19 +279,18 @@ def matchup_read(away: str, home: str, spread_home=None, total=None) -> dict:
         f"{fh['abbr']} passing vs {fa['abbr']} pass D ({_pass_d(fa)}, {_ord(ha_pr)})",
     ]
 
-    # total lean from where both defenses are strong/soft (opponent-adjusted ranks)
-    both_run_strong = ha_rr <= 10 and hh_rr <= 10
-    both_pass_soft = ha_pr >= 22 and hh_pr >= 22
-    if both_run_strong and not both_pass_soft:
-        read["total_lean"] = ("Both run defenses rank top-10 on current form — the ground "
-                              "games project to get stuffed, so points have to come through the "
-                              "air. Leans the rushing props under; the total rides on passing.")
-    elif both_pass_soft and not both_run_strong:
-        read["total_lean"] = ("Both pass defenses rank bottom-11 on current form — supports "
-                              "the passing markets and the over.")
-    elif both_run_strong and both_pass_soft:
-        read["total_lean"] = ("Both defenses stuff the run but get thrown on — form points to "
-                              "air yards over ground yards, total near coin-flip.")
+    # total read -- game-script aware: a team that CAN'T run is FORCED to throw (more plays,
+    # more pass volume, more points), so "can't run" is an OVER signal, not an under one.
+    # Carries a contradiction flag so an under lean on a pass-heavy script gets challenged.
+    tr = total_read(away, home, total)
+    read["total_signals"] = tr
+    if tr.get("lean"):
+        parts = []
+        if tr["over"]:
+            parts.append("Over: " + "; ".join(tr["over"]))
+        if tr["under"]:
+            parts.append("Under: " + "; ".join(tr["under"]))
+        read["total_lean"] = f"[{tr['lean']}] " + " — ".join(parts) if parts else tr["lean"]
 
     read["note"] = (f"2026 form ({fa['abbr']} {ga}g, {fh['abbr']} {gh}g): "
                     + read["away_def_note"] + " || " + read["home_def_note"])

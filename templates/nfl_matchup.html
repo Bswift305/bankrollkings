@@ -141,6 +141,7 @@
         {% endif %}
         {% if has_form %}
         {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
+        {% if g.form.total_signals and g.form.total_signals.contradiction %}<span class="lean" style="background:rgba(255,209,102,.14);color:var(--bkn-mid,#ffd166);border:1px solid rgba(255,209,102,.4);">&#9888; {{ g.form.total_signals.contradiction }}</span>{% endif %}
         <span class="d">{{ g.form.away_def_note }}</span>
         <span class="d">{{ g.form.home_def_note }}</span>
         {% if g.form.away_qb_note %}<span class="d qb">{{ g.form.away_qb_note }}</span>{% endif %}
