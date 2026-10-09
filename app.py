@@ -30553,6 +30553,7 @@ def build_nfl_usage_board(limit=40, min_games=1):
     # game-script-dependence flag (raw share is contaminated for the ~10% who flip), and
     # (b) yards per OPPORTUNITY (the rate behind the per-game counting number).
     state_flags = _nfl_usage_state_flags()
+    role_map = _load_wisdom_lens('nfl_role_stability.json')   # the variance lens: is the role a floor?
     for r in rows:
         if r.get('is_def'):
             continue
@@ -30561,6 +30562,10 @@ def build_nfl_usage_board(limit=40, min_games=1):
         r['script_note'] = fl['note'] if fl else None
         touch_pg = (r.get('car_pg') or 0) + (r.get('tgt_pg') or 0)
         r['yds_per_touch'] = round(r['yds_pg'] / touch_pg, 1) if (touch_pg and r.get('yds_pg') is not None) else None
+        rs = role_map.get(r.get('player'))
+        r['role_stability'] = rs.get('stability') if rs else None
+        r['role_range'] = (f"{rs.get('min_share')}-{rs.get('max_share')}%" if rs else None)
+        r['role_cv'] = rs.get('cv') if rs else None
     rows.sort(key=lambda x: -x['score'])
     data = {'players': rows[:limit], 'available': bool(rows), 'season': cur,
             'count': len(rows), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
@@ -30851,9 +30856,16 @@ def build_green_light(limit=40):
         gs = scripts.get(team)
         lenses = []   # independent lenses that AGREE with the over
 
-        # 1. Opportunity -- volume access (cleaned: share-based, script-decoupled)
+        # 1. Opportunity -- volume access, QUALIFIED by Role Stability (floor = opportunity
+        # AND a stable role; a volatile role means the share is an average hiding the swing).
         if p.get('role') in OPP_ROLES:
-            lenses.append({'lens': 'Opportunity', 'why': p.get('why') or p.get('role')})
+            stab = p.get('role_stability')
+            why = p.get('why') or p.get('role')
+            if stab == 'Locked':
+                why += ' — locked role (a real floor)'
+            elif stab == 'Volatile':
+                why += f' — but VOLATILE role ({p.get("role_range")}), the share is not a floor'
+            lenses.append({'lens': 'Opportunity', 'why': why})
 
         # 2. Matchup -- opposing defense efficiency allowed (per-dropback / per-carry)
         opp_abbr = None

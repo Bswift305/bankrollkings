@@ -33,6 +33,10 @@
   .fp-metric small{display:block;font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
   .fp-script{font:800 7.5px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:2px 5px;margin-left:5px;background:rgba(255,209,102,.16);color:var(--bkn-mid,#ffd166);white-space:nowrap;}
   .fp-script-note{font:600 11px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-mid,#ffd166);}
+  .fp-stab{font:800 7.5px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:2px 5px;margin-left:5px;white-space:nowrap;}
+  .fp-stab.locked{background:rgba(78,212,138,.18);color:var(--bkn-good,#4ed48a);}
+  .fp-stab.steady{background:rgba(255,255,255,.08);color:var(--text-muted);}
+  .fp-stab.volatile{background:rgba(255,209,102,.16);color:var(--bkn-mid,#ffd166);}
   .fp-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);
     background:rgba(63,191,127,.05);border:1px solid var(--border);border-radius:11px;padding:13px 15px;margin-top:16px;}
   .fp-note b{color:var(--text-bright);}
@@ -96,7 +100,7 @@
   <span class="fp-score"><span class="n">{{ p.score }}</span><span class="l">{{ 'Vol' if p.is_def else 'Opp' }}</span></span>
   <span class="fp-main">
     <span class="fp-name">{{ p.player }} <span class="fp-pos">{{ p.team }} &middot; {{ p.pos }}</span>
-      <span class="fp-badge {{ p.role|lower|replace('-','')|replace(' ','') }}">{{ p.role }}</span>{% if p.script_dependent %}<span class="fp-script" title="Usage swings with game-state — raw share is game-script contaminated">&#8635; script</span>{% endif %}</span>
+      <span class="fp-badge {{ p.role|lower|replace('-','')|replace(' ','') }}">{{ p.role }}</span>{% if p.script_dependent %}<span class="fp-script" title="Usage swings with game-state — raw share is game-script contaminated">&#8635; script</span>{% endif %}{% if p.role_stability %}<span class="fp-stab {{ p.role_stability|lower }}" title="Role {{ p.role_stability }} — share ranges {{ p.role_range }} week to week (cv {{ p.role_cv }}). A locked role is a real floor; a volatile one isn't.">{{ p.role_stability }}</span>{% endif %}</span>
     <span class="fp-why">{{ p.why }}{% if p.yds_per_touch is not none %} &middot; <b>{{ p.yds_per_touch }}</b> yds/touch{% if p.yds_pg is not none %} ({{ p.yds_pg }}/gm){% endif %}{% elif p.yds_pg is not none %} &middot; <b>{{ p.yds_pg }}</b> total yds/gm{% endif %}{% if p.script_note %}<br><span class="fp-script-note">&#8635; {{ p.script_note }}</span>{% endif %}</span>
   </span>
   <span class="fp-metric">{{ p.metric }}<small>{{ p.games }} g</small></span>
@@ -106,7 +110,7 @@
 {% endfor %}
 </div>
 
-<div class="fp-note"><b>Why this, not a streak board:</b> we proved streaks get priced fast &mdash; but <b>opportunity is sticky</b> and it&rsquo;s the real reason a player keeps hitting. A 45%-target-share receiver or a back who owns his backfield has a high floor whether or not he&rsquo;s &ldquo;hot.&rdquo; That&rsquo;s the honest version of following the hot hand. Tap any player to see how often he actually clears his lines. Opportunity score is transparent: target/air-yards share for pass-catchers, carry share + pass role for backs, and <b>yards per touch</b> (the rate behind the per-game number). The <span class="fp-script">&#8635; script</span> tag flags the minority of players whose share actually <b>swings with game-state</b> (leading vs trailing) &mdash; an early-down back fades if his team trails, a chase-script receiver eats when behind &mdash; so for them raw season share can mislead; for everyone else it&rsquo;s clean. Early-season samples are small &mdash; the number firms up weekly. 21+</div>
+<div class="fp-note"><b>Why this, not a streak board:</b> we proved streaks get priced fast &mdash; but <b>opportunity is sticky</b> and it&rsquo;s the real reason a player keeps hitting. A 45%-target-share receiver or a back who owns his backfield has a high floor whether or not he&rsquo;s &ldquo;hot.&rdquo; That&rsquo;s the honest version of following the hot hand. Tap any player to see how often he actually clears his lines. Opportunity score is transparent: target/air-yards share for pass-catchers, carry share + pass role for backs, and <b>yards per touch</b> (the rate behind the per-game number). The <span class="fp-script">&#8635; script</span> tag flags the minority of players whose share actually <b>swings with game-state</b> (leading vs trailing) &mdash; an early-down back fades if his team trails, a chase-script receiver eats when behind &mdash; so for them raw season share can mislead; for everyone else it&rsquo;s clean. The <span class="fp-stab locked">Locked</span> / <span class="fp-stab volatile">Volatile</span> tag is <b>Role Stability</b> &mdash; how much the share moves week to week. A <b>floor isn&rsquo;t just high opportunity, it&rsquo;s high opportunity with a stable role</b>: two backs can both average 60% of the carries, but one ranges 58&ndash;62% (a floor) and the other 35&ndash;85% on script (no floor). Early-season samples are small &mdash; the number firms up weekly. 21+</div>
 {% endif %}
 </div>
 
