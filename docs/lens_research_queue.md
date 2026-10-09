@@ -6,8 +6,17 @@ Bankroll Kings now has something most betting products never build: a mechanism 
 doctrine's 4th question is law — **a lens that fails Q4 loses its seat, no matter how
 good its story was** (`BANKROLL_KINGS_DOCTRINE.md` §10).
 
-So this file is a roster, not a wishlist. A lens is in one of three states. It moves
-between them only on evidence from the attribution archive, never on how smart it sounds.
+So this file is a roster, not a wishlist. A lens is in one of **four** states —
+**Production, Under Review (probation), Research Queue (applicant), Retired** — and it
+moves between them only on evidence from the attribution archive, never on how smart it
+sounds. What we've accidentally built is not a feature workflow (Research → Board) but a
+research-organization one:
+
+```
+Research → Lens → Capture → Grade → Attribution → Promotion / Termination
+```
+
+Most betting products stop at "Board." The states below are the back half of that chain.
 
 ---
 
@@ -58,6 +67,15 @@ resolve** — and when one is built, Attribution judges it on day one.
    or is it already priced (the null our whole record keeps confirming)?
 6. **Travel / Rest dynamics** — short week, cross-country, Thursday games.
 
+## Retired — had a seat, lost it
+
+Empty, and that's the point: nothing has failed Q4 yet because nothing has *resolved*
+yet. When a lens degrades past its mechanism's promise, it lands here with the date and
+the row that killed it — not deleted, *recorded*. A retired lens is evidence too: it tells
+the next idea what "sounded smart but didn't survive" looks like. (Let-Down Factor would
+live here if it had ever earned a seat; it was killed as an applicant instead —
+`research_expectation_sensitivity.py`, persistence +0.04.)
+
 ---
 
 ## The rule that governs this file
@@ -66,6 +84,19 @@ resolve** — and when one is built, Attribution judges it on day one.
 > only after it clears the sample floor (MIN_SAMPLE=25 resolved) **and** shows the
 > separation its mechanism predicts. A lens is demoted — or a Research-Queue idea is never
 > built — when Attribution says the story didn't survive contact with resolved games.
+
+### Lens Longevity — the metric to add once plays resolve
+
+Don't only track hit rate and ROI. Track **state over time**. A lens rarely dies in a
+day; it degrades — or quietly strengthens — across weeks, and that trajectory is
+information a single snapshot hides (the Averaging Audit discipline applied to our own
+record). The intended shape, **activated when the archive has resolved plays, not built
+ahead of the data**: stamp each lens in `Lens_Grades_Summary.json` with its current state
+and the week it entered that state, so we can later read a lens's path
+(`Research → Probation → Production`, or `Production → … → Retired`) rather than just its
+latest cell. Degrading-but-not-dead and strengthening are both signals worth seeing early.
+
+---
 
 The highest-value thing on the platform for the next few weeks is not a new lens. It's
 `GreenLight_Archive.csv` slowly filling with resolved plays. That CSV is where we learn
