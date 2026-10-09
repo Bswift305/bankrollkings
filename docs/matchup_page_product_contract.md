@@ -10,8 +10,10 @@ decisions. Pairs with `docs/matchup_page_product_map.md` and `BANKROLL_KINGS_DOC
 > exception — **every** predictive suppressor (including the graded-record guardrails) needs a
 > documented governance record (§3); replaces the "authority increases" wording (§2); adds
 > "Qualified does not mean correct" (§3); fixes Failed / Retired / Data-Gated placement (§2);
-> makes Green Light & Daily Card conditional and names them currently nonconforming (§6); and
-> protects governance from My View personalization and Track & Learn hindsight (§8).
+> makes Green Light & Daily Card conditional and names them currently nonconforming (§6);
+> protects governance from My View personalization and Track & Learn hindsight (§8); and adds the
+> explicit research-status definitions table (§3). All seven freeze criteria are now addressed —
+> submitted for final freeze approval.
 
 ---
 
@@ -42,11 +44,23 @@ records the decision **without changing the authority** of the evidence that pre
 below Research Status may present an unaudited idea as a claim.
 
 **Placement.** Failed and Retired mechanisms do **not** appear as live matchup signals — they
-remain visible only through the Research Ledger or an educational link ("why we don't use this
-here"). **Data-Gated** status may appear only to explain a meaningful evidence *absence*, never as
-a signal.
+remain visible only through the Research Ledger, educational references ("why we don't use this
+here"), or historical research records. **Data-Gated** status may appear only to explain a
+meaningful evidence *absence*, never as a signal.
 
 ## 3. Authority Rules
+
+Research-status definitions (the fixed meanings this contract relies on):
+
+| Status | Meaning |
+|---|---|
+| **Qualified** | earned decision-influencing authority |
+| **Baseline** | valid benchmark / context; no demonstrated edge |
+| **Under Review** | active evaluation; conclusion not established |
+| **Failed** | tested and never earned authority |
+| **Legacy** | predates governance; authority never earned (untested, not failed) |
+| **Retired** | previously earned authority and later lost it |
+| **Data-Gated** | cannot yet be tested honestly |
 
 - **Qualified does not mean correct.** It means a mechanism earned authority under the *current*
   governance process, and it remains subject to probation, retirement, and future evidence.
