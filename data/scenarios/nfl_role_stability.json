@@ -1,0 +1,1307 @@
+{
+ "Jahmyr Gibbs": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 83.6,
+  "cv": 0.145,
+  "min_share": 67,
+  "max_share": 100,
+  "stability": "Locked"
+ },
+ "Jonathan Taylor": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 77.7,
+  "cv": 0.135,
+  "min_share": 67,
+  "max_share": 95,
+  "stability": "Locked"
+ },
+ "Kenneth Walker III": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 75.0,
+  "cv": 0.128,
+  "min_share": 61,
+  "max_share": 85,
+  "stability": "Locked"
+ },
+ "Derrick Henry": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 70.7,
+  "cv": 0.063,
+  "min_share": 65,
+  "max_share": 77,
+  "stability": "Locked"
+ },
+ "Chase Brown": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 69.6,
+  "cv": 0.162,
+  "min_share": 59,
+  "max_share": 87,
+  "stability": "Locked"
+ },
+ "Javonte Williams": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 65.8,
+  "cv": 0.104,
+  "min_share": 57,
+  "max_share": 76,
+  "stability": "Locked"
+ },
+ "Ashton Jeanty": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 65.7,
+  "cv": 0.091,
+  "min_share": 58,
+  "max_share": 72,
+  "stability": "Locked"
+ },
+ "James Cook": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 63.2,
+  "cv": 0.089,
+  "min_share": 58,
+  "max_share": 73,
+  "stability": "Locked"
+ },
+ "Breece Hall": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 61.4,
+  "cv": 0.084,
+  "min_share": 56,
+  "max_share": 68,
+  "stability": "Locked"
+ },
+ "Bijan Robinson": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 60.7,
+  "cv": 0.144,
+  "min_share": 50,
+  "max_share": 71,
+  "stability": "Locked"
+ },
+ "Tony Pollard": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 60.2,
+  "cv": 0.216,
+  "min_share": 48,
+  "max_share": 81,
+  "stability": "Locked"
+ },
+ "Bucky Irving": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 57.8,
+  "cv": 0.22,
+  "min_share": 40,
+  "max_share": 71,
+  "stability": "Locked"
+ },
+ "Cam Skattebo": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 57.7,
+  "cv": 0.1,
+  "min_share": 49,
+  "max_share": 64,
+  "stability": "Locked"
+ },
+ "Quinshon Judkins": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 57.4,
+  "cv": 0.074,
+  "min_share": 52,
+  "max_share": 63,
+  "stability": "Locked"
+ },
+ "Bhayshul Tuten": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 53.5,
+  "cv": 0.113,
+  "min_share": 47,
+  "max_share": 63,
+  "stability": "Locked"
+ },
+ "David Montgomery": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 50.2,
+  "cv": 0.21,
+  "min_share": 33,
+  "max_share": 62,
+  "stability": "Locked"
+ },
+ "Jacory Croskey-Merritt": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 46.9,
+  "cv": 0.181,
+  "min_share": 38,
+  "max_share": 59,
+  "stability": "Locked"
+ },
+ "Kaleb Johnson": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 40.3,
+  "cv": 0.146,
+  "min_share": 32,
+  "max_share": 44,
+  "stability": "Locked"
+ },
+ "Travis Etienne": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 37.4,
+  "cv": 0.185,
+  "min_share": 30,
+  "max_share": 46,
+  "stability": "Locked"
+ },
+ "Jaxon Smith-Njigba": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 37.3,
+  "cv": 0.184,
+  "min_share": 30,
+  "max_share": 46,
+  "stability": "Locked"
+ },
+ "Jadarian Price": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 35.2,
+  "cv": 0.212,
+  "min_share": 28,
+  "max_share": 45,
+  "stability": "Locked"
+ },
+ "Alvin Kamara": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 34.1,
+  "cv": 0.058,
+  "min_share": 32,
+  "max_share": 37,
+  "stability": "Locked"
+ },
+ "DeVonta Smith": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 32.5,
+  "cv": 0.138,
+  "min_share": 27,
+  "max_share": 38,
+  "stability": "Locked"
+ },
+ "Trey McBride": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 32.5,
+  "cv": 0.192,
+  "min_share": 22,
+  "max_share": 38,
+  "stability": "Locked"
+ },
+ "Brian Robinson": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 31.9,
+  "cv": 0.183,
+  "min_share": 24,
+  "max_share": 40,
+  "stability": "Locked"
+ },
+ "Isaiah Likely": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 31.0,
+  "cv": 0.211,
+  "min_share": 24,
+  "max_share": 41,
+  "stability": "Locked"
+ },
+ "Zay Flowers": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 29.8,
+  "cv": 0.13,
+  "min_share": 25,
+  "max_share": 34,
+  "stability": "Locked"
+ },
+ "Amon-Ra St. Brown": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 29.4,
+  "cv": 0.201,
+  "min_share": 22,
+  "max_share": 36,
+  "stability": "Locked"
+ },
+ "Chris Olave": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 28.6,
+  "cv": 0.117,
+  "min_share": 25,
+  "max_share": 32,
+  "stability": "Locked"
+ },
+ "Garrett Wilson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 28.2,
+  "cv": 0.215,
+  "min_share": 19,
+  "max_share": 36,
+  "stability": "Locked"
+ },
+ "Malik Washington": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 27.3,
+  "cv": 0.119,
+  "min_share": 22,
+  "max_share": 30,
+  "stability": "Locked"
+ },
+ "Najee Harris": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 26.2,
+  "cv": 0.207,
+  "min_share": 19,
+  "max_share": 32,
+  "stability": "Locked"
+ },
+ "Matthew Golden": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.4,
+  "cv": 0.141,
+  "min_share": 21,
+  "max_share": 30,
+  "stability": "Locked"
+ },
+ "Stefon Diggs": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.3,
+  "cv": 0.197,
+  "min_share": 18,
+  "max_share": 31,
+  "stability": "Locked"
+ },
+ "KC Concepcion": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.2,
+  "cv": 0.151,
+  "min_share": 20,
+  "max_share": 30,
+  "stability": "Locked"
+ },
+ "Mark Andrews": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 23.7,
+  "cv": 0.075,
+  "min_share": 21,
+  "max_share": 25,
+  "stability": "Locked"
+ },
+ "DK Metcalf": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 22.6,
+  "cv": 0.178,
+  "min_share": 16,
+  "max_share": 27,
+  "stability": "Locked"
+ },
+ "Tyler Warren": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 21.6,
+  "cv": 0.219,
+  "min_share": 17,
+  "max_share": 29,
+  "stability": "Locked"
+ },
+ "Keenan Allen": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 21.0,
+  "cv": 0.176,
+  "min_share": 17,
+  "max_share": 26,
+  "stability": "Locked"
+ },
+ "George Kittle": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 20.3,
+  "cv": 0.216,
+  "min_share": 15,
+  "max_share": 27,
+  "stability": "Locked"
+ },
+ "Deebo Samuel Sr.": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 20.1,
+  "cv": 0.037,
+  "min_share": 19,
+  "max_share": 21,
+  "stability": "Locked"
+ },
+ "Xavier Hutchinson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.4,
+  "cv": 0.149,
+  "min_share": 16,
+  "max_share": 24,
+  "stability": "Locked"
+ },
+ "Cade Otton": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.2,
+  "cv": 0.118,
+  "min_share": 17,
+  "max_share": 23,
+  "stability": "Locked"
+ },
+ "Denzel Boston": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.0,
+  "cv": 0.198,
+  "min_share": 13,
+  "max_share": 23,
+  "stability": "Locked"
+ },
+ "Dontayvion Wicks": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.0,
+  "cv": 0.056,
+  "min_share": 18,
+  "max_share": 20,
+  "stability": "Locked"
+ },
+ "Devaughn Vele": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 18.3,
+  "cv": 0.137,
+  "min_share": 15,
+  "max_share": 22,
+  "stability": "Locked"
+ },
+ "Courtland Sutton": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.7,
+  "cv": 0.186,
+  "min_share": 14,
+  "max_share": 23,
+  "stability": "Locked"
+ },
+ "Roman Wilson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.8,
+  "cv": 0.09,
+  "min_share": 15,
+  "max_share": 19,
+  "stability": "Locked"
+ },
+ "Juwan Johnson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 15.7,
+  "cv": 0.189,
+  "min_share": 12,
+  "max_share": 20,
+  "stability": "Locked"
+ },
+ "Jahan Dotson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.2,
+  "cv": 0.088,
+  "min_share": 13,
+  "max_share": 16,
+  "stability": "Locked"
+ },
+ "Pat Freiermuth": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 13.2,
+  "cv": 0.025,
+  "min_share": 13,
+  "max_share": 14,
+  "stability": "Locked"
+ },
+ "Jaylen Warren": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 64.7,
+  "cv": 0.276,
+  "min_share": 48,
+  "max_share": 89,
+  "stability": "Steady"
+ },
+ "Aaron Jones": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 64.0,
+  "cv": 0.277,
+  "min_share": 35,
+  "max_share": 82,
+  "stability": "Steady"
+ },
+ "Chuba Hubbard": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 63.5,
+  "cv": 0.227,
+  "min_share": 45,
+  "max_share": 83,
+  "stability": "Steady"
+ },
+ "Jeremiyah Love": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 54.2,
+  "cv": 0.297,
+  "min_share": 32,
+  "max_share": 78,
+  "stability": "Steady"
+ },
+ "Omarion Hampton": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 52.7,
+  "cv": 0.299,
+  "min_share": 28,
+  "max_share": 72,
+  "stability": "Steady"
+ },
+ "Kyren Williams": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 52.5,
+  "cv": 0.233,
+  "min_share": 38,
+  "max_share": 65,
+  "stability": "Steady"
+ },
+ "J.K. Dobbins": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 51.8,
+  "cv": 0.222,
+  "min_share": 36,
+  "max_share": 68,
+  "stability": "Steady"
+ },
+ "D'Andre Swift": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 45.7,
+  "cv": 0.242,
+  "min_share": 28,
+  "max_share": 57,
+  "stability": "Steady"
+ },
+ "Christian McCaffrey": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 44.6,
+  "cv": 0.277,
+  "min_share": 33,
+  "max_share": 65,
+  "stability": "Steady"
+ },
+ "TreVeyon Henderson": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 42.6,
+  "cv": 0.256,
+  "min_share": 31,
+  "max_share": 57,
+  "stability": "Steady"
+ },
+ "MarShawn Lloyd": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 41.9,
+  "cv": 0.309,
+  "min_share": 28,
+  "max_share": 62,
+  "stability": "Steady"
+ },
+ "Rhamondre Stevenson": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 35.9,
+  "cv": 0.39,
+  "min_share": 21,
+  "max_share": 58,
+  "stability": "Steady"
+ },
+ "Kyle Monangai": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 35.5,
+  "cv": 0.333,
+  "min_share": 26,
+  "max_share": 56,
+  "stability": "Steady"
+ },
+ "Woody Marks": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 32.0,
+  "cv": 0.241,
+  "min_share": 24,
+  "max_share": 44,
+  "stability": "Steady"
+ },
+ "CeeDee Lamb": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 31.1,
+  "cv": 0.345,
+  "min_share": 20,
+  "max_share": 49,
+  "stability": "Steady"
+ },
+ "Blake Corum": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 30.9,
+  "cv": 0.28,
+  "min_share": 20,
+  "max_share": 43,
+  "stability": "Steady"
+ },
+ "Carnell Tate": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 29.9,
+  "cv": 0.269,
+  "min_share": 21,
+  "max_share": 43,
+  "stability": "Steady"
+ },
+ "Michael Wilson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 29.2,
+  "cv": 0.24,
+  "min_share": 19,
+  "max_share": 37,
+  "stability": "Steady"
+ },
+ "Drake London": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 27.7,
+  "cv": 0.376,
+  "min_share": 16,
+  "max_share": 43,
+  "stability": "Steady"
+ },
+ "Kendre Miller": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 27.3,
+  "cv": 0.343,
+  "min_share": 14,
+  "max_share": 36,
+  "stability": "Steady"
+ },
+ "Tetairoa McMillan": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 26.9,
+  "cv": 0.396,
+  "min_share": 12,
+  "max_share": 41,
+  "stability": "Steady"
+ },
+ "Kaelon Black": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 26.8,
+  "cv": 0.449,
+  "min_share": 17,
+  "max_share": 47,
+  "stability": "Steady"
+ },
+ "Parker Washington": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 25.7,
+  "cv": 0.44,
+  "min_share": 13,
+  "max_share": 43,
+  "stability": "Steady"
+ },
+ "Davante Adams": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 25.0,
+  "cv": 0.227,
+  "min_share": 18,
+  "max_share": 33,
+  "stability": "Steady"
+ },
+ "Tee Higgins": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.8,
+  "cv": 0.264,
+  "min_share": 18,
+  "max_share": 32,
+  "stability": "Steady"
+ },
+ "T.J. Hockenson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.5,
+  "cv": 0.361,
+  "min_share": 16,
+  "max_share": 39,
+  "stability": "Steady"
+ },
+ "Malik Nabers": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 24.1,
+  "cv": 0.296,
+  "min_share": 12,
+  "max_share": 31,
+  "stability": "Steady"
+ },
+ "Luther Burden III": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 23.6,
+  "cv": 0.226,
+  "min_share": 19,
+  "max_share": 32,
+  "stability": "Steady"
+ },
+ "Terry McLaurin": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 23.4,
+  "cv": 0.297,
+  "min_share": 14,
+  "max_share": 30,
+  "stability": "Steady"
+ },
+ "Josh Downs": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 22.3,
+  "cv": 0.381,
+  "min_share": 14,
+  "max_share": 31,
+  "stability": "Steady"
+ },
+ "Jalen Coker": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 21.4,
+  "cv": 0.393,
+  "min_share": 10,
+  "max_share": 28,
+  "stability": "Steady"
+ },
+ "Mike Evans": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 21.4,
+  "cv": 0.225,
+  "min_share": 14,
+  "max_share": 28,
+  "stability": "Steady"
+ },
+ "Jaylen Waddle": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 21.0,
+  "cv": 0.419,
+  "min_share": 11,
+  "max_share": 34,
+  "stability": "Steady"
+ },
+ "Khalil Shakir": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 20.3,
+  "cv": 0.27,
+  "min_share": 12,
+  "max_share": 27,
+  "stability": "Steady"
+ },
+ "George Pickens": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 20.1,
+  "cv": 0.401,
+  "min_share": 7,
+  "max_share": 28,
+  "stability": "Steady"
+ },
+ "Harold Fannin Jr.": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.7,
+  "cv": 0.325,
+  "min_share": 14,
+  "max_share": 30,
+  "stability": "Steady"
+ },
+ "Emeka Egbuka": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.6,
+  "cv": 0.231,
+  "min_share": 15,
+  "max_share": 26,
+  "stability": "Steady"
+ },
+ "Sam LaPorta": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.3,
+  "cv": 0.233,
+  "min_share": 13,
+  "max_share": 25,
+  "stability": "Steady"
+ },
+ "Xavier Worthy": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 18.7,
+  "cv": 0.364,
+  "min_share": 9,
+  "max_share": 26,
+  "stability": "Steady"
+ },
+ "Tre Harris": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.8,
+  "cv": 0.241,
+  "min_share": 12,
+  "max_share": 22,
+  "stability": "Steady"
+ },
+ "Kenyon Sadiq": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.6,
+  "cv": 0.413,
+  "min_share": 8,
+  "max_share": 27,
+  "stability": "Steady"
+ },
+ "Travis Kelce": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.3,
+  "cv": 0.362,
+  "min_share": 9,
+  "max_share": 26,
+  "stability": "Steady"
+ },
+ "Michael Mayer": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.2,
+  "cv": 0.325,
+  "min_share": 10,
+  "max_share": 24,
+  "stability": "Steady"
+ },
+ "Tre Tucker": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.0,
+  "cv": 0.255,
+  "min_share": 13,
+  "max_share": 24,
+  "stability": "Steady"
+ },
+ "Romeo Doubs": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.8,
+  "cv": 0.347,
+  "min_share": 10,
+  "max_share": 25,
+  "stability": "Steady"
+ },
+ "Quentin Johnston": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.5,
+  "cv": 0.363,
+  "min_share": 6,
+  "max_share": 22,
+  "stability": "Steady"
+ },
+ "Rome Odunze": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.3,
+  "cv": 0.262,
+  "min_share": 12,
+  "max_share": 23,
+  "stability": "Steady"
+ },
+ "Ryan Flournoy": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.1,
+  "cv": 0.227,
+  "min_share": 12,
+  "max_share": 20,
+  "stability": "Steady"
+ },
+ "Tucker Kraft": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.1,
+  "cv": 0.29,
+  "min_share": 10,
+  "max_share": 23,
+  "stability": "Steady"
+ },
+ "Chris Godwin Jr.": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 15.6,
+  "cv": 0.441,
+  "min_share": 9,
+  "max_share": 27,
+  "stability": "Steady"
+ },
+ "Jameson Williams": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 15.5,
+  "cv": 0.303,
+  "min_share": 11,
+  "max_share": 23,
+  "stability": "Steady"
+ },
+ "Antonio Williams": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.5,
+  "cv": 0.333,
+  "min_share": 9,
+  "max_share": 22,
+  "stability": "Steady"
+ },
+ "DeMario Douglas": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.3,
+  "cv": 0.403,
+  "min_share": 8,
+  "max_share": 23,
+  "stability": "Steady"
+ },
+ "Rashid Shaheed": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.3,
+  "cv": 0.412,
+  "min_share": 7,
+  "max_share": 23,
+  "stability": "Steady"
+ },
+ "Greg Dulcich": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 13.5,
+  "cv": 0.382,
+  "min_share": 7,
+  "max_share": 20,
+  "stability": "Steady"
+ },
+ "Malachi Fields": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 13.1,
+  "cv": 0.277,
+  "min_share": 10,
+  "max_share": 19,
+  "stability": "Steady"
+ },
+ "Ted Hurst III": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 13.1,
+  "cv": 0.367,
+  "min_share": 9,
+  "max_share": 21,
+  "stability": "Steady"
+ },
+ "Mike Gesicki": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 12.7,
+  "cv": 0.44,
+  "min_share": 8,
+  "max_share": 21,
+  "stability": "Steady"
+ },
+ "Jalen Nailor": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 12.5,
+  "cv": 0.266,
+  "min_share": 10,
+  "max_share": 17,
+  "stability": "Steady"
+ },
+ "Darren Waller": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 12.4,
+  "cv": 0.412,
+  "min_share": 6,
+  "max_share": 19,
+  "stability": "Steady"
+ },
+ "De'Von Achane": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 46.6,
+  "cv": 0.564,
+  "min_share": 10,
+  "max_share": 69,
+  "stability": "Volatile"
+ },
+ "Emanuel Wilson": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 43.8,
+  "cv": 0.472,
+  "min_share": 9,
+  "max_share": 64,
+  "stability": "Volatile"
+ },
+ "Braelon Allen": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 41.3,
+  "cv": 0.823,
+  "min_share": 19,
+  "max_share": 100,
+  "stability": "Volatile"
+ },
+ "Saquon Barkley": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 39.7,
+  "cv": 0.769,
+  "min_share": 7,
+  "max_share": 79,
+  "stability": "Volatile"
+ },
+ "Ollie Gordon II": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 38.4,
+  "cv": 0.519,
+  "min_share": 10,
+  "max_share": 55,
+  "stability": "Volatile"
+ },
+ "Tank Bigsby": {
+  "role_type": "rush",
+  "games": 3,
+  "mean_share": 32.2,
+  "cv": 0.635,
+  "min_share": 4,
+  "max_share": 52,
+  "stability": "Volatile"
+ },
+ "Tyler Allgeier": {
+  "role_type": "rush",
+  "games": 4,
+  "mean_share": 29.4,
+  "cv": 0.513,
+  "min_share": 7,
+  "max_share": 50,
+  "stability": "Volatile"
+ },
+ "Justin Jefferson": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 26.2,
+  "cv": 0.505,
+  "min_share": 8,
+  "max_share": 39,
+  "stability": "Volatile"
+ },
+ "DJ Moore": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 24.6,
+  "cv": 0.541,
+  "min_share": 7,
+  "max_share": 38,
+  "stability": "Volatile"
+ },
+ "Jordan Addison": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 22.3,
+  "cv": 0.452,
+  "min_share": 9,
+  "max_share": 36,
+  "stability": "Volatile"
+ },
+ "Christian Watson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 21.9,
+  "cv": 0.461,
+  "min_share": 10,
+  "max_share": 38,
+  "stability": "Volatile"
+ },
+ "Rashee Rice": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 20.4,
+  "cv": 0.663,
+  "min_share": 8,
+  "max_share": 39,
+  "stability": "Volatile"
+ },
+ "Ja'Marr Chase": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.7,
+  "cv": 0.572,
+  "min_share": 6,
+  "max_share": 32,
+  "stability": "Volatile"
+ },
+ "Kalif Raymond": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.6,
+  "cv": 0.516,
+  "min_share": 6,
+  "max_share": 35,
+  "stability": "Volatile"
+ },
+ "Wan'Dale Robinson": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 19.1,
+  "cv": 0.477,
+  "min_share": 6,
+  "max_share": 31,
+  "stability": "Volatile"
+ },
+ "Brenton Strange": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 18.7,
+  "cv": 0.543,
+  "min_share": 7,
+  "max_share": 35,
+  "stability": "Volatile"
+ },
+ "Dalton Schultz": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.3,
+  "cv": 0.459,
+  "min_share": 8,
+  "max_share": 28,
+  "stability": "Volatile"
+ },
+ "Dalton Kincaid": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 17.1,
+  "cv": 0.499,
+  "min_share": 7,
+  "max_share": 29,
+  "stability": "Volatile"
+ },
+ "Mack Hollins": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 16.7,
+  "cv": 0.483,
+  "min_share": 10,
+  "max_share": 30,
+  "stability": "Volatile"
+ },
+ "Makai Lemon": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 15.3,
+  "cv": 0.504,
+  "min_share": 3,
+  "max_share": 24,
+  "stability": "Volatile"
+ },
+ "Jakobi Meyers": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 15.0,
+  "cv": 0.649,
+  "min_share": 4,
+  "max_share": 30,
+  "stability": "Volatile"
+ },
+ "Ladd McConkey": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.8,
+  "cv": 0.484,
+  "min_share": 6,
+  "max_share": 26,
+  "stability": "Volatile"
+ },
+ "Colston Loveland": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.6,
+  "cv": 0.577,
+  "min_share": 8,
+  "max_share": 29,
+  "stability": "Volatile"
+ },
+ "Rashod Bateman": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.3,
+  "cv": 0.733,
+  "min_share": 4,
+  "max_share": 31,
+  "stability": "Volatile"
+ },
+ "Kevin Coleman Jr.": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 14.1,
+  "cv": 0.485,
+  "min_share": 7,
+  "max_share": 24,
+  "stability": "Volatile"
+ },
+ "Keon Coleman": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 14.0,
+  "cv": 0.609,
+  "min_share": 4,
+  "max_share": 23,
+  "stability": "Volatile"
+ },
+ "Tyler Higbee": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 14.0,
+  "cv": 0.451,
+  "min_share": 7,
+  "max_share": 22,
+  "stability": "Volatile"
+ },
+ "Brian Thomas Jr.": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 13.8,
+  "cv": 0.674,
+  "min_share": 4,
+  "max_share": 29,
+  "stability": "Volatile"
+ },
+ "Hunter Henry": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 13.5,
+  "cv": 0.479,
+  "min_share": 7,
+  "max_share": 24,
+  "stability": "Volatile"
+ },
+ "Kendrick Bourne": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 13.1,
+  "cv": 0.495,
+  "min_share": 6,
+  "max_share": 22,
+  "stability": "Volatile"
+ },
+ "Tyquan Thornton": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 12.9,
+  "cv": 0.765,
+  "min_share": 4,
+  "max_share": 30,
+  "stability": "Volatile"
+ },
+ "Terrance Ferguson": {
+  "role_type": "target",
+  "games": 3,
+  "mean_share": 12.6,
+  "cv": 0.977,
+  "min_share": 4,
+  "max_share": 30,
+  "stability": "Volatile"
+ },
+ "Oronde Gadsden II": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 12.5,
+  "cv": 0.617,
+  "min_share": 7,
+  "max_share": 26,
+  "stability": "Volatile"
+ },
+ "Chris Bell": {
+  "role_type": "target",
+  "games": 4,
+  "mean_share": 12.4,
+  "cv": 0.536,
+  "min_share": 4,
+  "max_share": 20,
+  "stability": "Volatile"
+ }
+}
