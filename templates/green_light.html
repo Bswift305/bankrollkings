@@ -77,7 +77,7 @@
         {% for l in pl.lenses %}<span class="kw-chip">{{ l.lens }}</span>{% endfor %}
         {% if pl.td_angle %}<span class="kw-chip td">+ TD angle</span>{% endif %}
       </div>
-      <div class="kw-why">{% for l in pl.lenses %}<b>{{ l.lens }}:</b> {{ l.why }}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% if pl.td_angle %}<br><b style="color:#2dd4bf;">Concentration:</b> {{ pl.td_angle }} &mdash; <i>scoring-market angle</i>{% endif %}</div>
+      <div class="kw-why">{% for l in pl.lenses %}<b>{{ l.lens }}:</b> {{ l.why }}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% if pl.td_angle %}<br><b style="color:#2dd4bf;">Concentration:</b> {{ pl.td_angle }} &mdash; <i>scoring-market angle</i>{% endif %}{% if pl.fragile_note %}<br><span style="color:#ffa07a;font-weight:700;">&#9888; Fragile:</span> <span style="color:#ffa07a;">{{ pl.fragile_note }}</span>{% endif %}</div>
     </div>
     <div class="kw-gate">
       <span class="kw-badge {{ 'elig' if pl.eligible else 'priced' }}">{{ 'Eligible' if pl.eligible else 'Priced in' }}</span>

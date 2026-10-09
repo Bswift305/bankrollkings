@@ -30553,7 +30553,8 @@ def build_nfl_usage_board(limit=40, min_games=1):
     # game-script-dependence flag (raw share is contaminated for the ~10% who flip), and
     # (b) yards per OPPORTUNITY (the rate behind the per-game counting number).
     state_flags = _nfl_usage_state_flags()
-    role_map = _load_wisdom_lens('nfl_role_stability.json')   # the variance lens: is the role a floor?
+    role_map = _load_wisdom_lens('nfl_role_stability.json')      # variance lens: is the role a floor?
+    chan_map = _load_wisdom_lens('nfl_channel_dependency.json')  # robustness lens: one path or many?
     for r in rows:
         if r.get('is_def'):
             continue
@@ -30566,6 +30567,10 @@ def build_nfl_usage_board(limit=40, min_games=1):
         r['role_stability'] = rs.get('stability') if rs else None
         r['role_range'] = (f"{rs.get('min_share')}-{rs.get('max_share')}%" if rs else None)
         r['role_cv'] = rs.get('cv') if rs else None
+        cd = chan_map.get(r.get('player'))
+        r['channel_dep'] = cd.get('dependency') if cd else None
+        r['channel_split'] = (f"{cd.get('primary_pct')}% {cd.get('primary')} / {cd.get('secondary_pct')}% {cd.get('secondary')}" if cd else None)
+        r['single_channel'] = bool(cd and str(cd.get('dependency', '')).startswith('Single'))
     rows.sort(key=lambda x: -x['score'])
     data = {'players': rows[:limit], 'available': bool(rows), 'season': cur,
             'count': len(rows), 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
@@ -30929,13 +30934,21 @@ def build_green_light(limit=40):
         conv = len(lenses)
         if conv == 0 and not td_angle:
             continue
+        # FRAGILE flag: Channel Dependency x Script Certainty -- a single-channel player whose
+        # read leans on the projected script, in a game where that script isn't a lock, has one
+        # path riding a game that might not go his way (exactly the Cowboys/Daniels miss).
+        gi_voted = any(l['lens'] == 'Game Identity' for l in lenses)
+        fragile_note = None
+        if p.get('single_channel') and gi_voted and gs and gs.get('certainty') != 'high':
+            fragile_note = (f"one path ({p.get('channel_split')}) riding a "
+                            f"{gs.get('certainty')}-certainty script — if the game flips, so does this")
         plays.append({
             'player': p['player'], 'team': team, 'pos': p.get('pos'), 'is_back': is_back,
             'stat': stat, 'line': pr['line'], 'odds': (int(pr['odds']) if pd.notna(pr['odds']) else None),
             'game': pr.get('game'), 'opp': opp_abbr,
             'lenses': lenses, 'convergence': conv,
             'eligible': eligible, 'gate_note': gate_note,
-            'td_angle': td_angle, 'opp_score': p.get('score', 0),
+            'td_angle': td_angle, 'opp_score': p.get('score', 0), 'fragile_note': fragile_note,
         })
 
     # rank: eligible (un-priced) first, then convergence, then opportunity score
