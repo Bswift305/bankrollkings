@@ -30640,8 +30640,12 @@ def build_nfl_dvp(opp=None, pos='RB', player=None):
         return {'available': False, 'need_opp': True, 'teams': teams, 'pos': pos}
     opp = str(opp).upper()
     pos = (pos or 'RB').upper()
-    mode = 'rush' if pos in ('RB', 'FB', 'HB') else 'rec'
-    posset = ['RB', 'FB'] if mode == 'rush' else ([pos] if pos in ('WR', 'TE') else ['WR', 'TE'])
+    if pos == 'QB':
+        mode, posset = 'rush', ['QB']          # QB rushing (scrambles + designed runs)
+    elif pos in ('RB', 'FB', 'HB'):
+        mode, posset = 'rush', ['RB', 'FB']
+    else:
+        mode, posset = 'rec', ([pos] if pos in ('WR', 'TE') else ['WR', 'TE'])
     yds_col = 'rushing_yards' if mode == 'rush' else 'receiving_yards'
     att_col = 'carries' if mode == 'rush' else 'targets'
     td_col = 'rushing_tds' if mode == 'rush' else 'receiving_tds'
@@ -30665,8 +30669,8 @@ def build_nfl_dvp(opp=None, pos='RB', player=None):
     me = me.iloc[0]
     rk = int(me['rank'])
     label = 'soft' if rk > n_def * 2 / 3 else 'tough' if rk <= n_def / 3 else 'average'
-    thr = 100 if mode == 'rush' else 75
-    min_att = 5 if mode == 'rush' else 3
+    thr = (30 if pos == 'QB' else 100) if mode == 'rush' else 75
+    min_att = (2 if pos == 'QB' else 5) if mode == 'rush' else 3
     sub = d[(d['opponent_team'] == opp) & (d[att_col] >= min_att)]
     log = []
     for _, r in sub.sort_values(['week', yds_col], ascending=[True, False]).iterrows():
@@ -30685,7 +30689,7 @@ def build_nfl_dvp(opp=None, pos='RB', player=None):
         'att_label': 'car' if mode == 'rush' else 'tgt',
         'stat_label': 'rush yds' if mode == 'rush' else 'rec yds',
         'eff_label': 'yds/car' if mode == 'rush' else 'yds/tgt',
-        'pos_label': 'RBs' if mode == 'rush' else (pos + 's'),
+        'pos_label': 'QBs' if pos == 'QB' else ('RBs' if mode == 'rush' else (pos + 's')),
         'log': log,
     }
 

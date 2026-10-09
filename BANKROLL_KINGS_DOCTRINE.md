@@ -1,6 +1,6 @@
 # Bankroll Kings — Development Doctrine
 
-> **Last updated: 2026-10-04** (added §10, the research method). This is the *why* behind the product — the stable philosophy
+> **Last updated: 2026-10-09** (§10 now two questions: discovery + the mechanism/independence test). This is the *why* behind the product — the stable philosophy
 > every feature is checked against. Read it alongside [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md)
 > (the *how it's wired*) and [`CLAUDE.md`](CLAUDE.md) (the enforced session rules; §10 is the
 > honesty/guardrail rulebook this doctrine is the reasoning for). Internal doctrine — **not**
@@ -142,14 +142,17 @@ hold up are *avoidance* rules, and they are enforced in code:
 
 Full study and caveats: `docs/` + the market-efficiency research notes.
 
-## 10. The research method — "what is this average hiding?"
+## 10. The research method — two questions
 
 The two filters (§6) decide *what to build*. The beliefs (§8) say *what we hold true.* This is
 *how we discover* — the repeatable method behind every recent breakthrough. It is first-class
-doctrine, not a one-off exercise.
+doctrine, not a one-off exercise. It is **two questions**: the first *discovers* a candidate
+signal, the second *validates* whether it's an independent lens or just an interaction.
 
-> **The method is one question, asked of every number on the site:**
-> ### "What context is this average hiding?"
+> **Question 1 — discovery:** ### "What context is this average hiding?"
+> **Question 2 — validation:** ### "What mechanism creates this outcome?"
+
+### Question 1 finds the signal
 
 An average collapses a distribution to a single number, and **the signal is almost always in
 what got collapsed.** Every recent advance came from this move — not new math:
@@ -165,6 +168,28 @@ what got collapsed.** Every recent advance came from this move — not new math:
 **An average hides one of five things** — the checklist to run against any metric: **WHEN**
 (within-game time), **CONDITION** (game-state / script), **WHO** (concentration), **VS WHOM**
 (opponent / venue), **HOW RELIABLY** (the shape, not the mean).
+
+### Question 2 decides if it's a real lens
+
+Discovery alone over-expands — every new metric *looks* like a new angle. The second question
+is the filter: **a lens is independent if and only if it draws on a distinct causal mechanism.**
+Two metrics that trace back to the same mechanism are one lens wearing two hats, no matter how
+different the numbers look. So before a finding earns a seat at the convergence table, ask what
+*mechanism* produces it — and whether that mechanism is already represented.
+
+Worked both ways:
+- **QB rushing yards** *looked* like a new family. Mechanism check: it's produced by Game
+  Identity (trailing → scramble) × Matchup (weak pass rush/contain) × Opportunity (designed-run
+  role) — three families we already have. **Not a lens; a market** those lenses should reach.
+- **Situational usage** ("usage while trailing") is Opportunity × Game-Identity — an
+  *interaction* of two families, not a third. Not a lens.
+- **Role stability** (the *variance* of a player's role, not its level) traces to a mechanism
+  nothing else measures — coaching/personnel *trust* producing stable deployment. **A real new
+  lens**, and the missing half of a floor (high opportunity **+** stable role).
+
+The test's job is to **filter, not expand**: it should collapse a six-idea list to one new lens,
+two deepenings, a market, and an interaction — the way "four metrics, one lens" collapsed before.
+Done right, the lens set grows slowly and every member is genuinely its own argument.
 
 Four disciplines keep the method honest — each a scar, not a theory:
 
