@@ -54,12 +54,16 @@ fills. The whole point of the next few weeks is to resolve these:
 Ordered by mechanistic promise. **None of these gets built until the Under-Review rows
 resolve** — and when one is built, Attribution judges it on day one.
 
-1. **Coach Identity** — the special one. Unlike Let-Down Factor (killed as folklore,
-   persistence +0.04), this keeps passing every test, and the reason is *mechanistic*:
-   the coordinator literally controls PROE, pace, personnel grouping, red-zone play
-   selection and 4th-down aggression — and those decisions **create opportunity**. That's
-   a real causal layer, not a narrative. The discipline: when it's built, we don't argue
-   about whether it's real — Attribution tells us "did it help?" or "did it sound smart?"
+1. **Coach Identity** — the **benchmark applicant.** Every future candidate should be
+   measured against it, because it's the rare idea that passes all five tests at once:
+   ✅ hidden context (team stats average coaching away) · ✅ distinct mechanism · ✅ market
+   applicability · ✅ gradeable · ✅ operationalizable. Unlike Let-Down Factor (killed as
+   folklore, persistence +0.04), it keeps passing every test, and the reason is
+   *mechanistic*: the coordinator literally controls PROE, pace, personnel grouping,
+   red-zone play selection and 4th-down aggression — and those decisions **create
+   opportunity**. That's a real causal layer, not a narrative. It still doesn't get a free
+   pass: it's an applicant, not a board. When it's built, Attribution decides whether it's
+   hired. But if *Coach Identity* can't earn a seat, very few future ideas will.
 2. **Red-Zone Concentration expansion** — widen Concentration beyond anytime-TD share.
 3. **Deep passing channels** — split WR receiving into deep vs underneath channels.
 4. **TE middle-field channels** — seam/middle usage as its own channel.
@@ -84,6 +88,21 @@ live here if it had ever earned a seat; it was killed as an applicant instead �
 > only after it clears the sample floor (MIN_SAMPLE=25 resolved) **and** shows the
 > separation its mechanism predicts. A lens is demoted — or a Research-Queue idea is never
 > built — when Attribution says the story didn't survive contact with resolved games.
+
+### Lens Genealogy — where good ideas come from
+
+Recorded now because it lives only in session history and is lost at the next
+compaction — the same reason Retired entries are kept. These lineages teach us where
+good ideas originate, so future research can fish the same waters:
+
+```
+Role Stability     ← Floor Plays → Opportunity → Variance → Role Stability
+Channel Dependency ← QB Rushing → "the Deebo problem" → Position-vs-Channel → Channel Dependency
+```
+
+Both came from pulling on a loose thread in an existing lens, not from a blank-page
+brainstorm. That's the pattern worth remembering: the next lens is probably hiding inside
+a question an existing lens can't answer.
 
 ### Lens Longevity — the metric to add once plays resolve
 
