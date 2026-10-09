@@ -66,11 +66,16 @@ def _resolve(df: pd.DataFrame) -> pd.DataFrame:
         df["State"] = "SourceMissing"
         df["Hit"] = np.nan
         return df
+    # NaN SEMANTICS (P1-4): do NOT blanket-fill NaN -> 0. nflverse stores 0 for an active
+    # player's counting stats, so a genuine NaN means the value is unknown, not zero.
+    # A NaN actual becomes ManualReview below -- governance prefers uncertainty to false
+    # confidence. (This should almost never fire; frequent ManualReview = a feed problem.)
     for c in ("rushing_yards", "receiving_yards", "receptions", "passing_yards",
               "rushing_tds", "receiving_tds"):
         if c in s.columns:
-            s[c] = pd.to_numeric(s[c], errors="coerce").fillna(0)
-    s["anytime_td"] = s.get("rushing_tds", 0) + s.get("receiving_tds", 0)
+            s[c] = pd.to_numeric(s[c], errors="coerce")
+    s["anytime_td"] = s[[c for c in ("rushing_tds", "receiving_tds") if c in s.columns]] \
+        .sum(axis=1, min_count=1)      # NaN only if ALL components are NaN
     s["week"] = pd.to_numeric(s["week"], errors="coerce")
     max_week = int(s["week"].max()) if s["week"].notna().any() else 0
     states, hits = [], []
@@ -84,16 +89,24 @@ def _resolve(df: pd.DataFrame) -> pd.DataFrame:
             states.append("SourceMissing"); hits.append(np.nan); continue
         if pd.isna(line):
             states.append("ManualReview"); hits.append(np.nan); continue
-        # Resolve by the STABLE player_id we captured, not the display name -- two real
-        # players can share a name, and a name-join would grade whichever row sorts first
-        # (non-deterministic, silently wrong). Fall back to name only when no id was matched.
+        # IDENTITY GATE (P0-1/P0-2). A captured stable id carries authority; if it fails,
+        # that's an integrity failure, NOT license to guess by name.
+        status = str(r.get("PlayerIdStatus") or "").strip()
         pid = str(r.get("PlayerId") or "").strip()
-        if pid and "player_id" in s.columns and (s["player_id"].astype(str) == pid).any():
-            pg = s[s["player_id"].astype(str) == pid]
-        else:
-            pg = s[s["player_display_name"] == r.get("Player")]
-        if pg.empty:
+        if status == "ambiguous":
+            states.append("PlayerAmbiguous"); hits.append(np.nan); continue
+        if pid:
+            pg = s[s["player_id"].astype(str) == pid] if "player_id" in s.columns else s.iloc[0:0]
+            if pg.empty:
+                # captured authority failed to match the feed -- do not fall back to a name guess
+                states.append("PlayerIdUnmatched"); hits.append(np.nan); continue
+        elif status == "unmatched":
             states.append("PlayerUnmatched"); hits.append(np.nan); continue
+        else:
+            # legacy rows (pre-cap-3): no id was ever captured -> name is the only key we have
+            pg = s[s["player_display_name"] == r.get("Player")]
+            if pg.empty:
+                states.append("PlayerUnmatched"); hits.append(np.nan); continue
         if target is None:
             states.append("ManualReview"); hits.append(np.nan); continue
         fut = pg[pg["week"] >= target].sort_values("week")
@@ -105,7 +118,10 @@ def _resolve(df: pd.DataFrame) -> pd.DataFrame:
         if gw != target:
             # player was inactive the intended week but played later -> don't grade the wrong game
             states.append("Void(DNP)"); hits.append(np.nan); continue
-        actual = float(fut.iloc[0][key])
+        actual = fut.iloc[0][key]
+        if pd.isna(actual):      # P1-4: unknown stat value, not a zero -> don't fake a loss
+            states.append("ManualReview"); hits.append(np.nan); continue
+        actual = float(actual)
         st = _settle_over(actual, line, is_td)
         states.append(st)
         hits.append(1 if st == "Win" else (0 if st == "Loss" else np.nan))
@@ -142,24 +158,31 @@ def _cell(sub: pd.DataFrame) -> dict:
 
 
 def _pilot_audit(df: pd.DataFrame) -> dict:
-    """Can this cohort become governance data? Reconstructability, not edge."""
+    """Can this cohort become governance data? IDENTITY quality, not a self-generated key.
+    EventKey is derived (not a provider id), so it does NOT count toward reconstructability."""
     n = len(df)
-    st = df["State"] if "State" in df.columns else pd.Series([], dtype=object)
     has = lambda c: c in df.columns
-    event_ok = int(df["EventID"].astype(str).str.len().gt(0).sum()) if has("EventID") else 0
-    player_ok = int((st != "PlayerUnmatched").sum())
+    status = df["PlayerIdStatus"].astype(str) if has("PlayerIdStatus") else pd.Series([""] * n)
+    matched = int((status == "matched").sum())
+    ambiguous = int((status == "ambiguous").sum())
+    unmatched = int((status == "unmatched").sum())
+    legacy = int(n - matched - ambiguous - unmatched)   # pre-cap-3 rows with no status
     intended_ok = int(pd.to_numeric(df["AsOfWeek"], errors="coerce").notna().sum()) if has("AsOfWeek") else 0
-    quarantine = int(st.isin(["PlayerUnmatched", "SourceMissing", "ManualReview"]).sum())
-    ok = (event_ok == n and player_ok == n and intended_ok == n and quarantine == 0)
+    # identity is established only when a disambiguated id matched; ambiguous/unmatched quarantine
+    quarantine = ambiguous + unmatched
+    ok = (ambiguous == 0 and unmatched == 0 and legacy == 0 and intended_ok == n)
     return {
         "cohort_size": int(n),
-        "event_reconstructable": f"{event_ok}/{n}",
-        "player_matched": f"{player_ok}/{n}",
+        "identity_matched": f"{matched}/{n}",
+        "identity_ambiguous": ambiguous,
+        "identity_unmatched": unmatched,
+        "identity_legacy_nameonly": legacy,
         "intended_game_reconstructable": f"{intended_ok}/{n}",
-        "pushes_gradeable": True,  # settlement logic handles push/void explicitly
+        "derived_event_key": "present (slate key, NOT a provider event id -- not counted as identity)",
+        "pushes_gradeable": True,   # settlement logic handles push/void explicitly
         "quarantined": quarantine,
         "verdict": ("promote to governance data" if ok
-                    else "pipeline testing only -- quarantined rows must be resolved first"),
+                    else "pipeline testing only -- resolve ambiguous/unmatched/legacy identities first"),
     }
 
 
@@ -227,8 +250,10 @@ def main() -> int:
           f"{t['settled']} settled, {t['pending']} pending")
     print(f"  states: {states}")
     pa = summary["pilot_audit"]
-    print(f"  pilot audit: event {pa['event_reconstructable']}, player {pa['player_matched']}, "
-          f"quarantined {pa['quarantined']} -> {pa['verdict']}\n")
+    print(f"  pilot audit: identity matched {pa['identity_matched']}, "
+          f"ambiguous {pa['identity_ambiguous']}, unmatched {pa['identity_unmatched']}, "
+          f"legacy {pa['identity_legacy_nameonly']}, quarantined {pa['quarantined']} "
+          f"-> {pa['verdict']}\n")
     print(f"  {'LENS / COMBINATION':<36}{'appear':>7}{'settl':>6}{'hit%':>7}{'ROI%':>8}  read")
     for name, c in {**lenses, **combos, **confidence}.items():
         hr = f"{c['hit_rate']}" if c["hit_rate"] is not None else "--"

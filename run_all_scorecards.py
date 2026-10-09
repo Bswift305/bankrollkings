@@ -35,6 +35,10 @@ SCORECARDS = [
     # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
     # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
     ("Quick Tools QC", "qc_quick_tools.py", 300),
+    # Lens Attribution governance guards -- identity resolution + resolution states.
+    # Permanent regression guard for the capture/grading integrity defects; a governance
+    # bug reintroduced here is a hard FAIL, not a silently corrupted archive.
+    ("Lens Attribution QC", "qc_lens_attribution.py", 180),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
