@@ -213,7 +213,7 @@ Stability beat Opportunity alone" — or that a lens we loved added nothing. **W
 not bets.** Once a validated set exists, *measuring which lenses contribute is worth more than
 inventing a seventh* — and a lens that fails Q4 loses its seat no matter how good its story was.
 
-Four disciplines keep the method honest — each a scar, not a theory:
+Five disciplines keep the method honest — each a scar, not a theory:
 
 1. **De-averaging trades bias for variance.** Slice finely enough and the sample vanishes; a
    conditional point estimate on a handful of plays is a mirage (§8.2). Stop when the context
@@ -227,6 +227,11 @@ Four disciplines keep the method honest — each a scar, not a theory:
 4. **Correlated signals are not independent votes.** Before counting that several factors "agree,"
    confirm they aren't one argument wearing many hats (Target Share, Air Yards, Targets/Game are
    one lens, not three). Convergence of correlated lenses is false conviction.
+5. **Deterministic is not correct.** A consistent answer can still be wrong — our attribution
+   grader returned the *same* result every time while grading the *wrong player* (a display-name
+   collision). When you validate a lens, challenge its **correctness**, not just its
+   **consistency**: "does it repeat?" is easy; "is what it repeats true?" is the one that matters.
+   (`docs/lens_governance_constitution.md`.)
 
 The method is auditable and ongoing: `docs/averaging_audit.md` (the grounded inventory and the
 A1/A2/A3 findings), `docs/rate_over_counting.md` (the counting→rate migration), and

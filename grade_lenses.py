@@ -168,6 +168,9 @@ def _pilot_audit(df: pd.DataFrame) -> dict:
     unmatched = int((status == "unmatched").sum())
     legacy = int(n - matched - ambiguous - unmatched)   # pre-cap-3 rows with no status
     intended_ok = int(pd.to_numeric(df["AsOfWeek"], errors="coerce").notna().sum()) if has("AsOfWeek") else 0
+    # team mismatch is an INTEGRITY METRIC, not a blocker -- a rising count signals stale
+    # board data / trade propagation / upstream normalization, not a lens problem.
+    team_mismatch = int(pd.to_numeric(df["TeamMismatch"], errors="coerce").fillna(0).sum()) if has("TeamMismatch") else 0
     # identity is established only when a disambiguated id matched; ambiguous/unmatched quarantine
     quarantine = ambiguous + unmatched
     ok = (ambiguous == 0 and unmatched == 0 and legacy == 0 and intended_ok == n)
@@ -178,6 +181,7 @@ def _pilot_audit(df: pd.DataFrame) -> dict:
         "identity_unmatched": unmatched,
         "identity_legacy_nameonly": legacy,
         "intended_game_reconstructable": f"{intended_ok}/{n}",
+        "team_mismatch_watch": team_mismatch,  # integrity metric only; does not gate the verdict
         "derived_event_key": "present (slate key, NOT a provider event id -- not counted as identity)",
         "pushes_gradeable": True,   # settlement logic handles push/void explicitly
         "quarantined": quarantine,

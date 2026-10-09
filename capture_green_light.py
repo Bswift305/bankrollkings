@@ -38,7 +38,7 @@ ARCHIVE = BASE / "data" / "tracking" / "GreenLight_Archive.csv"
 STATS = BASE / "data" / "tracking" / "_nflverse_stats_2026.parquet"
 
 # --- versioning: bump the constant when the thing it names changes (not a git hash) ---
-CAPTURE_SCHEMA_VERSION = "cap-3"      # cap-3: disambiguated identity + EventKey rename
+CAPTURE_SCHEMA_VERSION = "cap-4"      # cap-4: + TeamMismatch integrity metric
 LENS_DEFINITION_VERSION = "lens-1"    # bump when a lens's logic/threshold changes
 BOARD_VERSION = "gl-1"                # bump when build_green_light's selection changes
 
@@ -64,24 +64,31 @@ def _load_identity_stats():
 
 
 def resolve_identity(stats: pd.DataFrame | None, name: str, team: str | None):
-    """Return (player_id, status, position). status in matched|ambiguous|unmatched.
-    Disambiguate by (name, team); if the name+team still maps to >1 id, DO NOT guess."""
+    """Return (player_id, status, position, team_mismatch). status in
+    matched|ambiguous|unmatched. Disambiguate by (name, team); if the name+team still maps
+    to >1 id, DO NOT guess. team_mismatch is an INTEGRITY METRIC (not a defect, not a
+    blocker): the board's team for this player wasn't found among the feed's rows for the
+    name -- usually stale board data or a trade not yet propagated, worth watching."""
     if stats is None or stats.empty:
-        return "", "unmatched", ""
+        return "", "unmatched", "", False
     cand = stats[stats["player_display_name"] == name]
     if cand.empty:
-        return "", "unmatched", ""
+        return "", "unmatched", "", False
+    team_mismatch = False
     if team:
         tt = cand[cand["team"].astype(str) == str(team)]
         if not tt.empty:
             cand = tt
+        else:
+            team_mismatch = True     # board team absent from this name's feed rows -- log it
     ids = [i for i in cand["player_id"].dropna().astype(str).unique() if i]
     if len(ids) == 1:
         row = cand[cand["player_id"].astype(str) == ids[0]].sort_values("week").iloc[-1]
-        return ids[0], "matched", (str(row.get("position")) if pd.notna(row.get("position")) else "")
+        pos = str(row.get("position")) if pd.notna(row.get("position")) else ""
+        return ids[0], "matched", pos, team_mismatch
     if not ids:
-        return "", "unmatched", ""
-    return "", "ambiguous", ""      # name+team still ambiguous -- refuse to guess
+        return "", "unmatched", "", team_mismatch
+    return "", "ambiguous", "", team_mismatch     # name+team still ambiguous -- refuse to guess
 
 
 def _event_key(season, aow, game: str) -> str:
@@ -115,11 +122,11 @@ def main() -> int:
         statkey = STAT_KEY.get(p["stat"], "")
         ek = _event_key(season, aow, p.get("game"))
         rid = _rec_id(season, ek, p["player"], statkey, p["line"], "OVER")
-        pid, status, pos = resolve_identity(idstats, p["player"], p.get("team"))
+        pid, status, pos, team_mismatch = resolve_identity(idstats, p["player"], p.get("team"))
         rows.append({
             # --- durable, disambiguated identity (governance) ---
             "RecommendationID": rid, "EventKey": ek,
-            "PlayerId": pid, "PlayerIdStatus": status,
+            "PlayerId": pid, "PlayerIdStatus": status, "TeamMismatch": int(team_mismatch),
             "Player": p["player"], "Team": p["team"], "Opp": p.get("opp"), "Game": p.get("game"),
             "Market": "player_prop", "Stat": p["stat"], "StatKey": statkey,
             "Position": (pos or p.get("pos") or ""),

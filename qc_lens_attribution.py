@@ -135,6 +135,10 @@ def main() -> int:
     check("name alone (2 ids) -> ambiguous", cap.resolve_identity(coll, "Byron Young", None)[1], "ambiguous")
     check("unknown name -> unmatched", cap.resolve_identity(coll, "Ghost Player", "LAR")[1], "unmatched")
     check("name+unseen team falls to name set -> ambiguous", cap.resolve_identity(coll, "Byron Young", "KC")[1], "ambiguous")
+    # team-mismatch integrity metric: board team absent from the feed's rows for this name
+    solo = _stats([{"name": "Traded Guy", "id": "TG", "team": "NYJ", "week": 4}])
+    check("board team not in feed -> team_mismatch flagged", cap.resolve_identity(solo, "Traded Guy", "CLE")[3], True)
+    check("matching team -> no mismatch", cap.resolve_identity(solo, "Traded Guy", "NYJ")[3], False)
 
     print()
     if _FAILS:

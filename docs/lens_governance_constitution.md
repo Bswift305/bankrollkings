@@ -3,6 +3,13 @@
 The roster ([lens_research_queue.md](lens_research_queue.md)) says *which* state each lens
 is in. This document says *how* a lens earns or loses a seat — and it is binding.
 
+> **Deterministic grading is not necessarily correct grading.** A consistent answer can
+> still be wrong — our name-collision bug returned the *same* result every time and graded
+> the *wrong player*. This lesson outlives attribution: it applies to Matchup, Role
+> Stability, Script Confidence, a future Coach Identity, and every lens audit. When you
+> validate a lens, challenge its **correctness**, not just its **consistency** — "does it
+> repeat?" is the easy question; "is what it repeats true?" is the one that matters.
+
 **The one rule that makes this credible: the test is written before the data arrives.**
 Every lens below carries a promotion test and a failure test that were set *now*, while the
 archive is empty. We do not move the goalposts after seeing outcomes. If a lens clears its
