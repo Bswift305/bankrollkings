@@ -1,4 +1,4 @@
-# Contract Conformance Remediation Specification (Rev 3)
+# Contract Conformance Remediation Specification (Rev 3 Final)
 
 **Status: SPEC FOR APPROVAL — no implementation.** Exact customer-facing language replacements for
 the accepted conformance findings, against the frozen contract
@@ -216,6 +216,28 @@ customer-visible; the contract governs customer meaning, not class names.)*
 This specification addresses **only the identified authority-language findings** above. It does
 **not** establish product-wide structural conformance with the frozen contract — surfaces not
 listed here were not re-inventoried in this pass.
+
+## Approval-standard check (Rev 3 Final)
+
+Against the five approval standards:
+
+1. **No remaining recommendation language** — verified by scan: every residual match for
+   play / lock / best / lean / anchor / reliability / high-floor / real-hit / de-vigged-price
+   appears only in the guiding-principle word list, the corrections log, a "Current language"
+   quote, a finding header, or a governance/non-change explanation — **never in a replacement.**
+2. **Every replacement is observational or mechanical** — market-implied probability, displayed
+   historical hit rate, configured-lens count, largest model–market difference, OVER/UNDER side,
+   "markets" / "market entries."
+3. **No implementation-time decisions remain** — the Play column is resolved to "Side" (it renders
+   `prop.direction`); nothing is deferred.
+4. **IDs / ordering / thresholds / selections unchanged** — each item's "explicit non-change" pins
+   what stays fixed; change type is copy / label / tooltip / framing only.
+5. **Completion claim limited** — see "Scope of this remediation (narrowed)" above; this addresses
+   the identified authority-language findings only, not product-wide structural conformance.
+
+*Note: Rev 3 (commit c1f2dae) already incorporated all five Rev-3 corrections; this Final pass
+verified them against the approval standards and changed no replacement text — only this check and
+the title.*
 
 ## Approval question
 
