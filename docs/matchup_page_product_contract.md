@@ -1,10 +1,12 @@
 # Matchup Page Product Contract
 
-**Status: FREEZE CANDIDATE — awaiting review.** This defines *what a completed Bankroll Kings
-matchup page promises the user*. It is a contract, not a plan. It does **not** define
-architecture, schemas, storage, implementation, UI layout, or engineering tasks; it does not open
-Audit #3, propose lenses, or authorize any build. Once reviewed and frozen it governs those later
-decisions. Pairs with `docs/matchup_page_product_map.md` and `BANKROLL_KINGS_DOCTRINE.md` §11.
+**Status: FROZEN — v1 (2026-10-09), the controlling product contract.** Approved and frozen by the
+Director. This defines *what a completed Bankroll Kings matchup page promises the user*. It is a
+contract, not a plan. It does **not** define architecture, schemas, storage, implementation, UI
+layout, or engineering tasks; it does not open Audit #3, propose lenses, or authorize any build.
+Every future product and implementation decision is evaluated against it. Changes to a frozen
+contract go through governed review, not quiet edits. Pairs with `docs/matchup_page_product_map.md`
+and `BANKROLL_KINGS_DOCTRINE.md` §11.
 
 > **Revision for final freeze (2026-10-09, consolidated review):** removes the suppression
 > exception — **every** predictive suppressor (including the graded-record guardrails) needs a
@@ -12,8 +14,8 @@ decisions. Pairs with `docs/matchup_page_product_map.md` and `BANKROLL_KINGS_DOC
 > "Qualified does not mean correct" (§3); fixes Failed / Retired / Data-Gated placement (§2);
 > makes Green Light & Daily Card conditional and names them currently nonconforming (§6);
 > protects governance from My View personalization and Track & Learn hindsight (§8); and adds the
-> explicit research-status definitions table (§3). All seven freeze criteria are now addressed —
-> submitted for final freeze approval.
+> explicit research-status definitions table (§3). All seven freeze criteria met — **frozen as v1
+> by the Director, 2026-10-09.**
 
 ---
 
@@ -155,5 +157,6 @@ Two protections keep agency and governance from corrupting each other:
 
 ---
 
-*Once frozen, this contract governs the later decision of which implementation gate opens first
-(Governance Source / Research Ledger / Matchup Assembly). That decision comes after approval.*
+*Frozen as v1 and controlling. The next gate — which implementation path opens first (Governance
+Source → Research Ledger → Matchup Assembly) — is a separate authorization and is **not open.**
+None opens automatically; each deserves its own gate.*
