@@ -30621,38 +30621,52 @@ def _dvp_resolve_player(name):
     return None, pos
 
 
-def build_nfl_dvp(opp=None, pos='RB', player=None):
-    """Defense vs Position -- de-averages the matchup. Instead of 'NO run D, 27th' (an
-    average that hides the shape), it shows what players at a position have ACTUALLY done
-    against this defense this season: the game log, efficiency allowed, and a league rank.
-    Answers 'what have RBs done against this run D?' in one view. See docs/averaging_audit.md."""
+# Defense vs CHANNEL (not position). Bettors bet production channels, not positions -- the
+# market (rush yds / rec yds / receptions) is the channel. (positions, mode, label, att_label,
+# stat_label, eff_label, min_att, big_thr). See docs/averaging_audit.md + DOCTRINE S10 (Q3).
+_DVP_CHANNELS = {
+    'rb_rush': (['RB', 'FB', 'HB'], 'rush', 'RB rushing', 'car', 'rush yds', 'yds/car', 5, 100),
+    'rb_rec':  (['RB', 'FB', 'HB'], 'rec', 'RB receiving', 'tgt', 'rec yds', 'yds/tgt', 2, 50),
+    'wr_rec':  (['WR'], 'rec', 'WR receiving', 'tgt', 'rec yds', 'yds/tgt', 3, 75),
+    'wr_rush': (['WR'], 'rush', 'WR rushing (gadget)', 'car', 'rush yds', 'yds/car', 1, 20),
+    'te_rec':  (['TE'], 'rec', 'TE receiving', 'tgt', 'rec yds', 'yds/tgt', 2, 50),
+    'qb_rush': (['QB'], 'rush', 'QB rushing', 'car', 'rush yds', 'yds/car', 2, 30),
+}
+_DVP_CHANNEL_ORDER = ['rb_rush', 'rb_rec', 'wr_rec', 'wr_rush', 'te_rec', 'qb_rush']
+_DVP_POS_DEFAULT = {'QB': 'qb_rush', 'RB': 'rb_rush', 'FB': 'rb_rush', 'HB': 'rb_rush',
+                    'WR': 'wr_rec', 'TE': 'te_rec'}
+
+
+def build_nfl_dvp(opp=None, channel=None, pos=None, player=None):
+    """Defense vs CHANNEL -- de-averages the matchup by PRODUCTION CHANNEL, not position,
+    because the market you bet (rush yds / rec yds / receptions) is a channel: an RB's rushing
+    and receiving are different defenses to beat (Gibbs/Kamara), a WR can carry it (Deebo), a
+    QB can run (Daniels). Shows what players in this channel ACTUALLY did vs this D this season
+    -- game log, efficiency, league rank, and a thin-sample flag. See docs/averaging_audit.md."""
     df = _dvp_stats()
     if df.empty:
         return {'available': False, 'reason': 'no current-season stats loaded'}
-    resolved_opp = None
+    resolved_opp, rpos = None, None
     if player:
         ropp, rpos = _dvp_resolve_player(player)
         resolved_opp = ropp
         opp = opp or ropp
-        pos = (pos if (pos and not rpos) else rpos) or pos
+    if not channel:
+        channel = _DVP_POS_DEFAULT.get((pos or rpos or 'RB').upper(), 'rb_rush')
+    channel = channel if channel in _DVP_CHANNELS else 'rb_rush'
+    posset, mode, ch_label, att_label, stat_label, eff_label, min_att, thr = _DVP_CHANNELS[channel]
+    channels = [{'key': k, 'label': _DVP_CHANNELS[k][2]} for k in _DVP_CHANNEL_ORDER]
     teams = sorted(t for t in df['opponent_team'].dropna().unique() if str(t).strip())
     if not opp:
-        return {'available': False, 'need_opp': True, 'teams': teams, 'pos': pos}
+        return {'available': False, 'need_opp': True, 'teams': teams,
+                'channel': channel, 'channels': channels}
     opp = str(opp).upper()
-    pos = (pos or 'RB').upper()
-    if pos == 'QB':
-        mode, posset = 'rush', ['QB']          # QB rushing (scrambles + designed runs)
-    elif pos in ('RB', 'FB', 'HB'):
-        mode, posset = 'rush', ['RB', 'FB']
-    else:
-        mode, posset = 'rec', ([pos] if pos in ('WR', 'TE') else ['WR', 'TE'])
     yds_col = 'rushing_yards' if mode == 'rush' else 'receiving_yards'
     att_col = 'carries' if mode == 'rush' else 'targets'
     td_col = 'rushing_tds' if mode == 'rush' else 'receiving_tds'
     d = df[df['position'].isin(posset)].copy()
     for c in (yds_col, att_col, td_col):
         d[c] = pd.to_numeric(d[c], errors='coerce').fillna(0)
-    # league table: yards allowed to this position per game, by defense
     lg = []
     for dteam, g in d.groupby('opponent_team'):
         wk = g['week'].nunique() or 1
@@ -30660,18 +30674,18 @@ def build_nfl_dvp(opp=None, pos='RB', player=None):
         lg.append({'def': dteam, 'ypg': g[yds_col].sum() / wk,
                    'eff': (g[yds_col].sum() / att) if att else 0.0, 'games': int(wk)})
     lg = pd.DataFrame(lg)
-    lg['rank'] = lg['ypg'].rank(ascending=True, method='min').astype(int)  # 1 = fewest allowed = toughest
+    lg['rank'] = lg['ypg'].rank(ascending=True, method='min').astype(int)  # 1 = fewest = toughest
     n_def = int(len(lg))
     me = lg[lg['def'] == opp]
     if me.empty:
-        return {'available': False, 'opp': opp, 'pos': pos, 'teams': teams,
-                'reason': f'no games logged vs {opp}'}
+        return {'available': False, 'opp': opp, 'channel': channel, 'channels': channels,
+                'teams': teams, 'reason': f'no {ch_label} logged vs {opp}'}
     me = me.iloc[0]
     rk = int(me['rank'])
     label = 'soft' if rk > n_def * 2 / 3 else 'tough' if rk <= n_def / 3 else 'average'
-    thr = (30 if pos == 'QB' else 100) if mode == 'rush' else 75
-    min_att = (2 if pos == 'QB' else 5) if mode == 'rush' else 3
-    sub = d[(d['opponent_team'] == opp) & (d[att_col] >= min_att)]
+    opp_rows = d[d['opponent_team'] == opp]
+    opp_att = int(opp_rows[att_col].sum())
+    sub = opp_rows[opp_rows[att_col] >= min_att]
     log = []
     for _, r in sub.sort_values(['week', yds_col], ascending=[True, False]).iterrows():
         att = int(r[att_col]); yds = int(r[yds_col])
@@ -30680,16 +30694,16 @@ def build_nfl_dvp(opp=None, pos='RB', player=None):
                     'eff': round(yds / att, 1) if att else 0.0, 'td': int(r[td_col]),
                     'big': yds >= thr})
     return {
-        'available': True, 'opp': opp, 'pos': pos, 'mode': mode, 'teams': teams,
+        'available': True, 'opp': opp, 'channel': channel, 'channel_label': ch_label,
+        'channels': channels, 'mode': mode, 'teams': teams,
         'player': player, 'resolved_opp': resolved_opp,
         'weeks': int(me['games']), 'ypg': round(float(me['ypg']), 1), 'eff': round(float(me['eff']), 2),
         'rank': rk, 'n_def': n_def, 'label': label,
         'league_avg': round(float(lg['ypg'].mean()), 1),
         'big_games': sum(1 for x in log if x['big']), 'big_thr': thr,
-        'att_label': 'car' if mode == 'rush' else 'tgt',
-        'stat_label': 'rush yds' if mode == 'rush' else 'rec yds',
-        'eff_label': 'yds/car' if mode == 'rush' else 'yds/tgt',
-        'pos_label': 'QBs' if pos == 'QB' else ('RBs' if mode == 'rush' else (pos + 's')),
+        'att_label': att_label, 'stat_label': stat_label, 'eff_label': eff_label,
+        'pos_label': ch_label,
+        'thin': opp_att < (6 if mode == 'rush' else 8), 'opp_att': opp_att,
         'log': log,
     }
 
@@ -42365,8 +42379,8 @@ def nfl_dvp_tool():
     upcoming defense this season (game log + efficiency + league rank). De-averages the
     'run D, 27th' rank into the shape it hides. Accepts ?opp=&pos= or ?player= (resolves
     the player's next opponent)."""
-    ctx = build_nfl_dvp(opp=request.args.get('opp'), pos=request.args.get('pos', 'RB'),
-                        player=request.args.get('player'))
+    ctx = build_nfl_dvp(opp=request.args.get('opp'), channel=request.args.get('channel'),
+                        pos=request.args.get('pos'), player=request.args.get('player'))
     return render_template('nfl_dvp.html', **ctx)
 
 

@@ -1,7 +1,7 @@
 {% set active_page = 'nfl_dvp' %}
 {% set active_sport = 'nfl' %}
 {% extends "bk_base.html" %}
-{% block title %}Defense vs Position - Bankroll Kings{% endblock %}
+{% block title %}Defense vs Channel - Bankroll Kings{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
@@ -33,21 +33,21 @@
 <div class="page-hero">
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL &middot; Evaluate</div>
-    <h1>Defense vs <span class="accent">Position</span></h1>
-    <div class="page-subtitle">A rank like &ldquo;run D, 27th&rdquo; is an <b>average</b> &mdash; it hides the shape. This shows what players at a position have <b>actually done</b> against this defense this season: the game log, the efficiency allowed, and where they rank. The de-averaged matchup, in one view.</div>
+    <h1>Defense vs <span class="accent">Channel</span></h1>
+    <div class="page-subtitle">You don&rsquo;t bet positions &mdash; you bet <b>production channels</b> (rush yds, rec yds, receptions). An RB&rsquo;s rushing and receiving are different defenses to beat; a WR can carry it (gadget); a QB can run. This shows what players in a channel have <b>actually done</b> against this defense &mdash; the game log, the efficiency allowed, the rank, and a thin-sample flag. The de-averaged matchup, by how production really happens.</div>
   </div>
 </div>
 
 <form method="get" action="/tools/nfl-dvp" class="dvp-pick">
   <label>Defense<select name="opp">{% for t in teams %}<option value="{{ t }}" {% if t == opp %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
-  <label>Position<select name="pos">{% for p in ['RB','WR','TE','QB'] %}<option value="{{ p }}" {% if p == pos %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+  <label>Channel<select name="channel">{% for c in channels %}<option value="{{ c.key }}" {% if c.key == channel %}selected{% endif %}>{{ c.label }}</option>{% endfor %}</select></label>
   <button type="submit">Show</button>
 </form>
 
 {% if available %}
 <div class="dvp-head">
-  <div class="big"><span class="v">{{ opp }}</span> allows <span class="v">{{ ypg }}</span> {{ stat_label }}/gm to {{ pos_label }}
-    <span class="dvp-tag {{ label }}">{{ rank }} of {{ n_def }} &middot; {{ label }}</span></div>
+  <div class="big"><span class="v">{{ opp }}</span> allows <span class="v">{{ ypg }}</span> {{ stat_label }}/gm &mdash; <b>{{ channel_label }}</b>
+    <span class="dvp-tag {{ label }}">{{ rank }} of {{ n_def }} &middot; {{ label }}</span>{% if thin %}<span class="dvp-tag" style="background:rgba(255,209,102,.16);color:var(--bkn-mid,#ffd166);">&#9888; thin ({{ opp_att }})</span>{% endif %}</div>
   <div class="sub">{{ eff }} {{ eff_label }} allowed &middot; league avg {{ league_avg }}/gm &middot; {{ big_games }} game{{ '' if big_games == 1 else 's' }} over {{ big_thr }} yds &middot; {{ weeks }} game sample{% if player %} &middot; next up for <b style="color:var(--text-bright);">{{ player }}</b>{% endif %}</div>
 </div>
 
