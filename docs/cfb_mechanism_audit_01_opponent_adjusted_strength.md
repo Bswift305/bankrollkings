@@ -2,7 +2,30 @@
 
 **Status:** Research (authorized). Not development, not a board, not a live model. The
 deliverable is this audit; the evidence is a read-only point-in-time backtest
-(`research/cfb_mechanism/audit_opponent_adjusted_strength.py`). Audited 2026-10-09.
+(`research/cfb_mechanism/audit_opponent_adjusted_strength.py`). Audited 2026-10-09;
+language tightened 2026-10-09 after consultant + Director review.
+
+> ## Official interpretation (adopted verbatim)
+> **Opponent-adjusted team strength is a valid, point-in-time CFB sides benchmark. In this
+> audit it selected ATS winners at 51.8% on 4,653 game-level observations, but did not
+> demonstrate profitability under an assumed −110 break-even standard. This does not prove
+> universal closing-market efficiency or that strength is useless; it establishes the
+> baseline that future mechanisms must improve upon on comparable games.**
+>
+> The audit **succeeded because it rejected deployment, not because it found an edge** —
+> which is exactly what a mechanism audit is for. "Insufficient evidence of a profitable
+> edge" is the claim; "strength is priced / redundant" and "closing-line efficiency is
+> settled" go further than the evidence supports and are **not** claimed here.
+
+| Dimension | Verdict |
+|---|---|
+| Testability | ✅ Testable |
+| Mechanism existence | ✅ Real |
+| Demonstrated betting edge | ❌ No |
+| Research value | ✅ Strong baseline |
+| Product authorization | ❌ None |
+| "Redundant" classification | Too strong — not claimed |
+| **Final label** | **Baseline / No demonstrated edge** |
 
 This is the first mechanism audit after the evidence-base audit
 ([cfb_research_audit.md](cfb_research_audit.md)) ruled CFB a **sides/totals** research
@@ -36,11 +59,25 @@ are re-solved each week from scratch.
 **Independent unit.** **Game.** The history is already one row per game (7,274 unique,
 zero duplicates), and n counts games, never book-rows or snapshots. Per the Director's
 correction: 7,274 games ≠ 7,274 independent anything unless the unit is the game.
-Predicted n after the point-in-time / min-sample gates = **4,653 games**.
+Predicted n after the point-in-time / min-sample gates = **4,653 games**, spanning
+**2021–2025** (the source contains 2026 rows, but no 2026 game cleared the week-/prior-game
+gates with a final score, so none were evaluated — earlier "2021–2026" wording was wrong).
+*Caveat:* even at one-row-per-game, games are not fully independent — the same teams recur
+across weeks, and a rating error can propagate to several later predictions. The Wilson
+intervals below therefore assume more independence than exists; a season-block or
+team-clustered bootstrap would likely be **wider**. The season-by-season read (no single
+year clears break-even) is the conservative cross-check that doesn't lean on that
+assumption.
 
-**Baseline.** The market (the closing spread). Null = 50% ATS; break-even at −110 =
-**52.4%**. A mechanism earns an edge claim only by clearing 52.4% out of sample with a CI
-that doesn't straddle it.
+**Baseline.** The market line. Null = 50% ATS; the **52.4%** break-even is a *hypothetical*
+−110 reference, not measured profitability — the history does not consistently preserve
+juice, so **no ROI conclusion is attached**. Also, "the market" here is an approximation:
+the per-game line is drawn from whichever book CFBD returned (ESPN Bet / Bovada / DK /
+William Hill / TeamRankings / consensus / Caesars), not one uniform book or consensus
+construction, which adds line-measurement noise. Open-to-close and price research are less
+complete than the general wording might suggest (open home spread exists for ~52% of games,
+open total ~39%, closing ML ~48%). The game-level *closing-spread* research is viable; the
+richer price/movement research is not uniformly available pre-2026.
 
 **Primary metric.** ATS cover rate of the model-selected side (bet the side the rating
 favors against the spread), with a 95% Wilson interval, on game units.
@@ -84,27 +121,40 @@ samples at the extreme mislead and reverse out of sample. **Verdict on the edge:
   (consensus/ESPN Bet/Bovada/DK…); it's one line per game, treated as the market estimate.
 - *No price field* — ROI isn't computed; this is cover rate only, graded at −110 break-even.
 
-**Verdict.** **Testable ✅, tested, and it does not beat the market baseline.** Opponent-
-adjusted team strength is a *real* property of teams but it is *priced*: a clean point-in-
-time SRS covers 51.8% ATS, inside the no-edge band. This is the same lesson the NFL graded
-record keeps teaching — predictive factors are in the price. The mechanism therefore
-**graduates to being the baseline**: it is the honest "strength is priced" floor that every
-future CFB sides mechanism (coaching continuity, situational, line-value) must beat out of
-sample before it earns a seat. It does **not** get built into anything live.
+**Verdict.** **Testable ✅, tested, and it did not demonstrate a profitable ATS edge** under
+the pre-registered −110 standard (51.8% [50.4, 53.3], straddling break-even). The mechanism
+is *real* — teams differ in quality and the model captures it — but it did not clear the
+deployment bar, which is the only answer that matters operationally. We do **not** conclude
+"strength is priced" or "the close is efficient" from one SRS specification; we conclude
+this SRS did not reliably beat the selected spread. Label: **Baseline / No demonstrated
+edge.** It does **not** get built into anything live.
 
 ---
 
+## What "baseline" means (so it isn't misused)
+
+Graduating to the benchmark does **not** mean "future models must report more than 51.8%."
+Raw cover rates from different game populations aren't comparable — a later audit could hit
+52.5% on easier games or different seasons and prove nothing. The benchmark means:
+
+> A future CFB sides mechanism must show **incremental improvement over (a) the market line
+> and (b) this point-in-time cumulative SRS, on the SAME eligible games, with paired
+> predictions and pre-declared exclusions** — never a higher percentage on a self-chosen
+> population.
+
 ## What this implies for the queue
 
-- This audit also largely answers candidate #2 (**market baseline / closing-line
-  efficiency**): the closing spread is ~unbeatable by team strength alone, as expected.
-- Next mechanism audits still worth running (research only, when authorized): **Team Form
-  through W-1** (does recent form add anything beyond full-season strength?), then
-  **Coaching Continuity** — but only after proving regime/coordinator/continuity history
-  can be reconstructed reliably point-in-time. **Per-possession** stays **data-gated** (no
-  drive/PBP data exists).
-- Nothing here authorizes a build. A CFB sides model is a separate decision, and it would
-  start life having to beat 51.8%.
+- This is **not** a settled closing-line-efficiency result. It shows *this* SRS didn't beat
+  *this* spread sample. A real market-efficiency audit (candidate #2) would need broader
+  baselines, calibration analysis, a consistent market definition, and ideally real prices.
+- Next candidate: **Opponent-Adjusted Team *Form* through W-1** — and the sharp question is
+  not "strength vs no strength" (Audit #1 is already point-in-time and dynamic) but **does
+  recency-weighted information add anything beyond cumulative opponent-adjusted strength and
+  the spread, on the same games?** Pre-registration frozen in
+  `docs/cfb_mechanism_audit_02_preregistration.md` before any result exists.
+- Then **Coaching Continuity** — only after proving regime/coordinator history reconstructs
+  point-in-time. **Per-possession** stays **data-gated** (no drive/PBP data exists).
+- Nothing here authorizes a build. A CFB sides model is a separate decision.
 
 See `research/cfb_mechanism/audit_opponent_adjusted_strength.py`,
 [cfb_research_audit.md](cfb_research_audit.md), and `BANKROLL_KINGS_DOCTRINE.md` §8–§10.

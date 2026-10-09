@@ -106,8 +106,13 @@ def main() -> int:
 
     p = pd.DataFrame(picks, columns=["season", "edge", "side", "hit"])
     n = len(p)
+    seasons = sorted(int(s) for s in p["season"].unique()) if n else []
     print("CFB Mechanism Audit #1 -- Opponent-Adjusted Team Strength (point-in-time SRS)\n")
-    print(f"independent unit = GAME | predicted games (n) = {n} | seasons 2021-2026, week >= {MIN_WEEK}\n")
+    print(f"independent unit = GAME | predicted games (n) = {n} | "
+          f"evaluated seasons {seasons} (source spans 2021-2026; no 2026 game cleared the gates), "
+          f"week >= {MIN_WEEK}")
+    print("NOTE: the Wilson CI assumes independent Bernoulli games; games share teams/weeks, "
+          "so a season-block or team-clustered interval would likely be wider.\n")
     if n == 0:
         print("no gradeable predictions -- data-gated"); return 0
 
