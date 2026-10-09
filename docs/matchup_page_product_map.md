@@ -6,6 +6,14 @@ path to the six-layer transparent decision-support matchup page. It does **not**
 build. Grounded in the live repo (routes + components) 2026-10-09; pairs with
 `BANKROLL_KINGS_DOCTRINE.md` §4–§5, §11.
 
+> **Revision 2 (2026-10-09, Fourth-Eye review):** suppression is treated as decision authority
+> gated by the *kind* of claim (§3, §5); research status and fact status are kept as two systems
+> behind one policy layer, not one schema (§8); classification is at the **claim level**, not the
+> route (§3a); **Green Light** and **Daily Card** are examined now as current overclaim risks
+> (§3a); the "zero Qualified" headline is narrowed (§3); "zero risk" is removed (§15); and the
+> §16 schema exclusion is clarified. Next gate (per CoCo): freeze a short **Matchup Page Product
+> Contract** before any build — this map's §1/§4/§5 are its draft.
+
 Governing order (per directive): **inventory → classify → placement → only then future work.**
 Nothing is assumed to need rebuilding merely because governance now exists.
 
@@ -98,13 +106,56 @@ No component unclassified. (Facts carry *fact* status, not research status; see 
   audited (this is most of the current-form/rankings/board family). Legacy = shown as context,
   **no earned authority**.
 - **Retired:** none yet (nothing has held authority and lost it).
-- **Evaluation tools (not signals):** Risk Radar, Ticket Check/Pick Analyzer — they warn/
-  challenge; classified as **suppression/context**, never affirmative votes.
+- **Evaluation tools (mixed — classified by the *kind* of warning, per §5):** Risk Radar and
+  Ticket Check / Pick Analyzer are not one class. Arithmetic / rule validation (parlay math,
+  duplicate leg) = **factual validation**. Bankroll / exposure guardrails (user limits,
+  concentration) = **safety policy**. A *predictive* "avoid this bet" = a claim that **requires
+  governed authority**; it may not suppress merely because caution sounds safe.
 
-> Honest headline: **King's View currently has zero Qualified inputs.** Everything is Fact,
-> Baseline, Under Review, Failed, Data-Gated, or Legacy context. A truthful King's View today
-> says "no qualified edge for this game — here is the market and the context," and that is the
-> product working, not failing.
+> Honest headline (narrowed per review): **No research mechanism is currently documented as
+> Qualified in the governance sources reviewed for this map.** This map did **not** independently
+> re-audit NBA / MLB / WNBA or older tools — they stay **Legacy** (untested *here*) unless a
+> governance source documents otherwise; that is not "proven to have no edge." On the sources
+> reviewed, every matchup input is Fact, Baseline, Under Review, Failed, Data-Gated, or Legacy.
+> So a truthful King's View today says "no *documented* qualified edge — here is the market and
+> the context," and that is the product working, not failing.
+
+---
+
+## 3a. Claim-level classification + two assemblies that overclaim today
+
+**Classify the displayed claim, not the route.** Several routes mix authority levels, so a
+blanket per-route label would be wrong — the atomic unit is the **displayed claim, metric, or
+mechanism.** Mixed-authority examples found in the inventory:
+
+- **Injury Report** = factual availability (who's out) **+** analytical with/without *impact*
+  (Legacy/Context, not Qualified).
+- **Game Lines / Command** = factual prices **+** an Elo-derived model edge (Legacy context).
+- **Market Movers** = factual open→now movement **+** any inferred interpretation (context, no
+  "sharp" claim).
+- **CFB matchup card** = factual results **+** current form (Legacy) **+** common-opponent margin
+  calc (Legacy).
+- **Green Light** = Under Review lenses **+** gating rules **+** tier language.
+
+**Requirement:** a **claim-level inventory** (every displayed claim → its own classification) must
+precede implementation. It is *not* done in this map.
+
+### Two assemblies that currently overclaim relative to governance (examine now)
+
+- **Green Light** (`/tools/green-light`) is customer-facing, and its tier labels (e.g. "Highest
+  conviction", "Strong context") read as authority — yet its underlying lenses are **Under
+  Review** (attribution still accruing) and **none are Qualified.** Honest classification: a
+  **research-in-progress assembly**, not a Qualified recommendation. It may stay visible, but the
+  authoritative-sounding tier language needs an interim **"research in progress"** framing so it
+  doesn't read as a governed pick.
+- **Daily Card** (`/tools/daily-card`) generates "best" 3/4/5-leg cards. "Best" implies **governed
+  selection authority that does not exist** (no Qualified mechanism). Honest classification: a
+  **user-convenience assembly** from the board pools by an explicit rule — not governed selection.
+  Interim: present as "cards assembled by [stated rule]," not "best," until a Qualified selection
+  mechanism exists.
+
+Both are live surfaces most likely to imply unearned authority, so they are flagged **now**, not
+deferred to matchup-page implementation. (Flagging only — no language change is authorized here.)
 
 ---
 
@@ -128,12 +179,26 @@ No component unclassified. (Facts carry *fact* status, not research status; see 
 - **May provide affirmative authority:** only **Qualified** research. (Today: none.)
 - **May provide context only:** Facts, **Baseline** (SRS), **Legacy** context, **Under Review**
   (shown, not voting), **Data-Gated** (as a stated absence).
-- **May suppress conclusions:** the graded-record avoidance signals (longshot-over, single-book,
-  all-over, prefer-under), contradiction/QC flags, and **Failed** findings (as "we tested this,
-  it didn't hold"). Suppression needs less proof than affirmation — warning is cheaper than a claim.
+- **May suppress conclusions — but suppression IS decision authority, so it is gated by the
+  *kind* of claim.** **Predictive** suppression (an "avoid"/"fade" resting on a forecast) requires
+  governed authority appropriate to the claim: a **Legacy, Under Review, or Failed** mechanism may
+  **not** suppress a wager just because caution sounds safe. What *may* suppress without predictive
+  qualification: **correctness failures** (bad parlay math, duplicate leg), **missing data /
+  source conflict** (§7), explicit **user-defined bankroll guardrails**, and the **graded-record
+  avoidance guardrails** (longshot-over, single-book, all-over, prefer-under) — these last carry
+  authority because they are the out-of-sample survivors of doctrine §10, i.e. governed evidence.
+  A **Failed** finding may be cited as *education* ("we tested this, it didn't hold"), never as an
+  active fade.
 - **Explicitly prohibited from acting as a vote:** any Fact-as-prediction; any **Failed** or
-  **Legacy** signal dressed as an edge; and everything on the §7 do-not-build list (composite
-  score, lock, sharp/steam label, cross-sport best-bets, auto-EV, Kelly staking).
+  **Legacy** signal dressed as an edge (affirmative *or* suppressive); and everything on the §7
+  do-not-build list (composite score, lock, sharp/steam label, cross-sport best-bets, auto-EV,
+  Kelly staking).
+
+> Rule (adopted): **Predictive suppression requires governed authority appropriate to the claim.
+> Correctness failures, missing data, source conflicts, and explicit user-defined bankroll
+> guardrails may suppress without predictive qualification.** (This also resolves the apparent
+> tension between "no documented Qualified inputs" and the existence of active avoidance signals:
+> the live guardrails are correctness/safety/graded-record, not unqualified predictions.)
 
 > Qualified research authority ≠ verified factual context. A line is *verified* (fact-status) but
 > carries no research authority; a Qualified lens carries authority but is not a "fact."
@@ -184,11 +249,23 @@ the CFB audit docs + `research/cfb_mechanism/*.json` (verdicts), and code-level 
 states for facts. The Research Ledger and the Matchup Page must both read **one** authoritative
 registry; otherwise status will drift between surfaces.
 
-**Requirement (not a build authorization):** one machine-readable governance registry — the
-single source of truth for every component's research-status (+ the fact-status contract) — that
-both the Research Ledger and the Matchup Page (and any future surface) consume. No parallel
-status systems. Its *content* changes only through the governance process (audits, probation,
-retirement); surfaces never hand-label status.
+**Requirement (not a build authorization) — two systems, one delivery contract.** Research status
+and fact status must **not** be merged into one physical registry/schema; they are different
+systems. Research status is slow-moving and attached to a *versioned mechanism* (Team Form v1
+stays Failed regardless of a game's data freshness); fact status is dynamic and attached to a
+*particular observation, provider, and timestamp* (an injury can be Verified at 10:00 and Stale by
+kickoff). Architecture:
+
+```
+Research Governance Registry ─┐
+                              ├─ Presentation / Policy Layer ──> Research Ledger + Matchup Page
+Fact Availability System ─────┘
+```
+
+One customer experience and one policy layer — **not** one schema. Both the Ledger and the Matchup
+Page consume status only through that shared policy layer; no surface hand-labels status, and the
+two systems never collapse into each other. Research-status *content* changes only through the
+governance process (audits, probation, retirement).
 
 ---
 
@@ -225,8 +302,9 @@ Top-to-bottom the page reads as a descent from *objective* to *governed* to *per
 2. **Analytical Context** offers lenses that may explain it (form, strength=Baseline, pace,
    DvP, market behavior) — explicitly multiple viewpoints, allowed to disagree, each carrying its
    research-status label.
-3. **Research Status** is not a separate block so much as the *label on every context item* +
-   a link to the ledger entry.
+3. **Research Status** appears at the *right level* — a status label on each analytical
+   **card / mechanism** (not on every datum) + a link to its ledger entry; facts carry
+   fact-status where freshness matters. Transparency, not a wall of badges.
 4. **King's View** synthesizes only Qualified inputs (today: a stated "no qualified edge, here is
    the market + context"), plus any suppression warnings.
 5. **My View** lets the user emphasize the lenses they care about and build the slip.
@@ -279,8 +357,10 @@ A sport inherits the *governance*, never another sport's *evidence model*.
 
 ## 13. Implementation Candidates (work packages — NOT authorized)
 
-1. **Governance source/registry** — one machine-readable source of research-status + fact-status
-   contract; prerequisite for 2 and 5.
+1. **Governance source + fact-availability + shared policy layer** — the research-governance
+   registry and the (already-existing) fact-availability system, joined by one presentation/policy
+   layer the Ledger and Matchup Page read (§8). Two systems, one delivery contract; prerequisite
+   for 2 and 5.
 2. **Research Ledger (public page)** — renders the registry with the §9 fields + plain-language.
 3. **Fact-status consistency pass** — render the existing availability states uniformly on facts.
 4. **Matchup-page assembly** — one page stacking the six layers (per-sport evidence, shared
@@ -294,8 +374,10 @@ A sport inherits the *governance*, never another sport's *evidence model*.
 
 ## 14. Acceptance Criteria (six-layer experience "complete")
 
-- Every matchup-page component carries a correct, registry-sourced **research-status or
-  fact-status** label; none unlabeled.
+- Status attaches at the **correct level, not on every datum**: **fact status** on an individual
+  observation when freshness matters, **research status** on a mechanism / analytical card, the
+  **governance explanation** behind an expandable detail or ledger link. Every claim / metric /
+  mechanism is *resolvable* to a correct, source-backed status — without a wall of badges.
 - **King's View draws authority only from Qualified** items; with none Qualified it honestly says
   so; it never shows a Failed/Legacy/Fact item as a vote.
 - **Failed/Retired/Legacy** are visible in the Ledger and never appear as live votes; a page may
@@ -319,11 +401,15 @@ A sport inherits the *governance*, never another sport's *evidence model*.
   single source (8).
 - **Approval gates:** each work package (§13) is its own gate — mechanism/spec → review →
   authorization → build → verify. No package starts without its gate.
-- **Smallest viable path:** **governance source (1) → Research Ledger (2)** alone already delivers
-  the core promise ("here is what has earned trust and what has not") with *zero* new research and
-  *zero* risk of false authority, because the Ledger only reports existing governed verdicts. That
-  is the smallest honest increment and the recommended first gate — the matchup assembly (4/5)
-  follows once the source exists.
+- **Smallest viable path:** **shared governance source/policy layer (1) → Research Ledger (2)**
+  delivers the core promise ("here is what has earned trust and what has not") with **no new
+  predictive claims** and **low implementation risk** — the Ledger only reports existing governed
+  verdicts. *Low risk is not zero risk:* it could still mis-map a mechanism, show stale governance
+  state, omit a version, over-broaden a bounded result, confuse Legacy with Failed, or expose
+  internal research misleadingly — so it needs its own correctness review. **Gate order (per
+  CoCo):** freeze the short **Matchup Page Product Contract** *before* building the Ledger, so the
+  Ledger and the page can't grow two different status systems ("Status System A" then "B"). The
+  matchup assembly (4/5) follows once the source exists.
 
 ---
 
@@ -336,7 +422,10 @@ Equal in importance to the roadmap. This exercise does **not** plan, propose, or
 - **Team Form resurrection** — any recency-weighting variant (v2+, other half-lives). Failed is
   final absent a governed reopening.
 - Dashboard sprawl / new standalone tools beyond the six-layer integration.
-- New research initiatives, schemas, or data collection (CFB gamelogs/prop capture stay blocked).
+- New **predictive-feature, evidence-capture, or research-data** schemas or data collection (CFB
+  gamelogs / prop capture stay blocked). *Clarification:* this does **not** forbid a **minimal
+  governance-metadata contract** for the status registry / policy layer (§8) — that may be
+  *proposed* separately under its own gate; it is not a predictive or data-capture schema.
 - Auto-promotion of any Legacy context to Qualified without passing an audit.
 - Anything on the doctrine §7 do-not-build list.
 
