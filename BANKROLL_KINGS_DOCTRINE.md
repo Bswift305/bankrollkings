@@ -245,5 +245,72 @@ ranking engine is allowed to treat as separate evidence.
 
 ---
 
+## 11. The product contract — the table, the status, the governed view
+
+The destination is **decision support, not a recommendation.** Bankroll Kings sits between two
+weak alternatives — a raw data dump ("figure it out yourself") and picks culture ("trust us
+blindly") — and is neither. The one-paragraph definition:
+
+> Bankroll Kings is a multi-sport decision-support platform that combines live market data,
+> analytical context, governed research, and transparent reasoning — helping bettors make and
+> evaluate their own decisions.
+
+The plain-language promise:
+
+> **We show the table. We show what has earned trust. We show what has not. You decide.**
+
+### The layered architecture (extends §4–§5)
+
+```
+Market Facts → Analytical Context → Research Status → King's View → My View → Track & Learn
+```
+
+The **King's View sits inside the product, not above it.** It is one governed layer, not the
+destination. The user gets the whole table; the King's View tells them which dishes have actually
+been tasted, tested, and survived scrutiny.
+
+### Governance governs claims, authority and placement — not visibility
+
+> Governance determines **what claims Bankroll Kings may make, what authority evidence receives,
+> and where it may appear.** It does **not** erase accurate facts or failed research.
+
+Transparency means preserving disagreements and failures. It does **not** mean presenting
+unsupported claims as equivalent choices. Failed research stays **visible in the research ledger**
+(mechanism, frozen test, population, result, failure class, interpretation limits, reproduction) —
+it does **not** appear on a live game page as a current signal with a vote. A live page may *link*
+"why Bankroll Kings does not use recent-form weighting here" — education, not resurrection.
+
+### Two status systems — never mixed
+
+**Research status** (has an idea earned decision-influencing authority?):
+
+| Status | Meaning |
+|---|---|
+| **Qualified** | earned decision-influencing authority |
+| **Baseline** | valid benchmark / context; no demonstrated edge |
+| **Under Review** | being tested; conclusion not established |
+| **Failed** | tested and did not earn authority |
+| **Data-Gated** | cannot yet be tested honestly |
+| **Legacy** | predates governance; authority not earned |
+| **Retired** | previously had authority, later lost it |
+
+Current ledger: opponent-adjusted SRS → **Baseline**; Team Form v1 → **Failed**; per-possession
+CFB → **Data-Gated**; a future production lens → **Qualified**; a seat later lost → **Retired**.
+
+**Fact status** (is the data correct and current? — this already exists, §10 availability states):
+Verified / Partial / Pending / Stale / Unavailable / Source conflict.
+
+Fact status answers "is this data right?"; research status answers "has this idea earned trust?"
+Mixing them confuses users and developers — keep them separate.
+
+### Internal precision, customer plain-language
+
+The internal taxonomy is exact; the customer interface stays readable. Translations: Qualified →
+"BK Tested"; Baseline → "Context, not an edge"; Under Review → "Research in progress"; Failed →
+"Tested; not supported"; Data-Gated → "Insufficient evidence"; Legacy → "Not yet audited";
+Retired → "No longer used". A user should not need the governance constitution to read a matchup.
+
+---
+
 *This doctrine is stable on purpose. Features change; the two filters, the beliefs, and the
 research method do not, unless new out-of-sample evidence forces a documented change here.*
