@@ -1,0 +1,26 @@
+{
+  "description": "Frozen eligible-game population for CFB Mechanism Audit #2 (paired with Audit #1).",
+  "eval_seasons": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "gates": {
+    "min_week": 4,
+    "min_prior_games": 3,
+    "min_prior_for_solve": 20,
+    "push_excluded": true,
+    "unit": "game"
+  },
+  "n_eligible": 4653,
+  "per_season": {
+    "2021": 575,
+    "2022": 982,
+    "2023": 919,
+    "2024": 1061,
+    "2025": 1116
+  },
+  "sha256": "ffb7c73f53d45e9c44249981714f3e6d3664ef78b92cbe46517d9bcc7ebbc6cd"
+}
