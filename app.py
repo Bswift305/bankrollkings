@@ -30768,9 +30768,26 @@ def _nfl_game_scripts():
             hml = pd.to_numeric(g['HomeML'], errors='coerce').median()
             fav = away if (pd.notna(aml) and pd.notna(hml) and aml < hml) else home
             mag = abs(float(sp)) if pd.notna(sp) else None
+            # Script HUMILITY (a.k.a. script certainty): the favorite only gets to WRITE the
+            # script ~win_prob of the time. De-vig the moneyline -> favorite's win probability.
+            # A pick-em's "favored -> leads -> run" is a coin flip, not evidence (the Cowboys
+            # were -8.5 and still played from behind). Never state the script as a fact.
+            def _imp(ml):
+                ml = float(ml)
+                return (100.0 / (ml + 100.0)) if ml > 0 else ((-ml) / ((-ml) + 100.0))
+            fav_wp = None
+            try:
+                if pd.notna(aml) and pd.notna(hml):
+                    ap, hp = _imp(aml), _imp(hml)
+                    fav_wp = round((ap if fav == away else hp) / (ap + hp), 2)   # de-vigged
+            except Exception:
+                fav_wp = None
+            certainty = ('high' if fav_wp and fav_wp >= 0.72 else
+                         'medium' if fav_wp and fav_wp >= 0.60 else 'low')
             for team, opp, is_home in ((away, home, False), (home, away, True)):
                 out[team] = {'opp': opp, 'favored': team == fav, 'spread_mag': mag,
-                             'total': float(tot) if pd.notna(tot) else None, 'home': is_home}
+                             'total': float(tot) if pd.notna(tot) else None, 'home': is_home,
+                             'fav_wp': fav_wp, 'certainty': certainty}
     except Exception:
         return {}
     return out
@@ -30878,18 +30895,24 @@ def build_green_light(limit=40):
                     side = 'run' if is_back else 'pass'
                     lenses.append({'lens': 'Matchup', 'why': f"{opp_abbr} {side} D ranks {rk}th per-play (soft)"})
 
-        # 3. Game Identity -- does the projected script feed this usage?
-        if gs and gs.get('spread_mag') and gs['spread_mag'] >= 3:
+        # 3. Game Identity -- does the projected script feed this usage? HUMILITY: a projected
+        # script is only evidence when the market is confident the favorite writes it. In a
+        # near-pick-em (low certainty) the "favored -> leads" read is a coin flip, so it does
+        # NOT vote. The win-prob rides along in the why so the script is never stated as a fact.
+        if (gs and gs.get('spread_mag') and gs['spread_mag'] >= 3
+                and gs.get('certainty') != 'low'):
+            wp = gs.get('fav_wp')
+            conf = f" ({round(wp * 100)}% to lead)" if wp else ""
             if is_back and gs['favored']:
-                lenses.append({'lens': 'Game Identity', 'why': f"favored by {gs['spread_mag']:g} → leading script → carries"})
+                lenses.append({'lens': 'Game Identity', 'why': f"favored by {gs['spread_mag']:g} → leading script → carries{conf}"})
             elif (not is_back) and (not gs['favored']):
-                lenses.append({'lens': 'Game Identity', 'why': f"dog by {gs['spread_mag']:g} → trailing script → targets"})
+                lenses.append({'lens': 'Game Identity', 'why': f"dog by {gs['spread_mag']:g} → trailing script → targets{conf}"})
             elif p.get('script_dependent'):
                 # script-dependent player whose flip direction matches the game script
                 note = str(p.get('script_note') or '')
                 if (is_back and 'leading' in note and gs['favored']) or \
                    ((not is_back) and 'trailing' in note and (not gs['favored'])):
-                    lenses.append({'lens': 'Game Identity', 'why': note})
+                    lenses.append({'lens': 'Game Identity', 'why': note + conf})
 
         # 4. Coaching -- does the team's structural tendency support it?
         ct = coach.get(team)
