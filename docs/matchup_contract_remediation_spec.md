@@ -1,10 +1,11 @@
-# Contract Conformance Remediation Specification (Rev 2)
+# Contract Conformance Remediation Specification (Rev 3)
 
 **Status: SPEC FOR APPROVAL — no implementation.** Exact customer-facing language replacements for
 the accepted conformance findings, against the frozen contract
 (`docs/matchup_page_product_contract.md`). Nothing applied. Scope is **copy / labels / tooltips /
 explanatory framing / status display only** — no ranking, selection logic, models, scores,
-governance states, research, or redesign. Rev 2 (2026-10-09) applies the nine review corrections.
+governance states, research, or redesign. Rev 3 (2026-10-09) applies the five final corrections on
+top of the nine resolved in Rev 2.
 
 **Guiding principle (Rev 2):** remediation must **eliminate authority language, not replace it with
 softer authority language.** Use **observational / mechanical** terms only. "Play," "Lean," "Best,"
@@ -21,9 +22,16 @@ is **same IDs / ordering / thresholds / selections**, not rendered-HTML equality
 claim narrowed to the identified authority-language findings only — this does **not** establish
 product-wide structural conformance.
 
-Also carried: no "model read" / "validated score" for the de-vigged price; it is "market-implied
-probability (de-vigged price)." The review's unestablished "high implied prob ≈ -EV" claim stays
+Also carried: no "model read" / "validated score"; the user-facing number is the **de-vigged
+market-implied probability**. The review's unestablished "high implied prob ≈ -EV" claim stays
 retracted.
+
+**Rev 3 corrections (5):** (a) remove residual "plays" recommendation nouns → "markets" / "market
+entries"; (b) resolve the matchup "Play" *column* — it renders `prop.direction` (OVER/UNDER), i.e.
+the **side**, so its header becomes "Side" (no deferred decision); (c) "real hit rates" →
+"displayed historical hit rates"; (d) "high historical hit rate" → the actual rule ("higher
+displayed historical hit rates at the current number"); (e) "de-vigged price" → "de-vigged
+market-implied probability" (the display is a probability).
 
 ---
 
@@ -37,23 +45,25 @@ retracted.
 - **Replacement language:** drop the Lock/Play/Pass verdict words entirely. Key heading "Verdict
   key:" → "Market-implied probability:" with two descriptive rows — "≥ 70% market-implied" and
   "< 70% market-implied". Badges "{N}% Lock" / "{N}% Play" → "{N}% market-implied". Column header
-  "Verdict" → "Market-implied %".
+  "Verdict" → "Market-implied %". The separate 6th column headed "Play" (`matchup.html:270`) renders
+  `prop.direction` (OVER/UNDER) — it is the **side**, so rename its header "Play" → "Side"; its cell
+  (OVER/UNDER) is unchanged.
 - **Governance reason:** §3/§7 — "Lock" is do-not-build; "Play"/"Pass"/"conviction" are
-  recommendation verdicts with no governed authority. The number is the de-vigged price, so show it
-  as a market-implied probability and stop there.
+  recommendation verdicts with no governed authority. The number is the de-vigged market-implied
+  probability, so show it as such and stop there.
 - **Change type:** copy / labels.
 - **Explicit non-change:** the 70% threshold, the implied-probability computation, which props
   display, and column order are unchanged — only the words.
 - **Verification:** grep shows no "Lock" / "Play" / "Pass" / "conviction" labels remain in
   `matchup.html`; the prop set has the **same IDs, same ordering, same thresholds, same
-  selections**. (Open item for implementation: the existing "Play" *column* at `:261` — confirm its
-  cell shows the O/U side vs a verdict; if a verdict, relabel to the side it displays.)
+  selections**. The 6th "Play" column is **resolved**: it renders `prop.direction` (OVER/UNDER), so
+  its header becomes "Side" and the cell is unchanged — no deferred decision.
 
 ### P1.2 — MLB matchup "Best Anchor"
 - **Surface:** `templates/mlb_matchup.html:118-121`.
 - **Current language:** "Best Anchor" / "Highest reliability prop currently attached to this game."
-- **Replacement language:** "**Historical Hit-Rate Leader**" / "Prop with the **highest historical
-  hit rate** attached to this game."
+- **Replacement language:** "**Historical Hit-Rate Leader**" / "Prop with the **highest displayed
+  historical hit rate** attached to this game."
 - **Governance reason:** §3 — "best"/"reliability" imply earned authority; historical hit rate is an
   observable Fact.
 - **Change type:** copy.
@@ -106,8 +116,8 @@ customer-visible; the contract governs customer meaning, not class names.)*
   reliably clear the number, plus one plus-money swing… Cross-game, **best of the board**, every
   leg with a real reason. **The finished ticket, on arrival.**"
 - **Replacement language:** "3, 4, and 5-leg tickets **assembled by rule** from this slate:
-  cross-game legs (one per game), weighted toward props with a **high historical hit rate at the
-  number** (from game logs), plus one plus-money leg for upside. **Options assembled for you — not a
+  cross-game legs (one per game), weighted toward props with **higher displayed historical hit rates
+  at the current number**, plus one plus-money leg for upside. **Options assembled for you — not a
   graded pick.**"
 - **Governance reason:** §6 — "strongest/best of the board/finished ticket" imply governed
   selection; §4/#4 — "high-floor" is an undefined/ungoverned term, so state the actual metric
@@ -134,10 +144,10 @@ customer-visible; the contract governs customer meaning, not class names.)*
 ### P4.1 — Free-tier feature copy
 - **Surface:** `app.py:453` (plan features list).
 - **Current language:** "Top 3 **highest-confidence** props per sport with hit rates"
-- **Replacement language:** "Top 3 props by **market-implied probability (de-vigged price)**, with
-  real hit rates"
+- **Replacement language:** "Top 3 props by **de-vigged market-implied probability**, with
+  **displayed historical hit rates**"
 - **Governance reason:** §3/§4 — "highest-confidence" implies earned ranking; the number is the
-  de-vigged price (not a "model read" or "validated score").
+  de-vigged market-implied probability (not a "model read" or "validated score").
 - **Change type:** copy.
 - **Explicit non-change:** which props the dashboard shows is unchanged.
 - **Verification:** grep shows "highest-confidence" gone from the features list.
@@ -145,9 +155,9 @@ customer-visible; the contract governs customer meaning, not class names.)*
 ### P4.2 — /market-edge sort control
 - **Surface:** `templates/smart_picks_v2.html:583`.
 - **Current language:** "Highest Confidence" (sort)
-- **Replacement language:** "Market-implied probability (de-vigged price)"
-- **Governance reason:** §3/§4 — the sort key is the de-vigged price, not a governed confidence or a
-  validated score.
+- **Replacement language:** "De-vigged market-implied probability"
+- **Governance reason:** §3/§4 — the sort key is the de-vigged market-implied probability, not a
+  governed confidence or a validated score.
 - **Change type:** copy (control label).
 - **Explicit non-change:** **the sort orders by the identical underlying value** — label only. No
   default-sort change (that would be a ranking change, out of scope).
@@ -162,8 +172,8 @@ customer-visible; the contract governs customer meaning, not class names.)*
 - **Surface:** `templates/cfb_board.html:33`.
 - **Current language:** "The model's **best** spread & total plays across this week's slate, **ranked
   by edge.** … Candidates, not locks."
-- **Replacement language:** "This week's spread & total plays where the model's number **differs
-  most from the posted number** (largest model–market difference). Opponent-adjusted strength is a
+- **Replacement language:** "This week's spread and total **markets** where the model's number
+  **differs most from the posted number** (largest model–market difference). Opponent-adjusted strength is a
   **Baseline — no validated edge** — context, not a graded pick. We surface and rank the options;
   you bring the eye test. Candidates, not locks."
 - **Governance reason:** §3 — opponent-adjusted strength is **Baseline** (Audit #1: no demonstrated
@@ -177,9 +187,9 @@ customer-visible; the contract governs customer meaning, not class names.)*
 - **Surface:** `templates/nfl_board.html:35`.
 - **Current language:** "The **best plays** across every market — props, totals, wind, injury spots
   — ranked by how strong the **evidence** is. … Candidates, not locks."
-- **Replacement language:** "Plays across every market — props, totals, wind, injury spots — ranked
-  by **historical hit rate** (default; sortable). Status-labeled; **not a graded edge**. …
-  Candidates, not locks."
+- **Replacement language:** "**Market entries** across props, totals, wind, and injury spots —
+  ranked by **displayed historical hit rate** (default; sortable). Status-labeled; **not a graded
+  edge**. … Candidates, not locks."
 - **Governance reason:** §3/#6 — state the real ordering rule (the board's default sort is
   `hit_pct`, an observable fact), not "best plays / how strong the evidence is."
 - **Change type:** copy.
