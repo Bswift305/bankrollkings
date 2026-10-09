@@ -84,7 +84,14 @@ def _resolve(df: pd.DataFrame) -> pd.DataFrame:
             states.append("SourceMissing"); hits.append(np.nan); continue
         if pd.isna(line):
             states.append("ManualReview"); hits.append(np.nan); continue
-        pg = s[s["player_display_name"] == r.get("Player")]
+        # Resolve by the STABLE player_id we captured, not the display name -- two real
+        # players can share a name, and a name-join would grade whichever row sorts first
+        # (non-deterministic, silently wrong). Fall back to name only when no id was matched.
+        pid = str(r.get("PlayerId") or "").strip()
+        if pid and "player_id" in s.columns and (s["player_id"].astype(str) == pid).any():
+            pg = s[s["player_id"].astype(str) == pid]
+        else:
+            pg = s[s["player_display_name"] == r.get("Player")]
         if pg.empty:
             states.append("PlayerUnmatched"); hits.append(np.nan); continue
         if target is None:
