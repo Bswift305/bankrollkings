@@ -7,10 +7,12 @@ doctrine's 4th question is law — **a lens that fails Q4 loses its seat, no mat
 good its story was** (`BANKROLL_KINGS_DOCTRINE.md` §10).
 
 So this file is a roster, not a wishlist. A lens is in one of **four** states —
-**Production, Under Review (probation), Research Queue (applicant), Retired** — and it
+**Research (applicant), Probation (on trial), Production (seated), Retired** — and it
 moves between them only on evidence from the attribution archive, never on how smart it
-sounds. What we've accidentally built is not a feature workflow (Research → Board) but a
-research-organization one:
+sounds. *How* it moves is binding and written down in advance:
+[lens_governance_constitution.md](lens_governance_constitution.md) — every lens's
+promotion and failure tests, set before the data arrives. What we've accidentally built is
+not a feature workflow (Research → Board) but a research-organization one:
 
 ```
 Research → Lens → Capture → Grade → Attribution → Promotion / Termination
@@ -34,7 +36,7 @@ market (Q3). They keep their seat only as long as Q4 keeps agreeing.
 | **Channel Dependency** | One channel vs many changes how a defense can take it away |
 | **Concentration (TD)** | Red-zone/goal-line share concentrates scoring in one back |
 
-## Under Review — earning their keep right now
+## Probation — on trial, earning their keep right now
 
 Built and capturing, **not yet proven**. These are the rows to watch as the archive
 fills. The whole point of the next few weeks is to resolve these:
@@ -84,10 +86,11 @@ live here if it had ever earned a seat; it was killed as an applicant instead �
 
 ## The rule that governs this file
 
-> Out-of-sample or it does not count. A lens is promoted from Under Review to Production
-> only after it clears the sample floor (MIN_SAMPLE=25 resolved) **and** shows the
-> separation its mechanism predicts. A lens is demoted — or a Research-Queue idea is never
-> built — when Attribution says the story didn't survive contact with resolved games.
+> Out-of-sample or it does not count. A lens is promoted from Probation to Production only
+> after it clears the sample floor (≥ 25 settled Win/Loss) **and** passes the promotion
+> test written for it in advance ([constitution](lens_governance_constitution.md)). A lens
+> is demoted — or a Research-Queue idea is never built — when Attribution trips its failure
+> test. Promotion and retirement are human decisions; the system recommends, a human decides.
 
 ### Lens Genealogy — where good ideas come from
 
