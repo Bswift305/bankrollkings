@@ -58,6 +58,17 @@ Per §8 that conclusion binds to Team Form v1 (H=3) only.
 
 ## Interpretation (authorized; held to the frozen scope)
 
+> **Bounded conclusion of Audit #2 (the only statement this result licenses):**
+> **Team Form v1 (opponent-adjusted exponentially-weighted SRS, H=3) FAILED** — no
+> demonstrated incremental edge over the Audit #1 cumulative SRS benchmark, well-powered
+> (n=850 disagreements). It is *not* underpowered and it did *not* succeed. Per the frozen
+> boundaries, this does **not** conclude anything about momentum, recency, other half-lives,
+> other weightings, or form models in general.
+>
+> Everything below the line is **context, explicitly NOT part of the Audit #2 conclusion** —
+> a mechanistic *hypothesis* (not proven here) and *proposals* that belong to the separate
+> Audit #3 candidate-selection gate. Kept for the record; carries no authorization.
+
 **What the result means (within §8 scope — Team Form v1, H=3 only).** Reweighting the SRS
 toward recent games at a 3-week half-life does not merely fail to help — on the 850 games
 where it *overturned* the cumulative rating's side, following it was **anti-predictive**
