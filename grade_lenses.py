@@ -85,18 +85,39 @@ def main() -> int:
     df = pd.read_csv(ARCHIVE)
     if df.empty:
         print("[grade_lenses] archive empty"); return 0
+    # ARCHIVE QUALITY: capture runs daily, so one upcoming play is snapshotted several times
+    # before kickoff. Grade ONE instance per play-week (latest snapshot = closest to the game,
+    # most current lenses) so a play isn't counted N times in attribution.
+    before = len(df)
+    df = df.sort_values("SnapshotDate").drop_duplicates(
+        subset=["Player", "Stat", "Season", "AsOfWeek"], keep="last").reset_index(drop=True)
+    if before != len(df):
+        print(f"[grade_lenses] de-duped {before} snapshots -> {len(df)} unique play-weeks")
     df = _resolve(df)
 
+    def col(name, default=np.nan):
+        return df[name] if name in df.columns else pd.Series([default] * len(df), index=df.index)
+
     lenses = {LENS_NAME[c]: _cell(df[df[c] == 1]) for c in LENSES if c in df.columns}
+    # THE KILLER TABLE -- lens INTERACTION, not just each lens alone. Does Opportunity + Stability
+    # beat Opportunity alone? Does the Fragile warning actually predict misses? This is where the
+    # next moat lives: the site slowly learning which FORMS of evidence deserve trust.
+    opp = df["L_Opportunity"] == 1
+    others = df[[c for c in LENSES if c != "L_Opportunity"]].sum(axis=1)
     combos = {
-        "Opportunity ALONE": _cell(df[(df["L_Opportunity"] == 1) & (df[[c for c in LENSES if c != "L_Opportunity"]].sum(axis=1) == 0)]),
-        "Opportunity + Role Stability=Locked": _cell(df[(df["L_Opportunity"] == 1) & (df.get("RoleStability") == "Locked")]),
-        "Fragile (single-channel x shaky script)": _cell(df[df.get("Fragile") == 1]),
+        "Opportunity ALONE": _cell(df[opp & (others == 0)]),
+        "Opportunity + Stability(Locked)": _cell(df[opp & (col("RoleStability") == "Locked")]),
+        "Opportunity + Stability + Matchup": _cell(df[opp & (col("RoleStability") == "Locked") & (df["L_Matchup"] == 1)]),
+        "Dual-threat (multi-channel)": _cell(df[col("SingleChannel") == 0]),
+        "Single-channel": _cell(df[col("SingleChannel") == 1]),
+        "Fragile (single-ch x shaky script)": _cell(df[col("Fragile") == 1]),
     }
+    confidence = {f"Script confidence = {c}": _cell(df[col("ScriptConfidence") == c])
+                  for c in ["high", "medium"]}
     tiers = {t: _cell(df[df["Tier"] == t]) for t in df["Tier"].dropna().unique()}
 
     summary = {
-        "by_lens": lenses, "by_combo": combos, "by_tier": tiers,
+        "by_lens": lenses, "by_combo": combos, "by_confidence": confidence, "by_tier": tiers,
         "totals": {"rows": int(len(df)), "resolved": int((df["Resolved"] == 1).sum()),
                    "pending": int((df["Resolved"] == 0).sum())},
         "min_sample": MIN_SAMPLE,
@@ -109,8 +130,8 @@ def main() -> int:
 
     t = summary["totals"]
     print(f"[grade_lenses] {t['rows']} captured | {t['resolved']} resolved, {t['pending']} pending\n")
-    print(f"  {'LENS':<34}{'appear':>7}{'resolv':>7}{'hit%':>7}{'ROI%':>8}  read")
-    for name, c in {**lenses, **combos}.items():
+    print(f"  {'LENS / COMBINATION':<36}{'appear':>7}{'resolv':>7}{'hit%':>7}{'ROI%':>8}  read")
+    for name, c in {**lenses, **combos, **confidence}.items():
         hr = f"{c['hit_rate']}" if c["hit_rate"] is not None else "--"
         roi = f"{c['roi']:+}" if c["roi"] is not None else "--"
         print(f"  {name:<34}{c['appearances']:>7}{c['resolved']:>7}{hr:>7}{roi:>8}  [{c['read']}]")

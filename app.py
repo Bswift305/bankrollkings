@@ -30950,6 +30950,8 @@ def build_green_light(limit=40):
             'eligible': eligible, 'gate_note': gate_note,
             'td_angle': td_angle, 'opp_score': p.get('score', 0), 'fragile_note': fragile_note,
             'role_stability': p.get('role_stability'), 'single_channel': bool(p.get('single_channel')),
+            'script_certainty': (gs.get('certainty') if gs else None),
+            'channel_dep': p.get('channel_dep'),
         })
 
     # rank: eligible (un-priced) first, then convergence, then opportunity score

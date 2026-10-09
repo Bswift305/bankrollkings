@@ -54,6 +54,7 @@ def main() -> int:
             "L_Concentration": int(bool(p.get("td_angle"))),
             "RoleStability": p.get("role_stability") or "",
             "SingleChannel": int(bool(p.get("single_channel"))),
+            "ScriptConfidence": p.get("script_certainty") or "",
             "Fragile": int(bool(p.get("fragile_note"))),
         })
     new = pd.DataFrame(rows)
