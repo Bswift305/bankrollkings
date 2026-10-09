@@ -1,6 +1,6 @@
 # Bankroll Kings — Development Doctrine
 
-> **Last updated: 2026-10-09** (§10 now two questions: discovery + the mechanism/independence test). This is the *why* behind the product — the stable philosophy
+> **Last updated: 2026-10-10** (§10 now four questions: discovery → mechanism → market → validation). This is the *why* behind the product — the stable philosophy
 > every feature is checked against. Read it alongside [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md)
 > (the *how it's wired*) and [`CLAUDE.md`](CLAUDE.md) (the enforced session rules; §10 is the
 > honesty/guardrail rulebook this doctrine is the reasoning for). Internal doctrine — **not**
@@ -142,15 +142,17 @@ hold up are *avoidance* rules, and they are enforced in code:
 
 Full study and caveats: `docs/` + the market-efficiency research notes.
 
-## 10. The research method — two questions
+## 10. The research method — four questions
 
 The two filters (§6) decide *what to build*. The beliefs (§8) say *what we hold true.* This is
 *how we discover* — the repeatable method behind every recent breakthrough. It is first-class
-doctrine, not a one-off exercise. It is **two questions**: the first *discovers* a candidate
-signal, the second *validates* whether it's an independent lens or just an interaction.
+doctrine, not a one-off exercise. It is **four questions**, in order: discover a signal, test
+that it's an independent mechanism, map it to a real market, then prove it actually helped.
 
-> **Question 1 — discovery:** ### "What context is this average hiding?"
-> **Question 2 — validation:** ### "What mechanism creates this outcome?"
+> **Q1 — discovery:** ### "What context is this average hiding?"
+> **Q2 — independence:** ### "What mechanism creates this outcome?"
+> **Q3 — market:** ### "What role / channel creates the production?"
+> **Q4 — validation:** ### "Did this lens actually help — forward, out-of-sample?"
 
 ### Question 1 finds the signal
 
@@ -190,6 +192,26 @@ Worked both ways:
 The test's job is to **filter, not expand**: it should collapse a six-idea list to one new lens,
 two deepenings, a market, and an interaction — the way "four metrics, one lens" collapsed before.
 Done right, the lens set grows slowly and every member is genuinely its own argument.
+
+### Question 3 maps it to a market
+
+You don't bet positions, you bet **production channels** — rush yds, rec yds, receptions, TDs.
+So a surviving lens still has to answer: *which market does it actually serve?* An RB's rushing
+and receiving are different defenses to beat; a WR can carry it; a QB can run. (This is why
+"Defense vs Position" became "Defense vs Channel.") Market applicability is uneven and must be
+*labeled*: Channel Dependency is a floor / anytime-TD read, **not** a yardage-prop signal — say
+so, don't slap a score on every market.
+
+### Question 4 proves it helped — the part that outranks invention
+
+A lens that survives Q1–Q3 is *plausible*, not *proven*. Q4 is the standard the others answer to:
+**did this lens actually help — forward, out-of-sample, captured, and graded?** Not in the
+backtest it was born in; on real plays it appeared on afterward. This is why the Lens Attribution
+harness exists — every Green Light play is captured *with the lenses that fired on it*, then graded
+as games resolve, so we can eventually say "Opportunity hit X% at Y ROI; Opportunity + Role
+Stability beat Opportunity alone" — or that a lens we loved added nothing. **We grade evidence,
+not bets.** Once a validated set exists, *measuring which lenses contribute is worth more than
+inventing a seventh* — and a lens that fails Q4 loses its seat no matter how good its story was.
 
 Four disciplines keep the method honest — each a scar, not a theory:
 

@@ -133,6 +133,12 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
         # whole archive each run so PENDING resolves as games fill in. Nothing claimed until the
         # sample is real and out-of-sample.
         ("Signal grading", _python("grade_signals.py"), 240),
+        # LENS ATTRIBUTION: snapshot every Green Light play WITH the lenses that fired on it,
+        # then grade each against the player's next game -> which lens actually helps when it
+        # appears, forward + out-of-sample (GreenLight_Archive.csv -> Lens_Grades_Summary.json).
+        # Grading evidence, not bets; accrues weekly. Nothing claimed until the sample is real.
+        ("Green Light lens capture", _python("capture_green_light.py"), 240),
+        ("Lens attribution grading", _python("grade_lenses.py"), 240),
         # Grade the archived prop lines against real results (all categories, incl. defense
         # + computed props). Re-grades the whole archive each run so PENDING games resolve
         # as gamelogs fill in -> NFL_PropLines_Graded.csv (the streak/heat-map + scoreboard
