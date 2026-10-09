@@ -6,6 +6,13 @@ architecture, schemas, storage, implementation, UI layout, or engineering tasks;
 Audit #3, propose lenses, or authorize any build. Once reviewed and frozen it governs those later
 decisions. Pairs with `docs/matchup_page_product_map.md` and `BANKROLL_KINGS_DOCTRINE.md` §11.
 
+> **Revision for final freeze (2026-10-09, consolidated review):** removes the suppression
+> exception — **every** predictive suppressor (including the graded-record guardrails) needs a
+> documented governance record (§3); replaces the "authority increases" wording (§2); adds
+> "Qualified does not mean correct" (§3); fixes Failed / Retired / Data-Gated placement (§2);
+> makes Green Light & Daily Card conditional and names them currently nonconforming (§6); and
+> protects governance from My View personalization and Track & Learn hindsight (§8).
+
 ---
 
 ## 1. Page Promise
@@ -29,22 +36,37 @@ substitutes its judgment for the user's, and it never presents an untested idea 
 | **My View** | The user's emphasis, filters, slip building, notes. | Anything the platform forces. This layer is the user's. |
 | **Track & Learn** | What the user actually bet, at the price taken, and the honest after-the-fact measure (CLV, results). | Marketing of hypothetical results. |
 
-The flow descends objective → governed → personal. Authority only ever *increases* as governance
-permits; nothing below Research Status may present an unaudited idea as a claim.
+As the page moves from facts to analytical context to King's View, the **source and limits of
+evidentiary authority become explicit.** My View then preserves user agency, and Track & Learn
+records the decision **without changing the authority** of the evidence that preceded it. Nothing
+below Research Status may present an unaudited idea as a claim.
+
+**Placement.** Failed and Retired mechanisms do **not** appear as live matchup signals — they
+remain visible only through the Research Ledger or an educational link ("why we don't use this
+here"). **Data-Gated** status may appear only to explain a meaningful evidence *absence*, never as
+a signal.
 
 ## 3. Authority Rules
 
+- **Qualified does not mean correct.** It means a mechanism earned authority under the *current*
+  governance process, and it remains subject to probation, retirement, and future evidence.
 - **May influence King's View (affirmative):** only **Qualified** research. (Today: none documented.)
 - **May provide context only (no vote):** **Facts**, **Baseline** (e.g. opponent-adjusted strength),
   **Legacy** (unaudited inheritances), **Under Review** (shown, not voting), **Data-Gated** (shown
   as a stated absence).
-- **May suppress conclusions — suppression is decision authority, and predictive suppression must
-  be governed.** A *predictive* "avoid/fade" requires governed authority appropriate to the claim;
-  a Legacy, Under Review, or Failed mechanism may **not** suppress a wager because caution sounds
-  safe. Suppression allowed **without** predictive qualification: correctness failures (bad parlay
-  math, duplicate leg), missing data / source conflict, explicit user-set bankroll guardrails, and
-  the graded-record avoidance guardrails (longshot-over, single-book, all-over, prefer-under) —
-  governed evidence as the out-of-sample survivors of doctrine §10.
+- **May suppress conclusions — suppression is decision authority.** **Any predictive suppression**
+  (an "avoid"/"fade" resting on expected performance) **requires a documented governance status
+  authorizing suppression for its applicable sport, market, population, and version.** A Legacy,
+  Under Review, or Failed mechanism may not suppress a wager, and neither may any predictive signal
+  lacking such a record. Suppression allowed **without** predictive qualification is limited to the
+  non-predictive kinds: **correctness failures** (bad parlay math, duplicate leg), **missing data /
+  source conflict** (§5), and explicit **user-set bankroll guardrails**.
+- **The graded-record avoidance guardrails** (longshot-over, single-book, all-over, prefer-under)
+  are **predictive and therefore not exempt.** They may ultimately *earn* suppressive authority —
+  they are strong candidates as out-of-sample survivors of doctrine §10 — but only once a
+  governance record documents their status, version, tested population, supported claim, permitted
+  suppressive use, applicable sports/markets, and review conditions. **Until that record exists
+  they do not influence King's View. No undocumented predictive suppressors.**
 - **Never a vote (affirmative or suppressive):** Fact-as-prediction; any **Failed** or **Legacy**
   signal dressed as an edge; and everything on the doctrine §7 do-not-build list (composite score,
   lock, sharp/steam, cross-sport best-bets, auto-EV, Kelly staking).
@@ -90,7 +112,10 @@ Missing or old data reads as *missing*, never as neutral or zero.
   until governance advances:* cards **assembled by a stated rule**, not "best"; "best" implies
   governed selection authority the product does not yet have.
 
-Neither is a recommendation engine. Both may remain visible, framed honestly for what they are.
+Neither is a recommendation engine. Both may remain visible **only when framed honestly according
+to their current governance status.** As they read today (authoritative "conviction" tiers; "best"
+cards), they are **nonconforming** with this contract and are **not** examples of the completed
+governed experience — the honest framing above is required, not optional.
 
 ## 7. No Qualified Edge
 
@@ -106,6 +131,13 @@ These remain **entirely the user's**, always: **My View** (which lenses to empha
 and **tracking** (what they bet, at their price). The platform shows the table and labels the
 dishes; the user chooses what to eat. Bankroll Kings informs and governs its own claims — it does
 not decide for the user.
+
+Two protections keep agency and governance from corrupting each other:
+
+- **My View** may change what the user *emphasizes*, but it may **not** change research status, fact
+  status, or Bankroll Kings' governed assessment. Personalization reorders; it never relabels.
+- **Track & Learn** preserves the wager, price, available evidence, and governed assessment **as
+  they existed at decision time**; later outcomes do not rewrite the original record. No hindsight.
 
 ---
 
