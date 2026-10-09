@@ -450,7 +450,7 @@ PRICING_TIERS = [
         'best_for': 'Casual bettors and first-time users',
         'features': [
             'Tonight\'s slate with game environment labels across NBA, MLB, WNBA, and NFL',
-            'Top 3 highest-confidence props per sport with hit rates',
+            'Top 3 props by de-vigged market-implied probability, with displayed historical hit rates',
             'Injury report — player status across all active sports',
             'Free account, saved tickets, and platform access',
         ],
@@ -30957,11 +30957,11 @@ def build_green_light(limit=40):
     # rank: eligible (un-priced) first, then convergence, then opportunity score
     plays.sort(key=lambda x: (x['eligible'], x['convergence'], x['opp_score']), reverse=True)
     for pl in plays:
-        pl['tier'] = ('Highest conviction' if pl['convergence'] >= 4 else
-                      'Strong context' if pl['convergence'] == 3 else
-                      'Worth investigating' if pl['convergence'] == 2 else
-                      'Single-lens idea')
-    TIERS = ['Highest conviction', 'Strong context', 'Worth investigating', 'Single-lens idea']
+        pl['tier'] = ('4+ configured lenses' if pl['convergence'] >= 4 else
+                      '3 configured lenses' if pl['convergence'] == 3 else
+                      '2 configured lenses' if pl['convergence'] == 2 else
+                      '1 configured lens')
+    TIERS = ['4+ configured lenses', '3 configured lenses', '2 configured lenses', '1 configured lens']
     tiers = [{'name': t, 'plays': [pl for pl in plays[:limit] if pl['tier'] == t]} for t in TIERS]
     tiers = [t for t in tiers if t['plays']]
     return {'available': bool(plays), 'plays': plays[:limit], 'tiers': tiers,

@@ -580,7 +580,7 @@
         <a href="{{ build_sort_link('/market-edge', base_params, ('player', 'asc')) }}" class="btn {% if sort_by == 'player' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Player A-Z</a>
             <a href="{{ build_sort_link('/market-edge', base_params, ('team', 'asc')) }}" class="btn {% if sort_by == 'team' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Team A-Z</a>
             <a href="{{ build_sort_link('/market-edge', base_params, ('stat', 'asc')) }}" class="btn {% if sort_by == 'stat' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Stat A-Z</a>
-            <a href="{{ build_sort_link('/market-edge', base_params, ('confidence', 'desc')) }}" class="btn {% if sort_by == 'confidence' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Confidence</a>
+            <a href="{{ build_sort_link('/market-edge', base_params, ('confidence', 'desc')) }}" class="btn {% if sort_by == 'confidence' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">De-vigged market-implied probability</a>
             <a href="{{ build_sort_link('/market-edge', base_params, ('line', 'asc')) }}" class="btn {% if sort_by == 'line' and sort_dir == 'asc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Lowest Line</a>
             <a href="{{ build_sort_link('/market-edge', base_params, ('avg', 'desc')) }}" class="btn {% if sort_by == 'avg' and sort_dir == 'desc' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Highest Avg</a>
         </div>
