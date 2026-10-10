@@ -79,12 +79,16 @@ and every other `marketing/` asset (including the already-modified ones in the w
 4. **Publishing exclusion:** these modes produce no output on any path; any routine (run_daily /
    scheduled task) that invokes `weekly_cards.py` must not request them. No published card selects,
    ranks by, or labels PropScore "validated/proven edge."
-5. **Dirty-worktree verification:** capture a **baseline `git status --porcelain=v1`** *before*
-   implementation. After implementation, re-run it and diff against the baseline — the only
-   new/changed entries may be the five image moves (`marketing/weekly_cards/` →
+5. **Dirty-worktree verification (content-aware):** *before* implementation capture a three-part
+   baseline — (a) a **status snapshot** (`git status --porcelain=v1`); (b) a **tracked-file
+   diff/hash baseline** (e.g. `git stash create` / `git diff` hash, or a sha256 of every tracked
+   working-tree file) so pre-existing *tracked* modifications are pinned by **content**, not just by
+   status line; (c) an **untracked-file hash baseline** (sha256 of every untracked file — the repo
+   already carries untracked marketing PNGs). *After* implementation, **recompute all three and
+   compare**: the only differences permitted are the five image moves (`marketing/weekly_cards/` →
    `marketing/_archive/propscore_quarantine_2026-10-09/`) and this containment's code/template edits.
-   **Every pre-existing unrelated entry (the already-modified marketing assets, data files, etc.)
-   must remain unchanged** from the baseline.
+   **Every pre-existing unrelated tracked and untracked file must hash-match its baseline** — no
+   content drift, not merely an unchanged status line.
 6. **Rollback:** a **single `git revert`** of the containment commit. The five images are moved with
    **`git mv` inside that commit**, so the revert restores them automatically — **no secondary manual
    asset moves.**
@@ -120,8 +124,9 @@ and every other `marketing/` asset (including the already-modified ones in the w
   > tendency), and Concentration (who gets the scoring, on TD markets only). These lenses are
   > **Under Review**: we have **not** shown they are independent of one another or predictive out of
   > sample. We **count how many point the same way**; we don't blend a score, because sports don't
-  > share one scale. **More agreement is more corroboration — not a bigger edge, and not evidence
-  > the market is wrong.** The market is the gate, never a vote — shop every line. This is
+  > share one scale. **More agreement means only a higher configured-lens count. It does not
+  > establish independence, corroboration, predictive value, or a larger edge. Market line and price
+  > changes are displayed as context only; they do not determine ordering or authority.** This is
   > **convergence of context, not a best-bets board**: no lock, no composite score, no claim we
   > can't defend. 21+"
   This removes **"independent"** (→ configured, with an explicit "not shown independent"), **"the
@@ -129,9 +134,6 @@ and every other `marketing/` asset (including the already-modified ones in the w
 - **Frozen explanatory sentence** (the one neutral explanation of the line/price readout):
   **"Open-to-current line and Over-price changes are shown as market context only. They do not
   indicate a priced or unpriced edge or predict the outcome."**
-- **Copy:** `:48` → **"the line is unchanged or softer since it opened"**; `:56` → **"the line
-  hasn't moved since open"**; `:92` → **"a flat or softer line since open is an observation, not a
-  prediction that the play will hit."**
 
 ## 7. Customer-facing claims (FROZEN)
 
