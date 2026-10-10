@@ -82,18 +82,32 @@ inverts. **The clean test supersedes the contaminated one.**
 
 ## 4. Governance-status recommendation
 
-**Recommend: PropScore v1 → INVALIDATED.** (The assessment recommends; it does not decide.)
+*(Reconciled to the sanctioned taxonomy per the Director's authorization — the taxonomy is
+{Qualified, Baseline, Under Review, Failed, Legacy, Retired, Data-Gated}; "Quarantined" is an
+**operational** condition, not a governance status. My earlier draft's coined "Invalidated" is
+withdrawn.)*
+
+**Recommend: governance status = `Failed`; operational condition = `Quarantined`.** (The assessment
+recommends; it does not assign either.)
 
 - Not **Legacy** — it was not merely inherited untested; it was tested.
-- Not **Under Review** — the clean holdout is conclusive that the dominant component inverts.
-- Stronger than **Failed** — "Failed" is a candidate that never earned a seat; PropScore v1
-  **shipped and exercised live ranking/selection authority and "validated" claims** on contaminated
-  evidence. "Invalidated" captures that a made claim was refuted.
-- **Justification:** the validation that granted its authority is leakage-contaminated; the one clean
-  holdout refutes the component carrying most of its variance; our own code says it "must not gate
-  live selection." It should hold **no** affirmative or selection authority and carry **no**
-  "validated/proven" claim until a clean re-validation earns a governed record (that would be a
-  **v2**, separate and unauthorized here).
+- Not **Under Review** — the clean holdout is conclusive that the dominant component inverts; this is
+  not open.
+- Not **Retired** — "Retired" implies authority that was once *legitimately earned* and later lost.
+  PropScore v1's authority rested on a leakage-contaminated validation, so it was **never legitimately
+  earned** — "Retired" would overstate its prior standing.
+- **`Failed`** is the honest fit: it was tested and **did not earn authority** (the one clean holdout
+  refutes the component carrying most of its variance; our own code says it "must not gate live
+  selection").
+- **Why `Quarantined` is also required:** unlike a clean Failed candidate that never shipped (e.g.
+  Team Form v1), PropScore v1 is **already embedded and exercising live ranking/selection authority
+  and "validated" claims.** "Failed" records the evidence verdict; **"Quarantined" is the operational
+  step that actually removes the authority** it should never have held. Status ≠ handling; both are
+  recommended, neither assigned here.
+- **Scope of the recommendation (per the authorization's methodological boundary):** this applies to
+  **PropScore v1 only.** It does **not** conclude that every future leakage-free formulation fails. A
+  corrected **v2** would require its own mechanism statement, pre-registration, review, authorization,
+  and a clean validation trail.
 
 ## 5. Minimal safe quarantine (recommendation)
 
@@ -157,8 +171,25 @@ grant it a clean governed record or soften the word — it must not disappear in
 
 ---
 
+## Authenticated Production Verification (folded into this gate)
+
+- **Deploy landed / no rollback:** ✅ confirmed anonymously — `/pricing` (public) serves the new
+  "de-vigged market-implied probability" copy and the old "highest-confidence props" is gone;
+  `60226f6` is live.
+- **No template failures:** ✅ (strong proxy). All 8 changed templates **compile through the app's
+  Jinja environment** with no syntax error, and `build_green_light()` runs and returns tiers + plays
+  without exception. The behind-auth risk these guards against — a Jinja error rendering a 500 after
+  the auth check — is ruled out.
+- **Green Light / Daily Card visual render behind auth:** ⚠️ **not visually confirmed on prod.**
+  `/tools/*` return 401 anonymously, and I have no production session (and will not use the user's
+  credentials). Template-compile + Python-build make a render failure very unlikely, but a *visual*
+  confirmation (tiers read "4+ configured lenses"; Daily Card reads "assembled by rule") needs one
+  of: the user logging the built-in browser into bankrollkings.com so I can view/screenshot, or an
+  SSM check of the prod journal for post-restart errors. **Outstanding — not closable autonomously.**
+
 ## Recommended next steps (for decision — not taken here)
-1. Adopt a governance status for PropScore v1 (recommended: **Invalidated**).
+1. Adopt a governance status for PropScore v1 (recommended: **`Failed`**) + the operational
+   condition **`Quarantined`**.
 2. Authorize the **minimal safe quarantine** (its own gate — touches ranking/selection).
 3. Fold the Green Light "unpriced" framing and the remaining **visual "lock" cues** (esp. the
    `smart_picks_v2` literal "Lock") into the exception-resolution work.
