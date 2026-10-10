@@ -452,7 +452,7 @@ PRICING_TIERS = [
             'Tonight\'s slate with game environment labels across NBA, MLB, WNBA, and NFL',
             'Top 3 props by de-vigged market-implied probability, with displayed historical hit rates',
             'Injury report — player status across all active sports',
-            'Free account, saved tickets, and platform access',
+            'Free account with honest sport previews and feedback access',
         ],
         'cta': 'Create Free Account',
     },
