@@ -1,19 +1,25 @@
 # CFB Point-in-Time Context — 2026-10-10
 
 **Legacy analytical context. Ordered by displayed model–market difference. No validated betting
-edge is claimed.** This is a bounded, reproducible snapshot — not picks, not an edge, not a best-bets
-list, not King's View. Preserved because `cfb_2026_results.json` is overwritten season-to-date (no
-point-in-time archive), so without this record the exact analysis could not be reconstructed later.
+edge is claimed.** This is a bounded snapshot for inspection — not picks, not an edge, not a
+best-bets list, not King's View. The four exact inputs are **archived immutably** at
+`docs/cfb_snapshots/2026-10-10T1755Z/` (because `cfb_2026_results.json` is otherwise overwritten
+season-to-date), so this analysis is reconstructable from the committed copies.
 
-## Provenance (retrieval + input fingerprints)
+## Provenance (retrieval + archived inputs + full hashes)
 
-- **Retrieval:** 2026-10-10 **17:55 UTC** (13:55 ET).
-- **Included games:** only those whose kickoff (ET) was **after** the retrieval time (pre-kickoff).
-- **Input fingerprints** (sha256, first 16):
-  - `4e6189ae27cf08ab` — `data/scenarios/cfb_2026_results.json` (1,670 completed 2026 games)
-  - `12bd74e9d8c10e6e` — `data/scenarios/cfb_power.json` — **Sep-3 preseason SP+ prior (STALE)**
-  - `fa446ba5896dc521` — `data/scenarios/cfb_rankings.json`
-  - `e33b78268cfd553a` — `data/odds/NCAAF_Odds.csv` (lines refreshed 2026-10-10 05:30)
+- **Analysis retrieval:** 2026-10-10 **17:55 UTC** (13:55 ET).
+- **Included games:** only those whose kickoff (ET) was **after** the analysis retrieval time
+  (pre-kickoff).
+- **Odds line age (precise):** the odds snapshot was fetched **~08:30 ET** (per-row `LastUpdated`
+  08:29–08:30 ET; file mtime 2026-10-10 05:30:13 PDT) — i.e. **~5.5 hours before** the 17:55 UTC
+  analysis. **Displayed lines may have since moved or closed and may no longer have been available.**
+- **Archived immutable copies** of the four exact inputs: `docs/cfb_snapshots/2026-10-10T1755Z/`.
+- **Full input SHA-256:**
+  - `4e6189ae27cf08ab5addea53b41f4adc2af4cbd5d77ed936dc68a9f2f32fbe9b` — `cfb_2026_results.json` (1,670 completed 2026 games)
+  - `12bd74e9d8c10e6e48a01245d58309583e9a19b6c1d76566185e3d126cf4d034` — `cfb_power.json` — **Sep-3 preseason SP+ prior (STALE)**
+  - `fa446ba5896dc5218e585b58b859cad235d2ef1fb7754e13a9bf0d1e323f9a88` — `cfb_rankings.json`
+  - `e33b78268cfd553adf59a6f0e259bc0a0ac22b3a6c8d424d442706f194151c8d` — `NCAAF_Odds.csv`
 
 ## What this is / is not (honest bounds)
 
@@ -29,9 +35,9 @@ point-in-time archive), so without this record the exact analysis could not be r
 - **The column below is a mechanical difference**, computed as
   `model_home_margin − (−market_home_spread)`; the "side indicated" is simply the sign of that
   difference. It is **not** a recommendation.
-- **Large differences are the least reliable**, not the strongest: a big number on a heavy
-  underdog (e.g. +28.5 / +33.5 / +38.5) is where blowout / garbage-time / starters-pulled dynamics
-  make an opponent-adjusted margin model least trustworthy. Mechanical artifact, not a signal.
+- **Large differences have not been shown to be more reliable** and may be especially sensitive to
+  blowout, garbage-time, and substitution dynamics (e.g. a big number on a heavy underdog like
+  +28.5 / +33.5 / +38.5). Treat them as mechanical output, not a signal.
 
 ## Screen (mechanical; HFA = 2.5; 32 games pre-kickoff, 2 FCS/unrated skipped)
 
