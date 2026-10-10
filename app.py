@@ -538,7 +538,7 @@ def _load_comp_all_access_emails():
     private COMP_ALL_ACCESS_EMAILS env var (comma / semicolon / whitespace separated),
     lowercased — set them in each host's private .env, never in this public repo.
     Field testers do NOT belong here: issue a trial invite code instead (see the
-    /trial/<code> flow and data/tracking/Invite_Codes.csv)."""
+    /trial/<code> flow and the private invite store at INVITE_CODES_PATH)."""
     raw = os.environ.get('COMP_ALL_ACCESS_EMAILS', '') or ''
     for sep in (';', '\n', '\t', ' '):
         raw = raw.replace(sep, ',')
@@ -550,7 +550,9 @@ COMP_ALL_ACCESS_EMAILS = _load_comp_all_access_emails()
 # Free-trial invite system (in-person / QR handouts). A redeemable code grants All
 # Access for TRIAL_DEFAULT_DAYS with NO credit card, tracked entirely in-app via the
 # per-user TrialExpiresAt date — it self-expires to the paywall, no Stripe, no cron.
-# Codes live in data/tracking/Invite_Codes.csv:
+# LIVE codes live in a PRIVATE untracked file at INVITE_CODES_PATH (never committed;
+# its contents are redemption secrets). The tracked data/tracking/Invite_Codes.csv is a
+# header/example template only. Columns:
 #   Code, Label, TrialDays, MaxRedemptions, TimesRedeemed, Active
 #   MaxRedemptions = 0  -> unlimited (the shared "flash the QR in person" code)
 #   MaxRedemptions = 1  -> a one-time code you hand to a single person
@@ -10754,8 +10756,16 @@ def normalize_invite_code(code):
     return str(code or '').strip().upper()
 
 
+# The LIVE invite-code store is operator data and MUST live outside this public
+# repo (its contents are redemption secrets). Point INVITE_CODES_PATH at a private
+# untracked production file; the tracked data/tracking/Invite_Codes.csv is only a
+# header/example template and holds no live codes.
+_INVITE_CODES_PATH_ENV = os.environ.get('INVITE_CODES_PATH', '').strip()
+INVITE_CODES_PATH = Path(_INVITE_CODES_PATH_ENV) if _INVITE_CODES_PATH_ENV else (DATA_DIR / 'tracking' / 'Invite_Codes.csv')
+
+
 def load_invite_codes():
-    path = DATA_DIR / 'tracking' / 'Invite_Codes.csv'
+    path = INVITE_CODES_PATH
     if not path.exists():
         return pd.DataFrame(columns=INVITE_CODE_COLUMNS)
     df = _load_cached_csv(path, default=pd.DataFrame(columns=INVITE_CODE_COLUMNS))
@@ -10804,7 +10814,7 @@ def consume_invite_code(code):
     """Increment TimesRedeemed. Last-write-wins CSV (same model as user rows); cap
     is a soft backstop, not a hard lock against concurrent redemptions."""
     code = normalize_invite_code(code)
-    path = DATA_DIR / 'tracking' / 'Invite_Codes.csv'
+    path = INVITE_CODES_PATH
     df = load_invite_codes()
     if df.empty:
         return

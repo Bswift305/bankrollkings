@@ -1,19 +1,2 @@
 Code,Label,TrialDays,MaxRedemptions,TimesRedeemed,Active
-KINGS14,Shared VIP (in-person QR),14,0,0,1
-KB-2YZ9VD,One-time (hand out),14,1,0,1
-KB-4WHKA3,One-time (hand out),14,1,0,1
-KB-5BM4S3,One-time (hand out),14,1,0,1
-KB-7HXKQS,One-time (hand out),14,1,0,1
-KB-9M83QX,One-time (hand out),14,1,0,1
-KB-D2VGRA,One-time (hand out),14,1,0,1
-KB-DGF8AQ,One-time (hand out),14,1,0,1
-KB-H9CK7Y,One-time (hand out),14,1,0,1
-KB-M7BW3C,One-time (hand out),14,1,0,1
-KB-NTQCJG,One-time (hand out),14,1,0,1
-KB-PPNMWY,One-time (hand out),14,1,0,1
-KB-SH466Y,One-time (hand out),14,1,0,1
-KB-TAYVU4,One-time (hand out),14,1,0,1
-KB-U85KTA,One-time (hand out),14,1,0,1
-KB-XBKK8U,One-time (hand out),14,1,0,1
-CASINO01,Casino visit (field test),7,25,0,1
-BARBER01,Barbershop visit (field test),7,25,0,1
+EXAMPLE,Template only - live codes live at INVITE_CODES_PATH (untracked),7,25,0,0
