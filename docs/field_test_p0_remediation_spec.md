@@ -101,26 +101,53 @@ It is rendered as `{{ prop.sport }} · {{ prop.lane }}` → "MLB · BEST UNDER".
 - `/test-drive` stays exactly as-is (owner-only). Not modified.
 
 ### S5 — new template `templates/feedback_form.html`
-- Extends `bk_base.html`. Contains a hero ("Leave Feedback" / short instruction) and the SAME
-  form fields as the existing `test_drive.html` form (tester name optional, page select,
-  category select, severity select, textarea `feedback` required), posting
-  `method="post" action="/feedback/save"` with `{{ csrf_token() }}`.
+- Extends `bk_base.html`. Contains a hero ("Leave Feedback" / short instruction) and the
+  form fields: page select, category select, severity select, textarea `feedback` required,
+  posting `method="post" action="/feedback/save"` with `{{ csrf_token() }}`.
+- **Does NOT render the `tester_name` field.** A signed-in tester may not submit feedback
+  under another person's name — identity is taken from the authenticated account server-side
+  (see S6, correction 2). The owner-only `test_drive.html` form keeps its `tester_name` field
+  so the owner can log feedback received verbally.
 - A `{% if saved %}` confirmation panel ("Thanks — your note was saved.").
 - **Must not** include: the feedback summary stat cards, the "Recent Feedback" table, the
   "Suggested Tester Path", or any owner/reviewer language.
 
-### S6 — `save_feedback` redirect branch (`app.py:36087–36108`)
-`POST /feedback/save` already accepts input with CSRF and length caps
-(name `[:80]`, feedback `[:2000]`, etc.) — keep all of that. Only the redirect target changes
-so a non-owner is not bounced to the owner-only `/test-drive`.
+### S6 — `save_feedback` authentication, identity, and redirect (`app.py:36087–36108`)
+`POST /feedback/save` already enforces CSRF and length caps (name `[:80]`, feedback `[:2000]`,
+etc.) — keep all of that. Three frozen changes:
 
-- **Exact current wording** (empty-feedback branch, line 36096):
+**Correction 1 — authenticate the endpoint.** CSRF ≠ authentication. The POST route currently
+has no login check. Add, as the **first statements** of `save_feedback()`:
+```
+current_user = get_current_user()
+if not current_user:
+    return redirect(url_for('login', next=url_for('feedback')))
+```
+Reuse this same `current_user` for both the identity decision and the redirect below (do not
+call `get_current_user()` again).
+
+**Correction 2 — do not trust a tester-supplied identity.** A signed-in tester may not post
+under another person's name. Set the stored name from role:
+```
+_owner = is_owner_user(current_user)
+if _owner:
+    tester_name = request.form.get('tester_name', '').strip()[:80]  # owner may record verbal feedback
+else:
+    tester_name = (current_user.get('display_name') or '').strip() \
+        or ('Account ' + str(current_user.get('user_id') or current_user.get('email') or 'unknown')[:12])
+```
+`get_current_user()` returns `{user_id, display_name, email, …}` (keys confirmed at
+`app.py:10478–10481`); the non-owner branch therefore uses the authenticated `display_name`
+with a stable account-id fallback and ignores any submitted `tester_name`. The row written
+by `save_feedback_entry` is otherwise unchanged.
+
+**Redirect by role** (reusing `current_user` / `_owner`):
+- **Current (empty-feedback branch, line 36096):**
   `return redirect(url_for('test_drive', postseason=1 if postseason_only_enabled() else 0))`
-- **Exact current wording** (success branch, line 36108):
+- **Current (success branch, line 36108):**
   `return redirect(url_for('test_drive', postseason=1 if postseason_only_enabled() else 0, saved=1))`
-- **Replacement (both branches):** branch on viewer role:
+- **Replacement (both branches):**
   ```
-  _owner = is_owner_user(get_current_user())
   _dest = 'test_drive' if _owner else 'feedback'
   # empty-feedback branch:
   return redirect(url_for(_dest, postseason=1 if postseason_only_enabled() else 0))
@@ -164,8 +191,9 @@ new JS. (Exact placement to match the footer's existing link markup.)
   owner/admin-only (`show_ops_strip`). The new tester route never reads or renders the
   feedback log or any aggregate.
 - `GET /feedback` requires a signed-in user; it exposes a blank form only.
-- `POST /feedback/save` keeps CSRF protection and all input length caps; it writes a single
-  feedback row via the existing `save_feedback_entry`. No change to what it stores.
+- `POST /feedback/save` **now requires authentication** (correction 1) in addition to CSRF and
+  input length caps. A non-owner's stored name is the authenticated account's `display_name`
+  (stable account-id fallback), never a form-supplied value (correction 2).
 - No change to authentication, plan/paywall gating, Stripe/checkout, owner/admin checks, or
   any data-refresh pipeline.
 - Repo is public: no secrets in any changed file. Verify `git status --short` before adding.
@@ -187,6 +215,12 @@ new JS. (Exact placement to match the footer's existing link markup.)
 - CFB surfaces — **untouched.**
 - The `/test-drive` 404 asset (P1-1) and internal tester-path notes (P1-2) are **not** in this
   P0 commit.
+
+### P1-3 (durability, non-blocking) — concurrent feedback writes
+`save_feedback_entry` rewrites a CSV, so two near-simultaneous submissions could overwrite one
+another and lose a note. Acceptable for a small, controlled field test; recorded as a **P1
+durability risk**, not a blocker for this rollout. Fix later (append-only write or a lock)
+if feedback volume grows.
 
 ---
 
