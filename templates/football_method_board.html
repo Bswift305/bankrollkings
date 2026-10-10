@@ -328,7 +328,7 @@
     <div class="card-header">
         <div>
             <div class="card-title">This Week&rsquo;s Totals</div>
-            <div class="cell-meta" style="margin-top:4px;line-height:1.5;max-width:640px;">Every game by its over/under &mdash; posted total, 1H total, each team&rsquo;s over rate, and the game-day <strong>wind</strong>. Outdoor 15+ mph leans the UNDER (~55%, our one validated totals edge); everything else is context.</div>
+            <div class="cell-meta" style="margin-top:4px;line-height:1.5;max-width:640px;">Every game by its over/under &mdash; posted total, 1H total, each team&rsquo;s over rate, and the game-day <strong>wind</strong>. Outdoor 15+ mph: wind-under historical backtest ~55% in the documented sample, governance status not yet assigned; everything else is context.</div>
         </div>
         <span class="badge badge-accent">{{ nt.nt_rows|length }} games</span>
     </div>
@@ -354,7 +354,7 @@
             </tbody>
         </table>
     </div>
-    <div class="table-scroll-hint">Wind-under rows are highlighted &mdash; the validated edge.</div>
+    <div class="table-scroll-hint">Wind-under rows are highlighted &mdash; historical backtest ~55% in the documented sample; governance status not yet assigned.</div>
 </div>
 {% endif %}
 
@@ -541,10 +541,7 @@
                         <div style="font-weight:800; color:var(--accent);">Edge {{ row.nfl_edge_score }}</div>
                         <div class="cell-meta">{{ row.edge_score_detail }}</div>
                         {% endif %}
-                        {% if row.nfl_prop_score %}
-                        <div style="font-weight:800; color:var(--accent-copper); margin-top:5px;">Prop {{ row.nfl_prop_score }}</div>
-                        <div class="cell-meta">{{ row.prop_score_detail }}</div>
-                        {% endif %}
+                        {# PropScore cell removed -- PropScore v1 Failed/Quarantined, not shown on live rows (containment S1) #}
                         {% if row.sim_hit_probability %}
                         <div style="font-weight:800; color:var(--accent-blue); margin-top:5px;">Sim {{ row.sim_hit_probability }}%</div>
                         <div class="cell-meta">{{ row.sim_detail }}</div>
@@ -934,10 +931,7 @@
                             <div style="font-weight:800; color:var(--accent);">Edge {{ play.nfl_edge_score }}</div>
                             <div class="cell-meta">{{ play.edge_score_detail }}</div>
                             {% endif %}
-                            {% if play.nfl_prop_score %}
-                            <div style="font-weight:800; color:var(--accent-copper); margin-top:5px;">Prop {{ play.nfl_prop_score }}</div>
-                            <div class="cell-meta">{{ play.prop_score_detail }}</div>
-                            {% endif %}
+                            {# PropScore cell removed -- PropScore v1 Failed/Quarantined, not shown on live rows (containment S1) #}
                             {% if play.sim_hit_probability %}
                             <div style="font-weight:800; color:var(--accent-blue); margin-top:5px;">Sim {{ play.sim_hit_probability }}%</div>
                             <div class="cell-meta">{{ play.sim_detail }}</div>

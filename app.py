@@ -30834,20 +30834,21 @@ def _wisdom_market_gate(pr):
     if open_line is not None and pd.notna(open_line) and cur is not None:
         move = round(float(cur) - float(open_line), 1)
         if move >= 0.5:
-            return False, f"line up {move:+g} off open — market already moved to it"
+            return False, f"Line +{move:g} since open"
         if move <= -0.5:
-            return True, f"line down {move:+g} off open — number softened, not priced"
+            return True, f"Line {move:g} since open"
     odds, oo = pr.get('odds'), pr.get('open_odds')
     if odds is not None and oo is not None and pd.notna(odds) and pd.notna(oo) and float(odds) < float(oo) - 15:
-        return False, "over price shortened — market moved to it"
-    return True, "number stable since open — convergence not yet priced"
+        return False, f"Over price shortened by {int(float(oo) - float(odds))}"
+    return True, "No material line or Over-price shortening detected"
 
 
 def build_green_light(limit=40):
     """Green Light -- the convergence assembly engine (NFL v1).
 
-    Named for the gate: a play goes GREEN when the independent lenses agree AND the market
-    hasn't priced it in yet (eligible). Formerly 'Kings Wisdomism'.
+    Named for the gate: a play goes GREEN when the configured lenses point the same way; the
+    market line-state is shown as context only (not a priced/unpriced edge). Formerly 'Kings
+    Wisdomism'. Lenses are Under Review -- convergence is a count, not a graded edge.
 
     Not a score, not a pick. For each featured player's primary over, it counts how many
     INDEPENDENT lenses agree (the ratified set: Opportunity, Matchup, Game Identity, Coaching,
@@ -30954,8 +30955,10 @@ def build_green_light(limit=40):
             'channel_dep': p.get('channel_dep'),
         })
 
-    # rank: eligible (un-priced) first, then convergence, then opportunity score
-    plays.sort(key=lambda x: (x['eligible'], x['convergence'], x['opp_score']), reverse=True)
+    # Containment S6: rank by configured-lens count, then neutral tie-breaks (game, player, stat).
+    # eligible/opp_score are NOT sort inputs -- line-state is informational only.
+    plays.sort(key=lambda x: (-x['convergence'], str(x.get('game') or ''),
+                              str(x.get('player') or ''), str(x.get('stat') or '')))
     for pl in plays:
         pl['tier'] = ('4+ configured lenses' if pl['convergence'] >= 4 else
                       '3 configured lenses' if pl['convergence'] == 3 else
@@ -32189,9 +32192,9 @@ def nfl_props_page():
     stat_filter = request.args.get('stat', '').strip().upper()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('player', request.args.get('search', '')).strip()
-    # Best-first: lead with the validated PropScore, not confidence (which restates the
-    # de-vigged price and ranks the most -EV plays first). See feedback_ranked_lists_best_first.
-    sort_by = request.args.get('sort_by', 'prop_score').strip().lower() or 'prop_score'
+    # PropScore v1 is Failed/Quarantined -- it may not order live rows. Default to a neutral,
+    # observable sort; PropScore is not a sort key. docs/propscore_incident_containment_spec.md.
+    sort_by = request.args.get('sort_by', 'player').strip().lower() or 'player'
     sort_dir = request.args.get('sort_dir', 'desc').strip().lower() or 'desc'
     odds_df = load_nfl_game_market_odds()
     schedule_df = load_nfl_schedule()
@@ -38466,9 +38469,7 @@ def sort_generic_prop_rows(rows, sort_by='confidence', sort_dir='desc'):
     reverse = str(sort_dir or 'desc').strip().lower() != 'asc'
 
     def key(row):
-        if sort_by in {'prop_score', 'nfl_prop_score'}:
-            # The validated NFL PropScore (best-first). Rows without a score sink.
-            return _prop_float_value(row.get('nfl_prop_score'), -999)
+        # PropScore v1 Failed/Quarantined -- not a sort key (containment spec S1/S8).
         if sort_by in {'confidence', 'score'}:
             return _prop_float_value(row.get('confidence'), 0) or 0
         if sort_by == 'line':
@@ -44083,27 +44084,11 @@ def build_nfl_board_context():
     _nt.clear_cache()
     cands = []
 
-    # 1) PropScore plays -- the validated NFL edge
-    try:
-        for p in (build_nfl_spots_context(limit=30).get('sp_top') or []):
-            flag = ('VOLATILE' if p.get('archetype_flag') == 'deep_threat'
-                    else ('NEW TEAM' if p.get('usage_flag') == 'new_team' else ''))
-            base = (p.get('prop_score') or 0) - (9 if flag else 0)
-            ln = p.get('line')
-            mu = p.get('matchup') or ''
-            game = mu
-            if ' @ ' in mu:
-                aw, ho = mu.split(' @ ', 1)
-                game = f"{_ncf.resolve(aw)} @ {_ncf.resolve(ho)}"
-            cands.append({'base': base, 'market': 'Prop', 'tier': 'Validated',
-                          'play': f"{p.get('player')} {p.get('direction')} "
-                                  f"{('%g' % ln) if isinstance(ln, (int, float)) else ln} {p.get('stat')}",
-                          'matchup': mu, 'game': game, 'why': f"PropScore {p.get('prop_score')}",
-                          'flag': flag})
-    except Exception:
-        pass
+    # 1) PropScore plays -- REMOVED (containment S3). PropScore v1 is Failed/Quarantined; it may
+    #    not rank or tier the board. Props have no other rank key, so the board is now totals-only
+    #    ("NFL Totals Context"), ordered neutrally (kickoff -> matchup), not by any edge base.
 
-    # 2) Totals -- wind (validated), QB-out (situational), else model; divergence-guarded
+    # 2) Totals -- wind / QB-out / model totals; divergence-guarded
     try:
         off, dff, lp = _nt._ratings()
         sc = json.load(open(os.path.join(scen, 'nfl_scores.json'), encoding='utf-8'))
@@ -44136,7 +44121,7 @@ def build_nfl_board_context():
             if 'QB out' in tr['lean']:
                 tier, base = 'Situational', 24 + edge
             elif wind >= 15 and side == 'UNDER':
-                tier, base = 'Validated', 36 + (wind - 15)
+                tier, base = 'Backtest ~55% (not yet governed)', 36 + (wind - 15)
             else:
                 tier, base = 'Model', 18 + min(edge, 6)
             base -= max(0, div - 6) * 1.5  # penalize a projection that fights actual scoring (LV@NO)
@@ -44147,12 +44132,14 @@ def build_nfl_board_context():
                 why += ", QB out"
             cands.append({'base': base, 'market': 'Total', 'tier': tier,
                           'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
-                          'matchup': '', 'game': f"{aa} @ {ha}", 'why': why, 'flag': ''})
+                          'matchup': '', 'game': f"{aa} @ {ha}", 'why': why, 'flag': '',
+                          'kick': g.get('date') or g.get('kickoff') or g.get('time') or ''})
     except Exception:
         pass
 
-    cands.sort(key=lambda x: (-x['base']))
-    top = cands[:20]
+    # Containment S3: neutral ordering (kickoff -> matchup), no edge hierarchy, no cap/padding.
+    cands.sort(key=lambda x: (str(x.get('kick') or ''), x.get('game') or ''))
+    top = cands
     for i, c in enumerate(top, 1):
         c['rank'] = i
     data = {'board': top, 'board_available': bool(top),
@@ -45483,57 +45470,11 @@ def build_nfl_spots_context(limit=12):
         'sp_floor': _NFL_SPOTS_PROPSCORE_FLOOR, 'sp_premium': _NFL_SPOTS_PROPSCORE_PREMIUM,
     }
 
-    # 1) Top PropScore plays off this week's live, scored props.
-    try:
-        props_df, refresh_meta = load_nfl_live_props_feed(require_fresh=True)
-        ctx['sp_top_available'] = bool(refresh_meta.get('has_live_props'))
-        if not props_df.empty:
-            rows = build_football_live_prop_board(
-                props_df, load_nfl_game_market_odds(), load_nfl_schedule(),
-                method_key='props', date_filter='all', sport_key='nfl')
-            rows = attach_nfl_quant_insights_to_rows(rows, default_direction='OVER')
-            scored = []
-            for r in rows:
-                try:
-                    ps = float(r.get('nfl_prop_score'))
-                except (TypeError, ValueError):
-                    continue
-                if ps < _NFL_SPOTS_PROPSCORE_FLOOR:
-                    continue
-                scored.append({
-                    'player': r.get('player'), 'team': r.get('team') or r.get('Team') or '',
-                    'stat': r.get('stat'), 'direction': r.get('direction'),
-                    'line': r.get('line'), 'matchup': r.get('matchup'),
-                    'away': r.get('away'), 'home': r.get('home'), 'date': r.get('date'),
-                    'price': _format_american_price(r.get('market_price')),
-                    'best_book': r.get('best_book') or r.get('book') or '',
-                    'prop_score': round(ps, 1), 'premium': ps >= _NFL_SPOTS_PROPSCORE_PREMIUM,
-                    'detail': r.get('prop_score_detail') or '',
-                    'sim': r.get('sim_hit_probability'),
-                })
-            scored.sort(key=lambda x: x['prop_score'], reverse=True)
-            ctx['sp_top'] = scored[:limit]
-            ctx['sp_premium_count'] = sum(1 for x in scored if x['premium'])
-            # Early-season usage gate (Week-1 2026 retro): flag plays for players who
-            # changed teams, whose usage/volume is projected on last year's role until
-            # current-season data accrues (weeks 1-3). Flag only -- no score change.
-            try:
-                import nfl_early_season_gate as _esg
-                _esg.annotate_plays(ctx['sp_top'], _esg.current_week(), apply_penalty=False)
-                ctx['sp_gated_count'] = sum(1 for x in ctx['sp_top'] if x.get('usage_flag'))
-            except Exception:
-                pass
-            # Receiver-archetype gate: flag receptions props on deep threats whose catch
-            # count is volatile (edge is yards, not receptions). Flag only, no score change.
-            try:
-                import nfl_archetype_gate as _arch
-                _arch.annotate_plays(ctx['sp_top'], apply_penalty=False)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # 1) Top PropScore plays -- REMOVED (containment S2). PropScore v1 is Failed/Quarantined and
+    #    may not select, rank, or tier live plays. ctx['sp_top'] stays empty; the template no longer
+    #    renders a PropScore section. Computation/CSVs preserved for research (S8).
 
-    # 2) Wind unders -- reuse the validated NFL totals board's wind flag.
+    # 2) Wind unders -- reuse the NFL totals board's wind flag.
     try:
         nt = build_nfl_totals_board_context('week')
         ctx['sp_season'] = nt.get('nt_season')

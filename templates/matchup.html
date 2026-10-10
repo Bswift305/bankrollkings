@@ -327,7 +327,7 @@
                 </td>
                 <td>
                     {% if prop.is_lock %}
-                    <span class="grade-badge" style="background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%); color: #08110f;">{{ prop.confidence|round|int }}% market-implied</span>
+                    <span class="grade-badge">{{ prop.confidence|round|int }}% market-implied</span>
                     {% elif prop.confidence >= 70 %}
                     <span class="grade-badge">{{ prop.confidence|round|int }}% market-implied</span>
                     {% else %}

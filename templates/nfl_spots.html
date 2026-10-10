@@ -44,7 +44,7 @@
   <div>
     <div class="page-kicker">NFL &middot; Sunday</div>
     <h1>NFL <span class="accent">Spots</span></h1>
-    <div class="page-subtitle">This week's board on the three prop signals that actually held up on real money — validated PropScore top plays, wind unders, and injury-change timing. The NFL parallel to College's Best Spots. Spots, not locks.</div>
+    <div class="page-subtitle">Two situational context views this week — wind-driven passing unders and injury-change timing. The NFL parallel to College's Best Spots. Spots, not locks.</div>
   </div>
 </div>
 
@@ -72,29 +72,7 @@
 </div>
 {% endif %}
 
-<!-- ============ 1. TOP PLAYS (validated PropScore) ============ -->
-<div class="ns-sec">
-  <div class="ns-sech"><span class="n">Top Plays</span><span class="d">Validated PropScore{% if sp_premium_count %} &middot; {{ sp_premium_count }} premium{% endif %}</span></div>
-  <p class="ns-blurb">Ranked by our backtested <b>PropScore</b> — the one prop score that held out of sample: <b>≥10 returned +9–11%</b> (63% hit), <b>≥20 returned +13–16%</b> (66% hit) across 2024–2025. This is the validated model, not the board's market-price read.</p>
-
-  {% if sp_top %}
-  <div class="ns-card">
-    {% for p in sp_top %}
-    <div class="ns-row">
-      <span class="ns-play">{{ p.player }}{% if p.usage_flag == 'new_team' %} <span style="font:700 9px/1 ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ffb05a;border-radius:4px;padding:2px 5px;vertical-align:middle;">NEW TEAM</span>{% endif %}{% if p.archetype_flag == 'deep_threat' %} <span style="font:700 9px/1 ui-monospace,monospace;letter-spacing:.04em;color:#0b1118;background:#ff6f7e;border-radius:4px;padding:2px 5px;vertical-align:middle;">VOLATILE</span>{% endif %}</span>
-      <span class="ns-bet">{{ p.direction }} {{ '%g'|format(p.line) if p.line is number else p.line }} {{ p.stat }}</span>
-      {% if p.price %}<span class="ns-price">{{ p.price }}{% if p.best_book %} · {{ p.best_book }}{% endif %}</span>{% endif %}
-      <span class="ns-score{{ ' prem' if p.premium else '' }}">{{ '%.1f'|format(p.prop_score) }}{% if p.premium %} ★{% endif %}</span>
-      <span class="ns-meta">{{ p.matchup }}{% if p.sim is not none %} — <b>{{ p.sim }}%</b> simulated hit{% endif %}{% if p.detail %} · {{ p.detail }}{% endif %}{% if p.usage_note %} · <span style="color:#ffb05a;">{{ p.usage_note }}</span>{% endif %}{% if p.archetype_note %} · <span style="color:#ff6f7e;">{{ p.archetype_note }}</span>{% endif %}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% elif sp_top_available %}
-  <div class="ns-empty">No plays cleared PropScore {{ '%g'|format(sp_floor) }} on this week's slate yet — the model isn't forcing a play. Check back as lines fill in.</div>
-  {% else %}
-  <div class="ns-empty">This week's live props haven't loaded yet — the scored top plays appear once the Sunday board is live. Check back closer to kickoff.</div>
-  {% endif %}
-</div>
+<!-- ============ 1. TOP PLAYS (PropScore) — REMOVED: PropScore v1 Failed/Quarantined (containment S2) ============ -->
 
 <!-- ============ 2. WIND UNDERS (empty-state only; the live card leads the board above) ============ -->
 {% if not sp_wind %}

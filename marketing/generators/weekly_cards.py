@@ -1595,7 +1595,7 @@ def main():
     ap.add_argument('--refresh', action='store_true', help="Fetch live game lines + props first")
     ap.add_argument('--week', default='Week 1', help="Week label shown on cards, e.g. 'Week 1 - Sunday'")
     ap.add_argument('--out', default=str(BASE / 'marketing' / 'weekly_cards'), help="Output directory")
-    ap.add_argument('--only', default='', help="Comma list: slate,top,premium,floor,defense,parlay")
+    ap.add_argument('--only', default='', help="Comma list: slate,defense,parlay (PropScore card modes removed -- containment S4)")
     ap.add_argument('--book', default='DraftKings',
                     help="Prefer this book for the whole board when it carries the play at the same line "
                          "(default DraftKings - deepest menu + best UX). Pass '' to keep each play's best-price book.")
@@ -1605,25 +1605,20 @@ def main():
         refresh_live()
 
     out_dir = Path(args.out); out_dir.mkdir(parents=True, exist_ok=True)
-    want = {s.strip() for s in args.only.split(',') if s.strip()} or {'slate', 'top', 'premium', 'floor', 'defense', 'parlay', 'hitlist'}
+    want = {s.strip() for s in args.only.split(',') if s.strip()} or {'slate', 'defense', 'parlay'}
 
     games = load_slate()
     plays = apply_book_preference(load_scored(), args.book)
     made = []
     if 'slate' in want:
         made.append(card_slate(games, streak_leans(games), args.week, str(out_dir / 'bk_slate.png')))
-    if 'top' in want:
-        made.append(card_top(plays, args.week, str(out_dir / 'bk_top_props.png')))
-    if 'premium' in want:
-        made.append(card_board(plays, 'premium', games, args.week, str(out_dir / 'bk_premium_board.png')))
-    if 'floor' in want:
-        made.append(card_board(plays, 'floor', games, args.week, str(out_dir / 'bk_floor_board.png')))
+    # PropScore-selected card modes (top / premium / floor) removed -- PropScore v1 Failed/
+    # Quarantined; generators retained in source but not dispatched (containment S4).
     if 'defense' in want:
         sacks, tk = load_defense()
         if len(sacks) or len(tk):
             made.append(card_defense(sacks, tk, args.week, str(out_dir / 'bk_defense.png')))
-    if 'hitlist' in want:
-        made.append(card_hitlist(plays, games, args.week, str(out_dir / 'bk_hitlist.png')))
+    # 'hitlist' (PropScore-selected) removed -- containment S4.
     if 'eqc' in want:
         made.append(card_eqc_tickets(args.week, str(out_dir / 'bk_eqc_tickets.png')))
     if 'openers' in want:
@@ -1636,8 +1631,7 @@ def main():
         made.append(card_game_sgp(args.week, str(out_dir / 'bk_tonight_sgp.png')))
     if 'cfbreads' in want:
         made.append(card_cfb_reads(args.week, str(out_dir / 'bk_cfb_reads.png')))
-    if 'sunday' in want:
-        made.append(card_sunday_best(args.week, str(out_dir / 'bk_sunday_best.png')))
+    # 'sunday' (card_sunday_best, PropScore "validated edge") removed -- containment S4.
     if 'atlgb' in want:
         made.append(card_atlgb_good(args.week, str(out_dir / 'bk_atlgb_good.png')))
     if 'cfbwave' in want:

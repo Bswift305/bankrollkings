@@ -882,8 +882,8 @@
                         </div>
                     </td>
                     <td>
-                        <span class="grade-badge" style="background: {% if pick.is_lock %}{% if pick.direction == 'OVER' %}linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-copper) 100%){% else %}#FF6B6B{% endif %}{% elif pick.confidence >= 75 %}{% if pick.direction == 'OVER' %}rgba(110,168,166,0.28){% else %}rgba(255,107,107,0.3){% endif %}{% else %}var(--bg-elevated){% endif %}; color: {% if pick.is_lock %}#{% if pick.direction == 'OVER' %}08110f{% else %}fff{% endif %}{% else %}var(--text){% endif %};">
-                            {{ pick.confidence|round|int }}% {% if pick.is_lock %}Lock{% endif %}
+                        <span class="grade-badge" style="background: {% if pick.confidence >= 75 %}{% if pick.direction == 'OVER' %}rgba(110,168,166,0.28){% else %}rgba(255,107,107,0.3){% endif %}{% else %}var(--bg-elevated){% endif %}; color: var(--text);">
+                            {{ pick.confidence|round|int }}%
                         </span>
                         {% if pick.play_verdict_note %}
                         <div class="confidence-note" style="color: {% if pick.play_verdict == 'PASS' %}#FF8C8C{% else %}#FFB800{% endif %};">{{ pick.play_verdict_note }}</div>
@@ -925,9 +925,7 @@
                         {% if 'LINE HISTORY CAP' in pick.guardrail_tags or 'LINE HISTORY CONFLICT' in pick.guardrail_tags %}
                         <div class="confidence-note" style="color: #FFB800;">Line history conflict</div>
                         {% endif %}
-                        {% if pick.is_lock %}
-                        <div class="confidence-note">{{ pick.lock_reason }}</div>
-                        {% endif %}
+                        {# lock_reason note removed -- no customer-facing lock treatment (containment S9) #}
                     </td>
                     <td>
                         {% if pick.game_day == 'TODAY' %}

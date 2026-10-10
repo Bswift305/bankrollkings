@@ -576,7 +576,7 @@
                             </div>
                         </td>
                         <td>
-                            <span class="badge {% if prop.is_lock %}badge-accent{% endif %}" style="{% if prop.is_lock %}box-shadow: 0 0 22px rgba(132,215,210,0.18);{% endif %}">{{ prop.confidence|round|int }}%</span>
+                            <span class="badge">{{ prop.confidence|round|int }}%</span>
                         </td>
                     </tr>
                     {% endfor %}

@@ -45,7 +45,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; NFL &middot; Evidence Assembly{% if updated %} &middot; {{ updated }}{% endif %}</div>
     <h1>Green <span class="accent">Light</span></h1>
-    <div class="page-subtitle">The destination the inputs feed. It does <b>not</b> rank plays by &ldquo;goodness&rdquo; or spit out a score &mdash; it ranks them by how many <b>configured lenses</b> point the same way, then lets the <b>market</b> check whether that agreement is already in the number. A play gets the <b style="color:var(--bkn-good,#4ed48a);">green light</b> when the angles point the same way <i>and</i> the number hasn&rsquo;t caught up. Evidence convergence, not a prediction. These lenses are <b>Under Review</b> &mdash; convergence is a count of configured angles that point the same way, <b>not a graded edge</b> yet.</div>
+    <div class="page-subtitle">The destination the inputs feed. It does <b>not</b> rank plays by &ldquo;goodness&rdquo; or spit out a score &mdash; it ranks them by how many <b>configured lenses</b> point the same way, then lets the <b>market</b> check whether that agreement is already in the number. A play gets the <b style="color:var(--bkn-good,#4ed48a);">green light</b> when the angles point the same way; the market line-state is shown as context only &mdash; whether the line is unchanged or softer since it opened. Evidence convergence, not a prediction. These lenses are <b>Under Review</b> &mdash; convergence is a count of configured angles that point the same way, <b>not a graded edge</b> yet.</div>
   </div>
 </div>
 
@@ -53,7 +53,7 @@
   <span class="kw-lens-key"><span class="kw-dot"></span><b>5 configured lenses</b> can point the same way:</span>
   <span>Opportunity</span><span>&middot;</span><span>Matchup</span><span>&middot;</span><span>Game Identity</span><span>&middot;</span><span>Coaching</span><span>&middot;</span><span>Concentration <span style="opacity:.7;">(scoring angle)</span></span>
   <span style="flex-basis:100%;height:0;"></span>
-  <span><b>Market is the referee, not a vote</b> &mdash; a play is <b style="color:var(--bkn-good,#4ed48a);">eligible</b> when the lenses agree <i>and</i> the number hasn&rsquo;t moved to price it in.</span>
+  <span><b>Market line-state is context, not a vote</b> &mdash; each row shows whether the number has moved since it opened; it does not set the ordering.</span>
 </div>
 
 {% if not available %}
@@ -80,8 +80,7 @@
       <div class="kw-why">{% for l in pl.lenses %}<b>{{ l.lens }}:</b> {{ l.why }}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% if pl.td_angle %}<br><b style="color:#2dd4bf;">Concentration:</b> {{ pl.td_angle }} &mdash; <i>scoring-market angle</i>{% endif %}{% if pl.fragile_note %}<br><span style="color:#ffa07a;font-weight:700;">&#9888; Fragile:</span> <span style="color:#ffa07a;">{{ pl.fragile_note }}</span>{% endif %}</div>
     </div>
     <div class="kw-gate">
-      <span class="kw-badge {{ 'elig' if pl.eligible else 'priced' }}">{{ 'Eligible' if pl.eligible else 'Priced in' }}</span>
-      <div class="g">{{ pl.gate_note }}</div>
+      <span class="kw-badge">{{ pl.gate_note }}</span>
       {% if pl.game %}<span class="game">{{ pl.game.replace('@',' @ ') if pl.game else '' }}</span>{% endif %}
     </div>
   </div>
@@ -89,7 +88,7 @@
 </div>
 {% endfor %}
 
-<div class="bkn-note" style="margin-top:20px;"><b>How to read it &mdash; honestly:</b> each lens is a genuinely <b>independent</b> argument the market tends to average away &mdash; Opportunity (volume access), Matchup (per-dropback efficiency allowed), Game Identity (the game&rsquo;s script), Coaching (structural tendency), and Concentration (who gets the scoring, on TD markets only). We <b>count agreement</b>, we don&rsquo;t blend a score, because sports don&rsquo;t share one scale. More lenses = more corroboration, <b>not</b> a bigger edge &mdash; and <b>&ldquo;eligible&rdquo;</b> only means the number hasn&rsquo;t yet moved to it, not that it will hit. <b>Market is the gate, never a vote.</b> Shop every line. This is the honest version of a &ldquo;best bets&rdquo; board: convergence of evidence, no lock, no composite score, no claim we can&rsquo;t defend. 21+</div>
+<div class="bkn-note" style="margin-top:20px;"><b>How to read it &mdash; honestly:</b> each lens is a <b>separately configured read</b> &mdash; Opportunity (volume access), Matchup (per-dropback efficiency allowed), Game Identity (the game&rsquo;s script), Coaching (structural tendency), and Concentration (who gets the scoring, on TD markets only). These lenses are <b>Under Review</b>: we have <b>not</b> shown they are independent of one another or predictive out of sample. We <b>count how many point the same way</b>; we don&rsquo;t blend a score, because sports don&rsquo;t share one scale. <b>More agreement means only a higher configured-lens count. It does not establish independence, corroboration, predictive value, or a larger edge. Market line and price changes are displayed as context only; they do not determine ordering or authority.</b> This is <b>convergence of context, not a best-bets board</b>: no lock, no composite score, no claim we can&rsquo;t defend. 21+</div>
 {% endif %}
 </div>
 {% endblock %}
