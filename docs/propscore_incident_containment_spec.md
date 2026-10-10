@@ -1,4 +1,9 @@
-# PropScore Incident Containment Specification (Final Freeze Candidate v2)
+# PropScore Incident Containment Specification (Final Freeze Candidate v3)
+
+<!-- v3: narrow wording/procedural freeze only (Green Light explanation, methodology wording, NFL
+Spots wording, dirty-worktree baseline verification, one-revert rollback). All v2 behavioral
+decisions preserved unchanged. -->
+
 
 **Read-only specification. No implementation, no code.** Governing decisions (**final**):
 **PropScore v1 → research status `Failed`; operational condition `Quarantined`.** Scope: PropScore v1
@@ -33,7 +38,7 @@ decision surface.**
 - The `sp_top` PropScore section (`app.py:45486-45516`) is **removed** with its `≥10` floor, `≥20`
   premium tier, and `sp_premium_count`. Nothing re-populates it.
 - **Remaining:** wind-under (§5) + injury-change-timing. Subtitle (`nfl_spots.html:47`) → *"Two
-  situational signals this week — wind-driven passing unders and injury-change timing."*
+  situational **context views** this week — wind-driven passing unders and injury-change timing."*
 
 ## 3. NFL Totals Context (FROZEN — renamed, neutral)
 
@@ -67,13 +72,16 @@ and every other `marketing/` asset (including the already-modified ones in the w
 4. **Publishing exclusion:** these modes produce no output on any path; any routine (run_daily /
    scheduled task) that invokes `weekly_cards.py` must not request them. No published card selects,
    ranks by, or labels PropScore "validated/proven edge."
-5. **Rollback procedure:** `git revert` the containment commit restores the dispatch entries;
-   restoring the five images is `git mv` back from `marketing/_archive/propscore_quarantine_2026-10-09/`
-   to `marketing/weekly_cards/`. **Verification after the move:** `git status --porcelain` shows
-   **only** those five path moves under `marketing/weekly_cards/` + `marketing/_archive/…` and the
-   `weekly_cards.py` dispatch edit — nothing else; the pre-existing unrelated marketing modifications
-   remain exactly as they were.
-6. **Historical preservation:** the generator source and the archived images are **kept** (archived,
+5. **Dirty-worktree verification:** capture a **baseline `git status --porcelain=v1`** *before*
+   implementation. After implementation, re-run it and diff against the baseline — the only
+   new/changed entries may be the five image moves (`marketing/weekly_cards/` →
+   `marketing/_archive/propscore_quarantine_2026-10-09/`) and this containment's code/template edits.
+   **Every pre-existing unrelated entry (the already-modified marketing assets, data files, etc.)
+   must remain unchanged** from the baseline.
+6. **Rollback:** a **single `git revert`** of the containment commit. The five images are moved with
+   **`git mv` inside that commit**, so the revert restores them automatically — **no secondary manual
+   asset moves.**
+7. **Historical preservation:** the generator source and the archived images are **kept** (archived,
    not deleted).
 
 ## 5. Wind-under — interim language (FROZEN)
@@ -96,6 +104,9 @@ and every other `marketing/` asset (including the already-modified ones in the w
   - **"Over price shortened by X"**
   - **"No material line or Over-price shortening detected"**
 - **Removed entirely:** the words **"eligible," "priced in," "unpriced," "caught up."**
+- **Frozen explanatory sentence** (the one neutral explanation of the line/price readout):
+  **"Open-to-current line and Over-price changes are shown as market context only. They do not
+  indicate a priced or unpriced edge or predict the outcome."**
 - **Copy:** `:48` → **"the line is unchanged or softer since it opened"**; `:56` → **"the line
   hasn't moved since open"**; `:92` → **"a flat or softer line since open is an observation, not a
   prediction that the play will hit."**
@@ -108,7 +119,7 @@ and every other `marketing/` asset (including the already-modified ones in the w
 | `nfl_spots.html:47,77,78,128` | "validated PropScore / held out of sample / out-of-sample-confirmed… monotonic" | Removed with `sp_top` (§2). |
 | `cfb_board.html:33,45` | "best spread & total plays… model lean… NFL PropScore… do" | Replace **exactly** with: **"CFB markets are ordered by displayed model–market difference. No validated betting edge is claimed."** No "play / plays / lean / edge" language. |
 | `nfl_formula_lab.html:15,31,61` | "PropScore Backtest" | Relabel: **"PropScore v1 — research artifact; shipped validation was leakage-contaminated and did not survive a clean holdout; not used for live selection."** |
-| `how_we_analyze.html:127,133` | "a **validated edge**, a model lean, or a situational spot…" | The "validated edge" category **cannot remain live**. Replace with: **"We tier each play by how much evidence backs it — a documented backtest result, a model estimate, or a situational note — and show that status openly. No play is labeled a validated edge unless a governance record supports that claim."** |
+| `how_we_analyze.html:127,133` | "a **validated edge**, a model lean, or a situational spot…" | The "validated edge" category **cannot remain live**. Replace with: **"We label each item by its source and current governance status — a documented backtest result, a model estimate, or a situational note. No item is described as a validated edge unless a governance record authorizes that claim."** |
 | `weekly_cards.py` captions | "the validated edge / Our proven edge" | Removed with the cards (§4). |
 
 ## 8. Treatment of Failed mechanisms on live pages (FROZEN policy)
