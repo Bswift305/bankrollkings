@@ -1,0 +1,85 @@
+{% set active_page = 'feedback' %}
+{% extends "bk_base.html" %}
+{% block title %}Leave Feedback - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <div class="page-kicker">Your Feedback</div>
+        <h1>Leave <span class="accent">Feedback</span></h1>
+        <div class="page-subtitle">
+            Tell us what felt clear, what felt off, what confused you, or what broke. One specific note
+            is worth more than ten vague reactions &mdash; it is how we tighten the product.
+        </div>
+    </div>
+</div>
+
+{% if saved %}
+<div class="card mb-24 panel-glow" style="border-color: rgba(132,215,210,0.34);">
+    <div class="p-16" style="color: var(--text-bright); font-weight: 600;">
+        Thanks &mdash; your note was saved. Keep them coming.
+    </div>
+</div>
+{% endif %}
+
+<div class="card panel-glow" style="max-width: 640px;">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">What happened?</div>
+    </div>
+    <form method="post" action="/feedback/save" class="p-20" style="display: flex; flex-direction: column; gap: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="grid-2" style="gap: 12px;">
+            <div>
+                <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Page</label>
+                <select name="page" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                    <option value="General">General</option>
+                    <option value="Home">Home</option>
+                    <option value="Dashboard">Dashboard</option>
+                    <option value="Props">Props</option>
+                    <option value="Parlay Builder">Parlay Builder</option>
+                    <option value="Market Edge">Market Edge</option>
+                    <option value="Matchup">Matchup</option>
+                    <option value="Streak Patterns">Streak Patterns</option>
+                    <option value="Review Center">Review Center</option>
+                    <option value="Bet Tracker">Bet Tracker</option>
+                    <option value="Signup / Login">Signup / Login</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Category</label>
+                <select name="category" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                    <option value="General">General</option>
+                    <option value="Clarity">Clarity</option>
+                    <option value="Trust">Trust / Confidence</option>
+                    <option value="Design">Design</option>
+                    <option value="Data">Data</option>
+                    <option value="Bug">Bug</option>
+                    <option value="Performance">Performance</option>
+                    <option value="Feature Idea">Feature Idea</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Severity</label>
+            <select name="severity" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright);">
+                <option value="Low">Low</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+            </select>
+        </div>
+
+        <div>
+            <label style="display: block; font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; margin-bottom: 6px;">Your note</label>
+            <textarea name="feedback" rows="7" required placeholder="What felt off, what felt sharp, what confused you, or what broke?" style="width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(9, 18, 25, 0.92); color: var(--text-bright); line-height: 1.6; resize: vertical;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+            <button type="submit" class="btn btn-primary">Save Feedback</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -464,8 +464,8 @@ PRICING_TIERS = [
         'monthly_label': '$19.99/mo',
         'annual_label': '',
         'badge': 'Everything Unlocked',
-        'summary': 'One membership, the whole platform. Every sport, every board, every lab — no tiers, no upsells. Built to help you beat the book, not to gouge you.',
-        'best_for': 'Anyone serious about beating the book',
+        'summary': 'One membership, the whole platform. Every sport, every board, every lab — no tiers, no upsells. The market, the context, and transparent research in one place so you can decide for yourself.',
+        'best_for': 'Anyone who wants to evaluate wagers for themselves',
         'features': [
             'Full prop boards across NBA, MLB, WNBA, NFL, CFB, and college hoops',
             'Player pages, team pages, matchup analysis, floor plays, and the parlay builder',
@@ -20994,9 +20994,9 @@ def build_cross_sport_top_props(sport_snapshots, limit=9):
     seen = set()
     for sport in sport_snapshots or []:
         for lane, prop in (
-            ('Best Under', sport.get('best_under')),
-            ('Best Over', sport.get('best_over')),
-            ('Best Board Read', sport.get('best_prop')),
+            ('Highest-implied Under', sport.get('best_under')),
+            ('Highest-implied Over', sport.get('best_over')),
+            ('Highest market-implied', sport.get('best_prop')),
         ):
             if not prop:
                 continue
@@ -36084,16 +36084,42 @@ def test_drive():
     )
 
 
+@app.route('/feedback')
+def feedback():
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=url_for('feedback')))
+    return render_template(
+        'feedback_form.html',
+        postseason_only=postseason_only_enabled(),
+        saved=request.args.get('saved') == '1',
+    )
+
+
 @app.route('/feedback/save', methods=['POST'])
 def save_feedback():
-    tester_name = request.form.get('tester_name', '').strip()[:80]
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('login', next=url_for('feedback')))
+
+    _owner = is_owner_user(current_user)
+    if _owner:
+        # Owner may record feedback received verbally, under a supplied name.
+        tester_name = request.form.get('tester_name', '').strip()[:80]
+    else:
+        # Non-owner submissions are attributed to the authenticated account,
+        # never a form-supplied identity.
+        tester_name = (current_user.get('display_name') or '').strip() \
+            or ('Account ' + str(current_user.get('user_id') or current_user.get('email') or 'unknown')[:12])
+
     page = request.form.get('page', '').strip()[:80]
     category = request.form.get('category', '').strip()[:80]
     severity = request.form.get('severity', '').strip()[:40]
     feedback = request.form.get('feedback', '').strip()[:2000]
 
+    _dest = 'test_drive' if _owner else 'feedback'
     if not feedback:
-        return redirect(url_for('test_drive', postseason=1 if postseason_only_enabled() else 0))
+        return redirect(url_for(_dest, postseason=1 if postseason_only_enabled() else 0))
 
     save_feedback_entry({
         'FeedbackId': str(uuid4())[:8],
@@ -36105,7 +36131,7 @@ def save_feedback():
         'Feedback': feedback,
         'Status': 'Open',
     })
-    return redirect(url_for('test_drive', postseason=1 if postseason_only_enabled() else 0, saved=1))
+    return redirect(url_for(_dest, postseason=1 if postseason_only_enabled() else 0, saved=1))
 
 @app.route('/season-review')
 def season_review():

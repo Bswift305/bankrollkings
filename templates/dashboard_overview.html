@@ -217,8 +217,8 @@
   <div class="bk-phase2-head compact">
     <div>
       <div class="bk-dashboard-kicker">Cross-Sport Home</div>
-      <h2>Top props across every live board</h2>
-      <p>The Home page stays sport-neutral: NBA, WNBA, MLB, and season-prep sports can all surface here when their boards are active.</p>
+      <h2>Highest market-implied props across every live board</h2>
+      <p>Ordered by de-vigged market-implied probability &mdash; the market's own read, not our edge. Heavy favorites naturally sit at the top. One per lane, per sport.</p>
     </div>
     <a class="bk-open-btn" href="{{ url_for('global_feature_preview', feature_key='parlay') }}">Build Cross-Sport</a>
   </div>
@@ -238,7 +238,7 @@
 </section>
 {% endif %}
 
-{% if phase2 and not public_tour %}
+{% if phase2 and not public_tour and show_ops_strip %}
 <section class="bk-content bk-phase2-shell">
   <div class="bk-phase2-head">
     <div>
