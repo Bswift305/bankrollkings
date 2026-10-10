@@ -431,6 +431,7 @@
     <div>
       <h2>Parlay Builder Example</h2>
       <small>A free test drive should show how legs become a graded ticket, even before the full builder unlocks.</small>
+      <small>Sample rows, ordered by de-vigged market-implied probability &mdash; the market's read, not our picks. Heavy favorites (very low payouts) sit at the top.</small>
     </div>
     <span class="free-lock">Preview workflow</span>
   </div>
@@ -443,7 +444,7 @@
           <strong>{{ row.player }}</strong>
           <small>{{ active_preview.sport }} · {{ row.stat }} {{ row.direction }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</small>
         </div>
-        <span class="free-builder-chip">{{ row.implied }}%</span>
+        <span class="free-builder-chip">{{ row.implied }}% implied</span>
       </div>
       {% else %}
       <div class="free-builder-leg">
@@ -486,7 +487,7 @@
     <div class="free-command-card">
       <span>Review Center</span>
       <strong>Did the signal actually work?</strong>
-      <small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and missed-winner proof.</small>
+      <small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and a record of what did and didn't hit.</small>
       <a href="{{ url_for('candidate_review') }}">Preview review</a>
     </div>
     <div class="free-command-card">
@@ -513,12 +514,14 @@
       <small>Calibration checks whether the model's 60%, 70%, and 80% bands actually behave that way over resolved results.</small>
       <a href="{{ url_for('calibration_lab') }}">Preview calibration</a>
     </div>
+    {% if show_ops_strip %}
     <div class="free-command-card">
       <span>Missed Opps</span>
       <strong>Find what hit quietly</strong>
       <small>Missed Winners show strong model reads that hit without being featured, then feed tomorrow's promotion logic.</small>
       <a href="{{ url_for('missed_opportunities') }}">Preview missed</a>
     </div>
+    {% endif %}
     <div class="free-command-card">
       <span>Systems Lab</span>
       <strong>Why the formula exists</strong>

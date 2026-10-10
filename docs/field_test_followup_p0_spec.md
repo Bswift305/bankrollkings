@@ -1,167 +1,152 @@
 # Field Test Follow-Up P0 Specification — 2026-10-10
 
-**Status: SPEC (read-only). No code changed.** Implement only after approval. This builds on
-`docs/field_test_p0_remediation_spec.md` (P0-1/P0-2/P0-3 — shipped c592863) and the P0-4 run,
-which proved the shipped fixes work **and** that the advertised **free** journey does not.
-These are the follow-up P0s. Per governance ruling: comping accounts is **not** a
-public-readiness fix (it masks the broken free journey, leaves inaccurate copy and preview
-authority live, and does not test what a QR prospect experiences).
+**Rev 2 — APPROVED NARROWER RELEASE PATH.** Rev 1 (the `/my-decisions` free-log proposal) was
+rejected. This revision reflects the governance ruling. **Status: SPEC + implementation of the
+approved Commits A & B.** Rev 1 preserved in git history (commit 931179c).
 
-**Governing promise:** market info + factual context + transparent research + decision
-tracking so a user can *evaluate wagers for themselves*. Track & Learn is a core layer.
-
----
-
-## P0-A — Free-preview authority (tester-facing)
-
-**Surfaces:** `templates/free_tier.html` (renders `/free` and `/free/<sport>`), fed by
-`build_free_sport_preview_context` / `build_free_sport_prop_rows` (`app.py:21175+`); plus the
-Free-plan copy in `app.py:449`.
-
-Goal: remove "top / proof / missed-winner" authority and present the heavy-favorite rows as
-**highest market-implied entries**, not best opportunities.
-
-1. **"missed-winner proof" → neutral record.**
-   - **Current** (`free_tier.html:489`):
-     `<small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and missed-winner proof.</small>`
-   - **Replacement:**
-     `<small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and a record of what did and didn't hit.</small>`
-
-2. **Ranked implied-% preview reads as a best-of list.** The numbered list
-   (`free_tier.html:439–447`) shows `{{ loop.index }}` 1/2/3 with a bare `{{ row.implied }}%`
-   chip — on today's slate that surfaces three −10000 / 99.0% stolen-bases unders as the
-   apparent top plays.
-   - Add a caption under the "Parlay Builder Example" head (`free_tier.html:432–435`), exact:
-     `<small>Sample rows, ordered by de-vigged market-implied probability — the market's read, not our picks. Heavy favorites (very low payouts) naturally sit at the top.</small>`
-   - Label the chip so the number is unambiguous — **current** `free_tier.html:446`
-     `<span class="free-builder-chip">{{ row.implied }}%</span>` → **replacement**
-     `<span class="free-builder-chip">{{ row.implied }}% implied</span>` (and the same at the
-     Market card `:494` / props table `:554` already say "implied" — leave those).
-   - **Do not** add any "top", "best", "lock", or ranking authority. The list stays ordered by
-     market-implied probability (unchanged computation); only the framing label is added.
-
-3. **Free-plan summary "top plays".**
-   - **Current** (`app.py:449`): `'summary': 'Know what is happening tonight across every sport. Slate, environment, top plays, and injuries — no subscription required.',`
-   - **Replacement:** `'summary': 'Know what is happening tonight across every sport. Slate, environment, the market's top-implied props, and injuries — no subscription required.',`
-   - `app.py:453` ("Top 3 props by de-vigged market-implied probability, with displayed
-     historical hit rates") is already market-framed — **leave as-is.**
+**Three corrections accepted:**
+1. **The free decision log was NOT a minimal reuse.** The tracker records American odds, stake,
+   selection, settlement state, optional closing odds; a saved "read" (sport/player/line/side/
+   note/timestamp) is a different record — mapping it in would need fake odds/stake and
+   contaminate ROI/CLV/learning. "No schema migration" was wrong. **Do not build `/my-decisions`
+   in this release.** Instead, **remove the free "saved tickets" promise.** A genuine My
+   Decisions feature gets its own later product contract + storage design.
+2. **Free-preview authority fix was incomplete.** Softening `free_tier.html:489` left the same
+   hindsight/promotion claim at `:519` ("Missed Winners show strong model reads that hit … then
+   feed tomorrow's promotion logic"). **Hide the whole "Missed Opps" preview card from non-owner
+   users** — not cosmetic softening. Missed Winners = owner/admin only (paying ≠ governance
+   authority). Calibration = All Access only (hidden from free nav).
+3. **Do not hardcode personal tester emails** in public source. Provision field-test access
+   through private operational config; remove after the visit.
 
 ---
 
-## P0-B — Non-owner navigation exposure
+## Commit A — Free preview and navigation
 
-**Surface:** the top-nav builder (`app.py:1529–1544`). `calibration_lab` ("Calibration") and
-`missed` ("Missed Winners") are added to the `lab` group with **no owner/plan gate**, so every
-signed-in user (including a free tester) sees them; their targets are owner/paid, which also
-produces the non-owner console 403s.
+### A1 · Neutral implied-probability framing (`templates/free_tier.html`, `app.py:449`)
+- **`free_tier.html:489` current:**
+  `<small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and missed-winner proof.</small>`
+  **→** `<small>Review Center turns resolved hit/miss data into player profiles, confidence calibration, and a record of what did and didn't hit.</small>`
+- **Caption on the implied-% sample list** — insert under the "Parlay Builder Example" head
+  (after `free_tier.html:433`), exact:
+  `<small>Sample rows, ordered by de-vigged market-implied probability — the market's read, not our picks. Heavy favorites (very low payouts) sit at the top.</small>`
+- **Chip label** — `free_tier.html:446` current `<span class="free-builder-chip">{{ row.implied }}%</span>`
+  **→** `<span class="free-builder-chip">{{ row.implied }}% implied</span>`
+- **Free-plan summary** — `app.py:449` current
+  `'summary': 'Know what is happening tonight across every sport. Slate, environment, top plays, and injuries — no subscription required.',`
+  **→** `'summary': 'Know what is happening tonight across every sport. Slate, environment, the market's top-implied props, and injuries — no subscription required.',`
+  (`app.py:453` is already market-framed — leave.)
 
-**Decision + change:** remove **Missed Winners** and **Calibration** from the nav for users who
-are not owner/admin and not `all_access`. Concretely, after the `items.extend([...])` block,
-drop those two keys when `not (is_owner_user(user) or normalize_user_plan(user) == 'all_access')`.
-("Missed Winners" also carries outcome/proof framing — keeping it out of the free surface is
-consistent with P0-A.) Paid users and the owner keep both. No change to the pages themselves in
-this spec.
+### A2 · Hide the "Missed Opps" preview card from non-owner (`free_tier.html:516–521`)
+Wrap the entire `<div class="free-command-card">` for "Missed Opps" in
+`{% if show_ops_strip %} … {% endif %}` (owner/admin-only global). Non-owner users never see the
+"feed tomorrow's promotion logic" claim. The Calibration card (`:510–515`) stays — its framing
+("checks whether the model's 60/70/80% bands actually behave that way") is transparent
+evaluation, not predictive authority.
+
+### A3 · Navigation gating (`app.py` `build_sport_workflow_nav`, def 1445; items 1529–1544)
+The nav builder has one caller, `inject_globals` (`app.py:29092`, request scope), which already
+resolves `current_user` and `show_ops_strip`. Pass two flags in:
+- Signature → `def build_sport_workflow_nav(active_sport='', active_page='', can_see_missed=False, can_see_calibration=False):`
+- After `items.extend([...])` (before the group-assignment loop), drop the gated keys:
+  ```
+  if not can_see_missed:
+      items = [it for it in items if it['key'] != 'missed']
+  if not can_see_calibration:
+      items = [it for it in items if it['key'] != 'calibration_lab']
+  ```
+- Caller (`app.py:29092`):
+  ```
+  nav_paid = bool(current_user and (is_owner_user(current_user) or normalize_user_plan(current_user) == 'all_access'))
+  top_nav_items = build_sport_workflow_nav(nav_sport, active_page_key, can_see_missed=show_ops_strip, can_see_calibration=nav_paid)
+  ```
+  → **Missed Winners** shows only for owner/admin (`show_ops_strip`); **Calibration** shows only
+  for owner/all_access. This also removes the non-owner click-through 403s. Defaults are
+  restrictive (`False`) so any future caller is safe.
+- Follow-up check (not code here): confirm the `/calibration-lab` page framing is transparent
+  evaluation, not predictive authority, before relying on paid visibility.
 
 ---
 
-## P0-C — Access-promise contradiction (saved-decision entitlement)
+## Commit B — Honest free-plan copy (remove saved-ticket promise)
 
-**The contradiction:** the product promises free "saved tickets" in three places —
-`app.py:455` (`'Free account, saved tickets, and platform access'`), `signup.html:17`
-(`Saved tickets`), `login.html:16` (`Saved tickets and history follow you across devices.`) —
-but `/tools/tracker` and the parlay builder are paid, and `/free/<sport>` states saving is
-"Waiting for full access" (`free_tier.html:461,464,465`).
+No free-reachable surface may promise saved tickets (an All-Access feature). All Access pricing
+keeps its saved-tickets line (accurate, untouched).
 
-**One product truth must be chosen. Recommended: enable a minimal free decision log** (Track &
-Learn is a core promise; removing it weakens the product more than a small build costs).
-
-**Minimal free decision log — design (the one genuine feature in this spec; build in its own
-sub-commit):**
-- **Entitlement:** any signed-in user (free included) may save a plain decision record and
-  reopen their own list. This is **not** the parlay builder, grading, CorrelationIQ/BankrollIQ,
-  or CLV — those stay paid.
-- **Store:** reuse the existing per-user mechanism (`services/bet_tracker.py` / `data/user_bets`,
-  already gitignored and per-account). No schema migration.
-- **Save affordance:** a "Save this read" control on the free `/free/<sport>` sample rows and on
-  any free-visible read, writing `{sport, player/market, line, side, note?, saved_at}` for the
-  authenticated account.
-- **Reopen:** a `GET /my-decisions` (login-gated, free-allowed) listing the account's saved
-  records read-only, newest first. No ranking, no EV, no "best" — a plain record.
-- **Guardrail:** the free log must introduce **no** predictive authority (no score, rank, grade,
-  EV, or "lock"). It is a record of the user's own choices, nothing more.
-- **Copy:** once enabled, `app.py:455` / `signup.html:17` / `login.html:16` are accurate and
-  stay. If this option is **declined**, those three strings must instead be struck/replaced so
-  production stops promising a free capability that does not exist.
+- **`app.py:455`** current `'Free account, saved tickets, and platform access',`
+  **→** `'Free account with honest sport previews and feedback access',`
+- **`signup.html:14`** current
+  `<p>Save tickets, keep review history, and unlock the whole platform with one membership — All Access, {{ all_access_tier.monthly_label }}. No tiers, no upsells.</p>`
+  **→** `<p>Create a free account to explore honest previews across every sport and send feedback. All Access, {{ all_access_tier.monthly_label }}, unlocks the full boards, tracking, and labs — no tiers, no upsells.</p>`
+- **`signup.html:17–18`** current `<strong>Saved tickets</strong>` / `<span>Track what you liked and why.</span>`
+  **→** `<strong>Honest previews</strong>` / `<span>See each sport's real board shape and context before you subscribe.</span>`
+- **`login.html:12`** current
+  `<p>Load your saved tickets, bet-review history, and personal parlay records anywhere you open the site.</p>`
+  **→** `<p>Pick up your previews and feedback anywhere you open the site. All Access loads your full tracking and review history.</p>`
+- **`login.html:16`** current `<span>Saved tickets and history follow you across devices.</span>`
+  **→** `<span>Your account and feedback follow you across devices.</span>`
+- **Do not build `/my-decisions`.**
 
 ---
 
-## P0-D — Temporary field-tester access rules
+## Operations — temporary field-tester access (no code in this release)
 
-For the first **moderated** casino/barbershop sessions, use explicitly designated, temporary
-**All-Access tester accounts** via `COMP_ALL_ACCESS_EMAILS` (`app.py:536`). Rules:
-- A small, fixed, owner-created list; each address clearly a test account.
-- Pre-authorized **before** a visit; **removed** after the engagement.
+- Use dedicated, owner-created **temporary All-Access test accounts** for moderated casino/
+  barbershop sessions.
+- Provision via **private operational config** (e.g., the prod `.env` / an untracked ops list),
+  **never** by committing real personal emails to this public repo. (`COMP_ALL_ACCESS_EMAILS`
+  may back it, but its membership for real testers must come from private config, not source.)
+- Remove access after the visit.
 - Owner-gating (`show_ops_strip`) means comped non-owners still never see the Phase 2
-  promote/proof strip — verify in Script 2.
-- **Never** cite a comped account working as evidence the **free** journey passes. The two are
-  different products and are tested separately (below).
-- Adding/removing emails edits `app.py:536` + deploy; record the engagement's test addresses in
-  the ops log, not in this public repo if they are real personal emails.
+  promote/proof strip — confirm in Script 2.
+- **Never** cite a comped account working as proof the **free** journey passes.
 
 ---
 
-## Two mobile verification scripts (375px; split P0-4)
+## Two mobile verification scripts (375px)
 
-**Script 1 — Free journey (ordinary QR visitor, non-comped free account).** All must PASS:
+**Script 1 — Free journey (ordinary QR visitor; non-comped free account).** All PASS:
 1. Signup + required 21+ attestation; no card.
-2. `/free` and `/free/<sport>` render; **no "top/proof/missed-winner" authority**; the −10000
-   rows read as "highest market-implied … not our picks"; nav shows **no Missed Winners /
-   Calibration**.
-3. **Save a decision** via the minimal free log, then reopen it in `/my-decisions`
-   (persists across a logout/login).
-4. Submit feedback via the footer link → `/feedback?saved=1`, no owner surfaces.
+2. `/free` and `/free/<sport>` render; **no missed-winner/promotion authority** (Missed Opps
+   card absent); the −10000 rows read as "market-implied … not our picks"; nav shows **no Missed
+   Winners and no Calibration**.
+3. Inspect honest previews (slate/props/market/matchup context; locked depth clearly labeled).
+4. Submit feedback via the footer link → `/feedback?saved=1`; no owner surfaces.
 5. Logout and return (re-login) cleanly.
+*(No "save a decision" step — free accounts do not save in this release.)*
 
-**Script 2 — Field Tester journey (temporary comped All-Access account).** All must PASS:
-1. Login; land on the full dashboard.
-2. **Phase 2 promote/proof strip is ABSENT** (comped user is non-owner); cross-sport cards read
-   "Highest-implied …"; no owner-only surface or `/test-drive` access.
-3. Full tools: props / market / matchup / parlay builder render with honest context.
-4. Save and reopen a decision in the full tracker.
-5. Submit feedback; logout and return.
+**Script 2 — Field Tester journey (temporary comped All-Access account).** All PASS:
+1. Login; full dashboard. **Phase 2 promote/proof strip ABSENT** (non-owner); cross-sport cards
+   "Highest-implied …"; no `/test-drive` access; Missed Winners **not** in nav (comp is not
+   owner); Calibration **is** in nav (paid).
+2. Full tools: props / market / matchup / parlay builder with honest context.
+3. Save and reopen a decision in the full tracker.
+4. Submit feedback; logout and return.
 
-Collect feedback from the two groups **separately** so a note is attributable to the preview or
-the full platform.
+Collect the two groups' feedback **separately**.
 
 ---
 
-## P1 (not blocking; unchanged)
+## P1 (not blocking)
 
-- **P1-1** `/test-drive` 404 static asset.
-- **P1-2** `/test-drive` internal tester-path notes.
+- **P1-1** `/test-drive` 404 static asset. **P1-2** `/test-drive` internal tester-path notes.
 - **P1-3** feedback-CSV concurrent-write durability.
-- **P1-4** non-owner console background **403s** — gate the owner-only fetch so a non-owner's
-  console is clean. (Kept P1: no visible breakage.)
-
----
+- **P1-4** any residual non-owner console background 403 (A3 should remove the nav-driven ones).
 
 ## Non-changes / boundaries
 
-- No model / ranking / threshold / probability change anywhere. PropScore stays
-  Failed + Quarantined. Green Light, NFL Totals Context, props screener, Daily Card,
-  `how_we_analyze`, matchup — untouched.
-- The shipped P0-1/P0-2/P0-3 gating and copy are not altered.
-- The minimal free decision log is a **record only** — no predictive authority, no grading.
-- Security: the free log is per-authenticated-user, sign-in required, no cross-user read;
-  `/my-decisions` is login-gated. `/test-drive` stays owner-only.
-- CFB surfaces untouched. Repo is public — no secrets (incl. real tester emails) committed.
+- No model / ranking / threshold / probability change. PropScore stays Failed + Quarantined.
+  Green Light, NFL Totals Context, props screener, Daily Card, `how_we_analyze`, matchup —
+  untouched. Shipped P0-1/P0-2/P0-3 unchanged.
+- **No new tracking system** and no `/my-decisions` in this release.
+- Calibration page content not rewritten here (nav gate only + framing review flagged).
+- Security: `/test-drive` stays owner-only; no cross-user data. Repo public — **no tester
+  emails or secrets committed.**
+- CFB untouched.
 
-## Sequencing & rollback
+## Rollback
 
-Implement in sub-steps, each reversible: (A) free-preview copy/labels, (B) nav gate, (C) the
-free decision log (its own sub-commit, with Script 1 step 3 as its gate), (D) is an ops action
-(comp list), not a code feature. Prefer one commit for A+B, a second for C. `git revert`
-restores per sub-commit; A/B/D need no data migration; C adds only per-user rows.
+Commit A and Commit B are separate, each `git revert`-able; copy/visibility only, no data
+migration. Prod picks up via push → `bk-deploy` auto-pull + restart (`preload_app`).
 
-*End of spec. Awaiting approval — note P0-C is a product-truth decision (enable free log vs.
-drop the promise) that should be ruled before implementation.*
+*Implementing Commits A & B now per the approved path.*

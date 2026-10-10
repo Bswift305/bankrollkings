@@ -446,7 +446,7 @@ PRICING_TIERS = [
         'monthly_label': '$0',
         'annual_label': '$0',
         'badge': 'Start Here',
-        'summary': 'Know what is happening tonight across every sport. Slate, environment, top plays, and injuries — no subscription required.',
+        'summary': 'Know what is happening tonight across every sport. Slate, environment, the market\'s top-implied props, and injuries — no subscription required.',
         'best_for': 'Casual bettors and first-time users',
         'features': [
             'Tonight\'s slate with game environment labels across NBA, MLB, WNBA, and NFL',
@@ -1442,7 +1442,7 @@ def get_sidebar_sport_counts():
     }
 
 
-def build_sport_workflow_nav(active_sport='', active_page=''):
+def build_sport_workflow_nav(active_sport='', active_page='', can_see_missed=False, can_see_calibration=False):
     sport_key = normalize_sport_access_key(active_sport)
     sport_label = {
         'nba': 'NBA',
@@ -1542,6 +1542,14 @@ def build_sport_workflow_nav(active_sport='', active_page=''):
         {'key': 'missed', 'label': 'Missed Winners', 'href': f"/missed-opportunities?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['missed']},
         {'key': 'elite', 'label': 'Elite', 'href': f"/elite?sport={quote(query_sport, safe='')}" if query_sport else global_feature_href['elite']},
     ])
+
+    # Governance-gated nav: Missed Winners is owner/admin only (it carries promotion/
+    # hindsight authority; paying does not grant that), and Calibration is paid-only
+    # (hidden from free nav since a free account cannot open it).
+    if not can_see_missed:
+        items = [it for it in items if it['key'] != 'missed']
+    if not can_see_calibration:
+        items = [it for it in items if it['key'] != 'calibration_lab']
 
     # Core = the everyday workflow; everything else is grouped under "Labs" in the
     # command toolbar so a newcomer lands on the essentials, not 15 equal buttons.
@@ -29089,7 +29097,8 @@ def inject_globals():
         nav_sport = query_sport if query_sport in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'} else ''
     else:
         nav_sport = '' if active_page_key in {'home', 'free_tier'} or request.endpoint == 'global_feature_preview' else active_sport
-    top_nav_items = build_sport_workflow_nav(nav_sport, active_page_key)
+    nav_paid = bool(current_user and (is_owner_user(current_user) or normalize_user_plan(current_user) == 'all_access'))
+    top_nav_items = build_sport_workflow_nav(nav_sport, active_page_key, can_see_missed=show_ops_strip, can_see_calibration=nav_paid)
     top_nav_by_key = {item['key']: item for item in top_nav_items}
     sports_nav_items = [
         {
