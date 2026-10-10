@@ -2,7 +2,14 @@
 
 <!-- v3: narrow wording/procedural freeze only (Green Light explanation, methodology wording, NFL
 Spots wording, dirty-worktree baseline verification, one-revert rollback). All v2 behavioral
-decisions preserved unchanged. -->
+decisions preserved unchanged.
+v3.1: the two remaining corrections to §6 — the green_light.html:92 note's residual "independent"
+lens claim (→ "separately configured", with an explicit "not shown independent") and its
+"market-averages-away / best-bets board" edge implication (→ "convergence of context, not a
+best-bets board; not evidence the market is wrong"). "Independent" is retired everywhere in this
+spec's scope in favor of "configured." (Doctrine/other surfaces still say "independent lenses" —
+flagged for a separate pass, out of this gate.) No behavioral re-open. -->
+
 
 
 **Read-only specification. No implementation, no code.** Governing decisions (**final**):
@@ -104,6 +111,21 @@ and every other `marketing/` asset (including the already-modified ones in the w
   - **"Over price shortened by X"**
   - **"No material line or Over-price shortening detected"**
 - **Removed entirely:** the words **"eligible," "priced in," "unpriced," "caught up."**
+- **`green_light.html:92` "How to read it — honestly" note — full frozen replacement.** (The earlier
+  §6 fixed only its "eligible" clause; the note still carried two **rejected** claims — the lenses
+  being **"independent,"** and the **"market tends to average away / honest version of a 'best-bets'
+  board"** edge implication.) Replace the whole note with:
+  > "Each lens is a **separately configured read** — Opportunity (volume access), Matchup
+  > (per-dropback efficiency allowed), Game Identity (the game's script), Coaching (structural
+  > tendency), and Concentration (who gets the scoring, on TD markets only). These lenses are
+  > **Under Review**: we have **not** shown they are independent of one another or predictive out of
+  > sample. We **count how many point the same way**; we don't blend a score, because sports don't
+  > share one scale. **More agreement is more corroboration — not a bigger edge, and not evidence
+  > the market is wrong.** The market is the gate, never a vote — shop every line. This is
+  > **convergence of context, not a best-bets board**: no lock, no composite score, no claim we
+  > can't defend. 21+"
+  This removes **"independent"** (→ configured, with an explicit "not shown independent"), **"the
+  market tends to average away,"** the residual **"'eligible'…"** clause, and **"best-bets board."**
 - **Frozen explanatory sentence** (the one neutral explanation of the line/price readout):
   **"Open-to-current line and Over-price changes are shown as market context only. They do not
   indicate a priced or unpriced edge or predict the outcome."**
