@@ -533,12 +533,19 @@ OWNER_EMAILS = {
 # Comped testers: these emails are auto-granted an active All Access membership
 # the moment they sign up (no checkout). Lowercase only — signup lowercases the
 # email before matching.
-COMP_ALL_ACCESS_EMAILS = {
-    'mribet504@gmail.com',
-    'dalecopper@comcast.net',
-    'yazmeenheaven@gmail.com',
-    'cspurlock65@att.net',
-}
+def _load_comp_all_access_emails():
+    """Comp All-Access addresses are operator data, not source code. They load from the
+    private COMP_ALL_ACCESS_EMAILS env var (comma / semicolon / whitespace separated),
+    lowercased — set them in each host's private .env, never in this public repo.
+    Field testers do NOT belong here: issue a trial invite code instead (see the
+    /trial/<code> flow and data/tracking/Invite_Codes.csv)."""
+    raw = os.environ.get('COMP_ALL_ACCESS_EMAILS', '') or ''
+    for sep in (';', '\n', '\t', ' '):
+        raw = raw.replace(sep, ',')
+    return {part.strip().lower() for part in raw.split(',') if part.strip()}
+
+
+COMP_ALL_ACCESS_EMAILS = _load_comp_all_access_emails()
 
 # Free-trial invite system (in-person / QR handouts). A redeemable code grants All
 # Access for TRIAL_DEFAULT_DAYS with NO credit card, tracked entirely in-app via the

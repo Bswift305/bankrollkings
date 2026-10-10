@@ -149,4 +149,53 @@ Collect the two groups' feedback **separately**.
 Commit A and Commit B are separate, each `git revert`-able; copy/visibility only, no data
 migration. Prod picks up via push → `bk-deploy` auto-pull + restart (`preload_app`).
 
-*Implementing Commits A & B now per the approved path.*
+*Commits A & B implemented + deployed + verified (03b9837 / 79bb2b0).*
+
+---
+
+## Rev 3 — readiness patch + corrected field-test access (2026-10-10)
+
+Two new P0s from review, plus a pre-launch verification. Shipped as a tiny patch.
+
+### R3-1 · Field-test access = trial invite codes, NOT comp emails
+The repo hardcoded four real-looking comp addresses in `app.py` (public repo = privacy +
+control problem). The project already has the right mechanism: the **trial invite system**
+(`/trial/<code>`, `data/tracking/Invite_Codes.csv`, columns
+`Code,Label,TrialDays,MaxRedemptions,TimesRedeemed,Active`): trial duration, redemption cap,
+auto-expiry via per-user `TrialExpiresAt`, **no credit card, no deploy per tester**.
+- **Field testers are issued a trial code, never added to `COMP_ALL_ACCESS_EMAILS`.**
+- One dedicated code per visit/location, short `TrialDays`, finite `MaxRedemptions`; set
+  `Active=0` to deactivate after the engagement. Record whether a feedback note came from the
+  free journey or the trial journey.
+- Code creation is an **ops action** (append a row to prod's gitignored
+  `data/tracking/Invite_Codes.csv` via SSM); codes are normalized UPPERCASE; `MaxRedemptions=0`
+  means unlimited. Example row: `CASINO01,Casino visit,14,50,0,1` → tester opens
+  `https://bankrollkings.com/trial/CASINO01` → free signup grants a 14-day All-Access trial.
+
+### R3-2 · Comp-email list moved out of public source (code change)
+`app.py` `COMP_ALL_ACCESS_EMAILS` now loads from a **private env var**
+(`_load_comp_all_access_emails()`; comma/semicolon/space separated, lowercased, empty default).
+No addresses remain in source.
+- **Privacy incident (minor):** the four addresses are already in Git history; removing the
+  lines does not un-expose them. Treat as a logged minor incident; **add no more**.
+- **Operational:** to preserve the existing comps with **zero gap**, set
+  `COMP_ALL_ACCESS_EMAILS` in prod `/opt/bankrollkings/.env` (values retrievable from Git
+  history, privately) and restart. Until set, those four accounts see the paywall (acceptable
+  per the incident ruling). Field testers do **not** go here — they get a trial code (R3-1).
+
+### R3-3 · Login feedback-persistence copy corrected
+Submitted feedback is stored for the owner; a tester cannot reopen it, so it does not "follow"
+them. `login.html:12` → "Sign in to continue exploring previews across every sport. All Access
+loads your full tracking and review history." `login.html:16` → "Your account access follows
+you across devices."
+
+### R3-4 · Pre-launch verification — free-preview link integrity
+The free page keeps a Calibration preview card though Calibration is out of free nav. Before
+launch, confirm **every** `/free` and `/free/<sport>` preview link resolves to an accessible
+preview **or** a clear upgrade screen — **no raw 403.** (Checked this round; see session notes.)
+
+### Launch sequence (per ruling)
+1. Complete the ordinary free journey. 2. Create a limited trial invite code. 3. Complete the
+All-Access field-tester journey **using that code** (not a comp). 4. Verify every free-preview
+link. 5. Generate QR materials (the trial code becomes the official field-marketing access
+path). *Public field-test readiness: not yet — pending steps 1–4.*
