@@ -79,16 +79,11 @@ and every other `marketing/` asset (including the already-modified ones in the w
 4. **Publishing exclusion:** these modes produce no output on any path; any routine (run_daily /
    scheduled task) that invokes `weekly_cards.py` must not request them. No published card selects,
    ranks by, or labels PropScore "validated/proven edge."
-5. **Dirty-worktree verification (content-aware):** *before* implementation capture a three-part
-   baseline — (a) a **status snapshot** (`git status --porcelain=v1`); (b) a **tracked-file
-   diff/hash baseline** (e.g. `git stash create` / `git diff` hash, or a sha256 of every tracked
-   working-tree file) so pre-existing *tracked* modifications are pinned by **content**, not just by
-   status line; (c) an **untracked-file hash baseline** (sha256 of every untracked file — the repo
-   already carries untracked marketing PNGs). *After* implementation, **recompute all three and
-   compare**: the only differences permitted are the five image moves (`marketing/weekly_cards/` →
-   `marketing/_archive/propscore_quarantine_2026-10-09/`) and this containment's code/template edits.
-   **Every pre-existing unrelated tracked and untracked file must hash-match its baseline** — no
-   content drift, not merely an unchanged status line.
+5. **Dirty-worktree verification (single frozen procedure):** Before implementation, capture
+   `git status --porcelain=v1` and record a SHA-256 hash for every pre-existing modified or
+   untracked file. After implementation, recompute those hashes. Every unrelated pre-existing path
+   must still exist and match its baseline hash exactly. Only the approved containment files and the
+   five archived-image moves may differ.
 6. **Rollback:** a **single `git revert`** of the containment commit. The five images are moved with
    **`git mv` inside that commit**, so the revert restores them automatically — **no secondary manual
    asset moves.**
