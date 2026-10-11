@@ -42,6 +42,9 @@ SCORECARDS = [
     # Floor-board cache determinism + player-log invalidation guard. Cheap; locks down the
     # call-order contamination and stale-on-log-refresh defects (a6d9e4c + signature follow-up).
     ("NFL Floor Cache QC", "qc_nfl_floor_cache.py", 240),
+    # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
+    # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
+    ("Player Check QC", "qc_player_check.py", 240),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
