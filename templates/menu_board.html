@@ -11,15 +11,17 @@
   .mb-ctrl{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:18px;}
   .mb-cg{display:flex;align-items:center;gap:7px;}
   .mb-cg .lb{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
-  .mb-pill{position:relative;cursor:pointer;font:700 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 12px;}
+  .mb-pill{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;cursor:pointer;font:700 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 12px;transition:color .16s ease,background-color .16s ease,border-color .16s ease,box-shadow .16s ease;}
   .mb-pill input{position:absolute;opacity:0;inset:0;cursor:pointer;}
-  .mb-pill.on{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+  .mb-pill:hover{color:var(--text-bright);border-color:color-mix(in srgb,var(--bkn-accent,#3fbf7f) 68%,var(--border));background:color-mix(in srgb,var(--bkn-accent,#3fbf7f) 10%,transparent);}
+  .mb-pill:focus-within{outline:2px solid var(--bk-gold2,#ffd16d);outline-offset:2px;}
+  .mb-pill.on{color:#06100f;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset,0 0 14px color-mix(in srgb,var(--bkn-accent,#3fbf7f) 24%,transparent);}
   .mb-count{margin-left:auto;font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
   .mb-game{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:4px 16px 6px;margin-bottom:14px;}
   .mb-gh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:12px 0 8px;border-bottom:1px solid var(--border);}
   .mb-gh .gm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
   .mb-gh .dt{font:700 10.5px ui-monospace,Consolas,monospace;color:var(--text-muted);white-space:nowrap;}
-  .mb-leg{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.055);cursor:pointer;}
+  .mb-leg{display:grid;grid-template-columns:auto minmax(220px,1fr) auto auto auto;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer;}
   .mb-leg:last-child{border-bottom:0;}
   .mb-leg:hover{background:rgba(255,255,255,.02);}
   .mb-leg.on{background:rgba(63,191,127,.06);}
@@ -31,6 +33,11 @@
   .mb-tp{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
   .mb-sp{font:700 8px ui-monospace,monospace;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;margin-left:4px;}
   .mb-rs{font:500 11px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:2px;}
+  .mb-evidence{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:7px;margin-top:8px;}
+  .mb-ev{min-width:0;padding:7px 9px;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.025);}
+  .mb-ev.context{grid-column:1/-1;}
+  .mb-ev .k{display:block;margin-bottom:3px;color:var(--text-muted);font:800 8px ui-monospace,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;}
+  .mb-ev .v{display:block;color:var(--text-bright);font:650 11px/1.4 'Helvetica Neue',Arial,sans-serif;}
   .mb-hit{flex:0 0 auto;font:800 12px ui-monospace,monospace;color:var(--bkn-good,#4ed48a);text-align:right;min-width:34px;}
   .mb-pr{flex:0 0 auto;font:800 12.5px ui-monospace,Consolas,monospace;color:var(--text-bright);text-align:right;min-width:48px;}
   .mb-add{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font:800 16px ui-monospace,monospace;line-height:1;cursor:pointer;}
@@ -57,6 +64,13 @@
   .mb-btn.ghost{background:transparent;color:var(--text-muted);border-color:var(--border);flex:0 0 auto;}
   .mb-btn.ghost:hover{color:var(--text-bright);}
   .mb-warn{font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-mid,#ffd166);margin-top:8px;display:none;}
+  @media(max-width:760px){
+    .mb-leg{grid-template-columns:auto minmax(0,1fr) auto;align-items:start;}
+    .mb-hit,.mb-pr{grid-column:2;justify-self:start;display:inline-block;}
+    .mb-add{grid-column:3;grid-row:1;}
+    .mb-evidence{grid-template-columns:1fr;}
+    .mb-ev.context{grid-column:auto;}
+  }
 </style>
 
 <div class="bkn" style="max-width:none;">
@@ -64,7 +78,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; Build-your-own{% if generated %} &middot; {{ generated }}{% endif %}</div>
     <h1>The <span class="accent">Menu</span></h1>
-    <div class="page-subtitle">Every option on the board, grouped by game &mdash; <b>floors</b> that reliably clear the number and plus-money <b>swings</b> &mdash; so you can scan the whole slate and build your own ticket by eye. Tap any leg to add it to your slip; the price updates live. This is the board; <a href="/tools/daily-card" style="color:var(--bkn-accent,#3fbf7f);">Today&rsquo;s Cards</a> is the auto-built version.</div>
+    <div class="page-subtitle">Every option on the board, grouped by game &mdash; <b>floors</b> with higher displayed historical clearance rates and plus-money <b>swings</b> &mdash; so you can inspect the evidence and build your own ticket. Tap any leg to add it to your slip; the price updates live. This is the board; <a href="/tools/daily-card" style="color:var(--bkn-accent,#3fbf7f);">Today&rsquo;s Cards</a> is the auto-built version.</div>
   </div>
 </div>
 
@@ -100,7 +114,12 @@
         <span class="mb-tag {{ l.tier }}">{{ 'FLOOR' if l.tier == 'floor' else ('EDGE' if l.tier == 'edge' else 'SWING') }}</span>
         <span class="mb-bd">
           <span class="mb-tp">{{ l.label }}<span class="mb-sp">{{ l.sport }}</span></span>
-          <span class="mb-rs">{{ l.reason }}</span>
+          <span class="mb-evidence">
+            <span class="mb-ev"><span class="k">Selection basis</span><span class="v">{{ 'Historical clearance' if l.tier == 'floor' else ('Model–market context' if l.tier == 'edge' else 'Plus-money candidate') }}</span></span>
+            <span class="mb-ev"><span class="k">Displayed history</span><span class="v">{% if l.hit %}{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}{% else %}Not a historical-hit-rate selection{% endif %}</span></span>
+            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ '%+d'|format(l.price) }}{% if l.market_pct is not none %} &middot; {{ l.market_pct }}% implied{% endif %}</span></span>
+            <span class="mb-ev context"><span class="k">Why it is available</span><span class="v">{{ l.reason }}</span></span>
+          </span>
         </span>
         <span class="mb-hit">{% if l.hit %}{{ l.hit }}%{% endif %}</span>
         <span class="mb-pr">{{ '%+d'|format(l.price) }}</span>
@@ -114,7 +133,7 @@
 
   <div class="mb-slip" id="mb-slip">
     <h3>Your Ticket <span class="sp" id="mb-nlegs" style="font:800 11px ui-monospace,monospace;color:var(--text-muted);"></span></h3>
-    <div class="sub">Tap legs on the board to build it. Cross-game keeps the legs uncorrelated.</div>
+    <div class="sub">Tap legs on the board to build it. One leg per game reduces shared-game concentration.</div>
     <div id="mb-rows"><div class="empty">No legs yet &mdash; tap a <b>+</b> to start your ticket.</div></div>
     <div class="mb-pay" id="mb-payrow" style="display:none;">
       <span class="k">$5 pays</span>
@@ -128,7 +147,7 @@
   </div>
 </div>
 
-<div class="bkn-note" style="margin-top:18px;"><b>How to read the Menu &mdash; honestly:</b> <b>Floors</b> are props a player has cleared a high % of the time at that number, from real game logs (the % shown is the historical hit rate, not a projection). <b>Swings</b> and <b>edges</b> are plus-money or model-divergent sides &mdash; higher payout, lower hit rate. Your ticket&rsquo;s payout <b>assumes the legs are independent</b>; a parlay still <b>compounds the vig</b>, so stacked legs are a value-shaped swing, not a lock. One leg per game keeps them uncorrelated. Shop every price &mdash; a half-point or a better book changes the math. MLB prices are estimates; confirm at your book. 21+</div>
+<div class="bkn-note" style="margin-top:18px;"><b>How to read the Menu &mdash; honestly:</b> <b>Floors</b> are props a player has cleared a high % of the time at that number, from real game logs (the % shown is historical, not a projection). <b>Swings</b> and <b>model-context rows</b> are plus-money options or places where a displayed model estimate differs from the market; neither label establishes a betting edge. Your ticket&rsquo;s payout calculation <b>assumes independence</b>, while real legs may still share team, weather, role, or game-environment risk. One leg per game reduces shared-game concentration; it does not prove independence. Shop every price. MLB prices are estimates; confirm at your book. 21+</div>
 </div>
 
 <script>

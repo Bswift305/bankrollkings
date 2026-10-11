@@ -31165,7 +31165,7 @@ def _mlb_floor_legs(limit=12):
             for pl, v in cand:
                 legs.append({'sport': 'MLB', 'kind': 'prop', 'tier': 'floor',
                              'label': f"{pl} to record a hit", 'game': gk, 'date': dt,
-                             'price': _mlb_hit_price(v['hit']), 'hit': round(v['hit'] * 100),
+                             'price': _mlb_hit_price(v['hit']), 'hit': round(v['hit'] * 100), 'sample': v['g'],
                              'reason': f"records a hit {round(v['hit'] * 100)}% of games (2026, {v['g']}g) · est. price",
                              'score': round(v['hit'] * 100)})
     legs.sort(key=lambda x: -x['score'])
@@ -31267,7 +31267,8 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
             leg = {'sport': 'NFL', 'kind': 'prop',
                    'label': f"{f['player']} {f['stat']} {f['line']:g}+",
                    'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
-                   'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit}
+                   'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit,
+                   'sample': f.get('n')}
             if hit >= 80 and -185 <= p <= 115:
                 leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
                            score=hit + (f.get('edge') or 0) * 0.3)
@@ -31288,6 +31289,9 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
     else:
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
+    for leg in floors + swings:
+        implied = _american_implied_probability(leg.get('price'))
+        leg['market_pct'] = round(implied * 100, 1) if implied is not None else None
     return floors, swings
 
 
@@ -31415,7 +31419,8 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         if key in seen:
             continue
         seen.add(key)
-        bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price', 'reason')})
+        bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price',
+                                             'reason', 'hit', 'sample', 'market_pct')})
         if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,

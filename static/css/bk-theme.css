@@ -2809,6 +2809,15 @@ body::after {
   font-weight: 700 !important;
 }
 
+/* Selected filter pills are commonly labels wrapping a visually-hidden radio/checkbox.
+   The compatibility label rule above must not wash out their text against a bright fill. */
+.bk-compat-content label.on:has(> input[type="radio"]),
+.bk-compat-content label.on:has(> input[type="checkbox"]),
+.bk-compat-content label.active:has(> input[type="radio"]),
+.bk-compat-content label.active:has(> input[type="checkbox"]) {
+  color: var(--sport-ink, #06100f) !important;
+}
+
 .bk-compat-content .stat-value,
 .bk-compat-content .metric-value {
   font-family: var(--font-display) !important;
