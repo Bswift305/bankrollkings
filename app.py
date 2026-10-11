@@ -29984,16 +29984,26 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     """Scan this week's live NFL props and surface the strongest FLOORS -- players who
     clear the posted line at a high rate over an adequate sample. Ranked by hit rate,
     then by how comfortably they clear it. Price shown for value context (a floor is
-    reliability first). Cached on the props-file mtime + player-log data."""
+    reliability first). Cached on the props-file mtime AND the (limit, min_hit, min_games)
+    params: callers pass different thresholds (the Menu/Daily Card pull a wider, lower-floor
+    board than the floor page), so a params-blind key non-deterministically returned whichever
+    caller warmed the single slot first. The player-week log is a process-lifetime cache, so a
+    restart refreshes the underlying data."""
     props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
     sig = os.path.getmtime(props_path) if props_path.exists() else 0
-    if _NFL_FLOOR_BOARD_CACHE.get('sig') == sig and 'data' in _NFL_FLOOR_BOARD_CACHE:
-        return _NFL_FLOOR_BOARD_CACHE['data']
+    pkey = (int(limit), int(min_hit), int(min_games))
+    if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
+        _NFL_FLOOR_BOARD_CACHE.clear()
+        _NFL_FLOOR_BOARD_CACHE['sig'] = sig
+        _NFL_FLOOR_BOARD_CACHE['by_params'] = {}
+    _bucket = _NFL_FLOOR_BOARD_CACHE['by_params']
+    if pkey in _bucket:
+        return _bucket[pkey]
     empty = {'floors': [], 'floor_count': 0, 'available': False,
              'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     log = _nfl_player_week_data()
     if log.empty or not props_path.exists():
-        _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=empty)
+        _bucket[pkey] = empty
         return empty
     cur = int(pd.to_numeric(log['season'], errors='coerce').max())
     # one filter of the big log per PLAYER (not per prop): index games by full name
@@ -30003,7 +30013,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     except Exception:
         props = pd.DataFrame()
     if props.empty or not {'Player', 'Stat', 'Line'}.issubset(props.columns):
-        _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=empty)
+        _bucket[pkey] = empty
         return empty
     p = props.copy()
     p['_stat'] = p['Stat'].map(_NFL_PROP_STAT_MAP)
@@ -30054,7 +30064,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     rows.sort(key=lambda x: (-x['hit'], -x['clears']))
     data = {'floors': rows[:limit], 'floor_count': len(rows), 'available': bool(rows),
             'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
-    _NFL_FLOOR_BOARD_CACHE.update(sig=sig, data=data)
+    _bucket[pkey] = data
     return data
 
 
