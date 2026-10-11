@@ -51,6 +51,13 @@
   .mu-wk-form .inj-p.out{color:#ff6f7e;}
   .mu-wk-form .inj-p.doubtful{color:#ff9f6a;}
   .mu-wk-form .inj-p.questionable{color:#ffcf6a;}
+  .mu-wk-form .mu-avail{color:var(--text);font-weight:600;margin-top:4px;}
+  .mu-wk-detail{margin-top:6px;}
+  .mu-wk-detail>summary{cursor:pointer;color:var(--mu-accent,#2dd4bf);font-weight:700;font-size:11.5px;letter-spacing:.03em;list-style:none;padding:4px 0;}
+  .mu-wk-detail>summary::-webkit-details-marker{display:none;}
+  .mu-wk-detail>summary::before{content:'\25B8\00a0';}
+  .mu-wk-detail[open]>summary::before{content:'\25BE\00a0';}
+  .mu-wk-detail>summary:focus-visible{outline:2px solid var(--mu-accent,#2dd4bf);outline-offset:2px;border-radius:3px;}
   .mu-wk-tk{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);}
   .mu-wk-tk>b{color:var(--text);font-weight:700;}
   .mu-wk-tk .tk-sub{color:var(--text-muted);font-size:10.5px;}
@@ -120,6 +127,14 @@
           {% if g.total.skill_note %}<br><span style="color:var(--text-muted);">{{ g.total.skill_note }}</span>{% endif %}
         </span>
         {% endif %}
+        {% if has_form %}
+        {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
+        {% if g.form.total_signals and g.form.total_signals.contradiction %}<span class="lean" style="background:rgba(255,209,102,.14);color:var(--bkn-mid,#ffd166);border:1px solid rgba(255,209,102,.4);">&#9888; {{ g.form.total_signals.contradiction }}</span>{% endif %}
+        {% set _atm = g.away_abbr|default(g.away.split(' ')[-1]) %}{% set _htm = g.home_abbr|default(g.home.split(' ')[-1]) %}
+        {% set _ao = (g.form.away_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _aq = (g.form.away_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}{% set _ho = (g.form.home_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _hq = (g.form.home_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}
+        <span class="d mu-avail">{{ _atm }}: {{ _ao }} Out &middot; {{ _aq }} Questionable &nbsp;|&nbsp; {{ _htm }}: {{ _ho }} Out &middot; {{ _hq }} Questionable</span>
+        {% endif %}
+        {% if g.move or g.periods or has_form or g.tackles %}<details class="mu-wk-detail"><summary>Game detail</summary>{% endif %}
         {% if g.move %}
         <span class="d per">
           <span class="per-tag">MOVE</span>
@@ -140,8 +155,6 @@
         {% endif %}
         {% endif %}
         {% if has_form %}
-        {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
-        {% if g.form.total_signals and g.form.total_signals.contradiction %}<span class="lean" style="background:rgba(255,209,102,.14);color:var(--bkn-mid,#ffd166);border:1px solid rgba(255,209,102,.4);">&#9888; {{ g.form.total_signals.contradiction }}</span>{% endif %}
         <span class="d">{{ g.form.away_def_note }}</span>
         <span class="d">{{ g.form.home_def_note }}</span>
         {% if g.form.away_qb_note %}<span class="d qb">{{ g.form.away_qb_note }}</span>{% endif %}
@@ -165,6 +178,7 @@
           {% endfor %}
         </div>
         {% endif %}
+        {% if g.move or g.periods or has_form or g.tackles %}</details>{% endif %}
         {% if g.menu %}
         <details class="mu-wk-sgp">
           <summary>Full SGP menu &mdash; every market ({{ g.menu|sum(attribute='legs', start=[])|length }} player legs)</summary>
