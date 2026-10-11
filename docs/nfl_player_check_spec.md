@@ -1,10 +1,14 @@
-# NFL Player Check — Specification (DRAFT v2, not implemented)
+# NFL Player Check — Specification (DRAFT v3, not implemented)
 
 **Status: SPEC ONLY.** No Player Check code is to be written until this document is approved.
-This revision (v2) incorporates the review corrections: market-level evaluation, surface-
-specific entry gates, Live Props as the factual foundation, a frozen shared-predicate
-centralization approach, robust name normalization, fixture-based tests, decided NFL/All-Access
-placement, and corrected Menu coverage language.
+v2 added market-level evaluation, surface-specific entry gates, Live Props as the factual
+foundation, a frozen shared-predicate centralization approach, robust name normalization,
+fixture-based tests, decided NFL/All-Access placement, and corrected Menu coverage language.
+**v3 corrects the rule modeling:** raw book quotes vs the canonical evaluated market; display
+cutoffs reclassified as VIEW; `INVALID_PRICE` is Menu-only (the floor board includes with price
+unavailable); explicit inclusion grain per surface; evaluative "fair price" language removed in
+favor of "configured floor price band." The ambiguous-name UX is frozen, and the Menu subtitle
+overclaim was corrected in its own copy-only commit (`94dc172`).
 
 **Surface (proposed):** an NFL player-search / explainability tool. The user types a player
 name; the tool answers, honestly and per market:
@@ -57,28 +61,45 @@ predicate. If they can diverge, the implementation is wrong.
 
 ---
 
-## 3. Evaluation model — markets first, then a per-surface summary
+## 3. Evaluation model — raw quotes vs the canonical evaluated market
 
-Player Check evaluates at the **market** grain and summarizes at the **surface** grain. A
-"market" is one (player, stat/market, line, price, book) row from the live feed.
+The live feed carries **multiple book quotes** for one player/stat (several `(book, line,
+price)` rows). The board builders **consolidate** those quotes before evaluating — e.g.
+`build_nfl_floor_board` takes the **median line** across the quotes and the **median of the
+valid prices** (`|odds| ≥ 100`). Player Check must model this exactly, or it would explain a
+rule against a single book while the board decided on the consolidated value.
+
+Two distinct objects, both shown:
+
+- **Raw market facts** — *every* book quote: book, line, price, and timestamp. Displayed under
+  Live Props (§4) as facts. **No reason code is attached to an individual book quote.**
+- **Canonical evaluated market** — the single consolidated representation each surface actually
+  consumes: the stat, the consolidated (median) line, the consolidated price (or "price
+  unavailable"), and the sample window. **Reason codes apply here**, because this is what the
+  builder judged.
+
+Player Check evaluates at the **canonical evaluated market** grain and summarizes at the
+**surface** grain:
 
 ```
-for each live market M of the player:
-    facts(M)                      # line, price, book, feed timestamp, fact-availability
+facts(player) = raw book quotes (every book/line/price/timestamp)   # shown, never code-tagged
+for each canonical evaluated market C of the player (one per stat, consolidated):
     for each surface S in [Floor, Menu, Green Light, Featured]:
-        verdict(M, S) = INCLUDED(context) | EXCLUDED(reason_code, context) | N/A(S does not consume M)
+        verdict(C, S) = INCLUDED(grain, context) | EXCLUDED(reason_code, context) | N/A(S does not consume C)
 summarize per surface S:
-    if any market INCLUDED on S  -> "On S: <which markets>"
-    elif any market is eligible-but-view-filtered -> "On S, hidden only by <filter>"
+    if any C INCLUDED on S  -> "On S: <which markets>"
+    elif any C is eligible-but-view-filtered -> "On S, hidden only by <filter>"
     else -> "No current <player> market qualifies for S" (+ the dominant reason code[s])
 ```
 
 Rules:
-- **Never collapse a player's markets to one player-level reason.** Show every market's verdict,
-  then the surface summary.
-- A surface that does not consume a given market type marks it `N/A` for that surface (e.g. a
-  receiving market is `N/A` for a QB passing-only lens), not `EXCLUDED`.
+- **Never collapse a player's markets to one player-level reason.** Show every canonical
+  market's verdict, then the surface summary.
+- A reason code is attached only to a **canonical evaluated market**, never to a raw book quote.
+- A surface that does not consume a given market marks it `N/A` for that surface (not
+  `EXCLUDED`).
 - The summary names the dominant reason(s) but links to the per-market detail.
+- `INCLUDED` carries its **grain** (§7.1), because inclusion means different things per surface.
 
 ---
 
@@ -90,12 +111,15 @@ always be found even when no board includes him. The top of the result shows:
 - **Current matchup** (team, opponent, kickoff) for the player this week.
 - **Feed timestamp** and **fact-availability status** (the existing fact taxonomy:
   Verified / Partial / Pending / Stale / Unavailable / Source-conflict).
-- **Every available market** for the player: market/stat, line, price, and **book**, exactly as
-  the feed carries them (`data/props/NFL_Props.csv` and the live props board that renders
-  `/sports/nfl/props`).
+- **Every raw book quote** for the player: market/stat, line, price, **book**, and timestamp,
+  exactly as the feed carries them (`data/props/NFL_Props.csv` and the live props board that
+  renders `/sports/nfl/props`) — one row per book, not pre-consolidated.
+- The **canonical evaluated market** derived from those quotes (consolidated line/price per
+  §3), labelled as such, so the user sees both the raw spread of books and the single value the
+  surfaces judge.
 
-Only after the facts are laid out does the tool explain how each market **flows — or does not
-flow — into** Floor, Menu, Green Light, and Featured (§6). "Found with facts, zero curated
+Only after the facts are laid out does the tool explain how each canonical market **flows — or
+does not flow — into** Floor, Menu, Green Light, and Featured (§6). "Found with facts, zero curated
 surfaces" is a valid, fully-explained result.
 
 ---
@@ -131,19 +155,29 @@ the floor pipeline is one surface's pipeline, not a prerequisite for the others.
 
 ### 6.1 Floor board — reliability pipeline
 `build_nfl_floor_board(limit, min_hit, min_games)`. Entry set = players with a **supported live
-prop market** this week. Per market:
-1. Market present in `NFL_Props.csv`; `Stat` maps via `_NFL_PROP_STAT_MAP`; `Line` numeric.
+prop market** this week. Per canonical market:
+1. Market present in `NFL_Props.csv`; `Stat` maps via `_NFL_PROP_STAT_MAP`; consolidated `Line`
+   numeric.
 2. Player resolves to a gamelog (`_nfl_player_index`), stat columns present
    (`_NFL_FLOOR_STATS`).
 3. Window (season / L2Y / career) has ≥ `min_games`.
 4. Hit rate ≥ `min_hit` (surface's own threshold; floor page = 78).
-5. Ranked by `(-hit, -clears)`, sliced to `limit`.
+5. Ranked by `(-hit, -clears)`, sliced to `limit` (the slice is display scope, not eligibility —
+   §7.3).
+
+> **Price is NOT a floor gate.** The floor builder computes a price from the valid book quotes
+> if any exist, else `price = None`, and **still includes the row** — reliability is the floor's
+> only eligibility test. So a qualified floor market with no usable price is `INCLUDED` with a
+> **price-unavailable** status, never excluded. `INVALID_PRICE` is a Menu-only code (§6.2).
 
 ### 6.2 The Menu — buildable board
 `build_menu_board` fed by `_card_pools`. Entry set = the floor board at `min_hit=52`, **re-gated
-to candidates**: a market is a **floor** only if `hit ≥ 80` and `-185 ≤ price ≤ 115`; a **swing**
-only if `price ≥ 120` and `hit ≥ 55`; price must be valid American (`|odds| ≥ 100`). Then
-timeframe / sport / tier / position filters; dedup by `(sport, label, game)`.
+to candidates**: a market is a **floor** only if `hit ≥ 80` and its price sits in the
+**configured floor price band** (`-185 ≤ price ≤ 115`); a **swing** only if `price ≥ 120` and
+`hit ≥ 55`; and — unlike the floor board — the price **must** be a valid American number
+(`|odds| ≥ 100`), so a price-unavailable market is excluded here (`INVALID_PRICE`). The price
+band is a **mechanical product rule, not a fairness/value judgment.** Then timeframe / sport /
+tier / position filters; dedup by `(sport, label, game)`.
 
 ### 6.3 Green Light — convergence pipeline (its OWN entry set)
 `build_green_light`. Entry set = the **opportunity/usage board** (`build_nfl_usage_board`), **not**
@@ -171,14 +205,19 @@ Player Check cannot attach a market to the Featured entry.
 ## 7. Reason-code catalog
 
 Each code carries: machine code, surface(s), **class** (ELIGIBILITY = a real data/quality gate,
-VIEW = a clearable filter state), grain (MARKET or PLAYER), plain-English template, and the
-predicate/gate it derives from (§6). Per market+surface the result is `INCLUDED`,
+VIEW = a clearable display/filter state), grain, plain-English template, and the predicate/gate
+it derives from (§6). Per canonical market + surface the result is `INCLUDED(grain)`,
 `EXCLUDED(code)`, or `N/A`.
 
-### 7.1 Inclusion
-| Code | Surfaces | Meaning |
-|---|---|---|
-| `INCLUDED` | any | Market appears on the surface; carry rank, tier/lens count, line/price/book. |
+### 7.1 Inclusion — grain is recorded (inclusion means different things per surface)
+`INCLUDED` always carries its grain:
+
+| Surface | Grain | What `INCLUDED` means | Context carried |
+|---|---|---|---|
+| Floor | `MARKET` | the canonical market clears the surface's reliability test | rank, hit%, line, price-or-"unavailable" |
+| Menu | `MARKET` | the canonical market is an admitted floor/swing candidate | tier (floor/swing), hit%, line, price |
+| Green Light | `PLAYER + PRIMARY_MARKET` | the player qualifies via lenses on his primary Rush/Rec Yds over | lens count/tier, primary line |
+| Featured | `PLAYER_USAGE` | the player ranks on opportunity — **may have no live prop at all** | usage rank/metrics |
 
 ### 7.2 Eligibility gates (true exclusions)
 | Code | Surface(s) | Class · grain | Derives from | Template |
@@ -186,25 +225,32 @@ predicate/gate it derives from (§6). Per market+surface the result is `INCLUDED
 | `NO_SUPPORTED_MARKET` | Floor, Menu | ELIG · player | §6.1.1 | "No supported {Floor/Menu} market for {player} this week." |
 | `NO_PRIMARY_PROP` | Green Light | ELIG · player | §6.3.2 | "{player} is featured but has no primary Rush/Rec Yds over to anchor the lenses." |
 | `STAT_NOT_SUPPORTED` | Floor, Menu | ELIG · market | §6.1.1 | "{player}'s {market} isn't a stat we grade for floors yet." |
-| `NO_VALID_LINE` | Floor, Menu | ELIG · market | §6.1.1 | "{player}'s {market} has no usable numeric line." |
+| `NO_VALID_LINE` | Floor, Menu | ELIG · market | §6.1.1 | "{player}'s {market} has no usable consolidated line." |
 | `NO_GAMELOG` | Floor, Menu, GL | ELIG · player | §6.1.2 | "Couldn't match {player} to game-log history." |
 | `AMBIGUOUS_NAME` | all | ELIG · player | §8 | "{query} is ambiguous; choose a candidate." |
 | `STAT_COLUMNS_MISSING` | Floor, Menu | ELIG · market | §6.1.2 | "We have {player}'s logs but not the columns for {market}." |
 | `INSUFFICIENT_SAMPLE` | Floor, Menu | ELIG · market | §6.1.3 | "Fewer than {min_games} qualifying games for {market}." |
 | `BELOW_HIT_THRESHOLD` | Floor, Menu | ELIG · market | §6.1.4 | "{player} clears {market} {line} only {hit}% — below the {min_hit}% floor." |
-| `INVALID_PRICE` | Floor, Menu | ELIG · market | §6.2 | "{player}'s {market} price isn't a usable American line." |
-| `NOT_FLOOR_OR_SWING` | Menu | ELIG · market | §6.2 | "{player}'s {market} clears {hit}% but meets neither the floor (≥80%, fair price) nor swing (+odds, ≥55%) rule." |
+| `INVALID_PRICE` | **Menu only** | ELIG · market | §6.2 | "{player}'s {market} price isn't a usable American line (the Menu requires one; the floor board does not)." |
+| `NOT_FLOOR_OR_SWING` | Menu | ELIG · market | §6.2 | "{player}'s {market} clears {hit}% but meets neither the floor (≥80%, in the configured price band) nor swing (+odds, ≥55%) rule." |
 | `NOT_FEATURED_USAGE` | Green Light, Featured | ELIG · player | §6.3.1/§6.4 | "{player} isn't among this week's opportunity-featured players." |
 | `NO_LENS_SUPPORT` | Green Light | ELIG · player | §6.3.3 | "No configured lens (and no TD angle) points to {player}." |
-| `BELOW_DISPLAY_CUTOFF` | Floor, GL (All view) | ELIG · market | §6.1.5/§6.3.4 | "Qualifies but ranks below the {limit}-row display cut on the unfiltered view." |
 
-### 7.3 View / filter state (clearable, not an exclusion)
+> **The floor board never excludes on price.** A qualified floor market with no usable price is
+> `INCLUDED` with a price-unavailable status (§6.1), so `INVALID_PRICE` applies to the Menu only.
+
+### 7.3 View / display state (clearable or scope-only, not an eligibility exclusion)
 | Code | Surface(s) | Class · grain | Template |
 |---|---|---|---|
+| `BELOW_DISPLAY_CUTOFF` | Floor, Green Light (All view) | VIEW · market | "{player}'s {market} qualifies but ranks below the {limit}-row display limit on the unfiltered view — select its position (Green Light) or narrow to see it." |
 | `POSITION_FILTERED` | Green Light, Menu | VIEW · player | "{player} ({pos}) is hidden only by the current position filter; clear it." |
 | `ROSTER_POSITION_UNKNOWN` | Menu | VIEW · player | "{player} has no roster-position match; he appears under 'Unknown', not {pos}." |
 | `TIMEFRAME_EXCLUDED` | Menu | VIEW · market | "{player}'s game is outside the selected window ({timeframe})." |
 | `SPORT_OR_SOURCE_EXCLUDED` | Menu | VIEW · market | "Excluded by the current Sport/Source filter, not by eligibility." |
+
+> `BELOW_DISPLAY_CUTOFF` is a **VIEW** state, not an eligibility failure: the market qualifies
+> and is simply outside the unfiltered display limit. On Green Light, selecting the player's
+> position exposes the complete set (Step-4 behavior), so it resolves to visible.
 
 > **Class drives the UI.** ELIGIBILITY explains a genuine absence; VIEW explains the player is
 > eligible and only page controls hide him. The two must be visually distinct so "not shown"
@@ -225,10 +271,13 @@ families. The resolver must normalize, in order:
 4. **Initials:** resolve `J.Hurts` → `Jalen Hurts` **only** when the initial+surname key maps to
    exactly one full name (the existing `_nfl_player_week_data` rule).
 
-**Ambiguity returns selectable candidates — never a silent pick.** `B. Robinson` → offer *Bijan
-Robinson* vs *Brian Robinson* with team/position, and the user chooses. Emits `AMBIGUOUS_NAME`
-until resolved. This honors the existing anti-guess rule and prevents the wrong-player class of
-error.
+**Ambiguity returns selectable candidates — never a silent pick (FROZEN UX).** When a query
+resolves to more than one player, Player Check emits `AMBIGUOUS_NAME` and renders **candidate
+cards**, each showing **full name, team, and position**. The user selects one; the selection
+**resolves to a canonical player identifier** (the roster/gamelog key, not the typed string),
+and all subsequent evaluation runs against that identifier. `B. Robinson` → cards for *Bijan
+Robinson · ATL · RB* and *Brian Robinson · WAS · RB*. This honors the existing anti-guess rule
+and prevents the wrong-player class of error.
 
 ---
 
@@ -247,9 +296,18 @@ Required fixture scenarios:
   single `NOT_ON_SLATE`).
 - A player **on Green Light but below the Menu floor** → Green Light `INCLUDED`, Menu
   `BELOW_HIT_THRESHOLD`/`NOT_FLOOR_OR_SWING`.
-- **Ambiguous name** (`B. Robinson`) → `AMBIGUOUS_NAME` with Bijan vs Brian candidates, no pick.
+- A **floor market with no usable price** → Floor `INCLUDED` (grain MARKET, price-unavailable),
+  Menu `INVALID_PRICE` — proving `INVALID_PRICE` is Menu-only and the floor never excludes on
+  price.
+- A **qualified market ranked past the unfiltered limit** → `BELOW_DISPLAY_CUTOFF` as a **VIEW**
+  state (not eligibility), and on Green Light selecting the player's position exposes it.
+- **Ambiguous name** (`B. Robinson`) → `AMBIGUOUS_NAME` with Bijan vs Brian candidate cards
+  (full name, team, position), no silent pick; selection yields a canonical identifier.
 - A player **eligible but hidden by a filter** → `POSITION_FILTERED` / `TIMEFRAME_EXCLUDED`
   (VIEW), not an eligibility code.
+- A player with **multiple book quotes for one stat** → one canonical evaluated market (median
+  line/price) carries the reason code; individual book quotes are shown as facts, never
+  code-tagged — proving §3's raw-vs-canonical separation.
 - **Centralization test:** flip a threshold constant in the shared predicate and assert both the
   board output and Player Check output change together (the anti-drift guarantee of §5).
 
@@ -257,18 +315,16 @@ Required fixture scenarios:
 
 ## 10. The Menu coverage claim (honesty correction)
 
-The Menu subtitle currently reads *"Every option on the board"* while the pool is **candidate-
-only** (floors ≥80% at a fair price, swings at +odds, §6.2). That overclaims. The narrowest
-honest change, specified here and implemented with Player Check:
+The Menu subtitle overclaimed with *"Every option on the board"* while the pool is
+**candidate-only** (floors ≥80% in the configured price band, swings at +odds, §6.2).
 
-- Revise the copy to **"Every option admitted by the current Menu rules."**
-- Show **coverage** on the Menu: games loaded, games represented, and games with **no
-  qualifying Menu entry**.
-- Player Check then explains the missing games and players (why a loaded game contributes no
-  Menu leg — every candidate market failed a gate, with the codes).
-
-*(This is a specified change for the Player Check workstream, not an implementation to be made
-now. It is flagged as a standalone honesty item in case it should land sooner.)*
+- **DONE — copy-only commit `94dc172`:** the subtitle now reads **"Every option admitted by the
+  current Menu rules, grouped by game."**
+- **Deferred to Player Check implementation:** show **coverage** on the Menu — games loaded,
+  games represented, and games with **no qualifying Menu entry** — once the shared evaluators
+  (§5) exist, so the counts are produced by the same predicates. Player Check then explains the
+  missing games and players (why a loaded game contributes no Menu leg — every candidate market
+  failed a gate, with the codes).
 
 ---
 
@@ -299,10 +355,13 @@ cross-surface "best player" ranking; no auto-EV. Read-only.
 
 ---
 
-## 13. Remaining open questions (narrow)
-1. On `AMBIGUOUS_NAME`, confirm candidate-picker UX (list with team/pos) vs a disambiguation
-   query param.
-2. Should the Menu coverage correction (§10) land as its own small commit **before** Player
-   Check, given it is a live overclaim?
+## 13. Resolved decisions (previously open)
+1. **Ambiguous-name UX — frozen (§8):** candidate cards with full name, team, position; the
+   selection resolves to a canonical player identifier. No disambiguation-by-query-param.
+2. **Menu overclaim — done now (§10):** corrected in copy-only commit `94dc172`
+   (*"Every option admitted by the current Menu rules, grouped by game."*). Coverage counts are
+   deferred to Player Check implementation so they share the evaluators.
 
-*Awaiting review of v2. No implementation until approved.*
+No open questions remain. Nothing else is to be built until this v3 is approved.
+
+*Awaiting review of v3. No Player Check implementation until approved.*
