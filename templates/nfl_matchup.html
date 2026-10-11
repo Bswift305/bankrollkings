@@ -131,8 +131,8 @@
         {% if g.form.total_lean %}<span class="lean">{{ g.form.total_lean }}</span>{% endif %}
         {% if g.form.total_signals and g.form.total_signals.contradiction %}<span class="lean" style="background:rgba(255,209,102,.14);color:var(--bkn-mid,#ffd166);border:1px solid rgba(255,209,102,.4);">&#9888; {{ g.form.total_signals.contradiction }}</span>{% endif %}
         {% set _atm = g.away_abbr|default(g.away.split(' ')[-1]) %}{% set _htm = g.home_abbr|default(g.home.split(' ')[-1]) %}
-        {% set _ao = (g.form.away_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _aq = (g.form.away_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}{% set _ho = (g.form.home_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _hq = (g.form.home_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}
-        <span class="d mu-avail">{{ _atm }}: {{ _ao }} Out &middot; {{ _aq }} Questionable &nbsp;|&nbsp; {{ _htm }}: {{ _ho }} Out &middot; {{ _hq }} Questionable</span>
+        {% set _ao = (g.form.away_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _ad = (g.form.away_injuries or [])|selectattr('status','equalto','DOUBTFUL')|list|length %}{% set _aq = (g.form.away_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}{% set _ho = (g.form.home_injuries or [])|selectattr('status','equalto','OUT')|list|length %}{% set _hd = (g.form.home_injuries or [])|selectattr('status','equalto','DOUBTFUL')|list|length %}{% set _hq = (g.form.home_injuries or [])|selectattr('status','equalto','QUESTIONABLE')|list|length %}
+        <span class="d mu-avail">{{ _atm }}: {{ _ao }} Out &middot; {{ _ad }} Doubtful &middot; {{ _aq }} Questionable &nbsp;|&nbsp; {{ _htm }}: {{ _ho }} Out &middot; {{ _hd }} Doubtful &middot; {{ _hq }} Questionable</span>
         {% endif %}
         {% if g.move or g.periods or has_form or g.tackles %}<details class="mu-wk-detail"><summary>Game detail</summary>{% endif %}
         {% if g.move %}
