@@ -25,9 +25,10 @@ None of these is classified or qualified; all are **Legacy** (predate governance
 reframed/declassified before opening night — the NBA equivalent of the NFL containment.
 - **Props Screener defaults to `Confidence` sort** (sort list: Confidence / Player / Team / …).
   "Confidence" is described on-page as *"Normalized play strength … a cleaner 50–99 score built
-  from the adjusted hit-rate read."* This is the same class of composite the NFL side removed as
-  the default ranking (de-vigged-price-derived ⇒ ranks the most -EV plays first). Default sort
-  should not be a play-strength score.
+  from the adjusted hit-rate read."* It is an **unaudited Legacy composite exercising ranking
+  authority** (it is the board's default sort) — which alone is reason to remove that authority.
+  (No claim is made that it is negative-EV; that is not demonstrated for NBA.) Default sort should
+  not be a play-strength score.
 - **`Tier`** — *"stricter than confidence … blends minutes, role stability, **edge**, and trend
   quality into a true **build-grade**."* A composite quality score claiming "edge" — unqualified
   authority + composite-score (against the do-not-build spirit).
@@ -39,10 +40,12 @@ reframed/declassified before opening night — the NBA equivalent of the NFL con
   shown as precise, authoritative predictions. Spurious precision from the unaudited NBA
   with/without impact engine. A "+305% boost" presented as fact will not survive scrutiny.
 
-**Recommended classification (for the governance call):** Confidence, Tier, Top Plays, and the
-injury-% boosts → **Legacy / Under Review**; must be relabeled and removed from any ranking or
-"best/strength/edge/lock" authority before opening night. The de-vigged market-implied read may
-remain as **Fact** (clearly labeled "the market's number"), not as our "confidence."
+**Governance classification:** Confidence, Tier, Top Plays, and the injury-% boosts are
+**Legacy — no governed authority** (they predate governance; that status alone removes their
+authority — they are not auto-marked "Under Review," which would require opening a formal
+evaluation). They must be relabeled and removed from any ranking or "best/strength/edge/lock"
+authority before opening night. The de-vigged market-implied read may remain as **Fact** (clearly
+labeled "the market's number"), not as our "confidence."
 
 ### P0-2 · Operator/dev language leaking onto customer screens
 - Command Center empty state: **"Run `REFRESH_DATA` to reload player props and rebuild the
