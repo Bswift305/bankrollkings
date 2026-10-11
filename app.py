@@ -29760,10 +29760,40 @@ _NFL_FLOOR_STATS = {
 }
 
 
+def _nfl_player_log_signature():
+    """Deterministic signature of EVERY file _nfl_player_week_data() consumes -- the historical
+    player-stat CSVs, the current-season tracking parquet(s), and the legacy parquet fallback
+    (only when applicable, mirroring the consumer's own 2026 check). (basename, size, mtime_ns)
+    per file, sorted. Any add / remove / rewrite changes it, so the player-week, index and
+    floor-board caches invalidate when the logs refresh even if NFL_Props.csv did not."""
+    import glob
+    paths = list(glob.glob(str(DATA_DIR / 'historical' / 'NFL_PlayerStats_202*.csv')))
+    season_parquets = list(glob.glob(str(DATA_DIR / 'tracking' / '_nflverse_stats_20*.parquet')))
+    paths += season_parquets
+    season_years = set()
+    for pf in season_parquets:
+        digits = ''.join(ch for ch in os.path.basename(pf) if ch.isdigit())[:4]
+        if digits:
+            season_years.add(int(digits))
+    legacy = BASE_DIR / 'jw26.parquet'
+    if 2026 not in season_years and os.path.exists(legacy):
+        paths.append(str(legacy))
+    out = []
+    for p in sorted(set(paths)):
+        try:
+            st = os.stat(p)
+            out.append((os.path.basename(p), st.st_size, st.st_mtime_ns))
+        except OSError:
+            continue
+    return tuple(out)
+
+
 def _nfl_player_week_data():
     """All nflverse weekly player stats we have on disk (historical CSVs + the 2026
-    parquet), concatenated once and cached. Powers the prop-floor analyzer."""
-    if _NFL_PLAYER_WEEK_CACHE.get('df') is not None:
+    parquet), concatenated once and cached. Powers the prop-floor analyzer. Invalidates on the
+    player-log file signature, so a daily parquet/CSV refresh is picked up without a restart."""
+    _sig = _nfl_player_log_signature()
+    if _NFL_PLAYER_WEEK_CACHE.get('sig') == _sig and _NFL_PLAYER_WEEK_CACHE.get('df') is not None:
         return _NFL_PLAYER_WEEK_CACHE['df']
     import glob
     frames = []
@@ -29823,6 +29853,7 @@ def _nfl_player_week_data():
         df['_full'] = [n if ' ' in str(n) else resolve.get(k, n)
                        for n, k in zip(df['_name'], df['_key'])]
     _NFL_PLAYER_WEEK_CACHE['df'] = df
+    _NFL_PLAYER_WEEK_CACHE['sig'] = _sig
     return df
 
 
@@ -29984,13 +30015,15 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     """Scan this week's live NFL props and surface the strongest FLOORS -- players who
     clear the posted line at a high rate over an adequate sample. Ranked by hit rate,
     then by how comfortably they clear it. Price shown for value context (a floor is
-    reliability first). Cached on the props-file mtime AND the (limit, min_hit, min_games)
-    params: callers pass different thresholds (the Menu/Daily Card pull a wider, lower-floor
-    board than the floor page), so a params-blind key non-deterministically returned whichever
-    caller warmed the single slot first. The player-week log is a process-lifetime cache, so a
-    restart refreshes the underlying data."""
+    reliability first). Cached on the props-file mtime, the player-log file signature, AND the
+    (limit, min_hit, min_games) params: callers pass different thresholds (the Menu/Daily Card
+    pull a wider, lower-floor board than the floor page), so a params-blind key
+    non-deterministically returned whichever caller warmed the single slot first. Including the
+    player-log signature means a gamelog refresh (CSV/parquet) invalidates the board even when
+    NFL_Props.csv is unchanged -- no restart required."""
     props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
-    sig = os.path.getmtime(props_path) if props_path.exists() else 0
+    props_mtime = os.path.getmtime(props_path) if props_path.exists() else 0
+    sig = (props_mtime, _nfl_player_log_signature())
     pkey = (int(limit), int(min_hit), int(min_games))
     if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
         _NFL_FLOOR_BOARD_CACHE.clear()
