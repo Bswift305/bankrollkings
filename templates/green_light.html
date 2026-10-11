@@ -38,6 +38,12 @@
   .kw-badge.priced{background:rgba(255,255,255,.07);color:var(--text-muted);}
   .kw-gate .g{font:500 9.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:5px;}
   .kw-gate .game{font:700 9px ui-monospace,monospace;color:var(--text-muted);margin-top:4px;display:block;}
+  .kw-posfilter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px;}
+  .kw-posfilter .lbl{font:700 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
+  .kw-pos{font:700 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.02em;text-decoration:none;color:var(--text-bright);border:1px solid var(--border);border-radius:999px;padding:6px 15px;background:transparent;transition:border-color .12s,color .12s,background .12s;}
+  .kw-pos:hover{border-color:var(--kw);color:var(--kw);}
+  .kw-pos.active{background:var(--kw);border-color:var(--kw);color:#07140d;}
+  .kw-pos:focus-visible{outline:2px solid var(--kw);outline-offset:2px;}
 </style>
 
 <div class="bkn kw" style="--bkn-accent:#4ed48a;--accent:#4ed48a;max-width:none;">
@@ -56,8 +62,20 @@
   <span><b>Market line-state is context, not a vote</b> &mdash; each row shows whether the number has moved since it opened; it does not set the ordering.</span>
 </div>
 
+{% if available and positions %}
+<div class="kw-posfilter" role="group" aria-label="Filter by position">
+  <span class="lbl">Position</span>
+  <a class="kw-pos{% if selected_pos == 'all' %} active{% endif %}" href="?"{% if selected_pos == 'all' %} aria-current="true"{% endif %}>All</a>
+  {% for p in positions %}
+  <a class="kw-pos{% if selected_pos == p|lower %} active{% endif %}" href="?pos={{ p|lower }}"{% if selected_pos == p|lower %} aria-current="true"{% endif %}>{{ p }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if not available %}
   <div class="bkn-empty">No current-season board loaded yet &mdash; Wisdomism assembles once the week&rsquo;s props and form are in.</div>
+{% elif not tiers %}
+  <div class="bkn-empty">No <b>{{ selected_pos|upper }}</b> plays in the current Green Light board right now. <a href="?" style="color:var(--kw);">Show all positions</a>.</div>
 {% else %}
 
 {% for tier in tiers %}

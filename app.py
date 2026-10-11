@@ -30869,7 +30869,7 @@ def _wisdom_market_gate(pr):
     return True, "No material line or Over-price shortening detected"
 
 
-def build_green_light(limit=40):
+def build_green_light(limit=40, pos=None):
     """Green Light -- the convergence assembly engine (NFL v1).
 
     Named for the gate: a play goes GREEN when the configured lenses point the same way; the
@@ -30885,7 +30885,8 @@ def build_green_light(limit=40):
     import nfl_current_form as _ncf
     usage = build_nfl_usage_board(limit=600)
     if not usage.get('available'):
-        return {'available': False, 'plays': [], 'tiers': [], 'season': usage.get('season')}
+        return {'available': False, 'plays': [], 'tiers': [], 'positions': [],
+                'selected_pos': (pos or 'all').strip().lower(), 'season': usage.get('season')}
     props = _nfl_wisdom_props()
     scripts = _nfl_game_scripts()
     conc = _load_wisdom_lens('nfl_concentration.json', rekey=True)
@@ -30981,6 +30982,20 @@ def build_green_light(limit=40):
             'channel_dep': p.get('channel_dep'),
         })
 
+    # Position filter (Step 4). Pills show only positions actually represented in the
+    # current board (plus All, added in the template) -- no permanently empty control.
+    # Filter BEFORE the display limit so a selection means every eligible row of that
+    # position, not just those inside the first `limit` unfiltered rows. board_available
+    # reflects whether the board loaded at all (pre-filter), so a position with no rows
+    # shows an honest position-specific empty state, not the generic "no board" message.
+    _PILL_ORDER = ['QB', 'RB', 'WR', 'TE']
+    _present = {(p.get('pos') or '').upper() for p in plays}
+    gl_positions = [pp for pp in _PILL_ORDER if pp in _present]
+    gl_board_available = bool(plays)
+    gl_sel = (pos or 'all').strip().lower()
+    if gl_sel != 'all':
+        plays = [p for p in plays if (p.get('pos') or '').lower() == gl_sel]
+
     # Containment S6: rank by configured-lens count, then neutral tie-breaks (game, player, stat).
     # eligible/opp_score are NOT sort inputs -- line-state is informational only.
     plays.sort(key=lambda x: (-x['convergence'], str(x.get('game') or ''),
@@ -30993,7 +31008,8 @@ def build_green_light(limit=40):
     TIERS = ['4+ configured lenses', '3 configured lenses', '2 configured lenses', '1 configured lens']
     tiers = [{'name': t, 'plays': [pl for pl in plays[:limit] if pl['tier'] == t]} for t in TIERS]
     tiers = [t for t in tiers if t['plays']]
-    return {'available': bool(plays), 'plays': plays[:limit], 'tiers': tiers,
+    return {'available': gl_board_available, 'plays': plays[:limit], 'tiers': tiers,
+            'positions': gl_positions, 'selected_pos': gl_sel,
             'season': usage.get('season'), 'count': len(plays),
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
@@ -42480,7 +42496,7 @@ def green_light_tool():
     lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the Concentration TD
     angle), gated by the market (a play goes green only when it's also un-priced). Evidence
     assembly, not a score. The destination the whole averaging audit earned the right to build."""
-    return render_template('green_light.html', **build_green_light())
+    return render_template('green_light.html', **build_green_light(pos=request.args.get('pos')))
 
 
 @app.route('/tools/nfl-dvp')
