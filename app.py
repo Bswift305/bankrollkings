@@ -732,6 +732,7 @@ PRO_ENDPOINTS = {
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
+    'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
@@ -30016,6 +30017,45 @@ _NFL_PROP_STAT_MAP = {
 }
 
 
+def _nfl_floor_market_eval(sub, meta, line, cur, *, min_hit, min_games):
+    """Shared per-(player, stat) floor evaluation -- the SINGLE reason-producing evaluator used
+    by both build_nfl_floor_board and the Player Check surface, so the two can never disagree
+    about why a market is or isn't a floor. `sub` is the player's gamelog (idx entry) or None;
+    `meta` is _NFL_FLOOR_STATS[stat] or None; `line` is the canonical (consolidated) line.
+
+    Returns {'code', 'hit', 'hit_frac', 'n', 'window', 'clears'} -- 'code' is a
+    services.nfl_inclusion.Reason value. Price is NOT a gate here (the floor board includes a
+    qualified market even with no usable price); callers handle price separately.
+    """
+    R = _nfl_incl.Reason
+    if meta is None:
+        return {'code': R.STAT_NOT_SUPPORTED}
+    if sub is None:
+        return {'code': R.NO_GAMELOG}
+    scols = [c for c in meta.get('cols', []) if c in sub.columns]
+    if not scols:
+        return {'code': R.STAT_COLUMNS_MISSING}
+    s = sub.copy()
+    s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in scols)
+    if meta['qb'] and 'attempts' in s.columns:
+        s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
+    s = s.dropna(subset=['_v', 'season'])
+    if s.empty:
+        return {'code': R.INSUFFICIENT_SAMPLE, 'n': 0}
+    wins = {'season': s[s['season'] == cur], 'l2y': s[s['season'] >= cur - 1], 'career': s}
+    ref = ('season' if len(wins['season']) >= min_games
+           else 'l2y' if len(wins['l2y']) >= min_games else 'career')
+    w = wins[ref]
+    if len(w) < min_games:
+        return {'code': R.INSUFFICIENT_SAMPLE, 'n': int(len(w)), 'window': ref}
+    hit_frac = float((w['_v'] >= line).mean())
+    hit = round(100 * hit_frac)
+    _inc, code = _nfl_incl.floor_market_verdict(hit, len(w), min_hit=min_hit, min_games=min_games)
+    clears = round(float(w['_v'].mean() - line), 1)
+    return {'code': code, 'hit': hit, 'hit_frac': hit_frac, 'n': int(len(w)),
+            'window': ref, 'clears': clears}
+
+
 def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     """Scan this week's live NFL props and surface the strongest FLOORS -- players who
     clear the posted line at a high rate over an adequate sample. Ranked by hit rate,
@@ -30064,33 +30104,14 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     for (player, stat), g in p.groupby(['Player', '_stat']):
         sub = idx.get(str(player).strip().lower())
         meta = _NFL_FLOOR_STATS.get(stat)
-        scols = [c for c in (meta or {}).get('cols', []) if sub is not None and c in sub.columns]
-        if sub is None or not meta or not scols:
-            continue
         line = float(g['Line'].median())
         valid = g['OverOdds'][g['OverOdds'].abs() >= _nfl_incl.MIN_AMERICAN_ODDS]
         price = int(round(valid.median())) if len(valid) else None
-        s = sub.copy()
-        s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in scols)
-        if meta['qb'] and 'attempts' in s.columns:
-            s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
-        s = s.dropna(subset=['_v', 'season'])
-        if s.empty:
+        # Shared reason-producing evaluator (single source of truth with Player Check).
+        ev = _nfl_floor_market_eval(sub, meta, line, cur, min_hit=min_hit, min_games=min_games)
+        if ev['code'] != _nfl_incl.Reason.INCLUDED:
             continue
-        wins = {'season': s[s['season'] == cur], 'l2y': s[s['season'] >= cur - 1], 'career': s}
-        ref = ('season' if len(wins['season']) >= min_games
-               else 'l2y' if len(wins['l2y']) >= min_games else 'career')
-        w = wins[ref]
-        if len(w) < min_games:
-            continue                                # guard before computing hit (avoids NaN)
-        hit = round(100 * (w['_v'] >= line).mean())
-        # Shared eligibility predicate (single source of truth with Player Check). Price is NOT
-        # a floor gate -- a qualified row with price=None is still included.
-        included, _floor_code = _nfl_incl.floor_market_verdict(
-            hit, len(w), min_hit=min_hit, min_games=min_games)
-        if not included:
-            continue
-        clears = round(float(w['_v'].mean() - line), 1)
+        hit, clears = ev['hit'], ev['clears']
         be = _american_to_prob(price)
         game = str(g['Game'].iloc[0]) if 'Game' in g.columns else ''
         if '@' in game:
@@ -30098,9 +30119,9 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
             game = f"{full2abbr.get(a.strip(), a.strip()[:3].upper())} @ {full2abbr.get(h.strip(), h.strip()[:3].upper())}"
         rows.append({
             'player': str(player), 'stat': meta['label'], 'stat_key': stat, 'line': line,
-            'price': price, 'hit': hit, 'n': int(len(w)), 'window': ref, 'clears': clears,
+            'price': price, 'hit': hit, 'n': ev['n'], 'window': ev['window'], 'clears': clears,
             'breakeven': (round(100 * be) if be is not None else None),
-            'edge': (round(100 * ((w['_v'] >= line).mean() - be), 1) if be is not None else None),
+            'edge': (round(100 * (ev['hit_frac'] - be), 1) if be is not None else None),
             'game': game,
         })
     rows.sort(key=lambda x: (-x['hit'], -x['clears']))
@@ -31072,6 +31093,173 @@ def build_green_light(limit=40, pos=None):
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
+def _player_check_resolve(query, names):
+    """Resolve a typed query to a canonical NFL player name against `names` (the universe of
+    players on the slate + usage board). Returns (status, resolved_or_candidates):
+      ('resolved', name) | ('ambiguous', [names]) | ('not_found', []).
+    Suffixes (Jr/Sr/II-IV), punctuation, apostrophes and spacing are normalized via
+    _normalize_nfl_roster_player_key; an initial form (B.Robinson) resolves only when unique,
+    else returns candidates -- never a silent pick (spec §8)."""
+    qk = _normalize_nfl_roster_player_key(query)
+    if not qk:
+        return 'not_found', []
+    exact = sorted({n for n in names if _normalize_nfl_roster_player_key(n) == qk})
+    if len(exact) == 1:
+        return 'resolved', exact[0]
+    if len(exact) > 1:
+        return 'ambiguous', exact
+    qi = _nfl_name_key(query)                       # initial+surname, e.g. 'b.robinson'
+    inits = sorted({n for n in names if _nfl_name_key(n) == qi})
+    if len(inits) == 1:
+        return 'resolved', inits[0]
+    if len(inits) > 1:
+        return 'ambiguous', inits
+    return 'not_found', []
+
+
+def evaluate_nfl_player(query):
+    """NFL Player Check (spec: docs/nfl_player_check_spec.md). Given a typed player name, returns
+    the player's live markets as FACTS and, for each canonical evaluated market, how it flows --
+    or does not -- into each surface (Floor, Menu, Green Light, Featured), using the SAME shared
+    predicates the boards run (services.nfl_inclusion + _nfl_floor_market_eval). Status, never a
+    verdict: no scoring, no recommendation, no player-level collapse of per-market outcomes."""
+    R = _nfl_incl.Reason
+    out = {'query': (query or '').strip(), 'status': 'empty', 'player': None, 'candidates': [],
+           'matchup': None, 'feed_ts': None, 'markets': [], 'surfaces': {},
+           'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    if not out['query']:
+        return out
+
+    props = _load_cached_csv(DATA_DIR / 'props' / 'NFL_Props.csv', default=pd.DataFrame())
+    usage = build_nfl_usage_board(limit=600)
+    usage_by = {p['player']: (i, p) for i, p in enumerate(usage.get('players', []))}
+    roster = build_nfl_current_roster_lookup()
+
+    names = set(usage_by)
+    if not props.empty and 'Player' in props.columns:
+        names |= set(props['Player'].dropna().astype(str))
+
+    status, resolved = _player_check_resolve(out['query'], names)
+    if status == 'ambiguous':
+        out['status'] = 'ambiguous'
+        for n in resolved:
+            u = usage_by.get(n, (None, {}))[1]
+            rec = roster.get(_normalize_player_join_key(n)) or roster.get(_normalize_nfl_roster_player_key(n)) or {}
+            out['candidates'].append({'player': n, 'team': u.get('team') or rec.get('team') or '',
+                                      'pos': u.get('pos') or rec.get('position') or ''})
+        return out
+    if status == 'not_found':
+        out['status'] = 'not_found'
+        return out
+
+    player = resolved
+    out['status'] = 'ok'
+    urank, uinfo = usage_by.get(player, (None, {}))
+    rec = roster.get(_normalize_player_join_key(player)) or roster.get(_normalize_nfl_roster_player_key(player)) or {}
+    pos = (uinfo.get('pos') or rec.get('position') or '').upper()
+    team = uinfo.get('team') or rec.get('team') or ''
+    out['player'] = {'player': player, 'team': team, 'pos': pos}
+
+    # --- raw book quotes (facts) + canonical evaluated markets ---------------------------
+    prows = props[props['Player'].astype(str) == player].copy() if not props.empty and 'Player' in props.columns else pd.DataFrame()
+    if not prows.empty:
+        g0 = str(prows['Game'].iloc[0]) if 'Game' in prows.columns else ''
+        out['matchup'] = g0.replace('@', ' @ ') if g0 else None
+        if 'LastUpdated' in prows.columns and prows['LastUpdated'].notna().any():
+            out['feed_ts'] = str(prows['LastUpdated'].dropna().max())
+
+    idx = _nfl_player_index()
+    sub = idx.get(str(player).strip().lower())
+    log = _nfl_player_week_data()
+    cur = int(pd.to_numeric(log['season'], errors='coerce').max()) if not log.empty else None
+
+    markets = []
+    if not prows.empty and {'Stat', 'Line'}.issubset(prows.columns):
+        prows = prows.copy()
+        prows['_stat'] = prows['Stat'].map(_NFL_PROP_STAT_MAP)
+        prows['_line'] = pd.to_numeric(prows['Line'], errors='coerce')
+        prows['_odds'] = pd.to_numeric(prows.get('OverOdds'), errors='coerce')
+        for stat_label, g in prows.groupby('Stat'):
+            stat_key = g['_stat'].iloc[0]
+            quotes = [{'book': str(r.get('Book') or ''), 'line': (None if pd.isna(r.get('Line')) else float(r.get('Line'))),
+                       'price': (None if pd.isna(r.get('OverOdds')) else int(r.get('OverOdds'))),
+                       'ts': (None if pd.isna(r.get('LastUpdated')) else str(r.get('LastUpdated')))}
+                      for _, r in g.iterrows()]
+            lvals = g['_line'].dropna()
+            cline = float(lvals.median()) if len(lvals) else None
+            valid = g['_odds'][g['_odds'].abs() >= _nfl_incl.MIN_AMERICAN_ODDS]
+            cprice = int(round(valid.median())) if len(valid) else None
+            meta = _NFL_FLOOR_STATS.get(stat_key) if stat_key else None
+
+            m = {'stat': str(stat_label), 'stat_key': stat_key, 'line': cline, 'price': cprice,
+                 'books': quotes, 'surfaces': {}}
+
+            if stat_key is None:
+                m['surfaces']['floor'] = {'code': R.STAT_NOT_SUPPORTED}
+                m['surfaces']['menu'] = {'code': R.STAT_NOT_SUPPORTED}
+            elif cline is None:
+                m['surfaces']['floor'] = {'code': R.NO_VALID_LINE}
+                m['surfaces']['menu'] = {'code': R.NO_VALID_LINE}
+            else:
+                # Floor page (min_hit=78) and Menu feed (min_hit=52) via the SAME evaluator.
+                fe = _nfl_floor_market_eval(sub, meta, cline, cur, min_hit=_nfl_incl.FLOOR_PAGE_MIN_HIT, min_games=_nfl_incl.MIN_GAMES_DEFAULT)
+                fv = {'code': fe['code']}
+                if fe['code'] == R.INCLUDED:
+                    fv.update(hit=fe.get('hit'), n=fe.get('n'), window=fe.get('window'),
+                              price_unavailable=(cprice is None))
+                m['surfaces']['floor'] = fv
+                me = _nfl_floor_market_eval(sub, meta, cline, cur, min_hit=_nfl_incl.CARD_POOL_MIN_HIT, min_games=_nfl_incl.MIN_GAMES_DEFAULT)
+                if me['code'] != R.INCLUDED:
+                    m['surfaces']['menu'] = {'code': me['code']}      # fails the 52% feed gate
+                else:
+                    tier, mc = _nfl_incl.menu_candidate_tier(me.get('hit'), cprice)
+                    m['surfaces']['menu'] = {'code': mc, 'tier': tier, 'hit': me.get('hit')}
+            markets.append(m)
+    out['markets'] = markets
+
+    # --- Featured (usage) + Green Light (player + primary market) ------------------------
+    if urank is None:
+        out['surfaces']['featured'] = {'code': R.NOT_FEATURED_USAGE}
+        out['surfaces']['green_light'] = {'code': R.NOT_FEATURED_USAGE}
+    else:
+        fnote = {} if urank < 40 else {'display_note': 'outside the Featured page top 40'}
+        out['surfaces']['featured'] = {'code': R.INCLUDED, 'grain': 'PLAYER_USAGE', 'rank': urank + 1, **fnote}
+        primary_key = 'rushing_yards' if uinfo.get('is_back') else 'receiving_yards'
+        has_primary = any(m.get('stat_key') == primary_key for m in markets)
+        if not has_primary:
+            out['surfaces']['green_light'] = {'code': R.NO_PRIMARY_PROP}
+        else:
+            gl = build_green_light(limit=100000)
+            gp = next((pl for pl in gl.get('plays', []) if pl.get('player') == player), None)
+            if gp is None:
+                out['surfaces']['green_light'] = {'code': R.NO_LENS_SUPPORT}
+            else:
+                rank = gl['plays'].index(gp)
+                glv = {'code': R.INCLUDED, 'grain': 'PLAYER+PRIMARY_MARKET',
+                       'convergence': gp.get('convergence'), 'stat': gp.get('stat'), 'line': gp.get('line')}
+                if rank >= 40:
+                    glv['display_note'] = 'outside the default All-view top 40 — select ' + (pos or 'the position') + ' to see it'
+                out['surfaces']['green_light'] = glv
+
+    # market-level surfaces (Floor, Menu) -> a per-surface summary: included markets, else the
+    # dominant exclusion reason. Per-market detail stays on each market; this never collapses
+    # the markets to one player verdict -- the detail table remains.
+    def _summarize(surface):
+        inc = [m['stat'] for m in markets if m['surfaces'].get(surface, {}).get('code') == R.INCLUDED]
+        if inc:
+            return {'code': R.INCLUDED, 'markets': inc}
+        counts = {}
+        for m in markets:
+            c = m['surfaces'].get(surface, {}).get('code')
+            if c:
+                counts[c] = counts.get(c, 0) + 1
+        dom = max(counts, key=counts.get) if counts else R.NO_SUPPORTED_MARKET
+        return {'code': dom, 'none': True}
+    out['surfaces']['floor'] = _summarize('floor')
+    out['surfaces']['menu'] = _summarize('menu')
+    return out
+
+
 def build_nfl_featured_parlay(legs=3):
     """Auto-build this week's Featured Parlay: the strongest FLOORS from distinct games
     (cross-game = low correlation, parlay-legal), one leg per game, priced. Reuses the
@@ -31701,6 +31889,19 @@ def menu_board_tool():
         pos = 'all'
     ctx = build_menu_board(legs=legs, timeframe=timeframe, sport=sport, tier=tier, pos=pos)
     return render_template('menu_board.html', **ctx)
+
+
+@app.route('/tools/player-check', methods=['GET'])
+def player_check_tool():
+    """NFL Player Check -- search a player and see, per market and per surface, which of our
+    boards include him and why (or why not). Facts first (live markets), then mechanical
+    inclusion status drawn from the shared predicates. Read-only; status, not a recommendation."""
+    q = (request.args.get('q') or '').strip()
+    ctx = evaluate_nfl_player(q) if q else {'query': '', 'status': 'empty', 'player': None,
+                                            'candidates': [], 'matchup': None, 'feed_ts': None,
+                                            'markets': [], 'surfaces': {}}
+    ctx['reason_class'] = _nfl_incl.reason_class
+    return render_template('player_check.html', **ctx)
 
 
 @app.route('/my-view', methods=['GET', 'POST'])

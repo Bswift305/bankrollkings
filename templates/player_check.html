@@ -1,0 +1,144 @@
+{% set active_page = 'player_check' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}Player Check - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<style>
+  .pc{--pc:#5aa9ff;}
+  .pc-search{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:18px;}
+  .pc-search input[type=text]{flex:1 1 240px;min-width:0;font:600 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;padding:11px 13px;}
+  .pc-search input[type=text]:focus{outline:2px solid var(--pc);outline-offset:1px;}
+  .pc-search button{flex:0 0 auto;cursor:pointer;font:800 13px 'Helvetica Neue',Arial,sans-serif;color:#06101f;background:var(--pc);border:1px solid var(--pc);border-radius:999px;padding:11px 20px;}
+  .pc-hint{font:500 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-8px 0 18px;}
+  .pc-cards{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px;}
+  .pc-cand{display:block;text-decoration:none;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:12px;padding:11px 15px;color:var(--text-bright);}
+  .pc-cand:hover{border-color:var(--pc);}
+  .pc-cand .nm{font:800 14px 'Helvetica Neue',Arial,sans-serif;}
+  .pc-cand .mt{font:700 10px ui-monospace,monospace;color:var(--text-muted);margin-top:2px;}
+  .pc-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:6px 0 4px;}
+  .pc-head .nm{font:800 22px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .pc-head .mt{font:700 11px ui-monospace,monospace;color:var(--text-muted);}
+  .pc-facts{font:600 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:2px 0 16px;}
+  .pc-facts b{color:var(--text-bright);}
+  .pc-sec{font:800 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin:20px 0 9px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  .pc-surf{display:grid;grid-template-columns:140px 1fr;gap:10px 14px;align-items:start;}
+  .pc-surf .snm{font:800 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);padding-top:2px;}
+  .pc-row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .pc-surf > div:last-child .pc-row:last-child{border-bottom:0;}
+  .pc-chip{flex:0 0 auto;font:800 8.5px ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:3px 7px;white-space:nowrap;}
+  .pc-chip.included{background:rgba(78,212,138,.18);color:var(--bkn-good,#4ed48a);}
+  .pc-chip.elig{background:rgba(255,255,255,.08);color:var(--text-muted);}
+  .pc-chip.view{background:rgba(255,209,102,.18);color:var(--bkn-mid,#ffd166);}
+  .pc-txt{font:600 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .pc-txt b{color:var(--text-bright);font-weight:800;}
+  table.pc-mkt{width:100%;border-collapse:collapse;margin-top:4px;}
+  table.pc-mkt th{font:800 8.5px ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);}
+  table.pc-mkt td{font:600 11.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top;}
+  table.pc-mkt td.num{font-family:ui-monospace,monospace;}
+  .pc-books{margin:4px 0 0;}
+  .pc-books summary{cursor:pointer;font:700 10.5px 'Helvetica Neue',Arial,sans-serif;color:var(--pc);list-style:none;}
+  .pc-books summary::-webkit-details-marker{display:none;}
+  .pc-books table{width:100%;border-collapse:collapse;margin-top:6px;}
+  .pc-books td{font:600 10.5px ui-monospace,monospace;color:var(--text-muted);padding:3px 8px 3px 0;}
+  @media(max-width:600px){ .pc-surf{grid-template-columns:1fr;gap:4px;} .pc-surf .snm{padding-top:10px;} }
+</style>
+
+{% set LABELS = {
+  'INCLUDED':'Included','NO_SUPPORTED_MARKET':'No supported market',
+  'NO_PRIMARY_PROP':'No primary Rush/Rec Yds over','STAT_NOT_SUPPORTED':'Stat not graded for floors',
+  'NO_VALID_LINE':'No usable line','NO_GAMELOG':'No game-log match',
+  'STAT_COLUMNS_MISSING':'Game-log columns missing','INSUFFICIENT_SAMPLE':'Too few qualifying games',
+  'BELOW_HIT_THRESHOLD':'Below the reliability floor','INVALID_PRICE':'No usable American price',
+  'NOT_FLOOR_OR_SWING':'Clears, but not a floor/swing candidate','NOT_FEATURED_USAGE':'Not opportunity-featured',
+  'NO_LENS_SUPPORT':'No lens points here','BELOW_DISPLAY_CUTOFF':'Outside the current display limit'
+} %}
+{% macro chip(code) %}{% set cls = reason_class(code)|lower %}<span class="pc-chip {{ 'included' if cls=='included' else ('view' if cls=='view' else 'elig') }}">{{ LABELS.get(code, code) }}</span>{% endmacro %}
+
+<div class="bkn pc" style="--bkn-accent:#5aa9ff;--accent:#5aa9ff;max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Quick Tools &middot; NFL &middot; Player Check</div>
+    <h1>Player <span class="accent">Check</span></h1>
+    <div class="page-subtitle">Search any NFL player to see his <b>live markets</b> and, for each one, exactly how it flows &mdash; or does not &mdash; into the Floor board, The Menu, Green Light, and Featured. It explains <b>why a player appears or not</b>, per market and per surface. It is a <b>status check, not a recommendation</b> &mdash; no score, no pick.</div>
+  </div>
+</div>
+
+<form class="pc-search" method="get" action="/tools/player-check">
+  <input type="text" name="q" value="{{ query|e }}" placeholder="e.g. Bijan Robinson" aria-label="Player name" autofocus>
+  <button type="submit">Check</button>
+</form>
+
+{% if status == 'empty' %}
+  <div class="pc-hint">Type a player name and press Check. Try <b>Bijan Robinson</b> or <b>Drake London</b>.</div>
+
+{% elif status == 'not_found' %}
+  <div class="bkn-empty">No NFL player matched &ldquo;{{ query|e }}&rdquo; on this week&rsquo;s slate or the opportunity board. Check the spelling, or try the full name.</div>
+
+{% elif status == 'ambiguous' %}
+  <div class="pc-hint">&ldquo;{{ query|e }}&rdquo; matches more than one player &mdash; pick one:</div>
+  <div class="pc-cards">
+    {% for c in candidates %}
+    <a class="pc-cand" href="?q={{ c.player|urlencode }}"><span class="nm">{{ c.player }}</span><span class="mt">{{ c.team }}{% if c.pos %} &middot; {{ c.pos }}{% endif %}</span></a>
+    {% endfor %}
+  </div>
+
+{% elif status == 'ok' %}
+  <div class="pc-head">
+    <span class="nm">{{ player.player }}</span>
+    <span class="mt">{{ player.team }}{% if player.pos %} &middot; {{ player.pos }}{% endif %}</span>
+  </div>
+  <div class="pc-facts">
+    {% if matchup %}<b>{{ matchup }}</b>{% else %}No live matchup this week{% endif %}
+    {% if feed_ts %} &middot; feed updated {{ feed_ts }}{% endif %}
+    {% if not markets %} &middot; <b>no live markets</b> (he may still be opportunity-featured below){% endif %}
+  </div>
+
+  {% if markets %}
+  <div class="pc-sec">Live markets &mdash; facts, and how each flows into the reliability surfaces</div>
+  <table class="pc-mkt">
+    <thead><tr><th>Market</th><th>Line</th><th>Price</th><th>Floor Board</th><th>The Menu</th></tr></thead>
+    <tbody>
+    {% for m in markets %}
+    <tr>
+      <td>{{ m.stat }}
+        {% if m.books %}<details class="pc-books"><summary>{{ m.books|length }} book{{ '' if m.books|length==1 else 's' }}</summary>
+          <table>{% for b in m.books %}<tr><td>{{ b.book }}</td><td>{{ ('%g'|format(b.line)) if b.line is not none else '—' }}</td><td>{{ ('%+d'|format(b.price)) if b.price is not none else 'no price' }}</td><td>{{ b.ts or '' }}</td></tr>{% endfor %}</table>
+        </details>{% endif %}
+      </td>
+      <td class="num">{{ ('%g'|format(m.line)) if m.line is not none else '—' }}</td>
+      <td class="num">{{ ('%+d'|format(m.price)) if m.price is not none else 'n/a' }}</td>
+      <td>{{ chip(m.surfaces.floor.code) }}{% if m.surfaces.floor.code=='INCLUDED' and m.surfaces.floor.price_unavailable %} <span class="pc-txt">(price unavailable)</span>{% elif m.surfaces.floor.hit is defined and m.surfaces.floor.hit is not none %} <span class="pc-txt">{{ m.surfaces.floor.hit }}%</span>{% endif %}</td>
+      <td>{{ chip(m.surfaces.menu.code) }}{% if m.surfaces.menu.code=='INCLUDED' and m.surfaces.menu.tier %} <span class="pc-txt">{{ m.surfaces.menu.tier }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="pc-hint" style="margin-top:8px;">Each row shows the <b>consolidated</b> line/price the surfaces evaluate; expand a market to see every raw book quote. A floor can be <b>included with no usable price</b>; The Menu requires one.</div>
+  {% endif %}
+
+  <div class="pc-sec">Surface summary</div>
+  <div class="pc-surf">
+    {% for key, name in [('floor','Floor Board'),('menu','The Menu'),('green_light','Green Light'),('featured','Featured')] %}
+    {% set s = surfaces.get(key) or {'code':'NO_SUPPORTED_MARKET'} %}
+    <div class="snm">{{ name }}</div>
+    <div><div class="pc-row">
+      {{ chip(s.code) }}
+      <span class="pc-txt">
+        {% if key in ('floor','menu') %}
+          {% if s.code=='INCLUDED' %}On {{ name }}: <b>{{ s.markets|join(', ') }}</b>.{% else %}No current {{ player.player }} market qualifies for {{ name }}.{% endif %}
+        {% elif key=='green_light' %}
+          {% if s.code=='INCLUDED' %}<b>Included</b> &mdash; {{ s.convergence }} lens{{ 'es' if s.convergence!=1 else '' }} on {{ s.stat }} {{ '%g'|format(s.line) }}.{% if s.display_note %} <i>{{ s.display_note }}</i>.{% endif %}{% else %}{{ LABELS.get(s.code, s.code) }}.{% endif %}
+        {% elif key=='featured' %}
+          {% if s.code=='INCLUDED' %}<b>Included</b> by opportunity (rank {{ s.rank }}).{% if s.display_note %} <i>{{ s.display_note }}</i>.{% endif %}{% else %}{{ LABELS.get(s.code, s.code) }}.{% endif %}
+        {% endif %}
+      </span>
+    </div></div>
+    {% endfor %}
+  </div>
+
+  <div class="bkn-note" style="margin-top:20px;"><b>How to read it &mdash; honestly:</b> Player Check reports <b>facts</b> (the live markets) and <b>inclusion status</b> drawn from the same rules the boards run. A grey chip means the market or player genuinely does not qualify for that surface; an amber chip means it <b>is</b> eligible and only a current filter or display limit is hiding it. Being on a surface is <b>not</b> a claim the bet is good, and being absent is <b>not</b> a claim it is bad &mdash; the surfaces simply ask different questions. 21+</div>
+{% endif %}
+</div>
+{% endblock %}
