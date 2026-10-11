@@ -92,6 +92,12 @@
   <div class="mb-cg"><span class="lb">From</span>
     {% for s, lbl in [('all','Everything'),('props','Props'),('lines','Team lines')] %}<label class="mb-pill {{ 'on' if filters.legs == s }}"><input type="radio" name="legs" value="{{ s }}" {{ 'checked' if filters.legs == s }}>{{ lbl }}</label>{% endfor %}
   </div>
+  {% if positions %}
+  <div class="mb-cg"><span class="lb">Position</span>
+    <label class="mb-pill {{ 'on' if filters.pos == 'all' }}"><input type="radio" name="pos" value="all" {{ 'checked' if filters.pos == 'all' }}>All</label>
+    {% for p in positions %}<label class="mb-pill {{ 'on' if filters.pos == p|lower }}"><input type="radio" name="pos" value="{{ p|lower }}" {{ 'checked' if filters.pos == p|lower }}>{{ p }}</label>{% endfor %}
+  </div>
+  {% endif %}
   <div class="mb-cg"><span class="lb">When</span>
     {% for t, lbl in [('smart','Smart'),('weekend','Weekend'),('week','Week')] %}<label class="mb-pill {{ 'on' if filters.timeframe == t }}"><input type="radio" name="timeframe" value="{{ t }}" {{ 'checked' if filters.timeframe == t }}>{{ lbl }}</label>{% endfor %}
   </div>

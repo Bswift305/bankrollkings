@@ -31311,11 +31311,12 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
     return floors, swings
 
 
-def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all'):
+def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos='all'):
     """THE MENU -- the full board of candidate legs for the window, grouped by game, nothing
     de-duped to one-per-game, so the bettor browses every option and builds his own ticket by
-    eye. Same pool the Daily Card draws from. Filter by sport (nfl/cfb/mlb) and tier
-    (floor/swing). Floors first within each game, then swings/edges."""
+    eye. Same pool the Daily Card draws from. Filter by sport (nfl/cfb/mlb), tier
+    (floor/swing), and position (nfl player props only). Floors first within each game, then
+    swings/edges."""
     floors, swings = _card_pools(legs if legs in ('all', 'props', 'lines') else 'all',
                                  mlb_limit=60, cfb_limit=20, nfl_line_limit=16)
     pool, seen = [], set()
@@ -31325,6 +31326,19 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all'):
             continue
         seen.add(key)
         pool.append(l)
+    # Roster-position enrichment (Step 4) -- NFL player props only. Join each NFL prop's
+    # player to the current roster; a missing match is 'Unknown' (never inferred from the
+    # prop's stat type). Team lines and non-NFL legs get no position and drop out when a
+    # position is selected. The shared _card_pools is untouched -- this annotates the Menu's
+    # own leg copies only, so the Daily Card engine is unaffected.
+    if any(l.get('sport') == 'NFL' and l.get('kind') == 'prop' for l in pool):
+        _roster = build_nfl_current_roster_lookup()
+        for l in pool:
+            if l.get('sport') == 'NFL' and l.get('kind') == 'prop':
+                _rec = (_roster.get(_normalize_player_join_key(l.get('player')))
+                        or _roster.get(_normalize_nfl_roster_player_key(l.get('player'))) or {})
+                _rp = (_rec.get('position') or '').strip().upper()
+                l['pos'] = _rp if _rp else 'Unknown'
     # timeframe window (same 'smart' logic as the card engine)
     tf_req = timeframe if timeframe in _CARD_TIMEFRAMES else 'smart'
     tf = tf_req
@@ -31346,6 +31360,17 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all'):
         pool = [l for l in pool if l.get('tier') == 'floor']
     elif tier_f == 'swing':
         pool = [l for l in pool if l.get('tier') in ('swing', 'edge')]
+    # position pills: only positions represented among the current NFL prop legs (plus All,
+    # added in the template; Unknown when some props have no roster match). Computed BEFORE
+    # the position filter so every available pill stays visible to switch between. No
+    # permanently empty control. Selecting a position keeps only matching NFL props.
+    _POS_ORDER = ['QB', 'RB', 'WR', 'TE']
+    _pp = {(l.get('pos') or '') for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'}
+    menu_positions = [pp for pp in _POS_ORDER if pp in _pp] + (['Unknown'] if 'Unknown' in _pp else [])
+    pos_f = (pos or 'all').strip().lower()
+    if pos_f != 'all':
+        pool = [l for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'
+                and (l.get('pos') or '').lower() == pos_f]
     # group by game, floors first within each
     _rank = {'floor': 0, 'edge': 1, 'swing': 2}
     games = {}
@@ -31363,7 +31388,8 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all'):
                              -max((l.get('score', 0) for l in gd['legs']), default=0)))
     return {'available': bool(out), 'games': out, 'window': tf,
             'filters': {'legs': legs if legs in ('all', 'props', 'lines') else 'all',
-                        'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f},
+                        'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f, 'pos': pos_f},
+            'positions': menu_positions,
             'counts': {'games': len(out), 'legs': sum(len(gd['legs']) for gd in out)},
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
@@ -31596,7 +31622,10 @@ def menu_board_tool():
     timeframe = src.get('timeframe') if src.get('timeframe') in _CARD_TIMEFRAMES else 'smart'
     sport = src.get('sport') if src.get('sport') in ('all', 'nfl', 'cfb', 'mlb') else 'all'
     tier = src.get('tier') if src.get('tier') in ('all', 'floor', 'swing') else 'all'
-    ctx = build_menu_board(legs=legs, timeframe=timeframe, sport=sport, tier=tier)
+    pos = (src.get('pos') or 'all').lower()
+    if pos not in ('all', 'qb', 'rb', 'wr', 'te', 'unknown'):
+        pos = 'all'
+    ctx = build_menu_board(legs=legs, timeframe=timeframe, sport=sport, tier=tier, pos=pos)
     return render_template('menu_board.html', **ctx)
 
 
