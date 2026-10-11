@@ -1,6 +1,11 @@
-# NFL Player Check — Specification (DRAFT v3, not implemented)
+# NFL Player Check — Specification (v3, IMPLEMENTED)
 
-**Status: SPEC ONLY.** No Player Check code is to be written until this document is approved.
+**Status: APPROVED + IMPLEMENTED** (staged build, 2026-10-11). Live at `/tools/player-check`
+(All-Access). Shared predicates: `services/nfl_inclusion.py` + `_nfl_floor_market_eval` /
+`evaluate_nfl_player` in `app.py`. Tests: `qc_nfl_inclusion_parity.py` (refactor parity),
+`qc_player_check.py` (acceptance). The sections below are the frozen contract the build follows.
+
+**Original status line (kept for history):** SPEC ONLY until approved.
 v2 added market-level evaluation, surface-specific entry gates, Live Props as the factual
 foundation, a frozen shared-predicate centralization approach, robust name normalization,
 fixture-based tests, decided NFL/All-Access placement, and corrected Menu coverage language.
