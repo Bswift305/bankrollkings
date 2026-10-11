@@ -25,7 +25,7 @@
             <div class="page-kicker">{{ sport_title }} Command Center</div>
             <h1>{{ sport_title }} <span class="accent">Command Center</span></h1>
             <div class="page-subtitle">
-                {% if board.available %}
+                {% if not preseason_mode %}
                 {{ sport_profile.summary }}
                 {% elif history_status and history_status.state in ['ready', 'partial'] %}
                 Preseason intelligence is active from historical performance, current roster context, and the football model. Live-market layers will join it when the new season opens.
