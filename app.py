@@ -45,6 +45,7 @@ from services.nfl_contradiction_qc import audit_plays as audit_nfl_plays
 from services.cfb_contradiction_qc import audit_plays as audit_cfb_plays
 from services.mlb_contradiction_qc import audit_props as audit_mlb_props
 from services.wnba_contradiction_qc import audit_props as audit_wnba_props
+from services import nfl_inclusion as _nfl_incl
 from services.qc_tracking import (
     QC_RUN_LOG_PATH,
     build_warning_history_map,
@@ -30067,7 +30068,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
         if sub is None or not meta or not scols:
             continue
         line = float(g['Line'].median())
-        valid = g['OverOdds'][g['OverOdds'].abs() >= 100]
+        valid = g['OverOdds'][g['OverOdds'].abs() >= _nfl_incl.MIN_AMERICAN_ODDS]
         price = int(round(valid.median())) if len(valid) else None
         s = sub.copy()
         s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in scols)
@@ -30081,9 +30082,13 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
                else 'l2y' if len(wins['l2y']) >= min_games else 'career')
         w = wins[ref]
         if len(w) < min_games:
-            continue
+            continue                                # guard before computing hit (avoids NaN)
         hit = round(100 * (w['_v'] >= line).mean())
-        if hit < min_hit:
+        # Shared eligibility predicate (single source of truth with Player Check). Price is NOT
+        # a floor gate -- a qualified row with price=None is still included.
+        included, _floor_code = _nfl_incl.floor_market_verdict(
+            hit, len(w), min_hit=min_hit, min_games=min_games)
+        if not included:
             continue
         clears = round(float(w['_v'].mean() - line), 1)
         be = _american_to_prob(price)
@@ -31007,7 +31012,9 @@ def build_green_light(limit=40, pos=None):
 
         eligible, gate_note = _wisdom_market_gate(pr)
         conv = len(lenses)
-        if conv == 0 and not td_angle:
+        # Shared lens gate (single source of truth with Player Check).
+        _gl_inc, _gl_code = _nfl_incl.green_light_lens_verdict(conv, bool(td_angle))
+        if not _gl_inc:
             continue
         # FRAGILE flag: Channel Dependency x Script Certainty -- a single-channel player whose
         # read leans on the projected script, in a game where that script isn't a lock, has one
@@ -31329,18 +31336,21 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
         for f in board:
             p = f.get('price')
             hit = f.get('hit') or 0
-            if p is None or abs(p) < 100:
+            # Shared Menu candidate gate (single source of truth with Player Check): invalid
+            # price or neither-floor-nor-swing -> dropped, exactly as before.
+            tier, _menu_code = _nfl_incl.menu_candidate_tier(hit, p)
+            if tier is None:
                 continue
             leg = {'sport': 'NFL', 'kind': 'prop',
                    'label': f"{f['player']} {f['stat']} {f['line']:g}+",
                    'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
                    'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit,
                    'sample': f.get('n')}
-            if hit >= 80 and -185 <= p <= 115:
+            if tier == 'floor':
                 leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
                            score=hit + (f.get('edge') or 0) * 0.3)
                 floors.append(leg)
-            elif p >= 120 and hit >= 55:
+            else:
                 dec = 1 + p / 100.0
                 leg.update(tier='swing', reason=f"{hit}% to clear ({f['n']} g) at plus money",
                            score=hit * (dec - 1))
