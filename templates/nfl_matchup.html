@@ -108,7 +108,7 @@
     <div class="mu-wk-item">
       <button type="button" class="mu-wk" data-away="{{ g.away }}" data-home="{{ g.home }}">
         <span class="mu-wk-tm">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>
-        <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ '%g'|format(g.total) if g.total is number else g.total }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
+        <span class="mu-wk-ln">{% if g.spread %}{{ g.spread }}{% endif %}{% set _ou = (('%g'|format(g.total.line) if (g.total is mapping and g.total.line is number) else ('%g'|format(g.total) if g.total is number else '')) if g.total else '') %}{% if _ou %} &middot; O/U {{ _ou }}{% endif %}{% if g.time %} &middot; {{ g.time }}{% endif %}</span>
       </button>
       {% set has_form = g.form and g.form.away_def_note and g.form.home_def_note %}
       {% if has_form or g.tackles or g.periods or g.move or (g.total and g.total.lean) %}
