@@ -242,7 +242,7 @@ it derives from (§6). Per canonical market + surface the result is `INCLUDED(gr
 ### 7.3 View / display state (clearable or scope-only, not an eligibility exclusion)
 | Code | Surface(s) | Class · grain | Template |
 |---|---|---|---|
-| `BELOW_DISPLAY_CUTOFF` | Floor, Green Light (All view) | VIEW · market | "{player}'s {market} qualifies but ranks below the {limit}-row display limit on the unfiltered view — select its position (Green Light) or narrow to see it." |
+| `BELOW_DISPLAY_CUTOFF` | Floor, Green Light (All view) | VIEW · market | Floor: "{player}'s {market} qualifies but is outside the current display limit." Green Light: "{player}'s {market} qualifies but is outside the current display limit — select its position to see the complete set." |
 | `POSITION_FILTERED` | Green Light, Menu | VIEW · player | "{player} ({pos}) is hidden only by the current position filter; clear it." |
 | `ROSTER_POSITION_UNKNOWN` | Menu | VIEW · player | "{player} has no roster-position match; he appears under 'Unknown', not {pos}." |
 | `TIMEFRAME_EXCLUDED` | Menu | VIEW · market | "{player}'s game is outside the selected window ({timeframe})." |
