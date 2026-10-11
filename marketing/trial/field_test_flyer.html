@@ -75,7 +75,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     body{background:#fff;padding:0}
     .controls{display:none!important}
     .flyer{border:none;border-radius:0;max-width:none}
-    @page{margin:14mm}
+    .qrmeta .url{display:none!important}   /* raw URL is screen-only; the QR carries it on the printed flyer */
+    @page{size:letter;margin:14mm}
   }
 </style>
 </head>
