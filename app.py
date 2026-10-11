@@ -30988,6 +30988,9 @@ def build_green_light(limit=40, pos=None):
     # position, not just those inside the first `limit` unfiltered rows. board_available
     # reflects whether the board loaded at all (pre-filter), so a position with no rows
     # shows an honest position-specific empty state, not the generic "no board" message.
+    # A SELECTED position exposes the COMPLETE matching set (eff_limit lifted) so the user
+    # reviews every player at that position without searching the slate; only the unfiltered
+    # All view keeps the display limit.
     _PILL_ORDER = ['QB', 'RB', 'WR', 'TE']
     _present = {(p.get('pos') or '').upper() for p in plays}
     gl_positions = [pp for pp in _PILL_ORDER if pp in _present]
@@ -30995,6 +30998,7 @@ def build_green_light(limit=40, pos=None):
     gl_sel = (pos or 'all').strip().lower()
     if gl_sel != 'all':
         plays = [p for p in plays if (p.get('pos') or '').lower() == gl_sel]
+    gl_eff_limit = len(plays) if gl_sel != 'all' else limit
 
     # Containment S6: rank by configured-lens count, then neutral tie-breaks (game, player, stat).
     # eligible/opp_score are NOT sort inputs -- line-state is informational only.
@@ -31006,9 +31010,9 @@ def build_green_light(limit=40, pos=None):
                       '2 configured lenses' if pl['convergence'] == 2 else
                       '1 configured lens')
     TIERS = ['4+ configured lenses', '3 configured lenses', '2 configured lenses', '1 configured lens']
-    tiers = [{'name': t, 'plays': [pl for pl in plays[:limit] if pl['tier'] == t]} for t in TIERS]
+    tiers = [{'name': t, 'plays': [pl for pl in plays[:gl_eff_limit] if pl['tier'] == t]} for t in TIERS]
     tiers = [t for t in tiers if t['plays']]
-    return {'available': gl_board_available, 'plays': plays[:limit], 'tiers': tiers,
+    return {'available': gl_board_available, 'plays': plays[:gl_eff_limit], 'tiers': tiers,
             'positions': gl_positions, 'selected_pos': gl_sel,
             'season': usage.get('season'), 'count': len(plays),
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
@@ -31360,14 +31364,27 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
         pool = [l for l in pool if l.get('tier') == 'floor']
     elif tier_f == 'swing':
         pool = [l for l in pool if l.get('tier') in ('swing', 'edge')]
-    # position pills: only positions represented among the current NFL prop legs (plus All,
-    # added in the template; Unknown when some props have no roster match). Computed BEFORE
-    # the position filter so every available pill stays visible to switch between. No
-    # permanently empty control. Selecting a position keeps only matching NFL props.
-    _POS_ORDER = ['QB', 'RB', 'WR', 'TE']
-    _pp = {(l.get('pos') or '') for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'}
-    menu_positions = [pp for pp in _POS_ORDER if pp in _pp] + (['Unknown'] if 'Unknown' in _pp else [])
+    # position filter (Step 4). A view can only carry a position dimension if it can contain
+    # NFL player props -- sport nfl/all AND source all/props. For CFB/MLB or a team-lines-only
+    # view there are no props, so the position is normalized to All: this prevents a HIDDEN
+    # active filter (e.g. pos=wr persisting into a CFB view where the control has vanished and
+    # the user can no longer clear it from zero results).
+    legs_norm = legs if legs in ('all', 'props', 'lines') else 'all'
+    nfl_prop_capable = sport_f in ('all', 'nfl') and legs_norm in ('all', 'props')
     pos_f = (pos or 'all').strip().lower()
+    if not nfl_prop_capable:
+        pos_f = 'all'
+    # Pills: positions represented among the current NFL prop legs (plus All, added in the
+    # template; Unknown when some props have no roster match). Computed BEFORE the filter so
+    # every available pill stays visible to switch between. A selected valid position is ALWAYS
+    # retained in the controls even if it currently matches zero rows, so it never disappears
+    # while still filtering -- the user can always see it is active and clear it.
+    _POS_ORDER = ['QB', 'RB', 'WR', 'TE']
+    _SEL_LABEL = {'qb': 'QB', 'rb': 'RB', 'wr': 'WR', 'te': 'TE', 'unknown': 'Unknown'}
+    _pp = {(l.get('pos') or '') for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'}
+    if nfl_prop_capable and pos_f in _SEL_LABEL:
+        _pp.add(_SEL_LABEL[pos_f])
+    menu_positions = [pp for pp in _POS_ORDER if pp in _pp] + (['Unknown'] if 'Unknown' in _pp else [])
     if pos_f != 'all':
         pool = [l for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'
                 and (l.get('pos') or '').lower() == pos_f]

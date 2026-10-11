@@ -44,6 +44,8 @@
   .kw-pos:hover{border-color:var(--kw);color:var(--kw);}
   .kw-pos.active{background:var(--kw);border-color:var(--kw);color:#07140d;}
   .kw-pos:focus-visible{outline:2px solid var(--kw);outline-offset:2px;}
+  .kw-showing{font:600 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-8px 0 18px;}
+  .kw-showing b{color:var(--text-bright);font-weight:800;}
 </style>
 
 <div class="bkn kw" style="--bkn-accent:#4ed48a;--accent:#4ed48a;max-width:none;">
@@ -70,6 +72,9 @@
   <a class="kw-pos{% if selected_pos == p|lower %} active{% endif %}" href="?pos={{ p|lower }}"{% if selected_pos == p|lower %} aria-current="true"{% endif %}>{{ p }}</a>
   {% endfor %}
 </div>
+{% if selected_pos != 'all' %}
+<div class="kw-showing">Showing all <b>{{ count }}</b> {{ selected_pos|upper }} {{ 'entry' if count == 1 else 'entries' }} &mdash; the complete set at this position, ranked by configured-lens count.</div>
+{% endif %}
 {% endif %}
 
 {% if not available %}
