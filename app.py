@@ -31588,6 +31588,33 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
                         or _roster.get(_normalize_nfl_roster_player_key(l.get('player'))) or {})
                 _rp = (_rec.get('position') or '').strip().upper()
                 l['pos'] = _rp if _rp else 'Unknown'
+    # Coverage (stage 5): the honest denominator behind "every option admitted by the current
+    # Menu rules." Computed on the PRE-FILTER pool so it reflects the admission rules, not the
+    # user's current filter -- slate NFL games vs games that produced a Menu-admitted player
+    # prop. A slate game with no admitted prop is listed so Player Check can explain why (every
+    # candidate market failed a gate). The shared menu_candidate_tier gate already decided pool
+    # membership upstream in _card_pools.
+    _menu_prop_games = {l.get('game') for l in pool
+                        if l.get('sport') == 'NFL' and l.get('kind') == 'prop'}
+    try:
+        _mprops = _load_cached_csv(DATA_DIR / 'props' / 'NFL_Props.csv', default=pd.DataFrame())
+        _m_f2a = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
+
+        def _mfmt(gm):
+            gm = str(gm)
+            if '@' in gm:
+                a, h = gm.split('@', 1)
+                return f"{_m_f2a.get(a.strip(), a.strip()[:3].upper())} @ {_m_f2a.get(h.strip(), h.strip()[:3].upper())}"
+            return gm
+        _nfl_slate = sorted({_mfmt(x) for x in _mprops['Game'].dropna().astype(str)}) \
+            if (not _mprops.empty and 'Game' in _mprops.columns) else []
+    except Exception:
+        _nfl_slate = []
+    menu_coverage = {
+        'nfl_games_loaded': len(_nfl_slate),
+        'nfl_games_with_prop': sum(1 for g in _nfl_slate if g in _menu_prop_games),
+        'nfl_games_prop_dry': [g for g in _nfl_slate if g not in _menu_prop_games],
+    }
     # timeframe window (same 'smart' logic as the card engine)
     tf_req = timeframe if timeframe in _CARD_TIMEFRAMES else 'smart'
     tf = tf_req
@@ -31652,6 +31679,7 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
             'filters': {'legs': legs if legs in ('all', 'props', 'lines') else 'all',
                         'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f, 'pos': pos_f},
             'positions': menu_positions,
+            'coverage': menu_coverage,
             'counts': {'games': len(out), 'legs': sum(len(gd['legs']) for gd in out)},
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 

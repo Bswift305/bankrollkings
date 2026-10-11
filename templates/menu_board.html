@@ -17,6 +17,10 @@
   .mb-pill:focus-within{outline:2px solid var(--bk-gold2,#ffd16d);outline-offset:2px;}
   .mb-pill.on{color:#06100f;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset,0 0 14px color-mix(in srgb,var(--bkn-accent,#3fbf7f) 24%,transparent);}
   .mb-count{margin-left:auto;font:700 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mb-coverage{font:600 11.5px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:-6px 0 16px;}
+  .mb-coverage b{color:var(--text-bright);}
+  .mb-coverage .dry{color:var(--bkn-mid,#ffd166);font-weight:700;}
+  .mb-coverage a{color:var(--bkn-accent,#3fbf7f);}
   .mb-game{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:4px 16px 6px;margin-bottom:14px;}
   .mb-gh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:12px 0 8px;border-bottom:1px solid var(--border);}
   .mb-gh .gm{font:800 15px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
@@ -103,6 +107,13 @@
   </div>
   <span class="mb-count">{{ counts.legs }} option{{ '' if counts.legs == 1 else 's' }} &middot; {{ counts.games }} game{{ '' if counts.games == 1 else 's' }}</span>
 </form>
+
+{% if coverage and coverage.nfl_games_loaded %}
+<div class="mb-coverage">
+  <b>Coverage</b> &mdash; NFL player props: {{ coverage.nfl_games_with_prop }} of {{ coverage.nfl_games_loaded }} game{{ '' if coverage.nfl_games_loaded == 1 else 's' }} this week produced a qualifying Menu option.
+  {% if coverage.nfl_games_prop_dry %}<span class="dry">{{ coverage.nfl_games_prop_dry|length }} with none:</span> {{ coverage.nfl_games_prop_dry|join(', ') }}. <a href="/tools/player-check">Player Check</a> explains why a game or player is dry.{% else %}Every game has at least one.{% endif %}
+</div>
+{% endif %}
 
 <div class="mb-wrap">
   <div class="mb-col">
