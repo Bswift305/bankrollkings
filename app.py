@@ -29760,59 +29760,23 @@ _NFL_FLOOR_STATS = {
 }
 
 
-def _nfl_player_log_signature():
-    """Deterministic signature of EVERY file _nfl_player_week_data() consumes -- the historical
-    player-stat CSVs, the current-season tracking parquet(s), and the legacy parquet fallback
-    (only when applicable, mirroring the consumer's own 2026 check). (basename, size, mtime_ns)
-    per file, sorted. Any add / remove / rewrite changes it, so the player-week, index and
-    floor-board caches invalidate when the logs refresh even if NFL_Props.csv did not."""
+def _nfl_player_log_sources():
+    """Single source of truth for the player-week log file manifest, consumed by BOTH the loader
+    (_nfl_player_week_data) and the cache signature (_nfl_player_log_signature) so the two can
+    never drift. Returns an ordered list of {'path', 'kind', 'season'} for exactly the files
+    that get read: historical CSVs first, then current/in-season tracking parquet(s) whose
+    season has no historical CSV (a closed season already has its CSV -- skip to avoid double-
+    counting), with jw26.parquet used as the 2026 legacy fallback only when no 2026 tracking
+    parquet exists. fetch_nfl_player_week.py refreshes the tracking parquet daily on prod."""
     import glob
-    paths = list(glob.glob(str(DATA_DIR / 'historical' / 'NFL_PlayerStats_202*.csv')))
-    season_parquets = list(glob.glob(str(DATA_DIR / 'tracking' / '_nflverse_stats_20*.parquet')))
-    paths += season_parquets
-    season_years = set()
-    for pf in season_parquets:
-        digits = ''.join(ch for ch in os.path.basename(pf) if ch.isdigit())[:4]
-        if digits:
-            season_years.add(int(digits))
-    legacy = BASE_DIR / 'jw26.parquet'
-    if 2026 not in season_years and os.path.exists(legacy):
-        paths.append(str(legacy))
-    out = []
-    for p in sorted(set(paths)):
-        try:
-            st = os.stat(p)
-            out.append((os.path.basename(p), st.st_size, st.st_mtime_ns))
-        except OSError:
-            continue
-    return tuple(out)
-
-
-def _nfl_player_week_data():
-    """All nflverse weekly player stats we have on disk (historical CSVs + the 2026
-    parquet), concatenated once and cached. Powers the prop-floor analyzer. Invalidates on the
-    player-log file signature, so a daily parquet/CSV refresh is picked up without a restart."""
-    _sig = _nfl_player_log_signature()
-    if _NFL_PLAYER_WEEK_CACHE.get('sig') == _sig and _NFL_PLAYER_WEEK_CACHE.get('df') is not None:
-        return _NFL_PLAYER_WEEK_CACHE['df']
-    import glob
-    frames = []
+    sources = []
     csv_seasons = set()
     for f in sorted(glob.glob(str(DATA_DIR / 'historical' / 'NFL_PlayerStats_202*.csv'))):
-        try:
-            d = pd.read_csv(f, low_memory=False)
-            digits = ''.join(ch for ch in os.path.basename(f) if ch.isdigit())[:4]
-            season = int(digits) if digits else None
-            d['season'] = season
-            frames.append(d)
-            if season:
-                csv_seasons.add(season)
-        except Exception:
-            continue
-    # Current/in-season nflverse weekly parquet(s). fetch_nfl_player_week.py refreshes
-    # data/tracking/_nflverse_stats_<season>.parquet daily on prod; jw26.parquet is the
-    # legacy one-time local build, used only if the refreshed file is absent. A closed
-    # season already has a historical CSV, so skip it here to avoid double-counting.
+        digits = ''.join(ch for ch in os.path.basename(f) if ch.isdigit())[:4]
+        season = int(digits) if digits else None
+        sources.append({'path': f, 'kind': 'csv', 'season': season})
+        if season:
+            csv_seasons.add(season)
     season_files = {}
     for pf in sorted(glob.glob(str(DATA_DIR / 'tracking' / '_nflverse_stats_20*.parquet'))):
         digits = ''.join(ch for ch in os.path.basename(pf) if ch.isdigit())[:4]
@@ -29824,8 +29788,48 @@ def _nfl_player_week_data():
     for season, pf in sorted(season_files.items()):
         if season in csv_seasons:
             continue
+        sources.append({'path': pf, 'kind': 'parquet', 'season': season})
+    return sources
+
+
+def _nfl_player_log_signature():
+    """Deterministic signature over the shared source manifest: (repo-relative path, size,
+    mtime_ns) per file. Repo-relative (not basename) so two same-named files in different dirs
+    can't collide. Any add / remove / rewrite changes it, so the player-week, index and floor-
+    board caches invalidate when the logs refresh even if NFL_Props.csv did not."""
+    out = []
+    for src in _nfl_player_log_sources():
+        p = src['path']
         try:
-            d = pd.read_parquet(pf); d['season'] = season; frames.append(d)
+            st = os.stat(p)
+        except OSError:
+            continue
+        try:
+            rel = os.path.relpath(p, BASE_DIR)
+        except ValueError:
+            rel = p
+        out.append((rel.replace('\\', '/'), st.st_size, st.st_mtime_ns))
+    return tuple(out)
+
+
+def _nfl_player_week_data():
+    """All nflverse weekly player stats we have on disk (historical CSVs + the 2026
+    parquet), concatenated once and cached. Powers the prop-floor analyzer. Invalidates on the
+    player-log file signature, so a daily parquet/CSV refresh is picked up without a restart.
+    Reads exactly the manifest from _nfl_player_log_sources() -- the same list the signature
+    hashes, so discovery can't drift between loader and cache key."""
+    _sig = _nfl_player_log_signature()
+    if _NFL_PLAYER_WEEK_CACHE.get('sig') == _sig and _NFL_PLAYER_WEEK_CACHE.get('df') is not None:
+        return _NFL_PLAYER_WEEK_CACHE['df']
+    frames = []
+    for src in _nfl_player_log_sources():
+        try:
+            if src['kind'] == 'csv':
+                d = pd.read_csv(src['path'], low_memory=False)
+            else:
+                d = pd.read_parquet(src['path'])
+            d['season'] = src['season']
+            frames.append(d)
         except Exception:
             continue
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

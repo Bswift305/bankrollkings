@@ -33,6 +33,12 @@ def _reset_floor_cache() -> None:
     app._NFL_FLOOR_BOARD_CACHE.clear()
 
 
+def _reset_all_caches() -> None:
+    app._NFL_FLOOR_BOARD_CACHE.clear()
+    app._NFL_PLAYER_WEEK_CACHE.clear()
+    app._NFL_PLAYER_IDX_CACHE.clear()
+
+
 def run_qc() -> dict:
     issues: list[str] = []
     notes: list[str] = []
@@ -64,30 +70,43 @@ def run_qc() -> dict:
     else:
         notes.append("no live floor data available -- order-independence checked on empty boards")
 
-    # --- player-log signature invalidation ----------------------------------------------
-    _reset_floor_cache()
+    # --- player-log signature invalidation: ALL THREE caches must rebuild -----------------
+    # A changed player-log signature must rebuild the player-week df, the player index, AND the
+    # floor board -- not merely flip the floor cache's stored flag. We assert on the stored
+    # markers (week sig, idx's stored log id, floor sig), which are values, not live-object
+    # identities, so the checks aren't fooled by CPython id reuse.
+    _reset_all_caches()
     app.build_nfl_floor_board(**HIGH)
-    sig_before = app._NFL_FLOOR_BOARD_CACHE.get("sig")
+    week_sig_before = app._NFL_PLAYER_WEEK_CACHE.get("sig")
+    idx_id_before = app._NFL_PLAYER_IDX_CACHE.get("id")
+    floor_sig_before = app._NFL_FLOOR_BOARD_CACHE.get("sig")
 
     original_sig = app._nfl_player_log_signature
     try:
-        # Mock a changed player-log signature (as if a gamelog file was refreshed), props
-        # file untouched. The floor cache must rebuild under the new composite signature.
+        # Mock a changed player-log signature (as if a gamelog file refreshed), props untouched.
         app._nfl_player_log_signature = lambda: (("__qc_mock_log__", 1, 1),)
         app.build_nfl_floor_board(**HIGH)
-        sig_after = app._NFL_FLOOR_BOARD_CACHE.get("sig")
+        week_sig_after = app._NFL_PLAYER_WEEK_CACHE.get("sig")
+        idx_id_after = app._NFL_PLAYER_IDX_CACHE.get("id")
+        floor_sig_after = app._NFL_FLOOR_BOARD_CACHE.get("sig")
     finally:
         app._nfl_player_log_signature = original_sig
 
-    if sig_before is None:
+    if floor_sig_before is None:
         issues.append("floor cache stored no signature -- cannot verify invalidation")
-    elif sig_after == sig_before:
-        issues.append("floor cache did NOT invalidate when the player-log signature changed")
-    else:
-        notes.append("floor cache invalidated on player-log signature change")
+    if week_sig_after == week_sig_before:
+        issues.append("_NFL_PLAYER_WEEK_CACHE did not rebuild on player-log signature change")
+    if floor_sig_after == floor_sig_before:
+        issues.append("_NFL_FLOOR_BOARD_CACHE did not rebuild on player-log signature change")
+    if idx_id_before is None:
+        notes.append("player index not populated (no live data) -- idx rebuild not exercised")
+    elif idx_id_after == idx_id_before:
+        issues.append("_NFL_PLAYER_IDX_CACHE did not rebuild on player-log signature change")
+    if not issues:
+        notes.append("all three caches rebuilt on player-log signature change")
 
     # restore a clean, real cache state (self-heals on next real call anyway)
-    _reset_floor_cache()
+    _reset_all_caches()
 
     return {"issues": issues, "notes": notes}
 
