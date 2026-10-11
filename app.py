@@ -31406,16 +31406,17 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         am, dec, pay = _card_price(picked)
         cards.append({'n': len(picked), 'legs': picked, 'american': am, 'decimal': dec,
                       'payout_5': pay, 'swing': (swing[0]['label'] if swing else None)})
-    # bench: next-best alternates not on the biggest card, for the swap-a-leg control
-    on_cards = {l['game'] for c in cards for l in c['legs']}
+    # Complete, de-duplicated candidate pool for the user-directed swap chooser.  It includes
+    # the initially selected legs too, because a leg used on one card may be a valid replacement
+    # on another.  The browser excludes games already represented on the card being edited.
     bench, seen = [], set()
     for l in floors + swings:
-        g = l['game']
-        if g in on_cards or g in seen:
+        key = (l.get('sport'), l.get('label'), l.get('game'))
+        if key in seen:
             continue
-        seen.add(g)
+        seen.add(key)
         bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price', 'reason')})
-        if len(bench) >= 10:
+        if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
             'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
