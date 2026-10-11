@@ -34,9 +34,12 @@
   .dc-ctrl{display:flex;flex-wrap:wrap;gap:16px 22px;align-items:center;background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:13px 16px;margin-bottom:20px;}
   .dc-cg{display:flex;align-items:center;gap:7px;}
   .dc-cg .lb{font:800 10px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-right:2px;}
-  .dc-pill{position:relative;cursor:pointer;font:700 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 12px;}
+  .bk-compat-content .dc-pill{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;cursor:pointer;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px !important;font-weight:700 !important;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:6px 12px;transition:color .16s ease,background-color .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease;}
   .dc-pill input{position:absolute;opacity:0;inset:0;cursor:pointer;}
-  .dc-pill.on{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+  .bk-compat-content .dc-pill:hover{color:var(--text-bright,#f4f7f8) !important;border-color:color-mix(in srgb,var(--bkn-accent,#3fbf7f) 68%,var(--border));background:color-mix(in srgb,var(--bkn-accent,#3fbf7f) 10%,transparent);}
+  .bk-compat-content .dc-pill:focus-within{outline:2px solid var(--bk-gold2,#ffd16d);outline-offset:2px;}
+  .bk-compat-content .dc-pill.on{color:#06100f !important;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset,0 0 14px color-mix(in srgb,var(--bkn-accent,#3fbf7f) 24%,transparent);}
+  .bk-compat-content .dc-pill.on:hover{color:#06100f !important;background:color-mix(in srgb,var(--bkn-accent,#3fbf7f) 88%,white);transform:translateY(-1px);}
   .dc-savebtn{margin-left:auto;cursor:pointer;font:800 12px 'Helvetica Neue',Arial,sans-serif;color:var(--bkn-accent,#3fbf7f);background:transparent;border:1px solid rgba(63,191,127,.4);border-radius:999px;padding:7px 15px;}
   .dc-savebtn:hover{background:rgba(63,191,127,.1);}
   .dc-savedtag{font:700 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
