@@ -1,10 +1,14 @@
-# Trial Eligibility Gate — Specification (DRAFT v3, not implemented)
+# Trial Eligibility Gate — Specification (v3 + addenda — ARCHITECTURE APPROVED)
 
-**Status: SPECIFICATION ONLY. No code written. Flyers NOT distributed; Casino/Barbershop codes stay
-at exactly 25 each. No SMS provider is to be chosen or purchased until this design is approved.**
-Requirement: **one lifetime trial per person**. v3 freezes the implementation-critical details on
-the approved v2 architecture (private transactional SQLite; verified phone primary; grant only after
-commit).
+**Status: ARCHITECTURE APPROVED (storage + transaction design). Not yet implemented.** Flyers remain
+undistributed; Casino/Barbershop codes remain exactly 25 each. SMS-provider **evaluation may begin**
+(see `docs/trial_sms_provider_evaluation.md`); purchase/deploy only after that evaluation is
+approved. Requirement: **one lifetime trial per person**.
+
+**Four mandatory implementation addenda** (approved; folded into the schema/sections below, marked
+**[A1]–[A4]**): (A1) versioned/multi-key code-token lookup; (A2) DB-enforced granted/denied row
+invariants; (A3) overrides that cannot issue a second trial; (A4) encrypted keyring backup/restore
+with a restore-detection test. No further broad redesign.
 
 ---
 
@@ -18,7 +22,8 @@ Scoped exception to the CSV model (CLAUDE.md §6), justified only by atomicity. 
 CREATE TABLE codes (                                    -- venue inventory
   code_id          INTEGER PRIMARY KEY,
   venue_label      TEXT    NOT NULL,
-  code_token_hmac  TEXT    NOT NULL UNIQUE,             -- HMAC(domain='codetoken'); raw token NEVER stored
+  code_token_hmac  TEXT    NOT NULL UNIQUE,             -- HMAC(domain='codetoken') under code_token_hmac_ver; raw token NEVER stored
+  code_token_hmac_ver INTEGER NOT NULL,                 -- [A1] key version; link lookup dual-reads ALL retained code-token versions
   trial_days       INTEGER NOT NULL CHECK (trial_days > 0),
   max_redemptions  INTEGER NOT NULL CHECK (max_redemptions > 0),   -- pilot: 25; zero/unlimited prohibited (§5)
   times_redeemed   INTEGER NOT NULL DEFAULT 0
@@ -50,7 +55,17 @@ CREATE TABLE redemptions (                              -- audit of every attemp
   activation_state TEXT    CHECK (activation_state IN ('committed','activated')),  -- granted rows only
   phone_mask       TEXT, email_mask TEXT,               -- masked display, purged per retention (§7)
   device_hmac      TEXT, ip_hmac    TEXT,               -- risk signals, purged per retention (§4,§7)
-  raw_expire_at    TEXT                                 -- when the masked/risk fields are purged
+  raw_expire_at    TEXT,                                -- when the masked/risk fields are purged
+  CHECK (                                               -- [A2] DB-enforced granted/denied invariants
+    (outcome='granted'
+       AND grant_id IS NOT NULL AND account_user_id IS NOT NULL
+       AND eligibility_id IS NOT NULL AND activation_state IS NOT NULL
+       AND deny_reason IS NULL)
+    OR
+    (outcome='denied'
+       AND grant_id IS NULL AND eligibility_id IS NULL
+       AND activation_state IS NULL AND deny_reason IS NOT NULL)
+  )
 );
 CREATE UNIQUE INDEX ux_grant_elig ON redemptions(eligibility_id) WHERE outcome='granted';  -- 1 grant <-> 1 eligibility
 
@@ -60,7 +75,8 @@ CREATE TABLE overrides (                                -- additive, audited; ne
   operator                TEXT NOT NULL,
   reason                  TEXT NOT NULL,
   affected_eligibility_id INTEGER REFERENCES eligibility(eligibility_id),
-  action                  TEXT NOT NULL CHECK (action IN ('grant_exception','note'))
+  action                  TEXT NOT NULL                 -- [A3] no second trial; comps go to a separate entitlement
+                            CHECK (action IN ('repair_activation','correct_identity','owner_comp_external'))
 );
 ```
 
@@ -127,6 +143,10 @@ legitimate); they only corroborate another identity key or raise an owner-review
   optional re-HMAC backfill may run only for rows where raw is still transiently available; it is not
   relied upon — dual-read across all versions is the permanent mechanism.) **Rotating the key never
   makes a previous recipient eligible again.**
+- **[A1] Code tokens are versioned and multi-key-read the same way.** `codes.code_token_hmac_ver`
+  records the version a code was written under; a `/trial/<token>` lookup computes the token HMAC
+  under **every retained code-token key version** and matches against `code_token_hmac`. So rotating
+  the master key **never invalidates an existing flyer** — the same printed token keeps resolving.
 
 ## 6. Verification + OTP security + both flows (v2 §5, retained)
 Both the **new-account signup** path and the **logged-in free user at `/trial/<code>`** pass through
@@ -158,17 +178,23 @@ deters abuse, not a perfect human identity.
   audit row is written in a **separate transaction** that touches only `redemptions`
   (`outcome='denied'`, no `eligibility_id`, no `codes` decrement) — a denial never creates
   eligibility or consumes capacity.
-- **Overrides (correction 11):** additive and audited — an `overrides` row (operator identity +
-  exact reason) plus, for a grant exception, a new linked eligibility/authorization. Overrides
-  **never delete** the original lifetime keys; historical eligibility is preserved.
+- **Overrides (correction 11 + [A3]):** additive and audited (operator identity + exact reason), and
+  **narrowly scoped — an override can never issue a second promotional trial** (that would break the
+  lifetime rule and collide with the UNIQUE account/identity constraints). The only permitted actions
+  are: **`repair_activation`** (re-apply a failed activation/projection for an *already-committed*
+  grant — no new eligibility row), **`correct_identity`** (fix incorrectly-associated identity data
+  on an existing record), and **`owner_comp_external`** (record an owner-authorized comp via a
+  **separate entitlement mechanism**, not the trial path — it grants access outside this gate and
+  writes no trial `eligibility` row). Overrides **never delete** original lifetime keys.
 
 ## 9. Live-code migration + rollback (correction 7)
 One-time migration of the two private CSV codes (`INVITE_CODES_PATH`) into SQLite, preserving the
 **same flyer URLs** (same `/trial/<token>` tokens), **venue labels**, **25-use limits**, **current
 `TimesRedeemed`**, and **active status**:
-1. For each CSV row: compute `code_token_hmac` (purpose `codetoken`) — **never log or print the raw
-   token** (token-nondisclosure check); insert `codes(venue_label, code_token_hmac, trial_days,
-   max_redemptions=25, times_redeemed=<current>, active)`.
+1. For each CSV row: compute `code_token_hmac` (purpose `codetoken`, under the current version) —
+   **never log or print the raw token** (token-nondisclosure check); insert `codes(venue_label,
+   code_token_hmac, code_token_hmac_ver, trial_days, max_redemptions=25, times_redeemed=<current>,
+   active)`.
 2. **Verify:** row count matches; each flyer token resolves (HMAC lookup finds its row); counts, caps,
    labels, active match the CSV exactly.
 3. **Flip authority:** set `TRIAL_STORE=sqlite`; redemption now reads/writes SQLite. The CSV becomes
@@ -183,15 +209,23 @@ One-time migration of the two private CSV codes (`INVITE_CODES_PATH`) into SQLit
 - **Integrity:** `foreign_keys=ON` on every connection; `PRAGMA integrity_check` on startup.
 - **Backup/restore:** scheduled `sqlite3 .backup` (hot backup) of `TRIAL_DB_PATH` to a private
   location; documented restore; backups carry the same `0600`/secret handling.
+- **[A4] Keyring backup/restore (critical):** a restored DB is useless for identity/token matching
+  without **every historical HMAC master version**. The **keyring** (all master versions, all
+  purpose-derived keys) is backed up **encrypted** (separate secret/KMS, never in plaintext beside
+  the DB), versioned alongside each DB backup. Restore **verifies** both the DB `integrity_check`
+  **and** that the keyring holds every version referenced by `*_hmac_ver` columns; a restore missing a
+  key version **fails closed**. An acceptance test proves an **old recipient stays detectable
+  (DENIED) after a full DB + keyring backup→restore** (§12).
 - **Corruption + availability — FAIL CLOSED:** a startup check fails closed if the eligibility DB is
   missing, unreadable, or fails `integrity_check`. When the DB is unavailable, the trial endpoint
   **denies all redemptions** (and logs an owner alert) — it must **never** fall back to the old
   ungated grant path. No trial is granted without a healthy authoritative store.
 
-## 11. External dependency — deferred
-SMS provider selection and purchase are **deferred** until this design is approved (so we don't pay
-for SMS while the record design could still change). Twilio Verify remains a candidate to evaluate
-after approval. Email verification runs on the existing SMTP; email alone is insufficient.
+## 11. External dependency — evaluation in progress
+Architecture is approved, so **SMS-provider evaluation may begin** (deliverable:
+`docs/trial_sms_provider_evaluation.md` — recommendation, operating cost, required credentials,
+implementation sequence). **Purchase/deploy only after that evaluation is approved.** Email
+verification runs on the existing SMTP; email alone is insufficient.
 
 ## 12. Tests
 Using the SQLite store + a mocked OTP/email verifier (real providers in staging before launch):
@@ -207,6 +241,16 @@ Using the SQLite store + a mocked OTP/email verifier (real providers in staging 
   re-derivable, no double grant, cap not over-consumed.
 - **Key rotation (correction 3):** a v1 recipient is still DENIED after rotating to v2 (dual-read);
   new grants written under v2.
+- **[A1] Code-token rotation:** after a master rotation, an **existing flyer token still resolves** to
+  its code (lookup dual-reads all `code_token_hmac_ver`); a wrong token still fails.
+- **[A2] Row invariants:** attempts to insert a malformed granted row (missing `grant_id`/account/
+  eligibility/activation, or with a `deny_reason`) and a malformed denied row (with grant/eligibility/
+  activation set, or missing `deny_reason`) are **rejected by the DB CHECK**.
+- **[A3] Override cannot issue a second trial:** an override never creates a second trial
+  `eligibility` row (UNIQUE still holds); `repair_activation` re-applies an existing committed grant;
+  `owner_comp_external` grants via the separate entitlement and writes no trial eligibility.
+- **[A4] Keyring restore detection:** full DB + encrypted keyring backup→restore, then an old
+  recipient is still **DENIED**; a restore missing a key version **fails closed** (no grants).
 - **Migration (correction 7):** counts/labels/caps/active/URLs preserved; token never logged/stored
   in clear; rollback restores CSV authority with no loss.
 - **Fail-closed (correction 12):** DB unavailable/corrupt → `/trial/<code>` denies all, never grants
@@ -217,9 +261,17 @@ Using the SQLite store + a mocked OTP/email verifier (real providers in staging 
 - **Entitlement authority (corrections 1,2):** committed grant drives access; a wiped user-file
   projection is recovered from the committed grant.
 
-## 13. Non-goals / boundaries
+## 13. Launch gate (per the ruling)
+Launch requires, in order: **(a)** mocked automated tests (§12) green; **(b)** real-provider
+**staging** tests (OTP delivery, retry, rate limits); **(c)** **migration verification** (counts/
+labels/caps/active/URLs preserved, token-nondisclosure, rollback proven); **(d)** a **production
+one-device redemption test** (one real end-to-end grant). Flyers stay paused until all pass.
+
+## 14. Non-goals / boundaries
 Governs the **trial** grant only (no checkout/founder change). Codes stay exactly 25 (pilot).
 SQLite is scoped to this gate, not a general migration. No claim of perfect human identity.
 
-*End of revised specification (v3). Awaiting approval of the storage/transaction design **before**
-choosing or purchasing an SMS provider. Flyers remain undistributed; codes remain at 25.*
+*End of specification (v3 + the four approved addenda [A1]–[A4]). Architecture approved;
+implementation may begin only with the addenda in the checklist. SMS-provider evaluation is the next
+deliverable (no purchase/deploy until it is approved). Flyers remain undistributed; codes remain at
+25.*
