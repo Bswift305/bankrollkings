@@ -1,178 +1,184 @@
-# Trial Eligibility Gate — Specification (DRAFT, not implemented)
+# Trial Eligibility Gate — Specification (DRAFT v2, not implemented)
 
 **Status: SPECIFICATION ONLY. No code written. Flyers NOT distributed; Casino/Barbershop codes
-stay at 25 each.** Produced in response to the corrected requirement: **one lifetime trial per
-person**, not 25 activations per venue. Return for approval; implementation also waits on one
-external decision (the SMS provider, §8).
+stay at 25 each. No SMS provider is to be chosen or purchased until this storage/transaction design
+is approved.** Requirement: **one lifetime trial per person**, not 25 activations per venue.
 
-**The requirement (restated):** a single human may redeem the no-card trial **once, ever**.
-Creating another account — new email, deleted-and-recreated account — must **not** yield a second
-trial. The venue code cap (`MaxRedemptions=25`) protects total inventory; it does **not** enforce
-per-person uniqueness, so public distribution is paused until this gate exists.
-
----
-
-## 1. Current flow and the gap (grounded in code)
-
-`/trial/<code>` → `trial_redeem()` (`app.py:39545`) validates only `invite_code_redeemable()`
-(Active + under the per-code cap), grants `all_access`, and `consume_invite_code()`
-(`app.py:10815`) increments `TimesRedeemed`. The invite store
-(`INVITE_CODE_COLUMNS = Code, Label, TrialDays, MaxRedemptions, TimesRedeemed, Active`) has **no
-per-person dimension**. No email verification, no phone, no device/IP signal, no ledger.
-
-**Consequence:** one person with N emails consumes up to N of a shared code's 25 redemptions. The
-cap limits the blast radius to 25; it does not stop repeat-trial abuse by one person.
-
-**What already exists to build on:** transactional email via SMTP (`send_email`, `.env SMTP_*`,
-`app.py:568`). **What does not exist:** any SMS/phone capability, any email-verification token
-flow, and any `Phone`/`EmailVerified`/`PhoneVerified`/`DeviceId` user fields.
+**v2 corrects the v1 flaw:** a cross-process file lock over several CSV/user-file writes is **not**
+atomic — a crash after the ledger write but before the counter increment or the access grant leaves
+inconsistent state. v2 replaces it with a **private transactional SQLite store** and makes the DB
+transaction (with UNIQUE constraints) the authority; the user grant is a recoverable projection of
+a committed record.
 
 ---
 
-## 2. Identity keys — one lifetime trial per each (phone primary)
+## 1. Storage — one private transactional SQLite database
 
-A redemption is denied if **any** of these already appears in the permanent ledger (§3):
+A single private, **untracked** SQLite file (`TRIAL_DB_PATH`, like `INVITE_CODES_PATH`; it holds
+redemption records, so it is a secret). This is a **scoped exception** to the app's CSV/JSON model
+(CLAUDE.md §6) — justified solely by the atomicity requirement, not a general DB migration. Tables:
 
-| Key | Normalization | Role |
-|---|---|---|
-| **Verified phone** (E.164) | digits → E.164; one trial per number | **PRIMARY** — email is too easy to replace |
-| **Normalized email** | lowercase, trim, strip dots/`+tags` for gmail-class providers (documented per-provider) | strong secondary |
-| **Account** (`UserId`) | the signed-in account | a given account trials once |
-| **Device / browser id** | a durable first-party id (§6) | supporting signal |
-| **Durable person-eligibility record** | the ledger row joining the above | the system of record |
+- **`codes`** (inventory): `code_id` PK, `venue_label`, `code_token_hmac` (HMAC of the redeemable
+  token — the raw token is **not** stored), `trial_days`, `max_redemptions`, `times_redeemed`,
+  `active`.
+- **`eligibility`** (the durable lifetime keys): `phone_hmac` **UNIQUE**, `email_hmac` **UNIQUE**,
+  `account_user_id` **UNIQUE**, `granted_at`, `expires_at`, `code_id`. One row **only** per
+  committed successful grant.
+- **`redemptions`** (audit of every attempt, granted or denied): `id` PK, `at`, `code_id` (the
+  **venue identifier, never the token**), `outcome` (granted|denied), `deny_reason`,
+  `activation_state` (committed|activated), `phone_mask`, `email_mask`, `device_hmac`, `ip_hmac`,
+  `expire_raw_at` (retention timestamp for the masked/raw-adjacent fields).
+- **`overrides`** (audited manual corrections): `at`, `operator`, `reason`, `affected_key`.
 
-Phone and email must both be **verified** (§4) before activation. Account and device are
-additional keys; IP is a monitoring signal only (§6), never a sole identity test.
-
----
-
-## 3. The permanent redemption ledger (account-independent)
-
-A single **append-only** store, independent of the Users file, at a private untracked path
-(`TRIAL_LEDGER_PATH`, mirroring `INVITE_CODES_PATH` — never committed; contains contact PII, so it
-is a secret). **Append-only**: rows are never rewritten or deleted, so deleting or recreating an
-account cannot reset eligibility.
-
-Each row (one per redemption **grant**, plus optional denied-attempt audit rows):
-`RedeemedAt, PhoneE164, PhoneHash, EmailNorm, EmailHash, UserId, DeviceId, IpHash, Code, TrialDays,
-ExpiresAt, Outcome (granted|denied), DenyReason, OverrideBy`.
-
-- Eligibility is checked against **PhoneE164 / EmailNorm / UserId / DeviceId**, never `UserId`
-  alone — so a new account with a reused phone or email is caught.
-- Store hashes (`PhoneHash`, `EmailHash`, `IpHash`) alongside the values so a future hardening can
-  drop the raw PII without losing the dedupe keys.
-- Expiry does **not** remove eligibility: a lifetime trial is once-ever, so an **expired** prior
-  grant still denies a second (test §9.6).
+**Constraints are the real guarantee** (req 3): `UNIQUE(phone_hmac)`, `UNIQUE(email_hmac)`,
+`UNIQUE(account_user_id)` on `eligibility`, and a **`CHECK(times_redeemed <= max_redemptions)`** plus
+the conditional UPDATE below on `codes`. Application checks are a convenience; the DB enforces
+correctness even under a race.
 
 ---
 
-## 4. Verification before activation
+## 2. The atomic redemption transaction (req 2, 3, 4)
 
-- **Email:** a token flow built on the existing SMTP (`send_email`). Account is not trial-eligible
-  until the email is confirmed. Buildable now.
-- **SMS (primary):** an OTP to the mobile number via an SMS provider. Account is not trial-eligible
-  until the phone is confirmed. **Provider-gated — see §8** (no SMS infrastructure exists today).
-- Order: verify email → verify phone → eligibility check → atomic redemption (§5). Nothing grants
-  a trial before both verifications succeed.
-
----
-
-## 5. Atomic redemption (one slot, no races)
-
-Eligibility check + code-cap check + ledger insert + counter increment are **one atomic
-operation**, under a single lock (a cross-process file lock on the ledger, since storage is
-CSV/JSON on one box — not a multi-writer DB):
+Everything that establishes a grant happens in **one SQLite transaction**:
 
 ```
-with trial_ledger_lock():            # cross-process; serializes all redemptions
-    if ledger_has(phone|email|user|device):   -> DENY (no code consumed)
-    if not invite_code_redeemable(code):      -> DENY (cap/inactive; no code consumed)
-    append_ledger(granted row)                # permanent
-    consume_invite_code(code)                 # increment TimesRedeemed
-    grant_trial(user, TrialDays)              # stamp all_access + ExpiresAt
-# commit all-or-nothing; a crash mid-way leaves no partial grant
+BEGIN IMMEDIATE;
+  -- eligibility (constraint-backed, not just a SELECT):
+  SELECT 1 FROM eligibility WHERE phone_hmac=? OR email_hmac=? OR account_user_id=?;   -> if hit: ROLLBACK, DENY
+  -- hard cap, enforced atomically in SQL:
+  UPDATE codes SET times_redeemed = times_redeemed + 1
+    WHERE code_id=? AND active=1 AND times_redeemed < max_redemptions;                 -> if 0 rows: ROLLBACK, DENY (cap/inactive)
+  -- durable keys; UNIQUE catches any racer that passed the SELECT:
+  INSERT INTO eligibility(phone_hmac,email_hmac,account_user_id,granted_at,expires_at,code_id) ...; -> UNIQUE violation: ROLLBACK, DENY
+  INSERT INTO redemptions(... outcome='granted', activation_state='committed' ...);
+COMMIT;
 ```
 
-- **Simultaneous final redemption:** two requests racing for a code's last slot — the lock
-  serializes them; exactly one appends + consumes, the other sees the cap exhausted and is denied
-  (test §9.5).
-- **Repeat attempt consumes nothing:** a denial for an already-redeemed person does **not**
-  increment any code counter (requirement 6).
+- **One successful grant guaranteed:** the UNIQUE constraints + the conditional `UPDATE` make the
+  grant and the cap-decrement atomic and race-safe; the SELECT is an early-out, the constraints are
+  the guarantee.
+- **Access is granted only AFTER commit** (req 4). The user's trial entitlement is **derived from a
+  committed `redemptions` row**, not a separate CSV flag that can diverge:
+  - After COMMIT, apply the user-facing trial stamp and set `activation_state='activated'` (idempotent).
+  - **Recoverable activation:** if the process crashes after COMMIT but before activation, the row
+    stays `committed`; on the user's next authenticated request (and via a recovery sweep), a
+    `committed`-not-`activated` redemption for that account is re-applied idempotently. A crash
+    **before** COMMIT rolls everything back — no code consumed, no eligibility row, no partial grant.
+- A **denied** attempt writes a `redemptions` audit row only; it inserts **no** `eligibility` row and
+  **decrements no code** (req 6 of the original ask, req 11 here).
 
 ---
 
-## 6. Secondary abuse signals (supporting, not identity)
+## 3. Identity keys — keyed HMAC, phone primary (req 5)
 
-- **Device / browser id:** a durable first-party identifier (e.g., a signed httpOnly cookie minted
-  on first visit, plus optional client fingerprint), recorded in the ledger and checked as a key.
-  Clearable by a determined abuser, hence supporting — not the identity test.
-- **IP velocity:** rate-limit redemptions per IP over a window and flag bursts for owner review.
-  **Do not hard-block on a shared IP** — casino/barbershop Wi-Fi legitimately shares one IP, so IP
-  is a *monitoring + rate-limit* signal that raises a review flag, never an automatic denial of a
-  verified phone.
+Durable keys are stored as **keyed HMACs**, never plain hashes (a plain SHA-256 of a 10-digit phone
+or a common email is trivially brute-forced):
 
----
+- `phone_hmac = HMAC_SHA256(TRIAL_HMAC_KEY, E.164_phone)` — **PRIMARY**, UNIQUE.
+- `email_hmac = HMAC_SHA256(TRIAL_HMAC_KEY, normalized_email)` — UNIQUE (normalization documented
+  per provider — lowercase/trim, gmail dot/`+tag` folding).
+- `account_user_id` — UNIQUE.
+- `TRIAL_HMAC_KEY` is a server secret in the prod `.env` (rotating it is a deliberate, documented
+  operation — it resets the dedupe space, so it is not rotated casually).
 
-## 7. Denial, owner reporting, manual override
+Both phone and email must be **verified** (§5) before they can key an eligibility row.
+
+## 4. Device / IP — secondary risk signals, NOT lifetime keys (req 7)
+
+- `device_hmac` and `ip_hmac` are stored on `redemptions` as **risk signals**, never as UNIQUE
+  eligibility keys. A device or IP match **alone never denies** — families and public/shared devices
+  are legitimate, and venue Wi-Fi shares one IP.
+- They **raise an abuse flag** for owner review (and feed IP **velocity** rate-limiting) only, and
+  only matter when they **corroborate** another identity key. IP is time-limited (§6), never an
+  automatic lifetime denial.
+
+## 5. Verification + OTP security (req 8, 9, 10)
+
+Both flows — **new-account signup** and the **logged-in free user at `/trial/<code>`** — pass
+through the **same** gate: verify email → verify phone (OTP) → eligibility transaction (§2). The
+current `/trial/<code>` immediate grant for logged-in free users (`app.py:39557`) is removed; no
+path grants a trial before both verifications and a committed redemption.
+
+**OTP security (frozen):** 6-digit code; **expires** in 10 minutes; **max 5 verify attempts** then
+lockout; **resend cooldown** (≥30 s) + a daily resend cap; the OTP is stored **HMAC-hashed**, never
+plaintext; it is **bound to the session + the account/phone** it was issued for; **rate-limited** per
+phone and per IP; and responses are **non-enumerating** ("if that number can receive texts, a code
+was sent" — never reveal whether a number/email is already registered or already redeemed).
+
+**SMS is control-of-number, not identity (req 10):** SMS verification proves control of a phone
+number at a point in time — not one biological person forever. Numbers can be shared, recycled, or
+replaced. It **materially deters** ordinary repeat-trial abuse; it does not guarantee human
+uniqueness. The product promise is calibrated to that bar.
+
+## 6. PII minimization + retention (req 6)
+
+- The permanent, lifetime-relevant data is the **HMAC keys** only. Raw phone, normalized email, raw
+  IP, and the redeemable token are **not** retained indefinitely.
+- `redemptions` keeps minimal **masked display** values (`•••-•••-1234`, `j***@domain`) for owner
+  reporting, with an `expire_raw_at` **retention policy** — a scheduled purge nulls the masked/adjacent
+  fields after N days, leaving the HMAC keys for lifetime dedupe.
+- The **code identifier / venue label** is stored, never the redeemable token (only its HMAC lives on
+  `codes` for validation).
+
+## 7. Denial, owner reporting, manual override (req 11)
 
 - **Denial message (frozen):** *"A trial has already been redeemed using this account or verified
-  contact information."* (No detail that would help an abuser enumerate which key matched.)
-- **Owner reporting:** an owner-gated view of the ledger — redemptions, denials by reason, IP/device
-  velocity flags, per-code usage — for monitoring the pilot.
-- **Manual override:** an explicit, authorized-operator action to grant or correct eligibility for a
-  legitimate case (e.g., a tester who changed phones), written to the ledger with `OverrideBy` so
-  every override is audited. Never automatic.
+  contact information."* — non-enumerating.
+- **Only a committed successful grant** creates lifetime ineligibility (req 11). Denied or abandoned
+  attempts (failed OTP, bailed flow) write audit rows but **never** an `eligibility` row — they do
+  **not** poison a phone or email.
+- **Owner reporting:** owner-gated view of `redemptions`/`overrides` — grants, denials by reason,
+  device/IP velocity flags, per-code usage.
+- **Manual override:** an explicit, authorized-operator action (writes an `overrides` row + the
+  `eligibility` adjustment) for legitimate corrections (e.g., a tester who changed phones). Audited;
+  never automatic.
 
----
+## 8. External dependency — deferred until this design is approved
 
-## 8. External dependency — the one decision that gates implementation
+SMS is the primary control and no SMS capability exists. **Provider selection and purchase are
+deferred** until this storage/transaction design is approved — otherwise we risk paying for SMS
+while the redemption record can still become inconsistent. Twilio Verify remains a reasonable
+candidate (purpose-built OTP) to evaluate **after** approval. Email verification runs on the existing
+SMTP (`send_email`); email alone is insufficient.
 
-**SMS is the primary control and no SMS capability exists in the codebase.** Standing it up
-requires a **provider decision + account + API credentials + per-message budget**: e.g. Twilio,
-AWS SNS, MessageBird, or Vonage. This is an operator decision + procurement (credentials set in the
-prod `.env` via SSM, like the other secrets) — it cannot be chosen or provisioned from code.
+## 9. Tests — concurrency AND crash-recovery (req 12)
 
-- Until a provider is chosen and credentials are live, the gate **cannot** meet "SMS-verified
-  mobile required," so it is **not** passable and flyers stay undistributed.
-- Email verification runs on the existing SMTP, but email alone is explicitly insufficient (the
-  director: "email alone is too easy to replace").
+Using the SQLite store + a **mocked** OTP/email verifier (real providers in staging before launch):
 
-**Recommended provider:** Twilio Verify (purpose-built OTP, handles delivery/retry/fraud, simplest
-integration) — but the choice and budget are the director's. Please confirm the provider.
+**Eligibility / uniqueness**
+1. Repeat account (new account, same phone/email) → DENY; no code consumed.
+2. Repeat email (same normalized email) → DENY.
+3. Repeat phone (same E.164) → DENY.
+4. New email, **reused phone** → DENY (phone primary; UNIQUE catches it).
+5. Shared-IP / shared-device legitimacy: distinct verified phones from one IP/device → all granted
+   (flag raised, no block).
 
----
+**Concurrency**
+6. Simultaneous final redemption (two requests for a code's last slot) → exactly one grant, one
+   deny; `times_redeemed` increments exactly once (UNIQUE + conditional UPDATE).
+7. Simultaneous same-phone from two sessions → exactly one eligibility row (UNIQUE constraint).
 
-## 9. Automated tests (must all pass before the gate is "passed")
+**Crash-recovery (partial failure at every transition)**
+8. Crash **before COMMIT** (after the conditional UPDATE / after the eligibility INSERT) → full
+   rollback: no code consumed, no eligibility row, person still eligible.
+9. Crash **after COMMIT, before activation** → redemption is `committed`; recovery idempotently
+   activates on next access; no double grant, cap not over-consumed.
+10. Crash during the **user-plan projection** write → re-derivable from the committed row; never a
+    grant without a committed redemption, never ineligibility without a grant.
 
-Using the ledger + a **mocked** SMS/email verifier (real provider in staging before launch):
-1. **Repeat account** — same person, new account, same phone/email → DENY; no code consumed.
-2. **Repeat email** — same normalized email, second attempt → DENY.
-3. **Repeat phone** — same E.164, second attempt → DENY.
-4. **New email, reused phone** — fresh email but a phone already in the ledger → DENY (phone is
-   primary).
-5. **Simultaneous final redemption** — two concurrent requests for a code's last slot → exactly one
-   grant, one deny; `TimesRedeemed` increments exactly once.
-6. **Expired prior trial** — a prior grant that has since expired → DENY (one lifetime trial).
-7. **Authorized operator override** — an override grants eligibility and is audited (`OverrideBy`).
-8. **Shared-IP legitimacy** — multiple distinct verified phones from one IP (venue Wi-Fi) → all
-   granted (IP raises a review flag but does not block), while IP velocity still rate-limits bursts.
+**Lifetime semantics**
+11. Expired prior trial → DENY (one lifetime trial; expiry never resets eligibility).
+12. Denied/abandoned attempt then a later genuine attempt by the same person → the earlier denial
+    did **not** create ineligibility; the genuine attempt proceeds.
 
----
+**Authorized override**
+13. Operator override grants/corrects eligibility and is audited (`overrides.operator`).
 
-## 10. Phasing
+## 10. Non-goals / boundaries
+- Governs the **trial** grant only — no change to paid checkout or founder logic.
+- Codes stay `MaxRedemptions=25` for the pilot (the DB cap still bounds inventory).
+- No claim of perfect human identity (§5, req 10).
+- SQLite is scoped to this gate; it is not a general migration of the CSV/JSON data model.
 
-- **Buildable now (for review, pre-SMS):** ledger + account-independent eligibility, atomic
-  redemption, email-verification token flow, device-id capture, IP velocity + flags, denial message,
-  owner reporting + manual override, and the full test harness with SMS mocked.
-- **Gated on §8:** SMS OTP verification (primary control). The gate is **not passable** — and
-  flyers stay undistributed — until SMS is live and all §9 tests pass against the real providers in
-  staging.
-
-## 11. Non-goals / boundaries
-- No change to the paid checkout or founder logic; this governs the **trial** grant only.
-- Codes stay at `MaxRedemptions=25` for the pilot (the cap still bounds total inventory).
-- No claim of perfect human identity — SMS + a permanent ledger stops *ordinary* repeat-trial abuse
-  while preserving the no-card offer; that is the stated bar.
-
-*End of specification. Awaiting approval + the §8 SMS-provider decision before implementation.
-Flyers remain undistributed; codes remain at 25.*
+*End of revised specification (v2). Awaiting approval of the storage/transaction design **before**
+choosing or purchasing an SMS provider. Flyers remain undistributed; codes remain at 25.*
