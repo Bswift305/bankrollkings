@@ -1206,7 +1206,7 @@
         <div>
             <div class="page-kicker">{% if matchup_lens_mode %}NBA Matchup Method{% else %}NBA Command Center{% endif %}</div>
             <h1>{% if matchup_lens_mode %}Matchup <span class="accent">Lens</span>{% else %}NBA <span class="accent">Command Center</span>{% endif %}</h1>
-            <div class="page-subtitle">{% if matchup_lens_mode %}The dedicated NBA matchup workspace for reading slate context, playoff series state, opponent environment, and whether a prop or trend actually fits tonight's spot.{% else %}The NBA sport workspace. Use the toolbar above to move from the command center into props, market, parlays, review, trends, injuries, and system layers without returning Home.{% endif %}</div>
+            <div class="page-subtitle">{% if matchup_lens_mode %}The dedicated NBA matchup workspace for reading slate context, opponent environment, and whether a prop or trend actually fits tonight's spot.{% else %}The NBA sport workspace. Use the toolbar above to move from the command center into props, market, parlays, review, trends, injuries, and system layers without returning Home.{% endif %}</div>
         </div>
     </div>
     <div class="hero-actions command-center-actions">
@@ -1654,7 +1654,7 @@
     </div>
     <table class="data-table">
         <thead>
-            <tr><th>Player</th><th>Team</th><th>Stat</th><th>Shift</th><th>Driver</th></tr>
+            <tr><th>Player</th><th>Team</th><th>Stat</th><th>Expected role</th><th>Driver</th></tr>
         </thead>
         <tbody>
             {% for role in role_changes[:8] %}
@@ -1662,7 +1662,7 @@
                 <td><a href="/player/{{ role.player|urlencode }}">{{ role.player }}</a></td>
                 <td>{{ team_mark(role.team, size='xs') }}</td>
                 <td><span class="badge">{{ role.stat }}</span></td>
-                <td><span class="hr-strong">+{{ role.boost_pct }}% {{ role.expected_shift }}</span>{% if role.projected_starter %}<div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Projected starter</div>{% endif %}</td>
+                <td>{{ role.expected_shift }}{% if role.projected_starter %}<div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Projected starter</div>{% endif %}</td>
                 <td>{{ role.injured_player }} <span style="color: var(--text-muted);">({{ role.injury_status }})</span></td>
             </tr>
             {% endfor %}
@@ -1686,15 +1686,15 @@
     </div>
     <div class="nba-metric-card">
         <div class="nba-metric-value">{{ top_plays|length }}</div>
-        <div class="nba-metric-label">Hot Plays</div>
+        <div class="nba-metric-label">Live Rows</div>
     </div>
 </div>
 
 <div class="card mb-24 nba-playoff-panel">
     <div class="card-header panel-header-gloss">
         <div>
-            <div class="card-title">Top Plays</div>
-            <div class="nba-playoff-panel-subtitle">The strongest live rows with market status and signal notes in one place.</div>
+            <div class="card-title">Live NBA markets</div>
+            <div class="nba-playoff-panel-subtitle">Tonight's live rows with market status and notes in one place.</div>
         </div>
         <a href="/market-edge?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open Board</a>
     </div>
@@ -1741,7 +1741,7 @@
     {% else %}
     <div class="empty-state">
         <div class="empty-state-title">No plays loaded</div>
-        <div class="empty-state-copy">Run `REFRESH_DATA` to reload player props and rebuild the dashboard board.</div>
+        <div class="empty-state-copy">NBA markets open closer to tip-off &mdash; the board fills when tonight's lines post.</div>
     </div>
     {% endif %}
 </div>

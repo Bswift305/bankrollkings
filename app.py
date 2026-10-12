@@ -3458,7 +3458,7 @@ def get_props_refresh_meta(props_df, max_age_hours=6):
             'has_live_props': False,
             'is_stale': False,
             'status': 'unavailable',
-            'warning': 'Live props feed is unavailable. Verify the Odds API key or subscription before trusting board lines.',
+            'warning': "Live lines aren't posted yet — check back near game time.",
         }
 
     books = []
@@ -21960,7 +21960,7 @@ def build_today_hub_context(postseason_only=False, selected_sport=''):
 def build_matchup_lens_hub_context(postseason_only=False, selected_sport=''):
     postseason_flag = 1 if postseason_only else 0
     cards = [
-        {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Matchup Lens', 'href': f'/sports/nba/matchup-lens?postseason={postseason_flag}', 'status': 'live', 'note': 'Dedicated NBA matchup lens with playoff context, series state, and prop fit.'},
+        {'sport_key': 'nba', 'sport': 'NBA', 'label': 'NBA Matchup Lens', 'href': f'/sports/nba/matchup-lens?postseason={postseason_flag}', 'status': 'live', 'note': 'Dedicated NBA matchup lens for slate context, opponent environment, and prop fit.'},
         {'sport_key': 'wnba', 'sport': 'WNBA', 'label': 'WNBA Matchup Lens', 'href': f'/sports/wnba?postseason={postseason_flag}', 'status': 'live', 'note': "Use the WNBA board and matchup cards as the current women's-hoops matchup layer."},
         {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Matchup Lens', 'href': f'/sports/mlb?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the MLB board as the current baseball matchup environment read.'},
         {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Matchup Lens', 'href': f'/sports/nfl?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the NFL board and matchup routes for weekly football matchup context.'},
