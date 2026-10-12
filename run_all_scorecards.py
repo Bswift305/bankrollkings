@@ -48,6 +48,9 @@ SCORECARDS = [
     # NBA postseason phase rule: the thirteen configured-window phase tests + override + NBA
     # scoping + other-sports-unchanged. Cheap; guards the P0 season-state correction.
     ("NBA Postseason Phase QC", "qc_nba_postseason_phase.py", 180),
+    # Trial Eligibility Gate core (mocked): one-lifetime-trial store guarantees -- eligibility,
+    # hard cap, atomic redemption, crash-recovery, key rotation, DB invariants, fail-closed.
+    ("Trial Gate QC", "qc_trial_gate.py", 120),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
