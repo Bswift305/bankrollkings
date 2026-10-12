@@ -183,15 +183,33 @@ season**, from existing sources only:
 1. **Current season ending year** — from **`get_current_nba_season()`** (`app.py:20011`), which
    returns `"YYYY-YY"` (e.g., `"2026-27"`). The **ending year** is the postseason's calendar year
    (`2026-27` → **2027**; the NBA play-in + playoffs run ~Apr–Jun of the ending year).
-2. **Configured postseason window (the gate)** — a small **season-specific configuration** maps the
-   ending year to the **official NBA postseason start and end dates** for that season, sourced from
-   the published NBA schedule and **updated once per season** (one line per year, e.g.
-   `NBA_POSTSEASON_DATES = { 2027: (date(2027, 4, 18), date(2027, 6, 30)) }` — play-in start through
-   the Finals end; confirm the exact dates from the official schedule before the season). This
-   configured `[start, end]` is what decides whether today is in the postseason. **Why not derive it
-   from results:** completed playoff rows cannot bound a *live* window — there is no row on the first
-   playoff day, and on an off-day between games "today" is later than the most recent result; a
-   result-derived window would wrongly flip those to regular-season.
+2. **Configured postseason window (the gate) — FROZEN per season from the official NBA schedule.**
+   A season-specific configuration maps the ending year to the **official** postseason **start** and
+   **end** dates; an entry is **complete only when BOTH official dates are present**. For
+   **2026-27 (ending year 2027)**:
+   ```python
+   NBA_POSTSEASON_DATES = {
+       2027: {
+           'start': date(2027, 4, 13),  # SoFi NBA Play-In Tournament start, Apr 13 2027 (official)
+           'end':   None,               # official latest-possible NBA Finals date -- NOT YET PUBLISHED; enter when the NBA posts it
+       },
+   }
+   ```
+   - **Start = April 13, 2027 (FROZEN)** — the Play-In start. Chosen because the product surfaces the
+     **20-team play-in field** ("20-Team Field" / play-in teams), so "postseason mode" **includes the
+     play-in**. (The 16-team-bracket-only alternative would start **April 17, 2027**; we take April 13.
+     Source: nba.com/news/key-dates — Play-In Tournament Apr 13-16, 2027; first round Apr 17, 2027.)
+   - **End = the official latest-possible NBA Finals date.** The NBA has **not yet published** the
+     2026-27 Finals schedule (the key-dates page lists only play-in and first round — no Finals /
+     Game-7 date), so the 2027 `end` is **`None`** and the entry is **incomplete**. **Do not substitute
+     a placeholder** (the earlier `June 30` is removed); if a provisional bound is ever required it
+     must be explicitly labeled a **safety boundary**, never the window. The operator enters the
+     official end date once the NBA publishes it.
+
+   This configured `[start, end]` is what decides whether today is in the postseason. **Why
+   configured, not result-derived:** completed playoff rows cannot bound a *live* window — there is no
+   row on the first playoff day, and on an off-day between games "today" is later than the most recent
+   result; a result-derived window would wrongly flip those to regular-season.
 3. **Current-season playoff rows — label only, not the gate** — **`load_playoff_results()`**
    (`app.py:3547`) reads `NBA_Playoff_Results.csv` (rows carry a **`Date`** and `Round`, **no Season
    column**). Keep **only rows whose `Date` year == the current ending year** (discarding stale
@@ -203,16 +221,17 @@ season**, from existing sources only:
 **`active_sports()` is NOT used to determine postseason** — only, elsewhere, to decide whether a
 live board exists at all.
 
-**Deterministic rule:** resolve the ending year (1); the NBA default is `postseason=1` **iff**
-`sports_today_date()` is within the **configured** `[start, end]` dates for that ending year (2).
-Otherwise — preseason (even with props), regular season before the start date, or offseason after
-the end date — the NBA default is `postseason=0`. The active-round **label** comes from
-current-ending-year playoff rows (3) when present. An explicit `?postseason=` query parameter
-**always overrides** this resolution. If the ending year has **no configured window**, default
-`postseason=0` and surface an owner-only note to add it before that postseason. Scoped to NBA;
-other sports untouched.
+**Deterministic rule:** resolve the ending year (1). A config entry is used **only when complete**
+(both official `start` and `end` present). The NBA default is `postseason=1` **iff** the entry is
+complete **and** `sports_today_date()` is within the **inclusive** configured `[start, end]`.
+Otherwise — preseason (even with props), regular season before `start`, offseason after `end`, **or
+an incomplete/missing entry** — the NBA default is `postseason=0`. The active-round **label** comes
+from current-ending-year playoff rows (3) when present. An explicit `?postseason=` query parameter
+**always overrides** this resolution. When the entry is **incomplete** (as 2027 is today — `end`
+unpublished), default `postseason=0` and surface an **owner-only** note to enter the official Finals
+end date before that postseason. Scoped to NBA; other sports untouched.
 
-**Eight phase tests (must all pass before this ships):**
+**Thirteen phase tests (must all pass before this ships):**
 | # | Scenario | Expected NBA default |
 |---|---|---|
 | 1 | **Preseason, no props** (Oct, no `NBA_Props.csv` rows) | `postseason=0` |
@@ -223,6 +242,11 @@ other sports untouched.
 | 6 | **Explicit override** (`?postseason=0` during the real postseason; `?postseason=1` during the regular season) | the param value wins, regardless of phase |
 | 7 | **First playoff day, before any result is recorded** (today == configured start; zero current-year playoff rows) | `postseason=1` — window is open; label falls back gracefully |
 | 8 | **Off-day between playoff games** (today inside the window; latest recorded result is several days old) | `postseason=1` — the window, not the latest result, governs |
+| 9 | **Day before the configured start** (ending year 2027: Apr 12, 2027) | `postseason=0` |
+| 10 | **Exactly the configured start** (Apr 13, 2027) | `postseason=1` — start is **inclusive** |
+| 11 | **Exactly the configured end** (the official Finals end date, once entered) | `postseason=1` — end is **inclusive** |
+| 12 | **Day after the configured end** | `postseason=0` |
+| 13 | **Incomplete config** (official `end` not yet published/entered — the current 2027 state) | `postseason=0` — safe default + owner-only "enter the official Finals end date" note |
 
 **"20-team field" (P1, not a standalone edit):** navigating `?postseason=0` did **not** change
 "20-Team Field," so it is **not** driven by the postseason default — it is a **data-completeness**
@@ -292,7 +316,9 @@ touched is `run_daily.py` wiring *if* a feed is found missing (step 2).
   the replacement order (tip-off/name) is neutral by construction.
 - No implementation until this spec is approved. The postseason default **mechanism is now frozen**
   (NBA-specific, current-season-matched via a configured official postseason window, param-
-  overridable, other sports unchanged, with eight phase tests) — no remaining decision.
+  overridable, other sports unchanged, with thirteen phase tests). 2026-27 start is frozen at the
+  official Play-In date (Apr 13, 2027); the end stays unset (official Finals date unpublished) so the
+  entry defaults safely to regular-season until entered. No remaining decision.
 
 ---
 
