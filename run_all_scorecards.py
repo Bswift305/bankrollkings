@@ -42,6 +42,11 @@ SCORECARDS = [
     # Floor-board cache determinism + player-log invalidation guard. Cheap; locks down the
     # call-order contamination and stale-on-log-refresh defects (a6d9e4c + signature follow-up).
     ("NFL Floor Cache QC", "qc_nfl_floor_cache.py", 240),
+    # NFL heat-map freshness: a stale streak must never read as current. Locks down the cache
+    # key (player-log signature), the through-week/timestamp disclosures, games-played vs
+    # calendar recency + injury availability, the completed-week pending gate, and the Mike
+    # Evans Week-5 regression (yesterday's result ends the run once the week loads).
+    ("NFL Heat-Map Freshness QC", "qc_nfl_heatmap_freshness.py", 180),
     # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
     # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
     ("Player Check QC", "qc_player_check.py", 240),

@@ -30354,6 +30354,40 @@ def build_nfl_ticket_scoreboard(graded_df=None, legs=3):
 _NFL_HOTHAND_CACHE = {}
 
 
+# Week-1 Thursday (ET) per NFL season, so the heat map can tell which completed week its
+# player logs SHOULD be through. Like the NBA postseason window, this is a configured
+# anchor: add each new season's opener here. Missing season -> the calendar freshness gate
+# degrades safely (returns None = "unknown"), and the board falls back to the per-player
+# recency + through-week disclosures, which need no calendar.
+NFL_SEASON_WEEK1_THURSDAY = {
+    2025: datetime(2025, 9, 4).date(),
+    2026: datetime(2026, 9, 10).date(),
+}
+
+
+def _nfl_expected_completed_week(today=None):
+    """How many NFL weeks SHOULD be final as of `today` (Eastern). Returns (week, season).
+
+    A week's slate runs Thu->Mon; it is not 'complete' until its games finalize, so we only
+    count a week once its Tuesday (ET) has passed. week=0 means the season hasn't started;
+    (None, season) means we have no configured Week-1 anchor for that season and therefore
+    make no staleness claim. Regular season only (capped at 18) -- the hot-hand board is a
+    regular-season player-prop surface."""
+    today = today or sports_today_date()
+    # NFL season N spans Sep N -> Feb N+1, so Jan/Feb belong to the prior season label.
+    season = today.year if today.month >= 3 else today.year - 1
+    wk1 = NFL_SEASON_WEEK1_THURSDAY.get(season)
+    if wk1 is None:
+        return None, season
+    if today < wk1:
+        return 0, season
+    days = (today - wk1).days
+    cur_week = days // 7 + 1          # 1-based week the slate is currently in
+    day_in_week = days % 7           # 0=Thu .. 4=Mon, 5=Tue (games final), 6=Wed
+    completed = cur_week if day_in_week >= 5 else cur_week - 1
+    return max(0, min(completed, 18)), season
+
+
 def _nfl_prop_matchup(opp_abbr, stat_key):
     """Opponent-defense read for a prop category: is the matchup a plus spot or a wall?
     High rank = soft defense = good look for the OVER. Returns None for stats with no
@@ -30387,16 +30421,68 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
     a streak is a trend the market prices -- context, not a proven edge -- but 'who's hot
     right now' is exactly what a bettor wants to see."""
     props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
-    sig = os.path.getmtime(props_path) if props_path.exists() else 0
+    inj_path = DATA_DIR / 'injuries' / 'NFL_Injuries.csv'
+    # Fix 1: the cache MUST invalidate when the player-game logs refresh, not only when
+    # NFL_Props.csv changes -- otherwise a fresh week of results (new parquet) is ignored and
+    # last week's streaks serve as "current" for the whole TTL. Fold in the player-log
+    # signature, the injury-file mtime (availability gate), and today's ET date (the
+    # completed-week calendar advances with the calendar even when no file changed).
+    props_sig = os.path.getmtime(props_path) if props_path.exists() else 0
+    inj_sig = os.path.getmtime(inj_path) if inj_path.exists() else 0
+    sig = (props_sig, inj_sig, _nfl_player_log_signature(), str(sports_today_date()))
     if _NFL_HOTHAND_CACHE.get('sig') == sig and 'data' in _NFL_HOTHAND_CACHE:
         return _NFL_HOTHAND_CACHE['data']
-    empty = {'streaks': [], 'available': False, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+    empty = {'streaks': [], 'available': False, 'pending_latest': False,
+             'through_week': None, 'through_label': '', 'data_updated': '',
+             'expected_week': None,
+             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     log = _nfl_player_week_data()
     if log.empty or not props_path.exists():
         _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
         return empty
     idx = _nfl_player_index()
     cur = int(pd.to_numeric(log['season'], errors='coerce').max())
+    # Fix 2: the week the loaded logs actually run THROUGH (current-season max week), and the
+    # real data freshness time = newest mtime of the current-season source files, NOT
+    # datetime.utcnow() (which only said when we rebuilt the cache, never how fresh the data was).
+    cur_weeks = pd.to_numeric(log.loc[pd.to_numeric(log['season'], errors='coerce') == cur, 'week'],
+                              errors='coerce').dropna()
+    through_week = int(cur_weeks.max()) if not cur_weeks.empty else None
+    _data_mtime = 0.0
+    for _src in _nfl_player_log_sources():
+        if _src.get('season') == cur:
+            try:
+                _data_mtime = max(_data_mtime, os.path.getmtime(_src['path']))
+            except OSError:
+                pass
+    if _data_mtime:
+        try:
+            from services.timeutils import to_eastern_datetime_str as _to_et
+            # Aware-UTC ISO (…+00:00) so _to_eastern parses it as UTC, not local wall-clock.
+            _iso = datetime.fromtimestamp(_data_mtime, tz=timezone.utc).isoformat()
+            data_updated = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+        except Exception:
+            data_updated = datetime.utcfromtimestamp(_data_mtime).strftime('%Y-%m-%d %H:%M UTC')
+    else:
+        data_updated = ''
+    # Fix 7: the completed week the calendar says SHOULD be loaded. If it is ahead of what we
+    # have, a finished week is missing -> pending_latest: show the board but never as "current".
+    expected_week, _season_lbl = _nfl_expected_completed_week()
+    pending_latest = bool(expected_week and through_week is not None and through_week < expected_week)
+    # Fixes 4/5: current availability, so an IR/Out player's old run isn't shown as active.
+    try:
+        inj_lookup = build_injury_status_lookup(load_sport_injuries('nfl'))
+    except Exception:
+        inj_lookup = {}
+
+    def _availability(player_name):
+        inj = inj_lookup.get(player_name) or inj_lookup.get(normalize_player_lookup_name(player_name) or '')
+        if not inj:
+            return {'status': 'ACTIVE', 'label': 'Active', 'rank': 3, 'available': True}
+        rank, label = _injury_severity_bucket(inj.get('status'))
+        # rank: 0 Out, 1 Doubtful, 2 Questionable, 3 Other. Out/Doubtful = not available.
+        return {'status': str(inj.get('status') or '').upper(), 'label': label, 'rank': rank,
+                'available': rank >= 2, 'reason': str(inj.get('reason') or '').strip()}
     try:
         props = _load_cached_csv(props_path, default=pd.DataFrame())
     except Exception:
@@ -30424,14 +30510,21 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
             s = s[pd.to_numeric(s['attempts'], errors='coerce').fillna(0) > 0]
         s = s.dropna(subset=['season'])
         s['week'] = pd.to_numeric(s.get('week'), errors='coerce')
+        s['season'] = pd.to_numeric(s['season'], errors='coerce')
         s = s.dropna(subset=['week']).sort_values(['season', 'week'], ascending=False)
-        if s.empty or int(s.iloc[0]['season']) != cur:   # last game must be current season = active
+        if s.empty or int(s.iloc[0]['season']) != cur:   # most recent LOADED game is current season
             continue
-        vals = s['_v'].tolist()
-        streak, clears = 0, []
-        for v in vals:
-            if v > float(line):
-                streak += 1; clears.append(v - float(line))
+        # Walk newest-first; capture the weeks that make up the run (fix 3) and the player's
+        # last LOADED game week, so we can tell a games-played streak from calendar recency (fix 5).
+        last_played_week = int(s.iloc[0]['week'])
+        last_played_season = int(s.iloc[0]['season'])
+        streak, clears, streak_weeks = 0, [], []
+        for _v, _wk, _sea in zip(s['_v'].tolist(), s['week'].tolist(), s['season'].tolist()):
+            if _v > float(line):
+                streak += 1
+                clears.append(_v - float(line))
+                if _sea == cur and not pd.isna(_wk):
+                    streak_weeks.append(int(_wk))
             else:
                 break
         if streak < min_streak:
@@ -30453,15 +30546,59 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         matchup = _nfl_prop_matchup(opp, stat_key) if opp else None
         pr = pd.to_numeric(g.get('OverOdds'), errors='coerce')
         pr = pr[pr.abs() >= 100]
+        # Fix 5: a run is only "active" if the player is still available AND his last loaded game
+        # keeps pace with the newest loaded week. A games-played streak frozen by an absence
+        # (IR/Out/benched, or simply hasn't appeared in the most recent loaded week) is preserved
+        # as a HISTORICAL run, never presented as current. Weeks-behind uses the log's own
+        # through-week so it also catches a player who stopped appearing while others advanced.
+        avail = _availability(str(player))
+        weeks_behind = (through_week - last_played_week) if (through_week is not None) else 0
+        weeks_behind = max(0, weeks_behind)
+        if streak_weeks:
+            wk_lo, wk_hi = min(streak_weeks), max(streak_weeks)
+            weeks_label = (f"Wk {wk_lo}" if wk_lo == wk_hi else f"Wks {wk_lo}–{wk_hi}")
+        else:
+            weeks_label = ''
+        is_active = bool(avail['available'] and weeks_behind == 0 and not pending_latest)
+        if not avail['available']:
+            status_label = f"Historical streak — {avail['label']} before this week"
+        elif weeks_behind >= 1:
+            status_label = (f"Historical streak — last played Wk {last_played_week}, "
+                            f"{weeks_behind} week{'s' if weeks_behind != 1 else ''} behind")
+        elif pending_latest:
+            status_label = f"As of Wk {through_week} — latest results pending"
+        else:
+            status_label = 'Active streak'
         rows.append({
             'player': str(player), 'stat': meta['label'], 'stat_key': stat_key,
             'line': float(line), 'streak': int(streak),
             'avg_clear': round(sum(clears) / len(clears), 1) if clears else 0,
             'price': int(round(pr.median())) if len(pr) else None,
             'game': game, 'team': p_team, 'opp': opp, 'matchup': matchup,
+            'streak_weeks': streak_weeks, 'weeks_label': weeks_label,
+            'last_week': last_played_week, 'last_season': last_played_season,
+            'weeks_behind': int(weeks_behind), 'active': is_active,
+            'availability': avail['label'], 'availability_status': avail['status'],
+            'status_label': status_label,
         })
-    rows.sort(key=lambda x: (-x['streak'], -x['avg_clear']))
+    # Preserve the existing ranking (streak length, then clear comfort) but partition so genuinely
+    # active runs lead and stale/historical ones sink -- a stale streak must never headline the
+    # board as if it were current. This is the only selection change (per the freshness scope).
+    rows.sort(key=lambda x: (0 if x['active'] else 1, -x['streak'], -x['avg_clear']))
+    active_count = sum(1 for r in rows if r['active'])
+    if through_week is not None:
+        if pending_latest:
+            through_label = (f"As of Week {through_week} · Week {expected_week} results pending"
+                             + (f" · logs updated {data_updated}" if data_updated else ''))
+        else:
+            through_label = (f"Results through Week {through_week}"
+                             + (f" · updated {data_updated}" if data_updated else ''))
+    else:
+        through_label = ''
     data = {'streaks': rows[:limit], 'count': len(rows), 'available': bool(rows),
+            'active_count': active_count, 'pending_latest': pending_latest,
+            'through_week': through_week, 'expected_week': expected_week,
+            'through_label': through_label, 'data_updated': data_updated,
             'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     _NFL_HOTHAND_CACHE.update(sig=sig, data=data)
     return data

@@ -22,8 +22,9 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
+import time
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -46,28 +47,52 @@ def current_nfl_season() -> int:
     return y if m >= 3 else y - 1
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Fetch current-season nflverse weekly player stats.")
-    ap.add_argument("--season", type=int, default=None, help="Override the season (default: current).")
-    ap.add_argument("--source", default=None, help="Use a local parquet instead of downloading.")
-    args = ap.parse_args()
-    season = args.season or current_nfl_season()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / f"_nflverse_stats_{season}.parquet"
+# Week-1 Thursday (ET) per season. Keep in sync with NFL_SEASON_WEEK1_THURSDAY in app.py:
+# both the heat-map freshness gate and this fetcher's retry decide "which week should be
+# final by now" from the same anchor. Add each new season's opener here.
+NFL_SEASON_WEEK1 = {
+    2025: date(2025, 9, 4),
+    2026: date(2026, 9, 10),
+}
 
+
+def expected_completed_week(season: int, today: date | None = None):
+    """How many weeks of `season` SHOULD be final as of `today` (ET date). A week runs
+    Thu->Mon and is only complete after its Tuesday, so the boundary falls on Tuesday.
+    Returns None when we have no Week-1 anchor for the season (make no staleness claim)."""
+    today = today or _today_et()
+    wk1 = NFL_SEASON_WEEK1.get(season)
+    if wk1 is None or today < wk1:
+        return 0 if (wk1 is not None and today < wk1) else None
+    days = (today - wk1).days
+    cur_week = days // 7 + 1
+    completed = cur_week if (days % 7) >= 5 else cur_week - 1
+    return max(0, min(completed, 18))
+
+
+def _today_et() -> date:
+    try:
+        from services.timeutils import to_eastern_date_str
+        s = to_eastern_date_str(datetime.utcnow().isoformat() + "Z")
+        return date(int(s[:4]), int(s[5:7]), int(s[8:10]))
+    except Exception:
+        return datetime.now().date()
+
+
+def _fetch_frame(season: int, source: str | None):
+    """Download (or read --source) the season parquet. Returns a DataFrame or None on failure.
+    Raises nothing -- a 404/offline season is a None return, not a crash."""
     tmp = None
     try:
-        if args.source:
-            df = pd.read_parquet(args.source)
-        else:
-            fd, tmp = tempfile.mkstemp(prefix=f"nflwk_{season}_", suffix=".parquet")
-            os.close(fd)
-            urllib.request.urlretrieve(STATS_URL.format(season=season), tmp)
-            df = pd.read_parquet(tmp)
+        if source:
+            return pd.read_parquet(source)
+        fd, tmp = tempfile.mkstemp(prefix=f"nflwk_{season}_", suffix=".parquet")
+        os.close(fd)
+        urllib.request.urlretrieve(STATS_URL.format(season=season), tmp)
+        return pd.read_parquet(tmp)
     except Exception as exc:
-        # Off-season / not-yet-published seasons 404 -- leave any existing file untouched.
         print(f"[fetch_nfl_player_week] could not fetch season {season}: {exc}")
-        return 0 if out.exists() else 1
+        return None
     finally:
         if tmp:
             try:
@@ -75,11 +100,61 @@ def main() -> int:
             except OSError:
                 pass
 
+
+def _max_week(df) -> int:
     if df is None or df.empty:
+        return 0
+    wk = pd.to_numeric(df.get("week"), errors="coerce").dropna()
+    return int(wk.max()) if not wk.empty else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Fetch current-season nflverse weekly player stats.")
+    ap.add_argument("--season", type=int, default=None, help="Override the season (default: current).")
+    ap.add_argument("--source", default=None, help="Use a local parquet instead of downloading.")
+    ap.add_argument("--retries", type=int, default=0,
+                    help="If the feed is behind the completed week, re-download up to N times "
+                         "(use on a post-game Mon/Tue cadence; default 0 for the daily run).")
+    ap.add_argument("--retry-wait", type=int, default=300,
+                    help="Seconds to wait between retries (default 300).")
+    ap.add_argument("--require-week", type=int, default=None,
+                    help="The completed week the feed MUST contain. Default: computed from the "
+                         "calendar. Exit 2 if still missing after retries (so an ops wrapper can "
+                         "keep retrying); the plain daily run leaves this unset and never exit-2s.")
+    args = ap.parse_args()
+    season = args.season or current_nfl_season()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / f"_nflverse_stats_{season}.parquet"
+
+    # The week that SHOULD be final by now. --require-week forces it (for the retry job); otherwise
+    # the calendar decides, and None means "no anchor configured" -> we make no freshness claim.
+    want_week = args.require_week if args.require_week is not None else expected_completed_week(season)
+
+    df = None
+    attempts = max(0, args.retries) + 1
+    for i in range(attempts):
+        df = _fetch_frame(season, args.source)
+        have = _max_week(df)
+        if want_week is None or have >= want_week or args.source:
+            break
+        if i < attempts - 1:
+            print(f"[fetch_nfl_player_week] season {season}: feed has week {have}, "
+                  f"completed week {want_week} not published yet -- retry {i + 1}/{attempts - 1} "
+                  f"in {args.retry_wait}s")
+            time.sleep(max(0, args.retry_wait))
+
+    if df is None:
+        # Off-season / not-yet-published season, or a transient network failure. Leave any
+        # existing file untouched so stale-but-real data is never replaced with nothing.
+        return 0 if out.exists() else 1
+    if df.empty:
         print(f"[fetch_nfl_player_week] season {season}: empty feed; left existing file untouched")
         return 0
+
     weeks = sorted(int(w) for w in pd.to_numeric(df.get("week"), errors="coerce").dropna().unique())
-    # atomic write so a concurrent web read never sees a half-written parquet
+    have = _max_week(df)
+    # atomic write so a concurrent web read never sees a half-written parquet. Always write the
+    # freshest data we obtained, even if still a week behind -- more weeks is never worse.
     fd, tmp2 = tempfile.mkstemp(prefix=f"nflwk_out_{season}_", suffix=".parquet", dir=str(OUT_DIR))
     os.close(fd)
     try:
@@ -92,6 +167,16 @@ def main() -> int:
             except OSError:
                 pass
     print(f"[fetch_nfl_player_week] season {season}: {len(df):,} rows, weeks {weeks} -> {out.name}")
+
+    if want_week is not None and have < want_week:
+        # The heat map / grader will treat this as 'pending latest results' and not present last
+        # week's streaks as current. Signal the shortfall so a retry wrapper knows to come back.
+        msg = (f"[fetch_nfl_player_week] FRESHNESS: season {season} completed week {want_week} "
+               f"not yet in the feed (have week {have}).")
+        if args.require_week is not None:
+            print(msg + " exit 2 -> retry later.")
+            return 2
+        print(msg + " Will pick it up on the next run.")
     return 0
 
 

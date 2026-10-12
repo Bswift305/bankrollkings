@@ -29,6 +29,20 @@
   .hm-line{flex:0 0 auto;text-align:right;font:800 15px ui-monospace,monospace;color:var(--hm-accent);}
   .hm-line small{display:block;font:600 10px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
   .hm-empty{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:12px 2px;}
+  .hm-fresh{font:700 12px/1.5 'Helvetica Neue',Arial,sans-serif;border-radius:10px;padding:10px 13px;margin:0 0 14px;
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .hm-fresh.ok{color:var(--text);background:rgba(63,191,127,.09);border:1px solid rgba(63,191,127,.3);}
+  .hm-fresh.pending{color:var(--text-bright);background:rgba(255,159,67,.1);border:1px solid rgba(255,159,67,.45);}
+  .hm-fresh .tag{font:800 9.5px ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase;
+    border-radius:5px;padding:2px 7px;background:var(--hm-accent);color:#0b1118;}
+  .hm-fresh.pending .tag{background:#ff9f43;}
+  .hm-row.stale{opacity:.62;}
+  .hm-row.stale .hm-fire{filter:grayscale(.55);}
+  .hm-wk{font:700 10px ui-monospace,monospace;color:var(--text-muted);margin-left:6px;}
+  .hm-avail{font:800 9px ui-monospace,monospace;letter-spacing:.03em;border-radius:5px;padding:2px 6px;margin-left:4px;white-space:nowrap;text-transform:uppercase;}
+  .hm-avail.out{background:#ff6b6b;color:#0b1118;} .hm-avail.doubt{background:#ff9f43;color:#0b1118;}
+  .hm-avail.quest{border:1px solid #ffd166;color:#ffd166;}
+  .hm-status{display:block;font:700 10.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:#ffb86b;margin-top:3px;}
 </style>
 
 <div class="hm-wrap">
@@ -41,10 +55,18 @@
   <div class="hero-actions"><a href="/tools/nfl-hub" class="btn btn-secondary btn-sm">&lsaquo; NFL Hub</a> <a href="/tools/nfl-featured" class="btn btn-secondary btn-sm">Featured Players</a></div>
 </div>
 
+{% if through_label %}
+  <div class="hm-fresh {{ 'pending' if pending_latest else 'ok' }}">
+    <span class="tag">{{ 'Pending latest results' if pending_latest else 'Data freshness' }}</span>
+    <span>{{ through_label }}</span>
+    {% if pending_latest %}<span>&mdash; runs below are shown <b>as of Week {{ through_week }}</b>, not as current form.</span>{% endif %}
+  </div>
+{% endif %}
+
 {% if not available %}
   <div class="hm-empty">No active streaks loaded yet &mdash; fills in once this week&rsquo;s lines and the season&rsquo;s game logs are in.</div>
 {% else %}
-<div class="hm-note"><b>Read it honestly:</b> a streak is a <b>trend the market already prices</b> &mdash; it&rsquo;s "who&rsquo;s hot right now," a starting point and your eye test, not a proven edge. A long run at a low line (e.g. 7.5 rec yds, clearing by +40) is a <b>floor</b>, not a heater &mdash; the "clears by" number tells you which. Streaks are counted vs this week&rsquo;s posted line from real game logs, most-recent game first.</div>
+<div class="hm-note"><b>Read it honestly:</b> a streak is a <b>trend the market already prices</b> &mdash; it&rsquo;s "who&rsquo;s hot right now," a starting point and your eye test, not a proven edge. A long run at a low line (e.g. 7.5 rec yds, clearing by +40) is a <b>floor</b>, not a heater &mdash; the "clears by" number tells you which. Each run shows the <b>weeks it spans</b>; a player who is hurt or hasn&rsquo;t played the latest loaded week is marked a <b>historical</b> run, not current. Counted vs this week&rsquo;s posted line from real game logs, most-recent game first.</div>
 
 <div class="hm-filter">
   <button class="hm-chip active" data-f="all">All</button>
@@ -64,12 +86,16 @@
    else 'rush' if r.stat_key in ['carries','rushing_yards','rush_rec_yds']
    else 'rec' %}
 {% set heat = '#ff3b30' if r.streak >= 8 else '#ff6b3d' if r.streak >= 5 else '#ff9f43' if r.streak >= 3 else '#ffd166' %}
-<a class="hm-row" data-cat="{{ cat }}" data-tone="{{ r.matchup.tone if r.matchup else 'none' }}" href="/tools/nfl-floor?player={{ r.player|urlencode }}&stat={{ r.stat_key }}&line={{ '%g'|format(r.line) }}{% if r.price %}&price={{ r.price }}{% endif %}">
-  <span class="hm-fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">straight</span></span>
+{% set av = (r.availability_status or '')|upper %}
+{% set avcls = 'out' if av in ['OUT','IR','PUP','NFI','RESERVE-RET'] else 'doubt' if av == 'DOUBTFUL' else 'quest' if av == 'QUESTIONABLE' else '' %}
+<a class="hm-row{% if not r.active %} stale{% endif %}" data-cat="{{ cat }}" data-active="{{ '1' if r.active else '0' }}" data-tone="{{ r.matchup.tone if r.matchup else 'none' }}" href="/tools/nfl-floor?player={{ r.player|urlencode }}&stat={{ r.stat_key }}&line={{ '%g'|format(r.line) }}{% if r.price %}&price={{ r.price }}{% endif %}">
+  <span class="hm-fire" style="background:{{ heat }};"><span class="n">{{ r.streak }}</span><span class="l">{{ 'straight' if r.active else 'past' }}</span></span>
   <span class="hm-main">
     <span class="hm-name">{{ r.player }}<span class="p">{{ r.team }}</span>
+      {% if avcls %}<span class="hm-avail {{ avcls }}">{{ r.availability }}</span>{% endif %}
       {% if r.matchup %}<span class="hm-mu {{ r.matchup.tone }}">{% if r.matchup.tone == 'soft' %}&#9733; {% endif %}{{ r.matchup.label }}</span>{% endif %}</span>
-    <span class="hm-sub"><b>{{ r.stat }} {{ '%g'|format(r.line) }}+</b> &middot; {{ r.game }} &middot; clears by <b>+{{ r.avg_clear }}</b> avg</span>
+    <span class="hm-sub"><b>{{ r.stat }} {{ '%g'|format(r.line) }}+</b> &middot; {{ r.game }} &middot; clears by <b>+{{ r.avg_clear }}</b> avg{% if r.weeks_label %}<span class="hm-wk">{{ r.weeks_label }}</span>{% endif %}</span>
+    {% if not r.active and r.status_label %}<span class="hm-status">{{ r.status_label }}</span>{% endif %}
   </span>
   <span class="hm-line">{% if r.price %}{{ '%+d'|format(r.price) }}{% else %}&mdash;{% endif %}<small>over</small></span>
 </a>

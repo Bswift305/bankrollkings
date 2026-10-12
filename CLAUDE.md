@@ -408,6 +408,20 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   deliberate choice (money-league legal risk).
 - **Parlay floor-reliability for football** fills in automatically once the season
   generates resolved floor plays. Nothing to build.
+- **NFL Hot Hand Heat Map freshness — BUILT, with a standing yearly chore.**
+  `build_nfl_hot_hand` no longer presents a stale run as current: its cache key folds in
+  `_nfl_player_log_signature()` (not just `NFL_Props.csv` mtime), it surfaces "Results
+  through Week X · updated <ET>" from the real data mtime, shows each run's weeks, gates
+  "active" on injury availability + the player keeping pace with the log's through-week
+  (otherwise a *historical* run, never current), and a calendar gate marks the whole board
+  "pending" when a completed week is missing. The fetcher (`fetch_nfl_player_week.py`) has a
+  `--require-week` / `--retries` freshness-retry path for a post-game Mon/Tue cadence.
+  **Chore:** both the gate and the fetcher read the season's Week-1 Thursday from a configured
+  table — `NFL_SEASON_WEEK1_THURSDAY` in `app.py` and `NFL_SEASON_WEEK1` in
+  `fetch_nfl_player_week.py` (keep them in sync). **Add each new NFL season's Week-1 Thursday
+  to both**, or the completed-week calendar returns None and the freshness/pending gate goes
+  quiet (through-week + per-player recency still work without it). QC:
+  `qc_nfl_heatmap_freshness.py`.
 - Premium nav icons are raster PNG from generated art — not vectorizable without a redraw.
 
 ---
