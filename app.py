@@ -11170,6 +11170,12 @@ def build_ops_status_strip():
         _load_sport_scorecard_summary('NFL'),
     ]
 
+    # Owner-only config warnings (never shown to customers). The NBA postseason window is
+    # incomplete until the official Finals end date is entered; flag it so an owner knows to add it.
+    config_warnings = [w for w in (nba_postseason_config_warning(),) if w]
+    if config_warnings and overall == 'good':
+        overall = 'watch'
+
     strip = {
         'overall': overall,
         'overall_label': {
@@ -11182,6 +11188,7 @@ def build_ops_status_strip():
         'scorecard_decision': scorecard_decision,
         'scorecard_note': scorecard_note or 'No scorecard note available yet.',
         'series_alerts': series_alerts,
+        'config_warnings': config_warnings,
     }
     RUNTIME_TTL_CACHE[cache_key] = {
         'created_at': datetime.now(timezone.utc),
@@ -20012,9 +20019,89 @@ def get_current_nba_season():
     now = datetime.now()
     return f"{now.year}-{str(now.year + 1)[2:]}" if now.month >= 10 else f"{now.year - 1}-{str(now.year)[2:]}"
 
-def postseason_only_enabled():
-    value = request.args.get('postseason', '1')
-    return str(value).lower() not in {'0', 'false', 'no', 'all'}
+# Official NBA postseason windows, one entry per season ENDING YEAR, from the published NBA
+# schedule (nba.com/news/key-dates). An entry is COMPLETE only when BOTH official dates are set;
+# an incomplete entry (end unpublished) defaults safely to regular season. Start = the Play-In
+# start, because the product surfaces the 20-team play-in field. Update once per season; the
+# future official Finals end date is an operational config update, not an implementation decision.
+NBA_POSTSEASON_DATES = {
+    2027: {
+        'start': datetime(2027, 4, 13).date(),  # SoFi NBA Play-In Tournament start, Apr 13 2027 (official)
+        'end': None,                             # official latest-possible NBA Finals date -- NOT YET PUBLISHED; enter when the NBA posts it
+    },
+}
+
+
+def _resolve_nba_postseason(today, ending_year, config=NBA_POSTSEASON_DATES):
+    """Pure: True iff `today` (a date) is within the configured INCLUSIVE [start, end] window for
+    `ending_year`. A missing entry, or an incomplete one (start or end is None), returns False
+    (regular season). Reads no props and no playoff results -- feed availability and stale
+    prior-season results cannot flip it; only the configured official window does (and an explicit
+    override, handled by the caller)."""
+    entry = config.get(ending_year)
+    if not entry:
+        return False
+    start, end = entry.get('start'), entry.get('end')
+    if start is None or end is None:
+        return False
+    return start <= today <= end
+
+
+def _nba_postseason_config_complete(ending_year=None, config=NBA_POSTSEASON_DATES):
+    """Owner-facing: is the current (or given) ending year's postseason window fully configured?"""
+    if ending_year is None:
+        try:
+            ending_year = int('20' + get_current_nba_season().split('-')[1])
+        except Exception:
+            return False
+    entry = config.get(ending_year)
+    return bool(entry and entry.get('start') is not None and entry.get('end') is not None)
+
+
+def nba_postseason_config_warning():
+    """Owner-only note: non-empty when the current ending year's postseason window is incomplete
+    (e.g. the official Finals end date is not yet published/entered). Customer surfaces never show
+    this -- it belongs on owner-gated diagnostics only."""
+    try:
+        ending_year = int('20' + get_current_nba_season().split('-')[1])
+    except Exception:
+        return ''
+    if _nba_postseason_config_complete(ending_year):
+        return ''
+    return (f"NBA postseason window for {ending_year} is incomplete (official Finals end date not "
+            f"entered) — defaulting to regular season. Enter the official end date in "
+            f"NBA_POSTSEASON_DATES before that postseason.")
+
+
+def _nba_default_postseason():
+    """NBA-specific, current-season-matched default from the configured official window."""
+    try:
+        ending_year = int('20' + get_current_nba_season().split('-')[1])
+    except Exception:
+        return False
+    try:
+        today = sports_today_date()
+    except Exception:
+        return False
+    return _resolve_nba_postseason(today, ending_year)
+
+
+def postseason_only_enabled(sport=None):
+    raw = request.args.get('postseason')
+    if raw is not None:
+        return str(raw).lower() not in {'0', 'false', 'no', 'all'}   # explicit override always wins
+    # NBA-specific, current-season-matched default, scoped to NBA surfaces (sport='nba' or an
+    # /sports/nba request path). Other sports keep the prior default (True). active_sports()/props
+    # presence and stale prior-season playoff results do NOT enter this decision.
+    is_nba = (sport or '').strip().lower() == 'nba'
+    if not is_nba:
+        try:
+            is_nba = request.path.startswith('/sports/nba')
+        except Exception:
+            is_nba = False
+    if is_nba:
+        return _nba_default_postseason()
+    return True
 
 def get_current_playoff_focus_label():
     try:

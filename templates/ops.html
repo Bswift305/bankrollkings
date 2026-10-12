@@ -57,6 +57,14 @@
         {% else %}
         <div style="margin: 0 0 18px; font-size: 12px; color: #7fd5a5;">✓ Series mapping: all playoff matchups are configured.</div>
         {% endif %}
+        {% if ops_status.config_warnings %}
+        <div style="margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,184,0,0.40); background: rgba(255,184,0,0.07);">
+            <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #FFB800; margin-bottom: 8px;">⚠ Config Warnings</div>
+            {% for warn in ops_status.config_warnings %}
+            <div style="font-size: 13px; color: var(--text-bright); margin-top: 5px; line-height: 1.45;">{{ warn }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="grid grid-3" style="gap: 16px;">
             {% for check in global_checks %}
             <div class="metric-card">
