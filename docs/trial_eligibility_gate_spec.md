@@ -31,16 +31,22 @@ CREATE TABLE codes (                                    -- venue inventory
   active           INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1))
 );
 
-CREATE TABLE eligibility (                              -- durable LIFETIME keys; permanent
+CREATE TABLE eligibility (                              -- durable LIFETIME record; permanent
   eligibility_id   INTEGER PRIMARY KEY,
-  phone_hmac       TEXT    NOT NULL UNIQUE,             -- HMAC(domain='phone', E164) under phone_hmac_ver
-  phone_hmac_ver   INTEGER NOT NULL,
-  email_hmac       TEXT    NOT NULL UNIQUE,             -- HMAC(domain='email', normalized) under email_hmac_ver
-  email_hmac_ver   INTEGER NOT NULL,
   account_user_id  TEXT    NOT NULL UNIQUE,
   code_id          INTEGER NOT NULL REFERENCES codes(code_id),
   granted_at       TEXT    NOT NULL,                    -- ISO-8601 UTC
   expires_at       TEXT    NOT NULL
+);
+CREATE TABLE eligibility_keys (                         -- APPEND-ONLY identity keys; never updated/removed
+  key_id          INTEGER PRIMARY KEY,
+  eligibility_id  INTEGER NOT NULL REFERENCES eligibility(eligibility_id),
+  key_type        TEXT    NOT NULL CHECK (key_type IN ('phone','email')),
+  key_hmac        TEXT    NOT NULL,                     -- domain-separated HMAC under key_version
+  key_version     INTEGER NOT NULL,
+  created_at      TEXT    NOT NULL,
+  source          TEXT    NOT NULL CHECK (source IN ('original','correction')),
+  UNIQUE(key_type, key_hmac)                            -- one owner per identity; blocks cross-attach + dup races
 );
 
 CREATE TABLE redemptions (                              -- audit of every attempt + activation state
@@ -111,7 +117,7 @@ nonnegative/capped counters, valid `active`, positive caps; `foreign_keys=ON`.
 
 ```
 BEGIN IMMEDIATE;
-  SELECT 1 FROM eligibility WHERE phone_hmac IN (<all key versions>) OR email_hmac IN (...) OR account_user_id=?;  -- early-out
+  SELECT 1 FROM eligibility_keys WHERE key_hmac IN (<all phone+email key versions>) ... OR <account match>;  -- early-out (searches every retained + corrected key)
      -> hit: ROLLBACK, then write a denied audit row in a SEPARATE txn (§10); DENY
   UPDATE codes SET times_redeemed = times_redeemed + 1
     WHERE code_id=? AND active=1 AND times_redeemed < max_redemptions;                 -- 0 rows -> ROLLBACK; denied audit; DENY
@@ -191,11 +197,15 @@ replaced; it deters abuse, not a perfect human identity.
 - **Overrides (correction 11 + [A3]):** additive and audited (operator identity + exact reason), and
   **narrowly scoped — an override can never issue a second promotional trial** (that would break the
   lifetime rule and collide with the UNIQUE account/identity constraints). The only permitted actions
-  are: **`repair_activation`** (re-apply a failed activation/projection for an *already-committed*
-  grant — no new eligibility row), **`correct_identity`** (fix incorrectly-associated identity data
-  on an existing record), and **`owner_comp_external`** (record an owner-authorized comp via a
-  **separate entitlement mechanism**, not the trial path — it grants access outside this gate and
-  writes no trial `eligibility` row). Overrides **never delete** original lifetime keys.
+  are: **`repair_activation`** (re-apply a failed activation/projection for an existing committed/
+  activated grant — no new eligibility row; **rejects when no such grant exists**, so it never audits
+  a repair of nothing; idempotent on `grant_id`), **`correct_identity`** (**APPEND** a newly-verified
+  key to `eligibility_keys` for an existing record — the original phone/email key is **never updated
+  or removed**, so a replaced identity stays searchable and cannot redeem again; the append + audit
+  commit in one transaction; `UNIQUE(key_type,key_hmac)` rejects attaching an identity already owned
+  by any eligibility and blocks duplicate-key races), and **`owner_comp_external`** (record an
+  owner-authorized comp via a **separate entitlement mechanism**, not the trial path — writes no
+  trial eligibility). Overrides **never delete** original lifetime keys.
 
 ## 9. Live-code migration + rollback (correction 7)
 One-time migration of the two private CSV codes (`INVITE_CODES_PATH`) into SQLite, preserving the

@@ -306,43 +306,93 @@ def check_purge():
 
 
 def check_overrides():
+    import threading
     issues = []
     kr = te.Keyring({1: "k-ovr"})
     path, conn = _mkdb(kr)
     try:
         _add_code(conn, kr, "C", cap=25)
-        te.attempt_redemption(conn, kr, token="C", **_person(1))
+        te.attempt_redemption(conn, kr, token="C", **_person(1))   # u1: phone +15550000001, user1@example.com
+        te.attempt_redemption(conn, kr, token="C", **_person(2))   # a second eligibility for cross-attach test
         elig0 = conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0]
+        eid = conn.execute("SELECT eligibility_id FROM eligibility WHERE account_user_id='u1'").fetchone()[0]
+
         # invalid action rejected
         try:
-            te.apply_override(conn, "owner", "x", "grant_free_trial")
-            issues.append("override: invalid action should raise")
+            te.apply_override(conn, "owner", "x", "grant_free_trial"); issues.append("invalid action should raise")
         except ValueError:
             pass
-        # repair_activation: re-activates, no new eligibility; idempotent (twice -> one audit)
-        te.apply_override(conn, "owner", "fix activation", "repair_activation", account_user_id="u1", project=lambda p: None)
-        te.apply_override(conn, "owner", "fix activation again", "repair_activation", account_user_id="u1", project=lambda p: None)
+        # repair_activation idempotent (twice -> one audit); and rejects when no grant exists
+        te.apply_override(conn, "owner", "fix", "repair_activation", account_user_id="u1", project=lambda p: None)
+        te.apply_override(conn, "owner", "fix2", "repair_activation", account_user_id="u1", project=lambda p: None)
         if conn.execute("SELECT COUNT(*) FROM overrides WHERE action='repair_activation'").fetchone()[0] != 1:
             issues.append("repair_activation audit must be idempotent (one per grant)")
-        # correct_identity: explicit keyring arg; fix phone on existing row, no new eligibility
-        eid = conn.execute("SELECT eligibility_id FROM eligibility WHERE account_user_id='u1'").fetchone()[0]
-        te.apply_override(conn, "owner", "changed phones", "correct_identity",
-                          affected_eligibility_id=eid, keyring=kr, correct={"phone_e164": "+15559998888"})
-        # correct_identity requires at least one corrected field
+        try:
+            te.apply_override(conn, "owner", "nothing", "repair_activation", account_user_id="nobody")
+            issues.append("repair_activation with no grant must raise (never audit ref=NULL)")
+        except ValueError:
+            pass
+
+        # correct_identity APPENDS new phone+email keys (originals untouched)
+        te.apply_override(conn, "owner", "changed contacts", "correct_identity",
+                          affected_eligibility_id=eid, keyring=kr,
+                          correct={"phone_e164": "+15559998888", "email": "corrected1@example.com"})
+        # correct_identity requires at least one field
         try:
             te.apply_override(conn, "owner", "noop", "correct_identity", affected_eligibility_id=eid, keyring=kr, correct={})
             issues.append("correct_identity with no field should raise")
         except ValueError:
             pass
-        # owner_comp_external: no trial eligibility written
         te.apply_override(conn, "owner", "vip comp", "owner_comp_external", account_user_id="u9")
+
+        # invariants: no new eligibility; every override audited (repair=1, correct=1, comp=1)
         if conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0] != elig0:
             issues.append("override must NEVER create a second trial eligibility row")
         if conn.execute("SELECT COUNT(*) FROM overrides").fetchone()[0] != 3:
-            issues.append("every override must be audited (repair=1 + correct=1 + comp=1)")
-        # the corrected phone now denies a new account using it
-        if te.attempt_redemption(conn, kr, token="C", account_user_id="u20", phone_e164="+15559998888", email="n@x.com").reason != "already_redeemed":
-            issues.append("correct_identity: corrected phone should now be deduped")
+            issues.append("every override must be audited")
+
+        # the FIVE required dedupe proofs (original keys never deleted) ----------------
+        def _denied(phone, email):
+            return te.attempt_redemption(conn, kr, token="C", account_user_id="nu"+phone[-4:], phone_e164=phone, email=email).reason == "already_redeemed"
+        if not _denied("+15550000001", "fresh-a@x.com"):
+            issues.append("ORIGINAL phone must remain denied after correction")
+        if not _denied("+15559998888", "fresh-b@x.com"):
+            issues.append("CORRECTED phone must be denied")
+        if not _denied("+15557000001", "user1@example.com"):
+            issues.append("ORIGINAL email must remain denied after correction")
+        if not _denied("+15557000002", "corrected1@example.com"):
+            issues.append("CORRECTED email must be denied")
+
+        # a correction cannot attach an identity already owned by ANOTHER eligibility
+        eid2 = conn.execute("SELECT eligibility_id FROM eligibility WHERE account_user_id='u2'").fetchone()[0]
+        try:
+            te.apply_override(conn, "owner", "steal phone", "correct_identity",
+                              affected_eligibility_id=eid2, keyring=kr, correct={"phone_e164": "+15550000001"})
+            issues.append("correct_identity must reject attaching an identity owned by another eligibility")
+        except ValueError:
+            pass
+
+        # concurrent corrections of the same new key cannot duplicate it
+        before = conn.execute("SELECT COUNT(*) FROM eligibility_keys WHERE key_hmac=?", (kr.hmac("phone", "+15557770000"),)).fetchone()[0]
+        results, barrier = [], threading.Barrier(2)
+        lock = threading.Lock()
+        def _corr():
+            c = te.open_conn(path)
+            try:
+                barrier.wait()
+                try:
+                    te.apply_override(c, "owner", "race", "correct_identity", affected_eligibility_id=eid, keyring=kr, correct={"phone_e164": "+15557770000"})
+                    with lock: results.append("ok")
+                except ValueError:
+                    with lock: results.append("rejected")
+            finally:
+                c.close()
+        ts = [threading.Thread(target=_corr) for _ in range(2)]
+        for t in ts: t.start()
+        for t in ts: t.join()
+        after = conn.execute("SELECT COUNT(*) FROM eligibility_keys WHERE key_hmac=?", (kr.hmac("phone", "+15557770000"),)).fetchone()[0]
+        if after - before != 1 or results.count("ok") != 1:
+            issues.append(f"concurrent corrections must add the key exactly once (added={after-before}, results={results})")
     finally:
         conn.close()
         if os.path.exists(path):

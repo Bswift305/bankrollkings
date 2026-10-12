@@ -123,14 +123,22 @@ CREATE TABLE IF NOT EXISTS codes (
 );
 CREATE TABLE IF NOT EXISTS eligibility (
   eligibility_id   INTEGER PRIMARY KEY,
-  phone_hmac       TEXT    NOT NULL UNIQUE,
-  phone_hmac_ver   INTEGER NOT NULL,
-  email_hmac       TEXT    NOT NULL UNIQUE,
-  email_hmac_ver   INTEGER NOT NULL,
   account_user_id  TEXT    NOT NULL UNIQUE,
   code_id          INTEGER NOT NULL REFERENCES codes(code_id),
   granted_at       TEXT    NOT NULL,
   expires_at       TEXT    NOT NULL
+);
+-- Lifetime identity keys are APPEND-ONLY: a correction ADDS a new verified key; originals are
+-- never updated or removed, so a replaced phone/email stays searchable and cannot redeem again.
+CREATE TABLE IF NOT EXISTS eligibility_keys (
+  key_id          INTEGER PRIMARY KEY,
+  eligibility_id  INTEGER NOT NULL REFERENCES eligibility(eligibility_id),
+  key_type        TEXT    NOT NULL CHECK (key_type IN ('phone','email')),
+  key_hmac        TEXT    NOT NULL,
+  key_version     INTEGER NOT NULL,
+  created_at      TEXT    NOT NULL,
+  source          TEXT    NOT NULL CHECK (source IN ('original','correction')),
+  UNIQUE(key_type, key_hmac)                     -- one owner per identity; blocks cross-attach + dup races
 );
 CREATE TABLE IF NOT EXISTS redemptions (
   redemption_id    INTEGER PRIMARY KEY,
@@ -303,13 +311,16 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
 
     conn.execute("BEGIN IMMEDIATE")
     try:
-        # eligibility early-out (dual-read all versions + account)
+        # eligibility early-out: search EVERY retained identity key (all versions, incl. corrections)
+        # in eligibility_keys, plus the account. The UNIQUE(key_type,key_hmac) below is the guarantee.
         qmarks_p = ",".join("?" * len(phone_hmacs))
         qmarks_e = ",".join("?" * len(email_hmacs))
         hit = conn.execute(
-            f"SELECT 1 FROM eligibility WHERE phone_hmac IN ({qmarks_p}) OR email_hmac IN ({qmarks_e})"
-            " OR account_user_id=? LIMIT 1",
-            (*phone_hmacs, *email_hmacs, str(account_user_id)),
+            f"SELECT 1 FROM eligibility_keys WHERE (key_type='phone' AND key_hmac IN ({qmarks_p}))"
+            f" OR (key_type='email' AND key_hmac IN ({qmarks_e})) LIMIT 1",
+            (*phone_hmacs, *email_hmacs),
+        ).fetchone() or conn.execute(
+            "SELECT 1 FROM eligibility WHERE account_user_id=? LIMIT 1", (str(account_user_id),)
         ).fetchone()
         if hit:
             conn.execute("ROLLBACK")
@@ -331,12 +342,17 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
         mask_exp = _iso(now + timedelta(days=MASK_RETENTION_DAYS))
         risk_exp = _iso(now + timedelta(days=RISK_RETENTION_DAYS))
         cur2 = conn.execute(
-            "INSERT INTO eligibility(phone_hmac,phone_hmac_ver,email_hmac,email_hmac_ver,"
-            "account_user_id,code_id,granted_at,expires_at) VALUES (?,?,?,?,?,?,?,?)",
-            (cur_phone_h, keyring.current, cur_email_h, keyring.current,
-             str(account_user_id), code_id, _iso(now), _iso(expires)),
+            "INSERT INTO eligibility(account_user_id,code_id,granted_at,expires_at) VALUES (?,?,?,?)",
+            (str(account_user_id), code_id, _iso(now), _iso(expires)),
         )
         eligibility_id = cur2.lastrowid
+        # original identity keys (append-only); UNIQUE(key_type,key_hmac) catches a racer -> deny
+        conn.execute(
+            "INSERT INTO eligibility_keys(eligibility_id,key_type,key_hmac,key_version,created_at,source)"
+            " VALUES (?,?,?,?,?,'original'),(?,?,?,?,?,'original')",
+            (eligibility_id, "phone", cur_phone_h, keyring.current, _iso(now),
+             eligibility_id, "email", cur_email_h, keyring.current, _iso(now)),
+        )
         grant_id = uuid.uuid4().hex
         conn.execute(
             "INSERT INTO redemptions(grant_id, at, code_id, account_user_id, eligibility_id, outcome,"
@@ -529,13 +545,16 @@ def apply_override(conn, operator, reason, action, *, account_user_id=None,
     result = {"action": action}
 
     if action == "repair_activation":
-        # activate() owns the external projection + its own txn; the audit is idempotent on grant_id.
-        payload = activate(conn, account_user_id, project=project)
-        pp = payload or projection_payload(conn, account_user_id)
-        ref = pp["grant_id"] if pp else None
+        # Reject when there is no committed OR activated grant to repair -- never audit a repair of
+        # nothing (ref must not be NULL).
+        pp = projection_payload(conn, account_user_id)
+        if not pp:
+            raise ValueError("repair_activation: no committed or activated grant found for this account")
+        payload = activate(conn, account_user_id, project=project) or pp  # activate() is idempotent
         conn.execute("BEGIN IMMEDIATE")
         try:
-            _audit_override(conn, now, operator, reason, affected_eligibility_id, action, ref, idempotent=True)
+            _audit_override(conn, now, operator, reason, affected_eligibility_id, action,
+                            pp["grant_id"], idempotent=True)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -550,16 +569,28 @@ def apply_override(conn, operator, reason, action, *, account_user_id=None,
             raise ValueError("correct_identity requires an explicit keyring argument")
         if not correct or not any(k in correct for k in ("phone_e164", "email")):
             raise ValueError("correct_identity requires at least one corrected field (phone_e164/email)")
-        conn.execute("BEGIN IMMEDIATE")          # update + audit atomically
+        # APPEND the corrected key(s) + audit in ONE transaction. Originals are never touched, so a
+        # replaced phone/email stays searchable. UNIQUE(key_type,key_hmac) rejects attaching an
+        # identity already owned by any eligibility (incl. another), and blocks duplicate-key races.
+        conn.execute("BEGIN IMMEDIATE")
         try:
             if "phone_e164" in correct:
-                conn.execute("UPDATE eligibility SET phone_hmac=?, phone_hmac_ver=? WHERE eligibility_id=?",
-                             (keyring.hmac("phone", correct["phone_e164"]), keyring.current, affected_eligibility_id))
+                conn.execute(
+                    "INSERT INTO eligibility_keys(eligibility_id,key_type,key_hmac,key_version,created_at,source)"
+                    " VALUES (?,?,?,?,?,'correction')",
+                    (affected_eligibility_id, "phone", keyring.hmac("phone", correct["phone_e164"]),
+                     keyring.current, _iso(now)))
             if "email" in correct:
-                conn.execute("UPDATE eligibility SET email_hmac=?, email_hmac_ver=? WHERE eligibility_id=?",
-                             (keyring.hmac("email", normalize_email(correct["email"])), keyring.current, affected_eligibility_id))
+                conn.execute(
+                    "INSERT INTO eligibility_keys(eligibility_id,key_type,key_hmac,key_version,created_at,source)"
+                    " VALUES (?,?,?,?,?,'correction')",
+                    (affected_eligibility_id, "email", keyring.hmac("email", normalize_email(correct["email"])),
+                     keyring.current, _iso(now)))
             _audit_override(conn, now, operator, reason, affected_eligibility_id, action, None)
             conn.execute("COMMIT")
+        except sqlite3.IntegrityError:
+            conn.execute("ROLLBACK")
+            raise ValueError("correct_identity: that identity is already attached to an eligibility record")
         except Exception:
             conn.execute("ROLLBACK")
             raise
@@ -591,8 +622,7 @@ def startup_healthy(path, keyring):
         if not ic or str(ic[0]).lower() != "ok":
             return False, "integrity_check failed"
         vers = set()
-        for tbl, col in (("eligibility", "phone_hmac_ver"), ("eligibility", "email_hmac_ver"),
-                         ("codes", "code_token_hmac_ver")):
+        for tbl, col in (("eligibility_keys", "key_version"), ("codes", "code_token_hmac_ver")):
             for r in conn.execute(f"SELECT DISTINCT {col} AS v FROM {tbl}"):
                 if r["v"] is not None:
                     vers.add(int(r["v"]))
