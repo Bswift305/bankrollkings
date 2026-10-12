@@ -142,8 +142,20 @@ def run():
         except RuntimeError:
             raised = True
         expect(raised, "from_env must FAIL CLOSED when the key is absent")
-        expect(te.Keyring.from_env(env_value="", allow_dev=True) is not None,
-               "from_env(allow_dev=True) permits a dev key for tests")
+        # allow_dev is inert unless the test-only env flag is set (app code can't accidentally use it)
+        raised_without_flag = False
+        try:
+            os.environ.pop("TRIAL_ALLOW_DEV_KEY", None)
+            te.Keyring.from_env(env_value="", allow_dev=True)
+        except RuntimeError:
+            raised_without_flag = True
+        expect(raised_without_flag, "allow_dev=True must still fail closed without TRIAL_ALLOW_DEV_KEY")
+        os.environ["TRIAL_ALLOW_DEV_KEY"] = "1"
+        try:
+            expect(te.Keyring.from_env(env_value="", allow_dev=True) is not None,
+                   "from_env(allow_dev=True) + test flag permits a dev key for tests")
+        finally:
+            os.environ.pop("TRIAL_ALLOW_DEV_KEY", None)
 
         # --- projection failure -> activation stays 'committed' -----------------------
         te.attempt_redemption(conn, kr, token="CASINO01", **_person(30))
@@ -188,15 +200,191 @@ def run():
     return issues, notes
 
 
+def check_migration():
+    issues = []
+    kr = te.Keyring({1: "k-mig"})
+    path, conn = _mkdb(kr)
+    try:
+        rows = [
+            {"Code": "CASINO01", "Label": "Casino", "TrialDays": 14, "MaxRedemptions": 25, "TimesRedeemed": 7, "Active": "1"},
+            {"Code": "BARBER01", "Label": "Barbershop", "TrialDays": 14, "MaxRedemptions": 25, "TimesRedeemed": 3, "Active": "1"},
+        ]
+        res = te.migrate_csv_to_sqlite(conn, kr, rows)
+        if not res["ok"]:
+            issues.append(f"migration not ok: {res.get('problems')}")
+        # both flyer tokens still resolve (URLs preserved) with exact fields
+        for r in rows:
+            c = te.find_code_by_token(conn, kr, r["Code"])
+            if not c:
+                issues.append(f"migrated token for {r['Label']} does not resolve")
+            elif (c["venue_label"] != r["Label"] or int(c["max_redemptions"]) != 25
+                  or int(c["times_redeemed"]) != r["TimesRedeemed"] or int(c["trial_days"]) != 14
+                  or int(c["active"]) != 1):
+                issues.append(f"migrated fields wrong for {r['Label']}")
+        # the raw token is not stored anywhere in the clear
+        dump = "".join(str(v) for row in conn.execute("SELECT * FROM codes") for v in row)
+        if "CASINO01" in dump or "BARBER01" in dump:
+            issues.append("raw token leaked into the codes table")
+        # re-migration into a non-empty store is refused
+        if te.migrate_csv_to_sqlite(conn, kr, rows)["ok"]:
+            issues.append("re-migration into a non-empty store should be refused")
+    finally:
+        conn.close()
+        if os.path.exists(path):
+            os.remove(path)
+    return issues
+
+
+def check_purge():
+    from datetime import datetime, timezone, timedelta
+    issues = []
+    kr = te.Keyring({1: "k-purge"})
+    path, conn = _mkdb(kr)
+    try:
+        _add_code(conn, kr, "C", cap=25)
+        now = datetime.now(timezone.utc)
+        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=40), device_id="d1", ip="1.1.1.1", **_person(1))   # risk expired (30d), mask not (90d)
+        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=100), device_id="d2", ip="2.2.2.2", **_person(2))  # both expired
+        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=5), device_id="d3", ip="3.3.3.3", **_person(3))    # neither expired
+        te.attempt_redemption(conn, kr, token="BAD", now=now - timedelta(days=200), **_person(4))  # denied, 200d old -> deletable
+        te.attempt_redemption(conn, kr, token="BAD", now=now - timedelta(days=100), **_person(5))  # denied, 100d old -> kept
+        elig_before = conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0]
+
+        res = te.purge_expired(conn, now=now)
+
+        # 40-day row: risk nulled, mask kept
+        r1 = conn.execute("SELECT ip_hmac, device_hmac, phone_mask FROM redemptions WHERE account_user_id='u1'").fetchone()
+        if r1["ip_hmac"] is not None or r1["device_hmac"] is not None:
+            issues.append("purge: IP/device not nulled at 30d")
+        if r1["phone_mask"] is None:
+            issues.append("purge: mask wrongly nulled before 90d")
+        # 100-day row: both nulled
+        r2 = conn.execute("SELECT ip_hmac, phone_mask FROM redemptions WHERE account_user_id='u2'").fetchone()
+        if r2["ip_hmac"] is not None or r2["phone_mask"] is not None:
+            issues.append("purge: 100d row not fully nulled (mask 90d / risk 30d)")
+        # 5-day row: untouched
+        r3 = conn.execute("SELECT ip_hmac, phone_mask FROM redemptions WHERE account_user_id='u3'").fetchone()
+        if r3["ip_hmac"] is None or r3["phone_mask"] is None:
+            issues.append("purge: recent row wrongly purged")
+        # denied retention: 200d deleted, 100d kept
+        denied = conn.execute("SELECT COUNT(*) FROM redemptions WHERE outcome='denied'").fetchone()[0]
+        if denied != 1:
+            issues.append(f"purge: denied retention wrong (expected 1 kept, got {denied})")
+        # eligibility NEVER deleted
+        if conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0] != elig_before:
+            issues.append("purge: eligibility must never be deleted")
+    finally:
+        conn.close()
+        if os.path.exists(path):
+            os.remove(path)
+    return issues
+
+
+def check_overrides():
+    issues = []
+    kr = te.Keyring({1: "k-ovr"})
+    path, conn = _mkdb(kr)
+    try:
+        _add_code(conn, kr, "C", cap=25)
+        te.attempt_redemption(conn, kr, token="C", **_person(1))
+        elig0 = conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0]
+        # invalid action rejected
+        try:
+            te.apply_override(conn, "owner", "x", "grant_free_trial")
+            issues.append("override: invalid action should raise")
+        except ValueError:
+            pass
+        # repair_activation: re-activates, no new eligibility
+        te.apply_override(conn, "owner", "fix activation", "repair_activation", account_user_id="u1", project=lambda p: None)
+        # correct_identity: fix phone on existing row, no new eligibility
+        eid = conn.execute("SELECT eligibility_id FROM eligibility WHERE account_user_id='u1'").fetchone()[0]
+        te.apply_override(conn, "owner", "changed phones", "correct_identity",
+                          affected_eligibility_id=eid, correct={"phone_e164": "+15559998888", "_keyring": kr})
+        # owner_comp_external: no trial eligibility written
+        te.apply_override(conn, "owner", "vip comp", "owner_comp_external", account_user_id="u9")
+        if conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0] != elig0:
+            issues.append("override must NEVER create a second trial eligibility row")
+        if conn.execute("SELECT COUNT(*) FROM overrides").fetchone()[0] != 3:
+            issues.append("every override must be audited")
+        # the corrected phone now denies a new account using it
+        if te.attempt_redemption(conn, kr, token="C", account_user_id="u20", phone_e164="+15559998888", email="n@x.com").reason != "already_redeemed":
+            issues.append("correct_identity: corrected phone should now be deduped")
+    finally:
+        conn.close()
+        if os.path.exists(path):
+            os.remove(path)
+    return issues
+
+
+def check_concurrency():
+    """Real races using two independent SQLite connections/threads."""
+    import threading
+    issues = []
+
+    def _race(setup, attempts):
+        kr = te.Keyring({1: "k-conc"})
+        path, conn = _mkdb(kr)
+        setup(conn, kr)
+        conn.close()
+        results, barrier = [], threading.Barrier(len(attempts))
+        lock = threading.Lock()
+
+        def worker(person_kwargs):
+            c = te.open_conn(path)
+            try:
+                barrier.wait()
+                r = te.attempt_redemption(c, kr, token="C", **person_kwargs)
+                with lock:
+                    results.append(r)
+            finally:
+                c.close()
+
+        threads = [threading.Thread(target=worker, args=(a,)) for a in attempts]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        vconn = te.open_conn(path)
+        try:
+            granted = sum(1 for r in results if r.granted)
+            times = vconn.execute("SELECT times_redeemed FROM codes").fetchone()[0]
+            elig = vconn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0]
+        finally:
+            vconn.close()
+            if os.path.exists(path):
+                os.remove(path)
+        return granted, times, elig
+
+    # 1) two people competing for the FINAL slot (cap=1)
+    g, times, elig = _race(lambda c, k: _add_code(c, k, "C", cap=1),
+                           [_person(1), _person(2)])
+    if g != 1 or times != 1 or elig != 1:
+        issues.append(f"final-slot race: expected exactly one grant/increment, got grants={g} times={times} elig={elig}")
+
+    # 2) two accounts simultaneously using the SAME phone
+    p_a = dict(account_user_id="uA", phone_e164="+15551110000", email="a@x.com")
+    p_b = dict(account_user_id="uB", phone_e164="+15551110000", email="b@x.com")
+    g2, _t2, elig2 = _race(lambda c, k: _add_code(c, k, "C", cap=25), [p_a, p_b])
+    if g2 != 1 or elig2 != 1:
+        issues.append(f"same-phone race: expected exactly one grant/eligibility, got grants={g2} elig={elig2}")
+
+    return issues
+
+
 def main() -> int:
     issues, notes = run()
+    issues += check_migration()
+    issues += check_purge()
+    issues += check_overrides()
+    issues += check_concurrency()
     print("=" * 60)
-    print("TRIAL ELIGIBILITY GATE QC (core, mocked)")
+    print("TRIAL ELIGIBILITY GATE QC (core + increment, mocked)")
     print("=" * 60)
     for n in notes:
         print(f"[NOTE] {n}")
+    print("[NOTE] migration, retention-purge, overrides, and threaded concurrency checks executed")
     if not issues:
-        print("All core gate checks passed.")
+        print("All gate checks passed.")
         return 0
     for m in issues:
         print(f"[FAIL] {m}")

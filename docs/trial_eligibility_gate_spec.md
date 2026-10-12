@@ -101,6 +101,9 @@ nonnegative/capped counters, valid `active`, positive caps; `foreign_keys=ON`.
   access check that finds a committed grant but a missing projection recovers it on the spot. No
   grant exists without a committed row; no ineligibility
   exists without a grant.
+- **Projection payload (unambiguous):** activation/recovery hands the caller the full payload needed
+  to rebuild the user stamp without guessing — `grant_id`, `granted_at`, `expires_at`, `trial_days`,
+  and the **code/venue reference** (`code_id` + `venue_label`, never the token).
 
 ---
 

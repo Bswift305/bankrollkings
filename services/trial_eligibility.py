@@ -67,11 +67,16 @@ class Keyring:
     def from_env(cls, env_value=None, allow_dev=False):
         """Load the keyring from TRIAL_KEY_MASTER (JSON {ver:secret} or a bare string = v1).
         FAIL CLOSED: if the secret is absent, raise -- the gate must NEVER run on a silent
-        fallback/predictable key in production. `allow_dev=True` (tests only) permits a dev key."""
+        fallback/predictable key in production.
+
+        `allow_dev` is **TEST-FIXTURE ONLY** and application code must never pass it. It is also
+        inert unless the test harness explicitly sets `TRIAL_ALLOW_DEV_KEY=1`, so even an accidental
+        `allow_dev=True` from app code still fails closed in production."""
         raw = env_value if env_value is not None else os.environ.get("TRIAL_KEY_MASTER", "")
         raw = (raw or "").strip()
         if not raw:
-            if not allow_dev:
+            dev_ok = allow_dev and os.environ.get("TRIAL_ALLOW_DEV_KEY", "").strip() == "1"
+            if not dev_ok:
                 raise RuntimeError(
                     "TRIAL_KEY_MASTER is not set -- refusing to run the trial gate on a fallback "
                     "key (fail closed). Set the secret in the environment.")
@@ -352,35 +357,51 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
         raise
 
 
-def activate(conn, account_user_id, project=None):
-    """Recoverable, idempotent. Finds a committed grant for the account, runs `project(grant)` (the
-    caller's user-record write), and marks the row 'activated' **only after project() succeeds**. If
-    `project` raises, the row stays 'committed' so a later call recovers it -- activation is never
-    marked complete before the projection. Safe to call repeatedly."""
+def projection_payload(conn, account_user_id):
+    """The complete, unambiguous payload the caller needs to (re)build the user trial stamp from the
+    authoritative grant -- so the caller never reconstructs it by guessing: grant_id, redemption_id,
+    activation_state, trial_days, expires_at, granted_at, and the code/venue reference (code_id +
+    venue_label; the venue id, never the token). Returns None if the account has no granted row."""
     row = conn.execute(
-        "SELECT redemption_id, grant_id, eligibility_id FROM redemptions"
-        " WHERE outcome='granted' AND activation_state='committed' AND account_user_id=?"
-        " ORDER BY redemption_id LIMIT 1",
+        "SELECT r.grant_id, r.redemption_id, r.activation_state, e.granted_at, e.expires_at,"
+        " c.code_id, c.venue_label, c.trial_days"
+        " FROM redemptions r JOIN eligibility e ON e.eligibility_id=r.eligibility_id"
+        " JOIN codes c ON c.code_id=e.code_id"
+        " WHERE r.outcome='granted' AND r.account_user_id=? ORDER BY r.redemption_id DESC LIMIT 1",
         (str(account_user_id),),
     ).fetchone()
     if not row:
         return None
-    grant = {"grant_id": row["grant_id"], "eligibility_id": row["eligibility_id"],
-             "redemption_id": row["redemption_id"]}
+    return {"grant_id": row["grant_id"], "redemption_id": row["redemption_id"],
+            "activation_state": row["activation_state"], "account_user_id": str(account_user_id),
+            "granted_at": row["granted_at"], "expires_at": row["expires_at"],
+            "trial_days": int(row["trial_days"]), "code_id": row["code_id"],
+            "venue_label": row["venue_label"], "trial_invite_reference": f"venue:{row['code_id']}"}
+
+
+def activate(conn, account_user_id, project=None):
+    """Recoverable, idempotent. Finds the committed grant for the account, runs `project(payload)`
+    (the caller's user-record write) with the FULL projection payload, and marks the row 'activated'
+    **only after project() succeeds**. If `project` raises, the row stays 'committed' so a later call
+    recovers it. Returns the projection payload (or None if nothing to activate)."""
+    payload = projection_payload(conn, account_user_id)
+    if not payload or payload["activation_state"] != "committed":
+        return None
     if project is not None:
-        project(grant)                       # may raise -> we do NOT mark activated (stays committed)
+        project(payload)                     # may raise -> we do NOT mark activated (stays committed)
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(
             "UPDATE redemptions SET activation_state='activated'"
             " WHERE redemption_id=? AND activation_state='committed'",
-            (row["redemption_id"],),
+            (payload["redemption_id"],),
         )
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    return grant
+    payload["activation_state"] = "activated"
+    return payload
 
 
 def active_grant_for(conn, account_user_id, now=None):
@@ -393,6 +414,135 @@ def active_grant_for(conn, account_user_id, now=None):
         " ORDER BY r.redemption_id DESC LIMIT 1",
         (str(account_user_id), _iso(now)),
     ).fetchone()
+
+
+# --- migration: live CSV codes -> SQLite (never logs tokens) -----------------------------
+def _parse_active(v):
+    return 0 if str(v).strip().lower() in {"0", "false", "no", ""} else 1
+
+
+def migrate_csv_to_sqlite(conn, keyring, csv_rows):
+    """Insert the live venue codes into SQLite, preserving the flyer token (-> same /trial/<token>
+    URL), venue label, trial duration, 25-use cap, current redemption count, and active state. The
+    raw token is **never logged or returned** -- only its HMAC is stored. Returns a verification dict;
+    the caller flips authority to SQLite only when `ok` is True. Idempotent-guard: refuses to run if
+    `codes` already has rows (migrate into an empty store)."""
+    if conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0]:
+        return {"ok": False, "problems": ["codes table is not empty; refusing to re-migrate"]}
+    inserted = 0
+    for r in csv_rows:
+        token = str(r["Code"])
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "INSERT INTO codes(venue_label,code_token_hmac,code_token_hmac_ver,trial_days,"
+                "max_redemptions,times_redeemed,active) VALUES (?,?,?,?,?,?,?)",
+                (str(r["Label"]), keyring.hmac("codetoken", token), keyring.current,
+                 int(r["TrialDays"]), int(r["MaxRedemptions"]), int(r["TimesRedeemed"]),
+                 _parse_active(r.get("Active", "1"))),
+            )
+            conn.execute("COMMIT")
+            inserted += 1
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    # verify (token resolution + exact field preservation); reference rows by LABEL in messages, never the token
+    problems = []
+    for r in csv_rows:
+        row = find_code_by_token(conn, keyring, str(r["Code"]))
+        if not row:
+            problems.append(f"token for '{r['Label']}' did not resolve after migration")
+        elif (row["venue_label"] != str(r["Label"])
+              or int(row["max_redemptions"]) != int(r["MaxRedemptions"])
+              or int(row["times_redeemed"]) != int(r["TimesRedeemed"])
+              or int(row["trial_days"]) != int(r["TrialDays"])
+              or int(row["active"]) != _parse_active(r.get("Active", "1"))):
+            problems.append(f"field mismatch for '{r['Label']}'")
+    count_ok = conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0] == len(csv_rows)
+    return {"ok": (not problems and count_ok), "inserted": inserted, "count_ok": count_ok,
+            "problems": problems}
+
+
+# --- retention purge (eligibility is NEVER deleted) --------------------------------------
+def purge_expired(conn, now=None):
+    """Enforce the retention policy: null IP/device risk at 30d, null masks at 90d, delete denied
+    rows at 180d. Lifetime `eligibility` rows are NEVER touched; granted redemptions are never
+    deleted. Returns the counts affected."""
+    now = now or _utcnow()
+    ni = _iso(now)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        risk = conn.execute(
+            "UPDATE redemptions SET device_hmac=NULL, ip_hmac=NULL"
+            " WHERE risk_expire_at IS NOT NULL AND risk_expire_at < ?"
+            " AND (device_hmac IS NOT NULL OR ip_hmac IS NOT NULL)", (ni,)).rowcount
+        masks = conn.execute(
+            "UPDATE redemptions SET phone_mask=NULL, email_mask=NULL"
+            " WHERE mask_expire_at IS NOT NULL AND mask_expire_at < ?"
+            " AND (phone_mask IS NOT NULL OR email_mask IS NOT NULL)", (ni,)).rowcount
+        cutoff = _iso(now - timedelta(days=DENIED_RETENTION_DAYS))
+        denied = conn.execute(
+            "DELETE FROM redemptions WHERE outcome='denied' AND at < ?", (cutoff,)).rowcount
+        conn.execute("COMMIT")
+        return {"risk_nulled": risk, "masks_nulled": masks, "denied_deleted": denied}
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+# --- overrides: additive, audited, never a second trial ---------------------------------
+OVERRIDE_ACTIONS = ("repair_activation", "correct_identity", "owner_comp_external")
+
+
+def apply_override(conn, operator, reason, action, *, account_user_id=None,
+                   affected_eligibility_id=None, project=None, correct=None, now=None):
+    """Audited, additive override. It can **never** create a second trial eligibility row.
+    - `repair_activation`: re-run activate() for the account (projection repair; no new eligibility).
+    - `correct_identity`: fix identity on an EXISTING eligibility row (`correct` = {'phone_e164':..}
+      and/or {'email':..}), recomputing the HMAC under the current version; no new row.
+    - `owner_comp_external`: record an owner comp handled by a SEPARATE entitlement mechanism
+      (outside this gate); writes no trial eligibility.
+    Always writes an `overrides` audit row (operator, reason, action)."""
+    if action not in OVERRIDE_ACTIONS:
+        raise ValueError(f"override action must be one of {OVERRIDE_ACTIONS}")
+    if not str(operator).strip() or not str(reason).strip():
+        raise ValueError("override requires a non-empty operator and reason")
+    now = now or _utcnow()
+    keyring = correct.get("_keyring") if correct else None
+    result = {"action": action}
+
+    if action == "repair_activation":
+        result["projection"] = activate(conn, account_user_id, project=project)
+    elif action == "correct_identity":
+        if not affected_eligibility_id or not correct:
+            raise ValueError("correct_identity needs affected_eligibility_id and corrected values")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if "phone_e164" in correct and keyring is not None:
+                conn.execute("UPDATE eligibility SET phone_hmac=?, phone_hmac_ver=? WHERE eligibility_id=?",
+                             (keyring.hmac("phone", correct["phone_e164"]), keyring.current, affected_eligibility_id))
+            if "email" in correct and keyring is not None:
+                conn.execute("UPDATE eligibility SET email_hmac=?, email_hmac_ver=? WHERE eligibility_id=?",
+                             (keyring.hmac("email", normalize_email(correct["email"])), keyring.current, affected_eligibility_id))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    elif action == "owner_comp_external":
+        result["external_comp"] = True   # handled by a separate entitlement mechanism, not this gate
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "INSERT INTO overrides(at, operator, reason, affected_eligibility_id, action)"
+            " VALUES (?,?,?,?,?)",
+            (_iso(now), str(operator), str(reason), affected_eligibility_id, action),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return result
 
 
 def startup_healthy(path, keyring):
