@@ -20086,19 +20086,39 @@ def _nba_default_postseason():
     return _resolve_nba_postseason(today, ending_year)
 
 
+def _request_is_nba_owned():
+    """True when the current request is an NBA-owned surface, using the app's own sport resolver
+    (NOT a bare URL prefix, which missed /dashboard). NBA-owned = get_active_sport_for_path()=='nba'
+    (covers /sports/nba, and the bare NBA tool paths /props, /market-edge, /matchup-lens, /trends,
+    /injuries, /team, /player, ...) PLUS the NBA Command Center at /dashboard (the resolver returns
+    'dashboard' there). An explicit ?sport=<non-nba> excludes the request so shared tool routes
+    aren't misclassified; ?sport=nba includes it."""
+    try:
+        path = request.path or ''
+        qsport = (request.args.get('sport') or '').strip().lower()
+    except Exception:
+        return False
+    if qsport and qsport != 'nba':
+        return False
+    if qsport == 'nba':
+        return True
+    try:
+        if get_active_sport_for_path(path) == 'nba':
+            return True
+    except Exception:
+        pass
+    return path.startswith('/dashboard')
+
+
 def postseason_only_enabled(sport=None):
     raw = request.args.get('postseason')
     if raw is not None:
         return str(raw).lower() not in {'0', 'false', 'no', 'all'}   # explicit override always wins
-    # NBA-specific, current-season-matched default, scoped to NBA surfaces (sport='nba' or an
-    # /sports/nba request path). Other sports keep the prior default (True). active_sports()/props
-    # presence and stale prior-season playoff results do NOT enter this decision.
-    is_nba = (sport or '').strip().lower() == 'nba'
-    if not is_nba:
-        try:
-            is_nba = request.path.startswith('/sports/nba')
-        except Exception:
-            is_nba = False
+    # NBA-specific, current-season-matched default on NBA-owned surfaces. NBA routes also pass
+    # sport='nba' explicitly; _request_is_nba_owned() is the robust fallback (resolver + /dashboard +
+    # query sport, never a bare prefix). Every other sport keeps the prior default (True).
+    # active_sports()/props presence and stale prior-season playoff results do NOT enter this.
+    is_nba = (sport or '').strip().lower() == 'nba' or _request_is_nba_owned()
     if is_nba:
         return _nba_default_postseason()
     return True
@@ -29290,7 +29310,7 @@ def frontpage():
     current_user = get_current_user()
     if current_user:
         return redirect(_resolve_post_auth_target(current_user, ''))
-    postseason_only = postseason_only_enabled()
+    postseason_only = postseason_only_enabled(sport='nba')
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
@@ -29645,7 +29665,7 @@ def build_nba_command_center_context(postseason_only):
 
 @app.route('/dashboard')
 def dashboard():
-    postseason_only = postseason_only_enabled()
+    postseason_only = postseason_only_enabled(sport='nba')
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
@@ -29759,7 +29779,7 @@ def global_feature_preview(feature_key):
 
 
 def render_nba_matchup_lens_page():
-    postseason_only = postseason_only_enabled()
+    postseason_only = postseason_only_enabled(sport='nba')
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
@@ -29778,7 +29798,7 @@ def matchup_lens():
 
 @app.route('/sports/nba')
 def nba_page():
-    postseason_only = postseason_only_enabled()
+    postseason_only = postseason_only_enabled(sport='nba')
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
