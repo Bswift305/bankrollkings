@@ -6,8 +6,9 @@ rev is the **focused Days 3–5 P0 spec** for the four accepted blockers. **Rev 
 decisions from review** (no open branches remain): (1) remove the customer-facing `min_confidence`
 control; (2) remove Tier from customer presentation, ordering, filtering, and membership; (3) the
 single heading **"Live NBA markets"**; (4) order injury-context cards **by team, then player A–Z**;
-(5) an **NBA-specific, current-season-matched** postseason default (resolved from the current
-season's own playoff records, ignoring stale prior-season rows and mere feed availability) where an
+(5) an **NBA-specific, current-season-matched** postseason default gated by a **configured
+official postseason start/end window** for the current ending year (ignoring stale prior-season
+rows, completed-result gaps, and mere feed availability; playoff rows only label the round) where an
 explicit `?postseason=` param overrides and other sports are unchanged. Each change below carries the **exact current wording**,
 its **classification (COPY-ONLY vs BEHAVIORAL)**, the **replacement**, the **behavioral
 consequence**, the **non-changes**, the **tests**, and the **rollback** — no
@@ -161,7 +162,7 @@ framed as "playoff context, series state."
 
 | Change | Class | Replacement |
 |---|---|---|
-| The NBA `postseason` default | **BEHAVIORAL (NBA-scoped)** | **FROZEN: an NBA-specific, CURRENT-SEASON-MATCHED default** (rule + sources in *Season-state source* below), not the hardcoded `'1'`. The NBA default is **regular-season** in every phase except when the **current season's** playoff records place today inside that season's playoff window — stale prior-season playoff rows and mere props/feed availability do **not** flip it. An explicit `?postseason=` query parameter **always overrides** the resolved default. **Other sports are unchanged** — the global default for MLB / WNBA / NFL is not touched. |
+| The NBA `postseason` default | **BEHAVIORAL (NBA-scoped)** | **FROZEN: an NBA-specific, CURRENT-SEASON-MATCHED default** (rule + sources in *Season-state source* below), not the hardcoded `'1'`. The NBA default is **regular-season** in every phase except when today falls inside the **configured current-season postseason window** (official start/end dates for the current ending year) — stale prior-season playoff rows, completed-result gaps, and mere props/feed availability do **not** flip it. An explicit `?postseason=` query parameter **always overrides** the resolved default. **Other sports are unchanged** — the global default for MLB / WNBA / NFL is not touched. |
 | NBA Matchup Lens "playoff context, series state" framing | **COPY-ONLY** | Reframe for regular-season games (series/playoff language removed for NBA regular season). |
 
 **Behavioral consequence:** during the NBA regular season the NBA board defaults to the
@@ -181,34 +182,47 @@ season**, from existing sources only:
 
 1. **Current season ending year** — from **`get_current_nba_season()`** (`app.py:20011`), which
    returns `"YYYY-YY"` (e.g., `"2026-27"`). The **ending year** is the postseason's calendar year
-   (`2026-27` → **2027**; NBA playoffs run ~Apr–Jun of the ending year).
-2. **Current-season playoff rows only** — **`load_playoff_results()`** (`app.py:3547`) reads
-   `NBA_Playoff_Results.csv`, whose rows carry a **`Date`** (and `Round`) but **no Season column**.
-   Keep **only rows whose `Date` year == the current ending year**; this **discards prior-season
-   records** (the 2026-dated rows are ignored when the current ending year is 2027).
-3. **Current-season window** — derive the boundary from those current-season rows: the window is
-   `[earliest current-season playoff Date, latest current-season playoff Date]`. No hardcoded
-   season-specific date is used.
+   (`2026-27` → **2027**; the NBA play-in + playoffs run ~Apr–Jun of the ending year).
+2. **Configured postseason window (the gate)** — a small **season-specific configuration** maps the
+   ending year to the **official NBA postseason start and end dates** for that season, sourced from
+   the published NBA schedule and **updated once per season** (one line per year, e.g.
+   `NBA_POSTSEASON_DATES = { 2027: (date(2027, 4, 18), date(2027, 6, 30)) }` — play-in start through
+   the Finals end; confirm the exact dates from the official schedule before the season). This
+   configured `[start, end]` is what decides whether today is in the postseason. **Why not derive it
+   from results:** completed playoff rows cannot bound a *live* window — there is no row on the first
+   playoff day, and on an off-day between games "today" is later than the most recent result; a
+   result-derived window would wrongly flip those to regular-season.
+3. **Current-season playoff rows — label only, not the gate** — **`load_playoff_results()`**
+   (`app.py:3547`) reads `NBA_Playoff_Results.csv` (rows carry a **`Date`** and `Round`, **no Season
+   column**). Keep **only rows whose `Date` year == the current ending year** (discarding stale
+   prior-season rows) and use them, via `get_current_playoff_focus_label()`, **only to label the
+   active round** (First Round / Semis / …). They do **not** determine whether today is inside the
+   postseason — the configured dates (step 2) do that. When no current-year row exists yet (e.g. the
+   first playoff day), the window is still open and the label falls back gracefully.
 
 **`active_sports()` is NOT used to determine postseason** — only, elsewhere, to decide whether a
 live board exists at all.
 
-**Deterministic rule:** the NBA default is `postseason=1` **iff** `load_playoff_results()` contains
-**current-ending-year** rows with a recognized `Round` (per `PLAYOFF_ROUND_ORDER`) **and**
-`sports_today_date()` falls **within the current-season window** (step 3). Otherwise — preseason
-(even with props), regular season, play-in before the window, **or offseason after the Finals
-(stale rows only)** — the NBA default is `postseason=0` (regular season). An explicit `?postseason=`
-query parameter **always overrides** this resolution. Scoped to NBA; other sports untouched.
+**Deterministic rule:** resolve the ending year (1); the NBA default is `postseason=1` **iff**
+`sports_today_date()` is within the **configured** `[start, end]` dates for that ending year (2).
+Otherwise — preseason (even with props), regular season before the start date, or offseason after
+the end date — the NBA default is `postseason=0`. The active-round **label** comes from
+current-ending-year playoff rows (3) when present. An explicit `?postseason=` query parameter
+**always overrides** this resolution. If the ending year has **no configured window**, default
+`postseason=0` and surface an owner-only note to add it before that postseason. Scoped to NBA;
+other sports untouched.
 
-**Six phase tests (must all pass before this ships):**
+**Eight phase tests (must all pass before this ships):**
 | # | Scenario | Expected NBA default |
 |---|---|---|
 | 1 | **Preseason, no props** (Oct, no `NBA_Props.csv` rows) | `postseason=0` |
-| 2 | **Preseason WITH props** (Oct, props present so `active_sports()`=NBA, but no current-ending-year playoff rows) | `postseason=0` — props must not flip it |
-| 3 | **Regular season** (props present, today before the current-season playoff window) | `postseason=0` |
-| 4 | **Current-season postseason** (today within the current ending-year playoff window, recognized `Round`) | `postseason=1` |
-| 5 | **Stale prior-season playoff results present** (Oct; file holds only last-season rows dated a prior year) | `postseason=0` — prior-season rows are ignored |
+| 2 | **Preseason WITH props** (Oct, props present so `active_sports()`=NBA, outside the configured window) | `postseason=0` — props must not flip it |
+| 3 | **Regular season** (props present, today before the configured start date) | `postseason=0` |
+| 4 | **Current-season postseason** (today within the configured `[start, end]`) | `postseason=1` |
+| 5 | **Stale prior-season playoff results present** (Oct; file holds only last-season rows dated a prior year) | `postseason=0` — prior-season rows are ignored, no current window |
 | 6 | **Explicit override** (`?postseason=0` during the real postseason; `?postseason=1` during the regular season) | the param value wins, regardless of phase |
+| 7 | **First playoff day, before any result is recorded** (today == configured start; zero current-year playoff rows) | `postseason=1` — window is open; label falls back gracefully |
+| 8 | **Off-day between playoff games** (today inside the window; latest recorded result is several days old) | `postseason=1` — the window, not the latest result, governs |
 
 **"20-team field" (P1, not a standalone edit):** navigating `?postseason=0` did **not** change
 "20-Team Field," so it is **not** driven by the postseason default — it is a **data-completeness**
@@ -277,8 +291,8 @@ touched is `run_daily.py` wiring *if* a feed is found missing (step 2).
 - Rankings are not re-weighted; nothing is re-scored. Removing an authority ≠ inventing a new one —
   the replacement order (tip-off/name) is neutral by construction.
 - No implementation until this spec is approved. The postseason default **mechanism is now frozen**
-  (NBA-specific, current-season-matched, param-overridable, other sports unchanged, with six phase
-  tests) — no remaining decision.
+  (NBA-specific, current-season-matched via a configured official postseason window, param-
+  overridable, other sports unchanged, with eight phase tests) — no remaining decision.
 
 ---
 
