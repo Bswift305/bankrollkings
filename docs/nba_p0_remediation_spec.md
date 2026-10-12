@@ -1,150 +1,269 @@
-# NBA P0 Remediation Specification — 2026-10-11
+# NBA Days 3–5 P0 Remediation Specification — focused (rev 2026-10-12)
 
 **Status: SPECIFICATION ONLY. No code changed. Do not implement until reviewed.**
-Companion to `docs/nba_season_readiness_review_2026-10-11.md`. This freezes the exact behavioral
-consequences and their neutral replacements before any edit — so we don't repeat the PropScore
-mistake of changing ranking behavior before defining what replaces it.
+Companion to `docs/nba_season_readiness_review_2026-10-11.md` (accepted report `e6c9513`). This
+rev is the **focused Days 3–5 P0 spec** for the four accepted blockers. It freezes, per change,
+the **exact current wording**, its **classification (COPY-ONLY vs BEHAVIORAL)**, the
+**replacement**, the **behavioral consequence**, the **non-changes**, the **tests**, and the
+**rollback** — so no ranking/filtering/membership behavior changes before its replacement is
+defined (the PropScore lesson).
 
-**Governance stance (corrected):** the NBA composites below are **Legacy — no governed
-authority**. They predate governance; that alone is enough to strip their authority. They are
-**not** labeled "Under Review" (that requires opening a formal evaluation) and are **not** claimed
-to be negative-EV (not demonstrated for NBA). The factual de-vigged market number may remain as a
-clearly-labeled **Fact**, never as "our confidence."
-
-**Untouched (leave alone):** the free/anonymous NBA surface (`/free/nba`), the season string, the
-trial infrastructure, and the site-wide containment (ticker, nav gating).
+**No new model, scoring system, research claim, or architecture.** The composite computations
+may remain internally; only their customer presentation / ranking / filtering / membership
+change. The free NBA surface, the season string, trial infra, and site-wide containment are
+untouched.
 
 ---
 
-## A. Completed surface inventory (read-only, prod, All-Access trial, NBA preseason)
+## 0. Today's data verification (2026-10-12, Monday — preseason)
+
+Verified from the working data + code (prod authenticated re-walk available on request; the
+authenticated-board *wording* below is from code/templates, not session state):
+
+| Signal | State today | Source |
+|---|---|---|
+| Season state | **Preseason**; regular season 2026-27 opens ~late Oct. Season string `get_current_nba_season()` = **"2026-27"** ✅ | code |
+| NBA props | **Empty** — `data/props/NBA_Props.csv` header-only, mtime 2026-07-28 (no markets posted) | file |
+| NBA game lines | **Empty** — `data/odds/NBA_Odds.csv` header-only, mtime 2026-07-28 | file |
+| NBA injuries | **Flowing** — `data/injuries/NBA_Injuries.csv`, 125 players, mtime 2026-10-11 18:30 | file |
+| Results / sim pipeline | Ran **today** — `NBA_AllPropResults.csv` / `NBA_Simulation_Results.csv` mtime 2026-10-12 08:3x | file |
+| Game coverage | 0 live games / 0 books (no posted slate markets) — expected in preseason | file |
+
+**Consequence for this spec:** all four blockers are reproducible *now* without a live slate,
+because they are authority/copy/default-state defects, not data defects. P0-4 (refresh chain) is
+the one that needs real opening-week data to fully pass — its acceptance test is defined here and
+run Days 6–7 / Day 10.
+
+---
+
+## Blocker 1 — Ungoverned authority on the authenticated NBA board (P0-1)
+
+The composites below are **Legacy — no governed authority** (they predate governance; that alone
+strips their authority). They are **not** labeled "Under Review" (that requires opening a formal
+evaluation) and are **not** claimed negative-EV (not demonstrated for NBA). The de-vigged
+market-implied number may remain as a labeled **Fact** ("the market's number"), never as "our
+confidence."
+
+### 1a · Confidence — default sort + "play strength" number + letter grade
+**Exact current wording** (`templates/props.html:254-256`, repeated `283-285`):
+> kicker **"Confidence"** · value **"Normalized play strength"** · note **"A cleaner 50-99 score
+> built from the adjusted hit-rate read so the board stays professional and comparable."**
+
+**Exact current behavior:** `sort_prop_rows(rows, sort_by='confidence', sort_dir='desc')`
+(`app.py:19990`) — and every board caller passes `sort_by='confidence'` by default
+(`app.py:29308, 36332, 36382, 37299, 38055, 38179, 38903`). `min_confidence` drops rows;
+confidence ≥ 80 feeds `is_lock` and a letter `grade` (`services/nba_props_engine.py:186,202,205,233`).
+
+| Change | Class | Replacement |
+|---|---|---|
+| Default sort | **BEHAVIORAL** | Deterministic authority-free order: **scheduled tip-off ascending, then player A–Z**. (Defined so removing confidence-sort never leaves order undefined.) |
+| The "play strength / 50-99 score" tile + letter grade | **COPY-ONLY** (tile text) + **BEHAVIORAL** (stop rendering the grade badge) | Keep only the de-vigged **market-implied %** labeled as the market's number (Fact). Remove "normalized play strength / 50-99 score" text and the letter grade. |
+| `min_confidence` filter | **BEHAVIORAL** | Remove, or relabel as a neutral market-implied-probability threshold (not "confidence"). |
+
+**Behavioral consequence:** the board's default row order changes (tip-off/name, not strength).
+Row counts are unchanged unless `min_confidence` was set. Nothing is dropped by the relabel.
+
+### 1b · Tier — "build-grade / edge"
+**Exact current wording** (`templates/props.html:258-261`, repeated `287-290`):
+> kicker **"Tier"** · value **"Parlay build quality"** · note **"Tier is stricter than confidence.
+> It blends minutes, role stability, edge, and trend quality into a true build-grade."**
+
+| Change | Class | Replacement |
+|---|---|---|
+| Tier as a quality/ranking signal + "build-grade/edge/quality" language | **COPY-ONLY** (tile text) + **BEHAVIORAL** (if Tier currently orders/gates, stop it) | Drop "build-grade / edge / build quality." Any remaining label is purely descriptive (sample depth / role) with no edge/grade/quality claim, and does not order or gate the board. |
+
+**Behavioral consequence:** Tier no longer influences order or membership; it becomes descriptive
+context or is removed. `snapshot_tier` (`nba_props_engine.py:270`) may remain internally.
+
+### 1c · Locks — board filter + lock badge
+**Exact current wording** (`templates/props.html`): board-filter buttons **"All Props"** (365) /
+**"Locks"** (367) / **"Floor Plays"** (370); header **"🔒 Locks (80%+ Confidence)"** (399).
+
+| Change | Class | Replacement |
+|---|---|---|
+| LOCKS board filter, the `props_locks_path` route tab, the lock badge + `lock_reason` | **BEHAVIORAL** (removes a filter/route tab + badges) | Board filter becomes **All Props / Floor Plays** only. `is_lock` (`nba_props_engine.py:235,316`) may persist internally but must not surface. |
+
+**Behavioral consequence:** one customer filter tab (Locks) and the lock badge disappear; Floor
+Plays already covers the high-reliability case honestly. No row data changes.
+
+### 1d · Top Plays — "the strongest live rows"
+**Exact current wording** (`templates/dashboard.html:1696-1697`):
+> title **"Top Plays"** · subtitle **"The strongest live rows with market status and signal notes
+> in one place."**
+
+| Change | Class | Replacement |
+|---|---|---|
+| "Top Plays / strongest / signal" heading | **COPY-ONLY** | Neutral heading ("Tonight's board" / "Live rows"), ordered by the 1a default. No "top/strongest/signal strength" language. |
+
+**Behavioral consequence:** none beyond the heading text + inheriting the 1a default order; it is a
+neutral list, not a best-bets set.
+
+### 1e · Injury "% BOOST"
+**Exact current wording** (`templates/dashboard.html:1652,1665`): section **"Expected Role
+Changes"**; each row renders **`+{{ role.boost_pct }}% {{ role.expected_shift }}`** (e.g.
+"+305.5% shift") plus **"Projected starter"**. `boost_pct` = `Boost_Pct` from the with/without
+engine (`app.py:18292, 19736`).
+
+| Change | Class | Replacement |
+|---|---|---|
+| The fabricated `+N% shift` magnitude in the customer card | **COPY/PRESENTATION** (computation unchanged) | A qualitative, factual note: who is out + the expected role (e.g., "Gui Santos — projected larger role with Jimmy Butler III out"). Any magnitude shown must be a defensible, labeled observation (the player's own recent minutes/usage), never a relative % that balloons off a bench baseline. `build_role_change_candidates` (`app.py:19705/19744`) stays; only the `% shift` presentation changes. |
+
+**Behavioral consequence:** none to ranking — the list may keep its order or be neutrally
+reordered; only the displayed magnitude text changes.
+
+### 1f · Governance labels (presentation)
+Confidence/market number, Tier, Top Plays, injury role-changes → shown as **Legacy** context ("the
+market's number," not a BK edge). The de-vigged market-implied probability → **Fact**. Nothing is
+marked Qualified/Baseline; nothing auto-marked Under Review.
+
+---
+
+## Blocker 2 — Operator/dev language on customer screens (P0-2)
+
+All **COPY-ONLY** (string edits; no logic change).
+
+| # | Exact current wording | Location | Replacement (frozen) |
+|---|---|---|---|
+| 2a | **"Run `REFRESH_DATA` to reload player props and rebuild the dashboard board."** | `templates/dashboard.html:1744` | **"NBA markets open closer to tip-off — the board fills when tonight's lines post."** |
+| 2b | **"Live props feed is unavailable. Verify the Odds API key or subscription before trusting board lines."** | `app.py:3461` | **"Live NBA lines aren't posted yet — check back near game time."** |
+
+All engine/key/refresh health language stays on **owner-gated** surfaces only. (These replacements
+are sport-neutral enough to reuse; if other sports share string 2b, scope the change so only the
+customer-facing empty state is reworded, not any owner diagnostic.)
+
+**Behavioral consequence:** none — empty/late-feed states read as calm customer states instead of
+maintenance commands.
+
+---
+
+## Blocker 3 — `postseason=1` default during a regular-season opener (P0-3)
+
+**Exact current behavior** (`app.py:20015-20017`):
+```python
+def postseason_only_enabled():
+    value = request.args.get('postseason', '1')
+    return str(value).lower() not in {'0', 'false', 'no', 'all'}
+```
+The param **defaults to `'1'`**, so with no query param the whole app is in **postseason-only**
+focus. Pages load `?postseason=1`; the props header renders
+**`{{ (focus_mode_label + ' Props') if postseason_only else 'All Props' }}`** with
+`focus_mode_label = '20-Team Field'` (`app.py:20075,20084,20099`). The NBA **Matchup Lens** is
+framed as "playoff context, series state."
+
+| Change | Class | Replacement |
+|---|---|---|
+| The `postseason` default (`'1'` → regular-season default for NBA's regular season) | **BEHAVIORAL** | Make the regular-season view the default for NBA launch. **Mechanism to choose at implementation review (do not pick blind):** (a) flip the global default to `'0'`, or (b) make the default **season-aware** (postseason-default only when the league is actually in its postseason). Option (b) is safer cross-sport (MLB/WNBA/NFL also read this) — confirm the blast radius before choosing. |
+| NBA Matchup Lens "playoff context, series state" framing | **COPY-ONLY** | Reframe for regular-season games (series/playoff language removed for NBA regular season). |
+
+**Behavioral consequence:** NBA (and, depending on mechanism, other sports) default to the
+regular-season field instead of a playoff field. **This is the highest-blast-radius change** —
+`postseason_only_enabled()` is global; option (a) changes every sport's default. Verification
+(below) must confirm regular-season schedule/boards/labels render correctly under the new default
+before it ships.
+
+**"20-team field" (P1, not a standalone edit):** navigating `?postseason=0` did **not** change
+"20-Team Field," so it is **not** driven by the postseason default — it is a **data-completeness**
+symptom (20 of 30 teams carrying preseason data). **Do not** "fix" the label until a full slate
+loads and the real count is known (reconfirm in the §Verification load test).
+
+---
+
+## Blocker 4 — Production refresh chain for lines, props, injuries (P0-4)
+
+**Current state (today):** injuries flow; props/lines are empty (preseason, no markets). Per the
+standing rule ("if a feed isn't wired into `run_daily.py` it never runs on prod"), the chain must
+be **proven** before opening night. NBA uses the **unprefixed** loaders (`load_props`,
+`load_schedule`, `load_gamelogs`, `load_game_market_odds`) and grades via
+`load_nba_review_gamelogs`.
+
+**Spec action (Days 3–5, verify-and-document — mostly non-code):**
+1. Confirm NBA **props**, **game lines**, and **injuries** fetch/refresh steps are present in
+   `run_daily.py` and in the prod systemd timers (not just the Windows batch files). Record the
+   exact unit/timer names and cadence.
+2. If any NBA feed is **absent** from `run_daily.py`, that wiring is the one code change this
+   blocker authorizes (add the NBA feed to the daily operator) — specified and reviewed before
+   edit, scoped to wiring only (no model/logic).
+3. Document the chain in `docs/PROJECT_MAP.md` so it is re-derivable.
+
+**Acceptance test** (run Days 6–7 + Day 10 on real opening-week data; launch stays blocked until
+all pass):
+1. **Schedule loads** — regular-season NBA games with correct Eastern dates; no stale/missing days.
+2. **Game lines load** — spreads + totals, ≥1 book.
+3. **Props load when markets exist** — non-zero rows, `books > 0`, a real market source (not
+   "manual or generated board").
+4. **Injuries load** — statuses + role-change inputs populate.
+5. **Timestamps + sources display** — real "props/lines refreshed <time>" + book list; no "Unknown."
+6. **Late/missing feed → safe empty state** — shows the Blocker-2 customer copy, never the operator
+   strings.
+7. **Tracking + grading persist** — a saved NBA decision survives reopen; after results it grades;
+   **NBA appears in the Review Center sport filter** (today it is absent: MLB/NCAAF/NFL/WNBA only).
+
+**Behavioral consequence:** none to UI; this is operational wiring + verification. The only code
+touched is `run_daily.py` wiring *if* a feed is found missing (step 2).
+
+---
+
+## Copy-only vs behavioral — at a glance (for staged commits)
+
+- **COPY-ONLY commits** (safe, no logic): 1a tile text, 1b tile text, 1d heading, 1e magnitude
+  text, 2a, 2b, 3 Matchup-Lens reframe. These can land first and are trivially rollback-able.
+- **BEHAVIORAL commits** (reviewed, tested against current output first): 1a default sort +
+  `min_confidence` + grade badge, 1b Tier ordering/gating removal, 1c Locks filter/route/badge
+  removal, 3 postseason default (**highest blast radius — global**), 4 `run_daily.py` wiring if
+  missing.
+- Mirror the Player Check discipline: for any change that could alter which rows show or their
+  order, **characterize current output first**, then prove the change does exactly (and only) what
+  the spec says.
+
+---
+
+## Explicit non-changes / boundaries
+
+- No new NBA model, scoring system, research claim, or architecture.
+- No change to the free/anonymous NBA surface, the season string, trial infra, or site-wide
+  containment.
+- `is_lock` / `confidence` / `snapshot_tier` / `boost_pct` **computations** may remain internally;
+  only their customer presentation, ranking, filtering, and membership roles change.
+- Rankings are not re-weighted; nothing is re-scored. Removing an authority ≠ inventing a new one —
+  the replacement order (tip-off/name) is neutral by construction.
+- No implementation until this spec is reviewed and the postseason default **mechanism** (§Blocker
+  3) is chosen.
+
+---
+
+## Rollback (per change)
+
+Every change is a discrete, revertible edit; none migrates or deletes data, so rollback is a code
+revert with no data step.
+
+| Change | Rollback |
+|---|---|
+| 1a default sort | Revert the caller defaults to `sort_by='confidence'`; order returns to confidence-desc. Pure presentation — no data effect. |
+| 1a grade/number + `min_confidence` | Re-render the tile/grade and re-enable the filter param. The computations were never removed (internal), so the surface returns intact. |
+| 1b Tier | Restore the tile text + any ordering hook. `snapshot_tier` untouched internally. |
+| 1c Locks | Restore the Locks filter button + `props_locks_path` tab + lock badge/`lock_reason` render. `is_lock` untouched internally. |
+| 1d Top Plays | Restore the "Top Plays / strongest live rows" strings. |
+| 1e Injury % | Restore the `+{{ role.boost_pct }}% …` render. `build_role_change_candidates` untouched. |
+| 2a / 2b | Restore the original strings. |
+| 3 postseason default | Restore `request.args.get('postseason', '1')` (or revert the season-aware wrapper). **Because this is global, roll back as its own commit** so other sports aren't disturbed by an unrelated revert. |
+| 3 Matchup-Lens copy | Restore the playoff/series wording. |
+| 4 run_daily wiring | Revert the added NBA feed step; the daily operator returns to its prior set. No data effect (a refresh step only writes fresh files). |
+
+Each behavioral change ships as its own commit (not bundled), so any one can be reverted
+independently without touching the others — especially the global postseason default.
+
+---
+
+## Surface inventory (prod, All-Access, NBA preseason — from the accepted report + 10-12 recheck)
 
 | Surface | State | Finding |
 |---|---|---|
-| Command Center `/sports/nba` | renders | "Curated Lens / Top Plays — strongest live rows"; injury "**% BOOST**" cards; "Run `REFRESH_DATA`" operator leak; "20 Teams", "Props refreshed Unknown", "Results through 2026-10-10". |
-| Props Screener `/sports/nba/props` | renders, 0 rows | Default sort **Confidence**; **Tier** "build-grade/edge"; **LOCKS** filter; "20-Team Field"; "Verify the Odds API key" operator leak; "Unknown" timestamps; "manual or generated board". |
-| Free Preview `/free/nba` | honest ✅ | Inherits patched `free_tier.html` (de-vigged caption, no Missed-Opps card). No action. |
-| Daily Card `/tools/daily-card` | honest ✅ | "assembled by rule … not a graded pick"; follows the live slate (NFL today). Will build NBA cards from the NBA board once props load — so it inherits whatever the board ranking becomes (ties to C below). |
-| Review Center `/candidate-review` | renders | Sport filter = MLB/NCAAF/NFL/WNBA — **NBA absent**. No NBA graded/tracking rows yet; NBA must appear here once results grade (acceptance test, §F). |
-| Matchup Lens `/tools/matchup-lens?sport=nba` | renders | NBA lens is described as **"playoff context, series state"** — a postseason orientation that mismatches a regular-season opener (see §E). |
-| Game pages | n/a (preseason) | Game-dependent; verify opening week with a real slate. |
-| Mobile save/reopen | generic ✅ | Tracker save/reopen verified generically earlier; an NBA-specific saved decision needs live props — verify opening week (§F). |
+| Command Center `/sports/nba` | renders | Top Plays "strongest live rows"; injury "+N% shift" cards; "Run `REFRESH_DATA`" leak; "20 Teams"; "Props refreshed Unknown". |
+| Props Screener `/sports/nba/props` | renders, 0 rows | Default sort **Confidence**; **Tier** "build-grade/edge"; **Locks** filter; "20-Team Field"; "Verify the Odds API key" leak; "Unknown" timestamps; "Manual or generated board". |
+| Free Preview `/free/nba` | honest ✅ | Patched `free_tier.html`. No action. |
+| Daily Card `/tools/daily-card` | honest ✅ | Inherits 1a–1e once NBA props load; no separate change. |
+| Review Center `/candidate-review` | renders | NBA **absent** from the sport filter — must appear once results grade (test §4.7). |
+| Matchup Lens `?sport=nba` | renders | "playoff context, series state" — reframe for regular season (Blocker 3 copy). |
 
----
-
-## B. Composite map — what each actually does (ranking / filtering / membership / presentation)
-
-Built in `services/nba_props_engine.py` + `app.py`.
-
-| Composite | Ranking | Filtering | Membership | Presentation | Code |
-|---|---|---|---|---|---|
-| **Confidence** (calibrated market-confidence, 0–99) | **Default board sort** (desc) | `min_confidence` param drops rows | feeds `is_lock` (≥80) and letter `grade` | "Normalized play strength" 50–99 number + grade badge | `sort_prop_rows(sort_by='confidence')` app.py:19988/19968; `nba_props_engine.py:186,202,205,233` |
-| **Tier** (`snapshot_tier`) | secondary quality signal | — | parlay/floor build-quality bucket | "build-grade … blends minutes, role stability, **edge**, trend" | `nba_props_engine.py:270` |
-| **Locks** (`is_lock`) | — | **LOCKS board filter** selects these | row is a "lock" when flag set + conf ≥ 80 | lock badge + `lock_reason` | `nba_props_engine.py:235,316`; `build_lock_reason` |
-| **Top Plays** | selects "strongest" rows | — | command-center feature set | "the strongest live rows" | command-center board build |
-| **Injury % BOOST** | orders role-change cards | — | "Expected Role Changes" list | "{injured} can create a **{boost_pct}% shift**" | `build_role_change_candidates` app.py:19705/19744; rendered app.py:20450 |
-
----
-
-## C. Frozen neutral replacements (one behavior each — reviewed before implementing)
-
-**C-1 Confidence.**
-- **Default sort →** deterministic, authority-free order: **scheduled tip-off time ascending, then
-  player name A–Z** (the defined replacement, so removing confidence-sort never leaves order
-  undefined). Confidence remains an *optional* user-selected sort only if it is first relabeled
-  per the next point.
-- **The number →** keep only the de-vigged **market-implied %**, labeled factually as the market's
-  number (a Fact). Remove the "normalized play strength / 50–99 score" labeling and the letter
-  **grade**. No "confidence" authority wording.
-- **`min_confidence` filter →** remove, or relabel as a neutral market-implied-probability
-  threshold (not "confidence").
-
-**C-2 Tier.** Remove Tier as a quality/ranking signal and drop the "build-grade / edge / build
-quality" language. If any label remains it is purely descriptive (e.g., sample depth / role), with
-no "edge," "grade," or "quality" claim, and it does not order or gate the board.
-
-**C-3 Locks.** Remove the **LOCKS** board filter, the lock badge, and `lock_reason` from all
-customer surfaces (a literal "lock" is on the do-not-build list). `is_lock` may persist internally
-but must not surface. Board filter becomes **All Props / Floor Plays** only (Floor Plays already
-covers the high-reliability case honestly).
-
-**C-4 Top Plays.** Replace "Top Plays — the strongest live rows" with a neutral heading
-("Tonight's board" / "Live rows"), ordered by the C-1 default. No "top / strongest / signal
-strength" language; it is a neutral list, not a best-bets set.
-
-**C-5 Injury % BOOST.** Remove the fabricated `boost_pct` percentage from the customer
-presentation. Replace with a **qualitative, factual** note: who is out and the expected role
-(e.g., "Gui Santos — projected larger role with Jimmy Butler III out"). Any magnitude shown must
-be a defensible, labeled observation (the player's own recent minutes/usage), never a relative %
-that balloons off a bench baseline. The `build_role_change_candidates` computation may stay; only
-the "% shift" presentation changes.
-
-*(Daily Card and any parlay/floor assembly that consume the board inherit C-1…C-5 automatically;
-no separate Daily Card change is specified.)*
-
----
-
-## D. Governance labels to apply (presentation)
-
-Each surfaced NBA analytical read carries its status so nothing reads as governed by default:
-- Confidence/market number, Tier, Top Plays, injury role-changes → **Legacy** (shown as context /
-  "the market's number," not a Bankroll Kings edge).
-- The de-vigged market-implied probability → **Fact** (labeled as the market's number).
-- Nothing is marked Qualified or Baseline; nothing is auto-marked Under Review.
-
----
-
-## E. Postseason default + 20-team
-
-- **Postseason default:** `postseason_only_enabled()` defaults **true** (app.py:20014). For NBA
-  launch, the **regular-season** view must be the default; opening night is not the playoffs.
-  Concretely, the **NBA Matchup Lens** is described as "playoff context, series state" — reframe
-  the NBA matchup/series framing for regular-season games. (Freeze the exact default-resolution
-  mechanism in implementation review; options: flip the NBA default to regular-season, or make the
-  focus season-aware.)
-- **20-team field:** tested — navigating `postseason=0` did **not** change "20-Team Field," so it
-  is **not** driven by the postseason default. Treat it as a **data-completeness** symptom (20 of
-  30 teams carrying preseason data), to **reconfirm once a full slate loads** (§F) — not a
-  standalone copy edit. Do not "fix" the label until the full-slate count is known.
-
----
-
-## F. Production refresh acceptance test (definition — run Days 6–7 and Day 10; launch stays blocked until it passes)
-
-Each item has an explicit pass criterion; opening night is GO only when all pass on real data.
-
-1. **Schedule loads** — regular-season NBA games appear with correct Eastern dates; no stale/
-   missing days.
-2. **Game lines load** — spreads + totals for the slate, ≥1 book.
-3. **Props load when markets exist** — non-zero prop rows, `books > 0`, source is a real market
-   feed (not "manual or generated board").
-4. **Injuries load** — player statuses + role-change inputs populate.
-5. **Timestamps + sources display** — real "props/lines refreshed <time>" and book list; no
-   "Unknown."
-6. **Late / missing feed → safe empty state** — shows the customer message (§ operator-leak
-   replacements), never "Run REFRESH_DATA" or "Verify the Odds API key."
-7. **Tracking + grading persist** — a saved NBA decision survives reopen; after results it grades;
-   **NBA appears in the Review Center sport filter**.
-
-(Per the standing rule, first confirm NBA props/lines/injuries are wired into `run_daily.py` + prod
-timers so the chain runs at all.)
-
----
-
-## G. Operator-leak empty-state replacements (frozen copy)
-
-- Command Center "Run `REFRESH_DATA` to reload player props…" → **"NBA markets open closer to
-  tip-off — the board fills when tonight's lines post."**
-- Props Screener "Live props feed is unavailable. Verify the Odds API key or subscription…" →
-  **"Live NBA lines aren't posted yet — check back near game time."**
-- All engine/key/refresh health language stays on owner-gated surfaces only.
-
----
-
-## H. Explicit non-changes / boundaries
-- No new NBA model or research mechanism. No changes to the free NBA surface, season string, trial
-  infra, or site-wide containment.
-- `is_lock` / `confidence` / `boost_pct` computations may remain internally; only their customer
-  presentation, ranking, filtering, and membership roles change per §C.
-- No implementation until this spec is reviewed and the default-resolution mechanism (§E) is chosen.
-
-*End of specification. Awaiting review before the Days 3–5 implementation gate opens.*
+*End of focused Days 3–5 P0 specification. No new model/scoring/research/architecture. Awaiting
+review + the Blocker-3 mechanism choice before the implementation gate opens.*
