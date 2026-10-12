@@ -135,8 +135,52 @@ def run():
         ok_missing, reason = te.startup_healthy(path, te.Keyring({1: "k-one"}))
         expect(not ok_missing, "[A4] fail-closed when keyring is missing a referenced version")
 
+        # --- missing production key -> fail closed ------------------------------------
+        raised = False
+        try:
+            te.Keyring.from_env(env_value="")
+        except RuntimeError:
+            raised = True
+        expect(raised, "from_env must FAIL CLOSED when the key is absent")
+        expect(te.Keyring.from_env(env_value="", allow_dev=True) is not None,
+               "from_env(allow_dev=True) permits a dev key for tests")
+
+        # --- projection failure -> activation stays 'committed' -----------------------
+        te.attempt_redemption(conn, kr, token="CASINO01", **_person(30))
+        boom = []
+        def _bad_project(_g):
+            boom.append(1)
+            raise RuntimeError("projection write failed")
+        failed = False
+        try:
+            te.activate(conn, "u30", project=_bad_project)
+        except RuntimeError:
+            failed = True
+        expect(failed and boom, "projection failure propagates")
+        st = conn.execute("SELECT activation_state FROM redemptions WHERE account_user_id='u30'").fetchone()[0]
+        expect(st == "committed", "activation must stay 'committed' when projection fails (not marked early)")
+        ok_proj = te.activate(conn, "u30", project=lambda g: None)
+        expect(ok_proj is not None and
+               conn.execute("SELECT activation_state FROM redemptions WHERE account_user_id='u30'").fetchone()[0] == "activated",
+               "activation completes only after a successful projection")
+
+        # --- retention boundaries match policy (mask 90d / risk 30d) ------------------
+        from datetime import datetime as _dt
+        row = conn.execute("SELECT at, mask_expire_at, risk_expire_at FROM redemptions WHERE account_user_id='u30' AND outcome='granted'").fetchone()
+        _p = lambda s: _dt.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+        expect((_p(row["mask_expire_at"]) - _p(row["at"])).days == te.MASK_RETENTION_DAYS, "masked contact retention = 90d")
+        expect((_p(row["risk_expire_at"]) - _p(row["at"])).days == te.RISK_RETENTION_DAYS, "IP/device risk retention = 30d")
+
+        # --- invalid-code auditing ----------------------------------------------------
+        before = conn.execute("SELECT COUNT(*) FROM redemptions WHERE deny_reason='invalid_code'").fetchone()[0]
+        bad = te.attempt_redemption(conn, kr, token="NOPE-NOT-A-CODE", **_person(31))
+        expect(bad.reason == "invalid_code", "invalid code -> denied invalid_code")
+        audited = conn.execute("SELECT COUNT(*) FROM redemptions WHERE deny_reason='invalid_code' AND code_id IS NULL").fetchone()[0]
+        expect(audited == before + 1, "invalid-code attempt is AUDITED with code_id NULL")
+
         notes.append("eligibility/uniqueness, cap, crash-recovery, entitlement, [A1]/[A2]/[A4], "
-                     "denial-isolation checks executed")
+                     "denial-isolation, fail-closed-key, projection-failure, retention-boundaries, "
+                     "invalid-code-audit checks executed")
     finally:
         conn.close()
         if os.path.exists(path):

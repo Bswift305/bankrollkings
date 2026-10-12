@@ -55,7 +55,8 @@ CREATE TABLE redemptions (                              -- audit of every attemp
   activation_state TEXT    CHECK (activation_state IN ('committed','activated')),  -- granted rows only
   phone_mask       TEXT, email_mask TEXT,               -- masked display, purged per retention (§7)
   device_hmac      TEXT, ip_hmac    TEXT,               -- risk signals, purged per retention (§4,§7)
-  raw_expire_at    TEXT,                                -- when the masked/risk fields are purged
+  mask_expire_at   TEXT,                                -- masked-contact purge boundary (+90d, §7)
+  risk_expire_at   TEXT,                                -- IP/device risk purge boundary (+30d, §7)
   CHECK (                                               -- [A2] DB-enforced granted/denied invariants
     (outcome='granted'
        AND grant_id IS NOT NULL AND account_user_id IS NOT NULL
@@ -94,9 +95,11 @@ nonnegative/capped counters, valid `active`, positive caps; `foreign_keys=ON`.
   rebuildable from the grant — never an independent source of truth.
 - **Recovery linkage:** every granted redemption carries `grant_id` (UNIQUE UUID), `account_user_id`,
   and `eligibility_id` (FK). Recovery = `SELECT ... FROM redemptions WHERE outcome='granted' AND
-  activation_state='committed' AND account_user_id=?` → re-apply the user stamp idempotently and set
-  `activation_state='activated'`. An access check that finds a committed grant but a missing
-  projection recovers it on the spot. No grant exists without a committed row; no ineligibility
+  activation_state='committed' AND account_user_id=?` → re-apply the user stamp idempotently and,
+  **only after that projection succeeds**, set `activation_state='activated'` (a failed projection
+  leaves the row `committed` for the next recovery — activation is never marked complete early). An
+  access check that finds a committed grant but a missing projection recovers it on the spot. No
+  grant exists without a committed row; no ineligibility
   exists without a grant.
 
 ---
@@ -221,9 +224,11 @@ One-time migration of the two private CSV codes (`INVITE_CODES_PATH`) into SQLit
   key version **fails closed**. An acceptance test proves an **old recipient stays detectable
   (DENIED) after a full DB + keyring backup→restore** (§12).
 - **Corruption + availability — FAIL CLOSED:** a startup check fails closed if the eligibility DB is
-  missing, unreadable, or fails `integrity_check`. When the DB is unavailable, the trial endpoint
-  **denies all redemptions** (and logs an owner alert) — it must **never** fall back to the old
-  ungated grant path. No trial is granted without a healthy authoritative store.
+  missing, unreadable, fails `integrity_check`, **or the keyring (`TRIAL_KEY_MASTER`) is absent or
+  does not cover every `*_hmac_ver` referenced** (no silent fallback/predictable key — `from_env`
+  raises). When the store/keyring is unavailable, the trial endpoint **denies all redemptions** (and
+  logs an owner alert) — it must **never** fall back to the old ungated grant path. No trial is
+  granted without a healthy authoritative store and a complete keyring.
 
 ## 11. External dependency — evaluation in progress
 Architecture is approved, so **SMS-provider evaluation may begin** (deliverable:

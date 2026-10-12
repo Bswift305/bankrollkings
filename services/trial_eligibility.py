@@ -23,8 +23,24 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 # --- keyring: versioned, domain-separated ------------------------------------------------
-_HKDF_SALT = b"BKtrial/v1/"
+_HKDF_SALT = b"BKtrial/hkdf/v1"
 _PURPOSES = ("phone", "email", "ip", "device", "codetoken")  # no 'otp' -- provider-managed
+_HASH = hashlib.sha256
+
+
+def _hkdf(ikm, info, length=32, salt=_HKDF_SALT):
+    """RFC 5869 HKDF-SHA256 (extract + expand). Real HKDF, not a single-step HMAC."""
+    if isinstance(ikm, str):
+        ikm = ikm.encode("utf-8")
+    if isinstance(info, str):
+        info = info.encode("utf-8")
+    prk = hmac.new(salt, ikm, _HASH).digest()                       # extract
+    okm, t, i = b"", b"", 0
+    while len(okm) < length:                                        # expand
+        i += 1
+        t = hmac.new(prk, t + info + bytes([i]), _HASH).digest()
+        okm += t
+    return okm[:length]
 
 
 def _utcnow():
@@ -48,11 +64,17 @@ class Keyring:
         self.current = max(self.versions)
 
     @classmethod
-    def from_env(cls, env_value=None):
+    def from_env(cls, env_value=None, allow_dev=False):
+        """Load the keyring from TRIAL_KEY_MASTER (JSON {ver:secret} or a bare string = v1).
+        FAIL CLOSED: if the secret is absent, raise -- the gate must NEVER run on a silent
+        fallback/predictable key in production. `allow_dev=True` (tests only) permits a dev key."""
         raw = env_value if env_value is not None else os.environ.get("TRIAL_KEY_MASTER", "")
         raw = (raw or "").strip()
         if not raw:
-            # dev/test fallback: a deterministic ephemeral key (NEVER used in prod; prod sets the env)
+            if not allow_dev:
+                raise RuntimeError(
+                    "TRIAL_KEY_MASTER is not set -- refusing to run the trial gate on a fallback "
+                    "key (fail closed). Set the secret in the environment.")
             raw = "dev-only-trial-key-not-for-production"
         try:
             parsed = json.loads(raw)
@@ -63,9 +85,8 @@ class Keyring:
         return cls({1: raw})
 
     def _derived(self, purpose, version):
-        secret = self.versions[int(version)]
-        # domain-separated subkey: HMAC(master_version, "BKtrial/<purpose>")
-        return hmac.new(secret, _HKDF_SALT + purpose.encode("ascii"), hashlib.sha256).digest()
+        # domain-separated per-purpose key via real HKDF, keyed by the master version secret.
+        return _hkdf(self.versions[int(version)], info=b"BKtrial/purpose/" + purpose.encode("ascii"))
 
     def hmac(self, purpose, value, version=None):
         if purpose not in _PURPOSES:
@@ -118,7 +139,8 @@ CREATE TABLE IF NOT EXISTS redemptions (
   activation_state TEXT    CHECK (activation_state IN ('committed','activated')),
   phone_mask       TEXT, email_mask TEXT,
   device_hmac      TEXT, ip_hmac    TEXT,
-  raw_expire_at    TEXT,
+  mask_expire_at   TEXT,                           -- masked contact purge boundary (policy: +90d)
+  risk_expire_at   TEXT,                           -- IP/device risk purge boundary (policy: +30d)
   CHECK (
     (outcome='granted'
        AND grant_id IS NOT NULL AND account_user_id IS NOT NULL
@@ -222,15 +244,26 @@ class RedeemResult:
         return self.outcome == "granted"
 
 
+# Retention policy (spec §7): masked contact 90d, IP/device risk 30d. (Denied-row deletion at
+# +180d and ops-log 90d are applied by the purge job from `at`, the authoritative row time.)
+MASK_RETENTION_DAYS = 90
+RISK_RETENTION_DAYS = 30
+DENIED_RETENTION_DAYS = 180
+
+
 def _write_denied(conn, code_id, reason, phone_mask, email_mask, device_hmac, ip_hmac, now):
-    """Denied audit row, in its OWN transaction -- never touches eligibility or the code counter."""
+    """Denied audit row, in its OWN transaction -- never touches eligibility or the code counter.
+    code_id may be NULL (an invalid/unknown code is still audited)."""
+    mask_exp = _iso(now + timedelta(days=MASK_RETENTION_DAYS))
+    risk_exp = _iso(now + timedelta(days=RISK_RETENTION_DAYS))
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(
             "INSERT INTO redemptions(grant_id, at, code_id, account_user_id, eligibility_id, outcome,"
-            " deny_reason, activation_state, phone_mask, email_mask, device_hmac, ip_hmac, raw_expire_at)"
-            " VALUES (NULL,?,?,NULL,NULL,'denied',?,NULL,?,?,?,?,?)",
-            (_iso(now), code_id, reason, phone_mask, email_mask, device_hmac, ip_hmac, None),
+            " deny_reason, activation_state, phone_mask, email_mask, device_hmac, ip_hmac,"
+            " mask_expire_at, risk_expire_at)"
+            " VALUES (NULL,?,?,NULL,NULL,'denied',?,NULL,?,?,?,?,?,?)",
+            (_iso(now), code_id, reason, phone_mask, email_mask, device_hmac, ip_hmac, mask_exp, risk_exp),
         )
         conn.execute("COMMIT")
     except Exception:
@@ -252,6 +285,7 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
 
     code = find_code_by_token(conn, keyring, token)
     if not code:
+        _write_denied(conn, None, "invalid_code", phone_mask, email_mask, device_hmac, ip_hmac, now)
         return RedeemResult("denied", "invalid_code")
     code_id = code["code_id"]
 
@@ -287,7 +321,8 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
             return RedeemResult("denied", "code_exhausted_or_inactive")
 
         expires = now + timedelta(days=int(code["trial_days"]))
-        raw_expire = now + timedelta(days=90)  # masked/risk retention (§7)
+        mask_exp = _iso(now + timedelta(days=MASK_RETENTION_DAYS))
+        risk_exp = _iso(now + timedelta(days=RISK_RETENTION_DAYS))
         cur2 = conn.execute(
             "INSERT INTO eligibility(phone_hmac,phone_hmac_ver,email_hmac,email_hmac_ver,"
             "account_user_id,code_id,granted_at,expires_at) VALUES (?,?,?,?,?,?,?,?)",
@@ -298,10 +333,11 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
         grant_id = uuid.uuid4().hex
         conn.execute(
             "INSERT INTO redemptions(grant_id, at, code_id, account_user_id, eligibility_id, outcome,"
-            " deny_reason, activation_state, phone_mask, email_mask, device_hmac, ip_hmac, raw_expire_at)"
-            " VALUES (?,?,?,?,?,'granted',NULL,'committed',?,?,?,?,?)",
+            " deny_reason, activation_state, phone_mask, email_mask, device_hmac, ip_hmac,"
+            " mask_expire_at, risk_expire_at)"
+            " VALUES (?,?,?,?,?,'granted',NULL,'committed',?,?,?,?,?,?)",
             (grant_id, _iso(now), code_id, str(account_user_id), eligibility_id,
-             phone_mask, email_mask, device_hmac, ip_hmac, _iso(raw_expire)),
+             phone_mask, email_mask, device_hmac, ip_hmac, mask_exp, risk_exp),
         )
         conn.execute("COMMIT")
         return RedeemResult("granted", grant_id=grant_id, eligibility_id=eligibility_id,
@@ -316,27 +352,35 @@ def attempt_redemption(conn, keyring, *, token, account_user_id, phone_e164, ema
         raise
 
 
-def activate(conn, account_user_id):
-    """Idempotent, recoverable: mark committed grants for this account 'activated' and return the
-    grant to project onto the user record. Safe to call repeatedly (recovery after a crash)."""
+def activate(conn, account_user_id, project=None):
+    """Recoverable, idempotent. Finds a committed grant for the account, runs `project(grant)` (the
+    caller's user-record write), and marks the row 'activated' **only after project() succeeds**. If
+    `project` raises, the row stays 'committed' so a later call recovers it -- activation is never
+    marked complete before the projection. Safe to call repeatedly."""
+    row = conn.execute(
+        "SELECT redemption_id, grant_id, eligibility_id FROM redemptions"
+        " WHERE outcome='granted' AND activation_state='committed' AND account_user_id=?"
+        " ORDER BY redemption_id LIMIT 1",
+        (str(account_user_id),),
+    ).fetchone()
+    if not row:
+        return None
+    grant = {"grant_id": row["grant_id"], "eligibility_id": row["eligibility_id"],
+             "redemption_id": row["redemption_id"]}
+    if project is not None:
+        project(grant)                       # may raise -> we do NOT mark activated (stays committed)
     conn.execute("BEGIN IMMEDIATE")
     try:
-        row = conn.execute(
-            "SELECT redemption_id, grant_id, eligibility_id FROM redemptions"
-            " WHERE outcome='granted' AND activation_state='committed' AND account_user_id=?"
-            " ORDER BY redemption_id LIMIT 1",
-            (str(account_user_id),),
-        ).fetchone()
-        if not row:
-            conn.execute("COMMIT")
-            return None
-        conn.execute("UPDATE redemptions SET activation_state='activated' WHERE redemption_id=?",
-                     (row["redemption_id"],))
+        conn.execute(
+            "UPDATE redemptions SET activation_state='activated'"
+            " WHERE redemption_id=? AND activation_state='committed'",
+            (row["redemption_id"],),
+        )
         conn.execute("COMMIT")
-        return {"grant_id": row["grant_id"], "eligibility_id": row["eligibility_id"]}
     except Exception:
         conn.execute("ROLLBACK")
         raise
+    return grant
 
 
 def active_grant_for(conn, account_user_id, now=None):
