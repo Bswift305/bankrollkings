@@ -232,6 +232,23 @@ def check_migration():
         conn.close()
         if os.path.exists(path):
             os.remove(path)
+
+    # forced-failure: second row duplicates the first token -> whole migration rolls back -> 0 codes
+    path2, conn2 = _mkdb(kr)
+    try:
+        bad = [
+            {"Code": "DUP", "Label": "A", "TrialDays": 14, "MaxRedemptions": 25, "TimesRedeemed": 0, "Active": "1"},
+            {"Code": "DUP", "Label": "B", "TrialDays": 14, "MaxRedemptions": 25, "TimesRedeemed": 0, "Active": "1"},
+        ]
+        res = te.migrate_csv_to_sqlite(conn2, kr, bad)
+        if res["ok"]:
+            issues.append("migration with a failing row must not report ok")
+        if conn2.execute("SELECT COUNT(*) FROM codes").fetchone()[0] != 0:
+            issues.append("a failed migration must leave ZERO codes (atomic rollback)")
+    finally:
+        conn2.close()
+        if os.path.exists(path2):
+            os.remove(path2)
     return issues
 
 
@@ -243,33 +260,41 @@ def check_purge():
     try:
         _add_code(conn, kr, "C", cap=25)
         now = datetime.now(timezone.utc)
-        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=40), device_id="d1", ip="1.1.1.1", **_person(1))   # risk expired (30d), mask not (90d)
-        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=100), device_id="d2", ip="2.2.2.2", **_person(2))  # both expired
-        te.attempt_redemption(conn, kr, token="C", now=now - timedelta(days=5), device_id="d3", ip="3.3.3.3", **_person(3))    # neither expired
-        te.attempt_redemption(conn, kr, token="BAD", now=now - timedelta(days=200), **_person(4))  # denied, 200d old -> deletable
-        te.attempt_redemption(conn, kr, token="BAD", now=now - timedelta(days=100), **_person(5))  # denied, 100d old -> kept
+        dd = lambda n: now - timedelta(days=n)
+        # risk boundary (30d): exactly 30 -> nulled; 29 -> kept
+        te.attempt_redemption(conn, kr, token="C", now=dd(30), device_id="dR30", ip="1.0.0.30", **_person(30))
+        te.attempt_redemption(conn, kr, token="C", now=dd(29), device_id="dR29", ip="1.0.0.29", **_person(29))
+        # mask boundary (90d): exactly 90 -> nulled; 89 -> kept
+        te.attempt_redemption(conn, kr, token="C", now=dd(90), device_id="dM90", ip="1.0.0.90", **_person(90))
+        te.attempt_redemption(conn, kr, token="C", now=dd(89), device_id="dM89", ip="1.0.0.89", **_person(89))
+        # denied boundary (180d): exactly 180 -> deleted; 179 -> kept
+        te.attempt_redemption(conn, kr, token="BAD", now=dd(180), **_person(180))
+        te.attempt_redemption(conn, kr, token="BAD", now=dd(179), **_person(179))
         elig_before = conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0]
 
-        res = te.purge_expired(conn, now=now)
+        te.purge_expired(conn, now=now)
 
-        # 40-day row: risk nulled, mask kept
-        r1 = conn.execute("SELECT ip_hmac, device_hmac, phone_mask FROM redemptions WHERE account_user_id='u1'").fetchone()
-        if r1["ip_hmac"] is not None or r1["device_hmac"] is not None:
-            issues.append("purge: IP/device not nulled at 30d")
-        if r1["phone_mask"] is None:
-            issues.append("purge: mask wrongly nulled before 90d")
-        # 100-day row: both nulled
-        r2 = conn.execute("SELECT ip_hmac, phone_mask FROM redemptions WHERE account_user_id='u2'").fetchone()
-        if r2["ip_hmac"] is not None or r2["phone_mask"] is not None:
-            issues.append("purge: 100d row not fully nulled (mask 90d / risk 30d)")
-        # 5-day row: untouched
-        r3 = conn.execute("SELECT ip_hmac, phone_mask FROM redemptions WHERE account_user_id='u3'").fetchone()
-        if r3["ip_hmac"] is None or r3["phone_mask"] is None:
-            issues.append("purge: recent row wrongly purged")
-        # denied retention: 200d deleted, 100d kept
-        denied = conn.execute("SELECT COUNT(*) FROM redemptions WHERE outcome='denied'").fetchone()[0]
-        if denied != 1:
-            issues.append(f"purge: denied retention wrong (expected 1 kept, got {denied})")
+        def _row(acct):
+            return conn.execute("SELECT ip_hmac, device_hmac, phone_mask FROM redemptions WHERE account_user_id=? AND outcome='granted'", (acct,)).fetchone()
+        # risk: exactly 30 nulled, mask kept; 29 risk kept
+        r30 = _row("u30")
+        if r30["ip_hmac"] is not None or r30["device_hmac"] is not None:
+            issues.append("purge: risk not nulled at EXACTLY 30d (<= boundary)")
+        if r30["phone_mask"] is None:
+            issues.append("purge: mask wrongly nulled at 30d")
+        if _row("u29")["ip_hmac"] is None:
+            issues.append("purge: risk wrongly nulled at 29d (before boundary)")
+        # mask: exactly 90 nulled; 89 kept
+        if _row("u90")["phone_mask"] is not None:
+            issues.append("purge: mask not nulled at EXACTLY 90d (<= boundary)")
+        if _row("u89")["phone_mask"] is None:
+            issues.append("purge: mask wrongly nulled at 89d (before boundary)")
+        # denied rows carry account_user_id=NULL, so identify by timestamp: 180d deleted, 179d kept
+        denied_ats = [r["at"] for r in conn.execute("SELECT at FROM redemptions WHERE outcome='denied'").fetchall()]
+        if te._iso(dd(180)) in denied_ats:
+            issues.append("purge: denied row not deleted at EXACTLY 180d (<= boundary)")
+        if te._iso(dd(179)) not in denied_ats:
+            issues.append("purge: denied row wrongly deleted at 179d (before boundary)")
         # eligibility NEVER deleted
         if conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0] != elig_before:
             issues.append("purge: eligibility must never be deleted")
@@ -294,18 +319,27 @@ def check_overrides():
             issues.append("override: invalid action should raise")
         except ValueError:
             pass
-        # repair_activation: re-activates, no new eligibility
+        # repair_activation: re-activates, no new eligibility; idempotent (twice -> one audit)
         te.apply_override(conn, "owner", "fix activation", "repair_activation", account_user_id="u1", project=lambda p: None)
-        # correct_identity: fix phone on existing row, no new eligibility
+        te.apply_override(conn, "owner", "fix activation again", "repair_activation", account_user_id="u1", project=lambda p: None)
+        if conn.execute("SELECT COUNT(*) FROM overrides WHERE action='repair_activation'").fetchone()[0] != 1:
+            issues.append("repair_activation audit must be idempotent (one per grant)")
+        # correct_identity: explicit keyring arg; fix phone on existing row, no new eligibility
         eid = conn.execute("SELECT eligibility_id FROM eligibility WHERE account_user_id='u1'").fetchone()[0]
         te.apply_override(conn, "owner", "changed phones", "correct_identity",
-                          affected_eligibility_id=eid, correct={"phone_e164": "+15559998888", "_keyring": kr})
+                          affected_eligibility_id=eid, keyring=kr, correct={"phone_e164": "+15559998888"})
+        # correct_identity requires at least one corrected field
+        try:
+            te.apply_override(conn, "owner", "noop", "correct_identity", affected_eligibility_id=eid, keyring=kr, correct={})
+            issues.append("correct_identity with no field should raise")
+        except ValueError:
+            pass
         # owner_comp_external: no trial eligibility written
         te.apply_override(conn, "owner", "vip comp", "owner_comp_external", account_user_id="u9")
         if conn.execute("SELECT COUNT(*) FROM eligibility").fetchone()[0] != elig0:
             issues.append("override must NEVER create a second trial eligibility row")
         if conn.execute("SELECT COUNT(*) FROM overrides").fetchone()[0] != 3:
-            issues.append("every override must be audited")
+            issues.append("every override must be audited (repair=1 + correct=1 + comp=1)")
         # the corrected phone now denies a new account using it
         if te.attempt_redemption(conn, kr, token="C", account_user_id="u20", phone_e164="+15559998888", email="n@x.com").reason != "already_redeemed":
             issues.append("correct_identity: corrected phone should now be deduped")

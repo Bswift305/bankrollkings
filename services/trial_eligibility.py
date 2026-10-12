@@ -164,8 +164,10 @@ CREATE TABLE IF NOT EXISTS overrides (
   operator                TEXT NOT NULL,
   reason                  TEXT NOT NULL,
   affected_eligibility_id INTEGER REFERENCES eligibility(eligibility_id),
-  action                  TEXT NOT NULL CHECK (action IN ('repair_activation','correct_identity','owner_comp_external'))
+  action                  TEXT NOT NULL CHECK (action IN ('repair_activation','correct_identity','owner_comp_external')),
+  ref                     TEXT    -- idempotency id (e.g. grant_id) so a retry neither duplicates nor loses the audit
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_override_ref ON overrides(action, ref) WHERE ref IS NOT NULL;
 """
 
 
@@ -428,39 +430,41 @@ def migrate_csv_to_sqlite(conn, keyring, csv_rows):
     the caller flips authority to SQLite only when `ok` is True. Idempotent-guard: refuses to run if
     `codes` already has rows (migrate into an empty store)."""
     if conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0]:
-        return {"ok": False, "problems": ["codes table is not empty; refusing to re-migrate"]}
-    inserted = 0
-    for r in csv_rows:
-        token = str(r["Code"])
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        return {"ok": False, "inserted": 0, "problems": ["codes table is not empty; refusing to re-migrate"]}
+    # ALL rows + verification in ONE transaction: commit only if everything succeeds, else roll back
+    # entirely (a partial failure leaves ZERO migrated codes, so the store can be retried cleanly).
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for r in csv_rows:
             conn.execute(
                 "INSERT INTO codes(venue_label,code_token_hmac,code_token_hmac_ver,trial_days,"
                 "max_redemptions,times_redeemed,active) VALUES (?,?,?,?,?,?,?)",
-                (str(r["Label"]), keyring.hmac("codetoken", token), keyring.current,
+                (str(r["Label"]), keyring.hmac("codetoken", str(r["Code"])), keyring.current,
                  int(r["TrialDays"]), int(r["MaxRedemptions"]), int(r["TimesRedeemed"]),
                  _parse_active(r.get("Active", "1"))),
             )
-            conn.execute("COMMIT")
-            inserted += 1
-        except Exception:
+        # verify within the same txn (our own inserts are visible); reference rows by LABEL, never the token
+        problems = []
+        for r in csv_rows:
+            row = find_code_by_token(conn, keyring, str(r["Code"]))
+            if not row:
+                problems.append(f"token for '{r['Label']}' did not resolve after migration")
+            elif (row["venue_label"] != str(r["Label"])
+                  or int(row["max_redemptions"]) != int(r["MaxRedemptions"])
+                  or int(row["times_redeemed"]) != int(r["TimesRedeemed"])
+                  or int(row["trial_days"]) != int(r["TrialDays"])
+                  or int(row["active"]) != _parse_active(r.get("Active", "1"))):
+                problems.append(f"field mismatch for '{r['Label']}'")
+        if conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0] != len(csv_rows):
+            problems.append("row count does not match the source")
+        if problems:
             conn.execute("ROLLBACK")
-            raise
-    # verify (token resolution + exact field preservation); reference rows by LABEL in messages, never the token
-    problems = []
-    for r in csv_rows:
-        row = find_code_by_token(conn, keyring, str(r["Code"]))
-        if not row:
-            problems.append(f"token for '{r['Label']}' did not resolve after migration")
-        elif (row["venue_label"] != str(r["Label"])
-              or int(row["max_redemptions"]) != int(r["MaxRedemptions"])
-              or int(row["times_redeemed"]) != int(r["TimesRedeemed"])
-              or int(row["trial_days"]) != int(r["TrialDays"])
-              or int(row["active"]) != _parse_active(r.get("Active", "1"))):
-            problems.append(f"field mismatch for '{r['Label']}'")
-    count_ok = conn.execute("SELECT COUNT(*) FROM codes").fetchone()[0] == len(csv_rows)
-    return {"ok": (not problems and count_ok), "inserted": inserted, "count_ok": count_ok,
-            "problems": problems}
+            return {"ok": False, "inserted": 0, "problems": problems}
+        conn.execute("COMMIT")
+        return {"ok": True, "inserted": len(csv_rows), "count_ok": True, "problems": []}
+    except Exception as exc:
+        conn.execute("ROLLBACK")
+        return {"ok": False, "inserted": 0, "problems": [f"migration failed and rolled back: {type(exc).__name__}"]}
 
 
 # --- retention purge (eligibility is NEVER deleted) --------------------------------------
@@ -472,17 +476,18 @@ def purge_expired(conn, now=None):
     ni = _iso(now)
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # inclusive boundaries: at exactly the frozen 30/90/180-day mark the record is purged.
         risk = conn.execute(
             "UPDATE redemptions SET device_hmac=NULL, ip_hmac=NULL"
-            " WHERE risk_expire_at IS NOT NULL AND risk_expire_at < ?"
+            " WHERE risk_expire_at IS NOT NULL AND risk_expire_at <= ?"
             " AND (device_hmac IS NOT NULL OR ip_hmac IS NOT NULL)", (ni,)).rowcount
         masks = conn.execute(
             "UPDATE redemptions SET phone_mask=NULL, email_mask=NULL"
-            " WHERE mask_expire_at IS NOT NULL AND mask_expire_at < ?"
+            " WHERE mask_expire_at IS NOT NULL AND mask_expire_at <= ?"
             " AND (phone_mask IS NOT NULL OR email_mask IS NOT NULL)", (ni,)).rowcount
         cutoff = _iso(now - timedelta(days=DENIED_RETENTION_DAYS))
         denied = conn.execute(
-            "DELETE FROM redemptions WHERE outcome='denied' AND at < ?", (cutoff,)).rowcount
+            "DELETE FROM redemptions WHERE outcome='denied' AND at <= ?", (cutoff,)).rowcount
         conn.execute("COMMIT")
         return {"risk_nulled": risk, "masks_nulled": masks, "denied_deleted": denied}
     except Exception:
@@ -494,54 +499,81 @@ def purge_expired(conn, now=None):
 OVERRIDE_ACTIONS = ("repair_activation", "correct_identity", "owner_comp_external")
 
 
+def _audit_override(conn, now, operator, reason, affected_eligibility_id, action, ref, idempotent=False):
+    verb = "INSERT OR IGNORE INTO" if idempotent else "INSERT INTO"
+    conn.execute(
+        f"{verb} overrides(at, operator, reason, affected_eligibility_id, action, ref)"
+        " VALUES (?,?,?,?,?,?)",
+        (_iso(now), str(operator), str(reason), affected_eligibility_id, action, ref),
+    )
+
+
 def apply_override(conn, operator, reason, action, *, account_user_id=None,
-                   affected_eligibility_id=None, project=None, correct=None, now=None):
-    """Audited, additive override. It can **never** create a second trial eligibility row.
-    - `repair_activation`: re-run activate() for the account (projection repair; no new eligibility).
+                   affected_eligibility_id=None, keyring=None, correct=None, project=None, now=None):
+    """Audited, additive override. It can **never** create a second trial eligibility row. `keyring`
+    is an explicit argument (not hidden in `correct`).
+    - `repair_activation`: re-run activate() (projection repair; no new eligibility). Idempotent and
+      recoverable: the audit is keyed by the grant_id (`ref`), so a retry neither duplicates nor
+      loses the audit.
     - `correct_identity`: fix identity on an EXISTING eligibility row (`correct` = {'phone_e164':..}
-      and/or {'email':..}), recomputing the HMAC under the current version; no new row.
-    - `owner_comp_external`: record an owner comp handled by a SEPARATE entitlement mechanism
-      (outside this gate); writes no trial eligibility.
-    Always writes an `overrides` audit row (operator, reason, action)."""
+      and/or {'email':..}, at least one), recomputing the HMAC under the current version. The update
+      AND its audit commit in **one transaction** (no unaudited correction on a crash).
+    - `owner_comp_external`: record an owner comp handled by a SEPARATE entitlement mechanism;
+      writes no trial eligibility.
+    """
     if action not in OVERRIDE_ACTIONS:
         raise ValueError(f"override action must be one of {OVERRIDE_ACTIONS}")
     if not str(operator).strip() or not str(reason).strip():
         raise ValueError("override requires a non-empty operator and reason")
     now = now or _utcnow()
-    keyring = correct.get("_keyring") if correct else None
     result = {"action": action}
 
     if action == "repair_activation":
-        result["projection"] = activate(conn, account_user_id, project=project)
-    elif action == "correct_identity":
-        if not affected_eligibility_id or not correct:
-            raise ValueError("correct_identity needs affected_eligibility_id and corrected values")
+        # activate() owns the external projection + its own txn; the audit is idempotent on grant_id.
+        payload = activate(conn, account_user_id, project=project)
+        pp = payload or projection_payload(conn, account_user_id)
+        ref = pp["grant_id"] if pp else None
         conn.execute("BEGIN IMMEDIATE")
         try:
-            if "phone_e164" in correct and keyring is not None:
-                conn.execute("UPDATE eligibility SET phone_hmac=?, phone_hmac_ver=? WHERE eligibility_id=?",
-                             (keyring.hmac("phone", correct["phone_e164"]), keyring.current, affected_eligibility_id))
-            if "email" in correct and keyring is not None:
-                conn.execute("UPDATE eligibility SET email_hmac=?, email_hmac_ver=? WHERE eligibility_id=?",
-                             (keyring.hmac("email", normalize_email(correct["email"])), keyring.current, affected_eligibility_id))
+            _audit_override(conn, now, operator, reason, affected_eligibility_id, action, ref, idempotent=True)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
             raise
-    elif action == "owner_comp_external":
-        result["external_comp"] = True   # handled by a separate entitlement mechanism, not this gate
+        result["projection"] = payload
+        return result
 
+    if action == "correct_identity":
+        if not affected_eligibility_id:
+            raise ValueError("correct_identity requires affected_eligibility_id")
+        if keyring is None:
+            raise ValueError("correct_identity requires an explicit keyring argument")
+        if not correct or not any(k in correct for k in ("phone_e164", "email")):
+            raise ValueError("correct_identity requires at least one corrected field (phone_e164/email)")
+        conn.execute("BEGIN IMMEDIATE")          # update + audit atomically
+        try:
+            if "phone_e164" in correct:
+                conn.execute("UPDATE eligibility SET phone_hmac=?, phone_hmac_ver=? WHERE eligibility_id=?",
+                             (keyring.hmac("phone", correct["phone_e164"]), keyring.current, affected_eligibility_id))
+            if "email" in correct:
+                conn.execute("UPDATE eligibility SET email_hmac=?, email_hmac_ver=? WHERE eligibility_id=?",
+                             (keyring.hmac("email", normalize_email(correct["email"])), keyring.current, affected_eligibility_id))
+            _audit_override(conn, now, operator, reason, affected_eligibility_id, action, None)
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        return result
+
+    # owner_comp_external: no trial eligibility; audit only (single txn)
     conn.execute("BEGIN IMMEDIATE")
     try:
-        conn.execute(
-            "INSERT INTO overrides(at, operator, reason, affected_eligibility_id, action)"
-            " VALUES (?,?,?,?,?)",
-            (_iso(now), str(operator), str(reason), affected_eligibility_id, action),
-        )
+        _audit_override(conn, now, operator, reason, affected_eligibility_id, action, None)
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
+    result["external_comp"] = True
     return result
 
 
