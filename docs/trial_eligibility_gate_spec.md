@@ -132,7 +132,8 @@ legitimate); they only corroborate another identity key or raise an owner-review
 
 - **Domain separation (correction 4):** one master secret `TRIAL_KEY_MASTER` (prod `.env`); each
   purpose uses its **own derived key** via HKDF: `K_purpose_v = HKDF(TRIAL_KEY_MASTER_v, info=purpose)`
-  for `purpose ∈ {phone, email, ip, device, codetoken, otp}`. No two purposes share a namespace;
+  for `purpose ∈ {phone, email, ip, device, codetoken}`. (No `otp` purpose — the provider manages
+  the OTP; §6.) No two purposes share a namespace;
   phone and email HMACs can never collide or cross-check.
 - **Versioning + rotation that NEVER resets eligibility (correction 3):** the keyring retains **all
   versions permanently** (`{v → master_v}`). A lookup for an incoming phone/email computes candidate
@@ -151,11 +152,14 @@ legitimate); they only corroborate another identity key or raise an owner-review
 ## 6. Verification + OTP security + both flows (v2 §5, retained)
 Both the **new-account signup** path and the **logged-in free user at `/trial/<code>`** pass through
 the same gate (verify email → verify phone OTP → §3 transaction); the current immediate grant
-(`app.py:39557`) is removed. OTP: 6-digit, **10-min expiry**, **max 5 attempts** then lockout,
-**resend cooldown ≥30 s** + daily resend cap, stored **HMAC-hashed** (purpose `otp`), **bound to the
-session + account/phone**, **rate-limited** per phone and per IP, **non-enumerating** responses. SMS
-verifies **control of a phone number, not a human** — numbers can be shared/recycled/replaced; it
-deters abuse, not a perfect human identity.
+(`app.py:39557`) is removed. **The OTP is generated and validated by the provider (Twilio Verify) —
+the application never generates, stores, or hashes the code.** We store only the provider's
+**verification identifier/status** and our **own** rate-limit metadata. The provider's delivery/
+retry/fraud controls **supplement** the application controls, which we still own and enforce:
+**resend cooldown ≥30 s** + a **daily resend cap**, **per-phone and per-IP velocity limits**,
+**binding the verification attempt to the session + account/phone**, and **non-enumerating**
+responses. SMS verifies **control of a phone number, not a human** — numbers can be shared/recycled/
+replaced; it deters abuse, not a perfect human identity.
 
 ## 7. PII minimization + EXACT retention (corrections 6, 9)
 - **Permanent:** the lifetime eligibility HMAC keys (`phone_hmac`, `email_hmac`, `account_user_id`)
