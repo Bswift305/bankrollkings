@@ -25,14 +25,16 @@ Inspected: `data/tracking/NBA_AllPropResults.csv` (5,290 rows) and
 |---|---|---|
 | **Write time** | `SnapshotWrittenAt` is the **same value for all 5,290 rows: `2026-08-15 07:01:34`** | The entire archive was persisted in one batch on Aug 15 — **after** the season it covers. `IsBackfill=False` is therefore **not trustworthy** as a point-in-time guarantee. |
 | **Snapshot vs result dates** | `SnapshotDate` spans **2026-05-28 → 07-18**; `ResultDate` spans **05-28 → 06-13** (playoffs ended mid-June). Snapshots run a **month past** the last result. | Many "snapshots" are dated after every game resolved. |
-| **Saved after result** | **1,297** graded raw rows have `SavedAt` **after** `ResultDate`. At the unique-market grain (§2), **735 of 1,231** markets' earliest `SavedAt` is after the result, and **411** have their earliest `SnapshotDate` on/after the result. | A large share of the "predictions" were recorded after the outcome was known. |
-| **Pre-event provability** | Only **820** unique markets even carry a `SnapshotDate` *earlier* than their `ResultDate`, and because of the uniform Aug-15 write, **none** can be *demonstrated* to have existed before the game. | **No documented decision-time cutoff exists**, so no row qualifies as demonstrably pre-event. |
+| **Saved vs result — by calendar day** | `ResultDate` is stored at **midnight**, so a raw `SavedAt > ResultDate` comparison (**1,297** rows) counts almost every **same-day** capture as "after," which does **not** establish a post-game save. On a **calendar-day** basis: only **154** raw graded rows (**150** unique markets) were saved on a **strictly later** date; **1,143** raw (**585** unique) were saved **on the result day** (not provably post-game). `SnapshotDate`: **411** unique markets fall **on** the result date and **0** on a later day (0 raw graded on a later day). | The strictly-later counts are small; same-day timestamps are **not** provably post-game. **The retrospective ruling does not rest on these counts** — see the next row. |
+| **Pre-event provability (decisive)** | Because of the uniform **Aug-15 batch write**, **no** row — not even one dated before its game — can be *demonstrated* to have existed before tip-off, and **no documented decision-time cutoff exists**. | No row qualifies as demonstrably pre-event, regardless of the saved-vs-result dates. |
 
 **Verdict:** this is a **retrospective** dataset (last-season **playoffs**, 2025-26), useful for
-**descriptive** study only. It cannot validate model performance, CLV, or an edge. Honest
-validation requires a **live, current-season capture with a provable decision-time write** (a real
-`SnapshotWrittenAt` at decision time, per prop), which does not yet exist — it rides on the P0-4
-refresh chain.
+**descriptive** study only. The classification rests on the **write lineage** (the single Aug-15
+batch) and the absence of a documented pregame cutoff — **not** on the saved-vs-result counts
+(which, corrected to calendar days, are small: 154 raw / 150 unique). It cannot validate model
+performance, CLV, or an edge. Honest validation requires a **live, current-season capture with a
+provable decision-time write** (a real `SnapshotWrittenAt` at decision time, per prop), which does
+not yet exist — it rides on the P0-4 refresh chain.
 
 ---
 

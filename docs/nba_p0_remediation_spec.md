@@ -112,7 +112,7 @@ engine (`app.py:18292, 19736`).
 
 | Change | Class | Replacement |
 |---|---|---|
-| The fabricated `+N% shift` magnitude in the customer card | **COPY/PRESENTATION** (computation unchanged) | A qualitative, factual note: who is out + the expected role (e.g., "Gui Santos — projected larger role with Jimmy Butler III out"). Any magnitude shown must be a defensible, labeled observation (the player's own recent minutes/usage), never a relative % that balloons off a bench baseline. `build_role_change_candidates` (`app.py:19705/19744`) stays; only the `% shift` presentation changes. |
+| The fabricated `+N% shift` magnitude in the customer card | **COPY/PRESENTATION** (computation unchanged) | **FROZEN: no magnitude is shown.** Display only a qualitative role/context sentence — who is out + the expected role (e.g., "Gui Santos — projected larger role with Jimmy Butler III out"). No percentage, multiple, or relative-shift number of any kind. `build_role_change_candidates` (`app.py:19705/19744`) stays; the `% shift` is dropped from presentation. |
 | Card ordering | **BEHAVIORAL** | **FROZEN: order the role-context cards neutrally by team, then player A–Z** — never by any magnitude. |
 
 **Behavioral consequence:** the displayed `+N% shift` magnitude is replaced by the qualitative
@@ -160,7 +160,7 @@ framed as "playoff context, series state."
 
 | Change | Class | Replacement |
 |---|---|---|
-| The NBA `postseason` default | **BEHAVIORAL (NBA-scoped)** | **FROZEN: an NBA-specific, season-aware default.** For NBA, the default view is **regular-season** unless the NBA is actually in its postseason (resolved from the real league phase, not the hardcoded `'1'`). An explicit `?postseason=` query parameter **always overrides** the resolved default. **Other sports are unchanged** — the global default for MLB / WNBA / NFL is not touched. |
+| The NBA `postseason` default | **BEHAVIORAL (NBA-scoped)** | **FROZEN: an NBA-specific, season-aware default** resolved from the **existing** phase logic (named in *Season-state source* below), not the hardcoded `'1'`. The NBA default is **regular-season** in every phase except when that existing logic says the NBA is actually in its playoff bracket. An explicit `?postseason=` query parameter **always overrides** the resolved default. **Other sports are unchanged** — the global default for MLB / WNBA / NFL is not touched. |
 | NBA Matchup Lens "playoff context, series state" framing | **COPY-ONLY** | Reframe for regular-season games (series/playoff language removed for NBA regular season). |
 
 **Behavioral consequence:** during the NBA regular season the NBA board defaults to the
@@ -168,6 +168,27 @@ framed as "playoff context, series state."
 postseason); an explicit `?postseason=` param still overrides. The change is **scoped to NBA**, so
 MLB / WNBA / NFL defaults are untouched. Verification (below) must confirm NBA regular-season
 schedule/boards/labels render correctly under the new default before it ships.
+
+**Season-state source (exact, existing — do not invent a new one).** The codebase already decides
+NBA league phase in **`get_focus_mode_labels()`** (`app.py:20057`), from three existing signals;
+the season-aware default reuses that same decision:
+1. **`season_utils.active_sports()`** — treats NBA as live only when `NBA_Props.csv` has ≥1 data
+   row. If NBA is **not** in `active_sports()` (preseason / offseason — today's state), there is no
+   live slate → default **regular-season** (`postseason=0`).
+2. **`playoff_bracket_lock`** (`app.py:20059`, currently `datetime(2026, 4, 18)`) — the existing
+   boundary separating the regular/play-in field from the playoff bracket. Before it → default
+   **regular-season**; this date is already maintained in code and is updated per season.
+3. **`get_current_playoff_focus_label()`** (`app.py:20019`) → **`load_playoff_results()`**
+   (`app.py:3547`), which reads the current bracket's `Round` against `PLAYOFF_ROUND_ORDER`. A
+   recognized active `Round` is what marks the NBA as in its postseason.
+
+**Deterministic rule:** the NBA default is `postseason=1` **iff all three hold** — `'NBA' in
+active_sports()` **and** `sports_today_date() >= playoff_bracket_lock` **and**
+`get_current_playoff_focus_label()` resolves a recognized playoff `Round`. Otherwise (preseason,
+regular season, play-in, offseason) the NBA default is `postseason=0`. This is exactly the gate
+`get_focus_mode_labels()` already applies to choose the playoff vs field labels, so the default and
+the labels stay consistent and no new source is introduced. (The one maintenance point — the
+`playoff_bracket_lock` date — already exists and is updated each season.)
 
 **"20-team field" (P1, not a standalone edit):** navigating `?postseason=0` did **not** change
 "20-Team Field," so it is **not** driven by the postseason default — it is a **data-completeness**
