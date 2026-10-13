@@ -108,16 +108,41 @@ def _max_week(df) -> int:
     return int(wk.max()) if not wk.empty else 0
 
 
-def _max_week_on_disk(season: int) -> int:
-    """Highest week already present in our on-disk parquet for `season` (0 if absent).
+def _on_disk_week(season: int):
+    """Inspect the on-disk parquet for `season` WITHOUT distinguishing-error-into-data. Returns
+    (status, info):
+      'missing'    -> the file is absent; info = 0 (legitimately no data yet).
+      'ok'         -> readable; info = highest week present (0 if the file has no week rows).
+      'unreadable' -> the file EXISTS but could not be read (a permission or corruption error);
+                      info = the exception. This must NOT be reported as 'week 0' -- a healthy
+                      parquet an operator simply lacks permission to read (e.g. run as ssm-user
+                      instead of ubuntu) would otherwise look like missing data.
     No network -- used by --check-only to decide whether a post-week retry is still needed."""
     out = OUT_DIR / f"_nflverse_stats_{season}.parquet"
     if not out.exists():
-        return 0
+        return "missing", 0
     try:
-        return _max_week(pd.read_parquet(out))
-    except Exception:
-        return 0
+        return "ok", _max_week(pd.read_parquet(out))
+    except Exception as exc:
+        return "unreadable", exc
+
+
+def _check_only_result(season: int, want_week):
+    """Decide the --check-only (exit_code, message). Separated from main() so it is unit-testable.
+    Exit 0 = up to date (or no calendar anchor); 2 = behind the completed week; 3 = the on-disk
+    file could not be read (permission/corruption) -- a DISTINCT failure, never a false 'week 0'."""
+    status, info = _on_disk_week(season)
+    if status == "unreadable":
+        return 3, (f"season {season}: cannot read the on-disk parquet ({type(info).__name__}: {info}). "
+                   f"The file exists but is not readable -- run as the owner (e.g. "
+                   f"`sudo -u ubuntu ...`). This is NOT missing data.")
+    have = info
+    if want_week is None:
+        return 0, f"season {season} has week {have}; no calendar anchor"
+    if have >= want_week:
+        return 0, f"season {season} week {have} >= completed week {want_week}"
+    where = "no on-disk parquet (week 0)" if status == "missing" else f"week {have}"
+    return 2, f"season {season} {where} < completed week {want_week}"
 
 
 def main() -> int:
@@ -138,7 +163,8 @@ def main() -> int:
                          "exit 2 if the feed is still behind it. For the post-week retry timer.")
     ap.add_argument("--check-only", action="store_true",
                     help="No download: report whether the on-disk parquet already holds the "
-                         "calendar's completed week. Exit 0 if present (or no anchor), 2 if behind.")
+                         "calendar's completed week. Exit 0 if present (or no anchor), 2 if behind, "
+                         "3 if the file exists but cannot be read (permission/corruption).")
     args = ap.parse_args()
     season = args.season or current_nfl_season()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -153,15 +179,9 @@ def main() -> int:
     gating = (args.require_week is not None) or args.gate
 
     if args.check_only:
-        have = _max_week_on_disk(season)
-        if want_week is None:
-            print(f"[fetch_nfl_player_week] check: season {season} has week {have}; no calendar anchor")
-            return 0
-        if have >= want_week:
-            print(f"[fetch_nfl_player_week] check: season {season} week {have} >= completed week {want_week}")
-            return 0
-        print(f"[fetch_nfl_player_week] check: season {season} week {have} < completed week {want_week}")
-        return 2
+        code, msg = _check_only_result(season, want_week)
+        print(f"[fetch_nfl_player_week] check: {msg}")
+        return code
 
     df = None
     attempts = max(0, args.retries) + 1

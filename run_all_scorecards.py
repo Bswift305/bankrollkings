@@ -55,6 +55,10 @@ SCORECARDS = [
     # record): proves an Under streak that is current through the latest graded week disappears once
     # the next graded game goes Over, via the real on-disk read path.
     ("NFL Prop-Streak Integration QC", "qc_nfl_prop_streak_integration.py", 180),
+    # fetch_nfl_player_week --check-only contract: a missing parquet is behind (exit 2), but a file
+    # that exists yet cannot be read is a DISTINCT error (exit 3), never a false "week 0" that would
+    # read as missing production data. Cheap; guards the post-week retry's operator diagnostics.
+    ("NFL Fetch Check-Only QC", "qc_nfl_fetch_checkonly.py", 120),
     # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
     # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
     ("Player Check QC", "qc_player_check.py", 240),
