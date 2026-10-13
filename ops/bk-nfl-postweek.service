@@ -1,0 +1,22 @@
+[Unit]
+Description=Bankroll Kings - post-week NFL player-stat freshness retry (self-gating)
+After=network-online.target
+Wants=network-online.target
+
+# Install (source of record: ops/). The wrapper goes OUTSIDE the repo so a mid-run git pull
+# cannot rewrite the executing script:
+#   sudo install -m 755 ops/bk-nfl-postweek-refresh.sh /usr/local/bin/bk-nfl-postweek-refresh.sh
+#   sudo cp ops/bk-nfl-postweek.service /etc/systemd/system/bk-nfl-postweek.service
+#   sudo cp ops/bk-nfl-postweek.timer   /etc/systemd/system/bk-nfl-postweek.timer
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bk-nfl-postweek.timer
+# Watch it:  journalctl -u bk-nfl-postweek.service -n 30 --no-pager
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/usr/local/bin/bk-nfl-postweek-refresh.sh
+# A --gate "still behind" tick exits 2; a transient sub-step may exit 1. Neither should mark the
+# unit failed or disable the timer -- the wrapper always exits 0, but be explicit for safety.
+SuccessExitStatus=0 1 2

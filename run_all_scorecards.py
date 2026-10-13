@@ -47,6 +47,10 @@ SCORECARDS = [
     # calendar recency + injury availability, the completed-week pending gate, and the Mike
     # Evans Week-5 regression (yesterday's result ends the run once the week loads).
     ("NFL Heat-Map Freshness QC", "qc_nfl_heatmap_freshness.py", 180),
+    # Riding-the-Wave player prop-streak freshness: the under-streak surface must disclose what
+    # it is graded through and never present last season's final runs as current. Locks the
+    # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.
+    ("NFL Prop-Streak Freshness QC", "qc_nfl_prop_streak_freshness.py", 180),
     # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
     # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
     ("Player Check QC", "qc_player_check.py", 240),

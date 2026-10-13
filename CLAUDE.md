@@ -408,20 +408,32 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   deliberate choice (money-league legal risk).
 - **Parlay floor-reliability for football** fills in automatically once the season
   generates resolved floor plays. Nothing to build.
-- **NFL Hot Hand Heat Map freshness — BUILT, with a standing yearly chore.**
-  `build_nfl_hot_hand` no longer presents a stale run as current: its cache key folds in
-  `_nfl_player_log_signature()` (not just `NFL_Props.csv` mtime), it surfaces "Results
-  through Week X · updated <ET>" from the real data mtime, shows each run's weeks, gates
-  "active" on injury availability + the player keeping pace with the log's through-week
-  (otherwise a *historical* run, never current), and a calendar gate marks the whole board
-  "pending" when a completed week is missing. The fetcher (`fetch_nfl_player_week.py`) has a
-  `--require-week` / `--retries` freshness-retry path for a post-game Mon/Tue cadence.
-  **Chore:** both the gate and the fetcher read the season's Week-1 Thursday from a configured
-  table — `NFL_SEASON_WEEK1_THURSDAY` in `app.py` and `NFL_SEASON_WEEK1` in
-  `fetch_nfl_player_week.py` (keep them in sync). **Add each new NFL season's Week-1 Thursday
-  to both**, or the completed-week calendar returns None and the freshness/pending gate goes
-  quiet (through-week + per-player recency still work without it). QC:
-  `qc_nfl_heatmap_freshness.py`.
+- **NFL streak-freshness — BUILT across BOTH surfaces, with a standing yearly chore + a prod
+  unit to install.** Two live NFL surfaces showed stale runs as current; both are now gated so a
+  run is only "current" when the data reaches the calendar's completed week AND the player is
+  available, else it is a *historical* run with a visible "through Week X / pending" disclosure.
+  - **Hot Hand Heat Map** (`build_nfl_hot_hand`, `/tools/nfl-heatmap`, source = nflverse weekly
+    parquet): cache key folds in `_nfl_player_log_signature()` (not just `NFL_Props.csv` mtime);
+    "Results through Week X · updated <ET>" from the real data mtime; per-run weeks; injury +
+    through-week recency gate; calendar pending gate. QC `qc_nfl_heatmap_freshness.py`.
+  - **Riding-the-Wave player prop streaks** (`build_nfl_prop_streaks`, `/tools/riding-the-wave`,
+    source = `NFL_Props_History.csv`, a *different* refresh path — the backfill, not the daily
+    grader). This is the **under-streak** surface (the Mike Evans "6 straight unders" was last
+    season's final run shown as current). Now discloses "Graded through <season> Week X" / pending
+    and demotes stale/injured runs. Cache (`_NFL_WAVE_CACHE`) key now includes the history mtime +
+    ET date. QC `qc_nfl_prop_streak_freshness.py`. (The team ATS/SU/OU boards on the same page
+    share the season-level gate but already print "through <season>"; left as-is — out of scope.)
+  - **Prod post-week retry:** `fetch_nfl_player_week.py` has `--gate` / `--require-week` /
+    `--retries` / `--check-only`. A dedicated **Tue/Wed** timer advances the parquet as soon as the
+    completed week publishes (so the heat map stops being a day behind): wrapper
+    `ops/bk-nfl-postweek-refresh.sh` (install to `/usr/local/bin`, outside the repo) +
+    `ops/bk-nfl-postweek.{service,timer}`. **These are NOT auto-installed — add them on the box via
+    SSM (install lines in the .service header), like the other `bk-*` units.**
+  **Yearly chore:** both the in-app gate and the fetcher read the season's Week-1 Thursday from a
+  configured table — `NFL_SEASON_WEEK1_THURSDAY` (`app.py`) and `NFL_SEASON_WEEK1`
+  (`fetch_nfl_player_week.py`); keep them in sync and **add each new NFL season's Week-1
+  Thursday to both**, or the completed-week calendar returns None and the pending gate goes quiet
+  (through-week + per-player recency still work without it).
 - Premium nav icons are raster PNG from generated art — not vectorizable without a redraw.
 
 ---

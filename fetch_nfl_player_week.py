@@ -108,6 +108,18 @@ def _max_week(df) -> int:
     return int(wk.max()) if not wk.empty else 0
 
 
+def _max_week_on_disk(season: int) -> int:
+    """Highest week already present in our on-disk parquet for `season` (0 if absent).
+    No network -- used by --check-only to decide whether a post-week retry is still needed."""
+    out = OUT_DIR / f"_nflverse_stats_{season}.parquet"
+    if not out.exists():
+        return 0
+    try:
+        return _max_week(pd.read_parquet(out))
+    except Exception:
+        return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch current-season nflverse weekly player stats.")
     ap.add_argument("--season", type=int, default=None, help="Override the season (default: current).")
@@ -121,14 +133,35 @@ def main() -> int:
                     help="The completed week the feed MUST contain. Default: computed from the "
                          "calendar. Exit 2 if still missing after retries (so an ops wrapper can "
                          "keep retrying); the plain daily run leaves this unset and never exit-2s.")
+    ap.add_argument("--gate", action="store_true",
+                    help="Gate on the calendar's completed week (like --require-week <computed>): "
+                         "exit 2 if the feed is still behind it. For the post-week retry timer.")
+    ap.add_argument("--check-only", action="store_true",
+                    help="No download: report whether the on-disk parquet already holds the "
+                         "calendar's completed week. Exit 0 if present (or no anchor), 2 if behind.")
     args = ap.parse_args()
     season = args.season or current_nfl_season()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"_nflverse_stats_{season}.parquet"
 
-    # The week that SHOULD be final by now. --require-week forces it (for the retry job); otherwise
-    # the calendar decides, and None means "no anchor configured" -> we make no freshness claim.
-    want_week = args.require_week if args.require_week is not None else expected_completed_week(season)
+    # The week that SHOULD be final by now. --require-week forces it; --gate uses the calendar;
+    # otherwise the calendar decides for reporting only. None = no anchor -> no freshness claim.
+    if args.require_week is not None:
+        want_week = args.require_week
+    else:
+        want_week = expected_completed_week(season)
+    gating = (args.require_week is not None) or args.gate
+
+    if args.check_only:
+        have = _max_week_on_disk(season)
+        if want_week is None:
+            print(f"[fetch_nfl_player_week] check: season {season} has week {have}; no calendar anchor")
+            return 0
+        if have >= want_week:
+            print(f"[fetch_nfl_player_week] check: season {season} week {have} >= completed week {want_week}")
+            return 0
+        print(f"[fetch_nfl_player_week] check: season {season} week {have} < completed week {want_week}")
+        return 2
 
     df = None
     attempts = max(0, args.retries) + 1
@@ -173,7 +206,7 @@ def main() -> int:
         # week's streaks as current. Signal the shortfall so a retry wrapper knows to come back.
         msg = (f"[fetch_nfl_player_week] FRESHNESS: season {season} completed week {want_week} "
                f"not yet in the feed (have week {have}).")
-        if args.require_week is not None:
+        if gating:
             print(msg + " exit 2 -> retry later.")
             return 2
         print(msg + " Will pick it up on the next run.")

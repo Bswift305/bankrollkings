@@ -1,0 +1,14 @@
+[Unit]
+Description=Bankroll Kings - fire the NFL post-week player-stat retry on Tue/Wed (script self-gates)
+
+[Timer]
+# NFL weeks finalize Tuesday (after MNF); nflverse republishes the season parquet within hours.
+# Fire a handful of times across Tue and Wed (times are UTC = prod's clock; 11:00-23:00 UTC is
+# ~07:00-19:00 ET). The wrapper no-ops cheaply once the completed week is on disk, so the later
+# ticks cost nothing; by Thursday the ordinary daily run has it regardless.
+OnCalendar=Tue,Wed *-*-* 11,14,17,20,23:00
+AccuracySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

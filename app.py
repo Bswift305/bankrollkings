@@ -30388,6 +30388,18 @@ def _nfl_expected_completed_week(today=None):
     return max(0, min(completed, 18)), season
 
 
+def _nfl_player_availability(player_name, inj_lookup):
+    """Current availability for an NFL player from the injury feed, shared by the hot-hand heat
+    map and the Riding-the-Wave prop-streak board so a run for an Out/IR player is never shown
+    as current. rank: 0 Out, 1 Doubtful, 2 Questionable, 3 Other/Active -> available at rank>=2."""
+    inj = inj_lookup.get(player_name) or inj_lookup.get(normalize_player_lookup_name(player_name) or '')
+    if not inj:
+        return {'status': 'ACTIVE', 'label': 'Active', 'rank': 3, 'available': True, 'reason': ''}
+    rank, label = _injury_severity_bucket(inj.get('status'))
+    return {'status': str(inj.get('status') or '').upper(), 'label': label, 'rank': rank,
+            'available': rank >= 2, 'reason': str(inj.get('reason') or '').strip()}
+
+
 def _nfl_prop_matchup(opp_abbr, stat_key):
     """Opponent-defense read for a prop category: is the matchup a plus spot or a wall?
     High rank = soft defense = good look for the OVER. Returns None for stats with no
@@ -30476,13 +30488,7 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         inj_lookup = {}
 
     def _availability(player_name):
-        inj = inj_lookup.get(player_name) or inj_lookup.get(normalize_player_lookup_name(player_name) or '')
-        if not inj:
-            return {'status': 'ACTIVE', 'label': 'Active', 'rank': 3, 'available': True}
-        rank, label = _injury_severity_bucket(inj.get('status'))
-        # rank: 0 Out, 1 Doubtful, 2 Questionable, 3 Other. Out/Doubtful = not available.
-        return {'status': str(inj.get('status') or '').upper(), 'label': label, 'rank': rank,
-                'available': rank >= 2, 'reason': str(inj.get('reason') or '').strip()}
+        return _nfl_player_availability(player_name, inj_lookup)
     try:
         props = _load_cached_csv(props_path, default=pd.DataFrame())
     except Exception:
@@ -45125,51 +45131,129 @@ def build_nfl_prop_streaks(limit=60):
     """Active player-prop over/under streaks: for each (player, stat), collapse every
     book row for a game to one consensus line, walk games in date order, and count the
     current run of the player beating (Over) or falling short of (Under) that number.
-    Longest run on top. Honest: 'over his receptions line 6 straight' from graded logs."""
+    Longest run on top. Honest: 'over his receptions line 6 straight' from graded logs.
+
+    Freshness-gated like the hot-hand heat map: the graded prop history can lag the live
+    season (it is written by the prop grader, a different path than the live board). A run is
+    only presented as CURRENT when the data reaches the calendar's completed week AND the
+    player is available; otherwise it is preserved as a historical run through its last graded
+    week, never passed off as this week's form. Returns a dict with the rows + freshness meta."""
+    empty = {'rows': [], 'through_season': None, 'through_week': None, 'pending': False,
+             'stale_season': False, 'through_label': '', 'expected_week': None, 'expected_season': None}
     ph = load_nfl_props_history()
     if ph is None or ph.empty:
-        return []
+        return empty
     req = {'Player', 'Stat', 'Line', 'Actual', 'CommenceTime', 'EventId'}
     if not req.issubset(ph.columns):
-        return []
+        return empty
     df = ph.copy()
     df['Line'] = pd.to_numeric(df['Line'], errors='coerce')
     df['Actual'] = pd.to_numeric(df['Actual'], errors='coerce')
     df['_t'] = pd.to_datetime(df['CommenceTime'], errors='coerce')
     df = df.dropna(subset=['Player', 'Stat', 'Line', 'Actual', '_t', 'EventId'])
     if df.empty:
-        return []
+        return empty
+    has_week = 'Week' in df.columns
+    if has_week:
+        df['Week'] = pd.to_numeric(df['Week'], errors='coerce')
     latest_season = 0
     if 'Season' in df.columns:
         s = pd.to_numeric(df['Season'], errors='coerce')
         latest_season = int(s.max()) if s.notna().any() else 0
+    # The week the GRADED data runs through in its latest season, and what the calendar says
+    # SHOULD be complete. If the data is a whole season behind, or behind the completed week,
+    # the board is pending and nothing on it is "current".
+    data_through_week = None
+    if has_week and latest_season:
+        wk = pd.to_numeric(df.loc[pd.to_numeric(df['Season'], errors='coerce') == latest_season, 'Week'],
+                           errors='coerce').dropna()
+        data_through_week = int(wk.max()) if not wk.empty else None
+    expected_week, expected_season = _nfl_expected_completed_week()
+    stale_season = bool(expected_season and latest_season and latest_season < expected_season)
+    pending = bool(stale_season or (expected_week and latest_season == expected_season
+                                    and data_through_week is not None and data_through_week < expected_week))
+    try:
+        inj_lookup = build_injury_status_lookup(load_sport_injuries('nfl'))
+    except Exception:
+        inj_lookup = {}
     # one graded outcome per player-stat-game (consensus line across books)
+    agg_kwargs = dict(line=('Line', 'median'), actual=('Actual', 'first'), t=('_t', 'max'),
+                      team=('Team', 'first'),
+                      season=('Season', 'first') if 'Season' in df.columns else ('Actual', 'size'))
+    if has_week:
+        agg_kwargs['wk'] = ('Week', 'max')
     g = df.groupby(['Player', 'Stat', 'EventId'], dropna=False)
-    games = g.agg(line=('Line', 'median'), actual=('Actual', 'first'), t=('_t', 'max'),
-                  team=('Team', 'first'),
-                  season=('Season', 'first') if 'Season' in df.columns else ('Actual', 'size')).reset_index()
+    games = g.agg(**agg_kwargs).reset_index()
     games['over'] = games['actual'] > games['line']
     games['under'] = games['actual'] < games['line']
     out = []
     for (player, stat), grp in games.sort_values('t').groupby(['Player', 'Stat'], dropna=False):
         grp = grp.sort_values('t')
         for side, col in (('Over', 'over'), ('Under', 'under')):
-            signs = [1 if v else -1 for v in grp[col].tolist()]
+            flags = grp[col].tolist()
+            signs = [1 if v else -1 for v in flags]
             n, direction = _wave_trailing_run(signs)
             if n < _WAVE_MIN_STREAK or direction != 1:
                 continue
             last = grp.iloc[-1]
             last_season = str(last['season']) if 'season' in grp.columns else ''
-            if latest_season and _season_num_top(last_season) != latest_season:
-                continue  # active only: ran into the most recent season
+            last_season_num = _season_num_top(last_season)
+            if latest_season and last_season_num != latest_season:
+                continue  # the run must reach the latest graded season to be a candidate
+            last_week = int(last['wk']) if (has_week and pd.notna(last.get('wk'))) else None
+            run_weeks = []
+            if has_week:
+                # Weeks that make up the run, but only the latest-season portion -- a trailing run
+                # can cross seasons, and mixing week numbers across years reads as a false span.
+                tail = grp.iloc[-n:]
+                run_weeks = [int(w) for w, sea in zip(tail['wk'].tolist(), tail['season'].tolist())
+                             if pd.notna(w) and _season_num_top(str(sea)) == latest_season]
+            avail = _nfl_player_availability(str(player), inj_lookup)
+            # Current only if: data isn't pending, the run reaches the data's through-week, and
+            # the player is available. Else it is a historical run before an absence / stale week.
+            reaches_latest = (data_through_week is None) or (last_week == data_through_week)
+            is_active = bool((not pending) and reaches_latest and avail['available'])
+            if not avail['available']:
+                status_label = f"Historical run — {avail['label']} before this week"
+            elif pending and stale_season:
+                status_label = f"Through {last_season_num or latest_season} — current season results pending"
+            elif pending:
+                status_label = f"As of Wk {data_through_week} — latest results pending"
+            elif not reaches_latest and last_week is not None:
+                status_label = f"Historical run — last graded Wk {last_week}"
+            else:
+                status_label = 'Active run'
+            if run_weeks:
+                wlo, whi = min(run_weeks), max(run_weeks)
+                weeks_label = (f"Wk {wlo}" if wlo == whi else f"Wks {wlo}–{whi}")
+            else:
+                weeks_label = ''
             out.append({
                 'player': str(player), 'stat': str(stat), 'side': side, 'streak': int(n),
                 'team': (str(last['team']) if pd.notna(last.get('team')) else ''),
                 'line': (round(float(last['line']), 1) if pd.notna(last['line']) else None),
-                'last_season': last_season,
+                'last_season': last_season, 'last_week': last_week, 'weeks_label': weeks_label,
+                'active': is_active, 'availability': avail['label'],
+                'availability_status': avail['status'], 'status_label': status_label,
             })
-    out.sort(key=lambda x: -x['streak'])
-    return out[:limit]
+    # Active runs lead; stale/historical ones sink so a stale run never headlines as current.
+    out.sort(key=lambda x: (0 if x['active'] else 1, -x['streak']))
+    out = out[:limit]
+    if data_through_week is not None and latest_season:
+        if pending:
+            through_label = (f"As of {latest_season} Week {data_through_week}"
+                             + (f" · {expected_season} Week {expected_week} results pending"
+                                if (expected_week and not stale_season) else " · current season results pending"))
+        else:
+            through_label = f"Graded through {latest_season} Week {data_through_week}"
+    elif latest_season:
+        through_label = (f"Graded through {latest_season}"
+                         + (" · current season results pending" if stale_season else ""))
+    else:
+        through_label = ''
+    return {'rows': out, 'through_season': latest_season or None, 'through_week': data_through_week,
+            'pending': pending, 'stale_season': stale_season, 'through_label': through_label,
+            'expected_week': expected_week, 'expected_season': expected_season}
 
 
 def _season_num_top(s):
@@ -45266,7 +45350,15 @@ def build_nfl_wave_context():
         return {'rw_boards': {'ats': [], 'su': [], 'ou': [], 'props': []}, 'rw_situational': [],
                 'rw_meta': {}, 'rw_available': False}
     ph = load_nfl_props_history()
-    sig = f"{len(hist)}::{0 if ph is None or ph.empty else len(ph)}"
+    # Include the prop-history file mtime and today's ET date so the player-streak freshness gate
+    # re-evaluates when the graded file refreshes (in place or by rows) and as the calendar rolls
+    # a completed week -- not just when history row counts change.
+    try:
+        _ph_mtime = os.path.getmtime(DATA_DIR / 'historical' / 'NFL_Props_History.csv')
+    except OSError:
+        _ph_mtime = 0
+    sig = (f"{len(hist)}::{0 if ph is None or ph.empty else len(ph)}"
+           f"::{_ph_mtime}::{sports_today_date()}")
     if _NFL_WAVE_CACHE.get('sig') == sig:
         return _NFL_WAVE_CACHE['data']
 
@@ -45337,11 +45429,12 @@ def build_nfl_wave_context():
         out.sort(key=lambda x: -x['streak'])
         return out
 
+    prop_streaks = build_nfl_prop_streaks()    # player over/under line streaks (3+, history)
     boards = {
         'ats': _collect(ats, pos_only=True),   # riding = covering
         'su': _collect(su, pos_only=True),     # riding = winning
         'ou': _collect(ou, pos_only=False, over_labels=True),  # either direction is a run
-        'props': build_nfl_prop_streaks(),     # player over/under line streaks (3+, history)
+        'props': prop_streaks['rows'],
     }
     hot = build_nfl_prop_hot_start()           # this-season hot starts, every player, 2+
 
@@ -45397,6 +45490,12 @@ def build_nfl_wave_context():
             'min_streak': _WAVE_MIN_STREAK,
             'hot_season': hot.get('season'), 'hot_week': hot.get('through_week'),
             'hot_total': hot.get('total', 0),
+            # Player prop-streak freshness (its graded source can lag the live season).
+            'prop_through_label': prop_streaks.get('through_label', ''),
+            'prop_pending': prop_streaks.get('pending', False),
+            'prop_through_season': prop_streaks.get('through_season'),
+            'prop_through_week': prop_streaks.get('through_week'),
+            'prop_active_count': sum(1 for r in prop_streaks['rows'] if r.get('active')),
         },
         'rw_available': any(boards.values()) or bool(situational) or bool(hot.get('rows')),
     }

@@ -36,6 +36,14 @@
   .rw-empty{padding:16px;color:var(--text-muted);font:500 12.5px 'Helvetica Neue',Arial,sans-serif;}
   .rw-card-wide .rw-props{display:grid;grid-template-columns:1fr;}
   @media (min-width:720px){ .rw-card-wide .rw-props{grid-template-columns:1fr 1fr;} .rw-card-wide .rw-props .rw-row:nth-child(2){border-top:1px solid rgba(255,255,255,.05);} }
+  .rw-fresh{margin:4px 16px 10px;font:700 12px/1.5 'Helvetica Neue',Arial,sans-serif;border-radius:9px;padding:9px 12px;
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .rw-fresh.ok{color:var(--text);background:rgba(91,141,239,.08);border:1px solid rgba(91,141,239,.28);}
+  .rw-fresh.pending{color:var(--text-bright);background:rgba(255,159,67,.1);border:1px solid rgba(255,159,67,.42);}
+  .rw-fresh .tag{font:800 9px ui-monospace,Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:2px 7px;background:#5b8def;color:#0b1118;}
+  .rw-fresh.pending .tag{background:#ff9f43;}
+  .rw-row.rw-stale{opacity:.6;}
+  .rw-status{display:block;font:700 10px/1.3 'Helvetica Neue',Arial,sans-serif;color:#ffb86b;margin-top:3px;}
   .rw-foot{margin-top:22px;font:500 11.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
   .rw-soon{margin-top:22px;background:linear-gradient(180deg,rgba(91,141,239,.07),transparent);border:1px dashed var(--border);
     border-radius:12px;padding:14px 16px;font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
@@ -111,11 +119,20 @@
 {% if rw_boards.props %}
 <div class="rw-card rw-card-wide" data-cat="props" style="margin-bottom:16px;">
   <h3><span class="dot" style="background:var(--rw-hot)"></span>Player Prop Streaks <small>beat / fell short of the line, N straight</small></h3>
+  {% if rw_meta.prop_through_label %}
+  <div class="rw-fresh {{ 'pending' if rw_meta.prop_pending else 'ok' }}">
+    <span class="tag">{{ 'Pending latest results' if rw_meta.prop_pending else 'Graded data' }}</span>
+    <span>{{ rw_meta.prop_through_label }}.</span>
+    {% if rw_meta.prop_pending %}<span>Runs below are shown as <b>historical</b>, not current form.</span>{% endif %}
+  </div>
+  {% endif %}
   <div class="rw-props">
     {% for r in rw_boards.props[:24] %}
-    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}</small></span>
-      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}</span></span></div>
+    {% set av = (r.availability_status or '')|upper %}
+    <div class="rw-row{% if not r.active %} rw-stale{% endif %}"><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.weeks_label %} &middot; {{ r.weeks_label }}{% endif %}{% if av in ['OUT','IR','DOUBTFUL'] %} &middot; <b style="color:var(--rw-cold)">{{ r.availability }}</b>{% endif %}</small>
+        {% if not r.active and r.status_label %}<span class="rw-status">{{ r.status_label }}</span>{% endif %}</span>
+      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}{% if not r.active %} past{% endif %}</span></span></div>
     {% endfor %}
   </div>
 </div>
