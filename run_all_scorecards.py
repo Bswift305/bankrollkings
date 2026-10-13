@@ -51,6 +51,10 @@ SCORECARDS = [
     # it is graded through and never present last season's final runs as current. Locks the
     # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.
     ("NFL Prop-Streak Freshness QC", "qc_nfl_prop_streak_freshness.py", 180),
+    # Same board against the REAL NFL_AllPropResults source schema (the routinely-refreshed graded
+    # record): proves an Under streak that is current through the latest graded week disappears once
+    # the next graded game goes Over, via the real on-disk read path.
+    ("NFL Prop-Streak Integration QC", "qc_nfl_prop_streak_integration.py", 180),
     # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
     # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
     ("Player Check QC", "qc_player_check.py", 240),

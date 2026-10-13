@@ -416,13 +416,20 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
     parquet): cache key folds in `_nfl_player_log_signature()` (not just `NFL_Props.csv` mtime);
     "Results through Week X · updated <ET>" from the real data mtime; per-run weeks; injury +
     through-week recency gate; calendar pending gate. QC `qc_nfl_heatmap_freshness.py`.
-  - **Riding-the-Wave player prop streaks** (`build_nfl_prop_streaks`, `/tools/riding-the-wave`,
-    source = `NFL_Props_History.csv`, a *different* refresh path — the backfill, not the daily
-    grader). This is the **under-streak** surface (the Mike Evans "6 straight unders" was last
-    season's final run shown as current). Now discloses "Graded through <season> Week X" / pending
-    and demotes stale/injured runs. Cache (`_NFL_WAVE_CACHE`) key now includes the history mtime +
-    ET date. QC `qc_nfl_prop_streak_freshness.py`. (The team ATS/SU/OU boards on the same page
-    share the season-level gate but already print "through <season>"; left as-is — out of scope.)
+  - **Riding-the-Wave player prop streaks** (`build_nfl_prop_streaks`, `/tools/riding-the-wave`).
+    This is the **under-streak** surface (the Mike Evans "6 straight unders" was last season's
+    final run shown as current). **Source lineage fixed:** it now reads the ROUTINELY-REFRESHED
+    graded record `data/tracking/NFL_AllPropResults.csv` (written weekly by
+    `refresh_all_prop_results.py`, in run_daily — the same source as the Heating Up board), via
+    `_load_nfl_all_prop_results()`, **not** the one-off backfill `NFL_Props_History.csv` that never
+    advanced in-season (which would have left the panel permanently "pending"). One canonical
+    observation per (player, stat, season, week). Discloses "Graded through <season> Week X ·
+    updated <source mtime, ET>" / pending, demotes stale/injured runs, and `_compact_weeks` shows a
+    run's weeks truthfully across gaps (e.g. "Wks 1–2, 16–18"). `_NFL_WAVE_CACHE` key = game-lines
+    history len + the graded source mtime + ET date. QCs: `qc_nfl_prop_streak_freshness.py`
+    (synthetic logic) + `qc_nfl_prop_streak_integration.py` (real source schema, unders→over). (The
+    team ATS/SU/OU boards on the same page share the season-level gate but already print "through
+    <season>"; left as-is — out of scope.)
   - **Prod post-week retry:** `fetch_nfl_player_week.py` has `--gate` / `--require-week` /
     `--retries` / `--check-only`. A dedicated **Tue/Wed** timer advances the parquet as soon as the
     completed week publishes (so the heat map stops being a day behind): wrapper

@@ -1,25 +1,23 @@
-"""QC: Riding-the-Wave player prop-streak board never shows a stale run as current.
+"""QC (synthetic): Riding-the-Wave player prop-streak board never shows a stale run as current.
 
 Regression guard for the under-streak freshness correction. `/tools/riding-the-wave` ->
-build_nfl_wave_context -> build_nfl_prop_streaks renders each player's active OVER/UNDER run
-from the graded prop history (NFL_Props_History.csv). That file is written by the prop grader
-and can lag the live season -- locally it sat a whole season behind (2025 wk18) while the
-calendar was in 2026, so Mike Evans' 6 straight unders from the END of last season rendered as a
-current streak with no disclosure. Defects this locks down:
+build_nfl_wave_context -> build_nfl_prop_streaks renders each player's active OVER/UNDER run from
+the ROUTINELY-REFRESHED graded record (NFL_AllPropResults.csv, written weekly by
+refresh_all_prop_results.py). This test drives the LOGIC with small synthetic frames through the
+source loader (_load_nfl_all_prop_results). The companion qc_nfl_prop_streak_integration.py proves
+the same behavior against the real on-disk source schema. Defects this locks down:
 
-  1. "Active" meant only "ran into the latest season IN THE FILE" -- if the file lagged, last
-     season's final runs showed as current. Now a run is current only when the graded data
-     reaches the calendar's completed week AND the player is available; else historical.
+  1. "Active" meant only "ran into the latest season IN THE FILE" -- if the graded source lagged
+     the calendar, last season's final runs showed as current (Mike Evans' 6 straight unders were
+     the END of 2025). Now a run is current only when the graded data reaches the calendar's
+     completed week AND the player is available; else historical.
   2. No through-week / pending disclosure. Now the board states what it is graded through and
      flags pending when the completed week is missing.
 
-The headline fixture is the reported sequence: Mike Evans on a 6-game UNDER run, then yesterday's
-game goes OVER once the next week loads -- the run ends and he is no longer a current streak.
-Exits 0 when the board behaves correctly, 1 otherwise.
+Headline fixture: Mike Evans on a 6-game UNDER run, then the next graded week goes OVER -- the run
+ends and he is no longer a current streak. Exits 0 when the board behaves correctly, 1 otherwise.
 """
 from __future__ import annotations
-
-from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -31,14 +29,14 @@ STAT = 'Rec Yds'
 
 def _history(weeks_actuals: dict[int, float], season: int = 2026, player: str = 'Mike Evans',
              team: str = 'TB') -> pd.DataFrame:
-    """One player's graded prop history: {week: actual} vs a fixed line."""
-    base = datetime(season, 9, 1)
+    """One player's graded results in the NFL_AllPropResults shape: {week: result} vs a fixed
+    line. OVER-direction rows only (the builder keeps OVER to dedupe the O/U pair)."""
     rows = []
-    for wk, actual in sorted(weeks_actuals.items()):
+    for wk, result in sorted(weeks_actuals.items()):
         rows.append({
-            'Player': player, 'Stat': STAT, 'Line': LINE, 'Actual': actual,
-            'CommenceTime': (base + timedelta(days=7 * wk)).isoformat(),
-            'EventId': f'{season}-W{wk}', 'Season': season, 'Week': wk, 'Team': team,
+            'Sport': 'NFL', 'SeasonType': 'REG', 'Season': season, 'Week': wk,
+            'Player': player, 'Team': team, 'Stat': STAT, 'Direction': 'OVER',
+            'Line': LINE, 'ResultValue': result,
         })
     return pd.DataFrame(rows)
 
@@ -55,7 +53,7 @@ def run_qc() -> dict:
     notes: list[str] = []
 
     saved = {
-        'load_nfl_props_history': app.load_nfl_props_history,
+        '_load_nfl_all_prop_results': app._load_nfl_all_prop_results,
         'load_sport_injuries': app.load_sport_injuries,
         '_nfl_expected_completed_week': app._nfl_expected_completed_week,
     }
@@ -66,7 +64,7 @@ def run_qc() -> dict:
 
         # ---- Scenario A: current data, Evans on a live 6-game UNDER run --------------------
         unders = {1: 30, 2: 40, 3: 25, 4: 35, 5: 45, 6: 20}   # all below 53.5
-        app.load_nfl_props_history = lambda: _history(unders)
+        app._load_nfl_all_prop_results = lambda: _history(unders)
         app._nfl_expected_completed_week = lambda today=None: (6, 2026)
         a = app.build_nfl_prop_streaks()
 
@@ -87,7 +85,7 @@ def run_qc() -> dict:
 
         # ---- Scenario B (the reported bug): Week 7 loads, Evans goes OVER -> run ends ------
         with_over = dict(unders); with_over[7] = 80   # 80 > 53.5 breaks the under run
-        app.load_nfl_props_history = lambda: _history(with_over)
+        app._load_nfl_all_prop_results = lambda: _history(with_over)
         app._nfl_expected_completed_week = lambda today=None: (7, 2026)
         b = app.build_nfl_prop_streaks()
         ev_b = _evans(b)
@@ -99,7 +97,7 @@ def run_qc() -> dict:
             notes.append(f"reported sequence: Evans now {ev_b['side']} x{ev_b['streak']} active={ev_b['active']}")
 
         # ---- Scenario C: graded file a whole season behind -> pending, nothing current -----
-        app.load_nfl_props_history = lambda: _history({1: 30, 2: 40, 3: 25, 4: 35, 5: 45, 6: 20},
+        app._load_nfl_all_prop_results = lambda: _history({1: 30, 2: 40, 3: 25, 4: 35, 5: 45, 6: 20},
                                                       season=2025)
         app._nfl_expected_completed_week = lambda today=None: (4, 2026)   # calendar is 2026
         c = app.build_nfl_prop_streaks()
@@ -113,7 +111,7 @@ def run_qc() -> dict:
             notes.append("stale-season: last year's final runs are held as historical, not current")
 
         # ---- Scenario D: availability gate -- an Out player's run is not current -----------
-        app.load_nfl_props_history = lambda: _history(unders)
+        app._load_nfl_all_prop_results = lambda: _history(unders)
         app._nfl_expected_completed_week = lambda today=None: (6, 2026)
         app.load_sport_injuries = lambda sport_key='nfl': pd.DataFrame(
             [{'Player': 'Mike Evans', 'Team': 'TB', 'Status': 'OUT', 'Reason': 'Hamstring',
