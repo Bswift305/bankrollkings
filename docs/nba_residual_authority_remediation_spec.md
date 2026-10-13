@@ -1,7 +1,13 @@
-# NBA Residual-Authority Remediation Specification (frozen · 2026-10-13)
+# NBA Residual-Authority Remediation Specification (frozen · rev 2 · 2026-10-13)
 
-**Status: SPECIFICATION ONLY. No code changed. Do not implement until approved.** Freezes the eight
-rulings on the residual customer-facing authority found in
+**Status: SPECIFICATION ONLY. No code changed. Do not implement until approved.** **Rev 2 applies the
+three approved corrections** (no code): R1 header frozen exactly as "Market lean gap" (no
+alternative); R4/R5 model fields frozen to remain visible only inside the Legacy disclosure with the
+banner (no optional removal); route verification frozen to **semantic equivalence** (ordered row
+identities, counts, direction membership, no confidence/PLAY gate, no "Best … Plays" title), with
+byte identity demoted to an optional check — plus an added R2 fallback test (the EV-skip fallback
+shows only market-derived info). Freezes the eight rulings on the residual customer-facing authority
+found in
 `docs/nba_p0_residual_authority_addendum.md` (inventory). It is a **separate, reversible commit** —
 **never an amendment to `9fcf691`** (Commit C). Companion to `docs/nba_p0_remediation_spec.md`.
 
@@ -23,12 +29,13 @@ Class key: **COPY** = text only; **BEHAVIORAL** = logic/membership/routing.
 
 | Location | Current | Replacement (NBA only) |
 |---|---|---|
-| `props.html:491` | `<th>Edge</th>` | `<th>Market lean gap</th>` (or a short header + the explanatory text below) |
+| `props.html:491` | `<th>Edge</th>` | `<th>Market lean gap</th>` — **frozen, exactly this header text** (no short-header alternative) |
 | `props.html:542` | `{{ edge_pct }}%` … label **"Edge"** | value unchanged; label **"Market lean gap"** |
 | `props.html:564` | `… Edge {{ edge_pct }}%` | `… Market lean gap {{ edge_pct }}%` |
 
-Explanatory text to attach (tooltip or the glossary row for this column): **"Difference between the
-market-implied Over and Under probabilities."** No value, membership, or ordering change.
+The header is frozen as **"Market lean gap"** with the approved explanatory text attached (tooltip or
+the glossary row for this column): **"Difference between the market-implied Over and Under
+probabilities."** No value, membership, or ordering change.
 
 ---
 
@@ -71,9 +78,13 @@ text. These are BK model estimates.
 
 Required banner at the top of the NBA Model-Read `<details>` body: **"Legacy model estimate — not
 validated and not used for ordering or selection."** These values must not drive sort/membership
-(they do not today; the NBA default order is `tipoff` and no filter uses them). If a clean Legacy
-treatment is not wanted for a given field, that field is removed from the NBA row instead; the
-computation persists internally either way.
+(they do not today; the NBA default order is `tipoff` and no filter uses them).
+
+**Frozen — no implementation discretion:** `core_model_read`, `model_prob`, and `play_verdict_note`
+remain **visible on the NBA row ONLY inside the "Legacy model estimate" disclosure**, under the exact
+banner above. They are not removed, not surfaced anywhere outside that disclosure, and not relabeled
+to anything other than the frozen text. There is no optional-removal path. (`play_verdict_note` and
+`rank_explanation` live in the same `<details>` body and are covered by the same banner.)
 
 ---
 
@@ -118,14 +129,25 @@ board title (no "Best … Plays (70%+)").
 title guard `props.html:409–410` is additionally made `… and not is_nba_props` (defense in depth);
 after coercion `filter_type` is never `overs`/`unders` on the NBA path, so the branch is dead for NBA.
 
-**Mandatory proof (as directed):** a test must show that for a fixed candidate set, the coerced board
-equals **`direction`-filtered only**, i.e.:
-1. its row set = `{ rows with that direction }` — identical to `?direction=over|under` with no other
-   filter; and
-2. the rows it **adds back** versus the old gate are **exactly** those with `confidence < 70` (or
-   `play_verdict != 'PLAY'`) in that direction — nothing else changes; and
-3. the normal Over/Under **direction** filters remain available and still exclude the opposite side
-   (no OVER rows on the unders board, no UNDER rows on the overs board).
+**Mandatory proof (semantic equivalence, as directed).** The correctness requirement is **semantic**,
+not byte identity: the legacy (`/overs`,`/unders`) and canonical (`?direction=…`) requests have
+different URLs, so generated links and request-aware markup may legitimately differ even when rows
+and behavior are identical. A test must show the coerced legacy board is semantically equivalent to
+the canonical direction-filtered board, on a fixed candidate set, by **all** of:
+1. **identical ordered row identities** — same rows in the same order (compare a stable row key:
+   player + stat + direction + line);
+2. **identical row counts**;
+3. **identical direction membership** — every row is the requested direction and the opposite side
+   is wholly absent (no OVER rows on the unders board, no UNDER rows on the overs board);
+4. **no confidence or PLAY gate** — the membership **added back** versus the old `filter_type`
+   behavior is **exactly** the rows with `confidence < 70` (or `play_verdict != 'PLAY'`) in that
+   direction, and nothing else; no confidence/PLAY threshold is applied;
+5. **no "Best … Plays" title** — the rendered title is the ordinary board title, never
+   "Best Over/Under Plays (70%+)".
+
+A byte-for-byte comparison of the two responses is **not** the correctness requirement and may be
+included only as an *additional* check — and only if the implementation performs an HTTP redirect to
+a single canonical URL (it does not here; it coerces in-handler, so the URL and some links differ).
 
 ---
 
@@ -159,12 +181,22 @@ No change touches `render_props_screener_page`, `get_sort_params`, or any non-NB
    price" not "Fair", summary is "Legacy model estimate" with the banner, no "% EV", no Simulation
    Leaders block; and for NFL/NCAAF/WNBA/MLB (explicit-False **and** omitted flag): "Edge", "Fair",
    "Model Read", EV, and the Simulation Leaders block all still present (unchanged).
-2. **R7 membership proof:** the three assertions in R7 above, via `build_live_props_board` on a fixed
-   candidate set (or `render_nba_props_page` through the test client) — coerced board = direction-only;
-   added-back rows = exactly the sub-70 / non-PLAY rows; opposite direction still excluded.
-3. **Route smoke:** `/sports/nba/props/overs` and `/unders` return 200 and are byte-identical to
-   `/sports/nba/props?direction=over|under`.
-4. **Live production visual check (authenticated):** NBA page shows the relabels and no Simulation
+2. **R7 membership proof (semantic equivalence):** the five assertions in R7 above, via
+   `build_live_props_board` on a fixed candidate set (or `render_nba_props_page` through the test
+   client) — identical ordered row identities, identical counts, identical direction membership, no
+   confidence/PLAY gate (added-back rows = exactly the sub-70 / non-PLAY rows), and no "Best … Plays"
+   title. **Semantic equivalence is the correctness bar, not byte identity.**
+3. **R2 fallback test:** after the EV branch is skipped for NBA, the "Play" cell must display **only
+   market-derived information** — it must not expose a model or confidence field. Assert the fallback
+   path renders the market-lean label (`lean_strength`, the qualitative bucket of
+   `lean_gap = abs(over_rate − under_rate)`) and/or the market/book number (`market_prob`,
+   `edge_pct` relabeled "Market lean gap") and never surfaces `model_prob`, `confidence`,
+   `core_model_read`, or any other model/confidence value through the EV fallback.
+4. **Route smoke (not a correctness gate):** `/sports/nba/props/overs` and `/unders` return 200 and
+   render the ordinary direction-filtered board (no "Best … Plays" title). A byte comparison to
+   `/sports/nba/props?direction=over|under` is optional and only meaningful under an HTTP redirect to
+   a canonical URL (not used here); correctness is the semantic equivalence in (2).
+5. **Live production visual check (authenticated):** NBA page shows the relabels and no Simulation
    Leaders / no "Best … Plays"; NFL/MLB/WNBA/CFB pages unchanged. (Covers Commit C + this commit
    together, per the ruling.)
 
