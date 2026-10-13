@@ -326,9 +326,15 @@
             <div style="font-size:12px; color:var(--text-muted);">No team-prior matches on this filter yet.</div>
             {% endfor %}
         </div>
+        {# NBA Residual-Authority remediation (R6): the Simulation Leaders leaderboard is removed from
+           the NBA customer board entirely -- its ranked "strongest / Live Authority / most weight"
+           framing is authority a Legacy label would not cure. build_board_intelligence_summary /
+           top_sims still compute (internal / research surface); only the NBA presentation is gone.
+           The sibling Team Prior Leaders (R8) stays. #}
+        {% if not is_nba_props %}
         <div class="parlay-surface-soft" style="padding:12px;">
             <div class="page-kicker" style="margin-bottom:8px;">Simulation Leaders</div>
-            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">The board's strongest simulation reads &mdash; how often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support{% if not is_nba_props %} beside Confidence and Tier{% endif %}, not on their own.</div>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">The board's strongest simulation reads &mdash; how often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support beside Confidence and Tier, not on their own.</div>
             {% for row in board_intelligence.top_sims %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
                 <span style="color:var(--text-bright); font-weight:700;">{{ row.player }}</span>
@@ -339,6 +345,7 @@
             <div style="font-size:12px; color:var(--text-muted);">No calibrated simulation reads on this filter yet.</div>
             {% endfor %}
         </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -406,8 +413,8 @@
         <div class="card-title">
             {% if filter_type == 'locks' and not is_nba_props %}🔒 Locks (80%+ Confidence)
             {% elif filter_type == 'floor' %}📉 Floor Plays
-            {% elif filter_type == 'overs' %}📈 Best Over Plays (70%+)
-            {% elif filter_type == 'unders' %}📉 Best Under Plays (70%+)
+            {% elif filter_type == 'overs' and not is_nba_props %}📈 Best Over Plays (70%+)
+            {% elif filter_type == 'unders' and not is_nba_props %}📉 Best Under Plays (70%+)
             {% elif filter_type == 'situational' %}⚡ Situational Plays
             {% else %}{{ (focus_mode_label + ' Props') if postseason_only else 'All Props' }}
             {% endif %}
@@ -488,7 +495,7 @@
                 <th>Avg</th>
                 <th>Play</th>
                 <th>O/U %</th>
-                <th>Edge</th>
+                {% if is_nba_props %}<th title="Difference between the market-implied Over and Under probabilities.">Market lean gap</th>{% else %}<th>Edge</th>{% endif %}
                 <th>Market &amp; Env</th>
                 <th>Signals</th>
                 {# NBA P0 Commit C (1a): the NBA board drops the Conf (50-99 play-strength) column +
@@ -534,12 +541,12 @@
                     {% endif %}
                 </td>
                 <td style="white-space:nowrap;">
-                    {% if prop.ev_pct is not none %}
+                    {% if prop.ev_pct is not none and not is_nba_props %}
                     <strong style="color: {% if prop.ev_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.ev_pct }}%</strong> <span style="font-size:10px; color:var(--text-muted);">EV</span>
                     {% elif prop.lean_strength %}
                     <strong style="color: var(--accent);">{{ prop.lean_strength }}</strong>{% if prop.market_prob is not none %} <span style="font-size:10px; color:var(--text-muted);">{{ prop.market_prob }}% book</span>{% endif %}
                     {% elif prop.edge_pct is not none %}
-                    <strong style="color: {% if prop.edge_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.edge_pct }}%</strong> <span style="font-size:10px; color:var(--text-muted);">Edge</span>
+                    <strong style="color: {% if prop.edge_pct >= 0 %}var(--accent){% else %}#ffb3b3{% endif %};">{{ prop.edge_pct }}%</strong> <span style="font-size:10px; color:var(--text-muted);">{{ 'Market lean gap' if is_nba_props else 'Edge' }}</span>
                     {% elif prop.market_prob is not none %}
                     <strong style="color: var(--accent);">{{ prop.market_prob }}%</strong> <span style="font-size:10px; color:var(--text-muted);">book</span>
                     {% else %}<span style="color:var(--text-muted);">&mdash;</span>{% endif %}
@@ -555,13 +562,14 @@
                     {% if prop.injury_context_note %}<div style="color: var(--accent-copper); margin-top:4px;">{{ prop.injury_context_note }}</div>{% endif %}
                     {% if prop.core_model_read or prop.rank_explanation or prop.play_verdict_note %}
                     <details class="model-read">
-                        <summary>Model Read</summary>
+                        <summary>{{ 'Legacy model estimate' if is_nba_props else 'Model Read' }}</summary>
                         <div class="model-read-body">
+                            {% if is_nba_props %}<div style="color:var(--text-muted); font-size:10.5px; margin-bottom:4px;">Legacy model estimate &mdash; not validated and not used for ordering or selection.</div>{% endif %}
                             {% if prop.play_verdict_note %}<div>{{ prop.play_verdict_note }}</div>{% endif %}
                             {% if prop.rank_explanation %}<div>{{ prop.rank_explanation }}</div>{% endif %}
                             {% if prop.core_model_read %}<div>{{ prop.core_model_read }}</div>{% endif %}
                             {% if prop.projected_minutes is not none %}<div>{{ prop.projected_minutes }} MIN{% if prop.usage_pct is not none %} &middot; {{ prop.usage_pct }} USG{% endif %}{% if prop.ts_pct is not none %} &middot; {{ prop.ts_pct }} TS{% endif %}</div>{% endif %}
-                            {% if prop.fair_price %}<div>Fair {{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% if prop.edge_pct is not none %} &middot; Edge {{ prop.edge_pct }}%{% endif %}{% if prop.model_prob is not none %} &middot; Model {{ prop.model_prob }}%{% endif %}</div>{% endif %}
+                            {% if prop.fair_price %}<div>{{ 'De-vigged market price' if is_nba_props else 'Fair' }} {{ '+' if prop.fair_price > 0 }}{{ prop.fair_price }}{% if prop.edge_pct is not none %} &middot; {{ 'Market lean gap' if is_nba_props else 'Edge' }} {{ prop.edge_pct }}%{% endif %}{% if prop.model_prob is not none %} &middot; {{ 'Legacy model' if is_nba_props else 'Model' }} {{ prop.model_prob }}%{% endif %}</div>{% endif %}
                             {% if prop.best_book %}<div>Best book: {{ prop.best_book }}{% if prop.book_count and prop.book_count > 1 %} &middot; {{ prop.book_count }} books{% endif %}</div>{% endif %}
                             {% if prop.featured_risk_note %}<div><strong>Risk:</strong> {{ prop.featured_risk_note }}</div>{% endif %}
                         </div>

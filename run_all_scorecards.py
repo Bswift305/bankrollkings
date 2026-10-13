@@ -69,6 +69,10 @@ SCORECARDS = [
     # Locks + neutral tip-off sort) must be NBA-only and fail-safe -- other sports keep everything,
     # including when the is_nba_props flag is omitted. Renders props.html for both views x all sports.
     ("NBA Commit C Guard QC", "qc_nba_commit_c_guard.py", 180),
+    # NBA Residual-Authority remediation (rev 2): R1-R8 presentation (both views x all sports, incl.
+    # omitted-flag fail-safe), R2 market-only fallback, and R7 semantic equivalence + exact
+    # added-back membership (/overs,/unders coerced to the direction-filtered board).
+    ("NBA Residual-Authority QC", "qc_nba_residual_authority.py", 180),
     # Trial Eligibility Gate core (mocked): one-lifetime-trial store guarantees -- eligibility,
     # hard cap, atomic redemption, crash-recovery, key rotation, DB invariants, fail-closed.
     ("Trial Gate QC", "qc_trial_gate.py", 120),

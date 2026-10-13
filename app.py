@@ -39308,11 +39308,21 @@ def render_nba_props_page(filter_type=None):
     # -- rather than leave an orphaned authority surface reachable by URL.
     if filter_type == 'locks':
         filter_type = None
+    # NBA Residual-Authority remediation (R7): the "Best Over/Under Plays (70%+)" views gated
+    # membership on confidence >= 70 (+ a PLAY gate) and carried a best-bets title. Coerce the
+    # legacy /overs and /unders views to the ordinary board with ONLY the factual direction filter
+    # applied -- no confidence gate, no PLAY gate, no "Best ... Plays" title. Captured here, applied
+    # to direction_filter after the request context is built below.
+    _legacy_direction = {'overs': 'over', 'unders': 'under'}.get(filter_type)
+    if _legacy_direction is not None:
+        filter_type = None
     postseason_only = postseason_only_enabled()
     request_context = build_live_prop_request_context(postseason_only=postseason_only)
     date_filter = request_context['date_filter']
     model_debug = request_context['model_debug']
     direction_filter = request_context['direction_filter']
+    if _legacy_direction is not None:
+        direction_filter = _legacy_direction
     team_query = request_context['team_query']
     player_query = request_context['player_query']
     stat_query = request_context['stat_query']

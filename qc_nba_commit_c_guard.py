@@ -18,6 +18,8 @@ Exits 0 when every guard holds, 1 otherwise.
 from __future__ import annotations
 
 import jinja2
+import re
+
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader
 
 import app
@@ -100,7 +102,10 @@ def _markers(html):
         'conf_col_header': '<th>Conf</th>' in html,
         'conf_sort_option': 'value="confidence"' in html,
         'tipoff_sort_option': 'value="tipoff"' in html,
-        'th_count': html.count('<th>'),
+        # Count header cells whether or not they carry attributes (<th> and <th title=...>),
+        # excluding <thead>. The NBA "Market lean gap" header (R1) is a <th title=...>, so a plain
+        # '<th>' substring count would under-count NBA by one and read as a false misalignment.
+        'th_count': len(re.findall(r'<th[ >]', html)),
         'row_present': 'Al Horford' in html,
     }
 
