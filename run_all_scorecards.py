@@ -65,6 +65,10 @@ SCORECARDS = [
     # NBA postseason phase rule: the thirteen configured-window phase tests + override + NBA
     # scoping + other-sports-unchanged. Cheap; guards the P0 season-state correction.
     ("NBA Postseason Phase QC", "qc_nba_postseason_phase.py", 180),
+    # NBA P0 Commit C: the authenticated NBA board authority removal (Confidence/Tier/Conf-column/
+    # Locks + neutral tip-off sort) must be NBA-only and fail-safe -- other sports keep everything,
+    # including when the is_nba_props flag is omitted. Renders props.html for both views x all sports.
+    ("NBA Commit C Guard QC", "qc_nba_commit_c_guard.py", 180),
     # Trial Eligibility Gate core (mocked): one-lifetime-trial store guarantees -- eligibility,
     # hard cap, atomic redemption, crash-recovery, key rotation, DB invariants, fail-closed.
     ("Trial Gate QC", "qc_trial_gate.py", 120),

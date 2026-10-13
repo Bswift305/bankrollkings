@@ -123,3 +123,37 @@ test session (or the render functions exercised directly), never against a real 
 
 Each step is behind an NBA guard or on the NBA render path, so steps 4–5's diff proves the other
 four sports are untouched. Nothing is implemented in this record.
+
+---
+
+## 7. Implementation notes (as built — steps 4–5)
+
+Corrections to the inventory discovered during implementation, and what shipped:
+
+- **Fail-safe discriminator (per review):** a server-side `is_nba_props` flag, **default `False`**.
+  `render_nba_props_page` passes `is_nba_props=True`; `render_props_screener_page` passes
+  `is_nba_props=False`; the template sets `{% set is_nba_props = is_nba_props|default(False) %}`.
+  All removals guard on this, never on `props_sport_key`'s `"nba"` default — a renderer that forgot
+  the flag gets `False` and keeps all authority.
+- **"Top Plays" is NOT in `props.html`** — it is a `dashboard.html` element (spec §1d) handled in
+  Commit B. Commit C is §1a (Confidence) + §1b (Tier) + §1c (Locks) on `props.html` only.
+- **`min_confidence` has no customer control on this board** — `build_live_props_board` takes no
+  `min_confidence` param and `props.html` has no such control, so frozen decision (1) is already
+  satisfied here and NBA row membership is not reduced by any confidence floor (nothing to remove).
+- **The Locks tab was already NBA-only** (`{% if props_sport_key == 'nba' %}`), so it was removed by
+  deleting the block (other sports never rendered it), and the orphaned `/sports/nba/props/locks`
+  route is coerced to the all-props board in `render_nba_props_page` (no lock filter/framing).
+- **Ordering:** `render_nba_props_page` now defaults to the authority-free **`tipoff`** order
+  (scheduled tip-off ascending, then player A–Z), implemented as a composite key in
+  `sort_prop_rows`; the rendered rows are re-sorted after enrichment so the snapshot path can't
+  reintroduce a confidence order. `?sort_by=confidence` maps to the neutral default. The shared
+  `get_sort_params` default and the NCAAF/WNBA/MLB explicit `'confidence'` defaults are untouched.
+- **Membership unchanged** on the NBA default/floor board: no row filter was added or changed (only
+  the sort and the presentation tiles/column), so the row *set* is identical — only its order and
+  the Confidence/Tier/Conf-column/Locks framing changed, exactly the frozen authority.
+
+**Proof:** `qc_nba_commit_c_guard.py` renders `props.html` for both views × all sports and asserts
+NBA is stripped while NFL/CFB/MLB/WNBA keep everything — including when the flag is omitted (the
+fail-safe). A live authenticated render confirmed `/sports/nba/props` (and the coerced `/locks`)
+strip the authority and offer Tip-off, while `/sports/nfl/props` keeps the Confidence/Tier tiles and
+the Conf column from real in-season rows.

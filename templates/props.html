@@ -1,4 +1,8 @@
 {% set active_page = 'props' %}
+{# Fail-safe NBA discriminator: default FALSE so a renderer that forgot to pass it can never
+   receive the NBA-only authority removals. Only render_nba_props_page passes is_nba_props=True.
+   The frozen P0 Commit C removals guard on this, NOT on props_sport_key's "nba" default. #}
+{% set is_nba_props = is_nba_props|default(False) %}
 {% set props_sport_key = props_sport_key|default('nba') %}
 {% set props_sport_label = props_sport_label|default('NBA') %}
 {% set props_base_path = props_base_path|default('/sports/nba/props') %}
@@ -250,6 +254,7 @@
             <div class="floor-stat-value">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
             <div class="floor-stat-note">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
         </div>
+        {% if not is_nba_props %}
         <div class="floor-stat-tile">
             <div class="floor-stat-kicker">Confidence</div>
             <div class="floor-stat-value">Normalized play strength</div>
@@ -260,6 +265,7 @@
             <div class="floor-stat-value">Parlay build quality</div>
             <div class="floor-stat-note">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
         </div>
+        {% endif %}
         <div class="floor-stat-tile">
             <div class="floor-stat-kicker">Next Gen + Game Env</div>
             <div class="floor-stat-value">Tracking is live</div>
@@ -279,6 +285,7 @@
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">{{ refresh_meta.book_count }} book{{ '' if refresh_meta.book_count == 1 else 's' }}</div>
             <div style="font-size: 11px; color: var(--text-muted);">{{ refresh_meta.books[:3]|join(', ') if refresh_meta.books else 'Manual or generated board' }}</div>
         </div>
+        {% if not is_nba_props %}
         <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
             <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">CONFIDENCE</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Normalized play strength</div>
@@ -289,6 +296,7 @@
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Parlay build quality</div>
             <div style="font-size: 11px; color: var(--text-muted);">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
         </div>
+        {% endif %}
         <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
             <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">{{ props_tracking_label|upper }}</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
@@ -320,7 +328,7 @@
         </div>
         <div class="parlay-surface-soft" style="padding:12px;">
             <div class="page-kicker" style="margin-bottom:8px;">Simulation Leaders</div>
-            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">The board's strongest simulation reads &mdash; how often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support beside Confidence and Tier, not on their own.</div>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">The board's strongest simulation reads &mdash; how often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support{% if not is_nba_props %} beside Confidence and Tier{% endif %}, not on their own.</div>
             {% for row in board_intelligence.top_sims %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
                 <span style="color:var(--text-bright); font-weight:700;">{{ row.player }}</span>
@@ -363,9 +371,9 @@
 
         <span class="control-label" style="margin-left:8px;">Board</span>
         <a href="{{ props_all_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if not filter_type %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All Props</a>
-        {% if props_sport_key == 'nba' %}
-        <a href="{{ props_locks_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'locks' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Locks</a>
-        {% endif %}
+        {# NBA P0 Commit C (1c): the Locks board filter is removed from the customer board. It was
+           NBA-only (props_sport_key == 'nba') and is gone entirely; the board is now All Props /
+           Floor Plays. is_lock may persist internally but never surfaces. Other sports never had it. #}
         {% if props_floor_path %}
         <a href="{{ props_floor_path }}?date={{ date_filter }}&direction={{ direction_filter }}&postseason={{ 1 if postseason_only else 0 }}&sample={{ sample_mode }}&page_size={{ pagination.page_size }}{% if team_query %}&team={{ team_query|urlencode }}{% endif %}{% if player_query %}&player={{ player_query|urlencode }}{% endif %}{% if stat_query %}&stat={{ stat_query|urlencode }}{% endif %}{% if model_debug %}&model_debug=1{% endif %}" class="btn {% if filter_type == 'floor' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Floor Plays</a>
         {% endif %}
@@ -396,7 +404,7 @@
 <div class="card">
     <div class="card-header">
         <div class="card-title">
-            {% if filter_type == 'locks' %}🔒 Locks (80%+ Confidence)
+            {% if filter_type == 'locks' and not is_nba_props %}🔒 Locks (80%+ Confidence)
             {% elif filter_type == 'floor' %}📉 Floor Plays
             {% elif filter_type == 'overs' %}📈 Best Over Plays (70%+)
             {% elif filter_type == 'unders' %}📉 Best Under Plays (70%+)
@@ -420,7 +428,11 @@
         <div class="board-filter-field">
             <label for="nba-sort-filter">Sort</label>
             <select id="nba-sort-filter" name="sort_by">
+                {% if not is_nba_props %}
                 <option value="confidence" {% if sort_by == 'confidence' %}selected{% endif %}>Confidence</option>
+                {% else %}
+                <option value="tipoff" {% if sort_by == 'tipoff' %}selected{% endif %}>Tip-off</option>
+                {% endif %}
                 <option value="player" {% if sort_by == 'player' %}selected{% endif %}>Player</option>
                 <option value="team" {% if sort_by == 'team' %}selected{% endif %}>Team</option>
                 <option value="stat" {% if sort_by == 'stat' %}selected{% endif %}>Stat</option>
@@ -479,7 +491,9 @@
                 <th>Edge</th>
                 <th>Market &amp; Env</th>
                 <th>Signals</th>
-                <th>Conf</th>
+                {# NBA P0 Commit C (1a): the NBA board drops the Conf (50-99 play-strength) column +
+                   its grade styling. The market-implied % (O/U %) remains as the market's number. #}
+                {% if not is_nba_props %}<th>Conf</th>{% endif %}
             </tr>
         </thead>
         <tbody>
@@ -554,12 +568,14 @@
                     </details>
                     {% endif %}
                 </td>
+                {% if not is_nba_props %}
                 {# No percent sign: this is normalize_confidence_rate's 50-99 play-strength
                    score, not a probability. It floors at 50 and caps at 99, so a "%" made a
                    floored longshot read as a coin flip and made every row look like the model
                    disagreeing with the book by a few points. The glossary above the table
                    already defines it as a 50-99 score; this makes the cell agree. #}
                 <td><span class="{% if prop.confidence >= 80 %}hr-lock{% else %}hr-strong{% endif %}">{{ prop.confidence|round|int }}</span></td>
+                {% endif %}
             </tr>
             {% endfor %}
         </tbody>

@@ -20003,6 +20003,26 @@ def sort_prop_rows(rows, sort_by='confidence', sort_dir='desc'):
         'ev_pct', 'edge_pct', 'market_price', 'matchup_over_rate', 'matchup_under_rate',
         'matchup_games', 'over_streak', 'under_streak'
     }
+    # 'tipoff' is the deterministic, authority-free order (scheduled tip-off ascending, then
+    # player A-Z) used as the NBA board default after confidence-sort was removed (NBA P0 Commit C,
+    # docs/nba_p0_remediation_spec.md 1a). It is a composite, so it is handled before the single-key
+    # path below and is unaffected by sort_dir (tip-off is always ascending, player always A-Z).
+    if sort_by == 'tipoff':
+        def _clock(s):
+            # Parse a display tip-off ("7:30 PM", "10:00 PM", "19:30") to (hour24, minute) so the
+            # order is chronological, not lexical ("10:00 PM" must not sort before "7:30 PM").
+            m = re.search(r'(\d{1,2}):(\d{2})\s*([AaPp][Mm])?', str(s or ''))
+            if not m:
+                return (99, 99)  # unknown/empty tip-offs sort last, deterministically
+            h, mnt, ap = int(m.group(1)), int(m.group(2)), (m.group(3) or '').upper()
+            if ap == 'PM' and h != 12:
+                h += 12
+            if ap == 'AM' and h == 12:
+                h = 0
+            return (h, mnt)
+        return sorted(rows, key=lambda r: (str(r.get('game_date') or ''),
+                                           _clock(r.get('game_time')),
+                                           str(r.get('player') or '').lower()))
     key = sort_by if sort_by in alpha_fields | numeric_fields else 'confidence'
 
     def sort_key(row):
@@ -39246,6 +39266,9 @@ def render_props_screener_page(
     return render_template(
         'props.html',
         **label_overrides,
+        # Explicit fail-safe: every non-NBA sport (NFL/NCAAF/WNBA/MLB + the tools hub) renders
+        # through here with the NBA authority removals OFF, so their boards are unchanged.
+        is_nba_props=False,
         props=visible_props,
         filter_type=filter_type,
         date_filter=date_filter,
@@ -39280,6 +39303,11 @@ def render_props_screener_page(
 
 
 def render_nba_props_page(filter_type=None):
+    # NBA P0 Commit C (1c): the Locks filter is removed. The /sports/nba/props/locks route still
+    # resolves, so coerce it to the ordinary all-props board -- no lock filtering, no lock framing
+    # -- rather than leave an orphaned authority surface reachable by URL.
+    if filter_type == 'locks':
+        filter_type = None
     postseason_only = postseason_only_enabled()
     request_context = build_live_prop_request_context(postseason_only=postseason_only)
     date_filter = request_context['date_filter']
@@ -39289,13 +39317,21 @@ def render_nba_props_page(filter_type=None):
     player_query = request_context['player_query']
     stat_query = request_context['stat_query']
     sample_mode = request_context['sample_mode']
-    sort_by = request_context['sort_by']
-    sort_dir = request_context['sort_dir']
+    # NBA P0 Commit C (spec 1a): the NBA board default order is the authority-free 'tipoff' order
+    # (scheduled tip-off ascending, then player A-Z), NOT confidence. An explicit ?sort_by= still
+    # works, but 'confidence' is no longer an available ordering on the NBA board -- it maps to the
+    # neutral default. Other sports are unaffected (this override is on the NBA render path only).
+    sort_by = request.args.get('sort_by', 'tipoff').strip().lower() or 'tipoff'
+    if sort_by == 'confidence':
+        sort_by = 'tipoff'
+    sort_dir = request.args.get('sort_dir', '').strip().lower()
+    if sort_dir not in {'asc', 'desc'}:
+        sort_dir = 'asc' if sort_by == 'tipoff' else 'desc'
     use_default_snapshot = (
         filter_type in {None, 'floor'} and postseason_only and date_filter == 'today'
         and direction_filter == 'all' and not team_query and not player_query and not stat_query
         and sample_mode == 'current' and not model_debug
-        and sort_by == 'confidence' and sort_dir == 'desc'
+        and sort_by == 'tipoff' and sort_dir == 'asc'
     )
     if use_default_snapshot:
         snapshot_key = 'nba_floor_props_postseason_today_current' if filter_type == 'floor' else 'nba_props_postseason_today_current'
@@ -39334,6 +39370,10 @@ def render_nba_props_page(filter_type=None):
     all_props = attach_formula_insights_to_rows(enrich_rows_with_game_environment(board['props'], sport='NBA'), sport='NBA')
     all_props = attach_active_simulation_insights_to_rows(all_props, sport='NBA')
     all_props = attach_team_strength_priors_to_rows(all_props, sport='NBA')
+    # Enforce the effective order on the rows actually displayed. The snapshot path bypasses
+    # build_live_props_board's own sort, so without this a cached snapshot would keep its
+    # build-time order; re-sorting here guarantees the authority-free NBA default (1a) holds.
+    all_props = sort_prop_rows(all_props, sort_by, sort_dir)
     refresh_meta = board['refresh_meta']
     upcoming = board['upcoming']
     from_cache = bool(board.get('from_cache'))
@@ -39441,6 +39481,11 @@ def render_nba_props_page(filter_type=None):
         prop_pointers=prop_pointers.get_prop_pointers('nba'),
         props_sport_key='nba',
         props_sport_label='NBA',
+        # Explicit, fail-safe NBA discriminator (default False everywhere else). The frozen P0
+        # Commit C authority removals (confidence/tier/locks framing) guard on THIS, never on the
+        # template's props_sport_key default -- a renderer that forgot the flag can't strip a
+        # non-NBA board, because the flag is only True here.
+        is_nba_props=True,
         props_base_path='/sports/nba/props',
         props_all_path='/sports/nba/props',
         props_floor_path='/sports/nba/props/floor',
