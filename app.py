@@ -43773,10 +43773,25 @@ def build_cfb_ats_streaks_context():
     except (OSError, ValueError):
         pass
     boards = data.get('boards') or {}
+    # Forward-cover reality check (build_cfb_ats_streak_backtest.py): over completed seasons, teams
+    # ENTERING on an N-game cover streak covered LESS the deeper the run -- the honest "track & learn"
+    # number behind "streaks are priced." Stable historical reference; absent -> the tool just omits
+    # the context line. Shown as who's overbought, never as a bet signal.
+    fwd = {}
+    try:
+        fp = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats_streak_forward_rates.json')
+        with open(fp, encoding='utf-8') as fh:
+            fwd = json.load(fh)
+    except (OSError, ValueError):
+        fwd = {}
+    ats_fwd = dict(fwd.get('cumulative') or {})     # {'3':{...},'4':{...}} by entering-streak depth
+    if ats_fwd:
+        ats_fwd['range'] = fwd.get('season_range') or ''   # per-row caption (keyed, never iterated)
     return {'ats_cover': boards.get('cover', []), 'ats_fade': boards.get('fade', []),
             'ou_over': boards.get('over', []), 'ou_under': boards.get('under', []),
             'ats_season': data.get('season'), 'ats_week': data.get('through_week'),
             'ats_updated': data.get('updated'),
+            'ats_fwd': ats_fwd, 'ats_fwd_meta': fwd,
             'ats_available': bool(boards.get('cover') or boards.get('fade')
                                   or boards.get('over') or boards.get('under'))}
 

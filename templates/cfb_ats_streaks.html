@@ -13,6 +13,14 @@
     border-radius:999px;padding:9px 18px;font:800 12.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;}
   .ats-tab.active{color:#0b1118;background:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
   .ats-view.hide{display:none;}
+  .ats-reality{display:flex;gap:10px;align-items:flex-start;margin-bottom:18px;padding:11px 14px;border-radius:11px;
+    background:rgba(255,159,67,.08);border:1px solid rgba(255,159,67,.34);
+    font:600 12.5px/1.55 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .ats-reality b{color:var(--text-bright);}
+  .ats-reality .rc-tag{flex:0 0 auto;font:800 9.5px ui-monospace,Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;
+    background:#ff9f43;color:#0b1118;border-radius:5px;padding:3px 7px;margin-top:1px;}
+  .ats-fwd{display:block;margin-top:2px;font:600 11px/1.5 'Helvetica Neue',Arial,sans-serif;color:#ffb86b;}
+  .ats-fwd b{color:#ffd0a0;}
 </style>
 <div class="bkn">
 <div class="page-hero">
@@ -28,17 +36,20 @@
   <div class="bkn-empty">Streaks aren&rsquo;t loaded yet &mdash; they build from the season&rsquo;s spreads, totals &amp; results once a couple of weeks are in.</div>
 {% else %}
 {% macro next_ref(r, mode) %}{% if r.next_opp %}{{ 'vs' if r.next_home else '@' }} {{ r.next_opp }}{% if mode == 'ats' and r.next_line is not none %} {{ '%+g'|format(r.next_line) }}{% elif mode == 'ou' and r.next_total is not none %} &middot; o/u {{ r.next_total }}{% endif %}{% else %}&mdash;{% endif %}{% endmacro %}
-{% macro board(rows, kind, mode) %}
+{% macro board(rows, kind, mode, fwd=None) %}
   <div class="bkn-list">
   {% for r in rows %}
   {% set heat = ({'cover':['#2f9e5f','#3fbf7f','#4ed48a'],'fade':['#d84b57','#ff6b3d','#ff9f43'],'over':['#e8813a','#ff9f43','#ffb865'],'under':['#3a7bd5','#4a90d9','#6aa7e0']}[kind]) %}
   {% set col = heat[0] if r.streak >= 4 else heat[1] if r.streak == 3 else heat[2] %}
   {% set verb = {'cover':'covering by','fade':'missing by','over':'over by','under':'under by'}[kind] %}
+  {% set fb = (6 if r.streak >= 6 else r.streak) %}
+  {% set fwd_row = (fwd.get(fb|string) if (fwd and kind == 'cover' and r.streak >= 3) else None) %}
   <div class="bkn-row" style="cursor:default;">
     <span class="bkn-tile fire" style="background:{{ col }};"><span class="n">{{ r.streak }}</span><span class="l">{{ kind }}</span></span>
     <span class="lead">
       <span class="t">{{ r.team }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ r.rec }} {{ 'ATS' if mode == 'ats' else 'O/U' }} &middot; {{ r.pct }}%</span></span>
       <span class="m"><span class="ats-res">{% for ch in r.last.split(' ') %}<span class="{{ ch|lower }}">{{ ch }}</span>{% if not loop.last %} {% endif %}{% endfor %}</span> &middot; {{ verb }} {{ '%+.1f'|format(r.streak_acm) }} avg</span>
+      {% if fwd_row and fwd_row.cover_pct is not none %}<span class="m ats-fwd">↳ teams on a {{ fb }}+ cover run then covered <b>{{ fwd_row.cover_pct }}%</b> <span style="opacity:.75;">next game ({{ fwd_row.games }} gms, {{ fwd.range }})</span></span>{% endif %}
     </span>
     <span class="trail" style="font:700 12px ui-monospace,monospace;">{{ next_ref(r, mode) }}<small>this week</small></span>
   </div>
@@ -52,9 +63,18 @@
 </div>
 
 <div class="ats-view" data-view="ats">
+  {% if ats_fwd_meta and ats_fwd_meta.cumulative %}
+  {% set c4 = ats_fwd_meta.cumulative.get('4') %}{% set c5 = ats_fwd_meta.cumulative.get('5') %}
+  <div class="ats-reality">
+    <span class="rc-tag">Reality check</span>
+    <span>Over {{ ats_fwd_meta.season_range }}, the <b>deeper</b> the cover streak, the <b>less</b> teams covered next &mdash;
+      a 4+ run then covered <b>{{ c4.cover_pct }}%</b>, a 5+ run <b>{{ c5.cover_pct }}%</b> (breakeven is {{ ats_fwd_meta.breakeven_pct }}%).
+      The market moves to catch a hot team. This shows you <b>who&rsquo;s overbought</b>, not who to ride.</span>
+  </div>
+  {% endif %}
   <div class="bkn-sec">
     <div class="bkn-sec-h"><span class="ic">&#128293;</span><h2>Cover Streaks</h2><span class="sub">beating the spread</span></div>
-    {{ board(ats_cover, 'cover', 'ats') }}
+    {{ board(ats_cover, 'cover', 'ats', ats_fwd) }}
   </div>
   <div class="bkn-sec">
     <div class="bkn-sec-h"><span class="ic">&#129482;</span><h2>Fade Streaks</h2><span class="sub">can&rsquo;t cover</span></div>

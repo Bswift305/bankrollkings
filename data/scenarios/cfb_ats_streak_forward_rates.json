@@ -1,0 +1,77 @@
+{
+  "season_range": "2021-2025",
+  "seasons": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "breakeven_pct": 52.38,
+  "updated": "2026-10-15 22:58 UTC",
+  "baseline": {
+    "games": 13610,
+    "cover_pct": 50.0,
+    "roi": -4.5,
+    "pushes": 200
+  },
+  "by_depth": {
+    "1": {
+      "games": 3420,
+      "cover_pct": 48.7,
+      "roi": -7.0,
+      "pushes": 60
+    },
+    "2": {
+      "games": 1489,
+      "cover_pct": 50.8,
+      "roi": -2.9,
+      "pushes": 26
+    },
+    "3": {
+      "games": 679,
+      "cover_pct": 52.7,
+      "roi": 0.7,
+      "pushes": 9
+    },
+    "4": {
+      "games": 318,
+      "cover_pct": 46.2,
+      "roi": -11.7,
+      "pushes": 5
+    },
+    "5": {
+      "games": 131,
+      "cover_pct": 44.3,
+      "roi": -15.5,
+      "pushes": 2
+    }
+  },
+  "cumulative": {
+    "3": {
+      "games": 1199,
+      "cover_pct": 49.8,
+      "roi": -4.9,
+      "pushes": 17
+    },
+    "4": {
+      "games": 520,
+      "cover_pct": 46.0,
+      "roi": -12.3,
+      "pushes": 8
+    },
+    "5": {
+      "games": 202,
+      "cover_pct": 45.5,
+      "roi": -13.1,
+      "pushes": 3
+    },
+    "6": {
+      "games": 71,
+      "cover_pct": 47.9,
+      "roi": -8.6,
+      "pushes": 1
+    }
+  },
+  "note": "The deeper the cover streak, the less teams have covered next -- the market moves to catch a hot team. Priced-in context (who is overbought), not a bet signal."
+}
