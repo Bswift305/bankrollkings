@@ -1,70 +1,60 @@
 # Decision Journal — Implementation & Storage Design (design only, no code)
 
 **Status: DESIGN FREEZE for one final implementation approval. No code, no UI, no model tuning.**
-This document builds against the approved contract in `docs/decision_journal_review_spec.md` (Rev 3)
-and freezes the decisions the implementation-design gate asked for. The DDL and operation descriptions
-below are **schema and procedure artifacts** (the thing being frozen), not application code.
+Builds against `docs/decision_journal_review_spec.md` (Rev 3). The DDL, triggers and operation
+**pseudocode** below are schema/procedure artifacts (the thing being frozen), not application code.
 
-Governing constraint (carried from Rev 3): **never manufacture precision a sportsbook ticket did not
-provide.** Unknown stays unknown; the book's settlement is authoritative; nothing causal is claimed.
+Governing constraint (Rev 3): **never manufacture precision a sportsbook ticket did not provide.**
+Unknown stays unknown; the book's settlement is authoritative; nothing causal is claimed.
 
-Date: 2026-10-16.
+Date: 2026-10-16. Design revision: 2 (closes the ten implementability blockers — see §14).
 
 ---
 
 ## 1. Storage decision — JSON tracker vs transactional SQLite
 
-### 1a. What the existing tracker does
-`services/bet_tracker.py` writes `data/user_bets/<uid>.json` — a whole-file read-modify-write of a
-list of flat bet dicts. It works for a small personal log but cannot carry the Rev 3 record.
+### 1a–1b. (unchanged) Whole-file JSON fails the hard Rev 3 requirements — atomicity, concurrency,
+immutability, lost-update race — on every multi-row write. The comparison table from design rev 1
+stands; it is summarized here and not repeated line-by-line.
 
-### 1b. Comparison against the Rev 3 requirements
+### 1c. Decision — **SQLite, single database file, WAL, `synchronous=FULL`**
+**One SQLite database**, opened with:
 
-| Requirement (Rev 3) | Whole-file JSON | Transactional SQLite (`sqlite3`, stdlib) |
-|---|---|---|
-| Atomic ticket **+ N legs + tags + surfaces** in one write | ✗ — one JSON blob; a crash mid-write corrupts the file; no multi-record atomicity beyond "rewrite everything" | ✓ — one `BEGIN IMMEDIATE … COMMIT` transaction spans all rows |
-| Concurrency (web worker + settlement job) | ✗ — two read-modify-writes race; last writer wins, the other's write is lost | ✓ — WAL: concurrent readers + serialized single writer; no lost update |
-| Crash leaves no partial ticket | ✗ — truncated/partial JSON is unparseable | ✓ — uncommitted transaction rolls back; WAL recovery on open |
-| Immutable decision-time fields + audit | ✗ — any field is freely overwritten; no enforcement | ✓ — `BEFORE UPDATE` triggers block frozen columns; append-only `audit_log` |
-| Idempotent import / duplicate detection | ✗ — no uniqueness; dedupe is an O(n) scan each time | ✓ — `UNIQUE(import_fingerprint)` + `ON CONFLICT` |
-| Grouped reporting with sample sizes, overlapping tags | ✗ — load all, group in Python | ✓ — indexed `GROUP BY`; many-to-many tag table makes overlap explicit |
-| Growth | ✗ — rewrite the whole file on every append | ✓ — row-level writes, indexes |
-| Backup / integrity check | ~ — copy the file | ✓ — `VACUUM INTO` snapshot + `PRAGMA integrity_check` |
-| New dependency | none | **none** — `sqlite3` is in the Python stdlib |
+```
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA synchronous = FULL;     -- user-owned records: durability over throughput; weaken only on measured evidence (blocker 8)
+PRAGMA busy_timeout = 5000;
+```
 
-### 1c. Decision — **SQLite, single database file, WAL mode**
-Recommended and frozen: **one SQLite database at `data/decision_journal/journal.db`**, opened with
-`PRAGMA journal_mode=WAL`, `PRAGMA foreign_keys=ON`, `PRAGMA synchronous=NORMAL`, `busy_timeout=5000`.
-
-- **Single DB, not per-user files.** User isolation is enforced by a `user_id` column + mandatory
-  app-layer scoping (§7), which keeps integrity, migration and backup to one file and still gives the
-  reporting group-bys a single place to run. Per-user files were rejected: they multiply migration and
-  backup surface and give no isolation that a scoped query does not already give at this scale.
-- **Why not keep JSON:** it fails atomicity, concurrency and immutability — four of the hard Rev 3
-  requirements — and no amount of discipline on a whole-file rewrite fixes the lost-update race.
-- The project's "no database, CSV/JSON under `data/`" convention is for the **analytics data
-  pipeline** (bulk, regenerated, read-mostly). The journal is **transactional user-owned state** with
-  different needs; a stdlib SQLite file under `data/` adds no deployment dependency and does not change
-  the pipeline. This exception is scoped to the journal only.
+- **Path is configurable and private (blocker 8):** `DECISION_JOURNAL_DB_PATH`, **stored outside the
+  deploy checkout** so a `git pull`/redeploy never touches it. Prod default
+  `/var/lib/bankrollkings/decision_journal/journal.db`; Windows dev default under the user's app-data
+  dir (never OneDrive, never the repo). Directory `0700`, DB file `0600`, owned by the app service
+  user. The `-wal`/`-shm` siblings inherit the directory's restricted perms.
+- **Single DB, not per-user files.** Isolation is a **service boundary** (§10), not a storage feature.
+- `sqlite3` is stdlib — no new dependency. The "no database" project convention is for the analytics
+  pipeline (bulk, regenerated); the journal is transactional user-owned state. Exception scoped to the
+  journal only.
 
 ---
 
-## 2. Schema freeze
+## 2. Schema freeze (DDL)
 
-Expressed as SQLite DDL (the frozen schema artifact). Timestamps are ISO-8601 UTC text; money is
-integer **cents** (never float). `NULL` always means *unknown* and is never substituted with a guess.
+Timestamps are ISO-8601 UTC text (`YYYY-MM-DDTHH:MM:SSZ`), comparable with `datetime('now')`. Money is
+integer **cents**, never float. `NULL` always means *unknown* and is never substituted with a guess.
+The base ticket/leg rows are the **immutable decision-time snapshot**; every post-lock change is an
+append-only row in `decision_revisions` (§4) — the base is never mutated for a frozen field.
 
 ```sql
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys=ON;
-
-CREATE TABLE schema_meta (        -- single row; migration bookkeeping
-  version      INTEGER NOT NULL,
-  applied_at   TEXT    NOT NULL
+CREATE TABLE schema_meta (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),   -- enforces a single row (blocker 7)
+  version     INTEGER NOT NULL,
+  applied_at  TEXT    NOT NULL
 );
 
 CREATE TABLE tickets (
-  ticket_id          TEXT PRIMARY KEY,         -- uuid4
+  ticket_id          TEXT PRIMARY KEY,               -- uuid4
   user_id            TEXT NOT NULL,
   ticket_type        TEXT NOT NULL CHECK (ticket_type IN
                         ('straight','parlay','same-game-parlay','legacy_flat_ticket')),
@@ -72,10 +62,10 @@ CREATE TABLE tickets (
                         ('prospective-captured','historical-documented',
                          'historical-reconstructed','legacy-flat')),
   book               TEXT,
-  game_thesis        TEXT,                      -- frozen at decision time
-  game_thesis_at     TEXT,                      -- when the thesis was recorded (must precede kickoff for prospective)
-  combined_price     INTEGER,                   -- American odds; actual book payout; no independence caveat
-  -- settlement block (book-authoritative; §5 of the spec) --
+  game_thesis        TEXT,
+  game_thesis_at     TEXT,                           -- < earliest_kickoff for prospective (trigger)
+  combined_price     INTEGER,                        -- actual book payout odds; NO independence caveat
+  -- settlement block (book-authoritative; semantics frozen in §6) --
   book_ticket_result TEXT CHECK (book_ticket_result IN
                         ('win','loss','push','void','cashout','pending') OR book_ticket_result IS NULL),
   cash_stake_cents       INTEGER,
@@ -83,10 +73,11 @@ CREATE TABLE tickets (
   total_returned_cents   INTEGER,
   cashout_amount_cents   INTEGER,
   book_settlement_note   TEXT,
-  net_cash_pl_cents      INTEGER,               -- derived ONLY when inputs support it; else NULL (unavailable)
-  thesis_correct     INTEGER CHECK (thesis_correct IN (0,1) OR thesis_correct IS NULL), -- SUBJECTIVE user judgment
-  import_fingerprint TEXT UNIQUE,               -- idempotent import / dup detection (§6); NULL for manual
-  earliest_kickoff   TEXT,                      -- min(leg.event_start); drives the immutability lock (§4)
+  net_cash_pl_cents      INTEGER,                    -- stored ONLY when §6 inputs sufficient; else NULL
+  thesis_correct     INTEGER CHECK (thesis_correct IN (0,1) OR thesis_correct IS NULL),  -- SUBJECTIVE
+  import_fingerprint TEXT UNIQUE,                    -- idempotent import / dup detect (§5); NULL = manual
+  migrated_from_json TEXT UNIQUE,                    -- source JSON record id when migrated; else NULL (blocker 7)
+  earliest_kickoff   TEXT,                           -- = min(legs.event_start); drives the lock (§4)
   placed_at          TEXT,
   settled_at         TEXT,
   created_at         TEXT NOT NULL,
@@ -96,226 +87,390 @@ CREATE INDEX ix_tickets_user ON tickets(user_id);
 CREATE INDEX ix_tickets_prov ON tickets(user_id, record_provenance);
 
 CREATE TABLE legs (
-  leg_id             TEXT PRIMARY KEY,          -- uuid4
+  leg_id             TEXT PRIMARY KEY,               -- uuid4
   ticket_id          TEXT NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
-  leg_index          INTEGER NOT NULL,          -- 0-based order within the ticket
+  leg_index          INTEGER NOT NULL,
   selection_origin   TEXT NOT NULL CHECK (selection_origin IN
                         ('user-selected','BK-rule-assembled','unknown')),
   entry_method       TEXT NOT NULL CHECK (entry_method IN
                         ('manual','sportsbook-import','BK-builder','migration')),
   user_reviewed_before_bet TEXT NOT NULL CHECK (user_reviewed_before_bet IN ('yes','no','unknown')),
-  surfaces_known     INTEGER NOT NULL DEFAULT 1,-- 0 => consulted-surfaces unknown; 1 => known (0..N rows)
+  surfaces_known     INTEGER NOT NULL DEFAULT 1,     -- 0 => consulted-surfaces unknown; 1 => known (0..N rows)
   sport              TEXT NOT NULL,
   game               TEXT NOT NULL,
-  event_start        TEXT,                      -- kickoff/tip; used for the immutability lock
-  player             TEXT,                      -- prop only
-  market             TEXT NOT NULL,
-  line               REAL,                      -- captured at decision time; NULL = unknown, never inferred
+  event_start        TEXT,                           -- kickoff/tip; required for prospective (trigger)
+  player             TEXT,                           -- prop only
+  market             TEXT NOT NULL,                  -- e.g. 'passing yards', 'spread', 'moneyline', 'total'
+  selection          TEXT NOT NULL,                  -- WHAT was picked (blocker 1): 'over'/'under' for props&totals;
+                                                     --   the chosen team or 'home'/'away' for spread/ML. The pick,
+                                                     --   not just the market+line.
+  line               REAL,                           -- captured at decision time; NULL = unknown, never inferred
   quote_scope        TEXT NOT NULL CHECK (quote_scope IN ('individual-leg','combined-ticket','unavailable')),
-  price              INTEGER,                   -- REQUIRED iff quote_scope='individual-leg'; else NULL
+  price              INTEGER,                         -- REQUIRED iff quote_scope='individual-leg'
   book               TEXT,
-  decision_time      TEXT,                      -- must precede event_start for prospective; may be NULL for historical
+  decision_time      TEXT,                            -- < event_start for prospective (trigger)
   leg_rationale      TEXT,
-  leg_rationale_at   TEXT,
-  confidence         INTEGER CHECK (confidence BETWEEN 1 AND 5 OR confidence IS NULL), -- personal, not a system score
+  leg_rationale_at   TEXT,                            -- < event_start for prospective (trigger)
+  confidence         INTEGER CHECK (confidence BETWEEN 1 AND 5 OR confidence IS NULL),  -- personal, frozen
   alt_line           REAL,
   alt_price          INTEGER,
   leg_result         TEXT CHECK (leg_result IN ('win','loss','push','void','pending') OR leg_result IS NULL),
-  read_happened      INTEGER CHECK (read_happened IN (0,1) OR read_happened IS NULL), -- objective, != ticket result
-  CHECK (quote_scope != 'individual-leg' OR price IS NOT NULL),  -- combined-only legs are NOT forced to invent a price
+  read_happened      INTEGER CHECK (read_happened IN (0,1) OR read_happened IS NULL),
+  CHECK (quote_scope != 'individual-leg' OR price IS NOT NULL),   -- combined-only legs not forced to invent a price
   UNIQUE (ticket_id, leg_index)
 );
 CREATE INDEX ix_legs_ticket ON legs(ticket_id);
 
-CREATE TABLE leg_reason_tags (    -- many-to-many; a leg has >=1, tags OVERLAP (reporting must disclose)
+CREATE TABLE leg_reason_tags (                       -- >=1 per leg; tags OVERLAP (reporting discloses)
   leg_id  TEXT NOT NULL REFERENCES legs(leg_id) ON DELETE CASCADE,
   tag     TEXT NOT NULL CHECK (tag IN
             ('streak','coaching','effort','matchup','injuries','pace/game-env','line-value','model','other')),
   PRIMARY KEY (leg_id, tag)
 );
 
-CREATE TABLE leg_bk_surfaces (    -- many-to-many; ZERO rows with surfaces_known=1 means "consulted none"
+CREATE TABLE leg_bk_surfaces (                       -- 0 rows with surfaces_known=1 => "consulted none"
   leg_id  TEXT NOT NULL REFERENCES legs(leg_id) ON DELETE CASCADE,
-  surface TEXT NOT NULL,          -- 'wave-watch','ats-streaks','matchup','heat-map','daily-card',...
+  surface TEXT NOT NULL,
   PRIMARY KEY (leg_id, surface)
 );
 
-CREATE TABLE audit_log (          -- append-only; every correction to a frozen field lands here
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     TEXT NOT NULL,
-  ticket_id   TEXT,
-  leg_id      TEXT,
-  field       TEXT NOT NULL,
-  old_value   TEXT,
-  new_value   TEXT,
-  reason      TEXT NOT NULL,      -- a correction must state why
-  actor       TEXT NOT NULL,      -- the acting user/owner id
-  created_at  TEXT NOT NULL
+CREATE TABLE leg_bk_origin (                         -- immutable BK-origin reference (blocker 5)
+  leg_id          TEXT PRIMARY KEY REFERENCES legs(leg_id) ON DELETE CASCADE,  -- present IFF origin=BK-rule-assembled
+  surface         TEXT NOT NULL,                     -- the tool/surface that assembled it
+  candidate_id    TEXT NOT NULL,                     -- the assembly/candidate id the surface showed
+  rule_version    TEXT NOT NULL,                     -- rule / engine version at decision time
+  captured_at     TEXT NOT NULL,                     -- when the suggestion was captured (<= decision_time)
+  displayed_line  REAL,                              -- line the surface showed, where available
+  displayed_price INTEGER                            -- price the surface showed, where available
 );
-CREATE INDEX ix_audit_ticket ON audit_log(ticket_id);
+
+CREATE TABLE decision_revisions (                    -- APPEND-ONLY: the ONLY post-lock change path (§4)
+  revision_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT NOT NULL,
+  target_table TEXT NOT NULL,                        -- 'tickets' | 'legs' | 'leg_reason_tags' | 'leg_bk_surfaces'
+  target_id    TEXT NOT NULL,                        -- ticket_id or leg_id
+  field        TEXT NOT NULL,                        -- column, or 'tag:add'/'tag:remove'/'surface:add'/'surface:remove'
+  old_value    TEXT,
+  new_value    TEXT,
+  reason       TEXT NOT NULL,                        -- a correction MUST state why
+  actor        TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX ix_rev_target ON decision_revisions(target_table, target_id);
 ```
 
-**Field-to-spec mapping** is 1:1 with Rev 3 §2a/§2b; nothing in the spec is dropped and nothing new is
-added beyond the bookkeeping columns (`import_fingerprint`, `earliest_kickoff`, `surfaces_known`,
-`schema_meta`, `audit_log`) that the frozen requirements imply.
+---
+
+## 3. Atomic operations (pseudocode)
+
+All writes: `BEGIN IMMEDIATE` … single `COMMIT`; any error → `ROLLBACK`. The repository (§10) is the
+only caller.
+
+```
+create_ticket(user_id, ticket_fields, legs[]):            # atomic, all-or-nothing
+  assert legs is non-empty if provenance == 'prospective-captured'   # >=1 real leg (blocker 4)
+  assert legs is empty      if ticket_type == 'legacy_flat_ticket'   # zero legs, no placeholder (blocker 7)
+  BEGIN IMMEDIATE
+    INSERT tickets(... earliest_kickoff = NULL ...)       # not yet locked
+    for i, leg in legs:
+      INSERT legs(leg_index=i, ...)                       # triggers enforce prospective timing on insert
+      for tag in leg.reason_tags:      INSERT leg_reason_tags
+      if leg.surfaces_known:
+        for s in leg.surfaces:         INSERT leg_bk_surfaces
+      if leg.selection_origin == 'BK-rule-assembled':
+        INSERT leg_bk_origin(...)                          # required (trigger verifies, blocker 5)
+    UPDATE tickets SET earliest_kickoff = (SELECT min(event_start) FROM legs WHERE ticket_id=?)
+                                                           # thesis-timing trigger fires here for prospective
+  COMMIT
+
+settle_ticket(user_id, ticket_id, settlement, leg_results[]):   # atomic
+  BEGIN IMMEDIATE
+    UPDATE tickets SET book_ticket_result, cash_stake_cents, promo_stake_cents,
+       total_returned_cents, cashout_amount_cents, book_settlement_note,
+       net_cash_pl_cents = compute_net_cash_pl(...)        # §6; NULL when inputs insufficient
+       , settled_at = now, updated_at = now
+     WHERE ticket_id=? AND user_id=?                       # settlement columns are NOT frozen
+    for lr in leg_results:
+      UPDATE legs SET leg_result=?, read_happened=? WHERE leg_id=? AND ticket_id=?
+  COMMIT
+```
 
 ---
 
-## 3. Atomic operations
+## 4. Immutability + the append-only correction mechanism (blockers 2 & 3)
 
-All writes use `BEGIN IMMEDIATE` (acquire the write lock up front; no upgrade deadlock) and a single
-`COMMIT`; any error → `ROLLBACK`, leaving the DB exactly as before.
+**No transaction-local trigger bypass is used** (it is not a real SQLite primitive). The frozen
+mechanism is **append-only decision revisions**: after a ticket locks, its base rows and child rows are
+**hard-immutable** (triggers `RAISE(ABORT)` with no exception), and the *only* way to amend a frozen
+datum is to append a row to `decision_revisions`. The decision-time snapshot is therefore preserved
+forever; the effective (corrected) value is the base overlaid with the latest matching revision.
 
-- **Create ticket (+legs+tags+surfaces)** — one transaction: insert `tickets`, then each `legs` row,
-  then that leg's `leg_reason_tags` and `leg_bk_surfaces`. The whole ticket appears or none of it does.
-  `earliest_kickoff` is computed from the legs' `event_start` inside the same transaction.
-- **Settlement update** — one transaction: update the ticket settlement block and every leg's
-  `leg_result` / `read_happened` together, set `settled_at`. A half-settled ticket is impossible.
-- **Idempotent import** — `INSERT … ON CONFLICT(import_fingerprint) DO NOTHING`; the call returns
-  "already present" without duplicating (§6).
+**Lock predicate:** a ticket is locked when
+`earliest_kickoff IS NOT NULL AND earliest_kickoff <= datetime('now')`, **or** `settled_at IS NOT NULL`.
+
+**Frozen after lock** — ticket: `game_thesis, game_thesis_at, combined_price, record_provenance,
+ticket_type, earliest_kickoff, import_fingerprint`. Leg: `selection_origin, entry_method,
+user_reviewed_before_bet, surfaces_known, sport, game, event_start, player, market, selection, line,
+quote_scope, price, book, decision_time, leg_rationale, leg_rationale_at, confidence, alt_line,
+alt_price, leg_index`, plus the **whole** `leg_bk_origin` row, and the **membership** of
+`leg_reason_tags` and `leg_bk_surfaces`, and leg **insert/delete** (blocker 3).
+
+**Mutable after lock** (results known later): ticket settlement block, `settled_at`, `thesis_correct`;
+leg `leg_result`, `read_happened`.
+
+```sql
+-- ticket frozen columns
+CREATE TRIGGER trg_tickets_freeze BEFORE UPDATE ON tickets FOR EACH ROW
+WHEN (OLD.earliest_kickoff IS NOT NULL AND OLD.earliest_kickoff <= datetime('now')) OR OLD.settled_at IS NOT NULL
+BEGIN
+  SELECT CASE WHEN
+      NEW.game_thesis       IS NOT OLD.game_thesis       OR NEW.game_thesis_at IS NOT OLD.game_thesis_at
+   OR NEW.combined_price    IS NOT OLD.combined_price    OR NEW.record_provenance IS NOT OLD.record_provenance
+   OR NEW.ticket_type       IS NOT OLD.ticket_type       OR NEW.earliest_kickoff IS NOT OLD.earliest_kickoff
+   OR NEW.import_fingerprint IS NOT OLD.import_fingerprint
+  THEN RAISE(ABORT,'frozen ticket field — use decision_revisions') END;
+END;
+
+-- leg frozen columns (parent locked)
+CREATE TRIGGER trg_legs_freeze BEFORE UPDATE ON legs FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = OLD.ticket_id
+             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+BEGIN
+  SELECT CASE WHEN
+      NEW.selection_origin IS NOT OLD.selection_origin OR NEW.entry_method IS NOT OLD.entry_method
+   OR NEW.user_reviewed_before_bet IS NOT OLD.user_reviewed_before_bet OR NEW.surfaces_known IS NOT OLD.surfaces_known
+   OR NEW.sport IS NOT OLD.sport OR NEW.game IS NOT OLD.game OR NEW.event_start IS NOT OLD.event_start
+   OR NEW.player IS NOT OLD.player OR NEW.market IS NOT OLD.market OR NEW.selection IS NOT OLD.selection
+   OR NEW.line IS NOT OLD.line OR NEW.quote_scope IS NOT OLD.quote_scope OR NEW.price IS NOT OLD.price
+   OR NEW.book IS NOT OLD.book OR NEW.decision_time IS NOT OLD.decision_time
+   OR NEW.leg_rationale IS NOT OLD.leg_rationale OR NEW.leg_rationale_at IS NOT OLD.leg_rationale_at
+   OR NEW.confidence IS NOT OLD.confidence OR NEW.alt_line IS NOT OLD.alt_line OR NEW.alt_price IS NOT OLD.alt_price
+   OR NEW.leg_index IS NOT OLD.leg_index
+  THEN RAISE(ABORT,'frozen leg field — use decision_revisions') END;
+END;
+
+-- no leg insert/delete/reorder after lock
+CREATE TRIGGER trg_legs_no_insert BEFORE INSERT ON legs FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = NEW.ticket_id
+             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+BEGIN SELECT RAISE(ABORT,'leg insert after lock'); END;
+
+CREATE TRIGGER trg_legs_no_delete BEFORE DELETE ON legs FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = OLD.ticket_id
+             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+BEGIN SELECT RAISE(ABORT,'leg delete after lock'); END;
+
+-- tags / surfaces / bk_origin immutable after lock (one pair shown; the same INSERT+DELETE pair exists
+-- for leg_reason_tags, leg_bk_surfaces, and leg_bk_origin, joining leg -> ticket for the lock test)
+CREATE TRIGGER trg_tags_no_insert BEFORE INSERT ON leg_reason_tags FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM legs l JOIN tickets t ON t.ticket_id = l.ticket_id
+             WHERE l.leg_id = NEW.leg_id
+             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+BEGIN SELECT RAISE(ABORT,'reason-tag change after lock'); END;
+-- (… trg_tags_no_delete, trg_surfaces_no_insert/delete, trg_bkorigin_no_update/delete analogous …)
+
+-- BK-origin reference required for BK-rule-assembled legs
+CREATE TRIGGER trg_legs_require_bkorigin AFTER INSERT ON legs FOR EACH ROW
+WHEN NEW.selection_origin = 'BK-rule-assembled'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM leg_bk_origin o WHERE o.leg_id = NEW.leg_id)
+         THEN RAISE(ABORT,'BK-rule-assembled leg needs a leg_bk_origin row') END;
+END;   -- the repository inserts the leg and its leg_bk_origin in the same transaction; a deferred
+       -- integrity query (startup + QC) re-checks the invariant.
+
+-- prospective timing (blocker 4)
+CREATE TRIGGER trg_legs_prospective BEFORE INSERT ON legs FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = NEW.ticket_id AND t.record_provenance='prospective-captured')
+BEGIN
+  SELECT CASE WHEN NEW.event_start IS NULL THEN RAISE(ABORT,'prospective leg requires event_start') END;
+  SELECT CASE WHEN NEW.decision_time IS NULL OR NEW.decision_time >= NEW.event_start
+         THEN RAISE(ABORT,'decision_time must precede event_start') END;
+  SELECT CASE WHEN NEW.leg_rationale_at IS NOT NULL AND NEW.leg_rationale_at >= NEW.event_start
+         THEN RAISE(ABORT,'leg rationale timestamped after event start') END;
+END;
+
+CREATE TRIGGER trg_ticket_thesis_timing BEFORE UPDATE OF earliest_kickoff ON tickets FOR EACH ROW
+WHEN NEW.record_provenance='prospective-captured' AND NEW.game_thesis_at IS NOT NULL
+BEGIN
+  SELECT CASE WHEN NEW.game_thesis_at >= NEW.earliest_kickoff THEN RAISE(ABORT,'thesis timestamped after kickoff') END;
+END;
+
+-- decision_revisions is append-only
+CREATE TRIGGER trg_rev_no_update BEFORE UPDATE ON decision_revisions BEGIN SELECT RAISE(ABORT,'append-only'); END;
+CREATE TRIGGER trg_rev_no_delete BEFORE DELETE ON decision_revisions BEGIN SELECT RAISE(ABORT,'append-only'); END;
+```
+
+```
+correct(user_id, target_table, target_id, field, new_value, reason, actor):   # the ONLY post-lock edit
+  BEGIN IMMEDIATE
+    old = effective_value(target_table, target_id, field)
+    INSERT decision_revisions(user_id, target_table, target_id, field, old_value=old,
+                              new_value, reason, actor, created_at=now)
+  COMMIT
+# effective_value(field) = latest decision_revisions.new_value for (target, field), else the base row's value.
+# child membership corrections use field='tag:add'/'tag:remove'/'surface:add'/'surface:remove'.
+```
+
+**≥1-leg (prospective) and 0-leg (legacy_flat_ticket)** are asserted by the repository inside the
+create transaction (SQLite cannot declaratively require a child-count at COMMIT), and re-verified by a
+startup + QC integrity query — stated honestly rather than claimed as a pure DB constraint.
 
 ---
 
-## 4. Immutability of decision-time fields + audited corrections
-
-**Frozen once the ticket locks.** The lock trips at **the earliest leg `event_start`** (kickoff/tip);
-for an already-settled ticket it is also locked. Frozen fields:
-
-- ticket: `game_thesis`, `game_thesis_at`, `combined_price`, `record_provenance`, `ticket_type`
-- leg: `selection_origin`, `entry_method`, `user_reviewed_before_bet`, `line`, `price`, `quote_scope`,
-  `decision_time`, `leg_rationale`, `leg_rationale_at`, `event_start`, `market`, `player`, `game`,
-  and the leg's `reason_tags` / `bk_surfaces`
-
-**Mutable after kickoff** (results are only known later): the settlement block, `leg_result`,
-`read_happened`, `thesis_correct`, `settled_at`.
-
-**Enforcement** = two layers. (a) App layer refuses a direct edit of a frozen field on a locked ticket.
-(b) A `BEFORE UPDATE` trigger on `tickets`/`legs` **raises** if a frozen column changes while
-`earliest_kickoff` is in the past, *unless* the same transaction has first written the corresponding
-`audit_log` row (the correction path). A correction therefore can never be silent: it must record
-`field`, `old_value`, `new_value`, `reason`, `actor`. Design intent — the trigger checks a
-transaction-local marker (e.g. a one-row `pragma`/temp flag set only by the audited-correction code
-path) so ordinary UPDATEs stay blocked.
+## 5. Imports — idempotent, dup-detected (schema frozen; UI deferred to post-V1)
+`import_fingerprint` = stable hash of `(user_id, book, placed_at rounded to minute, and each leg's
+game + market + selection + line)` — **now includes `selection`** (blocker 1), order-independent.
+`UNIQUE`, so re-import is a no-op. Near-duplicate manual entries are **flagged for the user**, never
+silently merged. Import UI is not in V1 (§11); the column and rule are frozen so the schema is stable.
 
 ---
 
-## 5. Sportsbook imports — idempotency & duplicate detection
+## 6. Settlement semantics (frozen — blocker 6)
 
-- **`import_fingerprint`** = a stable hash of (user_id, book, placed_at rounded to the minute, and each
-  leg's game+market+line+side, order-independent). `UNIQUE`, so re-importing the same slip is a no-op.
-- **Near-duplicate** (manual entry that matches an existing ticket on user + legs within a time window)
-  is **flagged for the user to confirm**, never silently merged or silently rejected — the user owns
-  the call. V1 scope note: import itself is **not** built in V1 (§10); the fingerprint column and the
-  rule are frozen now so the schema does not change when import arrives.
+All amounts in cents. Definitions:
 
----
+- **`cash_stake_cents`** — real money risked. **`promo_stake_cents`** — free-bet/bonus amount wagered
+  (not real money).
+- **Free-bet stake is NOT returned** — on a winning free bet the book credits winnings only, never the
+  promo stake. So the promo stake never appears in `total_returned_cents`.
+- **`total_returned_cents`** — the total **real cash** the book credited from this ticket, **including
+  any cashout proceeds** and the settlement of any residual. One convention, no ambiguity:
+  everything the book paid back to the cash balance for this ticket.
+- **`cashout_amount_cents`** — the portion of `total_returned_cents` that came from a cashout (0/NULL
+  if none). **Partial cashout + later settlement:** `cashout_amount_cents` = the cashed portion;
+  `total_returned_cents` = cashout proceeds **plus** the residual's normal settlement return; so the
+  invariant below still holds without special-casing.
+- **`net_cash_pl_cents`** — the single deterministic formula:
 
-## 6. Migration — reversible, additive, non-destructive
+  ```
+  net_cash_pl_cents = total_returned_cents − cash_stake_cents
+  ```
 
-- **Source:** the existing `data/user_bets/<uid>.json` files, read **read-only**. They are never
-  modified or deleted by migration.
-- **Straight bets** → one-leg tickets, `entry_method='migration'`, `record_provenance='legacy-flat'`,
-  `quote_scope` from whether a price was present (`individual-leg` if `odds` known, else `unavailable`),
-  `selection_origin='unknown'`, `user_reviewed_before_bet='unknown'`.
-- **Parlays / multi-leg** → `ticket_type='legacy_flat_ticket'`; the ticket-level stake/result are
-  carried; legs are **not** fabricated — a single placeholder leg marked unreconstructed, or zero legs,
-  per what the record actually contains.
-- **Reversibility:** because migration only *reads* JSON and *writes* the new DB, rollback is "stop
-  using the DB" — the JSON tracker remains the untouched source of truth until a later, separately
-  approved cutover. A `migrated_from_json` marker on each migrated ticket lets a reverse pass delete
-  exactly the migrated rows if needed. Migration is **idempotent** (keyed by the JSON record id in
-  `import_fingerprint`) so re-running it changes nothing.
-
----
-
-## 7. Account ownership & access isolation
-
-- Every `tickets` row carries `user_id`; `legs`/tags/surfaces inherit it through the ticket.
-- **Every** read and write is scoped by the authenticated session `user_id`; there is no unscoped query
-  in the design. Owner/admin views are scoped the same way (no implicit cross-user read).
-- No endpoint returns another user's rows; reporting group-bys run within one user's partition.
+  Stored **only** when **both** `cash_stake_cents` and `total_returned_cents` are known (and, when
+  `book_ticket_result='cashout'`, `cashout_amount_cents` is known). Otherwise **NULL = unavailable** —
+  never derived from assumed odds. (Worked cases: cash win → returned = stake + winnings, net = +win;
+  free-bet-only win → cash_stake 0, returned = winnings, net = +winnings; full cashout → returned =
+  cashout proceeds, net = proceeds − stake; void/push → returned = stake, net = 0.)
 
 ---
 
-## 8. Backup, restore, corruption recovery
-
-- **Backup:** a scheduled `VACUUM INTO 'data/backups/journal_<ts>.db'` snapshot (consistent even while
-  the app runs), retained N days. On Windows dev this is a Scheduled Task; on prod a `bk-*` systemd
-  timer (installed via SSM like the other units, since units are not auto-created).
-- **Integrity:** `PRAGMA integrity_check` and `PRAGMA foreign_key_check` on app start and after each
-  backup; a failure alerts (the daily refresh alert path) and does not silently continue.
-- **Recovery:** restore the latest good snapshot; any records newer than the snapshot that still exist
-  in the JSON source (during the rollout window) can be re-migrated idempotently. WAL gives
-  crash-consistency for the in-flight transaction without manual steps.
+## 7. (merged into §4) Audit / correction trail
+The correction trail **is** `decision_revisions`, append-only and trigger-protected against
+UPDATE/DELETE. There is no separate mutable `audit_log` (that reconciles the blocker-7 concern that an
+"append-only" table had no enforcement).
 
 ---
 
-## 9. Compatibility during rollout
-- The existing `/tools/tracker` and `services/bet_tracker.py` **keep running unchanged** off their JSON
-  store. The Decision Journal is **additive and separate** — new DB, new routes, behind a feature flag.
-- No dual-write and no cutover in this phase. A future, separately approved gate decides whether the
-  tracker is subsumed; until then both coexist and the JSON tracker stays authoritative for its own UI.
+## 8. Migration — reversible, additive, non-destructive (reconciled with the DDL — blocker 7)
+- **Source:** `data/user_bets/<uid>.json`, read **read-only**; never modified or deleted.
+- **Straight bets** → one-leg tickets: `entry_method='migration'`, `record_provenance='legacy-flat'`,
+  `selection` from the recorded pick, `quote_scope='individual-leg'` if a price was present else
+  `'unavailable'`, `selection_origin='unknown'`, `user_reviewed_before_bet='unknown'`,
+  `migrated_from_json = <json record id>`.
+- **Parlays / multi-leg** → `ticket_type='legacy_flat_ticket'` with **zero legs** (no fabricated
+  placeholder — blocker 7). Ticket-level stake/result/settlement carried where present.
+- **Reversible & idempotent:** `migrated_from_json` is `UNIQUE`; re-running inserts nothing new, and a
+  reverse pass deletes exactly the rows whose `migrated_from_json` is set. JSON stays authoritative
+  until a later, separately-approved cutover.
 
 ---
 
-## 10. V1 UI scope (frozen — deliberately small)
-
-In V1:
-1. **Prospective manual entry** of a ticket and its legs (`entry_method='manual'`,
-   `record_provenance='prospective-captured'`), with `decision_time`/`game_thesis` captured pregame.
-2. **Individual leg preservation** (leg rows, not a flattened blob), incl. `quote_scope` so SGP
-   combined-only pricing is honored and no per-leg price is invented.
-3. **Pregame thesis & rationale** capture (ticket `game_thesis`, optional leg `leg_rationale`).
-4. **Actual settlement** entry (book result, cash/promo stake, total returned, cashout, note →
-   `net_cash_pl` only when inputs support it).
-5. **User-selected vs BK-rule-assembled comparison** (the §4.1 cut) with sample sizes.
-6. **Straight / parlay / same-game-parlay reporting with sample sizes**, overlapping-tag disclosure,
-   and descriptive (non-causal) framing.
-
-**Explicitly OUT of V1:** sportsbook automation, OCR, any model tuning, any causal conclusion, and the
-import/near-duplicate UI (schema supports it; UI deferred). Audited-correction UI is minimal (the
-schema/trigger enforce it; a full correction console is deferred).
+## 9. Failure behavior (blocker 9)
+On DB open failure or a failed `PRAGMA integrity_check` / `foreign_key_check`:
+- the journal enters a **disabled** state: **writes are refused** and the UI shows **"Journal
+  temporarily unavailable."**
+- **No unrelated site page is affected** — the journal module catches its own storage errors; no
+  exception propagates to other routes.
+- The failure **alerts** (the daily-refresh alert path) and the DB is **not** silently rewritten;
+  recovery is the §12 restore.
 
 ---
 
-## 11. Acceptance tests (QC-style, matching the repo's `qc_*.py` suite — runner-registered)
+## 10. Access isolation = one repository/service boundary (blocker 10)
+- All journal DB access goes through a **single `JournalRepository` service** that **requires the
+  authenticated `user_id`** and scopes every statement by it. No other module issues SQL against
+  `journal.db`.
+- **Tests assert cross-user denial on every public operation** (read, create, settle, correct, report)
+  — attempts to touch another user's `ticket_id`/`leg_id` return not-found/denied. We do **not** claim
+  a QC proves "no unscoped SQL exists anywhere"; the guarantee is the boundary + per-operation denial
+  tests.
 
-Each is a deterministic script (no live network), registered in `run_all_scorecards.py`:
+---
+
+## 11. V1 UI scope (frozen — deliberately small)
+1. **Prospective manual entry** (`entry_method='manual'`, `record_provenance='prospective-captured'`),
+   `decision_time`/`game_thesis` captured pregame, `selection` required per leg.
+2. **Individual leg preservation** incl. `quote_scope` (SGP combined-only honored; no invented price).
+3. **Pregame thesis & rationale** capture.
+4. **Actual settlement** entry (§6).
+5. **User-selected vs BK-rule-assembled** comparison (with the immutable `leg_bk_origin` reference
+   captured for BK legs) with sample sizes.
+6. **Straight / parlay / same-game-parlay reporting** with sample sizes, overlapping-tag disclosure,
+   descriptive (non-causal) framing.
+
+**OUT of V1:** sportsbook automation, OCR, model tuning, causal conclusions, import/near-duplicate UI,
+and a full correction console (the schema/triggers enforce corrections; the V1 UI simply blocks frozen
+edits and exposes settlement).
+
+---
+
+## 12. Backup, restore, corruption recovery (retention frozen — blocker 8)
+- **Backup:** scheduled `VACUUM INTO` snapshot to the private backup dir (not the checkout): **hourly
+  WAL checkpoint; a daily snapshot retained 30 days; a monthly snapshot retained 12 months.** Prod =
+  a `bk-*` systemd timer (installed via SSM, like the other units); Windows dev = a Scheduled Task.
+- **Integrity:** `integrity_check` + `foreign_key_check` on app start and after each snapshot; failure
+  → §9 disabled state + alert.
+- **Recovery:** restore the latest good snapshot; records newer than it that still exist in the JSON
+  source (rollout window) can be re-migrated idempotently (`migrated_from_json`). WAL gives
+  crash-consistency for the in-flight transaction with no manual step.
+
+---
+
+## 13. Acceptance tests (QC-style, runner-registered)
 
 | Test | Asserts |
 |---|---|
-| `qc_dj_concurrency` | two writers (threads/processes) creating + settling under WAL → no lost update, no "database is locked" escaping `busy_timeout`, both results present |
-| `qc_dj_crash_recovery` | a transaction killed mid-write leaves **no** partial ticket (ticket/legs/tags all-or-nothing) after reopen |
-| `qc_dj_unknown_fields` | NULL `line`/`price`/settlement persist as unknown; nothing is coerced to 0 or −110; reports show "unavailable" |
-| `qc_dj_sgp_pricing` | a same-game-parlay with `quote_scope='combined-ticket'` and no per-leg price **saves** (the `CHECK` passes); an `individual-leg` leg with NULL price is **rejected** |
-| `qc_dj_push_void` | push/void at leg level → book settlement + `total_returned` drive P/L; no derived "any-leg-loss = ticket loss" override |
-| `qc_dj_cashout_promo` | cashout and promotional-stake tickets settle from book inputs; `net_cash_pl` uses cash, excludes promo stake correctly; `NULL` when inputs insufficient |
-| `qc_dj_immutability_audit` | editing a frozen field on a locked ticket is blocked; an audited correction writes `audit_log` and succeeds; settlement fields remain editable |
-| `qc_dj_import_idempotent` | re-import of the same fingerprint is a no-op; a near-duplicate is flagged, not merged |
-| `qc_dj_migration` | straight bets → one-leg tickets, parlays → `legacy_flat_ticket`; re-run changes nothing; JSON source untouched; reverse pass removes only migrated rows |
-| `qc_dj_access_isolation` | a query scoped to user A never returns user B's rows; no unscoped path exists |
+| `qc_dj_concurrency` | two writers under WAL → no lost update, no lock error past `busy_timeout`, both present |
+| `qc_dj_crash_recovery` | a transaction killed mid-write leaves no partial ticket after reopen |
+| `qc_dj_unknown_fields` | NULL line/price/settlement persist as unknown; no coercion to 0/−110; reports show "unavailable" |
+| `qc_dj_selection` | a leg without `selection` is rejected; Over vs Under on the same market+line are distinct records and fingerprints |
+| `qc_dj_sgp_pricing` | `combined-ticket` leg with no price saves; `individual-leg` leg with NULL price is rejected |
+| `qc_dj_push_void_cashout_promo` | §6 arithmetic: cash win, free-bet-only win, full & **partial** cashout, void/push all yield the right `net_cash_pl` or NULL |
+| `qc_dj_immutability` | after lock: frozen ticket/leg columns, leg insert/delete, tag add/delete, surface add/delete, `leg_bk_origin` change, and `earliest_kickoff` change are **all** blocked |
+| `qc_dj_corrections_append_only` | a correction appends to `decision_revisions` and the effective value overlays; UPDATE/DELETE on `decision_revisions` are rejected |
+| `qc_dj_prospective_timing` | prospective ticket requires event_start, enforces decision_time < event_start, thesis/rationale before start, ≥1 leg, and no leg added after earliest kickoff |
+| `qc_dj_bk_origin` | a `BK-rule-assembled` leg without a `leg_bk_origin` row is rejected; the reference is immutable after lock |
+| `qc_dj_import_idempotent` | re-import of a fingerprint is a no-op; a near-duplicate is flagged, not merged |
+| `qc_dj_migration` | straight→one-leg, parlay→`legacy_flat_ticket` with **zero** legs; re-run changes nothing; JSON untouched; reverse pass removes only `migrated_from_json` rows |
+| `qc_dj_access_isolation` | every public repository operation denies another user's ids (per-operation cross-user denial) |
+| `qc_dj_failure_mode` | a forced integrity-check failure disables journal writes + shows the banner and does not raise into unrelated routes |
 | `qc_dj_reporting` | every breakdown emits sample sizes; overlapping-tag disclosure present; no causal language; reconstructed/historical excluded from prospective cuts |
 
 ---
 
-## 12. One-commit rollback & production migration procedure
-
-- **Feature flag** (`DECISION_JOURNAL_ENABLED`, default off) gates all routes/UI. Shipping dark means
-  the DB and code exist but nothing is user-visible until the flag flips.
-- **One-commit rollback:** the feature lands as a single squashed commit (or a tight series revertable
-  together). Because the DB is **additive** and migration is **non-destructive** to the JSON tracker,
-  `git revert <commit>` + restart fully disables the Journal with **zero** data loss to the existing
-  tracker. The `journal.db` file can be left in place (inert) or archived.
-- **Prod migration:** deploy via the normal `git push origin master` → auto-pull + restart; run the
-  one-time migration **once** via SSM (guarded: refuses to run twice via `schema_meta`), take a
-  `VACUUM INTO` backup immediately after, then flip the flag. If anything looks wrong, flip the flag
-  off (instant) and/or revert the commit (full rollback) — the JSON tracker never stopped being
-  authoritative, so there is nothing to reconcile.
+## 14. What changed in design rev 2 (the ten blockers)
+1. Added required **`selection`** on legs (and into the import fingerprint) — a leg now has a pick.
+2. Removed the unsupported transaction-local trigger bypass; froze **append-only `decision_revisions`**
+   as the one real SQLite correction mechanism; base rows hard-immutable after lock.
+3. Immutability now covers **leg insert/delete, reason-tag and surface membership, `leg_bk_origin`,
+   and `earliest_kickoff`**, not just column updates.
+4. **DB-enforced prospective timing** (event_start required; decision_time < event_start; thesis/
+   rationale before start; ≥1 leg; no leg after kickoff).
+5. Added the immutable **`leg_bk_origin`** reference (surface, candidate id, rule version, captured_at,
+   displayed line/price) required for `BK-rule-assembled`.
+6. **Frozen settlement semantics** + a single deterministic `net_cash_pl` formula, stored only when
+   inputs suffice.
+7. DDL/migration reconciled: added `migrated_from_json`; `schema_meta` single-row `CHECK`; append-only
+   enforced by triggers; `legacy_flat_ticket` = **zero** legs.
+8. **`DECISION_JOURNAL_DB_PATH`** outside the checkout, `0700`/`0600`, `synchronous=FULL`, retention
+   frozen (30 daily / 12 monthly).
+9. **Journal-only failure behavior** defined (disable writes + banner; never take down other pages).
+10. Access isolation reframed as a **repository/service boundary** with per-operation cross-user denial
+    tests (not a claim that no unscoped SQL exists).
 
 ---
 
-## 13. What this document is
-The frozen design for **one final implementation approval**. It introduces no code and no UI. On
-approval, implementation builds exactly this: SQLite store, the §2 schema, the §3 atomic operations,
-the §4 immutability/audit rules, §5–§9 operational guarantees, the §10 V1 scope, the §11 tests, and the
-§12 rollback/migration procedure — nothing broader.
+## 15. What this document is
+The corrected design for **one final — and mechanical — implementation approval.** It introduces no
+code and no UI. On approval, implementation builds exactly this: the §2 schema + §4 triggers, the §3
+operations, §5–§10 guarantees, the §11 V1 scope, the §12 recovery, the §13 tests, nothing broader.
