@@ -63,11 +63,34 @@ Add fixtures proving admission + streak computation on:
    has streak 2 → no).
 Plus the five truth-table rows as direct cases.
 
-## Current state & implementation note (not yet implemented)
-`build_cfb_wave_context` (app.py) currently admits on `cover% ≥ 60` + `n ≥ 3` (aggregate) — this
-**contradicts** the frozen rule (it would include a high-cover%% team with no active streak and could
-exclude a 3–3 team actively riding a 3-cover run). **Implementation** (to be approved separately):
-replace the admission metric with the active-cover-streak computation above (wiring the per-game graded
-ATS sequence, as `cfb_ats_streaks` does), keep the model tier labels as an overlay, add the fixtures,
-and apply the same rule to the NFL ATS wave surface. No membership/selection code is changed by this
-contract.
+## Current state & implementation note
+`build_cfb_wave_context` (app.py) **CFB is implemented** to the frozen rule above (NFL still pending,
+to be a separate reversible commit). The prior aggregate admission (`cover% ≥ 60` + `n ≥ 3`) is gone;
+membership now iterates the authoritative per-game streak index. Three integrity corrections are part
+of the implementation and are enforced by `qc_cfb_ats_wave_admission.py`:
+
+1. **Membership iterates the authoritative streak index**, never the season aggregate — the aggregate
+   can never suppress a qualifying team; the displayed season record is derived from the per-game
+   sequence.
+2. **Canonical team-GAME identity** = `(season, resolved team, resolved opponent, GameDate/kickoff;
+   stable event ID when available)`. **Week is an attribute, not an identifier** — using `(week, team)`
+   wrongly collapsed two legitimate games a team plays under one numbered week (e.g. a Week-1 label
+   spanning two Saturdays). Chronology is by actual `GameDate`. Duplicate handling: an **exact repeat**
+   of the same canonical game + result is **collapsed once** (`duplicates_collapsed`); the **same
+   canonical game with a conflicting result/line** is a **conflict** that **fails sync closed**; a
+   **different opponent or kickoff** is a **separate legitimate game, never a duplicate**.
+3. **Synchronization = completeness + manifest lineage**, not `max(Week)`. The expected-game manifest
+   (`cfb_line_moves.json`) must **declare the requested season** and carry a games list, or the source
+   **fails closed** (`manifest season/lineage invalid`); its `updated` timestamp is reported. Expected
+   and graded identities are matched at `(week, resolved team, resolved opponent)` grain. The board is
+   synchronized only when every expected completed-game FBS decision is graded and there are no
+   conflicts; otherwise it shows an honest "not synchronized" state and **never** falls back to season
+   cover %.
+
+**Real-data status (2026-10-16, local):** at the corrected canonical grain the graded source has **0
+exact duplicates and 0 conflicting identities** — the previously reported "54 duplicate conflicts" was
+an artifact of the `(week, team)` collapse and is **withdrawn**. The local source is graded through
+**Week 2** while the slate is at **Week 7**, so the board correctly **fails closed** (640 of 782
+expected FBS decisions through completed week 6 are ungraded). **Production freshness is pending
+verification** — the production sync report must prove the graded source is current before any claim
+that it is kept current.

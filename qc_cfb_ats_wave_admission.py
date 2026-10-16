@@ -1,10 +1,14 @@
 """QC: CFB Active ATS Wave admission + integrity (docs/ats_wave_contract.md, FROZEN).
 
-Proves the frozen factual rule AND the two integrity corrections:
+Proves the frozen factual rule AND the three integrity corrections:
   * membership iterates the AUTHORITATIVE per-game streak index (the season aggregate can never suppress
     a qualifying team), and the displayed season record derives from the per-game sequence;
-  * synchronization is a COMPLETENESS check against the expected completed-game manifest (not max(Week)),
-    enforcing one canonical ATS decision per team-game and failing closed on missing/duplicate identities.
+  * canonical team-GAME identity = (resolved team, resolved opponent, GameDate) -- NOT (week, team) --
+    so two opponents a team plays under one week number are both retained in date order; an exact repeat
+    collapses once; a conflicting repeat fails closed; a different opponent/date is never a duplicate;
+  * synchronization is a COMPLETENESS check with MANIFEST-LINEAGE validation (not max(Week)): the
+    manifest must declare the requested season, expected and graded identities match at
+    (week, team, opponent) grain, and a stale/wrong-season/malformed manifest fails closed.
 
 Uses controlled fixtures. Exits 0 on success, 1 otherwise.
 """
@@ -34,15 +38,27 @@ def _streaks(cases):
     rows = []
     for team, toks in cases.items():
         rows += _rows(team, toks)
-    per, through, canon, dups = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)
-    return {team: per.get(cff._resolve(team), {}) for team in cases}, through, canon, dups
+    d = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)
+    per = d['per']
+    return {team: per.get(cff._resolve(team), {}) for team in cases}, d['through']
+
+
+def _sd(graded_keys=None, conflicts=None, collapsed=0):
+    """A minimal streak_data payload in the shape _cfb_cover_streaks_from_df returns."""
+    return {'per': {}, 'through': None, 'graded_keys': set(graded_keys or set()),
+            'conflicts': list(conflicts or []), 'collapsed': collapsed}
+
+
+def _lm(games, season=2026, updated='2026-10-15 23:58 UTC'):
+    """A cfb_line_moves.json-shaped manifest."""
+    return {'season': season, 'updated': updated, 'games': games}
 
 
 def qc_truth_table():
     cases = {'T 3-3': ['L', 'L', 'L', 'W', 'W', 'W'], 'T 5-1': ['W', 'W', 'L', 'W', 'W', 'W'],
              'T 5-0': ['W', 'W', 'W', 'W', 'W'], 'T 4-2': ['W', 'W', 'W', 'L', 'W', 'W'],
              'T push': ['W', 'W', 'P', 'W']}
-    per, _, _, _ = _streaks(cases)
+    per, _ = _streaks(cases)
     want = {'T 3-3': 3, 'T 5-1': 3, 'T 5-0': 5, 'T 4-2': 2, 'T push': 1}
     issues = [f'{t}: {per[t].get("cover_streak")} want {w}' for t, w in want.items()
               if per[t].get('cover_streak') != w]
@@ -55,7 +71,7 @@ def qc_truth_table():
 def qc_edges():
     cases = {'bye': ['W', 'Bye', 'W', 'W'], 'ungraded': ['W', 'U', 'W', 'W'],
              'noline': ['W', 'N', 'W', 'W'], 'loss': ['W', 'W', 'W', 'L']}
-    per, through, _, _ = _streaks(cases)
+    per, through = _streaks(cases)
     issues = []
     for t, w in {'bye': 3, 'ungraded': 3, 'noline': 3, 'loss': 0}.items():
         if per[t].get('cover_streak') != w:
@@ -65,52 +81,107 @@ def qc_edges():
     return issues
 
 
-def qc_duplicate_grain():
-    """One canonical ATS decision per team-game: a duplicate same-result row does NOT add a cover; a
-    conflicting duplicate is flagged as a duplicate identity."""
+def qc_canonical_identity():
+    """Canonical team-GAME identity = (resolved team, resolved opponent, GameDate), NOT (week, team).
+    Two opponents under one week number -> both retained, date order. Exact repeat -> collapsed once.
+    Conflicting repeat -> a conflict (fails sync closed). Different opponent/date -> separate game."""
     issues = []
-    # team weeks 1(W),2(W) + a DUPLICATE week-2 W row -> 2 covers, not 3; no conflict
-    rows = _rows('DupTeam', ['W', 'W']) + [dict(_rows('DupTeam', ['W'])[0], Week=2, GameDate='2026-09-02')]
-    per, _, _, dups = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)
-    rec = per.get(cff._resolve('DupTeam'), {})
-    if rec.get('cover_streak') != 2 or rec.get('decisions') != 2:
-        issues.append(f'duplicate extended the streak: streak {rec.get("cover_streak")} decisions {rec.get("decisions")}')
-    # conflicting duplicate (week-2 W and week-2 L) -> flagged
-    rows2 = _rows('ConfTeam', ['W', 'W']) + [dict(_rows('ConfTeam', ['L'])[0], Week=2, GameDate='2026-09-02')]
-    _, _, _, dups2 = app._cfb_cover_streaks_from_df(pd.DataFrame(rows2), 2026)
-    if not dups2:
-        issues.append('conflicting duplicate identity was not flagged')
+    base = {'Sport': 'NCAAF', 'Season': 2026, 'MarketType': 'SPREAD', 'Line': -3.5}
+
+    def row(team, opp, date, state, wk):
+        return dict(base, Team=team, Opponent=opp, GameDate=date, OutcomeState=state, Week=wk)
+
+    rt = cff._resolve('TwoGame')
+    oa, ob = cff._resolve('OppA'), cff._resolve('OppB')
+    # (1) same week number, two opponents, OPPOSITE results -> both retained, ordered by GameDate
+    rows = [row('TwoGame', 'OppA', '2026-08-29 18:00:00+00:00', 'Hit', 1),
+            row('TwoGame', 'OppB', '2026-09-05 19:30:00+00:00', 'Miss', 1)]
+    d = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)
+    rec = d['per'].get(rt, {})
+    if rec.get('decisions') != 2 or rec.get('results') != ['W', 'L']:
+        issues.append(f'same-week two-opponent games not both retained in date order: {rec.get("results")}')
+    if rec.get('cover_streak') != 0 or rec.get('loss_streak') != 1:
+        issues.append(f'date-ordered streak wrong: cover {rec.get("cover_streak")} loss {rec.get("loss_streak")}')
+    if {k for k in d['graded_keys'] if k[1] == rt} != {(1, rt, oa), (1, rt, ob)}:
+        issues.append(f'graded_keys not at (week,team,opponent) grain: {sorted(d["graded_keys"])}')
+    # (2) exact repeat of the same canonical game -> collapsed once, decisions unchanged, no conflict
+    d2 = app._cfb_cover_streaks_from_df(
+        pd.DataFrame(rows + [row('TwoGame', 'OppA', '2026-08-29 18:00:00+00:00', 'Hit', 1)]), 2026)
+    rec2 = d2['per'].get(rt, {})
+    if d2['collapsed'] != 1 or rec2.get('decisions') != 2:
+        issues.append(f'exact duplicate not collapsed once: collapsed {d2["collapsed"]} decisions {rec2.get("decisions")}')
+    if d2['conflicts']:
+        issues.append('exact duplicate wrongly flagged as a conflict')
+    # (3) same canonical game, CONFLICTING result -> a conflict (fail closed), not a collapse
+    d3 = app._cfb_cover_streaks_from_df(
+        pd.DataFrame(rows + [row('TwoGame', 'OppA', '2026-08-29 18:00:00+00:00', 'Miss', 1)]), 2026)
+    if not d3['conflicts'] or d3['collapsed']:
+        issues.append(f'conflicting duplicate not flagged: conflicts {d3["conflicts"]} collapsed {d3["collapsed"]}')
+    # (4) different opponent, same week -> two separate legitimate games, never a duplicate
+    d4 = app._cfb_cover_streaks_from_df(pd.DataFrame(
+        [row('Multi', 'OppA', '2026-08-29 18:00:00+00:00', 'Hit', 1),
+         row('Multi', 'OppB', '2026-08-30 18:00:00+00:00', 'Hit', 1)]), 2026)
+    rec4 = d4['per'].get(cff._resolve('Multi'), {})
+    if rec4.get('cover_streak') != 2 or d4['collapsed'] or d4['conflicts']:
+        issues.append(f'different-opponent same-week games wrongly deduped: streak {rec4.get("cover_streak")} '
+                      f'collapsed {d4["collapsed"]}')
     return issues
 
 
 def qc_sync_completeness():
     """Completeness, not max(Week): an isolated graded row does not mark a week complete; a missing
-    required FBS decision fails closed; a no-line/cancelled game is an accepted exclusion."""
+    required FBS decision fails closed; a no-line/cancelled game is an accepted exclusion; a conflicting
+    duplicate fails closed. Expected and graded identities are matched at (week, team, opponent) grain."""
     issues = []
-    g1, g2 = 'Georgia', 'Alabama'
-    lm_two = [{'completed': True, 'week': 1, 'home': g1, 'away': g2, 'spread_now': -7.0},
-              {'completed': True, 'week': 1, 'home': 'Oregon', 'away': 'Ohio State', 'spread_now': -3.0}]
+    r1, r2 = cff._resolve('Georgia'), cff._resolve('Alabama')
+    ro, rohio = cff._resolve('Oregon'), cff._resolve('Ohio State')
+    games = [{'completed': True, 'week': 1, 'home': 'Georgia', 'away': 'Alabama', 'spread_now': -7.0},
+             {'completed': True, 'week': 1, 'home': 'Oregon', 'away': 'Ohio State', 'spread_now': -3.0}]
     # only ONE of the four FBS decisions graded -> incomplete -> not synchronized
-    canon_one = {(1, cff._resolve(g1)): {'res': 'W'}}
-    r = app._cfb_ats_sync(canon_one, [], lm_two, 1)
+    r = app._cfb_ats_sync(_sd({(1, r1, r2)}), _lm(games), 1, 2026)
     if r['synchronized'] or r['missing_count'] != 3:
         issues.append(f'isolated row marked complete: {r}')
     # all four graded -> synchronized, through_week set
-    canon_all = {(1, cff._resolve(t)): {'res': 'W'} for t in (g1, g2, 'Oregon', 'Ohio State')}
-    r2 = app._cfb_ats_sync(canon_all, [], lm_two, 1)
-    if not r2['synchronized'] or r2['through_week'] != 1:
-        issues.append(f'complete manifest not synchronized: {r2}')
+    allk = {(1, r1, r2), (1, r2, r1), (1, ro, rohio), (1, rohio, ro)}
+    r2c = app._cfb_ats_sync(_sd(allk), _lm(games), 1, 2026)
+    if not r2c['synchronized'] or r2c['through_week'] != 1:
+        issues.append(f'complete manifest not synchronized: {r2c}')
     # a no-line game is an accepted exclusion (not counted as missing)
-    lm_excl = lm_two[:1] + [{'completed': True, 'week': 1, 'home': 'Baylor', 'away': 'TCU',
-                             'spread_now': None, 'spread_open': None}]
-    canon_g1 = {(1, cff._resolve(g1)): {'res': 'W'}, (1, cff._resolve(g2)): {'res': 'L'}}
-    r3 = app._cfb_ats_sync(canon_g1, [], lm_excl, 1)
+    games_excl = games[:1] + [{'completed': True, 'week': 1, 'home': 'Baylor', 'away': 'TCU',
+                               'spread_now': None, 'spread_open': None}]
+    r3 = app._cfb_ats_sync(_sd({(1, r1, r2), (1, r2, r1)}), _lm(games_excl), 1, 2026)
     if not r3['synchronized'] or r3['exclusions'] < 1:
         issues.append(f'no-line game not treated as an accepted exclusion: {r3}')
-    # a duplicate identity fails closed even with nothing missing
-    r4 = app._cfb_ats_sync(canon_all, [(1, cff._resolve(g1))], lm_two, 1)
+    # a conflicting duplicate identity fails closed even with nothing missing
+    r4 = app._cfb_ats_sync(_sd(allk, conflicts=[(r1, r2, '2026-08-29')]), _lm(games), 1, 2026)
     if r4['synchronized']:
-        issues.append('duplicate identity did not fail closed')
+        issues.append('conflicting duplicate identity did not fail closed')
+    return issues
+
+
+def qc_sync_lineage():
+    """Manifest lineage gates synchronization: expected and graded match on (week, team, opponent); a
+    wrong-season or malformed manifest fails closed with a reason; the manifest `updated` is reported."""
+    issues = []
+    r1, r2 = cff._resolve('Georgia'), cff._resolve('Alabama')
+    games = [{'completed': True, 'week': 1, 'home': 'Georgia', 'away': 'Alabama', 'spread_now': -7.0}]
+    graded = {(1, r1, r2), (1, r2, r1)}
+    # matching identities -> synchronized, manifest_updated surfaced for the operator
+    ok = app._cfb_ats_sync(_sd(graded), _lm(games), 1, 2026)
+    if not ok['synchronized'] or ok.get('manifest_updated') != '2026-10-15 23:58 UTC':
+        issues.append(f'matching identities not synchronized / updated not reported: {ok}')
+    # opponent mismatch -> the manifest decision is missing (identity includes opponent, not just team)
+    mis = app._cfb_ats_sync(_sd({(1, r1, cff._resolve('Auburn')), (1, r2, r1)}), _lm(games), 1, 2026)
+    if mis['synchronized'] or mis['missing_count'] < 1:
+        issues.append(f'opponent mismatch not detected at identity grain: {mis}')
+    # wrong-season manifest -> fail closed with a lineage reason, never synchronized
+    stale = app._cfb_ats_sync(_sd(graded), _lm(games, season=2025), 1, 2026)
+    if stale['synchronized'] or 'lineage' not in (stale.get('reason') or ''):
+        issues.append(f'wrong-season manifest did not fail closed: {stale}')
+    # malformed manifest (no games list) -> fail closed
+    bad = app._cfb_ats_sync(_sd(graded), {'season': 2026, 'updated': 'x'}, 1, 2026)
+    if bad['synchronized']:
+        issues.append(f'malformed manifest (no games) did not fail closed: {bad}')
     return issues
 
 
@@ -130,11 +201,12 @@ def qc_membership_iterates_streaks():
              cff._resolve('Oregon'): s(3, name='Oregon'),
              cff._resolve('Ohio State'): s(2, name='Ohio State')}
     o1, o2 = app._cfb_active_cover_streaks, app._cfb_ats_sync
-    app._cfb_active_cover_streaks = lambda season=2026: (synth, 7, {}, [])
-    app._cfb_ats_sync = lambda canon, dups, lm, cw: {'synchronized': True, 'through_week': 7,
-                                                     'completed_week': 7, 'expected_decisions': 0,
-                                                     'graded_decisions': 0, 'exclusions': 0,
-                                                     'missing_count': 0, 'duplicate_count': 0}
+    app._cfb_active_cover_streaks = lambda season=2026: {'per': synth, 'through': 7, 'graded_keys': set(),
+                                                         'conflicts': [], 'collapsed': 0}
+    app._cfb_ats_sync = lambda streak_data, line_moves, completed_week, season=2026: {
+        'synchronized': True, 'through_week': 7, 'completed_week': 7, 'expected_decisions': 0,
+        'graded_decisions': 0, 'exclusions': 0, 'missing_count': 0, 'missing': [], 'conflicts': 0,
+        'duplicates_collapsed': 0, 'manifest_season': 2026, 'manifest_updated': 'fixture'}
     try:
         app._CFB_WAVE_CACHE.clear()
         ctx = app.build_cfb_wave_context()
@@ -173,7 +245,7 @@ def qc_alias_resolution():
     a, c = pair
     rows = _rows(c, ['W']) + [dict(_rows(a, ['W'])[0], Week=2, GameDate='2026-09-02')] \
         + [dict(_rows(c, ['W'])[0], Week=3, GameDate='2026-09-03')]
-    per, _, _, _ = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)
+    per = app._cfb_cover_streaks_from_df(pd.DataFrame(rows), 2026)['per']
     rec = per.get(cff._resolve(c), {})
     if rec.get('cover_streak') != 3:
         return [f'aliases split the team ({a!r}/{c!r}): streak {rec.get("cover_streak")} want 3']
@@ -188,8 +260,9 @@ def qc_fail_closed_real():
     return []
 
 
-CHECKS = [('truth_table', qc_truth_table), ('edges', qc_edges), ('duplicate_grain', qc_duplicate_grain),
-          ('sync_completeness', qc_sync_completeness),
+CHECKS = [('truth_table', qc_truth_table), ('edges', qc_edges),
+          ('canonical_identity', qc_canonical_identity),
+          ('sync_completeness', qc_sync_completeness), ('sync_lineage', qc_sync_lineage),
           ('membership_iterates_streaks', qc_membership_iterates_streaks),
           ('alias_resolution', qc_alias_resolution), ('fail_closed_real', qc_fail_closed_real)]
 

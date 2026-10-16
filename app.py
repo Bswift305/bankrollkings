@@ -44527,36 +44527,34 @@ def _cfb_active_cover_streaks(season=2026):
     (docs/ats_wave_contract.md). Cover=Hit, loss=Miss, push=Push; Pending/absent rows (byes, ungraded,
     no closing line) are ignored (not in the sequence). The active cover streak counts covers from the
     most recent graded decision backward and STOPS at the first loss OR push (a push interrupts a strict
-    consecutive-cover streak: W,W,P,W -> streak 1). Returns (per, max_graded_week, canon_decisions, dups)."""
-    import cfb_current_form as cff
+    consecutive-cover streak: W,W,P,W -> streak 1). Returns the streak-data dict (see below)."""
+    _empty = {'per': {}, 'through': None, 'graded_keys': set(), 'conflicts': [], 'collapsed': 0}
     path = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        return {}, None
+        return dict(_empty)
     if _CFB_ATS_STREAK_CACHE.get('mtime') != mtime or _CFB_ATS_STREAK_CACHE.get('season') != season:
         try:
             df = pd.read_csv(path, low_memory=False)
         except Exception:
-            return {}, None, {}, []
-        per, through, canon, dups = _cfb_cover_streaks_from_df(df, season)
+            return dict(_empty)
         _CFB_ATS_STREAK_CACHE.clear()
-        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season, 'per': per, 'through': through,
-                                      'canon': canon, 'dups': dups})
-    c = _CFB_ATS_STREAK_CACHE
-    return c.get('per', {}), c.get('through'), c.get('canon', {}), c.get('dups', [])
+        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season,
+                                      'data': _cfb_cover_streaks_from_df(df, season)})
+    return _CFB_ATS_STREAK_CACHE.get('data', dict(_empty))
 
 
 def _cfb_cover_streaks_from_df(df, season):
     """Pure computation behind the frozen Active ATS Wave rule (testable with a fixture DataFrame).
 
-    Enforces ONE canonical ATS decision per team-game via a stable key (season, week, resolved team,
-    resolved opponent): duplicate snapshot/book rows are collapsed and never extend a streak; rows that
-    disagree on the result are flagged as duplicate identities. For each team it computes the current
-    consecutive cover streak (stops at the first loss OR push), the loss streak, the ordered sequence,
-    and season counts -- all from the authoritative per-game source, not an aggregate.
-
-    Returns (per_team_by_resolved_name, max_graded_week, canonical_decisions, duplicate_identities)."""
+    Canonical team-GAME identity = (resolved team, resolved opponent, GameDate) -- NOT (week, team),
+    which would collapse two legitimate games a team plays under one numbered week (e.g. a Week-1 label
+    spanning two Saturdays). Chronology is by actual GameDate. Duplicate handling:
+      * exact repeat of the same canonical game + result -> collapsed (reported as duplicates_collapsed);
+      * same canonical game with a CONFLICTING result -> a conflict (fails sync closed);
+      * different opponent or kickoff -> a separate legitimate game, never a duplicate.
+    Returns {'per','through','graded_keys' (manifest-grain (week,team,opp) set),'conflicts','collapsed'}."""
     import cfb_current_form as cff
     df = df[(df['MarketType'].astype(str).str.upper() == 'SPREAD')
             & (pd.to_numeric(df['Season'], errors='coerce') == season)]
@@ -44564,29 +44562,32 @@ def _cfb_cover_streaks_from_df(df, season):
     df = df[pd.to_numeric(df['Line'], errors='coerce').notna()]             # must have a line
     df = df.assign(Week=pd.to_numeric(df['Week'], errors='coerce')).dropna(subset=['Week'])
     _m = {'Hit': 'W', 'Miss': 'L', 'Push': 'P'}
-    sort_cols = [c for c in ('Week', 'GameDate') if c in df.columns] or ['Week']
-    canon, dups = {}, []   # canon[(week, rteam)] = {'res','opp','name'}
-    for _, r in df.sort_values(sort_cols).iterrows():
+    canon = {}            # (rteam, ropp, date) -> {'res','week','name'}
+    conflicts, collapsed = [], 0
+    for _, r in df.iterrows():
         state = _m.get(str(r.get('OutcomeState')))
         if state is None:
             continue
-        wk = int(r['Week'])
+        date = str(r.get('GameDate') or '').strip()
         rteam = cff._resolve(str(r.get('Team', '')))
         ropp = cff._resolve(str(r.get('Opponent', '')))
-        key = (wk, rteam)
+        key = (rteam, ropp, date)                 # opponent + kickoff distinguish same-week games
         if key in canon:
-            if canon[key]['res'] != state:     # same team-game, conflicting graded result
-                dups.append(key)
-            continue                            # duplicate team-game -> ignored (never extends a streak)
-        canon[key] = {'res': state, 'opp': ropp, 'name': str(r.get('Team', ''))}
+            if canon[key]['res'] == state:
+                collapsed += 1                     # exact repeat of the same game -> dedupe
+            else:
+                conflicts.append(key)              # same game, conflicting result -> fail closed
+            continue
+        canon[key] = {'res': state, 'week': int(r['Week']), 'name': str(r.get('Team', ''))}
     by_team = {}
-    for (wk, rteam), v in canon.items():
-        by_team.setdefault(rteam, []).append((wk, v))
-    through = max((wk for (wk, _t) in canon), default=None)
+    for (rteam, ropp, date), v in canon.items():
+        by_team.setdefault(rteam, []).append((date, v))
+    through = max((v['week'] for v in canon.values()), default=None)
+    graded_keys = {(v['week'], rteam, ropp) for (rteam, ropp, _d), v in canon.items()}
     per = {}
     for rteam, lst in by_team.items():
-        lst.sort(key=lambda x: x[0])
-        seq = [v['res'] for _wk, v in lst]
+        lst.sort(key=lambda x: x[0])              # chronological by GameDate, not Week
+        seq = [v['res'] for _d, v in lst]
         cover_streak = 0
         for ch in reversed(seq):
             if ch == 'W':
@@ -44602,45 +44603,64 @@ def _cfb_cover_streaks_from_df(df, season):
         per[rteam] = {
             'team_name': lst[-1][1]['name'], 'cover_streak': cover_streak, 'loss_streak': loss_streak,
             'results': seq, 'recent': seq[-6:], 'covers': seq.count('W'), 'losses': seq.count('L'),
-            'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': lst[-1][0],
+            'pushes': seq.count('P'), 'decisions': len(seq),
+            'last_week': max(v['week'] for _d, v in lst),
         }
-    return per, through, canon, dups
+    return {'per': per, 'through': through, 'graded_keys': graded_keys,
+            'conflicts': conflicts, 'collapsed': collapsed}
 
 
-def _cfb_ats_sync(canon, duplicates, line_moves_games, completed_week):
-    """Completeness-based synchronization (replaces max(Week)). Builds the expected completed-game ATS
-    manifest from the line-moves feed -- every completed game through `completed_week` with a spread
-    contributes two team-game decisions; completed games with no line are legitimate exclusions. The
-    source is synchronized only when EVERY expected decision has a canonical graded decision and there
-    are no duplicate identities. Reports the counts; through_week is set only when completeness passes."""
+def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
+    """Completeness-based synchronization with MANIFEST-LINEAGE validation (replaces max(Week)).
+
+    Lineage first: the expected-game manifest (cfb_line_moves.json) must declare the requested season
+    and carry a games list, or the source fails closed as 'manifest season/lineage invalid' -- a stale
+    or wrong-season manifest can never mark the board synchronized. The manifest's `updated` timestamp
+    is reported for the operator.
+
+    Completeness next: every completed game through `completed_week` with a spread contributes two
+    team-game decisions at (week, resolved team, resolved opponent) grain -- the SAME grain as the
+    graded source's `graded_keys`. Completed games with no line, and non-FBS slots, are legitimate
+    exclusions. The source is synchronized only when EVERY expected decision is graded and there are
+    no conflicting duplicate identities. through_week is set only when completeness passes."""
     import cfb_current_form as cff
+    meta_season = (line_moves or {}).get('season')
+    games = (line_moves or {}).get('games')
+    conflicts = len((streak_data or {}).get('conflicts', []))
+    graded_keys = (streak_data or {}).get('graded_keys', set())
+    base = {'manifest_season': meta_season, 'manifest_updated': (line_moves or {}).get('updated'),
+            'completed_week': completed_week, 'conflicts': conflicts,
+            'duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
+            'graded_decisions': len(graded_keys), 'expected_decisions': 0, 'exclusions': 0,
+            'missing': [], 'missing_count': 0}
+    if meta_season != season or not isinstance(games, list):
+        return {**base, 'synchronized': False, 'through_week': None,
+                'reason': 'manifest season/lineage invalid'}
     if completed_week is None or completed_week < 1:
-        return {'synchronized': True, 'completed_week': completed_week, 'through_week': completed_week,
-                'expected_decisions': 0, 'graded_decisions': len(canon), 'exclusions': 0,
-                'missing': [], 'missing_count': 0, 'duplicate_count': len(duplicates)}
+        ok = conflicts == 0
+        return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None}
     fbs = cff._fbs_teams()
     expected, exclusions = set(), 0
-    for g in (line_moves_games or []):
+    for g in games:
         wk = g.get('week')
         if not g.get('completed') or wk is None or wk > completed_week:
             continue
         if g.get('spread_now') is None and g.get('spread_open') is None:
             exclusions += 1                       # no-line / cancelled -> legitimate exclusion
             continue
-        for side in (g.get('home', ''), g.get('away', '')):
-            r = cff._resolve(str(side))
-            if r in fbs:
-                expected.add((int(wk), r))        # the FBS wave universe
+        h, a = cff._resolve(str(g.get('home', ''))), cff._resolve(str(g.get('away', '')))
+        for team, opp in ((h, a), (a, h)):
+            if team in fbs:
+                expected.add((int(wk), team, opp))   # (week, team, opponent) -- manifest grain
             else:
-                exclusions += 1                   # non-FBS opponent slot -> legitimate exclusion
-    graded = {(wk, t) for (wk, t) in canon if wk <= completed_week and t in fbs}
+                exclusions += 1                      # non-FBS slot -> legitimate exclusion
+    graded = {k for k in graded_keys if k[0] <= completed_week and k[1] in fbs}
     missing = sorted(expected - graded)
-    synchronized = (not missing) and (not duplicates)
-    return {'synchronized': synchronized, 'completed_week': completed_week,
+    synchronized = (not missing) and (conflicts == 0)
+    return {**base, 'synchronized': synchronized,
             'through_week': completed_week if synchronized else None,
             'expected_decisions': len(expected), 'graded_decisions': len(graded),
-            'exclusions': exclusions, 'missing': missing[:12], 'missing_count': len(missing),
-            'duplicate_count': len(duplicates)}
+            'exclusions': exclusions, 'missing': missing[:12], 'missing_count': len(missing)}
 
 
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
@@ -44675,16 +44695,19 @@ def build_cfb_wave_context():
     ats_by_resolved = {cff._resolve(s): a for s, a in ats.items()}  # OPTIONAL season context only
     # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership iterates the AUTHORITATIVE
     # per-game streak index -- never the season aggregate, which must not be able to suppress membership.
-    streaks, _through, canon, dups = _cfb_active_cover_streaks(2026)
-    lm_games = _j(paths[2]).get('games', [])
+    streak_data = _cfb_active_cover_streaks(2026)
+    streaks = streak_data['per']
+    lm = _j(paths[2])
+    lm_games = lm.get('games', []) if isinstance(lm.get('games'), list) else []
     moves = [g for g in lm_games if not g.get('completed') and g.get('spread_now') is not None]
     wk = min((g['week'] for g in moves), default=None)
     moves = [g for g in moves if g['week'] == wk] if wk is not None else []
 
-    # Completeness-based synchronization (NOT max(Week)): every expected completed-game ATS decision
-    # through wk-1 must have a canonical graded decision, with no duplicate identities. Else FAIL CLOSED
-    # -- an honest "not synchronized" report, never a season-cover-% fallback.
-    sync = _cfb_ats_sync(canon, dups, lm_games, (wk - 1) if wk else None)
+    # Completeness-based synchronization (NOT max(Week)) with manifest-lineage validation: the manifest
+    # must declare season 2026, and every expected completed-game ATS decision through wk-1 must have a
+    # canonical graded decision at (week, team, opponent) grain, with no conflicting duplicate. Else FAIL
+    # CLOSED -- an honest "not synchronized" report, never a season-cover-% fallback.
+    sync = _cfb_ats_sync(streak_data, lm, (wk - 1) if wk else None, 2026)
     if not sync['synchronized']:
         data = {'wave_week': wk, 'wave_through_week': sync.get('through_week'), 'wave_unsynced': True,
                 'wave_sync': sync, 'wave_members': [], 'wave_fades': [], 'wave_count': 0,
