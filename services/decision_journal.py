@@ -155,7 +155,13 @@ CREATE TABLE IF NOT EXISTS tickets (
   placed_at TEXT,
   settled_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK (cash_stake_cents IS NULL OR cash_stake_cents >= 0),
+  CHECK (promo_stake_cents IS NULL OR promo_stake_cents >= 0),
+  CHECK (total_returned_cents IS NULL OR total_returned_cents >= 0),
+  CHECK (cashout_amount_cents IS NULL OR cashout_amount_cents >= 0),
+  CHECK (cashout_amount_cents IS NULL OR total_returned_cents IS NULL
+         OR cashout_amount_cents <= total_returned_cents)
 );
 CREATE INDEX IF NOT EXISTS ix_tickets_user ON tickets(user_id);
 CREATE INDEX IF NOT EXISTS ix_tickets_prov ON tickets(user_id, record_provenance);
@@ -391,7 +397,14 @@ class JournalRepository:
     def __init__(self, db_path: str | None = None, auto_init: bool = True):
         self.db_path = db_path or resolve_db_path()
         if auto_init:
-            init_db(self.db_path)
+            # Directory/permission/SQLite init failures must surface as JournalUnavailable so every
+            # route renders the journal-only "temporarily unavailable" page, never a site-level 500.
+            try:
+                init_db(self.db_path)
+            except JournalUnavailable:
+                raise
+            except Exception as e:  # OSError (mkdir/chmod), sqlite3.Error, etc.
+                raise JournalUnavailable(f'cannot initialize journal store: {e}') from e
 
     # -- connection + availability -----------------------------------------------------------------
     def _open(self) -> sqlite3.Connection:
@@ -530,16 +543,39 @@ class JournalRepository:
         return lid
 
     # -- settle ------------------------------------------------------------------------------------
+    _FINAL_RESULTS = ('win', 'loss', 'push', 'void', 'cashout')
+
     def settle_ticket(self, user_id, ticket_id, *, book_ticket_result, cash_stake_cents=None,
                       promo_stake_cents=None, total_returned_cents=None, cashout_amount_cents=None,
                       book_settlement_note=None, thesis_correct=None, leg_results=None):
         """Record the book-authoritative settlement + per-leg results, atomically. Settlement columns
-        are NOT frozen, so this succeeds after kickoff. net_cash_pl derived per §6 (NULL when short)."""
+        are NOT frozen, so this succeeds after kickoff. net_cash_pl derived per §6 (NULL when short).
+
+        settled_at is set ONLY for a final book result -- saving a 'pending' settlement must not lock a
+        pregame ticket. All inputs are validated before SQL, and any SQLite constraint failure is
+        wrapped as ValidationError so a bad input can never escape as a 500."""
         if book_ticket_result not in TICKET_RESULTS:
             raise ValidationError(f'bad book_ticket_result {book_ticket_result!r}')
+        for name, v in (('cash_stake', cash_stake_cents), ('promo_stake', promo_stake_cents),
+                        ('total_returned', total_returned_cents), ('cashout_amount', cashout_amount_cents)):
+            if v is not None and (not isinstance(v, int) or v < 0):
+                raise ValidationError(f'{name} must be a nonnegative amount')
+        if (cashout_amount_cents is not None and total_returned_cents is not None
+                and cashout_amount_cents > total_returned_cents):
+            raise ValidationError('cashout_amount cannot exceed total_returned')
+        if thesis_correct not in (None, 0, 1):
+            raise ValidationError('thesis_correct must be yes/no/unset')
+        lrs = list(leg_results or [])
+        for lr in lrs:
+            if lr.get('leg_result') not in (None,) + LEG_RESULTS:
+                raise ValidationError(f"bad leg_result {lr.get('leg_result')!r}")
+            if lr.get('read_happened') not in (None, 0, 1):
+                raise ValidationError('read_happened must be yes/no/unset')
+
         self._gate()
         net = compute_net_cash_pl(cash_stake_cents, total_returned_cents, book_ticket_result,
                                   cashout_amount_cents)
+        settled_at = _utcnow() if book_ticket_result in self._FINAL_RESULTS else None  # pending stays open
         now = _utcnow()
         conn = self._open()
         try:
@@ -550,76 +586,27 @@ class JournalRepository:
                          net_cash_pl_cents=?,thesis_correct=?,settled_at=?,updated_at=?
                        WHERE ticket_id=? AND user_id=?""",
                     (book_ticket_result, cash_stake_cents, promo_stake_cents, total_returned_cents,
-                     cashout_amount_cents, book_settlement_note, net, thesis_correct, now, now,
+                     cashout_amount_cents, book_settlement_note, net, thesis_correct, settled_at, now,
                      ticket_id, str(user_id)))
                 if cur.rowcount == 0:
                     raise ValidationError('ticket not found for this user')
-                for lr in (leg_results or []):
-                    conn.execute(
-                        """UPDATE legs SET leg_result=?, read_happened=?
-                           WHERE leg_id=? AND ticket_id=?""",
+                for lr in lrs:
+                    c2 = conn.execute(
+                        'UPDATE legs SET leg_result=?, read_happened=? WHERE leg_id=? AND ticket_id=?',
                         (lr.get('leg_result'), lr.get('read_happened'), lr.get('leg_id'), ticket_id))
+                    if c2.rowcount == 0:
+                        raise ValidationError(f"leg {lr.get('leg_id')!r} is not on this ticket")
+        except sqlite3.Error as e:
+            raise ValidationError(f'settlement rejected: {e}') from e
         finally:
             conn.close()
         return net
 
-    # -- correct (append-only) ---------------------------------------------------------------------
-    def correct(self, user_id, target_table, target_id, field, new_value, reason, actor):
-        """The ONLY post-lock edit path: append a typed-JSON revision. Base rows stay immutable."""
-        if target_table not in REVISION_FIELDS or field not in REVISION_FIELDS[target_table]:
-            raise ValidationError(f'field {field!r} not correctable on {target_table!r}')
-        if not (reason or '').strip():
-            raise ValidationError('a correction must state a reason')
-        self._gate()
-        now = _utcnow()
-        conn = self._open()
-        try:
-            self._assert_owns_target(conn, user_id, target_table, target_id)
-            old = self._effective(conn, target_table, target_id, field)
-            with _txn(conn):
-                conn.execute(
-                    """INSERT INTO decision_revisions(user_id,target_table,target_id,field,old_value,
-                         new_value,reason,actor,created_at) VALUES(?,?,?,?,?,?,?,?,?)""",
-                    (str(user_id), target_table, target_id, field, json.dumps(old),
-                     json.dumps(new_value), reason, actor, now))
-        finally:
-            conn.close()
-
-    def _assert_owns_target(self, conn, user_id, target_table, target_id):
-        if target_table == 'tickets':
-            row = conn.execute('SELECT user_id FROM tickets WHERE ticket_id=?', (target_id,)).fetchone()
-        else:  # leg-scoped tables key on leg_id
-            row = conn.execute(
-                """SELECT t.user_id FROM legs l JOIN tickets t ON t.ticket_id=l.ticket_id
-                   WHERE l.leg_id=?""", (target_id,)).fetchone()
-        if not row or str(row[0]) != str(user_id):
-            raise ValidationError('target not found for this user')
-
-    def _effective(self, conn, target_table, target_id, field):
-        rev = conn.execute(
-            """SELECT new_value FROM decision_revisions WHERE target_table=? AND target_id=? AND field=?
-               ORDER BY revision_id DESC LIMIT 1""", (target_table, target_id, field)).fetchone()
-        if rev is not None:
-            return json.loads(rev[0])
-        if field in _MEMBERSHIP_OPS:
-            return None
-        if target_table == 'tickets':
-            r = conn.execute(f'SELECT {field} FROM tickets WHERE ticket_id=?', (target_id,)).fetchone()
-        elif target_table == 'legs':
-            r = conn.execute(f'SELECT {field} FROM legs WHERE leg_id=?', (target_id,)).fetchone()
-        elif target_table == 'leg_bk_origin':
-            r = conn.execute(f'SELECT {field} FROM leg_bk_origin WHERE leg_id=?', (target_id,)).fetchone()
-        else:
-            r = None
-        return (r[0] if r else None)
-
-    def effective_value(self, user_id, target_table, target_id, field):
-        conn = self._open()
-        try:
-            self._assert_owns_target(conn, user_id, target_table, target_id)
-            return self._effective(conn, target_table, target_id, field)
-        finally:
-            conn.close()
+    # NOTE: post-lock corrections (the append-only decision_revisions API) are DEFERRED from V1. The
+    # table + append-only triggers exist so the base rows stay the immutable decision-time snapshot,
+    # but no write path is exposed: applying revision overlays consistently across get_ticket /
+    # list_tickets / report is its own gate. V1 simply makes locked records immutable. Until then,
+    # product reads below always return the base rows (no hidden overlay to forget to apply).
 
     # -- reads -------------------------------------------------------------------------------------
     def get_ticket(self, user_id, ticket_id):
@@ -773,9 +760,13 @@ class JournalRepository:
 
     # -- migration from the existing JSON tracker (reversible, non-destructive) --------------------
     def migrate_user_json(self, user_id, bets):
-        """Migrate a user's flat bet_tracker records (read-only input) into the journal. Straight bets
-        -> one-leg tickets; parlays/multi-leg -> legacy_flat_ticket with ZERO legs. Idempotent via
-        migrated_from_json UNIQUE. `bets` is a list of the tracker's bet dicts. Returns #migrated."""
+        """Migrate a user's flat bet_tracker records (read-only input) into the journal. Idempotent via
+        migrated_from_json UNIQUE. `bets` is a list of the tracker's bet dicts. Returns #migrated.
+
+        Classification is CONSERVATIVE (defect 2): a record is reconstructed as a one-leg straight ONLY
+        when it EXPLICITLY proves it is straight (bet_type='straight', or a single-element legs list).
+        The old tracker stores neither field, so every ambiguous record is preserved as a
+        legacy_flat_ticket with ZERO legs -- never a fabricated one-leg straight."""
         self._gate()
         migrated = 0
         for b in (bets or []):
@@ -790,11 +781,14 @@ class JournalRepository:
                 conn.close()
             if exists:
                 continue
-            is_parlay = bool(b.get('legs')) or str(b.get('bet_type') or '').lower() == 'parlay'
+            legs_field = b.get('legs')
+            proven_straight = (str(b.get('bet_type') or '').lower() == 'straight'
+                               or (isinstance(legs_field, list) and len(legs_field) == 1))
             result = _map_result(b.get('result'))
             stake_cents = _to_cents(b.get('stake'))
             try:
-                if is_parlay:
+                if not proven_straight:
+                    # ambiguous (or explicitly a parlay) -> flat legacy ticket, zero legs, no fabrication
                     self.create_ticket(
                         user_id, ticket_type='legacy_flat_ticket', record_provenance='legacy-flat',
                         legs=[], book=b.get('book'), placed_at=_iso_date(b.get('placed')),

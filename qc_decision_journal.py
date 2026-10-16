@@ -214,14 +214,17 @@ def qc_dj_immutability():
     return True, 'all frozen columns + child inserts/deletes + earliest_kickoff blocked after lock'
 
 
-def qc_dj_corrections_append_only():
+def qc_dj_revisions_append_only():
+    # Corrections (correct()/effective_value()) are DEFERRED from V1 -- the public API must be absent
+    # so product reads never silently diverge from base rows. The append-only table + triggers remain.
     repo = _repo()
-    tid = _locked_ticket(repo)
-    repo.correct('userA', 'tickets', tid, 'game_thesis', 'corrected thesis', 'fat-fingered', 'userA')
-    eff = repo.effective_value('userA', 'tickets', tid, 'game_thesis')
-    if eff != 'corrected thesis':
-        return False, f'effective value not overlaid: {eff!r}'
+    if hasattr(repo, 'correct') or hasattr(repo, 'effective_value'):
+        return False, 'correction API still exposed in V1 (reads would diverge from base rows)'
     conn = dj.connect(repo.db_path)
+    conn.execute('BEGIN IMMEDIATE')
+    conn.execute("""INSERT INTO decision_revisions(user_id,target_table,target_id,field,old_value,
+        new_value,reason,actor,created_at) VALUES('u','tickets','t','game_thesis','null','"x"','r','u','now')""")
+    conn.execute('COMMIT')
     for op, sql in (('update', "UPDATE decision_revisions SET reason='x'"),
                     ('delete', "DELETE FROM decision_revisions")):
         try:
@@ -231,7 +234,82 @@ def qc_dj_corrections_append_only():
         except sqlite3.Error:
             conn.execute('ROLLBACK')
     conn.close()
-    return True, 'correction appends + overlays; revisions are append-only (no update/delete)'
+    return True, 'correction API deferred from V1; decision_revisions table stays append-only'
+
+
+def qc_dj_settled_at_pending():
+    # Saving a PENDING settlement must NOT lock a pregame ticket (defect 5).
+    repo = _repo()
+    tid = repo.create_ticket('userA', ticket_type='straight', record_provenance='prospective-captured',
+                             legs=[_prosp_leg()])  # future kickoff -> unlocked
+    repo.settle_ticket('userA', tid, book_ticket_result='pending', cash_stake_cents=1000)
+    t = repo.get_ticket('userA', tid)
+    if t['settled_at'] is not None:
+        return False, 'pending settlement set settled_at (locked a pregame ticket)'
+    # still editable: a later final settlement succeeds and DOES set settled_at
+    repo.settle_ticket('userA', tid, book_ticket_result='win', cash_stake_cents=1000, total_returned_cents=1909)
+    t2 = repo.get_ticket('userA', tid)
+    if t2['settled_at'] is None or t2['book_ticket_result'] != 'win':
+        return False, 'final settlement did not settle'
+    return True, 'pending leaves settled_at NULL (unlocked); a final result settles'
+
+
+def qc_dj_financial_validation():
+    repo = _repo()
+    tid = repo.create_ticket('userA', ticket_type='straight', record_provenance='prospective-captured',
+                             legs=[_prosp_leg()])
+    try:
+        repo.settle_ticket('userA', tid, book_ticket_result='win', cash_stake_cents=-500, total_returned_cents=0)
+        return False, 'negative cash stake accepted'
+    except dj.ValidationError:
+        pass
+    try:
+        repo.settle_ticket('userA', tid, book_ticket_result='cashout', cash_stake_cents=1000,
+                           total_returned_cents=500, cashout_amount_cents=900)
+        return False, 'cashout greater than total_returned accepted'
+    except dj.ValidationError:
+        pass
+    # DB CHECK also guards a direct negative write
+    conn = dj.connect(repo.db_path)
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        conn.execute("UPDATE tickets SET total_returned_cents=-1 WHERE ticket_id=?", (tid,))
+        conn.execute('COMMIT'); conn.close()
+        return False, 'DB allowed a negative total_returned'
+    except sqlite3.Error:
+        conn.execute('ROLLBACK'); conn.close()
+    return True, 'negative money + cashout>returned rejected (app + DB CHECK)'
+
+
+def qc_dj_settle_input_validation():
+    repo = _repo()
+    a = repo.create_ticket('userA', ticket_type='straight', record_provenance='prospective-captured',
+                           legs=[_prosp_leg()])
+    b = repo.create_ticket('userA', ticket_type='straight', record_provenance='prospective-captured',
+                           legs=[_prosp_leg()])
+    b_leg = repo.get_ticket('userA', b)['legs'][0]['leg_id']
+    # bad leg_result
+    try:
+        repo.settle_ticket('userA', a, book_ticket_result='win',
+                           leg_results=[{'leg_id': repo.get_ticket('userA', a)['legs'][0]['leg_id'],
+                                         'leg_result': 'banana'}])
+        return False, 'bad leg_result accepted'
+    except dj.ValidationError:
+        pass
+    # a leg from ticket B cannot be settled under ticket A
+    try:
+        repo.settle_ticket('userA', a, book_ticket_result='win',
+                           leg_results=[{'leg_id': b_leg, 'leg_result': 'win'}])
+        return False, "another ticket's leg was accepted"
+    except dj.ValidationError:
+        pass
+    # bad thesis value
+    try:
+        repo.settle_ticket('userA', a, book_ticket_result='win', thesis_correct=2)
+        return False, 'bad thesis_correct accepted'
+    except dj.ValidationError:
+        pass
+    return True, 'bad leg_result / foreign leg / bad thesis all rejected as ValidationError (no 500)'
 
 
 def qc_dj_prospective_timing():
@@ -328,25 +406,30 @@ def qc_dj_import_idempotent():
 def qc_dj_migration():
     repo = _repo()
     bets = [
+        # ambiguous old record (no bet_type, no legs) -> MUST become legacy_flat (zero legs), not a straight
         {'id': 'b1', 'sport': 'NFL', 'description': 'KC -3', 'selection': 'KC -3', 'odds': -110,
          'stake': 100, 'result': 'win', 'placed': '2026-10-01', 'book': 'DK'},
+        # explicitly a parlay
         {'id': 'b2', 'sport': 'NFL', 'description': '3-leg parlay', 'result': 'loss', 'stake': 50,
          'legs': [{}, {}, {}], 'placed': '2026-10-02'},
+        # explicitly proven straight -> one-leg reconstruction allowed
+        {'id': 'b3', 'sport': 'NFL', 'bet_type': 'straight', 'description': 'BUF ML', 'selection': 'BUF ML',
+         'odds': -140, 'stake': 75, 'result': 'win', 'placed': '2026-10-03', 'book': 'FD'},
     ]
     m1 = repo.migrate_user_json('userA', bets)
     straight = [t for t in repo.list_tickets('userA') if t['ticket_type'] == 'straight']
     legacy = [t for t in repo.list_tickets('userA') if t['ticket_type'] == 'legacy_flat_ticket']
-    if m1 != 2 or len(straight) != 1 or len(legacy) != 1:
-        return False, f'migrated={m1} straight={len(straight)} legacy={len(legacy)}'
-    if straight[0]['legs_count'] != 1 or legacy[0]['legs_count'] != 0:
-        return False, f"leg counts wrong: straight={straight[0]['legs_count']} legacy={legacy[0]['legs_count']}"
+    if m1 != 3 or len(straight) != 1 or len(legacy) != 2:
+        return False, f'migrated={m1} straight={len(straight)} legacy={len(legacy)} (ambiguous must be legacy)'
+    if straight[0]['legs_count'] != 1 or any(t['legs_count'] != 0 for t in legacy):
+        return False, 'leg counts wrong (legacy must be zero legs, no fabricated leg)'
     m2 = repo.migrate_user_json('userA', bets)  # re-run
-    if m2 != 0 or len(repo.list_tickets('userA')) != 2:
+    if m2 != 0 or len(repo.list_tickets('userA')) != 3:
         return False, f're-run not idempotent: migrated={m2} total={len(repo.list_tickets("userA"))}'
     repo.reverse_migration('userA')
     if repo.list_tickets('userA'):
         return False, 'reverse migration left rows'
-    return True, 'straight->1 leg, parlay->legacy 0 legs; idempotent; reverse removes only migrated'
+    return True, 'ambiguous+parlay->legacy 0 legs, proven-straight->1 leg; idempotent; reverse clean'
 
 
 def qc_dj_access_isolation():
@@ -360,14 +443,11 @@ def qc_dj_access_isolation():
         return False, 'user B settled user A ticket'
     except dj.ValidationError:
         pass
-    try:
-        repo.correct('userB', 'tickets', tid, 'game_thesis', 'x', 'r', 'userB')
-        return False, 'user B corrected user A ticket'
-    except dj.ValidationError:
-        pass
+    if repo.get_ticket('userB', tid) is not None:
+        return False, 'user B read user A ticket by id'
     if repo.list_tickets('userB'):
         return False, 'user B list returned rows'
-    return True, 'every public op denies another user (read/settle/correct/list)'
+    return True, 'every public op denies another user (read/settle/list)'
 
 
 def qc_dj_failure_mode():
@@ -433,7 +513,10 @@ CHECKS = [
     ('qc_dj_sgp_pricing', qc_dj_sgp_pricing),
     ('qc_dj_push_void_cashout_promo', qc_dj_push_void_cashout_promo),
     ('qc_dj_immutability', qc_dj_immutability),
-    ('qc_dj_corrections_append_only', qc_dj_corrections_append_only),
+    ('qc_dj_revisions_append_only', qc_dj_revisions_append_only),
+    ('qc_dj_settled_at_pending', qc_dj_settled_at_pending),
+    ('qc_dj_financial_validation', qc_dj_financial_validation),
+    ('qc_dj_settle_input_validation', qc_dj_settle_input_validation),
     ('qc_dj_prospective_timing', qc_dj_prospective_timing),
     ('qc_dj_bk_origin', qc_dj_bk_origin),
     ('qc_dj_import_idempotent', qc_dj_import_idempotent),
@@ -458,7 +541,7 @@ def main() -> int:
         if not ok:
             failed += 1
     print('-' * 60)
-    print(f'FAIL: {failed}' if failed else 'All 15 Decision Journal acceptance checks passed.')
+    print(f'FAIL: {failed}' if failed else f'All {len(CHECKS)} Decision Journal acceptance checks passed.')
     return 1 if failed else 0
 
 

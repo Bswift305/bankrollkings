@@ -32301,16 +32301,53 @@ def _journal_now_iso():
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def _journal_dl_to_iso(s):
-    """A datetime-local form value 'YYYY-MM-DDTHH:MM' -> ISO-8601 UTC. Blank -> None."""
-    s = (s or '').strip()
+def _journal_norm_utc(iso):
+    """Normalize a browser-produced UTC ISO (new Date(local).toISOString(), e.g.
+    '2099-12-31T18:00:00.000Z') to '2099-12-31T18:00:00Z'. Returns None if unparseable."""
+    from datetime import datetime, timezone
+    s = (iso or '').strip()
     if not s:
         return None
-    if len(s) == 16:
-        return s + ':00Z'
-    if 'T' in s and not s.endswith('Z'):
-        return s + 'Z'
-    return s
+    try:
+        s2 = s[:-1] + '+00:00' if s.endswith('Z') else s
+        dt = datetime.fromisoformat(s2)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        return None
+
+
+def _journal_local_to_utc(local_naive, tz_name):
+    """Convert a tz-free datetime-local 'YYYY-MM-DDTHH:MM' in IANA zone tz_name to UTC via zoneinfo
+    (DST-aware). Returns None if the zone/value can't be resolved (caller then refuses)."""
+    from datetime import datetime, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat((local_naive or '').strip())
+        dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+        return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        return None
+
+
+def _journal_resolve_event_start(utc_iso, local_naive, tz_name):
+    """Resolve a leg's event start to UTC. Prefer the browser's own UTC conversion (DST-correct);
+    fall back to server-side zoneinfo with the captured IANA tz. If a local time was given but the
+    zone can't be determined, REFUSE rather than silently label it UTC (the 7-hour-early bug)."""
+    from services.decision_journal import ValidationError
+    v = _journal_norm_utc(utc_iso)
+    if v:
+        return v
+    local_naive = (local_naive or '').strip()
+    if not local_naive:
+        return None
+    if tz_name:
+        v = _journal_local_to_utc(local_naive, tz_name)
+        if v:
+            return v
+    raise ValidationError('could not determine your timezone for the event start; '
+                          'please retry with JavaScript enabled, or pick a labeled time')
 
 
 def _journal_cents(v):
@@ -32375,57 +32412,59 @@ def journal_new():
     if request.method == 'POST':
         f = request.form
         now = _journal_now_iso()
-        try:
-            count = int(f.get('leg_count') or 0)
-        except ValueError:
-            count = 0
-        legs = []
-        for i in range(count):
-            pfx = f'leg-{i}-'
-            market = (f.get(pfx + 'market') or '').strip()
-            selection = (f.get(pfx + 'selection') or '').strip()
-            if not market and not selection:
-                continue  # skipped/removed row
-            origin = f.get(pfx + 'origin') or 'user-selected'
-            qscope = f.get(pfx + 'quote_scope') or 'unavailable'
-            leg = {
-                'selection_origin': origin,
-                'entry_method': 'manual',
-                'user_reviewed_before_bet': f.get(pfx + 'reviewed') or 'unknown',
-                'surfaces_known': True,
-                'surfaces': [s for s in f.getlist(pfx + 'surfaces') if s],
-                'sport': (f.get(pfx + 'sport') or 'NFL').strip(),
-                'game': (f.get(pfx + 'game') or '').strip() or 'unknown',
-                'event_start': _journal_dl_to_iso(f.get(pfx + 'event_start')),
-                'player': (f.get(pfx + 'player') or '').strip() or None,
-                'market': market or 'unknown',
-                'selection': selection or 'unknown',
-                'line': _journal_float(f.get(pfx + 'line')),
-                'quote_scope': qscope,
-                'price': _journal_int(f.get(pfx + 'price')) if qscope == 'individual-leg' else None,
-                'book': (f.get(pfx + 'book') or '').strip() or None,
-                'decision_time': now,
-                'leg_rationale': (f.get(pfx + 'rationale') or '').strip() or None,
-                'leg_rationale_at': now if (f.get(pfx + 'rationale') or '').strip() else None,
-                'confidence': _journal_int(f.get(pfx + 'confidence')),
-                'reason_tags': [t for t in f.getlist(pfx + 'tags') if t] or ['other'],
-            }
-            if origin == 'BK-rule-assembled':
-                leg['bk_origin'] = {
-                    'surface': (f.get(pfx + 'bk_surface') or '').strip() or 'unknown',
-                    'candidate_id': (f.get(pfx + 'bk_candidate') or '').strip() or 'unknown',
-                    'rule_version': (f.get(pfx + 'bk_rule') or '').strip() or 'unknown',
-                    'captured_at': now,
-                    'displayed_line': _journal_float(f.get(pfx + 'bk_line')),
-                    'displayed_price': _journal_int(f.get(pfx + 'bk_price')),
+        tz = f.get('tz')  # browser IANA timezone (hidden field)
+        try:  # parsing + create share one try so a timezone-resolution refusal renders the form, not a 500
+            try:
+                count = int(f.get('leg_count') or 0)
+            except ValueError:
+                count = 0
+            legs = []
+            for i in range(count):
+                pfx = f'leg-{i}-'
+                market = (f.get(pfx + 'market') or '').strip()
+                selection = (f.get(pfx + 'selection') or '').strip()
+                if not market and not selection:
+                    continue  # skipped/removed row
+                origin = f.get(pfx + 'origin') or 'user-selected'
+                qscope = f.get(pfx + 'quote_scope') or 'unavailable'
+                leg = {
+                    'selection_origin': origin,
+                    'entry_method': 'manual',
+                    'user_reviewed_before_bet': f.get(pfx + 'reviewed') or 'unknown',
+                    'surfaces_known': True,
+                    'surfaces': [s for s in f.getlist(pfx + 'surfaces') if s],
+                    'sport': (f.get(pfx + 'sport') or 'NFL').strip(),
+                    'game': (f.get(pfx + 'game') or '').strip() or 'unknown',
+                    'event_start': _journal_resolve_event_start(
+                        f.get(pfx + 'event_start_utc'), f.get(pfx + 'event_start'), tz),
+                    'player': (f.get(pfx + 'player') or '').strip() or None,
+                    'market': market or 'unknown',
+                    'selection': selection or 'unknown',
+                    'line': _journal_float(f.get(pfx + 'line')),
+                    'quote_scope': qscope,
+                    'price': _journal_int(f.get(pfx + 'price')) if qscope == 'individual-leg' else None,
+                    'book': (f.get(pfx + 'book') or '').strip() or None,
+                    'decision_time': now,
+                    'leg_rationale': (f.get(pfx + 'rationale') or '').strip() or None,
+                    'leg_rationale_at': now if (f.get(pfx + 'rationale') or '').strip() else None,
+                    'confidence': _journal_int(f.get(pfx + 'confidence')),
+                    'reason_tags': [t for t in f.getlist(pfx + 'tags') if t] or ['other'],
                 }
-            legs.append(leg)
-        if f.get('ticket_type') == 'same-game-parlay':
-            ttype = 'same-game-parlay'
-        else:
-            ttype = 'parlay' if len(legs) > 1 else 'straight'
-        thesis = (f.get('game_thesis') or '').strip() or None
-        try:
+                if origin == 'BK-rule-assembled':
+                    leg['bk_origin'] = {
+                        'surface': (f.get(pfx + 'bk_surface') or '').strip() or 'unknown',
+                        'candidate_id': (f.get(pfx + 'bk_candidate') or '').strip() or 'unknown',
+                        'rule_version': (f.get(pfx + 'bk_rule') or '').strip() or 'unknown',
+                        'captured_at': now,
+                        'displayed_line': _journal_float(f.get(pfx + 'bk_line')),
+                        'displayed_price': _journal_int(f.get(pfx + 'bk_price')),
+                    }
+                legs.append(leg)
+            if f.get('ticket_type') == 'same-game-parlay':
+                ttype = 'same-game-parlay'
+            else:
+                ttype = 'parlay' if len(legs) > 1 else 'straight'
+            thesis = (f.get('game_thesis') or '').strip() or None
             if not legs:
                 raise dj.ValidationError('add at least one leg')
             dj.JournalRepository().create_ticket(
@@ -32451,8 +32490,8 @@ def journal_settle(ticket_id):
     if not uid:
         return _journal_login_redirect()
     from services import decision_journal as dj
-    repo = dj.JournalRepository()
     try:
+        repo = dj.JournalRepository()  # construction can fail on dir/perm/sqlite init -> JournalUnavailable
         ticket = repo.get_ticket(uid, ticket_id)
     except dj.JournalUnavailable:
         return render_template('decision_journal/unavailable.html')

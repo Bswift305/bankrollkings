@@ -49,7 +49,14 @@ set. Nothing is user-visible on deploy. Built to `docs/decision_journal_implemen
 parlay → `legacy_flat_ticket` with zero legs; `reverse_migration` removes only migrated rows). Not run
 automatically; a later gate decides if/when the tracker is subsumed. Until then both coexist.
 
-## Out of V1 (schema supports; UI deferred)
-Sportsbook import / OCR, model tuning, causal conclusions, near-duplicate UI, a full audited-correction
-console. Corrections are enforced by the schema/triggers (append-only `decision_revisions`); the V1 UI
-simply blocks frozen edits.
+## Out of V1 (schema supports; deferred)
+Sportsbook import / OCR, model tuning, causal conclusions, near-duplicate UI, and **post-lock
+corrections**. The `decision_revisions` table + append-only triggers exist so the base rows stay the
+immutable decision-time snapshot, but **no correction write-path is exposed in V1** — applying revision
+overlays consistently across `get_ticket` / `list_tickets` / `report` is its own gate, so until then
+product reads always return the base rows and a locked record is simply immutable.
+
+## Timezone note
+Event-start times come from a tz-free `datetime-local`; the entry page captures the browser's IANA
+timezone and its own UTC conversion, and the server converts via `zoneinfo`. A tz-free time is **never**
+read as UTC — if the zone can't be determined the entry is refused, not silently shifted.

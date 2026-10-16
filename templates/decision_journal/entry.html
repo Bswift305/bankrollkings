@@ -38,6 +38,7 @@
 
 <form method="POST" id="dj-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tz" id="dj-tz">
   <input type="hidden" name="leg_count" id="leg_count" value="1">
   <div class="dj-card">
     <h3>Ticket</h3>
@@ -77,7 +78,7 @@
     + '    <div class="dj-fg c2"><span class="lb">Sport</span><input name="leg-'+i+'-sport" value="NFL"></div>'
     + '    <div class="dj-fg c4"><span class="lb">Game</span><input name="leg-'+i+'-game" placeholder="KC @ BUF"></div>'
     + '    <div class="dj-fg c3"><span class="lb">Player (prop only)</span><input name="leg-'+i+'-player" placeholder="P. Mahomes"></div>'
-    + '    <div class="dj-fg c3"><span class="lb">Event start</span><input type="datetime-local" name="leg-'+i+'-event_start"></div>'
+    + '    <div class="dj-fg c3"><span class="lb">Event start</span><input type="datetime-local" name="leg-'+i+'-event_start" class="dj-es" data-i="'+i+'"><input type="hidden" name="leg-'+i+'-event_start_utc" class="dj-esutc" data-i="'+i+'"></div>'
     + '    <div class="dj-fg c4"><span class="lb">Market</span><input name="leg-'+i+'-market" placeholder="passing yards / spread"></div>'
     + '    <div class="dj-fg c4"><span class="lb">Selection (the pick)</span><input name="leg-'+i+'-selection" placeholder="over / KC -3.5"></div>'
     + '    <div class="dj-fg c2"><span class="lb">Line</span><input name="leg-'+i+'-line" inputmode="decimal" placeholder="274.5"></div>'
@@ -113,6 +114,18 @@
   function addLeg(){ legs.insertAdjacentHTML('beforeend', legHTML(counter)); counter++; document.getElementById('leg_count').value = counter; }
   addLeg();  // first leg
   document.getElementById('dj-addleg').addEventListener('click', addLeg);
+  // Record the browser IANA timezone and, at submit, the DST-correct UTC for each event start, so the
+  // server never has to guess a zone (a tz-free datetime-local must not be read as UTC).
+  try { document.getElementById('dj-tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch(e){}
+  document.getElementById('dj-form').addEventListener('submit', function(){
+    legs.querySelectorAll('.dj-es').forEach(function(inp){
+      var i = inp.getAttribute('data-i');
+      var hid = legs.querySelector('.dj-esutc[data-i="'+i+'"]');
+      if(!hid) return;
+      if(inp.value){ try { hid.value = new Date(inp.value).toISOString(); } catch(e){ hid.value=''; } }
+      else { hid.value = ''; }
+    });
+  });
   legs.addEventListener('click', function(e){
     if(e.target.classList.contains('dj-rm')){ var blk = e.target.closest('.dj-leg'); if(blk) blk.remove(); }
   });
