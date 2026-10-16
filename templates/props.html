@@ -109,9 +109,10 @@
 <div class="props-page {% if filter_type == 'floor' %}floor-mode{% endif %}">
 {% if is_nba_props and nba_stats_gated|default(false) %}
 <div style="margin:0 0 16px;padding:12px 16px;border-radius:12px;border:1px solid var(--border);background:rgba(255,159,67,.08);font:600 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
-  <b>NBA statistical context is temporarily unavailable.</b> While we complete a data-rights review, NBA
-  game-log stats and model reads are paused. The market lines shown below come from our licensed odds
-  provider and are unaffected. Nothing is deleted &mdash; this context returns once sourcing is cleared.
+  <b>The NBA board is temporarily unavailable.</b> NBA player game-log and tracking statistics &mdash; and
+  the model reads built from them &mdash; are paused during a data-rights review, so this board is not
+  shown right now. This does not affect our licensed odds data or other sports, and nothing is deleted.
+  The board returns once sourcing is cleared.
 </div>
 {% endif %}
 {% if filter_type == 'floor' %}

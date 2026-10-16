@@ -1066,6 +1066,12 @@ def write_runtime_snapshot(snapshot_key, payload, meta=None):
 
 
 def load_runtime_snapshot(snapshot_key, max_age_minutes=30, allow_stale=False, stale_max_age_minutes=None):
+    # Legal/IP NBA.com data-rights gate (docs/legal_ip_audit.md): a pre-rendered NBA/WNBA snapshot can
+    # contain NBA.com-derived (stats.nba.com) values and would otherwise bypass the live load_gamelogs
+    # gate (snapshots are allowed stale for up to days). When the gate is off, refuse to serve any
+    # NBA/WNBA snapshot -> callers fall through to the live build, which withholds NBA.com-derived stats.
+    if 'nba' in str(snapshot_key or '').lower() and not _nba_source_gate.nba_stats_enabled():
+        return None
     path = get_runtime_snapshot_path(snapshot_key)
     if not path.exists():
         return None
@@ -2856,6 +2862,10 @@ def build_ncaaf_current_season_context():
 
 
 def load_wnba_gamelogs():
+    # WNBA game logs come from stats.nba.com (nba_api leaguegamefinder) -> covered by the NBA.com
+    # data-rights gate. Withheld from display + model inputs while the gate is off.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'gamelogs' / 'WNBA_GameLogs.csv'
     if path.exists():
         try:
@@ -3531,16 +3541,23 @@ def load_playoff_results():
 
 
 def load_player_advanced():
+    # NBA.com-derived (stats.nba.com tracking) -> gated with the NBA.com data-rights gate.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'tracking' / 'NBA_PlayerAdvanced.csv'
     return _load_cached_csv(path)
 
 
 def load_player_snapshot():
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()  # NBA.com-derived (stats.nba.com) -> gated
     path = DATA_DIR / 'tracking' / 'NBA_PlayerSnapshot.csv'
     return _load_cached_csv(path)
 
 
 def load_player_tracking():
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()  # NBA.com-derived (stats.nba.com) -> gated
     path = DATA_DIR / 'tracking' / 'NBA_PlayerTracking.csv'
     return _load_cached_csv(path)
 
@@ -38591,7 +38608,10 @@ def matchup(matchup):
 def build_live_props_board(filter_type=None, postseason_only=False, date_filter=None, direction_filter='all',
                            team_query='', player_query='', stat_query='', sample_mode='full',
                            model_debug=False, sort_by='confidence', sort_dir='desc'):
-    cache_key = 'live_props_board::{postseason}::{filter_type}::{date_filter}::{direction_filter}::{team}::{player}::{stat}::{sample}::{debug}::{sort_by}::{sort_dir}'.format(
+    # The NBA.com data-rights gate state is part of the cache key so a board cached under one gate
+    # state can never be served under the other (defense in depth beside the gated load_gamelogs).
+    cache_key = 'live_props_board::nbagate{nbagate}::{postseason}::{filter_type}::{date_filter}::{direction_filter}::{team}::{player}::{stat}::{sample}::{debug}::{sort_by}::{sort_dir}'.format(
+        nbagate=int(_nba_source_gate.nba_stats_enabled()),
         postseason=int(bool(postseason_only)),
         filter_type=str(filter_type or ''),
         date_filter=str(date_filter or ''),

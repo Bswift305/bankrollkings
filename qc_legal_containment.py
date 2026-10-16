@@ -89,7 +89,8 @@ def run_qc():
         st, h = _get('/sports/nba/props')
         if st == 200 and 'temporarily unavailable' not in h.lower():
             issues.append('NBA board missing the honest unavailable banner while the NBA gate is off')
-        notes.append('NBA.com gamelogs withheld; board shows unavailable banner; Odds API lines unaffected')
+        notes.append('NBA.com-derived stats withheld (gamelogs/tracking/advanced/snapshot + snapshots + '
+                     'cache key); NBA board shows the paused banner; licensed odds + other sports unaffected')
 
     # ---- service worker cache bumped ----
     try:
