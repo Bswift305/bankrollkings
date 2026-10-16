@@ -64,6 +64,13 @@ shared; the reasoning is per-entry.** The framework explicitly forbids:
   **Failed / Retired** never act as live signals (a page may *link* "why we don't use X here").
 - The Lookup Mismatch Detector maps each output to a `model_id`; the Lookup materiality/stability
   contracts are **owned by registry entries** and abstain until the entry exists.
+- **Factual boards keep factual membership.** Where a board's membership is itself a factual rule (not a
+  model), a model may **never suppress** a qualifying row. The canonical case is the **Active ATS Wave**
+  (`docs/ats_wave_contract.md`, FROZEN): membership = a team's **current consecutive graded ATS-cover
+  streak ≥ 3** (not undefeated start, not cover%); byes/ungraded games are ignored, a push pauses (shown
+  separately) and is not a cover, an ATS loss resets. Objective sorting by **current streak length** is
+  allowed and labeled; any angle model (e.g., `cfb_ats` = cover wave × price movement × coaching) is an
+  **overlay beside each row** and controls neither membership nor the factual sort.
 
 ## 4. Inventory method (read-only)
 Catalog every existing NFL/NBA/CFB/MLB mechanism that affects selection/ranking/confidence/score or
