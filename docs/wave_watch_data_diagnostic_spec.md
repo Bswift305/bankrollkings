@@ -1,7 +1,16 @@
 # Wave Watch — Data & Diagnostic Phase + Shared Specification (read-only)
 
-**Status: READ-ONLY DIAGNOSTIC + SPECIFICATION. No code changed. No UI implementation, scoring
-change, new weight, or governance claim.** Produced per the Director's directive to replace the
+**Status: READ-ONLY DIAGNOSTIC + SPECIFICATION — rev 2 (2026-10-16). No code changed. No UI
+implementation, scoring change, new weight, or governance claim.** Rev 2 applies the six approved
+review corrections to `29d2c3a`, each verified against the data: (1) NFL `NFL_AllPropResults`
+→ **PARTIAL** (`OpenLine`/`CloseLine`/`OpenPrice`/`ClosePrice` are 0% populated; one direction/row;
+only `BetLine`/`BetPrice`); (2) NBA inherits the approved **retrospective/timestamp** ruling (duplicate
+snapshots confirmed, ~1,231 unique after dedup); (3) CFB is a **promotion/hierarchy** issue, not
+visibility suppression (all five render; only UCLA promoted to "This Week's Hits"); (4) adds the
+**one-loss ATS cohort** (Perfect start / Active wave / Strong season record); (5) includes the **2026
+3-0 → 13-8 ATS (61.9%, ≈+3.8u)** point-in-time result; (6) replaces the unsupported "prod can't desync"
+claim with a **synchronized-generation requirement**. The canonical-observation standard is unchanged.
+Produced per the Director's directive to replace the
 "eye-test reconstruction" with a data/diagnostic phase across three tracks (CFB team ATS, NFL player
 props, NBA player props), define one canonical observation, audit CFB admissions on *synchronized*
 inputs, and report honestly what prop-line history is reconstructable vs missing vs stale.
@@ -28,12 +37,17 @@ Date: 2026-10-15.
 
 **Freshness finding (already hit this session):** the surfaces were **de-synchronized locally** — I
 had re-run only `build_cfb_ats_streaks.py`, so the streak board was Wk7 while `cfb_2026_ats.json`
-(Wave Watch's record input) was stuck at 09-26 (~Wk4), producing the "3-0 vs 5-0" mismatch. **On prod
-this cannot happen**: `run_daily.py → refresh_cfb_data.py` runs every CFB builder in one pass. Re-ran
-the stale builders locally (`build_cfb_2026_ats`, `fetch_cfb_line_moves`, `build_cfb_rankings`) to
-restore parity. `NCAAF_GameLineResults.csv` is graded only through Wk2 of 2026 locally (its grader
+(Wave Watch's record input) was stuck at 09-26 (~Wk4), producing the "3-0 vs 5-0" mismatch. Re-ran the
+stale builders locally (`build_cfb_2026_ats`, `fetch_cfb_line_moves`, `build_cfb_rankings`) to restore
+parity. `NCAAF_GameLineResults.csv` is graded only through Wk2 of 2026 locally (its grader
 `build_ncaaf_game_line_backfill.py` is **not** in the daily pipeline) but has **complete 2021-2025**,
 which is what the continuation study needs.
+
+**Correction — this is NOT a prod-immune problem.** Running every builder in one `refresh_cfb_data`
+script is **not atomic publication**: a sequential daily refresh can **partially fail** (a mid-run
+CFBD error, timeout, or earlyoom kill) and leave the scenario files from **different update
+generations** — exactly the skew above, just by failure rather than operator error. The spec must
+therefore **enforce synchronized generations** (C4), not assume them.
 
 ### A2. Track 2 — NFL player props
 
@@ -51,6 +65,13 @@ which is what the continuation study needs.
 | `data/tracking/NBA_AllPropResults.csv` | 5,290 | **2025-26, SnapshotDate 2026-05-28 → 07-18 (playoffs only)**; ResultDate on 2,047 (~39% graded) | 10-15 | historical graded record |
 | `data/props/NBA_Props.csv` | — | stale/empty (off-season) | 07-28 | current board input |
 | current 2026-27 season | — | **none — season opens ~late Oct 2026** | — | — |
+
+**The 10-15 mtime does NOT make NBA observations fresh or point-in-time.** Inheriting the approved
+NBA ruling (`docs/nba_results_diagnostic_2026-10-12.md`): the NBA graded record is a **single
+retrospective batch lineage** with **unreliable pre-event timing** and **duplicate snapshots** (this
+inventory confirms 188 of 540 markets carry more than one snapshot), reducing to **~1,231 unique
+graded markets after deduplication**. It is **retrospective / descriptive** and **cannot establish a
+trustworthy prop-wave record** — treat it as history to study, never as a live or point-in-time wave.
 
 ---
 
@@ -76,22 +97,27 @@ as exactly one **(player · stat market · game · direction)** row carrying:
 
 | Source | player | stat | game | source | line type | both prices | result | timestamp | push | Verdict |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **NFL_AllPropResults (2024-25)** | ✅ | ✅ | ~ (GameDate+Opp) | ✅ Book | ✅ **Open+Close+Captured** | ✅ (per-direction row: Direction + OpenPrice/ClosePrice/BetPrice) | ✅ ResultValue | ✅ SnapshotDate/WrittenAt | ✅ OutcomeState/Hit_Binary | **RECONSTRUCTABLE** (the gold standard) |
+| **NFL_AllPropResults (2024-25)** | ✅ | ✅ | ~ (GameDate+Opp, no EventId) | ✅ Book | ⚠️ **CAPTURED only** — `OpenLine`/`CloseLine` columns exist but are **0% populated**; only `BetLine`/`CurrentLine`/`Line` (100%) | ⚠️ **one direction per row** (17,394 OVER / 17,394 UNDER); `OpenPrice`/`ClosePrice` **0% populated**, only `BetPrice`/`MarketPrice` (99.9%) | ✅ ResultValue | ✅ SnapshotDate/WrittenAt | ✅ OutcomeState/Hit_Binary | **PARTIAL** — supports an against-the-line hit record + **directional return at `BetPrice`**; **cannot** do open-vs-close or two-sided (both-price) reconstruction |
 | **NFL_PropLines_Graded (2026)** | ✅ | ✅ | ✅ Game | ~ BookCount only | ⚠️ **captured only** (no open/close) | ✅ OverOdds+UnderOdds | ✅ Actual | ✅ SnapshotDate | ❌ no push field | **PARTIAL + STALE** (09-30) |
 | **NFL_PropLines_Archive (2026)** | ✅ | ✅ | ✅ | ~ | captured only | ✅ | ❌ no result | ✅ | ❌ | capture-only, **STALE/THIN** |
-| **NBA_AllPropResults (2025-26)** | ✅ | ✅ | ❌ **no game key** | ✅ Book | ✅ Open+Close | ✅ (per-direction) | ✅ (39% graded) | ✅ | ~ OutcomeState | **PARTIAL** (playoffs only, weak game key, partial grade) |
+| **NBA_AllPropResults (2025-26)** | ✅ | ✅ | ❌ **no game key** | ✅ Book | ~ open/close columns, population unverified | ⚠️ per-direction | ⚠️ 2,047 of 5,290 graded (~39%) | ⚠️ **unreliable pre-event timing** | ~ OutcomeState | **PARTIAL / RETROSPECTIVE** — one batch lineage, duplicate snapshots (188/540 markets carry >1 snapshot), ~1,231 unique graded markets after dedup (approved NBA diagnostic). Descriptive only; **cannot establish a trustworthy prop-wave record** |
 | current NBA 2026-27 | — | — | — | — | — | — | — | — | — | **NONE (off-season)** |
 | any game-log file | ✅ | ✅ | ✅ | **✅ has no line at all** | — | — | ✅ | — | — | **NOT a prop record — do not use** |
 
 **Headline gaps:**
-1. **The current NFL player-prop wave is not reliably recordable today** — the capture
-   (`NFL_PropLines_Archive/Graded`) is stale (09-30) and thin, has only a *captured* line (no
-   open/close), no push field, and only a book-count (no named source/consensus rule). The rich
-   open+close+price+push record only exists for **completed 2024-25**.
-2. **NBA has no current-season prop history** (off-season) and its historical record is playoff-only,
-   ~39% graded, with **no game key**.
-3. **CFB team ATS is the one fully reconstructable track** (graded lines + results, 2021-25 complete;
-   current synchronized once all builders run together, which prod already does).
+1. **No source currently supports complete two-sided prop-line reconstruction — not even the
+   completed seasons.** `NFL_AllPropResults` (2024-25) is the richest, but its `OpenLine`/`CloseLine`/
+   `OpenPrice`/`ClosePrice` are **entirely empty** and each row is a single direction, so it supports
+   an **against-the-line hit record** and a **directional return at `BetPrice`** — not open-vs-close
+   movement or a two-sided market. The current-season capture (`NFL_PropLines_Archive/Graded`) is
+   stale (09-30), thin, captured-line-only, no push field, book-count-only source.
+2. **NBA has no current-season prop history** (off-season) and the historical file is **retrospective**
+   — one batch lineage, unreliable pre-event timing, duplicate snapshots, no game key, ~1,231 unique
+   graded markets after dedup (per the approved NBA diagnostic, `docs/nba_results_diagnostic_2026-10-12.md`).
+   Descriptive only.
+3. **CFB team ATS is the one fully reconstructable track** (graded lines + results, 2021-25 complete).
+   Its current-season surfaces are reliable **only when the inputs share one refresh generation** (see
+   A1 and C4); that is a requirement to enforce, not an assumption to assert.
 
 ---
 
@@ -111,9 +137,15 @@ cover rate by the streak a team ENTERS the game on:
 | 6+ | 47.9% | 71 |
 
 Breakeven −110 = 52.4%. **Descriptive, not a forecast or a fade signal** (noisy sub-samples; prices,
-pushes and OOS not yet modeled). The honest read: a 3-0 wave continues at roughly a coin flip and
-**decays the deeper it runs** — consistent with "the market catches hot teams," but it establishes no
-productizable edge in either direction.
+pushes and OOS not yet modeled). The historical read: a 3-0 wave continues at roughly a coin flip and
+**decays the deeper it runs** — consistent with "the market catches hot teams."
+
+**Current-season (2026) point-in-time result — the reason this diagnostic exists.** Of the teams that
+reached **3-0 ATS** this season, **21 FBS teams** qualified; their **next played, graded game** went
+**13-8 ATS = 61.9%**, ≈ **+3.8 units** at −110. This is **descriptive and not validated** (one season,
+n=21, no price/push/CLV modeling, point-in-time eligibility only) and it runs *against* the multi-year
+decay above — which is exactly why the wave deserves a visible, factual board rather than a model
+verdict: a single season can diverge sharply from the 2021-25 base rate, and the user should see both.
 
 ### B2. CFB admission/exclusion audit (synchronized inputs)
 
@@ -125,15 +157,19 @@ productizable edge in either direction.
   number the model still likes** (`edge = their_proj + their_line > 0`). Teams whose number the model
   reads as already **priced** (edge ≤ 0) and that carry no "underrated" status fall below the surfaced
   shortlist.
-- **Result for the five (on synced data):** **1 of 5 surfaced** — UCLA (a hit). Oregon State, Utah,
-  BYU, Georgia are all admitted to the wave (they cover) but **not surfaced**, because the model reads
-  their number as priced and they lack an "underrated" flag.
+- **Result for the five (on synced data):** **all five render on the full Wave Watch page**
+  (`cfb_wave.html` renders every `wave_tiers` group — each is `{tier, label, plays}` — beneath the
+  promoted section; the context carries all five). **Only UCLA is promoted into the primary "This
+  Week's Hits" section** (a hit = underrated + positive model edge). Oregon State, Utah, BYU, Georgia
+  remain present, in the tier groups below, with the model reading their number as priced.
 
-**The finding the Director predicted:** this is **visibility suppression by the model overlay**, not a
-data error (the data is now synchronized) and not a false exclusion by a broken threshold — the
-admission threshold is permissive (≥60% cover). The model's "priced" judgment quietly removes
-covering teams from the surfaced list. Whether that judgment is *right* is a separate, unproven
-question (B1 says deep streaks are a coin flip on average; it says nothing about a specific team).
+**Corrected finding (was overstated in the pre-review draft):** this is a **promotion / hierarchy
+problem, not complete visibility suppression.** All five stay in the full inventory; one is promoted.
+It still matters — **most users treat the first shortlist ("This Week's Hits") as *the* actionable
+list**, so a covering team demoted below the fold is effectively out of view for practical purposes —
+but the accurate statement is *demoted, not removed*. Whether the model's "priced" demotion is *right*
+is a separate, unproven question (B1 says a deep streak is a coin flip on average; it says nothing
+about a specific team).
 
 ### B3. Player-prop surfaces using stale/incomplete records
 
@@ -154,8 +190,14 @@ One model for both team ATS and player prop waves. **Every qualifying subject st
 model is an explanatory overlay.**
 
 ### C1. Qualifier (visibility), per track
-- **CFB team ATS:** every FBS team at **3-0 ATS or longer** (active cover run ≥ 3), and symmetric
-  fade runs. Permissive, as today — but *all* qualifiers render, with no shortlist that hides them.
+- **CFB team ATS — three separate FACTUAL cohorts** (a single "active streak ≥ 3" gate wrongly omits
+  one-loss teams like 5-1 / 4-1 whose *current consecutive* run is short). A team may carry **multiple
+  labels**; **none is model-filtered**, and all render:
+  - **Perfect start** — the team's **first three graded ATS decisions were all covers**.
+  - **Active wave** — **current consecutive cover streak ≥ 3** (today's streak board).
+  - **Strong season record** — **≤ 1 ATS loss with ≥ 3 graded decisions** (captures Georgia 5-1,
+    which the active-streak gate would drop even though it is 5-1 ATS).
+  - Symmetric fade cohorts apply the same way.
 - **NFL / NBA player props:** every player on an active **Over or Under streak ≥ 3** vs the posted
   line, per the canonical observation in B-prereq. (Threshold TBD on review; the point is the qualifier
   governs **visibility**, not the model.)
@@ -180,8 +222,15 @@ fading and decides for themselves.
    not a game log, not a stale 09-30 file.
 2. The current-season graded record folded in only once it meets the canonical bar; until then the
    surface shows **Pending / line-type = captured**, never a fabricated closing record.
-3. CFB inputs kept **synchronized** (prod already does this via `refresh_cfb_data`; the local skew was
-   operator error, not a product defect).
+3. **Synchronized-generation requirement** (replaces any "prod can't desync" assumption). Before any
+   surface renders a *combined* conclusion from multiple sources (streak board + ATS record + lines +
+   results), the inputs must be proven to share one generation:
+   - a **shared refresh/run identifier** stamped on every file a run produces;
+   - **source-through-week metadata** on each file (which season/week it is current to);
+   - a **parity check** at read time — if the inputs disagree on run-id or through-week, do **not** mix
+     them into one conclusion;
+   - a visible **"sources not synchronized"** state (name the lagging file + its through-week) instead
+     of silently blending generations. This makes a partial-refresh failure *loud*, not invisible.
 
 ### C5. Explicitly out of scope here
 No UI, no scoring, no new weights, no governance/status labels, no "edge" or "fade" claim. The
