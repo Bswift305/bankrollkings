@@ -9,7 +9,10 @@ Durable invariants (no saved baseline needed):
      bet the opponent / "This Week's Hits" / genuinely underrated / better than the market rated /
      baked into the number / "the edge is a team"), and the ATS Streaks surface no longer says
      "overbought".
-  3. The frozen neutral replacements are present.
+  3. The frozen neutral replacements are present, including the neutral tier labels (C6 addendum:
+     _WAVE_TIERS / _SINK_TIERS are model-description copy, not buy/fade verdicts). Every builder tier
+     group renders, in the builder's order -- proving the label change is display-only (the tier
+     NUMBER drives grouping/order, so no team moved and no group reordered).
 
 Renders through the real authenticated route (owner session), so it exercises the live template +
 builder. Exits 0 when the remediation holds, 1 otherwise.
@@ -25,6 +28,9 @@ AUTHORITY_GONE = [
     "This Week&rsquo;s Hits", "Ride until it does", "Fade the Sinkers", "bet the opponent",
     "genuinely underrated", "better than the market rated", "baked into the number",
     "the edge is a team", "FADE {",  # the "FADE {line} -> back {opp}" play text
+    # Retired tier labels + the tier-2 blurb (C6 addendum) -- regression guards.
+    "market lagging", "Genuinely strong", "regression risk", "cupcakes", "Overrated",
+    "Bad and priced",
 ]
 NEUTRAL_PRESENT = [
     "Covering, and the model still projects a cover",
@@ -79,6 +85,28 @@ def run_qc():
     for ph in NEUTRAL_PRESENT:
         if ph.lower() not in h.lower():
             issues.append(f"neutral replacement missing on cfb-wave: {ph!r}")
+
+    # (4) tier-group labels: membership + order unchanged. The builder DROPS empty tiers
+    # (`if members`), so the expected labels are whatever the builder actually produced --
+    # derive them from the builder output and prove each renders, in the builder's order.
+    # The tier NUMBER (0/1/2) drives grouping/order; the label is display-only copy, so
+    # neutralizing the labels cannot move a team or reorder a group.
+    wave_labels = [str(g.get("label", "")) for g in (ww.get("wave_tiers") or [])]
+    sink_labels = [str(g.get("label", "")) for g in (ww.get("wave_sink_tiers") or [])]
+    for lbl in wave_labels + sink_labels:
+        if lbl and lbl.lower() not in h.lower():
+            issues.append(f"builder tier label not rendered (membership changed): {lbl!r}")
+
+    def _in_order(labels):
+        idx = [h.lower().find(l.lower()) for l in labels if l]
+        seen = [i for i in idx if i >= 0]
+        return seen == sorted(seen)
+    if not _in_order(wave_labels):
+        issues.append(f"wave tier labels rendered out of builder order: {wave_labels}")
+    if not _in_order(sink_labels):
+        issues.append(f"sink tier labels rendered out of builder order: {sink_labels}")
+    if not issues:
+        notes.append(f"tier labels render in builder order — waves={wave_labels} sinks={sink_labels}")
 
     # ATS Streaks: overbought gone, descriptive present
     s2, h2 = _authed_html("/tools/cfb-ats-streaks")

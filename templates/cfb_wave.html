@@ -72,7 +72,7 @@
   <div class="wv-h"><span class="n"><span class="wv-tierlbl t{{ grp.tier }}">{{ grp.label }}</span></span><span class="d">{{ grp.plays|length }} teams</span></div>
   {% if grp.tier == 0 %}<p class="wv-blurb">The model&rsquo;s number is higher than the closing line &mdash; it still projects a cover. The market may adjust. (Model read, not an instruction.)</p>
   {% elif grp.tier == 1 %}<p class="wv-blurb">The model and the closing number agree &mdash; the model projects no further cover edge here.</p>
-  {% else %}<p class="wv-blurb">Big cover margins on a <b>soft schedule</b> &mdash; the opponent-adjusted rating says cupcakes, not quality. Regression risk as the schedule stiffens.</p>{% endif %}
+  {% else %}<p class="wv-blurb">Big cover margins against a <b>soft schedule</b> &mdash; the opponent-adjusted rating sits below the record. The model&rsquo;s read, shown as context.</p>{% endif %}
   {% for p in grp.plays %}
   <div class="wv-row">
     <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>

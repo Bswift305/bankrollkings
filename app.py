@@ -44159,9 +44159,12 @@ def cfb_matchup_tool():
 
 
 _CFB_WAVE_CACHE = {}
-_WAVE_TIERS = {0: 'Underrated — market lagging', 1: 'Genuinely strong — priced',
-               2: 'Soft schedule — regression risk'}
-_SINK_TIERS = {0: 'Overrated — fade persists', 1: 'Bad and priced'}
+# Neutral model-description labels (CFB Wave Watch wording remediation, C6 addendum). These are the
+# model's read of each team's number vs the closing line, shown as an overlay beside the facts --
+# never a buy/fade verdict. Display-only strings; the tier NUMBER (0/1/2) drives grouping/order.
+_WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
+               2: 'Soft schedule (opponent-adjusted)'}
+_SINK_TIERS = {0: 'Model rates below the line', 1: 'Model well below the line'}
 
 
 def build_cfb_wave_context():
