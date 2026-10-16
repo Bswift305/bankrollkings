@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Decision Journal — dark-production SETUP VERIFIER (read-only on the live store).
+"""Decision Journal — dark-production SETUP VERIFIER (non-destructive to the live store).
 
 Run AFTER creating the private directory and setting DECISION_JOURNAL_DB_PATH, with the feature flag
 still OFF, as the application service user. Proves permissions, initialization, PRAGMAs, both integrity
-checks, backup, and a restore round-trip -- WITHOUT enabling routes, WITHOUT migrating or creating
-tickets, and WITHOUT destructively touching the live DB (the corrupt/restore test runs on a copy).
+checks, an empty new store, a private backup, and a restore round-trip -- WITHOUT enabling routes,
+WITHOUT migrating or creating tickets. It is initialization-capable (it creates the empty schema if
+absent), not literally read-only, but it never mutates existing rows and runs the corrupt/restore test
+only on a temporary COPY, never the live DB.
 
 The report is SANITIZED: it prints no ticket contents, user IDs, row counts, environment secrets, or
 database bytes -- only PASS/FAIL checkpoints and non-sensitive configuration (paths, modes, PRAGMAs).
 
     DECISION_JOURNAL_DB_PATH=/var/lib/bankrollkings/decision_journal/journal.db \
-        python3 verify_decision_journal_setup.py
+        python3 verify_decision_journal_setup.py <expected_service_user>
 """
 from __future__ import annotations
 
@@ -19,11 +21,12 @@ import os
 import shutil
 import sqlite3
 import stat
+import sys
 from datetime import datetime, timezone
 
 import services.decision_journal as dj
 
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 CHECKS, NOTES = [], []
 
 
@@ -38,15 +41,17 @@ def _mode(path):
         return 'n/a'
 
 
+def _count(path, table):
+    c = sqlite3.connect(path)
+    try:
+        return c.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
+    finally:
+        c.close()
+
+
 def _rows_match(a, b):
     """True if two stores hold the same number of tickets. The count itself is never printed."""
-    def n(p):
-        c = sqlite3.connect(p)
-        try:
-            return c.execute('SELECT count(*) FROM tickets').fetchone()[0]
-        finally:
-            c.close()
-    return n(a) == n(b)
+    return _count(a, 'tickets') == _count(b, 'tickets')
 
 
 def _integrity(path):
@@ -63,19 +68,32 @@ def _integrity(path):
 
 
 def main() -> int:
+    expected_user = sys.argv[1].strip() if len(sys.argv) > 1 else ''
     path = dj.resolve_db_path()
-    d = os.path.dirname(os.path.abspath(path))
-    NOTES.append(f'service user: {getpass.getuser()} (confirm this is the app service account)')
+    rpath = os.path.realpath(path)
+    d = os.path.dirname(rpath)
+    cur_user = getpass.getuser()
+    NOTES.append(f'service user: {cur_user}')
     NOTES.append(f'DB path: {path}')
+
+    # expected service user (passed in) must match the running user
+    if expected_user:
+        ok(cur_user == expected_user, f'running as the expected service user ({expected_user})',
+           f'running as {cur_user}, expected {expected_user}')
+    else:
+        NOTES.append('no expected service user passed (argv[1]); pass it so the match is asserted')
 
     # service user is not root (prod)
     if os.name == 'posix':
         ok(os.geteuid() != 0, 'runs as a non-root service user', f'euid={os.geteuid()} (root)')
 
-    # path resolves OUTSIDE the deploy checkout
-    inside = os.path.abspath(path).startswith(REPO_ROOT + os.sep)
+    # path resolves OUTSIDE the deploy checkout — realpath + commonpath (symlink/sibling-prefix safe)
+    try:
+        inside = os.path.commonpath([rpath, REPO_ROOT]) == REPO_ROOT
+    except ValueError:  # different drives/roots -> definitely outside
+        inside = False
     ok(not inside, 'DECISION_JOURNAL_DB_PATH resolves outside the checkout',
-       f'path is inside the checkout {REPO_ROOT}')
+       f'resolved path {rpath} is inside the checkout {REPO_ROOT}')
 
     # initialize (idempotent; empty DB in prod)
     try:
@@ -119,6 +137,11 @@ def main() -> int:
     jok = dj.JournalRepository(db_path=path, auto_init=False).integrity_report()
     ok(jok['ok'], 'orphan / invariant checks clean', str(jok.get('issues')))
 
+    # empty-store assertion — this setup is for a NEW empty database (count asserted, never printed)
+    empties = {t: _count(path, t) for t in ('tickets', 'legs', 'decision_revisions')}
+    ok(all(v == 0 for v in empties.values()), 'new store is empty (tickets/legs/revisions)',
+       'store is not empty — this runbook is for a fresh database only')
+
     # feature flag OFF + routes unavailable while dark
     flag = (os.environ.get('DECISION_JOURNAL_ENABLED', '') or '').strip().lower()
     ok(flag not in ('1', 'true', 'yes', 'on'), 'DECISION_JOURNAL_ENABLED is OFF', f'flag={flag!r}')
@@ -130,22 +153,20 @@ def main() -> int:
     except Exception as e:  # noqa
         ok(False, 'journal routes verified unavailable', f'route check error: {type(e).__name__}')
 
-    # backup (consistent snapshot) + both integrity checks on the backup
-    bdir = os.path.join(d, 'backups')
-    os.makedirs(bdir, exist_ok=True)
-    try:
-        os.chmod(bdir, 0o700)
-    except OSError:
-        pass
+    # backup: the SAME Python SQLite routine the runbook uses (dj.backup) -> VACUUM INTO + chmod 0600
+    # + both integrity checks. Assert backup-dir 0700 and backup-file 0600 (privacy under umask).
     ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    bdir = os.path.join(d, 'backups')
     backup = os.path.join(bdir, f'verify_{ts}.db')
     try:
-        cc = sqlite3.connect(path)
-        cc.execute('VACUUM INTO ?', (backup,))
-        cc.close()
-        bic, bnofk = _integrity(backup)
-        ok(os.path.exists(backup) and bic and bnofk and _rows_match(path, backup),
-           'backup created, opens, passes both integrity checks (rows match live)')
+        healthy = dj.backup(path, backup)  # creates bdir 0700, chmods backup 0600, dual integrity check
+        ok(healthy and os.path.exists(backup) and _rows_match(path, backup),
+           'backup created via dj.backup, opens, passes both integrity checks')
+        if os.name == 'posix':
+            ok(_mode(bdir) == '0o700', 'backup directory permissions are 0700', f'dir mode {_mode(bdir)}')
+            ok(_mode(backup) == '0o600', 'backup file permissions are 0600', f'file mode {_mode(backup)}')
+        else:
+            NOTES.append('backup perm bits are POSIX (prod is Linux) — not asserted here')
     except sqlite3.Error as e:
         ok(False, 'backup create/verify', f'{type(e).__name__}')
 

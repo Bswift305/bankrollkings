@@ -357,6 +357,31 @@ def init_db(path: str | None = None) -> str:
     return path
 
 
+def backup(db_path: str, dest: str) -> bool:
+    """Write a consistent snapshot of `db_path` to `dest` via VACUUM INTO, then lock it down (`0600`)
+    and verify it opens and passes BOTH integrity checks. The parent dir is created `0700`. Returns
+    True iff the backup is healthy. `dest` must not already exist (VACUUM INTO requires a new file)."""
+    _ensure_dir(dest)  # creates the backup dir at 0700
+    conn = connect(db_path)
+    try:
+        conn.execute('VACUUM INTO ?', (dest,))
+    finally:
+        conn.close()
+    try:
+        os.chmod(dest, 0o600)  # VACUUM INTO/CLI would otherwise create it under the process umask
+    except OSError:
+        pass
+    c = sqlite3.connect(dest)
+    try:
+        ic = c.execute('PRAGMA integrity_check').fetchone()[0]
+        fk = c.execute('PRAGMA foreign_key_check').fetchall()
+    except sqlite3.Error:
+        return False
+    finally:
+        c.close()
+    return ic == 'ok' and not fk
+
+
 # ---------------------------------------------------------------------------------------------------
 # Settlement math (§6)
 # ---------------------------------------------------------------------------------------------------

@@ -12,21 +12,30 @@ The feature flag `DECISION_JOURNAL_ENABLED` stays **OFF** (unset) throughout, so
 
 ---
 
+The verifier is **non-destructive to the live store** (initialization-capable — it creates the empty
+schema if absent — but it never mutates existing rows and runs the corrupt/restore test only on a
+temporary copy).
+
 ## What the verifier proves (sanitized — no contents, IDs, counts, secrets, or bytes)
-`verify_decision_journal_setup.py` (deployed to the box) checks and prints PASS/FAIL for:
-- running as a **non-root** service user (the report prints the user to confirm it's the app account);
-- `DECISION_JOURNAL_DB_PATH` resolves **outside** the deploy checkout;
-- directory mode **0700**, DB file mode **0600** (asserted on Linux);
+`verify_decision_journal_setup.py <expected_service_user>` (deployed to the box) checks and prints
+PASS/FAIL for:
+- running as the **expected service user** (passed in and compared) and **non-root**;
+- `DECISION_JOURNAL_DB_PATH` resolves **outside** the deploy checkout (realpath + `commonpath`,
+  symlink/sibling-prefix safe);
+- directory mode **0700**, DB file mode **0600**, **backup dir 0700**, **backup file 0600** (Linux);
 - **schema version** correct;
 - **`foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL`**;
 - **`integrity_check=ok`** and **`foreign_key_check` returns no rows** (+ orphan/invariant checks);
+- the **new store is empty** (tickets/legs/revisions — asserted, count never printed);
 - **`DECISION_JOURNAL_ENABLED` is OFF** and the **journal routes return 404 while dark**;
-- a **consistent backup** can be created and **opens + passes both integrity checks**;
+- a **consistent backup** via the same Python routine (`dj.backup`) that **opens + passes both integrity
+  checks**;
 - **corruption is detected and restore recovers** a healthy store — tested **only on a temporary copy**,
   never the live DB.
 
 ### Local proof (Windows dev; mechanics only — Linux asserts the perm bits)
 ```
+[PASS] running as the expected service user (<svc>)
 [PASS] DECISION_JOURNAL_DB_PATH resolves outside the checkout
 [PASS] empty database initializes cleanly
 [PASS] schema version is 1
@@ -36,12 +45,15 @@ The feature flag `DECISION_JOURNAL_ENABLED` stays **OFF** (unset) throughout, so
 [PASS] integrity_check=ok
 [PASS] foreign_key_check returns no rows
 [PASS] orphan / invariant checks clean
+[PASS] new store is empty (tickets/legs/revisions)
 [PASS] DECISION_JOURNAL_ENABLED is OFF
 [PASS] journal routes return 404 while dark
-[PASS] backup created, opens, passes both integrity checks (rows match live)
+[PASS] backup created via dj.backup, opens, passes both integrity checks
 [PASS] corruption detected and restore recovers a healthy store (temp copy only)
 DARK SETUP VERIFIED — ready for dark operation (routes still disabled).
 ```
+(On Linux the run also asserts dir 0700 / file 0600 / backup dir 0700 / backup file 0600 and non-root;
+those show as POSIX NOTEs on the Windows dev box.)
 
 ---
 
@@ -75,12 +87,14 @@ sudo systemctl restart bankrollkings
 sudo -u "$SVC" env DECISION_JOURNAL_DB_PATH="$DBP" "$PY" \
   -c "import services.decision_journal as dj; dj.init_db(); print('init ok')"
 
-# 5. run the verifier AS THE SERVICE USER (flag stays unset in this shell)
-sudo -u "$SVC" env DECISION_JOURNAL_DB_PATH="$DBP" "$PY" verify_decision_journal_setup.py
+# 5. run the verifier AS THE SERVICE USER, passing the expected user so the match is asserted
+sudo -u "$SVC" env DECISION_JOURNAL_DB_PATH="$DBP" "$PY" verify_decision_journal_setup.py "$SVC"
 
-# 6. create + keep a named first backup (the verifier also makes a throwaway one)
-sudo -u "$SVC" env DBP="$DBP" bash -c \
-  'sqlite3 "$DBP" "VACUUM INTO '"'"'/var/lib/bankrollkings/decision_journal/backups/first_'"$(date -u +%Y%m%dT%H%M%SZ)"'.db'"'"'"'
+# 6. create + keep a named first backup via the SAME Python routine the verifier uses
+#    (dj.backup: VACUUM INTO + chmod 0600 + both integrity checks). No fragile shell sqlite3.
+FIRST="/var/lib/bankrollkings/decision_journal/backups/first_$(date -u +%Y%m%dT%H%M%SZ).db"
+sudo -u "$SVC" env DBP="$DBP" FIRST="$FIRST" "$PY" -c \
+  "import os,services.decision_journal as dj; ok=dj.backup(os.environ['DBP'],os.environ['FIRST']); print('first backup OK' if ok else 'FIRST BACKUP FAILED')"
 
 # 7. copy ONLY the sanitized verifier PASS/FAIL report back for the record.
 ```
