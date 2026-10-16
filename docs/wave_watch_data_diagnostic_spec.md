@@ -1,8 +1,17 @@
 # Wave Watch — Data & Diagnostic Phase + Shared Specification (read-only)
 
-**Status: READ-ONLY DIAGNOSTIC + SPECIFICATION — rev 2 (2026-10-16). No code changed. No UI
-implementation, scoring change, new weight, or governance claim.** Rev 2 applies the six approved
-review corrections to `29d2c3a`, each verified against the data: (1) NFL `NFL_AllPropResults`
+**Status: READ-ONLY DIAGNOSTIC + SPECIFICATION — rev 3 (2026-10-16). No code changed. No UI,
+scoring, ranking, weight, or governance change.** Rev 3 adds the authority-language containment the
+review required: (1) a full **inventory of every betting-authority phrase** on the CFB Wave Watch +
+ATS Streaks surfaces with **frozen neutral replacements** (C6), separated into Facts / Context / Model
+overlay; (2) the three CFB cohorts stay visible (C1); (3) **staged player-prop capability** — captured
+record → price-adjusted return → CLV (C7); (4) the **player-prop cohorts are frozen** (≥3 graded
+covers; ≤1 miss / ≥3 decisions) (C1); (5) CFB framed as **gradeable against the stored spread, not
+ROI-reconstructable** without prices (−110 disclosed) (B1); (6) the **13-8 result made reproducible**
+(cohort + grades + input fingerprint + method) (B1); (7) **execution split into two gates** (C8). The
+appendix's single "overbought" retraction is now **superseded by the full C6 inventory**.
+
+Rev 2 applied the six approved factual corrections to `29d2c3a`, each verified against the data: (1) NFL `NFL_AllPropResults`
 → **PARTIAL** (`OpenLine`/`CloseLine`/`OpenPrice`/`ClosePrice` are 0% populated; one direction/row;
 only `BetLine`/`BetPrice`); (2) NBA inherits the approved **retrospective/timestamp** ruling (duplicate
 snapshots confirmed, ~1,231 unique after dedup); (3) CFB is a **promotion/hierarchy** issue, not
@@ -115,9 +124,11 @@ as exactly one **(player · stat market · game · direction)** row carrying:
    — one batch lineage, unreliable pre-event timing, duplicate snapshots, no game key, ~1,231 unique
    graded markets after dedup (per the approved NBA diagnostic, `docs/nba_results_diagnostic_2026-10-12.md`).
    Descriptive only.
-3. **CFB team ATS is the one fully reconstructable track** (graded lines + results, 2021-25 complete).
-   Its current-season surfaces are reliable **only when the inputs share one refresh generation** (see
-   A1 and C4); that is a requirement to enforce, not an assumption to assert.
+3. **CFB team ATS is the one fully GRADEABLE track** (cover/no-cover/push is certain from the stored
+   closing spread + score, 2021-25 complete). It is **not fully ROI-reconstructable** — no captured
+   ATS price is stored, so unit returns assume −110 (B1). Its current-season surfaces are reliable
+   **only when the inputs share one refresh generation** (A1, C4) — a requirement to enforce, not an
+   assumption to assert.
 
 ---
 
@@ -136,16 +147,33 @@ cover rate by the streak a team ENTERS the game on:
 | 5+ | 45.5% | 202 |
 | 6+ | 47.9% | 71 |
 
-Breakeven −110 = 52.4%. **Descriptive, not a forecast or a fade signal** (noisy sub-samples; prices,
-pushes and OOS not yet modeled). The historical read: a 3-0 wave continues at roughly a coin flip and
-**decays the deeper it runs** — consistent with "the market catches hot teams."
+Breakeven −110 = 52.4%. **Descriptive, not a forecast or a fade signal** (noisy sub-samples; OOS not
+yet modeled). The historical read: a 3-0 wave continues at roughly a coin flip and **decays the deeper
+it runs** — consistent with "the market catches hot teams."
+
+**Gradeable vs ROI-reconstructable (disclosure).** CFB ATS is **fully gradeable against the stored
+closing spread** — cover / no-cover / push is certain from the stored spread + final score. It is
+**not** fully reconstructable for *actual* ROI, because these rows carry **no captured moneyline/price**
+for the ATS bet. Therefore **every "ROI" / "units" figure here (and on the live surface) assumes a flat
+−110** and is labeled as such; a real return needs captured prices (same gap as the player-prop
+tracks).
 
 **Current-season (2026) point-in-time result — the reason this diagnostic exists.** Of the teams that
 reached **3-0 ATS** this season, **21 FBS teams** qualified; their **next played, graded game** went
-**13-8 ATS = 61.9%**, ≈ **+3.8 units** at −110. This is **descriptive and not validated** (one season,
-n=21, no price/push/CLV modeling, point-in-time eligibility only) and it runs *against* the multi-year
-decay above — which is exactly why the wave deserves a visible, factual board rather than a model
-verdict: a single season can diverge sharply from the 2021-25 base rate, and the user should see both.
+**13-8 ATS = 61.9%**, ≈ **+3.8 units** at an assumed −110 (per the disclosure above). This is
+**descriptive and not validated** (one season, n=21, no price/push/CLV modeling, point-in-time
+eligibility only) and it runs *against* the multi-year decay above — which is exactly why the wave
+deserves a visible, factual board rather than a model verdict: a single season can diverge sharply
+from the 2021-25 base rate, and the user should see both.
+
+**Reproducibility of the 13-8 result (required before it is cited as product context).** The figure
+must be regenerable, not asserted. Preserve: (a) the **21-team cohort** — each team, the week it
+reached 3-0 ATS, and the three covers that qualified it; (b) each team's **next graded game** with
+opponent, stored closing spread, final score, and cover/no-cover (the 13-8); (c) an **input
+fingerprint** — the source file(s), their run-id/through-week, and row counts used (so a re-run proves
+the same inputs); (d) the **calculation method** — point-in-time eligibility rule, push handling, and
+the −110 assumption. Byes are **no wager**, not a loss or a streak break. Until (a)-(d) are stored and
+a re-run reproduces 13-8, the number stays an internal diagnostic note, not surface copy.
 
 ### B2. CFB admission/exclusion audit (synchronized inputs)
 
@@ -198,9 +226,11 @@ model is an explanatory overlay.**
   - **Strong season record** — **≤ 1 ATS loss with ≥ 3 graded decisions** (captures Georgia 5-1,
     which the active-streak gate would drop even though it is 5-1 ATS).
   - Symmetric fade cohorts apply the same way.
-- **NFL / NBA player props:** every player on an active **Over or Under streak ≥ 3** vs the posted
-  line, per the canonical observation in B-prereq. (Threshold TBD on review; the point is the qualifier
-  governs **visibility**, not the model.)
+- **NFL / NBA player props — frozen cohorts** (no longer TBD), per the canonical observation in
+  B-prereq; both are factual, a player may carry both, and **neither is model-filtered**:
+  - **Active prop wave** — **active Over or Under streak ≥ 3 graded covers** vs the posted line.
+  - **Strong line record** — **≤ 1 miss across ≥ 3 graded decisions** vs the line (the one-miss
+    analogue of the CFB "Strong season record" cohort).
 
 ### C2. The row carries FACTS (verifiable, source-labeled), never a verdict
 Team: record, active streak, avg cover margin, the run's weeks, this week's line + line-move, opponent.
@@ -232,14 +262,60 @@ fading and decides for themselves.
    - a visible **"sources not synchronized"** state (name the lagging file + its through-week) instead
      of silently blending generations. This makes a partial-refresh failure *loud*, not invisible.
 
+### C6. Authority-language inventory & frozen neutral replacements
+
+The live surfaces turn descriptive ATS history + a model difference into **betting authority**. Every
+phrase below is frozen to neutral wording that keeps the three layers separate — **Facts** (record,
+streak, next line, sample), **Context** (historical continuation + the 2026 point-in-time result),
+**Model overlay** (the model–market difference shown *beside* every qualifier, never used to remove
+one). No *ride / fade / bet / hit / edge / overbought / underrated / overrated* verdict survives.
+
+| Current phrase (live) | Location | Frozen neutral replacement | Layer |
+|---|---|---|---|
+| "the **edge** is a team covering because it's **genuinely underrated**, into a number the model still likes" | `cfb_wave.html:41` | "teams covering ATS this year, with the model's read of each number shown beside it" | Facts + Model overlay |
+| "**This Week's Hits**" (promoted section header) | `cfb_wave.html:50,52` | "Covering, and the model still projects a cover" — a labeled group, **not** a promoted shortlist | Model overlay |
+| "covering **because they're better than the market rated them**" | `cfb_wave.html:53` | "covering, and the model's number is higher than the closing line" | Model overlay |
+| "**Ride until it does**" | `cfb_wave.html:73` | "the model still projects a cover; the market may adjust" (statement, not instruction) | Model overlay |
+| "the cover is **baked into the number** now. Neutral." | `cfb_wave.html:74` | "the model and the closing number agree" | Model overlay |
+| "**Fade the Sinkers** (anti-wave)" | `cfb_wave.html:90,92` | "Not covering" — teams missing the spread (a factual cohort) | Facts |
+| "a spot to **bet the opponent**" · "**FADE** {line} → back {opp}" | `cfb_wave.html:93,99` | "the model projects a miss against this line" (no bet instruction) | Model overlay |
+| "**overrated**, model projects them to **miss this number** — **bet {opp}**" | `cfb_wave.html:100` | "the model's number is below the closing line; it projects a miss" | Model overlay |
+| "The **edge** is the **underrated** tier … its mirror, an **overrated** sinker the model fades" | `cfb_wave.html:121` | "a streak is where you start; beside each, the model's number-vs-line difference — context, not a signal on its own" | Context + Model overlay |
+| "this shows you **who's overbought**, not who to ride" | `cfb_ats_streaks.html:72` | "over 2021-25 a deep cover streak continued at ~46–50% next game, below the 52.4% breakeven — a descriptive record, not a forecast or a fade signal" | Context |
+
+The model-overlay labels (surging / rising / priced / soft; tier 0/1/2) **stay as a read beside each
+row, never as a gate** that removes a qualifier. The responsible-gambling line stays; "spots, not
+locks" / "don't force it" are retained as caution, not promotion.
+
+### C7. Staged player-prop capability (build only what the data supports)
+
+The absence of closing history must **not** block an honestly-labeled captured-line streak surface.
+Three stages, each gated on the source meeting the canonical bar (B-prereq):
+1. **Captured-line record** — W/L/push vs a **timestamped captured line**, with line-type labeled
+   "captured". Buildable now for any source recording a captured line + result + timestamp + push.
+2. **Price-adjusted directional return** — a unit return **only where the recorded price supports it**
+   (e.g. NFL `BetPrice`). Where no price is recorded, show W/L/push with **no** return — or a
+   −110-assumed figure **explicitly disclosed** (see B1 / #6).
+3. **Open → current → close movement + CLV** — **only after complete two-sided capture exists** (both
+   prices, open and close). Until then this stage is **Pending**; nothing fabricates a closing record.
+
 ### C5. Explicitly out of scope here
 No UI, no scoring, no new weights, no governance/status labels, no "edge" or "fade" claim. The
 continuation numbers (B1) stay **descriptive**. Those decisions follow review of this diagnostic.
 
+### C8. Execution gates (sequencing only — not an authorization)
+1. **Gate 1 — CFB Wave Watch hierarchy + wording remediation.** Implementable from existing data: the
+   three visible cohorts (C1), the neutral replacements (C6), and the "every qualifier visible, model
+   as overlay" structure. No new data needed.
+2. **Gate 2 — NFL/NBA prop-capture infrastructure.** The live capture writing the full canonical
+   observation (C4 #1, C7) must be specified and *verified* before the complete player-prop Wave Watch
+   is built. Gate 2 does not start until its data prerequisite is met.
+
 ---
 
-## Appendix — the overclaim to retract on review
-The CFB ATS Streaks tool shipped earlier today (`242a7a9`) carries copy — *"this shows you who's
-overbought, not who to ride"* — that implies a productizable fade read. B1 does **not** establish that
-(no prices/pushes/ROI/OOS). **Recommended: soften to the descriptive continuation record with explicit
-uncertainty.** Held per the product freeze; not edited in this read-only phase.
+## Appendix — overclaim retraction (now folded into C6)
+The CFB ATS Streaks tool shipped earlier (`242a7a9`) carries *"this shows you who's overbought, not who
+to ride"* — a productizable fade read B1 does not establish. **This is now one row of the full C6
+authority-language inventory**, not a standalone retraction: C6 freezes its neutral replacement
+alongside every other ride/fade/bet/edge/underrated phrase on the CFB surfaces. All held per the
+product freeze; nothing edited in this read-only phase.
