@@ -12,9 +12,12 @@ The feature flag `DECISION_JOURNAL_ENABLED` stays **OFF** (unset) throughout, so
 
 ---
 
-The verifier is **non-destructive to the live store** (initialization-capable — it creates the empty
-schema if absent — but it never mutates existing rows and runs the corrupt/restore test only on a
-temporary copy).
+The verifier is **non-destructive to the live store**. It initializes the schema **only when the store
+does not yet exist** (fresh setup); an **existing** store is verified strictly **read-only** (`mode=ro`
+/ `PRAGMA query_only=ON`) and is never re-initialized, migrated, repaired, truncated or replaced — a
+failed integrity check never triggers schema creation. The live DB and the verified backup are opened
+read-only; the corrupt/restore test runs only on a temporary copy (both `integrity_check` and
+`foreign_key_check`), and all temporary artifacts are removed afterward.
 
 ## What the verifier proves (sanitized — no contents, IDs, counts, secrets, or bytes)
 `verify_decision_journal_setup.py <expected_service_user>` (deployed to the box) checks and prints

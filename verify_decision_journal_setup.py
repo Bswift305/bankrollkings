@@ -41,8 +41,23 @@ def _mode(path):
         return 'n/a'
 
 
+def _ro(path):
+    """Open a connection for VERIFICATION ONLY. Prefer a read-only file handle (mode=ro); fall back to
+    a normal handle with PRAGMA query_only=ON. Either way no write, repair, or schema change can occur
+    -- the live store and the verified backup are only ever read during verification."""
+    try:
+        c = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+    except sqlite3.Error:
+        c = sqlite3.connect(path)
+    try:
+        c.execute('PRAGMA query_only=ON')
+    except sqlite3.Error:
+        pass
+    return c
+
+
 def _count(path, table):
-    c = sqlite3.connect(path)
+    c = _ro(path)
     try:
         return c.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
     finally:
@@ -55,8 +70,11 @@ def _rows_match(a, b):
 
 
 def _integrity(path):
-    """(ok, no_fk_rows) using a plain connection — both checks the director requires."""
-    c = sqlite3.connect(path)
+    """(ok, no_fk_rows) via a READ-ONLY connection — both checks the director requires, no mutation."""
+    try:
+        c = _ro(path)
+    except sqlite3.Error:
+        return False, False
     try:
         ic = c.execute('PRAGMA integrity_check').fetchone()[0]
         fk = c.execute('PRAGMA foreign_key_check').fetchall()
@@ -95,14 +113,20 @@ def main() -> int:
     ok(not inside, 'DECISION_JOURNAL_DB_PATH resolves outside the checkout',
        f'resolved path {rpath} is inside the checkout {REPO_ROOT}')
 
-    # initialize (idempotent; empty DB in prod)
-    try:
-        dj.init_db(path)
+    # Initialize ONLY when the store does not yet exist (fresh dark setup). An existing store is
+    # verified strictly READ-ONLY and is NEVER re-initialized, migrated, repaired, truncated or
+    # replaced -- a failed integrity check must not trigger schema creation.
+    if os.path.exists(path):
         init_ok = True
-    except Exception as e:  # noqa
-        init_ok = False
-        NOTES.append(f'init error class: {type(e).__name__}')
-    ok(init_ok, 'empty database initializes cleanly')
+        NOTES.append('existing store present: verified read-only (not re-initialized)')
+    else:
+        try:
+            dj.init_db(path)
+            init_ok = True
+        except Exception as e:  # noqa
+            init_ok = False
+            NOTES.append(f'init error class: {type(e).__name__}')
+        ok(init_ok, 'empty database initializes cleanly')
     if not init_ok:
         return _emit()
 
@@ -114,8 +138,10 @@ def main() -> int:
     else:
         NOTES.append('permission bits are POSIX; Windows uses ACLs (prod is Linux) — not asserted here')
 
-    # schema version
+    # schema version + PRAGMAs: open via the app's connect() to reflect its configured PRAGMAs, then
+    # PRAGMA query_only=ON so verification cannot write/mutate the live store.
     c = dj.connect(path)
+    c.execute('PRAGMA query_only=ON')
     try:
         ver = c.execute('SELECT version FROM schema_meta WHERE id=1').fetchone()
         ok(ver and ver[0] == dj.SCHEMA_VERSION, f'schema version is {dj.SCHEMA_VERSION}',
