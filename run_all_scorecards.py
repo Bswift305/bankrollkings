@@ -84,6 +84,9 @@ SCORECARDS = [
     # gamelogs + shows the unavailable banner while licensed Odds API lines still render. Guard is
     # correct in both flag states (skips the relevant checks when a flag is explicitly ON).
     ("Legal/IP Containment QC", "qc_legal_containment.py", 180),
+    # NBA/WNBA market-only fallback while the NBA.com gate is off: licensed Odds API facts only, no
+    # NBA.com stats/snapshots/authority, same-book quotes, missing side labeled, NBA+WNBA independent.
+    ("NBA Market-Only Board QC", "qc_nba_market_only.py", 180),
     # Decision Journal V1 (SQLite): the 15 frozen acceptance checks -- concurrency, crash recovery,
     # unknown fields, selection, SGP combined-only pricing, settlement math, immutability + append-only
     # corrections, prospective timing, BK-origin, idempotent import, migration, access isolation,

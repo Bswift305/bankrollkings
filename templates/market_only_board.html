@@ -1,0 +1,59 @@
+{% set active_page = 'props' %}
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
+{% block title %}{{ sport_label }} Markets - Bankroll Kings{% endblock %}
+{% block content %}
+<style>
+  .mob-wrap{max-width:1000px;}
+  .mob-note{margin:0 0 16px;padding:12px 16px;border-radius:12px;border:1px solid rgba(255,159,67,.34);
+    background:rgba(255,159,67,.08);font:600 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);}
+  .mob-meta{font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 10px;}
+  .mob-scroll{overflow-x:auto;}
+  table.mob{width:100%;border-collapse:collapse;font:600 12.5px 'Helvetica Neue',Arial,sans-serif;}
+  table.mob th{text-align:left;font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--text-muted);padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;}
+  table.mob td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--text-bright);white-space:nowrap;}
+  table.mob td.num{font-family:ui-monospace,Consolas,monospace;}
+  table.mob .miss{color:var(--text-muted);}
+  .mob-empty{font:500 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:18px 2px;}
+</style>
+<div class="bkn mob-wrap">
+<div class="page-hero"><div>
+  <div class="page-kicker">{{ sport_label }} &middot; Market Quotes</div>
+  <h1>{{ sport_label }} <span class="accent">Markets</span></h1>
+</div></div>
+
+<div class="mob-note">
+  {{ sport_label }} statistical context is temporarily unavailable while data rights are reviewed.
+  Current sportsbook markets are shown as factual quotes and are not recommendations.
+</div>
+
+{% if rows %}
+<div class="mob-meta">Showing {{ rows|length }} current market quote{{ '' if rows|length == 1 else 's' }} from the licensed odds provider. Each row is a single sportsbook's two-sided quote; a missing side is shown as &ldquo;&mdash;&rdquo;, not estimated.</div>
+<div class="mob-scroll">
+<table class="mob">
+  <thead><tr>
+    <th>Matchup</th><th>Player</th><th>Prop</th><th>Line</th><th>Book</th><th>Over</th><th>Under</th><th>Captured</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.game or '—' }}</td>
+    <td>{{ r.player }}</td>
+    <td>{{ r.stat or '—' }}</td>
+    <td class="num">{{ '%g'|format(r.line) if r.line is not none else '—' }}</td>
+    <td>{{ r.book or '—' }}</td>
+    <td class="num{% if r.over_odds is none %} miss{% endif %}">{% if r.over_odds is not none %}{{ '%+d'|format(r.over_odds|int) }}{% else %}—{% endif %}</td>
+    <td class="num{% if r.under_odds is none %} miss{% endif %}">{% if r.under_odds is not none %}{{ '%+d'|format(r.under_odds|int) }}{% else %}—{% endif %}</td>
+    <td class="num">{{ r.captured_at or '—' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="mob-meta" style="margin-top:12px;">Source: Odds API (licensed). Quotes are point-in-time and may move. No model read, ranking, confidence, edge, or recommendation is shown or implied.</div>
+{% else %}
+<div class="mob-empty">No current licensed {{ sport_label }} markets are available right now. Check back when today&rsquo;s slate is live.</div>
+{% endif %}
+</div>
+{% endblock %}

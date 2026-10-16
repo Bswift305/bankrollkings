@@ -33347,6 +33347,12 @@ def wnba_page():
 
 @app.route('/sports/wnba/props')
 def wnba_props_page():
+    # Legal/IP NBA.com data-rights gate (covers WNBA stats.nba.com): while off, serve the stats-free,
+    # Odds-API-only market board.
+    if not _nba_source_gate.nba_stats_enabled():
+        board = build_market_only_board(load_wnba_live_props_feed)
+        return render_template('market_only_board.html', sport_label='WNBA', sport_key='wnba',
+                               rows=board['rows'], as_of=board['as_of'], books=board['books'])
     date_filter = request.args.get('date', 'today').strip().lower() or 'today'
     stat_filter = request.args.get('stat', '').strip().upper()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
@@ -39590,7 +39596,51 @@ def render_props_screener_page(
     )
 
 
+def build_market_only_board(feed_loader):
+    """Legal containment (docs/legal_ip_audit.md): when the NBA.com data-rights gate is OFF, the
+    NBA/WNBA board shows ONLY licensed Odds API market facts and NO NBA.com-derived statistics, scores,
+    snapshots, or authority fields. Every displayed field has approved (Odds API) lineage:
+      player (outcome description) · matchup/Game (Odds API event) · book (bookmaker) · prop type ·
+      line · Over + Under prices (SAME book observation) · capture time (bookmaker last_update).
+    Start time is omitted (not available from an approved source without the NBA schedule). Each row is
+    one book's two-sided quote -- a missing side is LABELED, never synthesized. Neutral order (matchup,
+    player, stat); honest empty state. Reads the Odds API feed only (never load_gamelogs/tracking)."""
+    def _v(row, k):
+        v = row.get(k)
+        if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == '':
+            return None
+        return v
+    try:
+        df, meta = feed_loader(require_fresh=False)
+    except Exception:
+        df, meta = None, {}
+    rows = []
+    if df is not None and not getattr(df, 'empty', True):
+        for _, r in df.iterrows():
+            if _v(r, 'Player') is None:
+                continue
+            rows.append({
+                'player': str(_v(r, 'Player')),
+                'game': '' if _v(r, 'Game') is None else str(_v(r, 'Game')),
+                'book': '' if _v(r, 'Book') is None else str(_v(r, 'Book')),
+                'stat': '' if _v(r, 'Stat') is None else str(_v(r, 'Stat')),
+                'line': _v(r, 'Line'),
+                'over_odds': _v(r, 'OverOdds'),     # same-book observation
+                'under_odds': _v(r, 'UnderOdds'),   # same-book observation
+                'captured_at': '' if _v(r, 'LastUpdated') is None else str(_v(r, 'LastUpdated')),
+                'source': 'Odds API (licensed)',
+            })
+    rows.sort(key=lambda x: (x['game'], x['player'], x['stat']))  # neutral; no model ranking
+    return {'rows': rows, 'as_of': (meta or {}).get('as_of') or (meta or {}).get('generated_at'),
+            'books': (meta or {}).get('books') or []}
+
+
 def render_nba_props_page(filter_type=None):
+    # Legal/IP NBA.com data-rights gate: while off, serve the stats-free, Odds-API-only market board.
+    if not _nba_source_gate.nba_stats_enabled():
+        board = build_market_only_board(load_live_props_feed)
+        return render_template('market_only_board.html', sport_label='NBA', sport_key='nba',
+                               rows=board['rows'], as_of=board['as_of'], books=board['books'])
     # NBA P0 Commit C (1c): the Locks filter is removed. The /sports/nba/props/locks route still
     # resolves, so coerce it to the ordinary all-props board -- no lock filtering, no lock framing
     # -- rather than leave an orphaned authority surface reachable by URL.
