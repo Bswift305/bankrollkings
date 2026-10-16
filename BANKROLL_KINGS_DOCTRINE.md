@@ -1,6 +1,6 @@
 # Bankroll Kings — Development Doctrine
 
-> **Last updated: 2026-10-10** (§10 now four questions: discovery → mechanism → market → validation). This is the *why* behind the product — the stable philosophy
+> **Last updated: 2026-10-16** (added the ticket-building doctrine and its public-language boundary). This is the *why* behind the product — the stable philosophy
 > every feature is checked against. Read it alongside [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md)
 > (the *how it's wired*) and [`CLAUDE.md`](CLAUDE.md) (the enforced session rules; §10 is the
 > honesty/guardrail rulebook this doctrine is the reasoning for). Internal doctrine — **not**
@@ -19,6 +19,17 @@ The defining sentence:
 
 > **Bankroll Kings helps bettors build a repeatable, defensible process — combining context,
 > market information, and risk awareness — then measures those decisions honestly after the fact.**
+
+The internal ticket-building motto:
+
+> **There is a winning ticket in every game. We just need to build it.**
+
+This is a product-design challenge, **not a prediction or guarantee**. It means a game contains
+many possible markets and a bettor needs help finding the combination that best expresses a
+coherent game read. Bankroll Kings supplies the facts, context, transparent research, alternative
+legs, and review tools; the user makes the final decision. Public marketing uses the compliant
+translation: **“Every game has a story. Build the ticket that matches your read.”** See
+[`docs/ticket_building_brand_message.md`](docs/ticket_building_brand_message.md).
 
 That one sentence explains why Track Record, CLV, Ticket Check, Risk Radar, and Market Movers all
 exist, why we document failed theories, and why we reject locks and composite scores.
@@ -62,6 +73,21 @@ Discover → Evaluate → Build → Save → Track → Learn
 One destination (the ticket), fed by a research engine, backed by a record. Every surface serves a
 step. "Discover without Evaluate" is a picks site; "Track without Learn" is a spreadsheet. The loop
 is the product.
+
+### The ticket-building workflow
+
+The motto becomes useful only through a disciplined workflow:
+
+1. **Read the game story** — likely pace, scoring environment, coaching approach, matchups,
+   availability, and expected roles.
+2. **Inspect supporting markets** — side, total, player volume, and player production lines.
+3. **Build one coherent expression** — each leg should fit the same stated game thesis.
+4. **Offer alternatives** — a user can replace a disliked leg without losing the underlying read.
+5. **Explain each leg** — show why it is available and which facts or context support inspecting it.
+6. **Review the construction** — grade every leg and the original thesis, not only the final ticket.
+
+This workflow never implies that a winning construction is knowable in advance. It makes the
+user's reasoning visible, editable, and measurable.
 
 ## 5. The four-layer architecture
 
