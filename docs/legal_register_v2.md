@@ -33,6 +33,7 @@ commercial, gambling-adjacent analytics. (✓ permitted / ✗ not / ? verify, fr
 | The Odds API | **Event metadata** (teams/commence) | ✓ | ✓ | ✓ | ✗ | ✓ | Owned/Licensed | Low | used for market-only matchup |
 | CFBD | CFB stats/lines/rosters/returning-prod | ✓ | ✓ | ✓ (reasonable) | ✗ (bulk) | ✓ | Owned/Licensed | Low | — |
 | nflverse | NFL weekly stats / PBP / scores | ✓ | ✓ | ✓ | ✓ (w/ attrib) | ✓ | Owned/Licensed (CC-BY-4.0) | Medium | **attribution added** (footer) |
+| nflverse-data | **NFL schedules/games** (release parquet) | ✓ | ✓ | ✓ | ✓ (w/ attrib) | ✓ | Owned/Licensed (CC-BY-4.0) | Medium | **live — feeds the NFL ATS wave via `fetch_nfl_games.py` (sidecar records license+attribution)** |
 | **NBA.com** | **Game logs** (stats.nba.com) | ✗ | **✗ §9(iv)** | personal only | ✗ | ✗ | **Prohibited Until Cleared** | **Critical** | **gated (load_gamelogs)** |
 | **NBA.com** | **Player tracking / advanced** | ✗ | **✗** | ✗ | ✗ | ✗ | **Prohibited Until Cleared** | **Critical** | **gated (tracking/advanced/snapshot)** |
 | **NBA.com** | **Schedule** (scoreboardv2) | ✗ | ✗ | ✗ | ✗ | ✗ | Prohibited Until Cleared | High | ingestion gated; start-time omitted from market-only |
@@ -49,6 +50,23 @@ commercial, gambling-adjacent analytics. (✓ permitted / ✗ not / ? verify, fr
 | SportsDataIO | Season futures | ? (paid) | ? | ? | ? | ? | Unknown (confirm contract) | Medium | not enabled until confirmed |
 | Open-Meteo | Weather | ✗ free tier | — | ✓ paid | ? | ? | Prohibited Until Cleared (free-tier commercial) | High | **gated (fetchers + display)** |
 | refmetrics / teamrankings | Umpire zones / NCAAF stats (scraped) | ? | ? | ? | ? | ? | Permission Required | Medium | verify/replace |
+
+**nflverse-data NFL schedules/games (exact provenance):**
+- **Dataset:** nflverse `schedules` (a.k.a. games) — schedule, scores/results, and recorded spread/total
+  lines. The columns consumed are `game_id, season, week, gameday, gametime, home_team, away_team,
+  home_score, away_score, result, spread_line` (`spread_line` is a **recorded spread**, not documented
+  as a closing line).
+- **URL (documented release asset):**
+  `https://github.com/nflverse/nflverse-data/releases/download/schedules/games.parquet` — the same
+  release `nflreadpy.load_schedules` consumes.
+- **License:** CC BY 4.0, declared at `https://github.com/nflverse/nflverse-data/blob/main/LICENSE.md`.
+  (We fetch from the `nflverse-data` **release**, which carries this license — we do **not** rely on the
+  mutable `nfldata/master` raw path or assert it is independently licensed.)
+- **Attribution:** "nflverse (https://github.com/nflverse/nflverse-data), CC BY 4.0" — recorded in each
+  generation's `meta.json` sidecar and shown in the site footer alongside the other nflverse attribution.
+- **Consumer files:** `fetch_nfl_games.py` (fetch/validate/publish + sidecar), `app.py`
+  (`build_nfl_ats_wave` / `_nfl_ats_decisions_from_games` → `/tools/riding-the-wave`),
+  `report_nfl_ats_wave_sync.py`. Stored under `data/historical/nflverse_games/` (gitignored, on-box).
 
 **Odds rights vs league-statistics rights (explicit):** Odds API odds are licensed for commercial
 display; that permission does **not** extend to league statistics. NBA.com statistics are a **separate

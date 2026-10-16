@@ -167,8 +167,11 @@ def qc_push_interrupts():
 
 
 def qc_end_to_end_membership_and_order():
-    """Through the real loader path (temp parquet, fresh mtime): membership = cover streak >= 3, order
-    is streak-desc then team-asc, and nothing model-derived can alter it (no model input exists)."""
+    """Through the real loader path (a published generation in a temp store, fresh checked_at):
+    membership = cover streak >= 3, order is streak-desc then team-asc, and nothing model-derived can
+    alter it (no model input exists)."""
+    import fetch_nfl_games as fg
+    from datetime import datetime, timezone
     issues = []
     rows = []
     # BIG (5 covers), MID (3 covers), TIE (3 covers), LOW (2 covers -> excluded)
@@ -177,15 +180,13 @@ def qc_end_to_end_membership_and_order():
         for i, _s in enumerate(signs, 1):
             # home win by 10 vs spread 3 => cover (+1)
             rows.append(_g(f'2026_0{i}_{team}_OP{i}', i, f'2026-09-{10+i:02d}', team, f'OP{team}{i}', 20, 10, 3.0))
-    tmp = os.path.join(tempfile.gettempdir(), 'qc_nfl_ats_wave_fixture.parquet')
-    pd.DataFrame(rows).to_parquet(tmp)
-    try:
-        res = app.build_nfl_ats_wave(now_et=NOW, source_path=tmp)
-    finally:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
+    with tempfile.TemporaryDirectory() as root:
+        now = datetime.now(timezone.utc)
+        fg.publish_generation(pd.DataFrame(rows), now, '(qc)', None, None,
+                              {'current_season': 2026, 'current_season_rows': len(rows),
+                               'completed_games': len(rows), 'distinct_teams': 32, 'max_week': 18},
+                              root=root, now_utc=now)
+        res = app.build_nfl_ats_wave(now_et=NOW, games_root=root)
     sync = res['sync']
     if not sync['synchronized']:
         return [f'controlled fresh fixture not synchronized: {sync.get("reason")}']

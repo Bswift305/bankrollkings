@@ -1,18 +1,20 @@
-"""QC: NFL games-source refresh pipeline (fetch_nfl_games.py).
+"""QC: NFL games-source refresh pipeline (fetch_nfl_games.py), generation-store edition.
 
-No network. Exercises the refresh core against controlled local frames + injected downloads in a
-throwaway temp dir, proving: atomic replacement, malformed-schema rejection, duplicate-ID rejection,
-missing-current-season rejection, completed-count regression guard (+ override), permission/read
-failure as an OPERABILITY error (never 'no games'), unchanged-upstream (304) handling, sidecar
-freshness, and recovery after a failed pull. Exits 0 on success, 1 otherwise.
+No network. Exercises the refresh core against controlled frames + injected downloads in throwaway
+temp generation stores, proving: schema/dup/season/completed-regression validation; a failed
+publication leaves the PRIOR complete generation active; a 304 with a tampered live file fails closed;
+a missing / checksum-mismatched sidecar fails closed; a 304 advances checked_at while leaving
+content_fetched_at fixed; the shell-wrapper orchestrator propagates fetch and verifier failures; an
+operability (permission/read) failure is named, never 'no games'; and the sports date is Eastern
+regardless of host timezone. Exits 0 on success, 1 otherwise.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -22,11 +24,8 @@ SEASON = fg.current_nfl_season()
 
 
 def _valid_rows(season=SEASON, completed=40, teams=32, max_week=18):
-    """A plausible full-schedule frame: `teams` distinct teams, weeks up to max_week, `completed`
-    graded games with scores + result, the rest future (no result)."""
     tm = [f"T{i:02d}" for i in range(teams)]
     rows, gi = [], 0
-    # pair teams across weeks so the universe = `teams`; 16 games/week for 32 teams
     for wk in range(1, max_week + 1):
         for j in range(0, teams, 2):
             home, away = tm[j], tm[(j + 1) % teams]
@@ -40,166 +39,228 @@ def _valid_rows(season=SEASON, completed=40, teams=32, max_week=18):
     return pd.DataFrame(rows)
 
 
-def _write_source(df, d, name="src.parquet"):
+def _src(df, d, name="src.parquet"):
     p = os.path.join(d, name)
     df.to_parquet(p, index=False)
     return p
 
 
-def _seed_live(df, live):
-    """Install a known-good live parquet + sidecar (prev completed count) to test untouched-on-fail."""
-    df.to_parquet(live, index=False)
-    fg.write_sidecar({"schema_version": fg.SCHEMA_VERSION, "fetch_time_utc": "2026-01-01T00:00:00Z",
-                      "completed_games": int(pd.to_numeric(df["result"], errors="coerce").notna().sum()),
-                      "content_sha256": "seed"}, fg.sidecar_path(live))
-
-
-def _checksum(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def qc_atomic_replacement_and_recovery():
-    issues = []
-    with tempfile.TemporaryDirectory() as d:
-        live = Path(d) / "nflverse_games.parquet"
-        _seed_live(_valid_rows(completed=10), live)
-        before = _checksum(live)
-        # a FAILED pull (malformed source) must leave the live file byte-identical (recovery)
-        bad = _write_source(_valid_rows().drop(columns=["spread_line"]), d, "bad.parquet")
-        code, msg, _ = fg.refresh(source=bad, live_path=live)
-        if code != 4:
-            issues.append(f"malformed source not rejected (code {code}: {msg})")
-        if _checksum(live) != before:
-            issues.append("live file changed after a failed pull (not atomic / not recovered)")
-        # a GOOD pull then atomically replaces + advances completed count
-        good = _write_source(_valid_rows(completed=40), d, "good.parquet")
-        code, msg, meta = fg.refresh(source=good, live_path=live)
-        if code != 0 or meta is None:
-            issues.append(f"valid source not applied (code {code}: {msg})")
-        elif meta["completed_games"] != 40:
-            issues.append(f"completed count not recorded: {meta['completed_games']}")
-        if _checksum(live) == before:
-            issues.append("live file not replaced after a valid pull")
-    return issues
-
-
-def qc_malformed_schema():
+# --------------------------------------------------------------------------- pure validation
+def qc_validation():
     issues = []
     ok, errs, _ = fg.validate_frame(_valid_rows().drop(columns=["game_id"]), SEASON)
     if ok or not any("required columns" in e for e in errs):
-        issues.append(f"missing-column frame not rejected: {errs}")
-    # non-numeric spread present -> malformed
-    df = _valid_rows()
-    df["spread_line"] = df["spread_line"].astype(object)
-    df.loc[0, "spread_line"] = "pk"
+        issues.append(f"missing-column not rejected: {errs}")
+    df = _valid_rows(); df["spread_line"] = df["spread_line"].astype(object); df.loc[0, "spread_line"] = "pk"
     ok, errs, _ = fg.validate_frame(df, SEASON)
     if ok or not any("malformed" in e for e in errs):
         issues.append(f"non-numeric spread not rejected: {errs}")
-    return issues
-
-
-def qc_duplicate_ids():
-    df = pd.concat([_valid_rows(), _valid_rows().iloc[[0]]], ignore_index=True)
-    ok, errs, _ = fg.validate_frame(df, SEASON)
-    return [] if (not ok and any("duplicate game_id" in e for e in errs)) else [f"dupe id not rejected: {errs}"]
-
-
-def qc_missing_current_season():
-    df = _valid_rows(season=SEASON - 1)       # only a prior season present
-    ok, errs, _ = fg.validate_frame(df, SEASON)
-    return [] if (not ok and any("current season" in e for e in errs)) else [f"missing season not caught: {errs}"]
-
-
-def qc_completed_regression_guard():
-    issues = []
+    dup = pd.concat([_valid_rows(), _valid_rows().iloc[[0]]], ignore_index=True)
+    ok, errs, _ = fg.validate_frame(dup, SEASON)
+    if ok or not any("duplicate game_id" in e for e in errs):
+        issues.append(f"dup id not rejected: {errs}")
+    ok, errs, _ = fg.validate_frame(_valid_rows(season=SEASON - 1), SEASON)
+    if ok or not any("current season" in e for e in errs):
+        issues.append(f"missing season not caught: {errs}")
     ok, errs, _ = fg.validate_frame(_valid_rows(completed=20), SEASON, prev_completed=40)
     if ok or not any("regress" in e for e in errs):
         issues.append(f"completed regression not blocked: {errs}")
     ok2, _, _ = fg.validate_frame(_valid_rows(completed=20), SEASON, prev_completed=40, allow_regression=True)
     if not ok2:
         issues.append("operator override did not permit a completed regression")
-    # future schedule retained: a frame truncated to only completed weeks fails
-    trunc = _valid_rows(completed=40, max_week=5)
-    ok3, errs3, _ = fg.validate_frame(trunc, SEASON)
-    if ok3 or not any("future schedule" in e for e in errs3):
-        issues.append(f"truncated (no future) schedule not caught: {errs3}")
+    ok, errs, _ = fg.validate_frame(_valid_rows(max_week=5), SEASON)
+    if ok or not any("future schedule" in e for e in errs):
+        issues.append(f"truncated schedule not caught: {errs}")
     return issues
 
 
-def qc_permission_failure():
-    """An unreadable live parquet is an OPERABILITY failure (exit 3), never 'no current games'."""
-    with tempfile.TemporaryDirectory() as d:
-        live = Path(d) / "nflverse_games.parquet"
-        _seed_live(_valid_rows(), live)
-
-        def _boom(_p):
-            raise PermissionError("denied")
-        code, msg = fg.check_only_result(live_path=live, reader=_boom)
-    if code != 3 or "OPERABILITY" not in msg:
-        return [f"unreadable live file not an operability failure: code {code} msg {msg}"]
-    # must not FALSELY present it as absent/no-data (the missing-status wording)
-    if "absent" in msg.lower() or "no refresh has succeeded" in msg.lower() or "no current games" in msg.lower():
-        return ["unreadable file falsely described as missing/absent data"]
-    return []
-
-
-def qc_unchanged_upstream():
-    """A 304 leaves the parquet untouched but refreshes the sidecar fetch time (confirmed current)."""
+# --------------------------------------------------------------------------- publication / recovery
+def qc_publication_failure_keeps_prior():
+    """A failed publication (pointer-swap error) leaves the PRIOR complete generation active + intact."""
     issues = []
-    with tempfile.TemporaryDirectory() as d:
-        live = Path(d) / "nflverse_games.parquet"
-        _seed_live(_valid_rows(completed=40), live)
-        before = _checksum(live)
-        side = fg.sidecar_path(live)
-        fg.write_sidecar({**fg.read_sidecar(side), "fetch_time_utc": "2026-01-01T00:00:00Z",
-                          "upstream_etag": "abc"}, side)
+    with tempfile.TemporaryDirectory() as root:
+        c1, m1, _ = fg.refresh(source=_src(_valid_rows(completed=10), root), root=root)
+        if c1 != 0:
+            return [f"first publish failed: {m1}"]
+        prior = fg.resolve_current(root)
+        orig_write = fg._write_json_atomic
+
+        def _boom(path, obj):
+            raise OSError("pointer write denied")
+        fg._write_json_atomic = _boom
+        try:
+            c2, m2, _ = fg.refresh(source=_src(_valid_rows(completed=40), root, "good2.parquet"), root=root)
+        finally:
+            fg._write_json_atomic = orig_write
+        if c2 != 3:
+            issues.append(f"publication failure not an operability error: code {c2} ({m2})")
+        now = fg.resolve_current(root)
+        if now["content_sha256"] != prior["content_sha256"] or now["completed_games"] != 10:
+            issues.append("prior generation not preserved after a failed publication")
+        # a subsequent good publish advances to the new generation
+        c3, _, _ = fg.refresh(source=_src(_valid_rows(completed=40), root, "good3.parquet"), root=root)
+        if c3 != 0 or fg.resolve_current(root)["completed_games"] != 40:
+            issues.append("recovery publish after failure did not advance the generation")
+    return issues
+
+
+# --------------------------------------------------------------------------- sidecar integrity
+def qc_missing_or_mismatched_sidecar_fails_closed():
+    issues = []
+    with tempfile.TemporaryDirectory() as root:
+        fg.refresh(source=_src(_valid_rows(), root), root=root)
+        ptr = fg._read_json(fg.pointer_path(root))
+        gen = Path(root) / ptr["generation"]
+        # (a) missing sidecar
+        (gen / "meta.json").unlink()
+        code, msg = fg.check_only_result(root=root)
+        if code != 3 or "OPERABILITY" not in msg:
+            issues.append(f"missing sidecar not failed closed as operability: {code} {msg}")
+    with tempfile.TemporaryDirectory() as root:
+        fg.refresh(source=_src(_valid_rows(), root), root=root)
+        pq = fg.resolve_current(root)["parquet_path"]
+        with open(pq, "ab") as fh:         # tamper the parquet -> sha mismatch vs sidecar/pointer
+            fh.write(b"tampered")
+        try:
+            fg.resolve_current(root)
+            issues.append("checksum mismatch not raised by resolve_current")
+        except fg.GamesSourceError as exc:
+            if "sha256" not in str(exc):
+                issues.append(f"mismatch raised wrong error: {exc}")
+        code, msg = fg.check_only_result(root=root)
+        if code != 3:
+            issues.append(f"checksum mismatch not exit 3: {code} {msg}")
+    return issues
+
+
+# --------------------------------------------------------------------------- 304 hardening
+def qc_304_tampered_fails_closed():
+    issues = []
+    with tempfile.TemporaryDirectory() as root:
+        fg.refresh(source=_src(_valid_rows(), root), root=root)
+        before = fg.resolve_current(root)["checked_at_utc"]
+        pq = fg.resolve_current(root)["parquet_path"]
+        with open(pq, "ab") as fh:
+            fh.write(b"x")
 
         def _unchanged(url, etag, lastmod):
             return "unchanged", None, etag, lastmod
-        now = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
-        code, msg, meta = fg.refresh(live_path=live, download_fn=_unchanged, now_utc=now)
-        if code != 0 or "unchanged" not in msg:
-            issues.append(f"304 not handled as success: code {code} msg {msg}")
-        if _checksum(live) != before:
-            issues.append("304 rewrote the parquet (should be untouched)")
-        if fg.read_sidecar(side).get("fetch_time_utc") != "2026-10-16T12:00:00Z":
-            issues.append("304 did not refresh the sidecar fetch time")
+        code, msg, _ = fg.refresh(root=root, download_fn=_unchanged,
+                                  now_utc=datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc))
+        if code != 4 or "not marking fresh" not in msg:
+            issues.append(f"304 with tampered live file did not fail closed: {code} {msg}")
+        # pointer must be untouched (still points at the now-tampered gen, checked_at unchanged) -- but
+        # the board still fails closed because resolve_current rejects the checksum mismatch.
+        try:
+            after = fg._read_json(fg.pointer_path(root)).get("checked_at_utc")
+            if after != before:
+                issues.append("304-on-tamper advanced checked_at (should not)")
+        except Exception as exc:
+            issues.append(f"pointer unreadable after 304-tamper: {exc}")
     return issues
 
 
-def qc_sidecar_freshness():
-    """sidecar_fetch_epoch parses the recorded fetch time; check_only flags a stale sidecar (behind)
-    and a fresh one (ok), using the sidecar -- not mtime."""
+def qc_304_advances_checked_not_fetched():
     issues = []
-    with tempfile.TemporaryDirectory() as d:
-        live = Path(d) / "nflverse_games.parquet"
-        _seed_live(_valid_rows(completed=40), live)
-        side = fg.sidecar_path(live)
-        now = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
-        now_epoch = now.timestamp()
-        # fresh: fetched 1h ago
-        fresh_ft = datetime(2026, 10, 16, 11, 0, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        fg.write_sidecar({**fg.read_sidecar(side), "fetch_time_utc": fresh_ft}, side)
-        code, _ = fg.check_only_result(live_path=live, now_epoch=now_epoch)
+    with tempfile.TemporaryDirectory() as root:
+        t0 = datetime(2026, 10, 10, 8, 0, tzinfo=timezone.utc)
+        fg.refresh(source=_src(_valid_rows(), root), root=root, now_utc=t0)
+        cur0 = fg.resolve_current(root)
+
+        def _unchanged(url, etag, lastmod):
+            return "unchanged", None, etag, lastmod
+        t1 = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
+        code, msg, _ = fg.refresh(root=root, download_fn=_unchanged, now_utc=t1)
+        cur1 = fg.resolve_current(root)
         if code != 0:
-            issues.append(f"fresh sidecar reported not-fresh: code {code}")
-        # stale: fetched 100h ago
-        stale_ft = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        fg.write_sidecar({**fg.read_sidecar(side), "fetch_time_utc": stale_ft}, side)
-        code2, msg2 = fg.check_only_result(live_path=live, now_epoch=now_epoch)
-        if code2 != 2 or "stale" not in msg2:
-            issues.append(f"stale sidecar not flagged behind: code {code2} msg {msg2}")
-        if abs(fg.sidecar_fetch_epoch(side) - datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc).timestamp()) > 1:
-            issues.append("sidecar_fetch_epoch did not parse the recorded time")
+            issues.append(f"valid 304 not success: {code} {msg}")
+        if cur1["checked_at_utc"] != "2026-10-16T12:00:00Z":
+            issues.append(f"304 did not advance checked_at: {cur1['checked_at_utc']}")
+        if cur1["content_fetched_at_utc"] != cur0["content_fetched_at_utc"]:
+            issues.append("304 changed content_fetched_at (should be fixed)")
+        if cur1["content_sha256"] != cur0["content_sha256"]:
+            issues.append("304 changed the parquet checksum (should be untouched)")
     return issues
 
 
-CHECKS = [("atomic_replacement_and_recovery", qc_atomic_replacement_and_recovery),
-          ("malformed_schema", qc_malformed_schema), ("duplicate_ids", qc_duplicate_ids),
-          ("missing_current_season", qc_missing_current_season),
-          ("completed_regression_guard", qc_completed_regression_guard),
-          ("permission_failure", qc_permission_failure), ("unchanged_upstream", qc_unchanged_upstream),
-          ("sidecar_freshness", qc_sidecar_freshness)]
+# --------------------------------------------------------------------------- freshness / operability
+def qc_freshness_and_operability():
+    issues = []
+    with tempfile.TemporaryDirectory() as root:
+        t = datetime(2026, 10, 16, 11, 0, tzinfo=timezone.utc)
+        fg.refresh(source=_src(_valid_rows(), root), root=root, now_utc=t)
+        now_epoch = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc).timestamp()   # 1h later -> fresh
+        code, _ = fg.check_only_result(root=root, now_epoch=now_epoch)
+        if code != 0:
+            issues.append(f"fresh generation reported not-fresh: {code}")
+        stale_epoch = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc).timestamp()  # 4+ days later
+        code2, msg2 = fg.check_only_result(root=root, now_epoch=stale_epoch)
+        if code2 != 2 or "stale" not in msg2:
+            issues.append(f"stale generation not flagged behind: {code2} {msg2}")
+        # operability: an unreadable parquet (sha compute raises) -> exit 3, never 'no games'
+        orig = fg._sha256_file
+        fg._sha256_file = lambda p: (_ for _ in ()).throw(PermissionError("denied"))
+        try:
+            code3, msg3 = fg.check_only_result(root=root)
+        finally:
+            fg._sha256_file = orig
+        if code3 != 3 or "OPERABILITY" not in msg3 or "no current games" in msg3.lower():
+            issues.append(f"unreadable parquet not a named operability failure: {code3} {msg3}")
+    return issues
+
+
+# --------------------------------------------------------------------------- wrapper orchestration
+def qc_wrapper_propagates_failures():
+    issues = []
+    cases = [((4, 0), True, "fetch validation failure"), ((5, 0), True, "download failure"),
+             ((3, 0), True, "publish failure"), ((0, 3), True, "verifier failure"),
+             ((0, 0), False, "all ok"), ((2, 0), False, "behind (not a failure)")]
+    for (fr, vr), want_fail, desc in cases:
+        rc = fg.run_refresh_and_verify(fetch_fn=lambda fr=fr: fr, verify_fn=lambda vr=vr: vr,
+                                       in_season_fn=lambda: True)
+        if (rc != 0) != want_fail:
+            issues.append(f"{desc}: wrapper rc {rc} (want {'nonzero' if want_fail else '0'})")
+    # the verifier must run EVEN after a fetch failure
+    ran = {"verify": False}
+
+    def _vf():
+        ran["verify"] = True
+        return 0
+    fg.run_refresh_and_verify(fetch_fn=lambda: 4, verify_fn=_vf, in_season_fn=lambda: True)
+    if not ran["verify"]:
+        issues.append("verifier did not run after a fetch failure")
+    # off-season gate short-circuits without fetching
+    fetched = {"n": 0}
+
+    def _ff():
+        fetched["n"] += 1
+        return 0
+    rc = fg.run_refresh_and_verify(gate=True, fetch_fn=_ff, verify_fn=lambda: 0, in_season_fn=lambda: False)
+    if rc != 0 or fetched["n"] != 0:
+        issues.append(f"off-season gate did not short-circuit: rc {rc} fetched {fetched['n']}")
+    return issues
+
+
+# --------------------------------------------------------------------------- eastern date
+def qc_eastern_date():
+    issues = []
+    if fg._today_et() != datetime.now(ZoneInfo("America/New_York")).date():
+        issues.append("_today_et is not Eastern")
+    if fg.current_nfl_season(date(2026, 1, 15)) != 2025:
+        issues.append("Jan belongs to the prior season label")
+    if fg.current_nfl_season(date(2026, 9, 15)) != 2026:
+        issues.append("Sep belongs to the current season label")
+    return issues
+
+
+CHECKS = [("validation", qc_validation),
+          ("publication_failure_keeps_prior", qc_publication_failure_keeps_prior),
+          ("missing_or_mismatched_sidecar_fails_closed", qc_missing_or_mismatched_sidecar_fails_closed),
+          ("304_tampered_fails_closed", qc_304_tampered_fails_closed),
+          ("304_advances_checked_not_fetched", qc_304_advances_checked_not_fetched),
+          ("freshness_and_operability", qc_freshness_and_operability),
+          ("wrapper_propagates_failures", qc_wrapper_propagates_failures),
+          ("eastern_date", qc_eastern_date)]
 
 
 def main() -> int:

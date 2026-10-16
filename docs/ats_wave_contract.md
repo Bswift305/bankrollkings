@@ -76,10 +76,18 @@ active-season gate** (`_nfl_expected_completed_week`, never `max(season)`), **ev
 usable result is overdue → fail closed; future/within-grace games ignored), duplicate collapse vs
 conflict fail-closed, and a **48h source freshness budget**. SU and O/U on the same page are **failed
 closed** (they previously read the 2011–2025 history and showed prior-season runs as active); they
-return only once re-sourced and separately verified. Enforced by `qc_nfl_ats_wave.py`. **Open operator
-task:** no prod job currently refreshes `nflverse_games.parquet` (verified: absent from `ops/`,
-`deploy/`, `run_daily`) — until one is wired and verified, the NFL ATS wave correctly fails closed on
-the freshness budget rather than showing a stale board.
+return only once re-sourced and separately verified. Enforced by `qc_nfl_ats_wave.py`.
+
+**Refresh pipeline (`fetch_nfl_games.py`, corrective pass):** the source is the documented
+**nflverse-data `schedules` release parquet** (CC BY 4.0; the asset `nflreadpy.load_schedules`
+consumes), recorded in the legal register — not the mutable `nfldata/master` raw path. It is published
+as one atomic **generation** (parquet + immutable sidecar, swapped via a `current.json` pointer); the
+consumer verifies the parquet's SHA-256 against the sidecar and **fails closed on missing/corrupt/
+mismatched metadata — there is no mtime fallback**. Freshness is the sidecar's `checked_at_utc` (a 304
+refreshes it only after re-validating the live file; `content_fetched_at_utc` is separate). Ops units
+run every ~6h in-season, run the ATS verifier after every fetch, and propagate failure. **Open operator
+task:** install the timer via `docs/nfl_games_refresh_runbook.md`; until installed and
+`report_nfl_ats_wave_sync.py` returns `synchronized: True`, the board correctly fails closed.
 
 **CFB (`build_cfb_wave_context`):** the prior aggregate admission (`cover% ≥ 60` + `n ≥ 3`) is gone;
 membership now iterates the authoritative per-game streak index. Three integrity corrections are part

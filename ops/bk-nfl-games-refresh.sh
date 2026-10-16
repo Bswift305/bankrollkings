@@ -26,14 +26,11 @@ if ! flock -n 9; then
   exit 0
 fi
 
-# Refresh the source. --gate self-skips off-season. A validation/network failure leaves the last
-# valid parquet untouched and exits nonzero; we still run the verifier below to report true state.
-"$PY" fetch_nfl_games.py --gate
+# Refresh then verify in ONE entrypoint that PROPAGATES failure: it fetches (self-gating off-season),
+# ALWAYS runs the ATS synchronization verifier even after a fetch failure, and returns nonzero when the
+# fetch/publication or the verifier fails -- so systemd/journal monitoring reports a real failure. A
+# "behind"/"unchanged"/off-season tick is success.
+"$PY" fetch_nfl_games.py --run --gate
 rc=$?
-echo "[nfl-games] fetch exit ${rc}"
-
-# ALWAYS verify synchronization after a refresh attempt -- a good download is not a synchronized board.
-echo "[nfl-games] running NFL ATS synchronization verifier"
-"$PY" report_nfl_ats_wave_sync.py || true
-
-exit 0
+echo "[nfl-games] refresh+verify exit ${rc}"
+exit "$rc"
