@@ -4,32 +4,43 @@
 for approval before any implementation. Builds on the Decision Journal (built, dark —
 `docs/decision_journal_review_spec.md`), the dataset-level legal register
 (`docs/legal_register_v2.md`), and the queued Sport × Market × Angle Model Registry
-(`docs/` — pending). Date: 2026-10-16. **Revision 2** (nine implementation-readiness corrections — see
-§15; architecture and phased order unchanged).
+(`docs/` — pending). Date: 2026-10-16. **Revision 3** (five frozen product refinements — see §16:
+"What's Changed?" is the default opener with New / Newly-Significant sub-divisions; "Why This Is
+Interesting" attention layer; Mismatch stays descriptive; consistency scores replaced by distributions;
+"What Did I Miss?" is the user-facing change view. Builds on Revision 2's nine implementation-readiness
+corrections — §15.)
 
 ## 0. Frozen doctrine
-> **Facts may create visibility. Only validated, governed models may affect ordering or selection.**
+> **Facts create visibility. Research creates hypotheses. Qualified models may create authority. The
+> Decision Journal creates learning.**
 
-A change, a mismatch, or a contradiction can make a player/team/game **visible** (surface it, flag it,
-let the user investigate). None of them may change **ranking, confidence, selection, or
-recommendation** unless a corresponding Sport × Market × Angle model has passed governance
-(status = Qualified). Lookup is a **research workflow**, not a statistical encyclopedia and not a
-picks page.
+The shorter rule still holds: **facts may create visibility; only validated, governed models may affect
+ordering or selection.** A change, a mismatch, or a contradiction can make a player/team/game
+**visible** (surface it, flag it, let the user investigate). None of them may change **ranking,
+confidence, selection, or recommendation** unless a corresponding Sport × Market × Angle model has
+passed governance (status = Qualified). Lookup is a **disciplined decision workflow**, not a statistical
+encyclopedia and not a picks page. **No new black-box scores are introduced by any refinement here.**
 
 ---
 
 ## 1. Shared architecture — Player, Team, Matchup
-Every Player, Team and Matchup page renders the **same ordered sequence**; modules are omitted (not
-faked) when their data isn't cleared or present:
+Every Player, Team and Matchup page renders the **same ordered sequence** — **"What's Changed?" is the
+default opening module, before averages, heat maps, splits and logs.** Modules are omitted (not faked)
+when their data isn't cleared or present:
 
-1. **What's Changed?** — objective changes between defined snapshots.
-2. **New Since You Last Looked** — the user's unread qualifying changes since their last recorded view.
-3. **Facts** — logs, markets, availability, raw splits.
-4. **Context** — trends, distributions, stability, environment.
-5. **Matchup / Mismatch Detector** — factual archetype × opponent-channel alignments (visibility only).
-6. **Contradictions** — material facts pointing in different directions (no hidden score).
-7. **Research** — governed angle models with explicit status + explanation.
-8. **Decision Journal** — the user's decision, thesis and result (the existing system, not a new one).
+```
+What's Changed?                 ← default opener (before averages/heat maps/splits/logs)
+├─ New Information               (an injury, role, line, weather, availability or lineup actually changed)
+└─ Newly Significant Information (an existing fact became relevant because the player/opponent/matchup changed)
+What Did I Miss?                ← user-facing change view (the former "New Since You Last Looked")
+Why This Is Interesting         ← attention layer: short, traceable, evidence-linked factual statements
+Facts                           ← logs, markets, availability, raw splits
+Context                         ← distributions (median/percentiles/σ/n), stability, environment
+Mismatch Detector               ← descriptive archetype × opponent tendency (visibility only)
+Contradictions                  ← material opposing facts, no hidden score
+Research                        ← governed angle models, explicit status + explanation
+Decision Journal                ← the user's decision, thesis and result (existing system)
+```
 
 The three page types share one engine and one change-event store; they differ only in the **entity**
 (player / team / game) and which modules apply.
@@ -85,18 +96,45 @@ fresh change on every ingestion (the `dedup_key` + `supersedes` lineage prevent 
 
 ---
 
-## 3. "What's Changed?" vs "New Since You Last Looked"
-- **What's Changed?** — **objective, global** changes between defined snapshots (e.g., open → now; last
-  game → this game). Same for every viewer. Example items: "Line moved 63.5 → 67.5 (source X, 2h ago)";
-  "Starting RB ruled out (confirmed, 40m ago)"; "Designed-run rate 12% → 19% over last 3 games";
-  "Opponent went from strong to weak vs this channel."
-- **New Since You Last Looked** — the **user-specific** subset of qualifying change events the user has
-  not yet seen, determined by **availability to Bankroll Kings, not by effective time** (correction 1).
-  An event is **new** when `event_sequence > user.last_seen_sequence(entity)` (equivalently
-  `first_captured_at > user.last_viewed_at(entity)`). This is deliberate: a **delayed correction or a
-  backfilled event appears as new even if its `effective_time` predates the last visit** — because it
-  only became available to the user now. It is a *filter over the same immutable change events*, not a
-  second tracking system.
+## 3. "What's Changed?" (default opener), "What Did I Miss?", "Why This Is Interesting"
+
+### 3a. What's Changed? — the default opening module (refinement 1)
+**Objective, global** changes between defined snapshots (e.g., open → now; last game → this game), the
+same for every viewer, shown **before averages, heat maps, splits and logs**. It is divided into two
+labeled sub-sections, each item carrying its window + source + timing per §2:
+- **New Information** — an injury, role, line, weather, availability, or lineup **actually changed**
+  (a `change_class = observed` event, or a `derived` event whose underlying datum moved). Examples:
+  "Line moved 63.5 → 67.5 (book, 2h ago)"; "Starting RB ruled out (confirmed, 40m ago)";
+  "Designed-run rate 12% → 19% (last 3)".
+- **Newly Significant Information** — an existing fact **became relevant because the player, opponent,
+  or matchup changed** (nothing about the fact itself changed; its *relevance* did). Examples: "This
+  player's QB-rushing profile now meets a defense that allows QB rushing (opponent changed)"; "A stable
+  role is newly material because the projected game script flipped." Significance is a **visibility**
+  signal only; what counts as "newly significant" is a **frozen contract owned by a named Model-Registry
+  entry** and **abstains until that entry exists** (§6, correction 6) — never a developer-chosen rule,
+  never a score.
+
+### 3b. What Did I Miss? — the personalized change view (refinement 5; renames "New Since You Last Looked")
+The **user-specific** subset of qualifying change events the user has not yet seen. It shows the
+**last-view timestamp** and **all newly available or corrected events since that visit**, determined by
+**Bankroll Kings' capture sequence/time, not a provider's historical effective time** (correction 1) —
+so a **delayed correction surfaces even if its `effective_time` predates the visit**. An event is in
+"What Did I Miss?" when `event_sequence > user.last_seen_sequence(entity)` (equivalently
+`first_captured_at > user.last_viewed_at(entity)`). It is a *filter over the same immutable change
+events*, not a second tracking system. **First visits show an honest baseline, never a fabricated change
+history** (§4): the section is empty and seeds the watermark.
+
+### 3c. Why This Is Interesting — the attention layer (refinement 2)
+A short list of **traceable factual statements** that **direct the user toward situations worth
+researching**. Each statement:
+- is a plain fact with its window + source, **not** a verdict;
+- **never** says "best bet", "boost", "edge", or "recommended";
+- **links back to its underlying evidence** (the change event, the distribution, the mismatch row, or
+  the contradiction it summarizes);
+- creates **visibility/attention only** — it never ranks, scores, selects, or changes confidence.
+It is a human-readable index over the modules below it (What's Changed / Facts / Context / Mismatch /
+Contradictions), not a new computation. Example: "Three inputs moved this week — role up, opponent
+weak vs this channel, line up 7 — worth a look" with each clause linking to its source row.
 
 ---
 
@@ -111,9 +149,9 @@ fresh change on every ingestion (the `dedup_key` + `supersedes` lineage prevent 
   the highest `event_sequence` actually included in a successfully rendered response.** A failed/partial
   render never advances it, so nothing is silently marked "seen."
 - **First visit (frozen):** when no row exists for `(user, entity)`, there is **no** "new since"
-  baseline — the first view shows **What's Changed?** but an **empty "New Since You Last Looked"**, and
-  sets `last_seen_sequence` to the highest rendered event. The user is never shown a flood of "new"
-  events on their first visit.
+  baseline — the first view shows **What's Changed?** but an **empty "What Did I Miss?"** (an honest
+  baseline, never a fabricated change history), and sets `last_seen_sequence` to the highest rendered
+  event. The user is never shown a flood of "new" events on their first visit.
 - **Privacy/retention:** store only the latest watermark per (user, entity); no view history; purge on
   account deletion; covered by the privacy policy (`docs/legal_register_v2.md` §7/§9). `displayed_at` is
   computed at render time and is **not** persisted as a tracking log.
@@ -122,14 +160,22 @@ fresh change on every ingestion (the `dedup_key` + `supersedes` lineage prevent 
 
 ## 5. Module boundaries (what each may and may not do)
 - **Facts** — logs, markets, availability, raw splits. Display only; no scoring.
-- **Context** — trends, **descriptive distributions** (percentiles, median, variance, sample size — not
-  an unexplained "consistency score"), **floor/median/ceiling** as a descriptive historical
-  distribution (explicitly **not a projection** unless a governed model owns it), rotation/role
-  stability, schedule stress (rest/travel/workload where reliable sources exist). No verdicts.
-- **Mismatch Detector** — factual **archetype × opponent production-channel** alignment (e.g., mobile QB
-  vs a defense that allows QB rushing). **Creates visibility only.** It may surface/flag; it may **not**
-  rank, score, boost, or recommend. Every mismatch maps to a Sport × Market × Angle model id; it only
-  **affects ordering/selection** once that model is Qualified (§13 governance).
+- **Context** — trends, **descriptive distributions**, rotation/role stability, schedule stress
+  (rest/travel/workload where reliable sources exist). **No verdicts, and no "consistency score."**
+  **Refinement 4 — distributions replace any consistency score.** Every distribution shown reports:
+  **median; 25th & 75th percentiles; optional 10th & 90th percentiles; standard deviation; sample size
+  (n); the declared window; and the availability context** (what was/wasn't available across that
+  window). Floor/median/ceiling is presented **as this descriptive historical distribution, explicitly
+  not a projection** unless a governed model owns it. A single opaque "consistency"/"stability" number
+  is **prohibited** — the distribution itself is the artifact.
+- **Mismatch Detector** — **descriptive** factual **archetype × opponent tendency** alignment (e.g.,
+  mobile-QB archetype vs a defense that allows QB rushing). **Refinement 3 — it stays descriptive:** each
+  mismatch row shows the **player archetype, the opponent tendency, the sample size, the comparison
+  window, the data freshness, and the data source**, and carries **no opaque mismatch score**. It
+  **creates visibility only** — it may surface/flag but may **not** rank, score, boost, select, or change
+  confidence. Every mismatch maps to a Sport × Market × Angle model id; it **may change
+  ordering/selection/confidence only once a separately governed model Qualifies that exact
+  Sport × Market × Angle** (§13 governance) — never before.
 - **Contradictions** — lists **material opposing facts** in two columns ("Supports higher…" /
   "Pushes the other way…") with no forced verdict and **no hidden score**. Example (QB rushing):
   supports = designed runs up + opponent allows QB rushing; against = line moved 38.5 → 45.5 + starting
@@ -230,13 +276,19 @@ A field renders **only when BOTH hold**:
 ---
 
 ## 11. Phased build order (each phase returns for approval)
-1. **Change-event store + schema** (the three clocks), read-only population from already-cleared
-   datasets (Odds API market changes first). No UI ordering impact.
-2. **What's Changed? + New Since You Last Looked** modules + the minimal per-user last-viewed state.
-3. **Facts + Context** (descriptive distributions, stability, Unavailable Production) — cleared datasets
-   only; NBA.com-derived withheld behind the gate.
+The clean prioritization (refinements): **build the shared change-event foundation first, then the two
+change views and the evidence-backed interest summaries, then distributions, team context, mismatch
+detection, Research, and Journal integration. No new black-box scores are needed at any phase.**
+1. **Change-event store + schema** (the four clocks, identity/idempotency/correction lineage),
+   read-only population from already-cleared datasets (Odds API market changes first). No UI ordering impact.
+2. **The two change views + attention layer:** **What's Changed?** (incl. the *New Information* and
+   *Newly Significant Information* sub-sections) + **What Did I Miss?** + **Why This Is Interesting**
+   (evidence-linked factual statements) + the minimal per-user last-viewed state.
+3. **Facts + Context** — Context uses the §5 **distributions** (median / 25th–75th / optional 10th–90th
+   / σ / n / window / availability), stability as context, Unavailable Production. Cleared datasets only;
+   NBA.com-derived withheld behind the gate.
 4. **Contradictions** (two-column, no score).
-5. **Mismatch Detector** (visibility only) + mapping each output to a model-registry angle id.
+5. **Mismatch Detector** (descriptive, visibility only) + mapping each output to a model-registry angle id.
 6. **Research** surface reading governed model status (no ordering change until a model is Qualified).
 7. **Decision Journal integration** on the page — **view-only (planned affordance) until the Journal's
    production gate opens**; no record creation while its flag is off.
@@ -249,10 +301,10 @@ definition) and are **not** built in these phases.
   at render) stored in UTC; each labeled with timezone or "tz unknown"; the clocks are never conflated.
   A **tz-unknown** timestamp is rejected for ordering, unread boundaries, CLV, and before/after compares.
 - **Unread by availability (not effective time):** a backfilled/corrected event whose `effective_time`
-  predates the last visit but whose `event_sequence`/`first_captured_at` is new **appears as New Since**.
+  predates the last visit but whose `event_sequence`/`first_captured_at` is new **appears in What Did I Miss?**.
 - **View/update race + first visit:** the watermark advances only to the highest `event_sequence`
-  actually rendered; a failed render does not advance it; a first visit shows an **empty** New-Since and
-  seeds the watermark (no flood).
+  actually rendered; a failed render does not advance it; a first visit shows an **empty** "What Did I
+  Miss?" (honest baseline) and seeds the watermark (no flood).
 - **Idempotency + correction lineage:** re-ingesting the same observation is a no-op (`dedup_key`); a
   corrected value is a **new** event that `corrects` the original (original not mutated, not re-shown as
   new on every ingestion).
@@ -274,8 +326,12 @@ definition) and are **not** built in these phases.
   facts still render.
 - **Abstention:** stale/absent/un-cleared inputs → the module shows an honest unavailable state, never a
   fabricated value or projection.
-- **New-Since correctness:** only events with `effective_time > last_viewed_at` appear; the per-user
-  state stores exactly one `last_viewed_at` per (user, entity) and nothing else.
+- **What Did I Miss? correctness:** only events with `event_sequence > last_seen_sequence` (equivalently
+  `first_captured_at > last_viewed_at`) appear — **by availability, never by `effective_time`**; the
+  per-user state stores exactly one `(last_seen_sequence, last_viewed_at)` per (user, entity) and nothing
+  else. A distribution shown in Context carries median/25th/75th/σ/n/window (no consistency score); a
+  Mismatch row carries archetype/opponent-tendency/sample/window/freshness/source (no mismatch score);
+  a "Why This Is Interesting" statement links to its evidence and uses no bet-authority words.
 - **Contradictions / Environment Stability:** no hidden score; every contributing event is listed and
   the deterministic rules are reachable.
 - **Unavailable Production:** declares window + sample and never implies redistribution.
@@ -319,3 +375,24 @@ build order to review before any Lookup implementation gate opens.
    timestamp may display but cannot drive ordering, unread boundaries, CLV, or before/after. (§2b)
 9. **Decision Journal gated** — integration is view-only (planned affordance) and creates no record
    until the Journal production gate opens. (§5, §11)
+
+## 16. Changelog — Revision 3 (five frozen product refinements)
+1. **"What's Changed?" is the default opener** — before averages/heat maps/splits/logs — split into
+   **New Information** (a datum actually changed) and **Newly Significant Information** (an existing fact
+   became relevant because the player/opponent/matchup changed; governed, abstains until its registry
+   entry exists). (§1, §3a)
+2. **"Why This Is Interesting" attention layer** — short, traceable, evidence-linked factual statements
+   that direct attention; never "best bet/boost/edge/recommended"; visibility only, each clause links to
+   its source. (§1, §3c)
+3. **Mismatch Detector stays descriptive** — shows archetype, opponent tendency, sample, comparison
+   window, freshness, data source; **no opaque mismatch score**; may change ordering/selection/confidence
+   only once a separately governed model Qualifies that exact Sport × Market × Angle. (§5)
+4. **Distributions replace consistency scores** — median, 25th/75th, optional 10th/90th, standard
+   deviation, sample size, declared window + availability context; a single opaque consistency/stability
+   number is prohibited. (§5)
+5. **"What Did I Miss?"** is the user-facing name for the former "New Since You Last Looked" — shows the
+   last-view timestamp and all newly available/corrected events since, by Bankroll Kings' capture
+   sequence/time (not a provider's effective time); first visits show an honest baseline. (§1, §3b, §4)
+
+**Governing principle (frozen):** *Facts create visibility. Research creates hypotheses. Qualified
+models may create authority. The Decision Journal creates learning.* No new black-box scores.
