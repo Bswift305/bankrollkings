@@ -44527,7 +44527,7 @@ def _cfb_active_cover_streaks(season=2026):
     (docs/ats_wave_contract.md). Cover=Hit, loss=Miss, push=Push; Pending/absent rows (byes, ungraded,
     no closing line) are ignored (not in the sequence). The active cover streak counts covers from the
     most recent graded decision backward and STOPS at the first loss OR push (a push interrupts a strict
-    consecutive-cover streak: W,W,P,W -> streak 1). Returns (per_team_by_resolved_name, results_through_week)."""
+    consecutive-cover streak: W,W,P,W -> streak 1). Returns (per, max_graded_week, canon_decisions, dups)."""
     import cfb_current_form as cff
     path = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'
     try:
@@ -44538,47 +44538,109 @@ def _cfb_active_cover_streaks(season=2026):
         try:
             df = pd.read_csv(path, low_memory=False)
         except Exception:
-            return {}, None
-        per, through = _cfb_cover_streaks_from_df(df, season)
+            return {}, None, {}, []
+        per, through, canon, dups = _cfb_cover_streaks_from_df(df, season)
         _CFB_ATS_STREAK_CACHE.clear()
-        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season, 'per': per, 'through': through})
-    return _CFB_ATS_STREAK_CACHE.get('per', {}), _CFB_ATS_STREAK_CACHE.get('through')
+        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season, 'per': per, 'through': through,
+                                      'canon': canon, 'dups': dups})
+    c = _CFB_ATS_STREAK_CACHE
+    return c.get('per', {}), c.get('through'), c.get('canon', {}), c.get('dups', [])
 
 
 def _cfb_cover_streaks_from_df(df, season):
     """Pure computation behind the frozen Active ATS Wave rule (testable with a fixture DataFrame).
-    Filters to graded SPREAD decisions with a line for `season`, and for each team computes the current
-    consecutive cover streak (stops at the first loss OR push), the current loss streak, the ordered
-    result sequence, and season counts. Returns (per_team_by_resolved_name, results_through_week)."""
+
+    Enforces ONE canonical ATS decision per team-game via a stable key (season, week, resolved team,
+    resolved opponent): duplicate snapshot/book rows are collapsed and never extend a streak; rows that
+    disagree on the result are flagged as duplicate identities. For each team it computes the current
+    consecutive cover streak (stops at the first loss OR push), the loss streak, the ordered sequence,
+    and season counts -- all from the authoritative per-game source, not an aggregate.
+
+    Returns (per_team_by_resolved_name, max_graded_week, canonical_decisions, duplicate_identities)."""
     import cfb_current_form as cff
     df = df[(df['MarketType'].astype(str).str.upper() == 'SPREAD')
             & (pd.to_numeric(df['Season'], errors='coerce') == season)]
     df = df[df['OutcomeState'].astype(str).isin(['Hit', 'Miss', 'Push'])]   # graded decisions only
     df = df[pd.to_numeric(df['Line'], errors='coerce').notna()]             # must have a line
     df = df.assign(Week=pd.to_numeric(df['Week'], errors='coerce')).dropna(subset=['Week'])
-    per, through = {}, (int(df['Week'].max()) if not df.empty else None)
     _m = {'Hit': 'W', 'Miss': 'L', 'Push': 'P'}
-    sort_cols = ['Week', 'GameDate'] if 'GameDate' in df.columns else ['Week']
-    for team, g in df.groupby('Team'):
-        seq = [_m[s] for s in g.sort_values(sort_cols)['OutcomeState'] if s in _m]
+    sort_cols = [c for c in ('Week', 'GameDate') if c in df.columns] or ['Week']
+    canon, dups = {}, []   # canon[(week, rteam)] = {'res','opp','name'}
+    for _, r in df.sort_values(sort_cols).iterrows():
+        state = _m.get(str(r.get('OutcomeState')))
+        if state is None:
+            continue
+        wk = int(r['Week'])
+        rteam = cff._resolve(str(r.get('Team', '')))
+        ropp = cff._resolve(str(r.get('Opponent', '')))
+        key = (wk, rteam)
+        if key in canon:
+            if canon[key]['res'] != state:     # same team-game, conflicting graded result
+                dups.append(key)
+            continue                            # duplicate team-game -> ignored (never extends a streak)
+        canon[key] = {'res': state, 'opp': ropp, 'name': str(r.get('Team', ''))}
+    by_team = {}
+    for (wk, rteam), v in canon.items():
+        by_team.setdefault(rteam, []).append((wk, v))
+    through = max((wk for (wk, _t) in canon), default=None)
+    per = {}
+    for rteam, lst in by_team.items():
+        lst.sort(key=lambda x: x[0])
+        seq = [v['res'] for _wk, v in lst]
         cover_streak = 0
-        for r in reversed(seq):
-            if r == 'W':
+        for ch in reversed(seq):
+            if ch == 'W':
                 cover_streak += 1
             else:
-                break  # a loss OR a push stops the strict consecutive-cover streak
+                break
         loss_streak = 0
-        for r in reversed(seq):
-            if r == 'L':
+        for ch in reversed(seq):
+            if ch == 'L':
                 loss_streak += 1
             else:
                 break
-        per[cff._resolve(team)] = {
-            'cover_streak': cover_streak, 'loss_streak': loss_streak, 'results': seq,
-            'recent': seq[-6:], 'covers': seq.count('W'), 'losses': seq.count('L'),
-            'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': int(g['Week'].max()),
+        per[rteam] = {
+            'team_name': lst[-1][1]['name'], 'cover_streak': cover_streak, 'loss_streak': loss_streak,
+            'results': seq, 'recent': seq[-6:], 'covers': seq.count('W'), 'losses': seq.count('L'),
+            'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': lst[-1][0],
         }
-    return per, through
+    return per, through, canon, dups
+
+
+def _cfb_ats_sync(canon, duplicates, line_moves_games, completed_week):
+    """Completeness-based synchronization (replaces max(Week)). Builds the expected completed-game ATS
+    manifest from the line-moves feed -- every completed game through `completed_week` with a spread
+    contributes two team-game decisions; completed games with no line are legitimate exclusions. The
+    source is synchronized only when EVERY expected decision has a canonical graded decision and there
+    are no duplicate identities. Reports the counts; through_week is set only when completeness passes."""
+    import cfb_current_form as cff
+    if completed_week is None or completed_week < 1:
+        return {'synchronized': True, 'completed_week': completed_week, 'through_week': completed_week,
+                'expected_decisions': 0, 'graded_decisions': len(canon), 'exclusions': 0,
+                'missing': [], 'missing_count': 0, 'duplicate_count': len(duplicates)}
+    fbs = cff._fbs_teams()
+    expected, exclusions = set(), 0
+    for g in (line_moves_games or []):
+        wk = g.get('week')
+        if not g.get('completed') or wk is None or wk > completed_week:
+            continue
+        if g.get('spread_now') is None and g.get('spread_open') is None:
+            exclusions += 1                       # no-line / cancelled -> legitimate exclusion
+            continue
+        for side in (g.get('home', ''), g.get('away', '')):
+            r = cff._resolve(str(side))
+            if r in fbs:
+                expected.add((int(wk), r))        # the FBS wave universe
+            else:
+                exclusions += 1                   # non-FBS opponent slot -> legitimate exclusion
+    graded = {(wk, t) for (wk, t) in canon if wk <= completed_week and t in fbs}
+    missing = sorted(expected - graded)
+    synchronized = (not missing) and (not duplicates)
+    return {'synchronized': synchronized, 'completed_week': completed_week,
+            'through_week': completed_week if synchronized else None,
+            'expected_decisions': len(expected), 'graded_decisions': len(graded),
+            'exclusions': exclusions, 'missing': missing[:12], 'missing_count': len(missing),
+            'duplicate_count': len(duplicates)}
 
 
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
@@ -44610,29 +44672,31 @@ def build_cfb_wave_context():
         except (OSError, ValueError):
             return {}
     ats = _j(paths[1]).get('teams', {})
-    # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership = current consecutive graded
-    # ATS-cover streak >= 3, from the chronological graded source -- NOT season cover percentage.
-    streaks, results_through = _cfb_active_cover_streaks(2026)
-    moves = [g for g in _j(paths[2]).get('games', [])
-             if not g.get('completed') and g.get('spread_now') is not None]
+    ats_by_resolved = {cff._resolve(s): a for s, a in ats.items()}  # OPTIONAL season context only
+    # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership iterates the AUTHORITATIVE
+    # per-game streak index -- never the season aggregate, which must not be able to suppress membership.
+    streaks, _through, canon, dups = _cfb_active_cover_streaks(2026)
+    lm_games = _j(paths[2]).get('games', [])
+    moves = [g for g in lm_games if not g.get('completed') and g.get('spread_now') is not None]
     wk = min((g['week'] for g in moves), default=None)
     moves = [g for g in moves if g['week'] == wk] if wk is not None else []
 
-    # Through-week synchronization: the streak source must reach the completed week behind the displayed
-    # slate (wk-1). If it can't, FAIL CLOSED -- an honest "not synchronized" state, never a cover-% fallback.
-    expected_completed = (wk - 1) if wk else None
-    synced = results_through is not None and (expected_completed is None or results_through >= expected_completed)
-    if not synced:
-        data = {'wave_week': wk, 'wave_through_week': results_through, 'wave_unsynced': True,
-                'wave_members': [], 'wave_fades': [], 'wave_count': 0, 'wave_available': True}
+    # Completeness-based synchronization (NOT max(Week)): every expected completed-game ATS decision
+    # through wk-1 must have a canonical graded decision, with no duplicate identities. Else FAIL CLOSED
+    # -- an honest "not synchronized" report, never a season-cover-% fallback.
+    sync = _cfb_ats_sync(canon, dups, lm_games, (wk - 1) if wk else None)
+    if not sync['synchronized']:
+        data = {'wave_week': wk, 'wave_through_week': sync.get('through_week'), 'wave_unsynced': True,
+                'wave_sync': sync, 'wave_members': [], 'wave_fades': [], 'wave_count': 0,
+                'wave_available': True}
         _CFB_WAVE_CACHE['sig'] = sig
         _CFB_WAVE_CACHE['data'] = data
         return data
 
     game_of = {}
     for g in moves:
-        game_of[str(g['home']).lower()] = (g, True)
-        game_of[str(g['away']).lower()] = (g, False)
+        game_of[cff._resolve(str(g['home']))] = (g, True)
+        game_of[cff._resolve(str(g['away']))] = (g, False)
     ranks = _cfb_rankings()
     rank_lc = {k.lower(): v for k, v in ranks.items()}
     obs = cff._srs_observed()
@@ -44652,8 +44716,8 @@ def build_cfb_wave_context():
             return 'rising'
         return ''
 
-    def _attach_week(entry, school):
-        g_ish = game_of.get(school.lower())
+    def _attach_week(entry, rkey):
+        g_ish = game_of.get(rkey)
         if not g_ish:
             return
         g, ishome = g_ish
@@ -44677,19 +44741,19 @@ def build_cfb_wave_context():
                              'total_edge': (tr or {}).get('edge')}
 
     plays, sinks = [], []
-    for school, a in ats.items():
-        lc = cff._resolve(school)
-        if lc not in cff._fbs_teams():
+    for rteam, srec in streaks.items():     # iterate the AUTHORITATIVE streak index
+        if rteam not in cff._fbs_teams():
             continue
-        srec = streaks.get(lc)
-        if not srec:
-            continue
-        st = _status(school)
-        orank = obsrank.get(lc, 999)
-        # independent factual labels (context): Season ATS Record + Perfect Start + Strong Season Record
+        name = srec['team_name']
+        st = _status(name)
+        orank = obsrank.get(rteam, 999)
+        a = ats_by_resolved.get(rteam) or {}
+        # Season ATS record DERIVED from the authoritative per-game sequence (aggregate optional: acm only).
+        season_rec = f"{srec['covers']}-{srec['losses']}" + (f"-{srec['pushes']}" if srec['pushes'] else '')
+        cover_pct = round(100 * srec['covers'] / srec['decisions']) if srec['decisions'] else None
         perfect_start = srec['losses'] == 0 and srec['decisions'] >= 1
         strong_season = srec['losses'] <= 1 and srec['decisions'] >= 3
-        base = {'team': school, 'ats': a.get('ats'), 'cover': a.get('cover'), 'acm': a.get('acm'),
+        base = {'team': name, 'ats': season_rec, 'cover': cover_pct, 'acm': a.get('acm'),
                 'recent': srec['recent'], 'pushes': srec['pushes'],
                 'perfect_start': perfect_start, 'strong_season': strong_season, 'status': st,
                 'sos_rank': orank if orank <= 138 else None, 'week': None}
@@ -44697,13 +44761,13 @@ def build_cfb_wave_context():
             tier = 0 if st in ('surging', 'rising') else (1 if orank <= 25 else 2)
             entry = dict(base, cover_streak=srec['cover_streak'], tier=tier,
                          tier_label=_WAVE_TIERS[tier])  # model tier = OVERLAY only
-            _attach_week(entry, school)
+            _attach_week(entry, rteam)
             plays.append(entry)
         if srec['loss_streak'] >= 3:    # mirror: active NOT-covering streak >= 3
             s_tier = 0 if st in ('collapsed', 'regressed') else 1
             entry = dict(base, loss_streak=srec['loss_streak'], tier=s_tier,
                          tier_label=_SINK_TIERS[s_tier])
-            _attach_week(entry, school)
+            _attach_week(entry, rteam)
             sinks.append(entry)
 
     # DEFAULT FACTUAL ORDER = current cover-streak length DESC, deterministic neutral tiebreaker (team asc).
@@ -44711,8 +44775,8 @@ def build_cfb_wave_context():
     wave_fades = sorted(sinks, key=lambda p: (-p['loss_streak'], p['team']))
 
     data = {
-        'wave_week': wk, 'wave_through_week': results_through, 'wave_unsynced': False,
-        'wave_members': wave_members, 'wave_fades': wave_fades,
+        'wave_week': wk, 'wave_through_week': sync.get('through_week'), 'wave_unsynced': False,
+        'wave_sync': sync, 'wave_members': wave_members, 'wave_fades': wave_fades,
         'wave_count': len(wave_members), 'wave_available': bool(wave_members or wave_fades),
     }
     _CFB_WAVE_CACHE['sig'] = sig
