@@ -38,7 +38,7 @@
   <div>
     <div class="page-kicker">Quick Tools &middot; CFB</div>
     <h1>Wave <span class="accent">Watch</span></h1>
-    <div class="page-subtitle">Every team covering ATS this year &mdash; but sorted by <b>why</b>. A cover streak alone gets priced; the edge is a team that&rsquo;s covering because it&rsquo;s genuinely underrated, into a number the model still likes. That intersection is the week&rsquo;s hits.</div>
+    <div class="page-subtitle">Every team covering ATS this year &mdash; the facts (record, streak, this week&rsquo;s line) with the model&rsquo;s read of each number shown beside them. A cover streak is context the market already prices; the model&rsquo;s number-vs-line difference is an overlay, not a verdict.</div>
   </div>
   <div class="hero-actions"><a href="/tools/cfb-matchup" class="btn btn-secondary btn-sm">Matchup Card</a></div>
 </div>
@@ -47,10 +47,10 @@
 <div class="wv-empty">No 2026 ATS wave data loaded yet &mdash; the board fills in once this season&rsquo;s games and lines are in. Check back after Week 1.</div>
 {% else %}
 
-<!-- ===== THIS WEEK'S HITS ===== -->
+<!-- ===== COVERING + MODEL STILL PROJECTS A COVER ===== -->
 <div class="wv-sec">
-  <div class="wv-h"><span class="n">&#9873; This Week&rsquo;s Hits</span><span class="d">Underrated coverers &times; a number the model likes{% if wave_week %} &middot; Week {{ wave_week }}{% endif %}</span></div>
-  <p class="wv-blurb">The intersection: teams covering ATS <b>because they&rsquo;re better than the market rated them</b> (surging / rising), <b>and</b> whose line this week the model still projects to cover. The wave with a reason that persists.</p>
+  <div class="wv-h"><span class="n">&#9873; Covering, and the model still projects a cover</span><span class="d">Teams covering ATS whose model projection is above this week&rsquo;s line{% if wave_week %} &middot; Week {{ wave_week }}{% endif %}</span></div>
+  <p class="wv-blurb">Teams covering ATS whose <b>model number is higher than this week&rsquo;s closing line</b> (surging / rising). This is the model&rsquo;s read shown beside the facts &mdash; a grouping, not a shortlist to act on.</p>
   {% if wave_hits %}
   {% for p in wave_hits %}
   <div class="wv-hit">
@@ -62,7 +62,7 @@
   </div>
   {% endfor %}
   {% else %}
-  <div class="wv-empty">No clean intersection this week &mdash; the underrated coverers don&rsquo;t currently have a number the model likes. That&rsquo;s the market doing its job; don&rsquo;t force it.</div>
+  <div class="wv-empty">No team covering ATS also has a model number above this week&rsquo;s line right now. The covering teams are still listed below.</div>
   {% endif %}
 </div>
 
@@ -70,8 +70,8 @@
 {% for grp in wave_tiers %}
 <div class="wv-sec">
   <div class="wv-h"><span class="n"><span class="wv-tierlbl t{{ grp.tier }}">{{ grp.label }}</span></span><span class="d">{{ grp.plays|length }} teams</span></div>
-  {% if grp.tier == 0 %}<p class="wv-blurb">Covering because the line hasn&rsquo;t caught up to their real strength. <b>Ride until it does.</b></p>
-  {% elif grp.tier == 1 %}<p class="wv-blurb">Genuinely strong, but the market knows &mdash; the cover is baked into the number now. Neutral.</p>
+  {% if grp.tier == 0 %}<p class="wv-blurb">The model&rsquo;s number is higher than the closing line &mdash; it still projects a cover. The market may adjust. (Model read, not an instruction.)</p>
+  {% elif grp.tier == 1 %}<p class="wv-blurb">The model and the closing number agree &mdash; the model projects no further cover edge here.</p>
   {% else %}<p class="wv-blurb">Big cover margins on a <b>soft schedule</b> &mdash; the opponent-adjusted rating says cupcakes, not quality. Regression risk as the schedule stiffens.</p>{% endif %}
   {% for p in grp.plays %}
   <div class="wv-row">
@@ -87,22 +87,22 @@
 </div>
 {% endfor %}
 
-<!-- ===== FADE THE SINKERS (anti-wave) ===== -->
+<!-- ===== NOT COVERING ===== -->
 <div class="wv-sec" style="border-top:2px solid var(--border);padding-top:20px;">
-  <div class="wv-h" style="border-bottom-color:rgba(255,159,106,.3);"><span class="n" style="color:#ff9f6a;">&#9660; Fade the Sinkers</span><span class="d">Can&rsquo;t cover for a reason &mdash; the other side of the wave</span></div>
-  <p class="wv-blurb">The mirror image: teams <b>not</b> covering because the market <b>overrates</b> them. When one is a fade AND the model says they lose this week&rsquo;s number too, that&rsquo;s a spot to <b>bet the opponent</b>.</p>
+  <div class="wv-h" style="border-bottom-color:rgba(255,159,106,.3);"><span class="n" style="color:#ff9f6a;">&#9660; Not covering</span><span class="d">Teams missing the spread &mdash; the model&rsquo;s read shown beside each</span></div>
+  <p class="wv-blurb">The mirror image: teams <b>not</b> covering ATS, with the model&rsquo;s number <b>below</b> the closing line. Where the model also projects a miss on this week&rsquo;s line, that is shown as context, not an instruction.</p>
   {% if wave_fades %}
   {% for p in wave_fades %}
   <div class="wv-hit" style="border-color:rgba(255,159,106,.35);background:rgba(255,159,106,.05);">
     <div class="wv-row" style="border:0;padding:0;">
       <span class="wv-team" style="color:#ff9f6a;">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
-      <span class="wv-play" style="color:#ff8f9a;">FADE {{ '%+g'|format(p.week.line) }} &rarr; back {{ p.week.opp }}</span>
-      <span class="wv-why">2026 <b>{{ p.ats }} ATS</b> ({{ p.cover }}%) &middot; overrated, and the model projects them to <b>miss this number by {{ '%+g'|format(p.week.edge) }}</b> &mdash; bet {{ p.week.opp }}.</span>
+      <span class="wv-play" style="color:#ff8f9a;">model projects a miss vs {{ '%+g'|format(p.week.line) }} ({{ p.week.opp }})</span>
+      <span class="wv-why">2026 <b>{{ p.ats }} ATS</b> ({{ p.cover }}%) &middot; the model&rsquo;s number is below the closing line; it projects a miss of <b>{{ '%+g'|format(p.week.edge) }}</b> vs this line.</span>
     </div>
   </div>
   {% endfor %}
   {% else %}
-  <div class="wv-empty">No clean fade spot this week &mdash; the overrated sinkers don&rsquo;t have a number the model wants to bet against right now.</div>
+  <div class="wv-empty">No team missing ATS also has a model number below this week&rsquo;s line right now.</div>
   {% endif %}
   {% for grp in wave_sink_tiers %}
   <div style="margin-top:12px;">
@@ -111,14 +111,14 @@
     <div class="wv-row">
       <span class="wv-team">{{ p.team }}{% if p.status %} <span class="wv-tag {{ p.status }}">{{ p.status }}</span>{% endif %}</span>
       <span class="wv-ats" style="color:#ff9f6a;">{{ p.ats }} ATS ({{ p.cover }}%)</span>
-      {% if p.week %}<span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">misses {{ '%+g'|format(p.week.edge) }} &rarr; back {{ p.week.opp }}</span>{% endif %}</span>{% else %}<span class="wv-wk">no line this week / off</span>{% endif %}
+      {% if p.week %}<span class="wv-wk">this wk: <b>{{ '%+g'|format(p.week.line) }} vs {{ p.week.opp }}</b> &middot; model {% if p.week.covers %}<span class="cov">covers {{ '%+g'|format(p.week.edge) }}</span>{% else %}<span class="no">misses {{ '%+g'|format(p.week.edge) }}</span>{% endif %}</span>{% else %}<span class="wv-wk">no line this week / off</span>{% endif %}
     </div>
     {% endfor %}
   </div>
   {% endfor %}
 </div>
 
-<div class="wv-note"><b>How to read this:</b> a cover streak (or a losing one) is where you <i>start</i>, not the edge itself &mdash; the market prices streaks. The edge is the <b>underrated</b> tier (covering for a reason that persists) crossed with a line the model still likes &mdash; and its mirror, an <b>overrated</b> sinker the model fades. &ldquo;Priced&rdquo; and &ldquo;soft&rdquo; teams move for reasons the number already knows or that regress. Model projections are on a 3&ndash;4 game sample &mdash; spots, not locks. Bet what you can afford to lose.</div>
+<div class="wv-note"><b>How to read this:</b> a cover (or no-cover) streak is where you <i>start</i> &mdash; the market already prices streaks. Beside each team is the model&rsquo;s number-vs-line difference, shown as context, not a signal on its own. The tier labels are the model&rsquo;s read, never a filter that hides a team &mdash; every covering (and non-covering) team stays listed. Model projections are on a 3&ndash;4 game sample. Bet what you can afford to lose.</div>
 
 {% endif %}
 </div>

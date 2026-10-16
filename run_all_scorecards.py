@@ -47,6 +47,9 @@ SCORECARDS = [
     # calendar recency + injury availability, the completed-week pending gate, and the Mike
     # Evans Week-5 regression (yesterday's result ends the run once the week loads).
     ("NFL Heat-Map Freshness QC", "qc_nfl_heatmap_freshness.py", 180),
+    # CFB Wave Watch wording remediation (Gate 1): no betting-authority language survives and the
+    # template filters no qualifier (every builder team renders; the model groups, never removes).
+    ("CFB Wave Wording QC", "qc_cfb_wave_wording.py", 120),
     # Riding-the-Wave player prop-streak freshness: the under-streak surface must disclose what
     # it is graded through and never present last season's final runs as current. Locks the
     # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.
