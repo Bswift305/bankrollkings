@@ -11,7 +11,7 @@ X and the price on **each side** were captured, from a **specific book**, at a *
 before the game. Reconstructing a line from the log fabricates the market. Capture must run on a
 cadence because the Odds API serves only the **current** line — an uncaptured line is gone.
 
-Date: 2026-10-16. Revision: 2 (ten mechanical corrections from implementation review — see §11).
+Date: 2026-10-16. Revision: 3 (six semantic corrections + a read-only measurement sub-gate — see §11).
 Scope: **NFL + NBA**. MLB/WNBA out of scope.
 
 ---
@@ -24,7 +24,9 @@ It is **not** one side, and **not** a blended/consensus number.
 | Field | Required | Meaning |
 |---|---|---|
 | `event_id` | ✅ | **stable** provider event id (not a team string) + Eastern game date |
-| `player_id` | ✅ | **stable** provider/roster player id (not a name) |
+| `raw_player` | ✅ | the player identity exactly as the feed supplies it (name/handle) — always stored |
+| `player_id` | ○ | **stable** resolved player id when available; the feed **may not supply one** |
+| `player_resolution_status` | ✅ | `resolved` / `unresolved` — **only `resolved` observations qualify for grading** (correction 2); `unresolved` is captured and kept, but grades `UNGRADED` |
 | `team`, `opponent` | ✅ | matchup |
 | `stat_key` | ✅ | **normalized** market key (one canonical name per market across providers) |
 | `book` | ✅ | the single sportsbook this quote is from |
@@ -37,17 +39,23 @@ It is **not** one side, and **not** a blended/consensus number.
 | `result` | settle | `OVER / UNDER / PUSH / VOID / DNP / UNGRADED / PENDING` (§6) |
 | `actual_value` | settle | the stat the player recorded — only when every component was **observed** (no zero-fill) |
 
-**Per-book observations are the authority (correction 2).** A consensus/aggregate (e.g., modal line,
-median price) is a **separately labeled DERIVED record**, stored apart, and **may never be presented as
-an actually-available two-sided price, nor used as realized ROI.** Realized ROI uses a real book's real
-two prices at a real instant, or it is unavailable.
+**Per-book observations are the authority.** A consensus/aggregate (e.g., modal line, median price) is
+a **separately labeled DERIVED record**, stored apart, and **may never be presented as an
+actually-available two-sided price.** A captured two-sided quote supports a **hypothetical
+price-adjusted return** — *not* "realized ROI." **Realized ROI exists only when an actual wager was
+placed** (that lives in the Decision Journal, not here); otherwise returns are explicitly hypothetical
+(correction 1).
 
-**Snapshot identity (correction 4):** a row's key is
-`(event_id, player_id, stat_key, book, line, capture_window)` — the exact market snapshot. Idempotency
-is per-snapshot, **not** per calendar day.
+**Snapshot identity (revised — must preserve price-only movement, correction 5-new):** a row's key is
+`(event_id, raw_player|player_id, stat_key, book, capture_instant)` — or a **formally defined capture
+window** in place of `capture_instant`. **`line` is an attribute, not part of the key**, and prices are
+never dropped from the stored row, so a **price-only move at the same line** produces a distinct
+observation rather than collapsing. Idempotency is per-snapshot, **not** per calendar day. (If a coarse
+window is used as the dedup unit, the row must note it may contain intra-window movement.)
 
-**Stable identifiers are required (correction 5):** without a resolved `event_id` and `player_id` the
-observation is still captured, but it grades as **`UNGRADED`** — never silently name-matched to a log.
+**Identifier handling:** `event_id` and `player_id` are resolved where the feed provides them; an
+observation whose player cannot be resolved is still captured (with `raw_player` +
+`player_resolution_status='unresolved'`) and grades **`UNGRADED`** — never silently name-matched.
 
 ---
 
@@ -130,9 +138,13 @@ game only 1–2 snapshots). Freeze freshness limits only after the quota measure
 ## 6. Result taxonomy (correction 6)
 `OVER / UNDER / PUSH / VOID / DNP / UNGRADED / PENDING`:
 - **PUSH** only when the player played and `actual_value == line` exactly (money back).
-- **VOID** when the book voided the market.
-- **DNP** when the player did not play (no log row for a player confirmed inactive/out).
-- **UNGRADED** when identifiers couldn't be resolved — never a silent name-match, never PENDING-forever.
+- **VOID** only when a **sportsbook or authoritative settlement source confirms a void** — **never
+  inferred from a DNP** (correction 4).
+- **DNP** only when a **participation / inactive source confirms** the player did not play. **Absence
+  from a player-stat log does not prove DNP** — with no participation source, use **`UNGRADED`**
+  (correction 3).
+- **UNGRADED** when identifiers are unresolved, or participation is unknown — never a silent name-match,
+  never PENDING-forever.
 - **PENDING** only genuinely-not-yet-resolved.
 - **Never** turn a missing source/component column into 0 unless **0 was explicitly observed.**
 
@@ -141,28 +153,45 @@ game only 1–2 snapshots). Freeze freshness limits only after the quota measure
 ## 7. What an Over/Under prop wave needs
 A per-(`player_id`, `stat_key`) chronological series of graded OVER/UNDER against the **captured per-book
 line**, each row carrying its line, book and two prices, so an active wave reads "cleared 6 straight
-receiving-yards lines" with the real numbers. **ROI only from real two-sided per-book prices**; where
-absent, ROI is "unavailable," never assumed −110 and never from a consensus blend.
+receiving-yards lines" with the real numbers. Any return computed from captured prices is a labeled
+**hypothetical price-adjusted return** (not realized ROI — correction 1); where the two-sided per-book
+price is absent it is "unavailable," never assumed −110 and never from a consensus blend.
 
 ---
 
 ## 8. Honesty rails (doctrine + §10)
 Streaks are priced (171k graded props) → a wave is descriptive, a starting point, **not** a proven
 edge; no sharp/steam/lock language. Every built surface shows **sample size (n)**, discloses that depth
-isn't continuation evidence, and is non-causal. Prefer-UNDER / single-book→CONFLICTED / LONGSHOT-OVER
-guardrails apply. Availability states so a gap never reads as neutral.
+isn't continuation evidence, and is non-causal. Availability states so a gap never reads as neutral.
+
+**Predictive guardrails are context, not a filter (correction 6).** Prefer-UNDER / single-book→
+CONFLICTED / LONGSHOT-OVER and any other predictive guardrail **may not suppress or rank Wave rows**
+unless that use is authorized by the guardrail's own governance record (per the matchup-page contract).
+Absent that authorization they may appear **only as factual / context warnings under their current
+status** — they never hide or reorder a row.
 
 ---
 
 ## 9. Execution gates
-- **Gate 2a — capture complete (per sport, opens separately for NFL and NBA).** NFL is an
-  upgrade/migration from the Partial archive; NBA is a new pipeline. Gate 2a thresholds are **not frozen
-  until measured** (correction 9): first measure, on real data, **supported markets offered, stable-ID
-  (`event_id`/`player_id`) coverage, per-book row coverage, both-price coverage, and grading
-  resolution**; then freeze the % bars and the consecutive-green-days requirement, **verified with real
-  on-disk observations, not synthetic fixtures.**
+- **Gate 2a-measurement — OPEN now (read-only).** A read-only measurement sub-gate. It builds **no**
+  capture and **no** surface; it only measures reality to resolve cadence, quota, and identifiers, and
+  to propose numeric thresholds. The authorized measurement determines:
+  1. raw provider identifiers actually available (event + player);
+  2. per-book pairing reliability (an Over and Under genuinely from the **same** book/line);
+  3. both-price and stable-ID coverage;
+  4. source update timestamps (how fresh / how often the feed moves);
+  5. API quota and per-call cost;
+  6. feasible **pregame checkpoint cadence** (vs kickoff proximity);
+  7. grading and **participation-source** coverage;
+  8. proposed **numeric Gate 2a thresholds**.
+  Output = a measurement report (`docs/player_prop_capture_measurement.md`). It freezes nothing on its
+  own; the report is reviewed, then cadence + thresholds are frozen.
+- **Gate 2a — capture complete (per sport, opens separately for NFL and NBA) — CLOSED until the
+  measurement report freezes cadence/thresholds.** NFL is an upgrade/migration from the Partial archive;
+  NBA is a new pipeline. Thresholds are the measured % bars + the consecutive-green-days requirement,
+  **verified with real on-disk observations, not synthetic fixtures.**
 - **Gate 2b — the visible Wave surface.** Closed. Separate authorization; inherits the CFB Wave Watch
-  wording contract (`qc_cfb_wave_wording.py` bar).
+  wording contract (`qc_cfb_wave_wording.py` bar) and the §8 guardrail-governance rule.
 
 ---
 
@@ -180,7 +209,24 @@ Before Gate 2a closes for a sport, automated QC must reproduce, on real-shaped d
 
 ---
 
-## 11. Changelog — Rev 2 (ten corrections)
+## 11. Changelog
+
+### Rev 3 (six semantic corrections + measurement sub-gate)
+1. Captured prices support a **hypothetical price-adjusted return**, not "realized ROI" — realized ROI
+   exists only when an actual wager was placed (Decision Journal).
+2. `player_id` may be unresolved (feed may not supply one): store `raw_player` +
+   `player_resolution_status`; **only resolved observations qualify for grading**.
+3. Absence from a stat log does **not** prove DNP — require a participation/inactive source; else
+   `UNGRADED`.
+4. `VOID` only on a sportsbook/authoritative settlement confirmation — **never inferred from DNP**.
+5. Snapshot identity keys on `(event, player, market, book, capture_instant|window)` and keeps `line`
+   as an attribute with prices always stored, so **price-only movement is preserved, not collapsed**.
+6. Predictive guardrails may **not** suppress or rank Wave rows without a governance record authorizing
+   that use — they appear only as factual/context warnings under their current status.
++ Opened **Gate 2a-measurement** (read-only); the canonical capture build stays closed until the
+  measurement report freezes cadence + thresholds.
+
+### Rev 2 (ten corrections)
 1. Canonical row = one **book-specific two-sided market snapshot** (event_id, player_id, team/opp,
    normalized stat_key, book, line, over+under price, exact capture + commence UTC) — not one side.
 2. **Per-book observations are authority**; any consensus row is a separately labeled derived record,
