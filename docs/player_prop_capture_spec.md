@@ -1,171 +1,206 @@
 # Player-Prop Capture — Specification (design only, no code)
 
 **Status: SPECIFICATION ONLY. No code, no UI, no model tuning, no new surface.** This is "Gate 2" — the
-capture prerequisite named in `docs/wave_watch_data_diagnostic_spec.md` (C7 staged capability, C8
-execution gates). It defines the honest, graded **player-prop line record** that an NFL/NBA prop Wave
-Watch (Over/Under streaks + active waves for individual props, the ATS-cover-streak analog) must be
-built on. Building that surface is a **separate, separately-authorized gate** and is out of scope here.
+capture prerequisite named in `docs/wave_watch_data_diagnostic_spec.md` (C7/C8). It defines the honest,
+graded **player-prop line record** an NFL/NBA prop Wave Watch (Over/Under streaks + active waves, the
+ATS-cover-streak analog) must be built on. Building that surface is **Gate 2b**, separate and closed.
 
-Governing lesson (verified below): **you cannot establish a prop-line record from a game log.** A game
-log tells you what a player *did*; it does not tell you the *line and price the market offered*. Grading
-"did he beat X" is only honest when X — and the price on each side — were **captured at a point in
-time, before the game**. Reconstructing a line from the log (e.g., using a player's average as the
-"line") fabricates the market. Capture is therefore mandatory, and it must run daily, because the Odds
-API serves only the **current** line — an uncaptured line is gone.
+Governing lesson: **you cannot establish a prop-line record from a game log.** A game log says what a
+player *did*, not the *line and prices the market offered*. Grading "did he beat X" is honest only when
+X and the price on **each side** were captured, from a **specific book**, at a **specific instant**,
+before the game. Reconstructing a line from the log fabricates the market. Capture must run on a
+cadence because the Odds API serves only the **current** line — an uncaptured line is gone.
 
-Date: 2026-10-16. Scope: **NFL + NBA** (per direction). MLB/WNBA are out of scope for this spec.
+Date: 2026-10-16. Revision: 2 (ten mechanical corrections from implementation review — see §11).
+Scope: **NFL + NBA**. MLB/WNBA out of scope.
 
 ---
 
-## 1. The canonical prop observation (the unit of the record)
+## 1. The canonical prop observation (revised — a book-specific market snapshot)
 
-Mirrors the Wave Watch and Decision-Journal canonical observations. One row = one **side of one market,
-for one player, captured at one point in time**:
+**One row = one book's two-sided quote for one player's market, at one capture instant** (correction 1).
+It is **not** one side, and **not** a blended/consensus number.
 
 | Field | Required | Meaning |
 |---|---|---|
-| `player`, `team`, `opponent` | ✅ | subject + matchup |
-| `game_key` | ✅ | a **stable event id** (not just a team string) + Eastern game date |
-| `stat` / `market` | ✅ | Rec Yds, Pass Yds, Points, Rebounds, … |
-| `line` | ✅ | the number **as the book offered it**, at capture time |
-| `over_price`, `under_price` | ✅ (both) | American odds for **each** side — both, so ROI is real, not assumed |
-| `book` + `book_count` | ✅ | the book, or a defined **consensus** across N books (book_count disclosed) |
-| `line_type` | ✅ | **open / interim / closing** — labeled, not inferred silently |
-| `capture_time` | ✅ | timestamp the line/prices were seen — **must precede commence** |
-| `commence_time` | ✅ | game start (UTC→Eastern via `services/timeutils`) |
-| `result` | settle | **OVER / UNDER / PUSH / PENDING**, graded against the **captured** line |
-| `actual_value` | settle | the stat the player actually recorded |
+| `event_id` | ✅ | **stable** provider event id (not a team string) + Eastern game date |
+| `player_id` | ✅ | **stable** provider/roster player id (not a name) |
+| `team`, `opponent` | ✅ | matchup |
+| `stat_key` | ✅ | **normalized** market key (one canonical name per market across providers) |
+| `book` | ✅ | the single sportsbook this quote is from |
+| `line` | ✅ | that book's line |
+| `over_price`, `under_price` | ✅ | **that same book's** two prices — never one book's Over paired with another's Under |
+| `line_type` | ✅ | `source_open` (only if the source explicitly marks an opener) · `first_captured` · `last_prestart_captured` · `source_close` (only if the source supplies a true close). See §3 |
+| `capture_time_utc` | ✅ | exact UTC instant the quote was seen |
+| `commence_time_utc` | ✅ | game start; a capture at/after this is rejected (not stored as pre-game) |
+| `minutes_to_commence` | ✅ | `last_prestart_captured` carries its distance from kickoff — a proxy, never relabeled "closing" |
+| `result` | settle | `OVER / UNDER / PUSH / VOID / DNP / UNGRADED / PENDING` (§6) |
+| `actual_value` | settle | the stat the player recorded — only when every component was **observed** (no zero-fill) |
 
-**Push handling** is explicit: a whole-number line with `actual_value == line` is a PUSH (money back),
-never a loss or a win. **Unknown stays unknown** — a side with no offered price is recorded without a
-price, never back-filled with an assumed −110.
+**Per-book observations are the authority (correction 2).** A consensus/aggregate (e.g., modal line,
+median price) is a **separately labeled DERIVED record**, stored apart, and **may never be presented as
+an actually-available two-sided price, nor used as realized ROI.** Realized ROI uses a real book's real
+two prices at a real instant, or it is unavailable.
 
----
+**Snapshot identity (correction 4):** a row's key is
+`(event_id, player_id, stat_key, book, line, capture_window)` — the exact market snapshot. Idempotency
+is per-snapshot, **not** per calendar day.
 
-## 2. Current-state audit (what exists, verified 2026-10-16)
-
-### NFL — a capture+grade pipeline ALREADY EXISTS and is wired into `run_daily.py`
-- **Board snapshot** `data/props/NFL_Props.csv` already carries both sides and open/current/close:
-  `OpenLine, CurrentLine, CloseLine, OpenOverOdds, OpenUnderOdds, OverOdds, UnderOdds, CloseOverOdds,
-  CloseUnderOdds, BetLine, BetOverOdds, BetUnderOdds`. The raw material for a both-sided line history is
-  present at the board level.
-- **Daily line archive** `capture_nfl_prop_lines.py` → `data/tracking/NFL_PropLines_Archive.csv`
-  (`SnapshotDate, Season, Player, Team, Stat, Line, OverOdds, UnderOdds, BookCount, Game, GameDate`).
-  Wired into `run_daily.py` ("NFL prop-line capture"). Idempotent: one row per (SnapshotDate, Player,
-  Stat). **Both over and under odds are captured.** `data/tracking/` is gitignored, so prod accumulates
-  its own running record.
-- **Grader** `grade_nfl_prop_lines.py` → `data/tracking/NFL_PropLines_Graded.csv` with the actual value
-  + **OVER/UNDER/PUSH/PENDING** against the captured line. Also wired into `run_daily.py`.
-- **This graded line archive is the honest basis for an NFL prop Over/Under wave.**
-
-### NFL — what is NOT a line record (do not use it as one)
-- `data/tracking/NFL_AllPropResults.csv` (34,788 rows) is the **model snapshot** archive, not a line
-  history. Verified column population: `OpenLine / CloseLine / OpenPrice / ClosePrice` are **0%
-  populated**; only `BetLine / BetPrice / Direction` are filled (one direction per row). So it **cannot**
-  support open→close movement, CLV, or two-sided ROI. The existing "Riding the Wave" NFL prop-streak
-  surface reads this file (directional streaks only); an honest **priced** Over/Under wave must read the
-  two-sided graded archive (`NFL_PropLines_Graded.csv`) instead.
-
-### NBA — the board has the columns, but there is NO capture and NO grader
-- `data/props/NBA_Props.csv` has the same two-sided open/close schema as NFL.
-- There is **no `capture_nba_prop_lines.py` and no `grade_nba_prop_lines.py`.** `NBA_AllPropResults.csv`
-  is a model snapshot (retrospective, playoff-weighted), not a daily line history.
-- **Consequence: there is no honest NBA prop line record today, so an NBA prop wave is not yet
-  possible.** NBA season tips ~late Oct 2026; capture must be live before then to accrue.
+**Stable identifiers are required (correction 5):** without a resolved `event_id` and `player_id` the
+observation is still captured, but it grades as **`UNGRADED`** — never silently name-matched to a log.
 
 ---
 
-## 3. Gaps to close (the capture work this spec authorizes later)
+## 2. Current-state audit (verified 2026-10-16) — the NFL archive is **Partial**
 
-### NFL (upgrade the existing pipeline to meet the canonical observation)
-1. **Explicit open & close, plus a near-commence snapshot.** The daily archive currently stores one
-   *current* line per day; open→close is only implied by the daily series. Label the first in-window
-   snapshot `open` and the last pre-commence snapshot `closing`, and add a **near-kickoff** capture so
-   `closing` is genuinely close (the same reason `bk-linemove.timer` exists — once-daily gives a
-   near-term game only 1–2 snapshots, per CLAUDE.md §7).
-2. **Stable `game_key`.** Carry a real event id (from the schedule/Odds feed), not just
-   `AwayFull@HomeFull`, so grading and dedup are robust to name variants.
-3. **Consensus vs single book.** Record `book`/`book_count`; a single-book line is flagged (consistent
-   with the graded-record guardrail that single-book is CONFLICTED).
-4. **Feed both-side prices into the graded record** (`NFL_PropLines_Graded.csv` already can — confirm
-   `over_price`/`under_price` persist through grading so ROI is computable).
+Classified **Partial**, not capture-complete and not "nearly canonical" (correction 7). It is preserved
+and useful, but its lineage is **not** silently upgraded to the §1 standard.
 
-### NBA (build the analog, mirroring NFL — nothing exotic)
-1. `capture_nba_prop_lines.py` → `data/tracking/NBA_PropLines_Archive.csv` (same schema as NFL).
-2. `grade_nba_prop_lines.py` → `data/tracking/NBA_PropLines_Graded.csv` (OVER/UNDER/PUSH/PENDING vs the
-   captured line, from NBA box-score results).
-3. **Wire both into `run_daily.py`** — the §7 rule: *if a feed is not in `run_daily.py`, it never runs
-   on prod.* Must be live before tip-off to accrue a real history.
+### NFL board `data/props/NFL_Props.csv`
+Carries two-sided open/current/close columns (`OpenLine/CurrentLine/CloseLine`,
+`OpenOverOdds/OpenUnderOdds/OverOdds/UnderOdds/CloseOverOdds/CloseUnderOdds`). Raw material exists.
 
----
+### NFL daily archive `capture_nfl_prop_lines.py` → `NFL_PropLines_Archive.csv` (run_daily-wired) — **Partial**
+Verified against the code; gaps vs §1:
+- **One row per (player, stat) per calendar day** — not a per-book, per-instant snapshot.
+- **Line is the modal line** (`Line.mode()`, else median); **`OverOdds`/`UnderOdds` are the median Over
+  and median Under computed *independently*** over whatever books offered the modal line — so the two
+  sides **can come from different books** (cross-book price mixing). This is a derived number, not a
+  real two-sided quote — it must not be used as realized ROI (correction 2).
+- **`BookCount` counts every book in the (player,stat) group**, not the books offering the selected
+  line.
+- **No stable event or player id** (keys on `Player` name + `AwayFull@HomeFull`).
+- **`line_type` is absent**: "first captured" is **not** necessarily the opener and "last captured
+  before kickoff" is **not** the close (correction 3).
 
-## 4. What an Over/Under prop wave needs from this record
+### NFL grader `grade_nfl_prop_lines.py` → `NFL_PropLines_Graded.csv` — **Partial**
+- **Zero-fills missing components** (`val += v if notna else 0.0`) — a missing component stat manufactures
+  a lower value and can manufacture a result (correction 6).
+- Name-key matched (no stable `player_id`); a mismatch silently yields **PENDING** forever.
+- Only `OVER/UNDER/PUSH/PENDING`; **no `DNP/VOID/UNGRADED`**, so "didn't play," "not yet played," and
+  "couldn't match the player" are conflated.
 
-The ATS-cover-streak analog for props is a **per (player, stat) chronological series** of graded
-OVER / UNDER / PUSH outcomes **against the captured line**, each carrying its line and both prices:
-- an **active wave** = consecutive OVERs (or UNDERs) in that series, shown with the lines so it reads as
-  "cleared 6 straight receiving-yards lines," not a cherry-picked average;
-- **ROI is honest only from the two-sided captured prices** — which the line archive has and
-  `NFL_AllPropResults` does not; where a price is missing, ROI is "unavailable," never assumed −110
-  (same rule as the Decision Journal).
+### `NFL_AllPropResults.csv` is NOT a line history
+34,788 rows; `OpenLine/CloseLine/OpenPrice/ClosePrice` **0% populated**; only `BetLine/BetPrice/
+Direction` filled (one direction/row). Cannot support open→close, CLV, or two-sided ROI.
 
-This is exactly the record the user asked for: ATS-like Over/Under records and active waves for
-individual player props — but earned from captured lines, not reconstructed from box scores.
-
----
-
-## 5. Honesty rails (carried from doctrine + CLAUDE.md §10)
-
-- **Streaks are priced.** 171k graded MLB+WNBA props show every predictive factor already in the
-  number; a prop wave is a **descriptive** "who has been clearing their line," a starting point and the
-  user's eye test, **not** a proven edge. No "sharp"/"steam"/"lock" language.
-- **Descriptive, not causal.** Every surface built on this shows **sample size (n)**, discloses that a
-  deeper streak is not evidence of continuation, and frames differences as what happened.
-- **Prefer UNDER / single-book → CONFLICTED / LONGSHOT-OVER** guardrails apply to any prop surface, as
-  they already do on the boards.
-- **Availability states** (Verified/Partial/Pending/Stale/Unavailable) so a missing capture never reads
-  as neutral.
+### NBA — no capture, no grader
+`NBA_Props.csv` has the columns, but there is **no `capture_nba_prop_lines.py` and no grader**.
+`NBA_AllPropResults.csv` is a retrospective model snapshot. **No honest NBA prop record exists.**
 
 ---
 
-## 6. Staged capability (what is showable, and when)
+## 3. Line-type labeling (correction 3)
+- **`source_open`** only when the provider explicitly supplies an opener.
+- Otherwise the earliest capture is **`first_captured`** — honestly "the first we saw," not the open.
+- The latest pre-commence capture is **`last_prestart_captured`**, stored **with `minutes_to_commence`**
+  — never relabeled "closing."
+- **`source_close`** only when the provider supplies a true closing line.
 
-- **NFL, now (in season):** the two-sided graded archive is accruing via `run_daily`. Once the §3 NFL
-  upgrades land and a monitored history exists, an NFL prop wave can be built on it (its own gate).
-- **NBA, from tip-off:** nothing until §3-NBA capture is live and has accrued a monitored history —
-  honestly "Pending / Data-Gated" until then. No NBA prop wave may claim a record it does not have.
-- A surface may always show the **facts it does have** (today's two-sided lines) while the graded
-  **history** is still Pending.
-
----
-
-## 7. Execution gates
-
-- **Gate 2a — Capture complete (per sport).** Met only when, for that sport: the daily archive runs
-  green in `run_daily` for a defined run of consecutive in-season days; coverage reaches a defined % of
-  the modeled markets with **both-side prices** and a **stable game_key**; `open`/`closing` line-types
-  are labeled; and the grader resolves PENDING→OVER/UNDER/PUSH. **Verified with real on-disk
-  observations, not synthetic fixtures.** NFL is close (pipeline exists); NBA starts from zero.
-- **Gate 2b — Prop Wave Watch surface.** A **separate** authorization, not opened here. It reads the
-  Gate-2a record and inherits the CFB Wave Watch honesty contract (descriptive, priced, sample sizes,
-  no betting-authority language — the same wording bar enforced by `qc_cfb_wave_wording.py`).
+A surface may say "last line we saw, 14 min before kickoff," never "closing line," unless `source_close`.
 
 ---
 
-## 8. Monitoring (defined here; built with the capture, not now)
+## 4. Capture mechanics to build (NFL upgrade/migration; NBA new)
 
-A capture-health check (a `qc_*`/scorecard section) must report, per sport, with sample sizes:
-- **coverage** — modeled markets captured today vs offered (and the one-sided-market count);
-- **freshness** — newest snapshot age; a stale capture is flagged, never assumed live;
-- **two-sided price presence** — % of rows with both `over_price` and `under_price`;
-- **key integrity / dedup** — one row per (SnapshotDate, game_key, player, stat, line_type);
-- **grading throughput** — PENDING→resolved rate, push count.
-Capture is not "done" because a file exists; existence is not completeness (the same lesson the MLB
-featured-results staleness check enforces).
+### NFL — upgrade to the §1 snapshot (migration, not a silent relabel)
+Persist **per-book** rows (not a modal/median collapse), with resolved `event_id`/`player_id`, a
+`stat_key` normalizer, `line_type`, `capture_time_utc`/`commence_time_utc`, and the exact snapshot key
+(§1). Keep the existing `NFL_PropLines_Archive.csv` as the labeled **Partial** legacy source; the new
+canonical capture is a distinct lineage. A consensus/derived view may be computed on top, clearly
+labeled, never as realized ROI.
+
+### NBA — new pipeline, mirroring the corrected NFL design
+`capture_nba_prop_lines.py` + `grade_nba_prop_lines.py` writing the §1 canonical rows; **wired into
+`run_daily.py`** (the §7 rule: not in run_daily ⇒ never runs on prod). Live before tip-off (~late Oct
+2026) or it accrues nothing.
+
+Both: **reject a capture whose `capture_time_utc` ≥ `commence_time_utc`** (not a pre-game observation).
 
 ---
 
-## 9. Out of scope here
-No code, no UI, no model tuning, no prop Wave Watch surface, and no sportsbook automation beyond the
-Odds API fetch already in place. This document is the capture contract to review before the capture
-work (and later, separately, the surface) is authorized. It does not touch the Decision Journal.
+## 5. Capture cadence — measure first, then freeze (correction 8)
+Cadence is **not frozen in this spec.** First **measure the Odds API quota and per-call cost** actually
+available, then freeze checkpoints against **kickoff proximity** (e.g., a daily baseline plus denser
+captures approaching commence, mirroring why `bk-linemove.timer` exists — once-daily gives a near-term
+game only 1–2 snapshots). Freeze freshness limits only after the quota measurement.
+
+---
+
+## 6. Result taxonomy (correction 6)
+`OVER / UNDER / PUSH / VOID / DNP / UNGRADED / PENDING`:
+- **PUSH** only when the player played and `actual_value == line` exactly (money back).
+- **VOID** when the book voided the market.
+- **DNP** when the player did not play (no log row for a player confirmed inactive/out).
+- **UNGRADED** when identifiers couldn't be resolved — never a silent name-match, never PENDING-forever.
+- **PENDING** only genuinely-not-yet-resolved.
+- **Never** turn a missing source/component column into 0 unless **0 was explicitly observed.**
+
+---
+
+## 7. What an Over/Under prop wave needs
+A per-(`player_id`, `stat_key`) chronological series of graded OVER/UNDER against the **captured per-book
+line**, each row carrying its line, book and two prices, so an active wave reads "cleared 6 straight
+receiving-yards lines" with the real numbers. **ROI only from real two-sided per-book prices**; where
+absent, ROI is "unavailable," never assumed −110 and never from a consensus blend.
+
+---
+
+## 8. Honesty rails (doctrine + §10)
+Streaks are priced (171k graded props) → a wave is descriptive, a starting point, **not** a proven
+edge; no sharp/steam/lock language. Every built surface shows **sample size (n)**, discloses that depth
+isn't continuation evidence, and is non-causal. Prefer-UNDER / single-book→CONFLICTED / LONGSHOT-OVER
+guardrails apply. Availability states so a gap never reads as neutral.
+
+---
+
+## 9. Execution gates
+- **Gate 2a — capture complete (per sport, opens separately for NFL and NBA).** NFL is an
+  upgrade/migration from the Partial archive; NBA is a new pipeline. Gate 2a thresholds are **not frozen
+  until measured** (correction 9): first measure, on real data, **supported markets offered, stable-ID
+  (`event_id`/`player_id`) coverage, per-book row coverage, both-price coverage, and grading
+  resolution**; then freeze the % bars and the consecutive-green-days requirement, **verified with real
+  on-disk observations, not synthetic fixtures.**
+- **Gate 2b — the visible Wave surface.** Closed. Separate authorization; inherits the CFB Wave Watch
+  wording contract (`qc_cfb_wave_wording.py` bar).
+
+---
+
+## 10. Required tests (correction 10)
+Before Gate 2a closes for a sport, automated QC must reproduce, on real-shaped data:
+- **cross-book price mixing** — reject/label an Over and Under drawn from different books as a real
+  two-sided quote;
+- **late/post-kickoff capture** — a `capture_time_utc ≥ commence_time_utc` row is rejected;
+- **duplicate snapshots** — the exact snapshot key (§1) dedupes; a different capture window does not;
+- **player ambiguity** — unresolved `player_id` ⇒ `UNGRADED`, never a silent name-match;
+- **DNP** — an inactive player ⇒ `DNP`, not PUSH/UNDER/PENDING;
+- **missing components** — a missing component does **not** zero-fill into a manufactured result;
+- **line-type labels** — `first_captured` vs `source_open`, `last_prestart_captured` (with
+  `minutes_to_commence`) vs `source_close` are distinguished, never conflated.
+
+---
+
+## 11. Changelog — Rev 2 (ten corrections)
+1. Canonical row = one **book-specific two-sided market snapshot** (event_id, player_id, team/opp,
+   normalized stat_key, book, line, over+under price, exact capture + commence UTC) — not one side.
+2. **Per-book observations are authority**; any consensus row is a separately labeled derived record,
+   never an available two-sided price, never realized ROI.
+3. `source_open` only on an explicit opener; else `first_captured`; `last_prestart_captured` with
+   `minutes_to_commence`, not "closing"; `source_close` only on a true close.
+4. Snapshot identity = (event, player, stat, book, line, capture window) — not `SnapshotDate`.
+5. Stable `event_id`/`player_id` required; ambiguous match ⇒ `UNGRADED`, never silent name-match.
+6. Result set adds `VOID/DNP/UNGRADED`; missing columns/components never become 0 unless 0 is observed.
+7. The current NFL archive + grader are classified **Partial** (verified: modal line + independent
+   median Over/Under across books, BookCount counts all group books, no stable ids, grader zero-fills
+   components, no DNP/VOID/UNGRADED) — preserved, lineage not silently upgraded.
+8. Cadence is **measure-first**: measure Odds API quota/cost, then freeze checkpoints vs kickoff
+   proximity and freshness limits.
+9. Gate 2a thresholds frozen **only after** measuring real coverage (markets, stable-ID, per-book,
+   both-price, grading resolution).
+10. Tests required for cross-book mixing, late capture, duplicate snapshots, player ambiguity, DNP,
+    missing components, and source-vs-captured line labels.
+
+## 12. Out of scope
+No code, no UI, no model tuning, no Wave surface, no sportsbook automation beyond the existing Odds API
+fetch. Does not touch the Decision Journal. This is the capture contract to review before any capture
+work (and later, separately, the surface) is authorized.
