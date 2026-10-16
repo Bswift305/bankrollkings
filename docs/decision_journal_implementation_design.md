@@ -7,7 +7,9 @@ Builds against `docs/decision_journal_review_spec.md` (Rev 3). The DDL, triggers
 Governing constraint (Rev 3): **never manufacture precision a sportsbook ticket did not provide.**
 Unknown stays unknown; the book's settlement is authoritative; nothing causal is claimed.
 
-Date: 2026-10-16. Design revision: 2 (closes the ten implementability blockers — see §14).
+Date: 2026-10-16. Design revision: 3 (rev 2 closed the ten implementability blockers; rev 3 closed two
+executable defects + three mechanical alignments found in mechanical review — see §14). **This is the
+final design; V1 implementation is authorized directly from it.**
 
 ---
 
@@ -139,7 +141,7 @@ CREATE TABLE leg_bk_origin (                         -- immutable BK-origin refe
   surface         TEXT NOT NULL,                     -- the tool/surface that assembled it
   candidate_id    TEXT NOT NULL,                     -- the assembly/candidate id the surface showed
   rule_version    TEXT NOT NULL,                     -- rule / engine version at decision time
-  captured_at     TEXT NOT NULL,                     -- when the suggestion was captured (<= decision_time)
+  captured_at     TEXT NOT NULL,                     -- when the suggestion was captured; <= leg.decision_time (trigger, §4)
   displayed_line  REAL,                              -- line the surface showed, where available
   displayed_price INTEGER                            -- price the surface showed, where available
 );
@@ -147,11 +149,23 @@ CREATE TABLE leg_bk_origin (                         -- immutable BK-origin refe
 CREATE TABLE decision_revisions (                    -- APPEND-ONLY: the ONLY post-lock change path (§4)
   revision_id  INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id      TEXT NOT NULL,
-  target_table TEXT NOT NULL,                        -- 'tickets' | 'legs' | 'leg_reason_tags' | 'leg_bk_surfaces'
+  target_table TEXT NOT NULL CHECK (target_table IN           -- explicit allowlist (incl. leg_bk_origin)
+                 ('tickets','legs','leg_reason_tags','leg_bk_surfaces','leg_bk_origin')),
   target_id    TEXT NOT NULL,                        -- ticket_id or leg_id
-  field        TEXT NOT NULL,                        -- column, or 'tag:add'/'tag:remove'/'surface:add'/'surface:remove'
-  old_value    TEXT,
-  new_value    TEXT,
+  field        TEXT NOT NULL CHECK (field IN (        -- explicit allowlist: every frozen field + membership ops
+                 -- tickets:
+                 'game_thesis','game_thesis_at','combined_price','record_provenance','ticket_type',
+                 'earliest_kickoff','import_fingerprint',
+                 -- legs:
+                 'selection_origin','entry_method','user_reviewed_before_bet','surfaces_known','sport',
+                 'game','event_start','player','market','selection','line','quote_scope','price','book',
+                 'decision_time','leg_rationale','leg_rationale_at','confidence','alt_line','alt_price','leg_index',
+                 -- leg_bk_origin:
+                 'surface','candidate_id','rule_version','captured_at','displayed_line','displayed_price',
+                 -- membership ops:
+                 'tag:add','tag:remove','surface:add','surface:remove')),
+  old_value    TEXT,                                 -- typed JSON (json.dumps): number/null/string never confused
+  new_value    TEXT,                                 -- typed JSON
   reason       TEXT NOT NULL,                        -- a correction MUST state why
   actor        TEXT NOT NULL,
   created_at   TEXT NOT NULL
@@ -206,7 +220,10 @@ datum is to append a row to `decision_revisions`. The decision-time snapshot is 
 forever; the effective (corrected) value is the base overlaid with the latest matching revision.
 
 **Lock predicate:** a ticket is locked when
-`earliest_kickoff IS NOT NULL AND earliest_kickoff <= datetime('now')`, **or** `settled_at IS NOT NULL`.
+`earliest_kickoff IS NOT NULL AND julianday(earliest_kickoff) <= julianday('now')`, **or**
+`settled_at IS NOT NULL`. **All** lock and timing comparisons use `julianday(...)`, never lexical
+string comparison — stored timestamps are `...T...Z` while `datetime('now')` is `... ...` (space, no
+`Z`), so a lexical `<=` can misfire on the day of kickoff (blocker 1).
 
 **Frozen after lock** — ticket: `game_thesis, game_thesis_at, combined_price, record_provenance,
 ticket_type, earliest_kickoff, import_fingerprint`. Leg: `selection_origin, entry_method,
@@ -218,10 +235,13 @@ alt_price, leg_index`, plus the **whole** `leg_bk_origin` row, and the **members
 **Mutable after lock** (results known later): ticket settlement block, `settled_at`, `thesis_correct`;
 leg `leg_result`, `read_happened`.
 
+All lock/timing tests use `julianday(...)`. The locked sub-expression is written once here and reused:
+`LOCKED(t) ::= (t.earliest_kickoff IS NOT NULL AND julianday(t.earliest_kickoff) <= julianday('now')) OR t.settled_at IS NOT NULL`.
+
 ```sql
 -- ticket frozen columns
 CREATE TRIGGER trg_tickets_freeze BEFORE UPDATE ON tickets FOR EACH ROW
-WHEN (OLD.earliest_kickoff IS NOT NULL AND OLD.earliest_kickoff <= datetime('now')) OR OLD.settled_at IS NOT NULL
+WHEN (OLD.earliest_kickoff IS NOT NULL AND julianday(OLD.earliest_kickoff) <= julianday('now')) OR OLD.settled_at IS NOT NULL
 BEGIN
   SELECT CASE WHEN
       NEW.game_thesis       IS NOT OLD.game_thesis       OR NEW.game_thesis_at IS NOT OLD.game_thesis_at
@@ -234,7 +254,7 @@ END;
 -- leg frozen columns (parent locked)
 CREATE TRIGGER trg_legs_freeze BEFORE UPDATE ON legs FOR EACH ROW
 WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = OLD.ticket_id
-             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+             AND ((t.earliest_kickoff IS NOT NULL AND julianday(t.earliest_kickoff) <= julianday('now')) OR t.settled_at IS NOT NULL))
 BEGIN
   SELECT CASE WHEN
       NEW.selection_origin IS NOT OLD.selection_origin OR NEW.entry_method IS NOT OLD.entry_method
@@ -252,47 +272,58 @@ END;
 -- no leg insert/delete/reorder after lock
 CREATE TRIGGER trg_legs_no_insert BEFORE INSERT ON legs FOR EACH ROW
 WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = NEW.ticket_id
-             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+             AND ((t.earliest_kickoff IS NOT NULL AND julianday(t.earliest_kickoff) <= julianday('now')) OR t.settled_at IS NOT NULL))
 BEGIN SELECT RAISE(ABORT,'leg insert after lock'); END;
 
 CREATE TRIGGER trg_legs_no_delete BEFORE DELETE ON legs FOR EACH ROW
 WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = OLD.ticket_id
-             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+             AND ((t.earliest_kickoff IS NOT NULL AND julianday(t.earliest_kickoff) <= julianday('now')) OR t.settled_at IS NOT NULL))
 BEGIN SELECT RAISE(ABORT,'leg delete after lock'); END;
 
--- tags / surfaces / bk_origin immutable after lock (one pair shown; the same INSERT+DELETE pair exists
--- for leg_reason_tags, leg_bk_surfaces, and leg_bk_origin, joining leg -> ticket for the lock test)
+-- tags / surfaces / bk_origin immutable after lock. The same INSERT+DELETE pair exists for
+-- leg_reason_tags and leg_bk_surfaces; leg_bk_origin additionally blocks UPDATE and DELETE (its row is
+-- the decision-time BK snapshot). All join leg -> ticket for the LOCKED test. One shown:
 CREATE TRIGGER trg_tags_no_insert BEFORE INSERT ON leg_reason_tags FOR EACH ROW
 WHEN EXISTS (SELECT 1 FROM legs l JOIN tickets t ON t.ticket_id = l.ticket_id
              WHERE l.leg_id = NEW.leg_id
-             AND ((t.earliest_kickoff IS NOT NULL AND t.earliest_kickoff <= datetime('now')) OR t.settled_at IS NOT NULL))
+             AND ((t.earliest_kickoff IS NOT NULL AND julianday(t.earliest_kickoff) <= julianday('now')) OR t.settled_at IS NOT NULL))
 BEGIN SELECT RAISE(ABORT,'reason-tag change after lock'); END;
--- (… trg_tags_no_delete, trg_surfaces_no_insert/delete, trg_bkorigin_no_update/delete analogous …)
+-- (… trg_tags_no_delete, trg_surfaces_no_insert/delete, trg_bkorigin_no_insert/update/delete analogous …)
 
--- BK-origin reference required for BK-rule-assembled legs
-CREATE TRIGGER trg_legs_require_bkorigin AFTER INSERT ON legs FOR EACH ROW
-WHEN NEW.selection_origin = 'BK-rule-assembled'
+-- BK-origin capture must not postdate the decision (blocker alignment: captured_at <= decision_time)
+CREATE TRIGGER trg_bkorigin_capture_timing BEFORE INSERT ON leg_bk_origin FOR EACH ROW
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM leg_bk_origin o WHERE o.leg_id = NEW.leg_id)
-         THEN RAISE(ABORT,'BK-rule-assembled leg needs a leg_bk_origin row') END;
-END;   -- the repository inserts the leg and its leg_bk_origin in the same transaction; a deferred
-       -- integrity query (startup + QC) re-checks the invariant.
+  SELECT CASE WHEN EXISTS (SELECT 1 FROM legs l WHERE l.leg_id = NEW.leg_id
+             AND l.decision_time IS NOT NULL AND julianday(NEW.captured_at) > julianday(l.decision_time))
+         THEN RAISE(ABORT,'leg_bk_origin.captured_at is after the leg decision_time') END;
+END;
 
--- prospective timing (blocker 4)
+-- NOTE: there is NO AFTER-INSERT trigger requiring a leg_bk_origin row for BK-rule-assembled legs.
+-- SQLite runs it immediately after the leg INSERT, before the origin row is inserted in the same
+-- transaction, so it would ALWAYS abort and no BK leg could ever be created (blocker 2). The invariant
+-- "every BK-rule-assembled leg has exactly one leg_bk_origin row" is instead enforced by:
+--   (a) repository validation AFTER inserting the origin rows and BEFORE COMMIT (the atomic transaction
+--       rolls the whole ticket back if it fails); and
+--   (b) a startup + QC orphan query:
+--       SELECT leg_id FROM legs WHERE selection_origin='BK-rule-assembled'
+--         AND leg_id NOT IN (SELECT leg_id FROM leg_bk_origin);   -- must return zero rows
+
+-- prospective timing (blocker 4) — julianday throughout
 CREATE TRIGGER trg_legs_prospective BEFORE INSERT ON legs FOR EACH ROW
 WHEN EXISTS (SELECT 1 FROM tickets t WHERE t.ticket_id = NEW.ticket_id AND t.record_provenance='prospective-captured')
 BEGIN
   SELECT CASE WHEN NEW.event_start IS NULL THEN RAISE(ABORT,'prospective leg requires event_start') END;
-  SELECT CASE WHEN NEW.decision_time IS NULL OR NEW.decision_time >= NEW.event_start
+  SELECT CASE WHEN NEW.decision_time IS NULL OR julianday(NEW.decision_time) >= julianday(NEW.event_start)
          THEN RAISE(ABORT,'decision_time must precede event_start') END;
-  SELECT CASE WHEN NEW.leg_rationale_at IS NOT NULL AND NEW.leg_rationale_at >= NEW.event_start
+  SELECT CASE WHEN NEW.leg_rationale_at IS NOT NULL AND julianday(NEW.leg_rationale_at) >= julianday(NEW.event_start)
          THEN RAISE(ABORT,'leg rationale timestamped after event start') END;
 END;
 
 CREATE TRIGGER trg_ticket_thesis_timing BEFORE UPDATE OF earliest_kickoff ON tickets FOR EACH ROW
 WHEN NEW.record_provenance='prospective-captured' AND NEW.game_thesis_at IS NOT NULL
 BEGIN
-  SELECT CASE WHEN NEW.game_thesis_at >= NEW.earliest_kickoff THEN RAISE(ABORT,'thesis timestamped after kickoff') END;
+  SELECT CASE WHEN julianday(NEW.game_thesis_at) >= julianday(NEW.earliest_kickoff)
+         THEN RAISE(ABORT,'thesis timestamped after kickoff') END;
 END;
 
 -- decision_revisions is append-only
@@ -302,13 +333,17 @@ CREATE TRIGGER trg_rev_no_delete BEFORE DELETE ON decision_revisions BEGIN SELEC
 
 ```
 correct(user_id, target_table, target_id, field, new_value, reason, actor):   # the ONLY post-lock edit
+  assert field is in the repository's allowlist FOR target_table   # table-appropriate subset, tighter than the CHECK
   BEGIN IMMEDIATE
     old = effective_value(target_table, target_id, field)
-    INSERT decision_revisions(user_id, target_table, target_id, field, old_value=old,
-                              new_value, reason, actor, created_at=now)
+    INSERT decision_revisions(user_id, target_table, target_id, field,
+                              old_value = json.dumps(old), new_value = json.dumps(new_value),
+                              reason, actor, created_at=now)
   COMMIT
-# effective_value(field) = latest decision_revisions.new_value for (target, field), else the base row's value.
-# child membership corrections use field='tag:add'/'tag:remove'/'surface:add'/'surface:remove'.
+# effective_value(field) = json.loads(latest decision_revisions.new_value) for (target, field),
+#   else the base row's value. Values are stored as typed JSON so a number, a null and a string "null"
+#   are never confused. child membership corrections use field='tag:add'/'tag:remove'/'surface:add'/
+#   'surface:remove' with new_value = the tag/surface name.
 ```
 
 **≥1-leg (prospective) and 0-leg (legacy_flat_ticket)** are asserted by the repository inside the
@@ -351,6 +386,10 @@ All amounts in cents. Definitions:
   never derived from assumed odds. (Worked cases: cash win → returned = stake + winnings, net = +win;
   free-bet-only win → cash_stake 0, returned = winnings, net = +winnings; full cashout → returned =
   cashout proceeds, net = proceeds − stake; void/push → returned = stake, net = 0.)
+- **ROI is separate from net cash P/L, and has a zero-denominator rule.** `roi = net_cash_pl_cents /
+  cash_stake_cents`. When **`cash_stake_cents = 0`** (e.g. a free-bet-only ticket) the net cash
+  **profit is still shown**, but **ROI is "unavailable"** — the denominator is zero, so no percentage
+  is computed or displayed. ROI is likewise unavailable whenever `net_cash_pl_cents` is NULL.
 
 ---
 
@@ -469,6 +508,18 @@ edits and exposes settlement).
     tests (not a claim that no unscoped SQL exists).
 
 ---
+
+## 14b. What changed in design rev 3 (mechanical review)
+1. **`julianday()` everywhere** in lock and timing comparisons — stored `...T...Z` vs
+   `datetime('now')` (`... ...`, no `Z`) made lexical `<=` misfire on the kickoff day.
+2. **Removed `trg_legs_require_bkorigin`** — it ran right after the leg INSERT, before the origin row
+   in the same transaction, so it always aborted and no BK leg could be inserted. The invariant is now
+   enforced by repository validation before COMMIT + a startup/QC orphan query (+ atomic rollback).
+3. **`leg_bk_origin.captured_at <= leg.decision_time`** enforced by a BEFORE INSERT trigger.
+4. **`decision_revisions` allowlists** on `target_table` and `field` (incl. `leg_bk_origin`), and
+   values stored as **typed JSON** so number/null/string are never confused.
+5. **ROI zero-denominator rule** — a free-bet-only ticket (`cash_stake_cents = 0`) shows net profit but
+   ROI is **unavailable** (no division by zero).
 
 ## 15. What this document is
 The corrected design for **one final — and mechanical — implementation approval.** It introduces no
