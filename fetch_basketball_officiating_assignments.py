@@ -146,6 +146,10 @@ def fetch_basketball_officiating(default_sport: str = "NBA") -> pd.DataFrame:
 
 
 def main() -> int:
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA referee assignments (official.nba.com).")
+        return 0
     CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
     print("=" * 70)
     print("BANKROLL KINGS - BASKETBALL OFFICIATING FETCH")

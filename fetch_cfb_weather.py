@@ -135,6 +135,9 @@ def build():
 
 def main() -> int:
     load_local_env(BASE_DIR)
+    if (os.environ.get("BK_WEATHER_SOURCE_LICENSED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] Open-Meteo ingestion disabled (BK_WEATHER_SOURCE_LICENSED off) — skipping CFB weather.")
+        return 0
     data = build()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

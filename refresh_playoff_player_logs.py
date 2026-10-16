@@ -118,6 +118,10 @@ def load_existing_logs() -> pd.DataFrame:
 
 
 def main() -> int:
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA playoff player logs.")
+        return 0
     for proxy_key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         proxy_value = os.environ.get(proxy_key, "")
         if proxy_value.strip().lower() == "http://127.0.0.1:9":

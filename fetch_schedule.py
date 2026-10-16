@@ -187,6 +187,10 @@ def fetch_nba_schedule():
 
 
 if __name__ == "__main__":
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA schedule (stats.nba.com).")
+        raise SystemExit(0)
     fetch_nba_schedule()
 
     print("\n" + "=" * 50)

@@ -51,6 +51,10 @@ def download_player_game_log(player_id, player_name, season):
         return None
 
 def main():
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA game logs.")
+        return
     print("=" * 60)
     print(f"NBA {SEASON} GAME LOG DOWNLOADER")
     print("=" * 60)

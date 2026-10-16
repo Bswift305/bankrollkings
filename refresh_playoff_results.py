@@ -394,6 +394,10 @@ def merge_result_sources(*frames: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> int:
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA playoff results.")
+        return 0
     print("=" * 60)
     print("BANKROLL KINGS - Refresh Playoff Results")
     print("=" * 60)

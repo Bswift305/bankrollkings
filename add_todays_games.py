@@ -1,6 +1,11 @@
 from nba_api.live.nba.endpoints import scoreboard
 import pandas as pd
 from datetime import datetime
+import os as _os
+
+if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+    print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping add_todays_games (cdn.nba.com).")
+    raise SystemExit(0)
 
 print("Fetching today's games from NBA.com...")
 

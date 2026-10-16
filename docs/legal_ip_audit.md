@@ -170,6 +170,34 @@ flag OFF:
 
 ---
 
+## G2. Implementation status — Proposal 1 shipped (reversible), 2026-10-16
+Containment is IMPLEMENTED behind default-off flags; the feature footprint is reversible and no customer
+data was deleted.
+- **`BK_OFFICIAL_MARKS_ENABLED` (default OFF):** `team_logo_url`/`football_logo_url` return `''` →
+  `render_team_mark` shows a plain-text abbreviation; `sport_logo_url` returns an owned BK badge for
+  league slots (section icons unchanged). Third-party hot-link map removed (`TEAM_ABBR_TO_LOGO_URL={}`).
+- **Quarantine:** `static/logos/{nba,nba_clean,football,leagues/official}` (417 files) moved to
+  `_attic/legal_quarantine_2026-10-16/logos/` (gitignored → non-deployed); the former URLs now **404**.
+- **Service worker** bumped to `shell-v11` to purge any cached marks.
+- **Independence/trademark disclaimer** added to `templates/public_base.html` + `templates/bk_base.html`.
+- **`BK_WEATHER_SOURCE_LICENSED` (default OFF):** Open-Meteo fetchers refuse (no ingestion); the
+  MLB/game-context display withholds Open-Meteo-derived temperature/wind.
+- **`BK_NBA_STATS_ENABLED` (default OFF):** `load_gamelogs`/`load_playoff_gamelogs` (NBA.com-derived via
+  nba_api) return empty → withheld from display **and** model inputs; the NBA board shows a calm
+  unavailable banner while **licensed Odds API lines still render**. New NBA.com ingestion is stopped at
+  10 fetchers (nba_api + stats.nba.com/cdn.nba.com/official.nba.com). Historical NBA data is **not
+  deleted** — only un-loaded while the gate is off.
+- **nflverse CC-BY-4.0 attribution + link** added to both footers.
+- **Verification:** `qc_legal_containment.py` (registered in `run_all_scorecards.py`) — passes.
+
+### Rollback (reversible; no data loss)
+- **Restore NBA stats / weather instantly:** set `BK_NBA_STATS_ENABLED=1` / `BK_WEATHER_SOURCE_LICENSED=1`
+  and restart — historical data and loaders return unchanged (nothing was deleted).
+- **Restore official marks:** `git revert <containment commit>` (restores the 417 `static/logos` files
+  and the prior helper code), or move them back from `_attic/legal_quarantine_2026-10-16/` and set
+  `BK_OFFICIAL_MARKS_ENABLED=1`. The quarantine holds local copies independent of git history.
+- **Full rollback:** `git revert <containment commit>` + restart reverts all code and restores assets.
+
 ## H. What this is / is not
 A read-only inventory with evidence (file:line + source links + retrieval dates), a risk-ranked
 classification, and a **proposed** reversible containment patch + counsel-decision register. **No assets

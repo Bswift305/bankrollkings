@@ -161,6 +161,10 @@ def build_weather_context() -> pd.DataFrame:
 
 
 def main() -> int:
+    import os
+    if (os.environ.get("BK_WEATHER_SOURCE_LICENSED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] Open-Meteo ingestion disabled (BK_WEATHER_SOURCE_LICENSED off) — skipping MLB weather.")
+        return 0
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     weather = build_weather_context()
     weather.to_csv(OUTPUT_PATH, index=False)

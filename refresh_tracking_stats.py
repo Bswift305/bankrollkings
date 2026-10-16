@@ -66,6 +66,10 @@ def fetch_measure(season: str, measure: str) -> pd.DataFrame:
 
 
 def main() -> int:
+    import os as _os
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA tracking stats.")
+        return 0
     parser = argparse.ArgumentParser(description="Refresh NBA player tracking stats (touches, drives, speed).")
     parser.add_argument("--season", default=detect_season(), help="Season like 2025-26")
     args = parser.parse_args()

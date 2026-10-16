@@ -396,6 +396,11 @@ def fetch_nba_injury_report():
     Fetch official NBA injury report.
     Returns DataFrame with: Player, Team, Status, Reason, Updated
     """
+    import os as _os
+    import pandas as _pd
+    if (_os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping NBA injury report (cdn.nba.com/official.nba.com).")
+        return _pd.DataFrame()
     print("\n" + "=" * 60)
     print("  FETCHING NBA INJURY REPORT")
     print("=" * 60)

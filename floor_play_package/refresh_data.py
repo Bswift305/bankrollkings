@@ -13,6 +13,11 @@ from pathlib import Path
 # Ensure unbuffered output
 os.environ['PYTHONUNBUFFERED'] = '1'
 
+# Legal/IP: NBA.com-derived ingestion gate (docs/legal_ip_audit.md). Default OFF.
+if (os.environ.get('BK_NBA_STATS_ENABLED', '') or '').strip().lower() not in ('1', 'true', 'yes', 'on'):
+    print("[gated] NBA.com-derived ingestion disabled (BK_NBA_STATS_ENABLED off) — skipping floor-play NBA data refresh.")
+    sys.exit(0)
+
 def print_flush(msg):
     print(msg, flush=True)
 

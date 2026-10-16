@@ -1,4 +1,4 @@
-const BK_CACHE = 'bankroll-kings-shell-v10';
+const BK_CACHE = 'bankroll-kings-shell-v11';  // v11: legal containment — purge any cached official league/team marks
 const SHELL_ASSETS = [
   '/static/css/bk-theme.css',
   '/static/icons/icon-192.png',

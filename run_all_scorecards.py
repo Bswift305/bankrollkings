@@ -79,6 +79,11 @@ SCORECARDS = [
     # Trial Eligibility Gate core (mocked): one-lifetime-trial store guarantees -- eligibility,
     # hard cap, atomic redemption, crash-recovery, key rotation, DB invariants, fail-closed.
     ("Trial Gate QC", "qc_trial_gate.py", 120),
+    # Legal/IP containment: no uncleared official league/team mark is served or emitted, former logo
+    # URLs 404, the independence/trademark disclaimer renders, the NBA.com data-rights gate withholds
+    # gamelogs + shows the unavailable banner while licensed Odds API lines still render. Guard is
+    # correct in both flag states (skips the relevant checks when a flag is explicitly ON).
+    ("Legal/IP Containment QC", "qc_legal_containment.py", 180),
     # Decision Journal V1 (SQLite): the 15 frozen acceptance checks -- concurrency, crash recovery,
     # unknown fields, selection, SGP combined-only pricing, settlement math, immutability + append-only
     # corrections, prospective timing, BK-origin, idempotent import, migration, access isolation,

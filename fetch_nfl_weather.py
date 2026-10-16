@@ -79,6 +79,10 @@ def _fetch_stadium(lat: float, lon: float) -> dict:
 
 
 def main() -> int:
+    import os
+    if (os.environ.get("BK_WEATHER_SOURCE_LICENSED", "") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        print("[gated] Open-Meteo ingestion disabled (BK_WEATHER_SOURCE_LICENSED off) — skipping NFL weather.")
+        return 0
     games = _load_home_games()
     if games.empty:
         print("No NFL schedule rows found; nothing to fetch.")

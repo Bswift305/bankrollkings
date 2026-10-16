@@ -46,6 +46,7 @@ from services.cfb_contradiction_qc import audit_plays as audit_cfb_plays
 from services.mlb_contradiction_qc import audit_props as audit_mlb_props
 from services.wnba_contradiction_qc import audit_props as audit_wnba_props
 from services import nfl_inclusion as _nfl_incl
+from services import nba_source_gate as _nba_source_gate
 from services.qc_tracking import (
     QC_RUN_LOG_PATH,
     build_warning_history_map,
@@ -2033,38 +2034,10 @@ NBA_TEAM_TO_DIVISION = {
     'DAL': 'Southwest', 'HOU': 'Southwest', 'MEM': 'Southwest', 'NOP': 'Southwest', 'SAS': 'Southwest',
 }
 
-TEAM_ABBR_TO_LOGO_URL = {
-    'ATL': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/atlanta.png',
-    'BOS': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/boston.png',
-    'BKN': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/brooklyn.png',
-    'CHA': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/charlotte.png',
-    'CHI': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/chicago.png',
-    'CLE': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/cleveland.png',
-    'DAL': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/dallas.png',
-    'DEN': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/denver.png',
-    'DET': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/detroit.png',
-    'GSW': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/golden_state.png',
-    'HOU': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/houston.png',
-    'IND': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/indiana.png',
-    'LAC': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/la_clippers.png',
-    'LAL': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/la_lakers.png',
-    'MEM': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/memphis.png',
-    'MIA': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/miami.png',
-    'MIL': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/milwaukee.png',
-    'MIN': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/minnesota.png',
-    'NOP': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/new_orleans.png',
-    'NYK': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/new_york.png',
-    'OKC': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/oklahoma_city.png',
-    'ORL': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/orlando.png',
-    'PHI': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/philadelphia.png',
-    'PHX': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/phoenix.png',
-    'POR': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/portland.png',
-    'SAC': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/sacramento.png',
-    'SAS': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/san_antonio.png',
-    'TOR': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/toronto.png',
-    'UTA': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/utah.png',
-    'WAS': 'https://raw.githubusercontent.com/timaboderin/NBA_Logos/master/washington.png',
-}
+# Legal/IP containment (docs/legal_ip_audit.md): the former third-party GitHub hot-link of NBA team
+# marks (raw.githubusercontent.com/timaboderin/NBA_Logos) was an unauthorized source for trademarked
+# logos and has been REMOVED. Left as an empty map so any remaining reference is inert.
+TEAM_ABBR_TO_LOGO_URL = {}
 
 NBA_TEAM_ABBR_ALIASES = {
     'SA': 'SAS',
@@ -2397,11 +2370,19 @@ def _format_props(df):
 
 
 def load_gamelogs():
+    # NBA.com-derived (stats.nba.com via nba_api). Quarantined from display + model inputs while the
+    # NBA data-rights gate is off (docs/legal_ip_audit.md). Odds API market data is unaffected.
+    from services.nba_source_gate import nba_stats_enabled
+    if not nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv'
     return _load_cached_csv(path, transform=_format_gamelogs)
 
 
 def load_playoff_gamelogs():
+    from services.nba_source_gate import nba_stats_enabled
+    if not nba_stats_enabled():
+        return pd.DataFrame()  # NBA.com-derived -> gated
     path = DATA_DIR / 'gamelogs' / 'NBA_Playoff_GameLogs.csv'
     if path.exists():
         return _load_cached_csv(path, transform=_format_gamelogs)
@@ -15348,9 +15329,13 @@ def load_mlb_game_context_lookup():
             'home': home,
             'ballpark': str(row.get('Ballpark') or '').strip(),
             'park_hr_factor': pd.to_numeric(row.get('ParkHRFactor'), errors='coerce'),
-            'temperature': pd.to_numeric(row.get('Temperature'), errors='coerce'),
-            'wind_mph': pd.to_numeric(row.get('WindMph'), errors='coerce'),
-            'wind_direction': str(row.get('WindDirection') or '').strip().upper(),
+            # Open-Meteo-derived fields are withheld unless a licensed weather source is configured.
+            'temperature': (pd.to_numeric(row.get('Temperature'), errors='coerce')
+                            if BK_WEATHER_SOURCE_LICENSED else None),
+            'wind_mph': (pd.to_numeric(row.get('WindMph'), errors='coerce')
+                         if BK_WEATHER_SOURCE_LICENSED else None),
+            'wind_direction': (str(row.get('WindDirection') or '').strip().upper()
+                               if BK_WEATHER_SOURCE_LICENSED else ''),
             'umpire': str(row.get('Umpire') or '').strip(),
             'umpire_zone': str(row.get('UmpireZone') or '').strip().upper(),
             'source': str(row.get('Source') or '').strip(),
@@ -16885,7 +16870,26 @@ CFB_TEAM_ALIASES = {
 }
 
 
+# --- Legal/IP containment (docs/legal_ip_audit.md) --------------------------------------------------
+# Official league/team marks are NOT CLEARED and default OFF in production. While OFF: team marks render
+# as plain-text abbreviations (render_team_mark emits a text chip when the logo URL is empty) and league
+# slots show an original Bankroll Kings badge -- no trademarked mark is served. The raw files are moved
+# out of static/ into a non-deployed quarantine, so the former URLs 404 regardless of this flag. Flip ON
+# only with documented permission / counsel approval.
+BK_OFFICIAL_MARKS_ENABLED = (os.environ.get('BK_OFFICIAL_MARKS_ENABLED', '') or '').strip().lower() \
+    in ('1', 'true', 'yes', 'on')
+BK_OWNED_BADGE_URL = '/static/brand-bk-mark.png'  # owned BK mark shown in place of league logos
+
+# Open-Meteo's free tier is non-commercial only (docs/legal_ip_audit.md A#2); commercial use needs a
+# paid plan. Default OFF: weather context shows an honest unavailable state rather than silently using
+# the free service. Flip ON only once a commercial plan / permitted source is documented.
+BK_WEATHER_SOURCE_LICENSED = (os.environ.get('BK_WEATHER_SOURCE_LICENSED', '') or '').strip().lower() \
+    in ('1', 'true', 'yes', 'on')
+
+
 def football_logo_url(value, sport_key=None):
+    if not BK_OFFICIAL_MARKS_ENABLED:
+        return ''  # official team marks quarantined (legal containment)
     if value is None or pd.isna(value):
         return ''
     cleaned = str(value).strip()
@@ -16907,7 +16911,18 @@ def football_logo_url(value, sport_key=None):
 
 def sport_logo_url(sport_key):
     key = str(sport_key or '').strip().lower()
-    league_icons = {
+    # Original Bankroll Kings UI icons (not league marks) -- always served.
+    section_icons = {
+        'review': '/static/logos/leagues/review.svg',
+        'missed': '/static/logos/leagues/review.svg',
+        'game-lines': '/static/logos/leagues/game-lines.svg',
+        'props': '/static/logos/leagues/game-lines.svg',
+        'injuries': '/static/logos/leagues/injuries.svg',
+    }
+    if key in section_icons:
+        return section_icons[key]
+    # Official league marks -- NOT CLEARED. Quarantined; shown only with the marks flag ON.
+    league_marks = {
         'nba': '/static/logos/leagues/official/nba.png',
         'basketball_nba': '/static/logos/leagues/official/nba.png',
         'wnba': '/static/logos/leagues/official/wnba.png',
@@ -16916,21 +16931,19 @@ def sport_logo_url(sport_key):
         'baseball_mlb': '/static/logos/leagues/official/mlb.png',
         'nfl': '/static/logos/leagues/official/nfl.png',
         'americanfootball_nfl': '/static/logos/leagues/official/nfl.png',
-        # College uses the official NCAA/CFP marks as an interim until custom
-        # college logos are dropped into static/logos/leagues/official/.
         'ncaaf': '/static/logos/leagues/official/ncaaf.png?v=20260608b',
         'cfb': '/static/logos/leagues/official/ncaaf.png?v=20260608b',
         'ncaamb': '/static/logos/leagues/official/ncaamb.png?v=20260608b',
         'ncaawb': '/static/logos/leagues/official/ncaawb.png?v=20260608b',
         'cbb': '/static/logos/leagues/official/cbb.png',
-        'review': '/static/logos/leagues/review.svg',
-        'missed': '/static/logos/leagues/review.svg',
-        'game-lines': '/static/logos/leagues/game-lines.svg',
-        'props': '/static/logos/leagues/game-lines.svg',
-        'injuries': '/static/logos/leagues/injuries.svg',
     }
-    if key in league_icons:
-        return league_icons[key]
+    if not BK_OFFICIAL_MARKS_ENABLED:
+        # League marks quarantined -> serve an owned BK badge for any league slot (keeps <img> valid).
+        if key in league_marks or key in {'nfl', 'ncaaf'}:
+            return BK_OWNED_BADGE_URL
+        return ''
+    if key in league_marks:
+        return league_marks[key]
     if key == 'nfl':
         candidate = FOOTBALL_LOGO_DIR / 'NFL.png'
         if candidate.exists():
@@ -17052,6 +17065,8 @@ def normalize_ncaaf_team_name(value):
 
 
 def team_logo_url(value, sport_key=None):
+    if not BK_OFFICIAL_MARKS_ENABLED:
+        return ''  # official team marks quarantined -> render_team_mark shows a plain-text abbreviation
     sport_key = str(sport_key or '').strip().lower()
     if sport_key in {'nfl', 'ncaaf'}:
         football_logo = football_logo_url(value, sport_key=sport_key)
@@ -17060,9 +17075,8 @@ def team_logo_url(value, sport_key=None):
     abbr = normalize_team_abbr(value)
     if not abbr:
         return ''
-    # Prefer curated local assets first so we control quality and avoid
-    # mismatched remote logos. Fall back to the remote map only if a local
-    # file is missing.
+    # Curated local assets only. The former third-party hot-link fallback was removed (legal
+    # containment): Bankroll Kings never serves a trademarked mark from an unauthorized source.
     for extension in ('webp', 'png'):
         clean_candidate = STATIC_DIR / 'logos' / 'nba_clean' / f'{abbr}.{extension}'
         if clean_candidate.exists():
@@ -17071,8 +17085,6 @@ def team_logo_url(value, sport_key=None):
         candidate = STATIC_DIR / 'logos' / 'nba' / f'{abbr}.{extension}'
         if candidate.exists():
             return f'/static/logos/nba/{abbr}.{extension}'
-    if abbr in TEAM_ABBR_TO_LOGO_URL:
-        return TEAM_ABBR_TO_LOGO_URL[abbr]
     football_logo = football_logo_url(value, sport_key=sport_key)
     if football_logo:
         return football_logo
@@ -39752,6 +39764,10 @@ def render_nba_props_page(filter_type=None):
         # template's props_sport_key default -- a renderer that forgot the flag can't strip a
         # non-NBA board, because the flag is only True here.
         is_nba_props=True,
+        # NBA.com data-rights gate (docs/legal_ip_audit.md): when off, NBA.com-derived stats are
+        # withheld (gamelogs return empty); the board still shows licensed Odds API lines. The banner
+        # states the honest unavailable context.
+        nba_stats_gated=(not _nba_source_gate.nba_stats_enabled()),
         props_base_path='/sports/nba/props',
         props_all_path='/sports/nba/props',
         props_floor_path='/sports/nba/props/floor',
