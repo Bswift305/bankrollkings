@@ -33,7 +33,7 @@
 <div class="mob-scroll">
 <table class="mob">
   <thead><tr>
-    <th>Matchup</th><th>Player</th><th>Prop</th><th>Line</th><th>Book</th><th>Over</th><th>Under</th><th>Captured</th>
+    <th>Matchup</th><th>Player</th><th>Prop</th><th>Line</th><th>Book</th><th>Over</th><th>Under</th><th>Book Updated</th>
   </tr></thead>
   <tbody>
   {% for r in rows %}
@@ -45,13 +45,13 @@
     <td>{{ r.book or '—' }}</td>
     <td class="num{% if r.over_odds is none %} miss{% endif %}">{% if r.over_odds is not none %}{{ '%+d'|format(r.over_odds|int) }}{% else %}—{% endif %}</td>
     <td class="num{% if r.under_odds is none %} miss{% endif %}">{% if r.under_odds is not none %}{{ '%+d'|format(r.under_odds|int) }}{% else %}—{% endif %}</td>
-    <td class="num">{{ r.captured_at or '—' }}</td>
+    <td class="num">{% if r.book_updated_at %}{{ r.book_updated_at }}{% if not r.book_updated_tz_known %} <span class="miss" style="font-size:10px;">(tz unknown)</span>{% endif %}{% else %}—{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
-<div class="mob-meta" style="margin-top:12px;">Source: Odds API (licensed). Quotes are point-in-time and may move. No model read, ranking, confidence, edge, or recommendation is shown or implied.</div>
+<div class="mob-meta" style="margin-top:12px;"><b>Book Updated</b> is the Odds API bookmaker&rsquo;s reported quote-update time &mdash; not when Bankroll Kings ingested or when you viewed it. Where the source provides no timezone it is marked &ldquo;tz unknown&rdquo; rather than assumed. Source: Odds API (licensed). Quotes are point-in-time and may move. No model read, ranking, confidence, edge, or recommendation is shown or implied.</div>
 {% else %}
 <div class="mob-empty">No current licensed {{ sport_label }} markets are available right now. Check back when today&rsquo;s slate is live.</div>
 {% endif %}

@@ -39601,15 +39601,27 @@ def build_market_only_board(feed_loader):
     NBA/WNBA board shows ONLY licensed Odds API market facts and NO NBA.com-derived statistics, scores,
     snapshots, or authority fields. Every displayed field has approved (Odds API) lineage:
       player (outcome description) · matchup/Game (Odds API event) · book (bookmaker) · prop type ·
-      line · Over + Under prices (SAME book observation) · capture time (bookmaker last_update).
+      line · Over + Under prices (SAME book observation) · book_updated_at (the Odds API BOOKMAKER's
+      reported quote-update time -- NOT a Bankroll Kings ingestion/capture time; the feed carries no
+      separate ingestion timestamp, so none is inferred).
     Start time is omitted (not available from an approved source without the NBA schedule). Each row is
     one book's two-sided quote -- a missing side is LABELED, never synthesized. Neutral order (matchup,
     player, stat); honest empty state. Reads the Odds API feed only (never load_gamelogs/tracking)."""
     def _v(row, k):
         v = row.get(k)
-        if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == '':
+        try:
+            if v is None or pd.isna(v):   # None / NaN / pandas NA -> truly missing
+                return None
+        except (TypeError, ValueError):
+            pass
+        if str(v).strip() == '':
             return None
         return v
+
+    def _tz_known(s):
+        # True only if the stored timestamp carries explicit timezone info (Z or +/-HH:MM). Our stored
+        # LastUpdated has none, so we mark tz unknown rather than silently interpreting a local time.
+        return bool(s) and bool(re.search(r'(Z|[+-]\d{2}:?\d{2})\s*$', str(s)))
     try:
         df, meta = feed_loader(require_fresh=False)
     except Exception:
@@ -39619,6 +39631,7 @@ def build_market_only_board(feed_loader):
         for _, r in df.iterrows():
             if _v(r, 'Player') is None:
                 continue
+            bu = None if _v(r, 'LastUpdated') is None else str(_v(r, 'LastUpdated'))
             rows.append({
                 'player': str(_v(r, 'Player')),
                 'game': '' if _v(r, 'Game') is None else str(_v(r, 'Game')),
@@ -39627,7 +39640,8 @@ def build_market_only_board(feed_loader):
                 'line': _v(r, 'Line'),
                 'over_odds': _v(r, 'OverOdds'),     # same-book observation
                 'under_odds': _v(r, 'UnderOdds'),   # same-book observation
-                'captured_at': '' if _v(r, 'LastUpdated') is None else str(_v(r, 'LastUpdated')),
+                'book_updated_at': bu or '',        # Odds API bookmaker update time (NOT our capture)
+                'book_updated_tz_known': _tz_known(bu),
                 'source': 'Odds API (licensed)',
             })
     rows.sort(key=lambda x: (x['game'], x['player'], x['stat']))  # neutral; no model ranking
