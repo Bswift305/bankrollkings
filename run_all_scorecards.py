@@ -50,6 +50,10 @@ SCORECARDS = [
     # CFB Wave Watch wording remediation (Gate 1): no betting-authority language survives and the
     # template filters no qualifier (every builder team renders; the model groups, never removes).
     ("CFB Wave Wording QC", "qc_cfb_wave_wording.py", 120),
+    # CFB Active ATS Wave admission (docs/ats_wave_contract.md): membership = current consecutive graded
+    # cover streak >= 3 (not season cover%); push interrupts; bye/ungraded ignored; loss resets;
+    # source-through-week fail-closed; model-independent membership; deterministic streak-desc order.
+    ("CFB ATS Wave Admission QC", "qc_cfb_ats_wave_admission.py", 120),
     # Riding-the-Wave player prop-streak freshness: the under-streak surface must disclose what
     # it is graded through and never present last season's final runs as current. Locks the
     # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.

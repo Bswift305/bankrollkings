@@ -44518,6 +44518,69 @@ _CFB_WAVE_CACHE = {}
 # Neutral model-description labels (CFB Wave Watch wording remediation, C6 addendum). These are the
 # model's read of each team's number vs the closing line, shown as an overlay beside the facts --
 # never a buy/fade verdict. Display-only strings; the tier NUMBER (0/1/2) drives grouping/order.
+_CFB_ATS_STREAK_CACHE = {}
+
+
+def _cfb_active_cover_streaks(season=2026):
+    """Per-team CURRENT consecutive graded ATS-cover streak from the chronological graded source
+    (data/tracking/NCAAF_GameLineResults.csv, MarketType=SPREAD) — the frozen Active ATS Wave rule
+    (docs/ats_wave_contract.md). Cover=Hit, loss=Miss, push=Push; Pending/absent rows (byes, ungraded,
+    no closing line) are ignored (not in the sequence). The active cover streak counts covers from the
+    most recent graded decision backward and STOPS at the first loss OR push (a push interrupts a strict
+    consecutive-cover streak: W,W,P,W -> streak 1). Returns (per_team_by_resolved_name, results_through_week)."""
+    import cfb_current_form as cff
+    path = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}, None
+    if _CFB_ATS_STREAK_CACHE.get('mtime') != mtime or _CFB_ATS_STREAK_CACHE.get('season') != season:
+        try:
+            df = pd.read_csv(path, low_memory=False)
+        except Exception:
+            return {}, None
+        per, through = _cfb_cover_streaks_from_df(df, season)
+        _CFB_ATS_STREAK_CACHE.clear()
+        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season, 'per': per, 'through': through})
+    return _CFB_ATS_STREAK_CACHE.get('per', {}), _CFB_ATS_STREAK_CACHE.get('through')
+
+
+def _cfb_cover_streaks_from_df(df, season):
+    """Pure computation behind the frozen Active ATS Wave rule (testable with a fixture DataFrame).
+    Filters to graded SPREAD decisions with a line for `season`, and for each team computes the current
+    consecutive cover streak (stops at the first loss OR push), the current loss streak, the ordered
+    result sequence, and season counts. Returns (per_team_by_resolved_name, results_through_week)."""
+    import cfb_current_form as cff
+    df = df[(df['MarketType'].astype(str).str.upper() == 'SPREAD')
+            & (pd.to_numeric(df['Season'], errors='coerce') == season)]
+    df = df[df['OutcomeState'].astype(str).isin(['Hit', 'Miss', 'Push'])]   # graded decisions only
+    df = df[pd.to_numeric(df['Line'], errors='coerce').notna()]             # must have a line
+    df = df.assign(Week=pd.to_numeric(df['Week'], errors='coerce')).dropna(subset=['Week'])
+    per, through = {}, (int(df['Week'].max()) if not df.empty else None)
+    _m = {'Hit': 'W', 'Miss': 'L', 'Push': 'P'}
+    sort_cols = ['Week', 'GameDate'] if 'GameDate' in df.columns else ['Week']
+    for team, g in df.groupby('Team'):
+        seq = [_m[s] for s in g.sort_values(sort_cols)['OutcomeState'] if s in _m]
+        cover_streak = 0
+        for r in reversed(seq):
+            if r == 'W':
+                cover_streak += 1
+            else:
+                break  # a loss OR a push stops the strict consecutive-cover streak
+        loss_streak = 0
+        for r in reversed(seq):
+            if r == 'L':
+                loss_streak += 1
+            else:
+                break
+        per[cff._resolve(team)] = {
+            'cover_streak': cover_streak, 'loss_streak': loss_streak, 'results': seq,
+            'recent': seq[-6:], 'covers': seq.count('W'), 'losses': seq.count('L'),
+            'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': int(g['Week'].max()),
+        }
+    return per, through
+
+
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
                2: 'Soft schedule (opponent-adjusted)'}
 _SINK_TIERS = {0: 'Model rates below the line', 1: 'Model well below the line'}
@@ -44533,7 +44596,9 @@ def build_cfb_wave_context():
     files = ['cfb_2026_results.json', 'cfb_2026_ats.json', 'cfb_line_moves.json',
              'cfb_rankings.json', 'cfb_power.json']
     paths = [os.path.join(scen, f) for f in files]
-    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in paths)
+    _ats_results = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'  # the active-streak source
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in paths) + (
+        os.path.getmtime(_ats_results) if os.path.exists(_ats_results) else 0,)
     if _CFB_WAVE_CACHE.get('sig') == sig:
         return _CFB_WAVE_CACHE['data']
     cff.clear_cache()  # inputs changed -> recompute SoS ratings / divergence
@@ -44545,10 +44610,25 @@ def build_cfb_wave_context():
         except (OSError, ValueError):
             return {}
     ats = _j(paths[1]).get('teams', {})
+    # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership = current consecutive graded
+    # ATS-cover streak >= 3, from the chronological graded source -- NOT season cover percentage.
+    streaks, results_through = _cfb_active_cover_streaks(2026)
     moves = [g for g in _j(paths[2]).get('games', [])
              if not g.get('completed') and g.get('spread_now') is not None]
     wk = min((g['week'] for g in moves), default=None)
     moves = [g for g in moves if g['week'] == wk] if wk is not None else []
+
+    # Through-week synchronization: the streak source must reach the completed week behind the displayed
+    # slate (wk-1). If it can't, FAIL CLOSED -- an honest "not synchronized" state, never a cover-% fallback.
+    expected_completed = (wk - 1) if wk else None
+    synced = results_through is not None and (expected_completed is None or results_through >= expected_completed)
+    if not synced:
+        data = {'wave_week': wk, 'wave_through_week': results_through, 'wave_unsynced': True,
+                'wave_members': [], 'wave_fades': [], 'wave_count': 0, 'wave_available': True}
+        _CFB_WAVE_CACHE['sig'] = sig
+        _CFB_WAVE_CACHE['data'] = data
+        return data
+
     game_of = {}
     for g in moves:
         game_of[str(g['home']).lower()] = (g, True)
@@ -44572,97 +44652,68 @@ def build_cfb_wave_context():
             return 'rising'
         return ''
 
-    plays = []
+    def _attach_week(entry, school):
+        g_ish = game_of.get(school.lower())
+        if not g_ish:
+            return
+        g, ishome = g_ish
+        sp = g['spread_now']
+        try:
+            proj = cff.matchup_read(g['away'], g['home'], sp).get('proj_home_margin')
+        except Exception:
+            proj = None
+        if proj is not None:
+            their_line = round(sp if ishome else -sp, 1)
+            edge = round((proj if ishome else -proj) + their_line, 1)
+            opp = g['away'] if ishome else g['home']
+            tr = None
+            try:
+                tr = cff.total_read(g['away'], g['home'], g.get('total_now'))
+            except Exception:
+                tr = None
+            entry['week'] = {'opp': opp, 'line': their_line, 'edge': edge, 'covers': edge > 0,
+                             'opp_status': _status(opp), 'total_now': g.get('total_now'),
+                             'total_proj': (tr or {}).get('proj_total'), 'total_lean': (tr or {}).get('lean'),
+                             'total_edge': (tr or {}).get('edge')}
+
+    plays, sinks = [], []
     for school, a in ats.items():
-        if cff._resolve(school) not in cff._fbs_teams() or a.get('n', 0) < 3 or a.get('cover', 0) < 60:
-            continue
         lc = cff._resolve(school)
+        if lc not in cff._fbs_teams():
+            continue
+        srec = streaks.get(lc)
+        if not srec:
+            continue
         st = _status(school)
         orank = obsrank.get(lc, 999)
-        if st in ('surging', 'rising'):
-            tier = 0
-        elif orank <= 25:
-            tier = 1
-        else:
-            tier = 2
-        entry = {'team': school, 'ats': a['ats'], 'cover': a['cover'], 'acm': a['acm'],
-                 'tier': tier, 'tier_label': _WAVE_TIERS[tier], 'status': st,
-                 'sos_rank': orank if orank <= 138 else None, 'week': None}
-        g_ish = game_of.get(school.lower())
-        if g_ish:
-            g, ishome = g_ish
-            sp = g['spread_now']
-            try:
-                proj = cff.matchup_read(g['away'], g['home'], sp).get('proj_home_margin')
-            except Exception:
-                proj = None
-            if proj is not None:
-                their_line = round(sp if ishome else -sp, 1)
-                their_proj = proj if ishome else -proj
-                edge = round(their_proj + their_line, 1)  # >0 => model says they cover
-                opp = g['away'] if ishome else g['home']
-                tr = None
-                try:
-                    tr = cff.total_read(g['away'], g['home'], g.get('total_now'))
-                except Exception:
-                    tr = None
-                entry['week'] = {
-                    'opp': opp, 'line': their_line, 'edge': edge, 'covers': edge > 0,
-                    'opp_status': _status(opp),
-                    'total_now': g.get('total_now'),
-                    'total_proj': (tr or {}).get('proj_total'),
-                    'total_lean': (tr or {}).get('lean'),
-                    'total_edge': (tr or {}).get('edge'),
-                }
-        plays.append(entry)
+        # independent factual labels (context): Season ATS Record + Perfect Start + Strong Season Record
+        perfect_start = srec['losses'] == 0 and srec['decisions'] >= 1
+        strong_season = srec['losses'] <= 1 and srec['decisions'] >= 3
+        base = {'team': school, 'ats': a.get('ats'), 'cover': a.get('cover'), 'acm': a.get('acm'),
+                'recent': srec['recent'], 'pushes': srec['pushes'],
+                'perfect_start': perfect_start, 'strong_season': strong_season, 'status': st,
+                'sos_rank': orank if orank <= 138 else None, 'week': None}
+        if srec['cover_streak'] >= 3:   # MEMBERSHIP: active cover streak >= 3 (factual; model never suppresses)
+            tier = 0 if st in ('surging', 'rising') else (1 if orank <= 25 else 2)
+            entry = dict(base, cover_streak=srec['cover_streak'], tier=tier,
+                         tier_label=_WAVE_TIERS[tier])  # model tier = OVERLAY only
+            _attach_week(entry, school)
+            plays.append(entry)
+        if srec['loss_streak'] >= 3:    # mirror: active NOT-covering streak >= 3
+            s_tier = 0 if st in ('collapsed', 'regressed') else 1
+            entry = dict(base, loss_streak=srec['loss_streak'], tier=s_tier,
+                         tier_label=_SINK_TIERS[s_tier])
+            _attach_week(entry, school)
+            sinks.append(entry)
 
-    # SINKERS: the anti-wave -- teams NOT covering (they're bad/overrated for a reason).
-    # An overrated non-coverer the model also fades this week = a fade (bet the opponent).
-    sinks = []
-    for school, a in ats.items():
-        if cff._resolve(school) not in cff._fbs_teams() or a.get('n', 0) < 3 or a.get('cover', 100) > 40:
-            continue
-        st = _status(school)
-        s_tier = 0 if st in ('collapsed', 'regressed') else 1  # 0 = overrated (fade persists)
-        entry = {'team': school, 'ats': a['ats'], 'cover': a['cover'], 'acm': a['acm'],
-                 'tier': s_tier, 'tier_label': _SINK_TIERS[s_tier], 'status': st, 'week': None}
-        g_ish = game_of.get(school.lower())
-        if g_ish:
-            g, ishome = g_ish
-            sp = g['spread_now']
-            try:
-                proj = cff.matchup_read(g['away'], g['home'], sp).get('proj_home_margin')
-            except Exception:
-                proj = None
-            if proj is not None:
-                their_line = round(sp if ishome else -sp, 1)
-                edge = round((proj if ishome else -proj) + their_line, 1)  # <0 => model fades them
-                opp = g['away'] if ishome else g['home']
-                entry['week'] = {'opp': opp, 'line': their_line, 'edge': edge,
-                                 'covers': edge > 0, 'opp_status': _status(opp)}
-        sinks.append(entry)
-
-    hits = sorted([p for p in plays if p['tier'] == 0 and p['week'] and p['week']['edge'] >= 2.5],
-                  key=lambda p: -p['week']['edge'])
-    fades = sorted([p for p in sinks if p['tier'] == 0 and p['week'] and p['week']['edge'] <= -2.5],
-                   key=lambda p: p['week']['edge'])
-    tiers = []
-    for t in (0, 1, 2):
-        members = sorted([p for p in plays if p['tier'] == t],
-                         key=lambda p: (-(p['week']['edge'] if p['week'] else -99), -p['cover']))
-        if members:
-            tiers.append({'tier': t, 'label': _WAVE_TIERS[t], 'plays': members})
-    sink_tiers = []
-    for t in (0, 1):
-        members = sorted([p for p in sinks if p['tier'] == t],
-                         key=lambda p: ((p['week']['edge'] if p['week'] else 99), p['cover']))
-        if members:
-            sink_tiers.append({'tier': t, 'label': _SINK_TIERS[t], 'plays': members})
+    # DEFAULT FACTUAL ORDER = current cover-streak length DESC, deterministic neutral tiebreaker (team asc).
+    wave_members = sorted(plays, key=lambda p: (-p['cover_streak'], p['team']))
+    wave_fades = sorted(sinks, key=lambda p: (-p['loss_streak'], p['team']))
 
     data = {
-        'wave_week': wk, 'wave_hits': hits, 'wave_tiers': tiers,
-        'wave_fades': fades, 'wave_sink_tiers': sink_tiers,
-        'wave_count': len(plays), 'wave_available': bool(plays or sinks),
+        'wave_week': wk, 'wave_through_week': results_through, 'wave_unsynced': False,
+        'wave_members': wave_members, 'wave_fades': wave_fades,
+        'wave_count': len(wave_members), 'wave_available': bool(wave_members or wave_fades),
     }
     _CFB_WAVE_CACHE['sig'] = sig
     _CFB_WAVE_CACHE['data'] = data
