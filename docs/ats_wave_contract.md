@@ -64,8 +64,24 @@ Add fixtures proving admission + streak computation on:
 Plus the five truth-table rows as direct cases.
 
 ## Current state & implementation note
-`build_cfb_wave_context` (app.py) **CFB is implemented** to the frozen rule above (NFL still pending,
-to be a separate reversible commit). The prior aggregate admission (`cover% ≥ 60` + `n ≥ 3`) is gone;
+**CFB and NFL are both implemented** to the frozen rule above, in separate reversible commits.
+
+**NFL (`build_nfl_ats_wave` / `build_nfl_wave_context`, riding_the_wave.html):** the ATS wave reads the
+current-season source `nflverse_games.parquet` (characterized in
+`docs/nfl_ats_wave_source_characterization.md`), **not** a copy of CFB's mechanics. NFL uses a stable
+`game_id` identity, two reciprocal team-side decisions per completed game, the nflverse **recorded
+spread** (`spread_line > 0` ⇒ home favored ⇒ home ATS margin `= result − spread_line`), an **explicit
+active-season gate** (`_nfl_expected_completed_week`, never `max(season)`), **event-level completeness**
+(a completed Thursday game counts immediately; a scheduled game past an 8h settlement grace with no
+usable result is overdue → fail closed; future/within-grace games ignored), duplicate collapse vs
+conflict fail-closed, and a **48h source freshness budget**. SU and O/U on the same page are **failed
+closed** (they previously read the 2011–2025 history and showed prior-season runs as active); they
+return only once re-sourced and separately verified. Enforced by `qc_nfl_ats_wave.py`. **Open operator
+task:** no prod job currently refreshes `nflverse_games.parquet` (verified: absent from `ops/`,
+`deploy/`, `run_daily`) — until one is wired and verified, the NFL ATS wave correctly fails closed on
+the freshness budget rather than showing a stale board.
+
+**CFB (`build_cfb_wave_context`):** the prior aggregate admission (`cover% ≥ 60` + `n ≥ 3`) is gone;
 membership now iterates the authoritative per-game streak index. Three integrity corrections are part
 of the implementation and are enforced by `qc_cfb_ats_wave_admission.py`:
 

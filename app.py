@@ -45924,6 +45924,205 @@ def build_nfl_prop_hot_start(min_run=2, limit=400):
             'total': len(out)}
 
 
+# ---------------------------------------------------------------------------
+# NFL Active ATS Wave -- current-season source (nflverse_games.parquet)
+# ---------------------------------------------------------------------------
+# The frozen Active ATS Wave rule (docs/ats_wave_contract.md) on NFL, built from the current-season
+# source characterized in docs/nfl_ats_wave_source_characterization.md -- NOT a copy of the CFB
+# mechanics. NFL has a stable game_id (no team/opponent/date synthesis), one source for both schedule
+# and results, and needs its OWN freshness machinery: an EXPLICIT active-season gate (never
+# max(season)), EVENT-level completeness (a completed Thursday game counts immediately; a scheduled
+# game past its settlement grace with no usable result fails closed), and a source freshness budget.
+# `spread_line` is the nflverse RECORDED spread (its field dictionary does not establish it as a
+# closing line): spread_line > 0 means the HOME team is favored, so the home ATS margin is
+# (home_score - away_score) - spread_line. Verified empirically and by fixtures.
+NFL_ATS_SOURCE_FILE = DATA_DIR / 'historical' / 'nflverse_games.parquet'
+NFL_ATS_SOURCE_LABEL = 'nflverse games (recorded spread)'
+_NFL_SETTLE_GRACE = timedelta(hours=8)          # game (~3.5h) + finalization + buffer
+_NFL_SOURCE_FRESH_BUDGET = timedelta(hours=48)  # in-season parquet refresh budget
+_NFL_RW_CACHE = {}
+
+
+def _nfl_kickoff_et(gameday, gametime):
+    """Naive Eastern kickoff from nflverse gameday ('YYYY-MM-DD') + gametime ('HH:MM', ET). Falls
+    back to date-only (midnight ET) when gametime is absent so ordering still works."""
+    gd = str(gameday or '').strip()
+    if not gd or gd.lower() in ('nat', 'nan', 'none', ''):
+        return None
+    try:
+        base = datetime.strptime(gd, '%Y-%m-%d')
+    except ValueError:
+        return None
+    gt = str(gametime or '').strip()
+    if gt and gt.lower() not in ('nan', 'none'):
+        for fmt in ('%H:%M', '%H:%M:%S'):
+            try:
+                t = datetime.strptime(gt, fmt)
+                return base.replace(hour=t.hour, minute=t.minute)
+            except ValueError:
+                continue
+    return base
+
+
+def _nfl_ats_decisions_from_games(df, season, now_et, grace=_NFL_SETTLE_GRACE):
+    """Pure, testable core. Given nflverse-schema game rows, the EXPLICIT active `season`, and the
+    current Eastern time, produce per-team chronological ATS sign sequences + an integrity report.
+
+    Canonical game = game_id. Each completed game with a usable recorded spread yields TWO reciprocal
+    team-side decisions (one cover / one loss, or two pushes). Event-level completeness: a scheduled
+    game whose kickoff is past `grace` MUST be completed with a usable spread, else it is overdue
+    (fail closed) or a classified exclusion (completed but no recorded spread). Future / within-grace
+    unplayed games are ignored. Duplicate game_id rows collapse when identical; conflicting rows fail
+    closed. Returns per / graded_keys / pairs / conflicts / collapsed / overdue / malformed /
+    excluded / graded_through_week / season_rows."""
+    import math
+    out = {'per': {}, 'graded_keys': set(), 'pairs': [], 'conflicts': [], 'collapsed': 0,
+           'overdue': [], 'malformed': [], 'excluded': 0, 'graded_through_week': None, 'season_rows': 0}
+    if df is None or len(df) == 0:
+        return out
+    d = df.copy()
+    d['_season'] = pd.to_numeric(d.get('season'), errors='coerce')
+    d = d[d['_season'] == season]
+    out['season_rows'] = int(len(d))
+    if d.empty:
+        return out
+
+    def _num(v):
+        v = pd.to_numeric(v, errors='coerce')
+        return None if pd.isna(v) else float(v)
+
+    canon = {}   # game_id -> canonical row; exact repeats collapse, conflicts fail closed
+    for _, r in d.iterrows():
+        gid = str(r.get('game_id') or '').strip()
+        if not gid:
+            continue
+        wk = _num(r.get('week'))
+        rec = {'home': str(r.get('home_team') or '').strip(), 'away': str(r.get('away_team') or '').strip(),
+               'result': _num(r.get('result')), 'spread': _num(r.get('spread_line')),
+               'raw_spread': r.get('spread_line'), 'week': int(wk) if wk is not None else None,
+               'kick': _nfl_kickoff_et(r.get('gameday'), r.get('gametime'))}
+        if gid in canon:
+            p = canon[gid]
+            same = (p['home'] == rec['home'] and p['away'] == rec['away'] and p['result'] == rec['result']
+                    and ((p['spread'] is None and rec['spread'] is None) or p['spread'] == rec['spread']))
+            if same:
+                out['collapsed'] += 1
+            else:
+                out['conflicts'].append(gid)
+            continue
+        canon[gid] = rec
+
+    graded_weeks, overdue_weeks = set(), set()
+    seq = {}   # team -> [(kick, gid, sign, week)]
+    for gid, rec in canon.items():
+        kick, completed = rec['kick'], rec['result'] is not None
+        past_grace = kick is not None and now_et is not None and now_et >= (kick + grace)
+        raw = rec['raw_spread']
+        raw_present = not (raw is None or (isinstance(raw, float) and math.isnan(raw)))
+        malformed = raw_present and rec['spread'] is None
+        if completed and rec['spread'] is not None:
+            ats = rec['result'] - rec['spread']            # result = home-away; spread>0 => home favored
+            h = 1 if ats > 0 else (-1 if ats < 0 else 0)
+            for team, sign in ((rec['home'], h), (rec['away'], 0 if h == 0 else -h)):
+                if team:
+                    seq.setdefault(team, []).append((kick, gid, sign, rec['week']))
+                    out['graded_keys'].add((gid, team))
+            out['pairs'].append((gid, h, 0 if h == 0 else -h))
+            if rec['week'] is not None:
+                graded_weeks.add(rec['week'])
+        elif past_grace:
+            if malformed:
+                out['malformed'].append(gid)
+            elif completed:                                 # completed but no recorded spread
+                out['excluded'] += 1
+            else:                                           # overdue missing result -> fail closed
+                out['overdue'].append(gid)
+                if rec['week'] is not None:
+                    overdue_weeks.add(rec['week'])
+        # else: future / within-grace unplayed -> ignored
+
+    for team, lst in seq.items():
+        lst.sort(key=lambda x: (x[0] or datetime.min, x[1]))
+        signs = [s for (_k, _g, s, _w) in lst]
+        n, direction = _wave_trailing_run(signs)
+        weeks = [w for (_k, _g, _s, w) in lst if w is not None]
+        out['per'][team] = {'team': team, 'cover_streak': n if direction == 1 else 0,
+                            'loss_streak': n if direction == -1 else 0, 'results': signs,
+                            'recent': signs[-6:], 'covers': signs.count(1), 'losses': signs.count(-1),
+                            'pushes': signs.count(0), 'decisions': len(signs), 'weeks': weeks,
+                            'last_week': max(weeks) if weeks else None}
+    if graded_weeks:
+        gt = max(graded_weeks)
+        bad = {w for w in overdue_weeks if w <= gt}
+        out['graded_through_week'] = (min(bad) - 1) if bad else gt
+    return out
+
+
+def _nfl_ats_sync(dec, age_hours, last_refresh, season):
+    """Synchronization + freshness report. Fails closed on: no current-season rows; any overdue
+    (past-grace, ungraded) game; any duplicate conflict; any malformed recorded spread; or a source
+    older than the freshness budget. Surfaces source season, last refresh and graded-through."""
+    budget_h = _NFL_SOURCE_FRESH_BUDGET.total_seconds() / 3600
+    stale = age_hours is not None and age_hours > budget_h
+    reasons = []
+    if dec.get('season_rows', 0) == 0:
+        reasons.append('no current-season rows')
+    if dec.get('overdue'):
+        reasons.append(f"{len(dec['overdue'])} overdue ungraded game(s)")
+    if dec.get('conflicts'):
+        reasons.append(f"{len(dec['conflicts'])} duplicate conflict(s)")
+    if dec.get('malformed'):
+        reasons.append(f"{len(dec['malformed'])} malformed recorded spread(s)")
+    if stale:
+        reasons.append('source past freshness budget')
+    synchronized = not reasons
+    return {'synchronized': synchronized, 'source_season': season, 'source_label': NFL_ATS_SOURCE_LABEL,
+            'last_refresh': last_refresh,
+            'source_age_hours': round(age_hours, 1) if age_hours is not None else None,
+            'fresh_budget_hours': int(budget_h),
+            'graded_through_week': dec.get('graded_through_week') if synchronized else None,
+            'graded_decisions': len(dec.get('graded_keys', set())),
+            'exact_duplicates_collapsed': dec.get('collapsed', 0), 'conflicts': len(dec.get('conflicts', [])),
+            'overdue': len(dec.get('overdue', [])), 'malformed': len(dec.get('malformed', [])),
+            'classified_exclusions': dec.get('excluded', 0), 'season_rows': dec.get('season_rows', 0),
+            'reason': '; '.join(reasons) or None}
+
+
+def build_nfl_ats_wave(now_et=None, source_path=None):
+    """Current-season NFL ATS wave from nflverse_games.parquet: explicit active-season gate + the
+    frozen rule + event-level completeness + the freshness budget, failing closed otherwise. Returns
+    {'members' (streak-desc, team-asc; empty unless synchronized), 'sync', 'expected_completed_week'}."""
+    import time as _time
+    from zoneinfo import ZoneInfo
+    path = source_path or NFL_ATS_SOURCE_FILE
+    if now_et is None:
+        now_et = datetime.now(ZoneInfo('America/New_York')).replace(tzinfo=None)
+    expected_completed_week, season = _nfl_expected_completed_week()   # EXPLICIT active season
+    try:
+        mtime_epoch = os.path.getmtime(path)
+    except OSError:
+        mtime_epoch = None
+    try:
+        g = pd.read_parquet(path)
+    except Exception:
+        g = pd.DataFrame()
+    dec = _nfl_ats_decisions_from_games(g, season, now_et)
+    age_h = ((_time.time() - mtime_epoch) / 3600.0) if mtime_epoch else None
+    last_refresh = (datetime.fromtimestamp(mtime_epoch, ZoneInfo('America/New_York')).strftime('%Y-%m-%d %H:%M ET')
+                    if mtime_epoch else None)
+    sync = _nfl_ats_sync(dec, age_h, last_refresh, season)
+    members = []
+    if sync['synchronized']:
+        for team, s in dec['per'].items():
+            if s['cover_streak'] >= _WAVE_MIN_STREAK:
+                run_weeks = s['weeks'][-s['cover_streak']:] if s['weeks'] else []
+                members.append({'team': team, 'streak': s['cover_streak'], 'through_week': s['last_week'],
+                                'weeks_label': _compact_weeks(run_weeks), 'pushes': s['pushes'],
+                                'recent': s['recent']})
+        members.sort(key=lambda m: (-m['streak'], m['team']))   # factual: streak desc, team asc
+    return {'members': members, 'sync': sync, 'expected_completed_week': expected_completed_week}
+
+
 def build_nfl_wave_context():
     """Riding the Wave — every ACTIVE streak computed by walking each team's real graded
     games in date order (2011-2025 game-lines history). ATS cover streaks, straight-up
@@ -45941,9 +46140,15 @@ def build_nfl_wave_context():
         _apr_mtime = os.path.getmtime(DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv')
     except OSError:
         _apr_mtime = 0
-    sig = f"{len(hist)}::{_apr_mtime}::{sports_today_date()}"
-    if _NFL_WAVE_CACHE.get('sig') == sig:
-        return _NFL_WAVE_CACHE['data']
+    try:
+        _ats_mtime = os.path.getmtime(NFL_ATS_SOURCE_FILE)  # ATS reads the current-season parquet now
+    except OSError:
+        _ats_mtime = 0
+    # Own cache (not the shared _NFL_WAVE_CACHE, which build_nfl_wave_watch_context also uses) so the
+    # two builders can't clobber each other, and the ATS-source mtime is folded into the key.
+    sig = f"{len(hist)}::{_apr_mtime}::{_ats_mtime}::{sports_today_date()}"
+    if _NFL_RW_CACHE.get('sig') == sig:
+        return _NFL_RW_CACHE['data']
 
     from collections import defaultdict
     m2f = _nfl_mascot_to_full()
@@ -46013,10 +46218,19 @@ def build_nfl_wave_context():
         return out
 
     prop_streaks = build_nfl_prop_streaks()    # player over/under line streaks (3+, history)
+    # ATS now reads the CURRENT-SEASON source (nflverse_games.parquet) with an explicit active-season
+    # gate, event-level completeness and a freshness budget -- it never shows a completed prior season
+    # as active (the stale-2025 defect). See docs/nfl_ats_wave_source_characterization.md.
+    ats_wave = build_nfl_ats_wave()
+    ats_sync = ats_wave['sync']
+    # SU and O/U are FAILED CLOSED here: they previously read the 2011-2025 history and presented
+    # prior-season runs as active. They return only once their result definitions (and totals data for
+    # O/U) are verified against the current-season source separately -- the ATS fix must not silently
+    # legitimize them (req #7).
     boards = {
-        'ats': _collect(ats, pos_only=True),   # riding = covering
-        'su': _collect(su, pos_only=True),     # riding = winning
-        'ou': _collect(ou, pos_only=False, over_labels=True),  # either direction is a run
+        'ats': [{'team': m['team'], 'streak': m['streak'], 'weeks_label': m['weeks_label'],
+                 'through_week': m['through_week']} for m in ats_wave['members']],
+        'su': [], 'ou': [],
         'props': prop_streaks['rows'],
     }
     hot = build_nfl_prop_hot_start()           # this-season hot starts, every player, 2+
@@ -46079,11 +46293,19 @@ def build_nfl_wave_context():
             'prop_through_season': prop_streaks.get('through_season'),
             'prop_through_week': prop_streaks.get('through_week'),
             'prop_active_count': sum(1 for r in prop_streaks['rows'] if r.get('active')),
+            # ATS current-season source freshness/sync (never the stale 2011-2025 history).
+            'ats_season': ats_sync.get('source_season'),
+            'ats_through_week': ats_sync.get('graded_through_week'),
+            'ats_last_refresh': ats_sync.get('last_refresh'),
         },
-        'rw_available': any(boards.values()) or bool(situational) or bool(hot.get('rows')),
+        'rw_ats_sync': ats_sync,
+        'rw_ats_unsynced': not ats_sync['synchronized'],
+        'rw_su_available': False, 'rw_ou_available': False,
+        'rw_available': any(boards.values()) or bool(situational) or bool(hot.get('rows'))
+        or (not ats_sync['synchronized']),
     }
-    _NFL_WAVE_CACHE['sig'] = sig
-    _NFL_WAVE_CACHE['data'] = data
+    _NFL_RW_CACHE['sig'] = sig
+    _NFL_RW_CACHE['data'] = data
     return data
 
 

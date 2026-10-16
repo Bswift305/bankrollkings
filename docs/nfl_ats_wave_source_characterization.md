@@ -1,6 +1,16 @@
-# NFL Active ATS Wave — Source Characterization (read-only, pre-implementation)
+# NFL Active ATS Wave — Source Characterization
 
-**Status: READ-ONLY characterization. No NFL board code changed.** Gate before implementing the frozen
+> **Update — IMPLEMENTED (2026-10-16).** The source swap recommended below was approved and shipped as a
+> separate reversible NFL-only commit: `build_nfl_ats_wave` / `_nfl_ats_decisions_from_games` /
+> `_nfl_ats_sync` read `nflverse_games.parquet` with an explicit active-season gate, `game_id` identity,
+> the recorded-spread sign (verified by fixtures), event-level completeness, duplicate/conflict and
+> stale-source fail-closed, and a 48h freshness budget; SU and O/U are failed closed. Tests:
+> `qc_nfl_ats_wave.py`. **Before:** the board showed 2025 season-final streaks as active (NO 6, MIN 5,
+> SEA 5, CLE 3, DEN 3). **After (real local data):** fail-closed (15 overdue + source 174h stale),
+> 0 ATS/0 SU/0 OU. **Open operator task stands:** wire + verify a production refresh for
+> `nflverse_games.parquet` (none exists today) — until then the board correctly fails closed.
+
+**Status of this document: the read-only characterization that gated the implementation.** Gate before implementing the frozen
 Active ATS Wave rule (`docs/ats_wave_contract.md`) on the NFL surface. Date: 2026-10-16. Companion to
 the CFB implementation (commit `db650a8`). The directive was explicit: **do not implement by copying CFB
 assumptions** — establish the eight points below first, then build NFL as its own reversible commit using

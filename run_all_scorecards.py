@@ -54,6 +54,12 @@ SCORECARDS = [
     # cover streak >= 3 (not season cover%); push interrupts; bye/ungraded ignored; loss resets;
     # source-through-week fail-closed; model-independent membership; deterministic streak-desc order.
     ("CFB ATS Wave Admission QC", "qc_cfb_ats_wave_admission.py", 120),
+    # NFL Active ATS Wave on the current-season source (nflverse_games.parquet): explicit active-season
+    # gate (never max(season)), game_id identity + reciprocal team-side decisions, recorded-spread sign,
+    # event-level completeness (completed Thursday counts mid-week; future ignored; overdue fails closed),
+    # duplicate/conflict + stale-source fail-closed, factual streak-desc order, and W,W,P,W -> 1. Guards
+    # against re-presenting a completed prior season as active.
+    ("NFL ATS Wave QC", "qc_nfl_ats_wave.py", 120),
     # Riding-the-Wave player prop-streak freshness: the under-streak surface must disclose what
     # it is graded through and never present last season's final runs as current. Locks the
     # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.

@@ -56,7 +56,7 @@
     <div class="page-kicker">Quick Tools &middot; NFL</div>
     <h1>Riding the <span class="accent">Wave</span></h1>
     <div class="page-subtitle">Every active streak, pulled from real graded games &mdash; who&rsquo;s covering, who&rsquo;s winning, whose games keep going over or under, and the situational hot hands. Longest run on top.</div>
-    {% if rw_meta.asof %}<span class="rw-asof">Through {{ rw_meta.asof }}</span>{% endif %}
+    {% if not rw_ats_unsynced and rw_meta.ats_through_week %}<span class="rw-asof">ATS through {{ rw_meta.ats_season }} Wk {{ rw_meta.ats_through_week }}</span>{% endif %}
   </div>
 </div>
 
@@ -141,30 +141,33 @@
 <div class="rw-grid" id="rw-grid">
 
   <div class="rw-card" data-cat="ats">
-    <h3><span class="dot" style="background:var(--rw-hot)"></span>ATS Cover Streaks <small>straight covers</small></h3>
+    <h3><span class="dot" style="background:var(--rw-hot)"></span>ATS Cover Streaks <small>current season</small></h3>
+    {% if rw_ats_sync %}
+    <div class="rw-fresh {{ 'pending' if rw_ats_unsynced else 'ok' }}">
+      <span class="tag">{{ 'Not synchronized' if rw_ats_unsynced else 'Current-season' }}</span>
+      <span>{{ rw_ats_sync.source_label }} &middot; {{ rw_ats_sync.source_season }}{% if rw_ats_sync.last_refresh %} &middot; refreshed {{ rw_ats_sync.last_refresh }}{% endif %}{% if not rw_ats_unsynced and rw_ats_sync.graded_through_week %} &middot; graded through Wk {{ rw_ats_sync.graded_through_week }}{% endif %}.</span>
+      {% if rw_ats_unsynced %}<span>Active cover streaks are hidden until the source is complete and fresh{% if rw_ats_sync.reason %} ({{ rw_ats_sync.reason }}){% endif %}. We do <b>not</b> present a completed prior season as current.</span>{% endif %}
+    </div>
+    {% endif %}
+    {% if not rw_ats_unsynced %}
     {% for r in rw_boards.ats %}
     <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
+      <span class="rw-name">{{ r.team }}<small>{{ r.weeks_label }}{% if r.through_week %} &middot; through Wk {{ r.through_week }}{% endif %}</small></span>
       <span class="rw-badge hot"><span class="n">{{ r.streak }}</span><span class="u">covers</span></span></div>
-    {% else %}<div class="rw-empty">No active cover streaks of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+    {% else %}<div class="rw-empty">No active cover streak of {{ rw_meta.min_streak }}+ right now.</div>{% endfor %}
+    {% endif %}
   </div>
 
   <div class="rw-card" data-cat="su">
     <h3><span class="dot" style="background:var(--rw-accent)"></span>Win Streaks <small>straight up</small></h3>
-    {% for r in rw_boards.su %}
-    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
-      <span class="rw-badge acc"><span class="n">{{ r.streak }}</span><span class="u">wins</span></span></div>
-    {% else %}<div class="rw-empty">No active win streaks of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+    <div class="rw-fresh pending"><span class="tag">Unavailable</span>
+      <span>Straight-up streaks are temporarily off while they&rsquo;re re-sourced from the current-season feed. We won&rsquo;t show last season&rsquo;s runs as current.</span></div>
   </div>
 
   <div class="rw-card" data-cat="ou">
     <h3><span class="dot" style="background:var(--rw-over)"></span>Totals Runs <small>over / under</small></h3>
-    {% for r in rw_boards.ou %}
-    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.team }}<small>through {{ r.last_season }}</small></span>
-      <span class="rw-badge {{ 'over' if r.kind == 'Overs' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.kind }}</span></span></div>
-    {% else %}<div class="rw-empty">No active totals runs of {{ rw_meta.min_streak }}+.</div>{% endfor %}
+    <div class="rw-fresh pending"><span class="tag">Unavailable</span>
+      <span>Totals streaks are temporarily off pending verification of current-season totals data. We won&rsquo;t show last season&rsquo;s runs as current.</span></div>
   </div>
 
   <div class="rw-card" data-cat="situ">
@@ -182,7 +185,7 @@
   <b>Coming next:</b> CFB, NBA and MLB streaks on this same board &mdash; all from real graded results, same honesty rules.
 </div>
 
-<div class="rw-foot">Streaks counted from the NFL game-lines history ({{ rw_meta.seasons }}). A run &ldquo;through {{ rw_meta.asof or 'the latest graded game' }}&rdquo; carries into the current week until it ends.</div>
+<div class="rw-foot">ATS cover streaks are counted from the current-season {{ rw_ats_sync.source_label if rw_ats_sync else 'games' }} source{% if rw_meta.ats_season %} ({{ rw_meta.ats_season }}){% endif %} and shown only when the source is complete and fresh. Player-prop streaks come from the graded prop record with their own freshness disclosure above. Win and totals streaks are temporarily unavailable while they&rsquo;re re-sourced from the current-season feed.</div>
 {% endif %}
 </div>
 
