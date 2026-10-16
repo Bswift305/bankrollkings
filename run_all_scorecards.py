@@ -60,6 +60,10 @@ SCORECARDS = [
     # duplicate/conflict + stale-source fail-closed, factual streak-desc order, and W,W,P,W -> 1. Guards
     # against re-presenting a completed prior season as active.
     ("NFL ATS Wave QC", "qc_nfl_ats_wave.py", 120),
+    # NFL games-source refresh pipeline (fetch_nfl_games.py): atomic replace, schema/dup/season/
+    # completed-regression validation, permission failure as an operability error (never "no games"),
+    # 304 unchanged handling, sidecar freshness, recovery after a failed pull. No network (fixtures).
+    ("NFL Games Refresh QC", "qc_nfl_games_refresh.py", 120),
     # Riding-the-Wave player prop-streak freshness: the under-streak surface must disclose what
     # it is graded through and never present last season's final runs as current. Locks the
     # stale-season/through-week pending gate + availability + the Mike Evans unders->over fixture.

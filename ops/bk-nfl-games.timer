@@ -1,0 +1,14 @@
+[Unit]
+Description=Bankroll Kings - fire the NFL games-source refresh every ~6h in-season (script self-gates)
+
+[Timer]
+# NFL games finalize across Thu night, Sun afternoon/evening and Mon night. Firing every 6 hours
+# captures each promptly (worst case ~6h after a final). Times are UTC (prod's clock). The wrapper's
+# fetch_nfl_games.py --gate no-ops off-season, and flock prevents overlap, so off-window/extra ticks
+# cost nothing. 304s from upstream are cheap and just refresh the freshness sidecar.
+OnCalendar=*-*-* 00/6:30:00
+AccuracySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

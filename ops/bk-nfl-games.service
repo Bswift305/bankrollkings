@@ -1,0 +1,24 @@
+[Unit]
+Description=Bankroll Kings - NFL games-source refresh (nflverse games.csv, self-gating)
+After=network-online.target
+Wants=network-online.target
+
+# Install (source of record: ops/). The wrapper goes OUTSIDE the repo so a mid-run git pull cannot
+# rewrite the executing script. Run via SSM as the application service user (ubuntu):
+#   sudo install -m 755 ops/bk-nfl-games-refresh.sh /usr/local/bin/bk-nfl-games-refresh.sh
+#   sudo cp ops/bk-nfl-games.service /etc/systemd/system/bk-nfl-games.service
+#   sudo cp ops/bk-nfl-games.timer   /etc/systemd/system/bk-nfl-games.timer
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bk-nfl-games.timer
+# One-shot first run + verify:
+#   sudo systemctl start bk-nfl-games.service
+#   sudo -u ubuntu /opt/bankrollkings/venv/bin/python /opt/bankrollkings/report_nfl_ats_wave_sync.py
+# Watch it:  journalctl -u bk-nfl-games.service -n 40 --no-pager
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/usr/local/bin/bk-nfl-games-refresh.sh
+# The wrapper always exits 0; be explicit that a "behind"/transient sub-step never fails the unit.
+SuccessExitStatus=0 1 2

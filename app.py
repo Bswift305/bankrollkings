@@ -46058,7 +46058,7 @@ def _nfl_ats_decisions_from_games(df, season, now_et, grace=_NFL_SETTLE_GRACE):
     return out
 
 
-def _nfl_ats_sync(dec, age_hours, last_refresh, season):
+def _nfl_ats_sync(dec, age_hours, last_refresh, season, freshness_basis='mtime'):
     """Synchronization + freshness report. Fails closed on: no current-season rows; any overdue
     (past-grace, ungraded) game; any duplicate conflict; any malformed recorded spread; or a source
     older than the freshness budget. Surfaces source season, last refresh and graded-through."""
@@ -46077,7 +46077,7 @@ def _nfl_ats_sync(dec, age_hours, last_refresh, season):
         reasons.append('source past freshness budget')
     synchronized = not reasons
     return {'synchronized': synchronized, 'source_season': season, 'source_label': NFL_ATS_SOURCE_LABEL,
-            'last_refresh': last_refresh,
+            'last_refresh': last_refresh, 'freshness_basis': freshness_basis,
             'source_age_hours': round(age_hours, 1) if age_hours is not None else None,
             'fresh_budget_hours': int(budget_h),
             'graded_through_week': dec.get('graded_through_week') if synchronized else None,
@@ -46107,10 +46107,22 @@ def build_nfl_ats_wave(now_et=None, source_path=None):
     except Exception:
         g = pd.DataFrame()
     dec = _nfl_ats_decisions_from_games(g, season, now_et)
-    age_h = ((_time.time() - mtime_epoch) / 3600.0) if mtime_epoch else None
-    last_refresh = (datetime.fromtimestamp(mtime_epoch, ZoneInfo('America/New_York')).strftime('%Y-%m-%d %H:%M ET')
-                    if mtime_epoch else None)
-    sync = _nfl_ats_sync(dec, age_h, last_refresh, season)
+    # Freshness basis: the refresh pipeline's sidecar successful-fetch time is authoritative; fall back
+    # to filesystem mtime only when no sidecar exists (a redeploy/copy touches mtime without a real
+    # refresh, so mtime alone is not authoritative -- fetch_nfl_games.py writes the sidecar).
+    fetch_epoch, basis = mtime_epoch, 'mtime'
+    try:
+        _meta = json.loads(Path(str(path) + '.meta.json').read_text(encoding='utf-8'))
+        _ft = _meta.get('fetch_time_utc')
+        if _ft:
+            _dt = datetime.strptime(str(_ft).replace('Z', ''), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc)
+            fetch_epoch, basis = _dt.timestamp(), 'sidecar'
+    except Exception:
+        pass
+    age_h = ((_time.time() - fetch_epoch) / 3600.0) if fetch_epoch else None
+    last_refresh = (datetime.fromtimestamp(fetch_epoch, ZoneInfo('America/New_York')).strftime('%Y-%m-%d %H:%M ET')
+                    if fetch_epoch else None)
+    sync = _nfl_ats_sync(dec, age_h, last_refresh, season, basis)
     members = []
     if sync['synchronized']:
         for team, s in dec['per'].items():
@@ -46144,9 +46156,13 @@ def build_nfl_wave_context():
         _ats_mtime = os.path.getmtime(NFL_ATS_SOURCE_FILE)  # ATS reads the current-season parquet now
     except OSError:
         _ats_mtime = 0
+    try:
+        _ats_side_mtime = os.path.getmtime(str(NFL_ATS_SOURCE_FILE) + '.meta.json')  # 304 refresh -> sidecar only
+    except OSError:
+        _ats_side_mtime = 0
     # Own cache (not the shared _NFL_WAVE_CACHE, which build_nfl_wave_watch_context also uses) so the
-    # two builders can't clobber each other, and the ATS-source mtime is folded into the key.
-    sig = f"{len(hist)}::{_apr_mtime}::{_ats_mtime}::{sports_today_date()}"
+    # two builders can't clobber each other, and the ATS source + freshness sidecar are in the key.
+    sig = f"{len(hist)}::{_apr_mtime}::{_ats_mtime}::{_ats_side_mtime}::{sports_today_date()}"
     if _NFL_RW_CACHE.get('sig') == sig:
         return _NFL_RW_CACHE['data']
 
