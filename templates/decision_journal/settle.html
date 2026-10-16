@@ -1,0 +1,80 @@
+{% set active_page = 'journal' %}
+{% extends "bk_base.html" %}
+{% block title %}Grade a decision - Bankroll Kings{% endblock %}
+{% block content %}
+<style>
+  .dj-wrap{--dj-accent:#2dd4bf;max-width:820px;}
+  .dj-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:16px;}
+  .dj-card h3{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 3px;}
+  .dj-card .hint{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 12px;}
+  .dj-grid{display:grid;grid-template-columns:1fr;gap:11px;}
+  @media(min-width:640px){.dj-grid{grid-template-columns:repeat(12,1fr);align-items:end;}}
+  .dj-fg{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .dj-fg .lb{font:700 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .dj-fg input,.dj-fg select{background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:9px;color:var(--text-bright);font:600 13px 'Helvetica Neue',Arial,sans-serif;padding:9px 10px;width:100%;box-sizing:border-box;}
+  .c3{grid-column:span 3;}.c4{grid-column:span 4;}.c6{grid-column:span 6;}.c12{grid-column:span 12;}
+  @media(max-width:639px){.c3,.c4,.c6{grid-column:span 1;}}
+  .dj-leg{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;}
+  .dj-leg .m{flex:1 1 200px;font:700 12.5px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .dj-leg select{flex:0 0 auto;width:auto;background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:8px;color:var(--text-bright);font:600 12px;padding:6px 9px;}
+  .dj-submit{cursor:pointer;font:800 14px;color:#0b1118;background:var(--dj-accent);border:1px solid var(--dj-accent);border-radius:999px;padding:12px 26px;}
+  .dj-err{background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.4);color:#ffb3b3;border-radius:11px;padding:11px 14px;font:600 12.5px;margin-bottom:16px;}
+  .dj-hint2{font:500 11.5px/1.6;color:var(--text-muted);margin-top:8px;}
+</style>
+<div class="bkn dj-wrap">
+<div class="page-hero"><div>
+  <div class="page-kicker">Decision Journal &middot; Grade</div>
+  <h1>Record the <span class="accent">settlement</span></h1>
+  <div class="page-subtitle">Enter what the sportsbook actually did. The book&rsquo;s result is authoritative. Net P/L is cash returned minus cash staked; leave amounts blank if you don&rsquo;t have them and P/L stays &ldquo;unavailable.&rdquo;</div>
+</div></div>
+
+{% if error %}<div class="dj-err">Couldn&rsquo;t save: {{ error }}.</div>{% endif %}
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="dj-card">
+    <h3>Book settlement</h3>
+    <div class="hint">Free-bet (promo) stake is tracked separately and is not counted as cash returned. For a cashout, enter the cashout amount and the total returned.</div>
+    <div class="dj-grid">
+      <div class="dj-fg c4"><span class="lb">Book result</span>
+        <select name="book_ticket_result">
+          {% for r in results %}<option value="{{ r }}" {{ 'selected' if (ticket.book_ticket_result or 'pending') == r else '' }}>{{ r }}</option>{% endfor %}
+        </select></div>
+      <div class="dj-fg c4"><span class="lb">Cash staked ($)</span><input name="cash_stake" inputmode="decimal" value="{{ '%.2f'|format(ticket.cash_stake_cents/100) if ticket.cash_stake_cents is not none else '' }}"></div>
+      <div class="dj-fg c4"><span class="lb">Promo / free-bet staked ($)</span><input name="promo_stake" inputmode="decimal" value="{{ '%.2f'|format(ticket.promo_stake_cents/100) if ticket.promo_stake_cents is not none else '' }}"></div>
+      <div class="dj-fg c4"><span class="lb">Total cash returned ($)</span><input name="total_returned" inputmode="decimal" value="{{ '%.2f'|format(ticket.total_returned_cents/100) if ticket.total_returned_cents is not none else '' }}"></div>
+      <div class="dj-fg c4"><span class="lb">Cashout amount ($)</span><input name="cashout_amount" inputmode="decimal" value="{{ '%.2f'|format(ticket.cashout_amount_cents/100) if ticket.cashout_amount_cents is not none else '' }}"></div>
+      <div class="dj-fg c4"><span class="lb">Your thesis played out?</span>
+        <select name="thesis_correct"><option value="">Unset (your call)</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+      <div class="dj-fg c12"><span class="lb">Book settlement note</span><input name="note" placeholder="void rule, promo detail, partial cashout…"></div>
+    </div>
+    <div class="dj-hint2">&ldquo;Your thesis played out&rdquo; is your own subjective call &mdash; separate from the book&rsquo;s result and from whether each leg hit.</div>
+  </div>
+
+  <div class="dj-card">
+    <h3>Leg results</h3>
+    <div class="hint">How each leg graded, and (optionally) whether the underlying read actually happened &mdash; an objective fact, independent of the ticket.</div>
+    {% for leg in ticket.legs %}
+    <div class="dj-leg">
+      <span class="m">{{ leg.leg_index + 1 }}. {{ leg.market }} &mdash; <b>{{ leg.selection }}</b>{% if leg.line is not none %} {{ '%g'|format(leg.line) }}{% endif %}</span>
+      <select name="leg-{{ leg.leg_id }}-result">
+        <option value="pending" {{ 'selected' if (leg.leg_result or 'pending')=='pending' else '' }}>pending</option>
+        <option value="win" {{ 'selected' if leg.leg_result=='win' else '' }}>win</option>
+        <option value="loss" {{ 'selected' if leg.leg_result=='loss' else '' }}>loss</option>
+        <option value="push" {{ 'selected' if leg.leg_result=='push' else '' }}>push</option>
+        <option value="void" {{ 'selected' if leg.leg_result=='void' else '' }}>void</option>
+      </select>
+      <select name="leg-{{ leg.leg_id }}-read">
+        <option value="">read? (unset)</option>
+        <option value="yes" {{ 'selected' if leg.read_happened==1 else '' }}>read happened</option>
+        <option value="no" {{ 'selected' if leg.read_happened==0 else '' }}>read missed</option>
+      </select>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin:4px 0 8px;"><button type="submit" class="dj-submit">Save settlement</button>
+    <a href="{{ url_for('journal_home') }}" style="margin-left:12px;color:var(--text-muted);font:600 12px;">Cancel</a></div>
+</form>
+</div>
+{% endblock %}

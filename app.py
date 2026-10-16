@@ -32286,6 +32286,223 @@ def bet_tracker_delete():
     return redirect(url_for('bet_tracker_tool'))
 
 
+# ==================================================================================================
+# Decision Journal (V1) -- records WHICH reasoning produced each bet result. Additive and separate
+# from the JSON Bet Tracker above; behind DECISION_JOURNAL_ENABLED (default OFF -> routes 404, so the
+# feature ships dark). All DB access goes through the JournalRepository service boundary, scoped by
+# user_id. See docs/decision_journal_implementation_design.md.
+# ==================================================================================================
+DECISION_JOURNAL_ENABLED = (os.environ.get('DECISION_JOURNAL_ENABLED', '') or '').strip().lower() \
+    in ('1', 'true', 'yes', 'on')
+
+
+def _journal_now_iso():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _journal_dl_to_iso(s):
+    """A datetime-local form value 'YYYY-MM-DDTHH:MM' -> ISO-8601 UTC. Blank -> None."""
+    s = (s or '').strip()
+    if not s:
+        return None
+    if len(s) == 16:
+        return s + ':00Z'
+    if 'T' in s and not s.endswith('Z'):
+        return s + 'Z'
+    return s
+
+
+def _journal_cents(v):
+    v = (str(v) if v is not None else '').strip().replace(',', '').replace('$', '')
+    if not v:
+        return None
+    try:
+        return int(round(float(v) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
+def _journal_int(v):
+    v = (str(v) if v is not None else '').strip().replace('+', '')
+    if not v:
+        return None
+    try:
+        return int(round(float(v)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _journal_float(v):
+    v = (str(v) if v is not None else '').strip()
+    if not v:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _journal_login_redirect():
+    return redirect(url_for('login', next='/journal', gate='login_required', required='all_access'))
+
+
+@app.route('/journal', methods=['GET'])
+def journal_home():
+    if not DECISION_JOURNAL_ENABLED:
+        from flask import abort
+        abort(404)
+    uid = _card_prefs_uid()
+    if not uid:
+        return _journal_login_redirect()
+    from services import decision_journal as dj
+    try:
+        tickets = dj.JournalRepository().list_tickets(uid)
+    except dj.JournalUnavailable:
+        return render_template('decision_journal/unavailable.html')
+    return render_template('decision_journal/list.html', tickets=tickets)
+
+
+@app.route('/journal/new', methods=['GET', 'POST'])
+def journal_new():
+    if not DECISION_JOURNAL_ENABLED:
+        from flask import abort
+        abort(404)
+    uid = _card_prefs_uid()
+    if not uid:
+        return _journal_login_redirect()
+    from services import decision_journal as dj
+    if request.method == 'POST':
+        f = request.form
+        now = _journal_now_iso()
+        try:
+            count = int(f.get('leg_count') or 0)
+        except ValueError:
+            count = 0
+        legs = []
+        for i in range(count):
+            pfx = f'leg-{i}-'
+            market = (f.get(pfx + 'market') or '').strip()
+            selection = (f.get(pfx + 'selection') or '').strip()
+            if not market and not selection:
+                continue  # skipped/removed row
+            origin = f.get(pfx + 'origin') or 'user-selected'
+            qscope = f.get(pfx + 'quote_scope') or 'unavailable'
+            leg = {
+                'selection_origin': origin,
+                'entry_method': 'manual',
+                'user_reviewed_before_bet': f.get(pfx + 'reviewed') or 'unknown',
+                'surfaces_known': True,
+                'surfaces': [s for s in f.getlist(pfx + 'surfaces') if s],
+                'sport': (f.get(pfx + 'sport') or 'NFL').strip(),
+                'game': (f.get(pfx + 'game') or '').strip() or 'unknown',
+                'event_start': _journal_dl_to_iso(f.get(pfx + 'event_start')),
+                'player': (f.get(pfx + 'player') or '').strip() or None,
+                'market': market or 'unknown',
+                'selection': selection or 'unknown',
+                'line': _journal_float(f.get(pfx + 'line')),
+                'quote_scope': qscope,
+                'price': _journal_int(f.get(pfx + 'price')) if qscope == 'individual-leg' else None,
+                'book': (f.get(pfx + 'book') or '').strip() or None,
+                'decision_time': now,
+                'leg_rationale': (f.get(pfx + 'rationale') or '').strip() or None,
+                'leg_rationale_at': now if (f.get(pfx + 'rationale') or '').strip() else None,
+                'confidence': _journal_int(f.get(pfx + 'confidence')),
+                'reason_tags': [t for t in f.getlist(pfx + 'tags') if t] or ['other'],
+            }
+            if origin == 'BK-rule-assembled':
+                leg['bk_origin'] = {
+                    'surface': (f.get(pfx + 'bk_surface') or '').strip() or 'unknown',
+                    'candidate_id': (f.get(pfx + 'bk_candidate') or '').strip() or 'unknown',
+                    'rule_version': (f.get(pfx + 'bk_rule') or '').strip() or 'unknown',
+                    'captured_at': now,
+                    'displayed_line': _journal_float(f.get(pfx + 'bk_line')),
+                    'displayed_price': _journal_int(f.get(pfx + 'bk_price')),
+                }
+            legs.append(leg)
+        if f.get('ticket_type') == 'same-game-parlay':
+            ttype = 'same-game-parlay'
+        else:
+            ttype = 'parlay' if len(legs) > 1 else 'straight'
+        thesis = (f.get('game_thesis') or '').strip() or None
+        try:
+            if not legs:
+                raise dj.ValidationError('add at least one leg')
+            dj.JournalRepository().create_ticket(
+                uid, ticket_type=ttype, record_provenance='prospective-captured', legs=legs,
+                book=(f.get('book') or '').strip() or None, game_thesis=thesis,
+                game_thesis_at=now if thesis else None,
+                combined_price=_journal_int(f.get('combined_price')), placed_at=now)
+        except dj.JournalUnavailable:
+            return render_template('decision_journal/unavailable.html')
+        except dj.ValidationError as e:
+            return render_template('decision_journal/entry.html', error=str(e),
+                                   tags=dj.REASON_TAGS, form=f)
+        return redirect(url_for('journal_home'))
+    return render_template('decision_journal/entry.html', error=None, tags=dj.REASON_TAGS, form=None)
+
+
+@app.route('/journal/<ticket_id>/settle', methods=['GET', 'POST'])
+def journal_settle(ticket_id):
+    if not DECISION_JOURNAL_ENABLED:
+        from flask import abort
+        abort(404)
+    uid = _card_prefs_uid()
+    if not uid:
+        return _journal_login_redirect()
+    from services import decision_journal as dj
+    repo = dj.JournalRepository()
+    try:
+        ticket = repo.get_ticket(uid, ticket_id)
+    except dj.JournalUnavailable:
+        return render_template('decision_journal/unavailable.html')
+    if not ticket:
+        from flask import abort
+        abort(404)
+    if request.method == 'POST':
+        f = request.form
+        tc = f.get('thesis_correct')
+        leg_results = [{'leg_id': leg['leg_id'],
+                        'leg_result': f.get(f'leg-{leg["leg_id"]}-result') or None,
+                        'read_happened': (1 if f.get(f'leg-{leg["leg_id"]}-read') == 'yes'
+                                          else 0 if f.get(f'leg-{leg["leg_id"]}-read') == 'no' else None)}
+                       for leg in ticket['legs']]
+        try:
+            repo.settle_ticket(
+                uid, ticket_id, book_ticket_result=f.get('book_ticket_result') or 'pending',
+                cash_stake_cents=_journal_cents(f.get('cash_stake')),
+                promo_stake_cents=_journal_cents(f.get('promo_stake')),
+                total_returned_cents=_journal_cents(f.get('total_returned')),
+                cashout_amount_cents=_journal_cents(f.get('cashout_amount')),
+                book_settlement_note=(f.get('note') or '').strip() or None,
+                thesis_correct=(1 if tc == 'yes' else 0 if tc == 'no' else None),
+                leg_results=leg_results)
+        except dj.JournalUnavailable:
+            return render_template('decision_journal/unavailable.html')
+        except dj.ValidationError as e:
+            return render_template('decision_journal/settle.html', ticket=ticket,
+                                   results=dj.TICKET_RESULTS, error=str(e))
+        return redirect(url_for('journal_home'))
+    return render_template('decision_journal/settle.html', ticket=ticket,
+                           results=dj.TICKET_RESULTS, error=None)
+
+
+@app.route('/journal/report', methods=['GET'])
+def journal_report():
+    if not DECISION_JOURNAL_ENABLED:
+        from flask import abort
+        abort(404)
+    uid = _card_prefs_uid()
+    if not uid:
+        return _journal_login_redirect()
+    from services import decision_journal as dj
+    try:
+        report = dj.JournalRepository().report(uid, prospective_only=True)
+    except dj.JournalUnavailable:
+        return render_template('decision_journal/unavailable.html')
+    return render_template('decision_journal/report.html', report=report)
+
+
 @app.route('/tools/daily-card.png', methods=['GET', 'POST'])
 def daily_card_image():
     """Render one Daily Card as a shareable Bankroll Kings PNG ticket, via the marketing card

@@ -1,0 +1,133 @@
+{% set active_page = 'journal' %}
+{% extends "bk_base.html" %}
+{% block title %}Log a decision - Bankroll Kings{% endblock %}
+{% block content %}
+<style>
+  .dj-wrap{--dj-accent:#2dd4bf;max-width:860px;}
+  .dj-card{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:16px;padding:16px 16px 10px;margin-bottom:18px;}
+  .dj-card h3{font:800 14px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 3px;}
+  .dj-card .hint{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 12px;}
+  .dj-grid{display:grid;grid-template-columns:1fr;gap:11px;}
+  @media(min-width:680px){.dj-grid{grid-template-columns:repeat(12,1fr);align-items:end;}}
+  .dj-fg{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .dj-fg .lb{font:700 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);}
+  .dj-fg input,.dj-fg select,.dj-fg textarea{background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:9px;color:var(--text-bright);font:600 13px 'Helvetica Neue',Arial,sans-serif;padding:9px 10px;width:100%;box-sizing:border-box;}
+  .dj-fg textarea{min-height:52px;resize:vertical;}
+  .c2{grid-column:span 2;}.c3{grid-column:span 3;}.c4{grid-column:span 4;}.c6{grid-column:span 6;}.c12{grid-column:span 12;}
+  @media(max-width:679px){.c2,.c3,.c4,.c6{grid-column:span 1;}}
+  .dj-leg{border:1px solid var(--border);border-radius:13px;padding:13px 13px 6px;margin-bottom:12px;background:rgba(255,255,255,.015);}
+  .dj-leg-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;}
+  .dj-leg-h b{font:800 12px 'Helvetica Neue',Arial,sans-serif;color:var(--dj-accent);text-transform:uppercase;letter-spacing:.05em;}
+  .dj-rm{cursor:pointer;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:8px;font:700 11px;padding:4px 9px;}
+  .dj-tags{display:flex;flex-wrap:wrap;gap:8px;}
+  .dj-tags label{font:600 11px 'Helvetica Neue',Arial,sans-serif;color:var(--text);display:flex;gap:4px;align-items:center;background:var(--bg,#0b1220);border:1px solid var(--border);border-radius:999px;padding:5px 10px;cursor:pointer;}
+  .dj-bk{border-top:1px dashed var(--border);margin-top:10px;padding-top:10px;}
+  .dj-add{cursor:pointer;font:800 12px 'Helvetica Neue',Arial,sans-serif;color:var(--dj-accent);background:transparent;border:1px dashed var(--dj-accent);border-radius:10px;padding:9px 14px;}
+  .dj-submit{cursor:pointer;font:800 14px 'Helvetica Neue',Arial,sans-serif;color:#0b1118;background:var(--dj-accent);border:1px solid var(--dj-accent);border-radius:999px;padding:12px 26px;}
+  .dj-err{background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.4);color:#ffb3b3;border-radius:11px;padding:11px 14px;font:600 12.5px 'Helvetica Neue',Arial,sans-serif;margin-bottom:16px;}
+  .dj-hd{font:500 11.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-top:10px;}
+</style>
+<div class="bkn dj-wrap">
+<div class="page-hero"><div>
+  <div class="page-kicker">Decision Journal</div>
+  <h1>Log a <span class="accent">decision</span></h1>
+  <div class="page-subtitle">Capture this <b>before</b> the game. The line and price are locked once it kicks off. Enter only what the ticket actually gives you &mdash; leave unknowns blank rather than guessing.</div>
+</div></div>
+
+{% if error %}<div class="dj-err">Couldn&rsquo;t save: {{ error }}. Nothing was recorded &mdash; adjust and resubmit.</div>{% endif %}
+
+<form method="POST" id="dj-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="leg_count" id="leg_count" value="1">
+  <div class="dj-card">
+    <h3>Ticket</h3>
+    <div class="hint">The thesis is frozen at submit time, before kickoff. For a same-game parlay, set the combined price here and mark each leg &ldquo;combined-ticket&rdquo;.</div>
+    <div class="dj-grid">
+      <div class="dj-fg c4"><span class="lb">Book</span><input name="book" placeholder="DraftKings"></div>
+      <div class="dj-fg c4"><span class="lb">Ticket kind</span>
+        <select name="ticket_type">
+          <option value="auto">Auto (straight / parlay by legs)</option>
+          <option value="same-game-parlay">Same-game parlay (correlated)</option>
+        </select></div>
+      <div class="dj-fg c4"><span class="lb">Combined price (optional)</span><input name="combined_price" inputmode="numeric" placeholder="+450"></div>
+      <div class="dj-fg c12"><span class="lb">Game thesis (why this ticket)</span><textarea name="game_thesis" placeholder="What has to be true for this to win."></textarea></div>
+    </div>
+  </div>
+
+  <div id="dj-legs"></div>
+  <button type="button" class="dj-add" id="dj-addleg">+ Add another leg</button>
+
+  <div class="dj-hd">Decision time is recorded as now (server, UTC). Every leg&rsquo;s <b>event start must be in the future</b> &mdash; a line entered after kickoff is not a prospective decision and will be rejected.</div>
+  <div style="margin:18px 0 8px;"><button type="submit" class="dj-submit">Save decision</button></div>
+</form>
+</div>
+
+<script>
+(function(){
+  var TAGS = {{ tags|tojson }};
+  var counter = 0;
+  function legHTML(i){
+    var tags = TAGS.map(function(t){
+      return '<label><input type="checkbox" name="leg-'+i+'-tags" value="'+t+'">'+t+'</label>';
+    }).join('');
+    return ''
+    + '<div class="dj-leg" data-i="'+i+'">'
+    + '  <div class="dj-leg-h"><b>Leg '+(i+1)+'</b><button type="button" class="dj-rm">Remove</button></div>'
+    + '  <div class="dj-grid">'
+    + '    <div class="dj-fg c2"><span class="lb">Sport</span><input name="leg-'+i+'-sport" value="NFL"></div>'
+    + '    <div class="dj-fg c4"><span class="lb">Game</span><input name="leg-'+i+'-game" placeholder="KC @ BUF"></div>'
+    + '    <div class="dj-fg c3"><span class="lb">Player (prop only)</span><input name="leg-'+i+'-player" placeholder="P. Mahomes"></div>'
+    + '    <div class="dj-fg c3"><span class="lb">Event start</span><input type="datetime-local" name="leg-'+i+'-event_start"></div>'
+    + '    <div class="dj-fg c4"><span class="lb">Market</span><input name="leg-'+i+'-market" placeholder="passing yards / spread"></div>'
+    + '    <div class="dj-fg c4"><span class="lb">Selection (the pick)</span><input name="leg-'+i+'-selection" placeholder="over / KC -3.5"></div>'
+    + '    <div class="dj-fg c2"><span class="lb">Line</span><input name="leg-'+i+'-line" inputmode="decimal" placeholder="274.5"></div>'
+    + '    <div class="dj-fg c2"><span class="lb">Book</span><input name="leg-'+i+'-book"></div>'
+    + '    <div class="dj-fg c4"><span class="lb">Price scope</span>'
+    + '      <select name="leg-'+i+'-quote_scope" class="dj-qs" data-i="'+i+'">'
+    + '        <option value="individual-leg">Individual-leg price</option>'
+    + '        <option value="combined-ticket">Combined-ticket only (SGP)</option>'
+    + '        <option value="unavailable">Unavailable</option></select></div>'
+    + '    <div class="dj-fg c2 dj-price" data-i="'+i+'"><span class="lb">Price</span><input name="leg-'+i+'-price" inputmode="numeric" placeholder="-110"></div>'
+    + '    <div class="dj-fg c3"><span class="lb">How selected</span>'
+    + '      <select name="leg-'+i+'-origin" class="dj-origin" data-i="'+i+'">'
+    + '        <option value="user-selected">I picked it</option>'
+    + '        <option value="BK-rule-assembled">A BK surface produced it</option>'
+    + '        <option value="unknown">Unknown</option></select></div>'
+    + '    <div class="dj-fg c3"><span class="lb">Reviewed this leg?</span>'
+    + '      <select name="leg-'+i+'-reviewed"><option value="yes">Yes, deliberately</option><option value="no">No</option><option value="unknown" selected>Unknown</option></select></div>'
+    + '    <div class="dj-fg c2"><span class="lb">Confidence (1-5)</span><input name="leg-'+i+'-confidence" inputmode="numeric" placeholder="your read"></div>'
+    + '    <div class="dj-fg c12"><span class="lb">Reason tags</span><div class="dj-tags">'+tags+'</div></div>'
+    + '    <div class="dj-fg c12"><span class="lb">Leg rationale (optional, frozen now)</span><textarea name="leg-'+i+'-rationale"></textarea></div>'
+    + '    <div class="dj-bk c12" data-i="'+i+'" style="display:none;">'
+    + '      <div class="dj-grid">'
+    + '        <div class="dj-fg c3"><span class="lb">BK surface</span><input name="leg-'+i+'-bk_surface" placeholder="wave-watch"></div>'
+    + '        <div class="dj-fg c3"><span class="lb">Candidate id</span><input name="leg-'+i+'-bk_candidate"></div>'
+    + '        <div class="dj-fg c2"><span class="lb">Rule / version</span><input name="leg-'+i+'-bk_rule"></div>'
+    + '        <div class="dj-fg c2"><span class="lb">Shown line</span><input name="leg-'+i+'-bk_line" inputmode="decimal"></div>'
+    + '        <div class="dj-fg c2"><span class="lb">Shown price</span><input name="leg-'+i+'-bk_price" inputmode="numeric"></div>'
+    + '      </div></div>'
+    + '  </div>'
+    + '</div>';
+  }
+  var legs = document.getElementById('dj-legs');
+  function addLeg(){ legs.insertAdjacentHTML('beforeend', legHTML(counter)); counter++; document.getElementById('leg_count').value = counter; }
+  addLeg();  // first leg
+  document.getElementById('dj-addleg').addEventListener('click', addLeg);
+  legs.addEventListener('click', function(e){
+    if(e.target.classList.contains('dj-rm')){ var blk = e.target.closest('.dj-leg'); if(blk) blk.remove(); }
+  });
+  legs.addEventListener('change', function(e){
+    if(e.target.classList.contains('dj-qs')){
+      var i = e.target.getAttribute('data-i');
+      var p = legs.querySelector('.dj-price[data-i="'+i+'"]');
+      if(p) p.style.display = (e.target.value === 'individual-leg') ? '' : 'none';
+    }
+    if(e.target.classList.contains('dj-origin')){
+      var j = e.target.getAttribute('data-i');
+      var bk = legs.querySelector('.dj-bk[data-i="'+j+'"]');
+      if(bk) bk.style.display = (e.target.value === 'BK-rule-assembled') ? '' : 'none';
+    }
+  });
+})();
+</script>
+{% endblock %}

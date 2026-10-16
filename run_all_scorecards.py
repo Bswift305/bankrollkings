@@ -79,6 +79,11 @@ SCORECARDS = [
     # Trial Eligibility Gate core (mocked): one-lifetime-trial store guarantees -- eligibility,
     # hard cap, atomic redemption, crash-recovery, key rotation, DB invariants, fail-closed.
     ("Trial Gate QC", "qc_trial_gate.py", 120),
+    # Decision Journal V1 (SQLite): the 15 frozen acceptance checks -- concurrency, crash recovery,
+    # unknown fields, selection, SGP combined-only pricing, settlement math, immutability + append-only
+    # corrections, prospective timing, BK-origin, idempotent import, migration, access isolation,
+    # journal-only failure mode, descriptive reporting. Runs against throwaway temp DBs; cheap.
+    ("Decision Journal QC", "qc_decision_journal.py", 180),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),

@@ -1,0 +1,60 @@
+{% set active_page = 'journal' %}
+{% extends "bk_base.html" %}
+{% block title %}Decision Journal - Bankroll Kings{% endblock %}
+{% block content %}
+<style>
+  .dj-wrap{--dj-accent:#2dd4bf;}
+  .dj-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px;}
+  .dj-btn{cursor:pointer;font:800 13px 'Helvetica Neue',Arial,sans-serif;border-radius:999px;padding:10px 18px;text-decoration:none;}
+  .dj-btn.p{color:#0b1118;background:var(--dj-accent);border:1px solid var(--dj-accent);}
+  .dj-btn.s{color:var(--text-bright);background:transparent;border:1px solid var(--border);}
+  .dj-note{font:500 12px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);background:rgba(45,212,191,.05);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:18px;}
+  .dj-row{display:flex;gap:11px;align-items:baseline;padding:12px 2px;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;}
+  .dj-row:last-child{border-bottom:0;}
+  .dj-type{font:800 9.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#0b1118;background:var(--dj-accent);border-radius:5px;padding:3px 7px;}
+  .dj-type.legacy{background:#8a94a6;}
+  .dj-main{flex:1 1 220px;min-width:0;}
+  .dj-sub{font:600 11px ui-monospace,Consolas,monospace;color:var(--text-muted);margin-top:3px;}
+  .dj-res{font:800 11px ui-monospace,Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;}
+  .dj-res.win{color:var(--bkn-good,#4ed48a);} .dj-res.loss{color:#ff6b6b;} .dj-res.pending,.dj-res.push,.dj-res.void,.dj-res.cashout{color:var(--text-muted);}
+  .dj-pl{font:800 13px ui-monospace,Consolas,monospace;} .dj-pl.pos{color:var(--bkn-good,#4ed48a);} .dj-pl.neg{color:#ff6b6b;} .dj-pl.na{color:var(--text-muted);}
+  .dj-empty{font:500 13px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:16px 2px;}
+</style>
+<div class="bkn dj-wrap">
+<div class="page-hero"><div>
+  <div class="page-kicker">Decision Journal</div>
+  <h1>Your <span class="accent">decisions</span>, graded by reason</h1>
+  <div class="page-subtitle">Log a bet with the reasoning behind it <b>before</b> the game, record how the book actually settled it after, and review what your record looks like by how the pick was made. A record of what happened &mdash; never a recommendation.</div>
+</div></div>
+
+<div class="dj-actions">
+  <a href="{{ url_for('journal_new') }}" class="dj-btn p">+ Log a decision</a>
+  <a href="{{ url_for('journal_report') }}" class="dj-btn s">Review record</a>
+</div>
+
+<div class="dj-note"><b>How this is honest:</b> prices and lines are captured at decision time and locked once the game starts; corrections are kept as an audited trail, never silent edits. ROI comes from the book&rsquo;s actual settlement &mdash; where a price or payout is unknown it stays unknown, not assumed.</div>
+
+{% if tickets %}
+<div class="dj-list">
+  {% for t in tickets %}
+  <div class="dj-row">
+    <span class="dj-type {{ 'legacy' if t.ticket_type == 'legacy_flat_ticket' else '' }}">{{ t.ticket_type.replace('_',' ') }}</span>
+    <span class="dj-main">
+      <div><b>{{ t.legs_count }} leg{{ '' if t.legs_count == 1 else 's' }}</b>{% if t.book %} &middot; {{ t.book }}{% endif %}{% if t.record_provenance != 'prospective-captured' %} &middot; <span style="color:var(--text-muted);">{{ t.record_provenance }}</span>{% endif %}</div>
+      <div class="dj-sub">{% if t.earliest_kickoff %}kickoff {{ t.earliest_kickoff[:16]|replace('T',' ') }}{% elif t.placed_at %}placed {{ t.placed_at[:10] }}{% endif %}</div>
+    </span>
+    <span class="dj-res {{ t.book_ticket_result or 'pending' }}">{{ t.book_ticket_result or 'pending' }}</span>
+    {% if t.net_cash_pl_cents is not none %}
+      <span class="dj-pl {{ 'pos' if t.net_cash_pl_cents > 0 else 'neg' if t.net_cash_pl_cents < 0 else '' }}">{{ '%+.2f'|format(t.net_cash_pl_cents/100) }}{% if t.roi is not none %} <span style="font-weight:600;color:var(--text-muted);">({{ '%+.1f'|format(t.roi*100) }}%)</span>{% endif %}</span>
+    {% else %}
+      <span class="dj-pl na">P/L n/a</span>
+    {% endif %}
+    {% if not t.book_ticket_result or t.book_ticket_result == 'pending' %}<a href="{{ url_for('journal_settle', ticket_id=t.ticket_id) }}" class="dj-btn s" style="padding:6px 12px;font-size:11px;">Grade</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="dj-empty">No decisions logged yet. <a href="{{ url_for('journal_new') }}" style="color:var(--dj-accent);">Log your first</a> &mdash; the value shows up once you&rsquo;ve recorded a handful with the reasoning captured before each game.</div>
+{% endif %}
+</div>
+{% endblock %}
