@@ -44639,17 +44639,18 @@ def _cfb_cover_streaks_from_df(df, season):
         team = str(r.get('Team', '')).strip()
         opp = str(r.get('Opponent', '')).strip()
         line = pd.to_numeric(raw_line, errors='coerce')
-        week = pd.to_numeric(raw_week, errors='coerce')
+        week_ok = bk_runtime.valid_week(raw_week)
         # MALFORMED: a value is PRESENT but unusable (distinct from truly-missing -> ineligible).
         if (_present(raw_gid) and gid is None) or (_present(raw_line) and pd.isna(line)) \
-                or (_present(raw_week) and pd.isna(week)):
+                or (_present(raw_week) and not week_ok):
             malformed += 1
             continue
-        if gid is None or side not in ('HOME', 'AWAY') or not team or not opp or pd.isna(line) \
-                or pd.isna(week):
+        if gid is None or side not in ('HOME', 'AWAY') or not bk_runtime.valid_text(team) \
+                or not bk_runtime.valid_text(opp) or pd.isna(line) or not week_ok:
             ineligible += 1                       # no stable identity / missing side, names, line, week
             continue
         date = str(r.get('GameDate') or '').strip()
+        week = int(float(raw_week))
         line = round(float(line), 2)
         ident = (team if side == 'HOME' else opp, opp if side == 'HOME' else team, date)
         if gid in gid_identity and gid_identity[gid] != ident:

@@ -84,6 +84,48 @@ def scenario_source_mtime(name: str) -> float:
         return 0.0
 
 
+_BAD_TEXT = frozenset({'', 'nan', 'none', 'null', '<na>', 'nat'})
+
+
+def valid_text(v):
+    """A real text value: not None/Boolean, and not empty / nan / none / null / <NA> / NaT (so
+    str(pd.NA) -> '<NA>' and str(np.nan) -> 'nan' are rejected)."""
+    if v is None or isinstance(v, bool):
+        return False
+    return str(v).strip().lower() not in _BAD_TEXT
+
+
+def valid_week(v, lo=1, hi=30):
+    """A positive integral week in the supported range (regular 1-18 + postseason)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return False
+    import math
+    return not math.isnan(f) and not math.isinf(f) and f == int(f) and lo <= int(f) <= hi
+
+
+def valid_date(v):
+    """Parseable as a timezone-aware timestamp, or an explicitly accepted provider ISO date/datetime
+    (leading YYYY-MM-DD). Rejects empty / nan / <NA> / unparseable."""
+    import re
+    import pandas as pd
+    if not valid_text(v):
+        return False
+    s = str(v).strip()
+    ts = pd.to_datetime(s, errors='coerce')
+    if pd.isna(ts):
+        return False
+    if getattr(ts, 'tzinfo', None) is not None:
+        return True
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}', s))   # accepted provider ISO date form
+
+
+def valid_int_counter(v):
+    """A present, non-negative integer (not None, not Boolean, not float/str)."""
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
 def write_csv_atomic(df, path):
     """Write a DataFrame to `path` atomically: temp file in the same directory, fsync, os.replace -- so a
     partial write is never observed and a failure leaves the prior file intact."""

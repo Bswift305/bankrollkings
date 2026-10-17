@@ -166,6 +166,31 @@ def build_results(history: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def validate_results_current_season(results, season):
+    """STRONG pre-publish validation (testable). The current-season SPREAD slice must be NONEMPTY and
+    every row must carry a canonical GameID, a valid HOME/AWAY side, exact Team/Opponent names, a valid
+    week + parseable date, a numeric line, and a conference value present. Returns (ok, message)."""
+    import bk_runtime
+    if results is None or results.empty or 'MarketType' not in results.columns:
+        return False, "empty results frame"
+    cur = results[(results["MarketType"].astype(str).str.upper() == "SPREAD")
+                  & (pd.to_numeric(results["Season"], errors="coerce") == season)]
+    if cur.empty:
+        return False, f"no current-season ({season}) SPREAD results in a {len(results)}-row file"
+    bad = 0
+    for _, r in cur.iterrows():
+        side = str(r.get("TeamSide") or "").strip().upper()
+        if not (bk_runtime.cfb_game_id(r.get("GameID")) and side in ("HOME", "AWAY")
+                and bk_runtime.valid_text(r.get("Team")) and bk_runtime.valid_text(r.get("Opponent"))
+                and bk_runtime.valid_week(r.get("Week")) and bk_runtime.valid_date(r.get("GameDate"))
+                and pd.notna(pd.to_numeric(r.get("Line"), errors="coerce"))
+                and bk_runtime.valid_text(r.get("Conf"))):
+            bad += 1
+    if bad:
+        return False, f"{bad} of {len(cur)} current-season SPREAD rows fail validation"
+    return True, f"{len(cur)} current-season ({season}) SPREAD rows valid"
+
+
 def main() -> int:
     if not INPUT_PATH.exists():
         print(f"[FAIL] missing NCAAF historical game lines: {INPUT_PATH}")
@@ -179,27 +204,10 @@ def main() -> int:
     from datetime import date as _date
     today = _date.today()
     cur_season = today.year if today.month >= 8 else today.year - 1
-    # STRONG pre-publish validation: every AUTHORITATIVE current-season SPREAD result must have a
-    # canonical GameID, a valid TeamSide, exact Team/Opponent names, a valid week/date, a numeric line,
-    # and a conference value present. Else leave the last good results untouched.
-    cur = results[(results["MarketType"].astype(str).str.upper() == "SPREAD")
-                  & (pd.to_numeric(results["Season"], errors="coerce") == cur_season)]
-    bad = 0
-    for _, r in cur.iterrows():
-        gid = bk_runtime.cfb_game_id(r.get("GameID"))
-        side = str(r.get("TeamSide") or "").strip().upper()
-        team = str(r.get("Team") or "").strip()
-        opp = str(r.get("Opponent") or "").strip()
-        wk = pd.to_numeric(r.get("Week"), errors="coerce")
-        dt = str(r.get("GameDate") or "").strip()
-        line = pd.to_numeric(r.get("Line"), errors="coerce")
-        conf = str(r.get("Conf") or "").strip()
-        if (gid is None or side not in ("HOME", "AWAY") or not team or not opp or pd.isna(wk)
-                or not dt or pd.isna(line) or not conf or conf.lower() == "nan"):
-            bad += 1
-    if bad:
-        print(f"[FAIL] {bad} current-season ({cur_season}) result rows fail validation "
-              "(GameID/side/names/week/date/line/conference); leaving the existing file untouched.")
+    ok, msg = validate_results_current_season(results, cur_season)
+    if not ok:
+        print(f"[FAIL] results pre-publish validation ({cur_season}): {msg}; leaving the existing "
+              "file untouched.")
         return 2
     bk_runtime.write_csv_atomic(results, OUTPUT_PATH)      # temp + fsync + os.replace
     resolved = int(results["OutcomeState"].isin(["Hit", "Miss", "Push"]).sum())

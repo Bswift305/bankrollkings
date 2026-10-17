@@ -16,9 +16,35 @@ import subprocess
 from pathlib import Path
 
 import app
+import bk_runtime
 
 SEASON = 2026
 BASE = Path(__file__).resolve().parent
+
+# Every declared integrity counter must be PRESENT, an integer, and ZERO to close (exact_duplicates_
+# collapsed is gated at zero for this launch -- an identical duplicate means the producer is wrong).
+DECLARED_COUNTERS = ('missing_count', 'overdue_decisions', 'conflicting_duplicates',
+                     'exact_duplicates_collapsed', 'malformed_rows', 'ineligible',
+                     'manifest_missing_gameid', 'manifest_dup_gameid', 'unknown_conference')
+
+
+def evaluate_closure(sync, overlay_misattributions, rendered_unsynced):
+    """(rc, bad). A MISSING/None/Boolean/negative/non-integer counter is a schema mismatch and fails
+    (never a silent zero). overlay_misattributions must be exactly 0 and present. Testable."""
+    bad = []
+    for k in DECLARED_COUNTERS:
+        v = sync.get(k, None)
+        if not bk_runtime.valid_int_counter(v):
+            bad.append(f'{k}=invalid({v!r})')
+        elif v != 0:
+            bad.append(f'{k}={v}')
+    if not bk_runtime.valid_int_counter(overlay_misattributions) or overlay_misattributions != 0:
+        bad.append(f'overlay_misattributions={overlay_misattributions!r}')
+    if not sync.get('synchronized'):
+        bad.append('not_synchronized')
+    if rendered_unsynced:
+        bad.append('rendered_context_unsynced')
+    return (0 if not bad else 1), bad
 
 
 def _deployed_commit() -> str:
@@ -69,17 +95,11 @@ def main() -> int:
     synced = bool(sync.get('synchronized'))
     print(f'synchronized               : {synced}')
 
-    # exact_duplicates_collapsed is informational (an identical repeat is harmless); every OTHER counter
-    # must be exactly zero. overlay_misattributions must be exactly 0.
-    bad = [k for k, v in counters.items()
-           if k != 'exact_duplicates_collapsed' and (v or 0) != 0]
-    overlay_mis = None
+    overlay_mis, rendered_unsynced = None, False
     if synced:
         ctx = app.build_cfb_wave_context()
-        if ctx.get('wave_unsynced'):              # rendered context flipped to unsynchronized
-            synced = False
-            bad.append('rendered_context_unsynced')
-        members = ctx.get('wave_members', []) if not ctx.get('wave_unsynced') else []
+        rendered_unsynced = bool(ctx.get('wave_unsynced'))
+        members = ctx.get('wave_members', []) if not rendered_unsynced else []
         overlay_mis = ctx.get('overlay_misattributions')
         print(f'overlay_misattributions    : {overlay_mis}')
         print(f'member count               : {len(members)}')
@@ -91,12 +111,10 @@ def main() -> int:
             print('sample missing (GameID, side):')
             for m in miss[:25]:
                 print(f'    {m}')
-    if overlay_mis != 0:                          # must be exactly 0 (never None/unavailable at close)
-        bad.append('overlay_misattributions')
+    rc, bad = evaluate_closure(sync, overlay_mis, rendered_unsynced)
     print('-' * 60)
-    rc = 0 if (synced and not bad) else 1
-    print(f'[EXIT {rc}] ' + ('CFB synchronized; all declared integrity counters zero.'
-                             if rc == 0 else 'NOT closable: ' + ', '.join(sorted(set(bad)) or ['unsynchronized'])))
+    print(f'[EXIT {rc}] ' + ('CFB synchronized; all declared integrity counters present and zero.'
+                             if rc == 0 else 'NOT closable: ' + ', '.join(bad)))
     return rc
 
 

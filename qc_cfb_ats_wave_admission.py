@@ -13,7 +13,10 @@ import pandas as pd
 
 import app
 import bk_runtime
+import build_ncaaf_game_line_backfill as grader
 import cfb_current_form as cff
+import fetch_cfbd_game_lines_history as hist
+import report_cfb_wave_sync as rep
 
 
 def grow(gid, side, team, opp, state, wk, date, conf='SEC', line=-3.5):
@@ -245,6 +248,112 @@ def qc_overlay_abstains_not_misattributes():
     return issues
 
 
+def _hist_row(gid='401901', home='Georgia', away='Alabama', hc='SEC', ac='SEC',
+              wk=1, date='2026-09-05T19:30:00+00:00', season=2026):
+    return {'GameID': gid, 'HomeTeamRaw': home, 'AwayTeamRaw': away, 'HomeConf': hc, 'AwayConf': ac,
+            'Week': wk, 'Season': season, 'Date': date}
+
+
+def _res_row(gid='401901', side='HOME', team='Georgia', opp='Alabama', conf='SEC', wk=1,
+             date='2026-09-05T19:30:00+00:00', line=-3.5, season=2026, market='SPREAD'):
+    return {'MarketType': market, 'Season': season, 'GameID': gid, 'TeamSide': side, 'Team': team,
+            'Opponent': opp, 'Conf': conf, 'Week': wk, 'GameDate': date, 'Line': line}
+
+
+def _good_sync():
+    return {**{k: 0 for k in rep.DECLARED_COUNTERS}, 'synchronized': True}
+
+
+def qc_validators_shared():
+    """Shared validators reject the str(pd.NA)/str(np.nan) traps, non-positive/fractional weeks, and
+    unparseable dates; accept real values."""
+    issues = []
+    for bad in ('', 'nan', 'NaN', 'none', 'null', '<NA>', '<na>', 'NaT', None, True):
+        if bk_runtime.valid_text(bad):
+            issues.append(f'valid_text wrongly accepted {bad!r}')
+    for good in ('Georgia', 'Miami (OH)', 'App State'):
+        if not bk_runtime.valid_text(good):
+            issues.append(f'valid_text wrongly rejected {good!r}')
+    for bad in (0, -1, 1.5, '1.5', 'nan', None, 99):
+        if bk_runtime.valid_week(bad):
+            issues.append(f'valid_week wrongly accepted {bad!r}')
+    if not (bk_runtime.valid_week(1) and bk_runtime.valid_week('18') and bk_runtime.valid_week(18.0)):
+        issues.append('valid_week rejected a good week')
+    for bad in ('', '<NA>', 'nan', 'garbage', None):
+        if bk_runtime.valid_date(bad):
+            issues.append(f'valid_date wrongly accepted {bad!r}')
+    if not bk_runtime.valid_date('2026-09-05T19:30:00+00:00') or not bk_runtime.valid_date('2026-09-05'):
+        issues.append('valid_date rejected a good provider date')
+    return issues
+
+
+def qc_prepublish_empty_current_season():
+    """A nonempty multi-year file with ZERO current-season rows must FAIL pre-publish (both artifacts)."""
+    issues = []
+    h = pd.DataFrame([_hist_row(season=2025)])
+    ok, _ = hist.validate_history_current_season(h, 2026)
+    if ok:
+        issues.append('history validation passed with no 2026 rows')
+    r = pd.DataFrame([_res_row(season=2025)])
+    ok2, _ = grader.validate_results_current_season(r, 2026)
+    if ok2:
+        issues.append('results validation passed with no 2026 SPREAD rows')
+    # a valid current-season frame passes
+    if not hist.validate_history_current_season(pd.DataFrame([_hist_row()]), 2026)[0]:
+        issues.append('valid history frame failed validation')
+    if not grader.validate_results_current_season(pd.DataFrame([_res_row()]), 2026)[0]:
+        issues.append('valid results frame failed validation')
+    return issues
+
+
+def qc_prepublish_bad_text_date_week():
+    """nan/<NA> names and dates, and a fractional/zero week, fail pre-publish validation."""
+    issues = []
+    cases = [('nan name', _hist_row(home='<NA>')), ('nan date', _hist_row(date='<NA>')),
+             ('null conf', _hist_row(hc='')), ('zero week', _hist_row(wk=0)),
+             ('frac week', _hist_row(wk=1.5)), ('bad date', _hist_row(date='garbage'))]
+    for label, row in cases:
+        if hist.validate_history_current_season(pd.DataFrame([row]), 2026)[0]:
+            issues.append(f'history accepted invalid row: {label}')
+    rcases = [('nan team', _res_row(team='nan')), ('<NA> date', _res_row(date='<NA>')),
+              ('zero week', _res_row(wk=0)), ('frac week', _res_row(wk=2.5)),
+              ('bad line', _res_row(line='n/a')), ('bad side', _res_row(side='X'))]
+    for label, row in rcases:
+        if grader.validate_results_current_season(pd.DataFrame([row]), 2026)[0]:
+            issues.append(f'results accepted invalid row: {label}')
+    return issues
+
+
+def qc_reporter_missing_counter_fails():
+    """A missing/None/Boolean/negative counter fails the reporter (never a silent zero)."""
+    issues = []
+    rc, _ = rep.evaluate_closure(_good_sync(), 0, False)
+    if rc != 0:
+        issues.append('a fully-valid all-zero sync did not pass')
+    for mutate in ({'malformed_rows': None}, {'unknown_conference': True}, {'missing_count': -1},
+                   {'conflicting_duplicates': '0'}):
+        s = {**_good_sync(), **mutate}
+        if rep.evaluate_closure(s, 0, False)[0] == 0:
+            issues.append(f'reporter passed with bad counter {mutate}')
+    s2 = _good_sync()
+    del s2['overdue_decisions']
+    if rep.evaluate_closure(s2, 0, False)[0] == 0:
+        issues.append('reporter passed with a MISSING counter')
+    # overlay misattribution missing/None/nonzero fails
+    for om in (None, 1, True):
+        if rep.evaluate_closure(_good_sync(), om, False)[0] == 0:
+            issues.append(f'reporter passed with overlay_misattributions={om!r}')
+    return issues
+
+
+def qc_reporter_gates_exact_duplicates():
+    """exact_duplicates_collapsed is gated at zero for launch: =1 -> reporter exit 1."""
+    s = {**_good_sync(), 'exact_duplicates_collapsed': 1}
+    if rep.evaluate_closure(s, 0, False)[0] != 1:
+        return ['exact_duplicates_collapsed=1 did not cause reporter exit 1']
+    return []
+
+
 def qc_overlay_cannot_change_membership():
     issues = []
 
@@ -295,6 +404,11 @@ CHECKS = [('streak_truth_table', qc_streak_truth_table),
           ('missing_name_fails_closed', qc_missing_name_fails_closed),
           ('manifest_dup_gameid_fails_closed', qc_manifest_dup_gameid_fails_closed),
           ('overlay_abstains_not_misattributes', qc_overlay_abstains_not_misattributes),
+          ('validators_shared', qc_validators_shared),
+          ('prepublish_empty_current_season', qc_prepublish_empty_current_season),
+          ('prepublish_bad_text_date_week', qc_prepublish_bad_text_date_week),
+          ('reporter_missing_counter_fails', qc_reporter_missing_counter_fails),
+          ('reporter_gates_exact_duplicates', qc_reporter_gates_exact_duplicates),
           ('overlay_cannot_change_membership', qc_overlay_cannot_change_membership)]
 
 

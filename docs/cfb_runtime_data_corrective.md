@@ -258,3 +258,19 @@ history-failure-before-grading, and overlay abstention (never misattribution). T
 
 **Close gate:** CFB closes only when the refresh command and `report_cfb_wave_sync.py` both exit 0, the
 reconciliation exits 0, `synchronized: True`, and every declared integrity counter is visibly zero.
+
+### Validation-rigor patch (final narrow pass)
+- **Empty current-season slice fails** — history and results pre-publish validation require a NONEMPTY
+  current-season slice (a nonempty multi-year file with zero 2026 rows no longer publishes).
+- **Shared validators** (`bk_runtime.valid_text` / `valid_week` / `valid_date`): text rejects empty /
+  `nan` / `none` / `null` / `<NA>` / `NaT` (so `str(pd.NA)`/`str(np.nan)` can't pass); week must be a
+  positive integral value in 1–30; date must parse tz-aware or as an accepted provider ISO date. Used by
+  the pre-publish validators and the streak-eligibility checks.
+- **Reporter counter integrity** (`bk_runtime.valid_int_counter`): every declared counter must be
+  PRESENT and a non-negative integer; missing / `None` / Boolean / negative / non-numeric fails the
+  reporter (a schema mismatch can't receive exit 0).
+- **`exact_duplicates_collapsed` gated at zero** for launch (identical duplicate ⇒ diagnose the
+  producer, don't silently close). Can become informational later via an explicit policy change.
+Fixtures: `qc_cfb_ats_wave_admission.py` (20 checks) covers no-current-season file, `nan`/`<NA>`
+names+dates, fractional/zero week, invalid date, missing reporter counter, and
+`exact_duplicates_collapsed=1 → exit 1`.

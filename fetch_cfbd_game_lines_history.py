@@ -172,38 +172,40 @@ def main() -> int:
 
     output = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     output_path = Path(args.output)
-    required = {"GameID", "HomeTeamRaw", "AwayTeamRaw", "HomeConf", "AwayConf", "Week", "Season", "Date"}
-    if output.empty or not required.issubset(output.columns):
-        print(f"[FAIL] history fetch produced {len(output)} rows / missing "
-              f"{required - set(output.columns)}; leaving the existing file untouched.")
-        return 2
-    # STRONG pre-publish validation: every AUTHORITATIVE current-season row must carry a canonical
-    # GameID, exact provider names, a valid week/date, and a conference value PRESENT for each side
-    # (an UNKNOWN-but-present conf may still publish for diagnosis; a NULL conf may not). If any fails,
-    # leave the last good history untouched rather than grade a malformed generation.
     from datetime import date as _date
     today = _date.today()
     cur_season = today.year if today.month >= 8 else today.year - 1
-    cur = output[pd.to_numeric(output["Season"], errors="coerce") == cur_season]
-    bad = 0
-    for _, r in cur.iterrows():
-        gid = bk_runtime.cfb_game_id(r.get("GameID"))
-        home = str(r.get("HomeTeamRaw") or "").strip()
-        away = str(r.get("AwayTeamRaw") or "").strip()
-        wk = pd.to_numeric(r.get("Week"), errors="coerce")
-        dt = str(r.get("Date") or "").strip()
-        hc = str(r.get("HomeConf") or "").strip()
-        ac = str(r.get("AwayConf") or "").strip()
-        if (gid is None or not home or not away or pd.isna(wk) or not dt
-                or not hc or hc.lower() == "nan" or not ac or ac.lower() == "nan"):
-            bad += 1
-    if bad:
-        print(f"[FAIL] {bad} current-season ({cur_season}) history rows fail validation "
-              "(GameID/names/week/date/conference); leaving the existing file untouched.")
+    ok, msg = validate_history_current_season(output, cur_season)
+    if not ok:
+        print(f"[FAIL] history pre-publish validation ({cur_season}): {msg}; leaving the existing "
+              "file untouched.")
         return 2
     bk_runtime.write_csv_atomic(output, output_path)       # temp + fsync + os.replace
-    print(f"Wrote {len(output)} rows to {output_path} ({len(cur)} current-season {cur_season} rows valid)")
+    print(f"Wrote {len(output)} rows to {output_path}; {msg}")
     return 0
+
+
+def validate_history_current_season(df, season):
+    """STRONG pre-publish validation (testable). The current-season slice must be NONEMPTY and every row
+    must carry a canonical GameID, exact provider names, a valid week + parseable date, and a conference
+    value PRESENT for each side. Returns (ok, message). UNKNOWN-but-present conference may publish (the
+    verifier fails closed on it); a NULL/empty conference may not."""
+    required = {"GameID", "HomeTeamRaw", "AwayTeamRaw", "HomeConf", "AwayConf", "Week", "Season", "Date"}
+    if df is None or df.empty or not required.issubset(df.columns):
+        return False, f"empty frame or missing columns {required - set(getattr(df, 'columns', []))}"
+    cur = df[pd.to_numeric(df["Season"], errors="coerce") == season]
+    if cur.empty:
+        return False, f"no current-season ({season}) rows in a {len(df)}-row file"
+    bad = 0
+    for _, r in cur.iterrows():
+        if not (bk_runtime.cfb_game_id(r.get("GameID")) and bk_runtime.valid_text(r.get("HomeTeamRaw"))
+                and bk_runtime.valid_text(r.get("AwayTeamRaw")) and bk_runtime.valid_week(r.get("Week"))
+                and bk_runtime.valid_date(r.get("Date")) and bk_runtime.valid_text(r.get("HomeConf"))
+                and bk_runtime.valid_text(r.get("AwayConf"))):
+            bad += 1
+    if bad:
+        return False, f"{bad} of {len(cur)} current-season rows fail GameID/names/week/date/conference"
+    return True, f"{len(cur)} current-season ({season}) rows valid"
 
 
 if __name__ == "__main__":
