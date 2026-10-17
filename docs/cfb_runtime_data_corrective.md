@@ -127,24 +127,27 @@ removal of locally-modified tracked files can't fail and prod never loses fresh 
 ## Post-corrective: the CFB "missing decisions" gap (separate diagnosis, read-only)
 After the runtime fix the manifest is fresh, but the wave still fail-closes on ~67 "missing decisions":
 completed, line-bearing FBS-team games in the manifest that are ungraded. Read-only code findings:
-- **Same endpoint, same universe.** Both feeds call `GET /lines?year=&seasonType=regular` (one call, no
-  pagination). The manifest (`fetch_cfb_line_moves.py`) keeps a game if the **median spread across all
-  books** is present. The history (`fetch_cfbd_game_lines_history.py`) keeps `_first_line` = **`lines[0]`
-  only**. So the loss is in NORMALIZATION, not the raw response / window / season-type / pagination.
-- **Candidate mechanism A — `lines[0]` vs median:** if the first book for a game has a null spread, the
-  history row has no `Line` → the grader marks it Pending → excluded, while the manifest's median still
-  carries a spread. (The manifest also uses `seasonType=regular` only; the history fans `both` but that
-  only ADDS postseason, never drops regular.)
-- **Candidate mechanism B — name normalization join:** `normalize_ncaaf_team_name` does NOT blank unknown
-  (FCS) teams (it returns the cleaned name), so FBS-vs-FCS is not dropped by the empty-name filter; a
-  residual divergence between `normalize_ncaaf_team_name` and `cff._resolve` could still mismatch the
-  graded key vs the manifest key. To be confirmed per game.
-- **Reconciliation tool (read-only, no pipeline change):** `diagnose_cfb_line_coverage.py` replays the
-  history normalization on the same raw `/lines` payload, keyed by the stable CFBD game `id`, and buckets
-  every expected-but-ungraded game by reason (`first_line_null` / `absent_from_history` /
-  `name_blanked` / `in_history_not_graded`) plus the directive's targeted checks (FBS-FCS, the named
-  FBS-FBS games, week-0, neutral/rivalry, date-vs-week). Run on prod, then the corrective plan follows
-  from its reconciliation table. **Governance (provisional, Darrel):** any completed game with a valid
-  market line belongs in the FBS team's ATS record, FCS opponent included — do NOT narrow the expected
-  universe to obtain sync; exclude only no-line / cancelled / ungradeable games. Board stays fail-closed
-  until a corrective is approved.
+- **Same endpoint, same universe (code fact).** Both feeds call `GET /lines?year=&seasonType=regular`
+  (one call, no pagination). The manifest (`fetch_cfb_line_moves.py`) keeps a game by the **median spread
+  across all books**; the history (`fetch_cfbd_game_lines_history.py`) keeps `_first_line` = **`lines[0]`
+  only**. `normalize_ncaaf_team_name` does **not** blank unknown (FCS) teams (returns the cleaned name).
+- **No root cause asserted yet.** The earlier "the loss is purely normalization" claim is **RETRACTED as
+  an unconfirmed hypothesis** — `lines[0]`-vs-median and a name/date join divergence are *candidates*, but
+  which stage actually drops each game is only established by the four-stage reconciliation below.
+- **Reconciliation tool (read-only, no pipeline change):** `diagnose_cfb_line_coverage.py` loads **all
+  four artifacts** — runtime manifest (with `updated`/season/source-path provenance), fresh raw `/lines`,
+  stored `NCAAF_GameLines_History.csv`, graded `NCAAF_GameLineResults.csv` — and walks each expected
+  manifest decision through **manifest → raw → normalized replay → stored history → graded**, charging it
+  to the FIRST failing stage. Mutually-exclusive buckets: `graded_ok`, `absent_from_current_raw`,
+  `absent_from_runtime_manifest` (cross-check), `dropped_in_normalize:name_blanked`,
+  `first_book_no_spread`, `dropped_in_normalize:other`, `in_replay_absent_from_stored_history`,
+  `in_history_but_ungraded`, `ambiguous_legacy_join`. Anchored on the CFBD game `id`; since the manifest/
+  history/results carry no id, the join is a disclosed legacy bridge `(season, week, resolved home,
+  resolved away)` + kickoff date, and **any ambiguous join makes the tool exit nonzero**. Missing/
+  unreadable inputs also exit nonzero. Targeted checks: FBS-FCS, the named FBS-FBS games, week-0,
+  neutral-site, date-vs-numbered-week drift, pagination/response-size.
+- **Recommended correction (not applied):** add a `GameID` column to future `NCAAF_GameLines_History` +
+  `NCAAF_GameLineResults` rows so this reconciles on the stable id, not a legacy name/date join.
+- **Governance (provisional, Darrel):** any completed game with a valid market line belongs in the FBS
+  team's ATS record, FCS opponent included — do NOT narrow the expected universe to obtain sync; exclude
+  only no-line / cancelled / ungradeable games. Board stays fail-closed until a corrective is approved.
