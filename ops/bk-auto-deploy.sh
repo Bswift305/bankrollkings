@@ -39,14 +39,18 @@ REMOTE=$(git rev-parse "origin/$BRANCH")
 
 echo "deploy: ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
-# Prod's OWN refresh jobs write to tracked files (data/scenarios/*.json and other
-# regenerable data), which leaves the working tree dirty. `git pull --ff-only` then
-# fails on that dirty tree EVERY tick and silently strands the deploy on old code --
-# the exact failure this line fixes. That data is regenerable, so discard uncommitted
-# working-tree changes before pulling. This does NOT paper over a real DIVERGENCE:
-# local *commits* still make --ff-only fail loudly below, which is the case we do want
-# to catch. (`checkout -- .` only touches uncommitted changes, never committed history.)
-git checkout -- . 2>/dev/null || true
+# Do NOT auto-discard working-tree changes. Runtime-generated data now lives OUTSIDE the checkout
+# (BK_RUNTIME_DIR; see docs/cfb_runtime_data_corrective.md), so a clean tree is the normal case and the
+# old blanket `git checkout -- .` is gone -- it silently deleted EVERY uncommitted tracked change, not
+# just regenerable data. Instead: if any TRACKED file is modified (staged or unstaged; untracked files
+# excluded), HOLD the deploy -- print only the offending paths, leave the running service on the current
+# commit, and never delete or reset anything. An operator then inspects/commits/reverts deliberately.
+DIRTY=$(git status --porcelain --untracked-files=no)
+if [ -n "$DIRTY" ]; then
+    echo "deploy held: unexpected modified tracked files (not auto-discarded):"
+    printf '%s\n' "$DIRTY" | sed 's/^.. /  /'
+    exit 1
+fi
 
 # --ff-only so a diverged tree still fails loudly instead of silently merging.
 # Leave the service running on the old code if the pull fails.
