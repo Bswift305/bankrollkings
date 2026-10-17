@@ -112,8 +112,12 @@ runtime dir and the committed seeds are independent).
 3. **Deploy the untrack commit** (git rm --cached + ignore the exact 9) — lands under the OLD deploy
    script, which cleans the now-unwritten tracked copies and pulls the removal cleanly; runtime copies
    already exist, so no gap.
-4. **Reinstall the hardened deploy script LAST:**
-   `sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh` (tree is clean by now).
+4. **Reinstall the hardened deploy script — BLOCKED until the NFL scenario migration.**
+   `sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh` **must NOT run yet.** The
+   hardened script holds on any dirty tracked file, but the ~10 NFL daily-lane `data/scenarios/nfl_*.json`
+   are still tracked and still written by the prod NFL refresh, so the tree is NOT clean. Reinstalling now
+   would hold every deploy. Keep the old `git checkout -- .` script (now CFB-safe — CFB data lives outside
+   the checkout) until the separate NFL runtime migration untracks the NFL files; reinstall then.
 5. **Verify the daily refresh timer** runs independently, and **re-run `report_cfb_wave_sync.py`** — close
    CFB only at `synchronized: True`.
 

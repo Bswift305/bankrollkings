@@ -73,6 +73,12 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
         # Called with no year args -> the fetcher self-computes the rolling window.
         ("CFB game-lines history", ["fetch_cfbd_game_lines_history.py",
                                     "--season-type", "both"], 600),
+        # Grade the refreshed history into the per-team ATS/O-U results the Active ATS Wave reads
+        # (data/tracking/NCAAF_GameLineResults.csv). Previously only run by a manual backfill, so the
+        # wave's graded source lagged the slate and the board fail-closed on "missing decisions". Runs
+        # right after the history so each refresh re-grades this week's finished games. Gitignored
+        # output (tracking), unaffected by the deploy; cheap (reads one CSV, no API calls).
+        ("CFB graded game-line results", ["build_ncaaf_game_line_backfill.py"], 240),
         ("CFB current roster", ["fetch_cfbd_current_roster.py",
                                 "--year", str(season),
                                 "--fallback-year", str(last_season)], 900),
