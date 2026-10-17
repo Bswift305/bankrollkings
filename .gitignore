@@ -110,3 +110,15 @@ marketing/trial/CODES.txt
 
 # Generated season-markets data (built by fetch_season_markets_sportsdataio.py)
 data/season_markets/
+
+# CFB runtime-authoritative outputs — now written outside the checkout (bk_runtime; BK_RUNTIME_DIR).
+# Exactly the 9 daily-lane files (docs/cfb_runtime_data_corrective.md). Seeds/research stay tracked.
+data/scenarios/cfb_line_moves.json
+data/scenarios/cfb_2026_results.json
+data/scenarios/cfb_2026_ats.json
+data/scenarios/cfb_ats_streaks.json
+data/scenarios/cfb_rankings.json
+data/scenarios/cfb_coaches_2026.json
+data/scenarios/cfb_key_numbers.json
+data/scenarios/cfb_pace.json
+data/scenarios/cfb_weather.json
