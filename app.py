@@ -44522,6 +44522,31 @@ _CFB_WAVE_CACHE = {}
 _CFB_ATS_STREAK_CACHE = {}
 
 
+def _cfb_wave_team_key(name):
+    """WAVE-LOCAL canonical team identity = cff._resolve(normalize_ncaaf_team_name(name)).
+
+    Collapses the CFBD short/long name divergence (e.g. "App State" vs "Appalachian State",
+    "Southern Miss" vs "Southern Mississippi", "UConn" vs "Connecticut") that split the manifest-expected
+    keys from the graded keys and left the Active ATS Wave fail-closed on games that WERE graded. Used
+    ONLY by the wave's identity matching (docs/cfb_runtime_data_corrective.md). Does NOT modify
+    cff._resolve, rewrite stored history, or affect other CFB surfaces; display names stay original."""
+    import cfb_current_form as cff
+    return cff._resolve(normalize_ncaaf_team_name(name))
+
+
+def _cfb_wave_key_collisions(names):
+    """COLLISION GUARD. Given source team names that are DISTINCT teams (CFBD uses one name per team
+    within a feed), return {key: [names]} for any key that >1 distinct name maps to -- i.e. the helper
+    would MERGE two different teams. Callers fail closed on a non-empty result. Pre-ship proof runs this
+    over the raw CFBD universe + the ambiguous families; the wave also runs it per-feed at build time."""
+    by_key = {}
+    for n in names:
+        s = str(n or '').strip()
+        if s:
+            by_key.setdefault(_cfb_wave_team_key(s), set()).add(s)
+    return {k: sorted(v) for k, v in by_key.items() if len(v) > 1}
+
+
 def _cfb_active_cover_streaks(season=2026):
     """Per-team CURRENT consecutive graded ATS-cover streak from the chronological graded source
     (data/tracking/NCAAF_GameLineResults.csv, MarketType=SPREAD) — the frozen Active ATS Wave rule
@@ -44570,8 +44595,8 @@ def _cfb_cover_streaks_from_df(df, season):
         if state is None:
             continue
         date = str(r.get('GameDate') or '').strip()
-        rteam = cff._resolve(str(r.get('Team', '')))
-        ropp = cff._resolve(str(r.get('Opponent', '')))
+        rteam = _cfb_wave_team_key(str(r.get('Team', '')))     # short/long name divergence collapsed
+        ropp = _cfb_wave_team_key(str(r.get('Opponent', '')))
         key = (rteam, ropp, date)                 # opponent + kickoff distinguish same-week games
         if key in canon:
             if canon[key]['res'] == state:
@@ -44640,7 +44665,17 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
     if completed_week is None or completed_week < 1:
         ok = conflicts == 0
         return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None}
-    fbs = cff._fbs_teams()
+    # Wave-local canonicalization so the manifest-expected keys and the graded keys use ONE identity
+    # (collapses App State/Appalachian State etc.). COLLISION GUARD: within this single manifest feed
+    # each team has one CFBD name, so if the helper merges two distinct manifest names into one key, that
+    # is a team-merge -> FAIL CLOSED rather than corrupt a record.
+    man_names = [str(g.get(side, '')) for g in games for side in ('home', 'away') if g.get(side)]
+    collisions = _cfb_wave_key_collisions(man_names)
+    if collisions:
+        return {**base, 'synchronized': False, 'through_week': None,
+                'reason': f'team-key collision in manifest ({len(collisions)}): '
+                          + '; '.join(f"{k}<-{v}" for k, v in list(collisions.items())[:3])}
+    fbs = {_cfb_wave_team_key(t) for t in cff._fbs_teams()}   # re-key the FBS universe to the same identity
     expected, exclusions = set(), 0
     for g in games:
         wk = g.get('week')
@@ -44649,7 +44684,7 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
         if g.get('spread_now') is None and g.get('spread_open') is None:
             exclusions += 1                       # no-line / cancelled -> legitimate exclusion
             continue
-        h, a = cff._resolve(str(g.get('home', ''))), cff._resolve(str(g.get('away', '')))
+        h, a = _cfb_wave_team_key(str(g.get('home', ''))), _cfb_wave_team_key(str(g.get('away', '')))
         for team, opp in ((h, a), (a, h)):
             if team in fbs:
                 expected.add((int(wk), team, opp))   # (week, team, opponent) -- manifest grain
@@ -44693,7 +44728,7 @@ def build_cfb_wave_context():
         except (OSError, ValueError):
             return {}
     ats = _j(paths[1]).get('teams', {})
-    ats_by_resolved = {cff._resolve(s): a for s, a in ats.items()}  # OPTIONAL season context only
+    ats_by_resolved = {_cfb_wave_team_key(s): a for s, a in ats.items()}  # OPTIONAL season context only
     # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership iterates the AUTHORITATIVE
     # per-game streak index -- never the season aggregate, which must not be able to suppress membership.
     streak_data = _cfb_active_cover_streaks(2026)
@@ -44719,12 +44754,13 @@ def build_cfb_wave_context():
 
     game_of = {}
     for g in moves:
-        game_of[cff._resolve(str(g['home']))] = (g, True)
-        game_of[cff._resolve(str(g['away']))] = (g, False)
+        game_of[_cfb_wave_team_key(str(g['home']))] = (g, True)
+        game_of[_cfb_wave_team_key(str(g['away']))] = (g, False)
+    fbs_keys = {_cfb_wave_team_key(t) for t in cff._fbs_teams()}   # FBS universe in the wave identity
     ranks = _cfb_rankings()
     rank_lc = {k.lower(): v for k, v in ranks.items()}
     obs = cff._srs_observed()
-    obsrank = {t: i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
+    obsrank = {_cfb_wave_team_key(t): i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
 
     def _status(school):
         lc = cff._resolve(school)
@@ -44766,7 +44802,7 @@ def build_cfb_wave_context():
 
     plays, sinks = [], []
     for rteam, srec in streaks.items():     # iterate the AUTHORITATIVE streak index
-        if rteam not in cff._fbs_teams():
+        if rteam not in fbs_keys:
             continue
         name = srec['team_name']
         st = _status(name)

@@ -1,30 +1,18 @@
 #!/usr/bin/env python3
 """READ-ONLY four-stage reconciliation of the CFB manifest-vs-history coverage gap.
 
-The Active ATS Wave fail-closes on "missing decisions": completed, line-bearing FBS-team games in the
-runtime MANIFEST (cfb_line_moves.json) that are ungraded in NCAAF_GameLineResults.csv. This walks the
-full pipeline across FOUR artifacts and assigns each expected decision ONE mutually-exclusive reason,
-so we do NOT presume where the loss is.
+Loads FOUR artifacts and walks every expected manifest decision through
+  manifest -> raw -> normalized replay -> stored history -> graded results,
+charging it to the FIRST failing stage. Identity uses the WAVE-LOCAL key
+`app._cfb_wave_team_key` (cff._resolve(normalize_ncaaf_team_name(...))) so a re-run reconciles exactly
+as the wave now does. The id-less manifest/history/results are bridged by that key + week; raw games are
+indexed in BOTH orientations (home/away) so a road team's decision is never a false "absent from raw".
 
-Artifacts:
-  1. runtime manifest   — cfb_line_moves.json (what the wave actually expects; provenance printed)
-  2. fresh raw CFBD      — GET /lines?year=&seasonType=regular (the id-bearing source both feeds share)
-  3. stored history CSV  — data/historical/NCAAF_GameLines_History.csv (what the grader read)
-  4. graded results CSV  — data/tracking/NCAAF_GameLineResults.csv (what the wave counts)
-
-Stages (each expected manifest decision is charged to the FIRST stage it fails):
-  manifest -> raw -> normalized replay -> stored history -> graded results.
-
-Identity: anchored on the CFBD game `id` in the raw feed; the manifest, stored history and graded
-results carry NO id, so they are bridged by the canonical legacy key (season, week, resolved home,
-resolved away) with kickoff date as a disambiguator. EVERY ambiguous legacy join (one key -> >1 id, or
-a stored-history canonical collision) is counted and makes the tool exit NONZERO -- the id-less join is
-a disclosed legacy bridge, not a stable-id reconciliation. Adding a GameID column to future history +
-results rows is the recommended correction (NOT applied here).
-
-Read-only: one /lines GET + three local reads; writes nothing, changes no pipeline. Exits nonzero if any
-input is missing/unreadable or any legacy join is ambiguous. Run on prod:
+Reporting separates DISTINCT GAMES (by CFBD id) from TEAM-SIDE DECISIONS (two per game). Exits NONZERO
+on: a missing/unreadable input, an ambiguous legacy join, a genuine absent-from-raw, or a team-key
+collision. Read-only (one /lines GET + three local reads). Run on prod:
     sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && set -a && . .env && set +a && venv/bin/python diagnose_cfb_line_coverage.py --completed-week 6'
+    ... add --collision-audit to run ONLY the collision scan over the raw team universe.
 """
 from __future__ import annotations
 
@@ -39,11 +27,12 @@ from pathlib import Path
 
 import pandas as pd
 
+import app
 import bk_runtime
 import cfb_current_form as cff
 import fetch_cfbd_game_lines_history as histmod
-from app import normalize_ncaaf_team_name as _nz
 
+K = app._cfb_wave_team_key
 BASE_DIR = Path(__file__).resolve().parent
 HIST_CSV = BASE_DIR / "data" / "historical" / "NCAAF_GameLines_History.csv"
 RESULTS_CSV = BASE_DIR / "data" / "tracking" / "NCAAF_GameLineResults.csv"
@@ -72,27 +61,43 @@ def _start_date(g):
         return None
 
 
-def _canon(week, rhome, raway):
-    try:
-        return (int(week), rhome, raway)
-    except (TypeError, ValueError):
-        return None
+def _collision_audit(raw) -> int:
+    names = set()
+    for g in raw:
+        for side in ("homeTeam", "awayTeam"):
+            n = str(g.get(side) or "").strip()
+            if n:
+                names.add(n)
+    coll = app._cfb_wave_key_collisions(names)
+    print(f"collision audit: {len(names)} distinct raw CFBD team names -> {len(coll)} collisions")
+    for key, merged in sorted(coll.items()):
+        print(f"  [COLLISION] key {key!r} merges distinct teams: {merged}")
+    if coll:
+        print("[EXIT 2] team-key collisions present — the helper would merge distinct teams; FAIL CLOSED.")
+        return 2
+    print("[EXIT 0] no collisions; every distinct raw team name maps to a unique key.")
+    return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--completed-week", type=int, default=6)
+    ap.add_argument("--collision-audit", action="store_true", help="Run only the raw-universe collision scan.")
     args = ap.parse_args()
     from services.env_loader import load_local_env
     load_local_env(BASE_DIR)
     season, cw = args.season, args.completed_week
 
+    raw = _fetch_lines(season)
+    if args.collision_audit:
+        return _collision_audit(raw)
+
     print("=" * 74)
     print(f"CFB FOUR-STAGE LINE-COVERAGE RECONCILIATION — season {season}, thru wk {cw}")
     print("=" * 74)
 
-    # ---- 1. runtime manifest (what the wave expects) + provenance ---------------------------------
+    # 1. runtime manifest + provenance
     mpath = bk_runtime.scenario_read_path("cfb_line_moves.json")
     manifest = bk_runtime.read_json("cfb_line_moves.json", None)
     if not manifest or not isinstance(manifest.get("games"), list):
@@ -105,17 +110,19 @@ def main() -> int:
         print(f"[FATAL] manifest season {manifest.get('season')} != requested {season}")
         return 2
 
-    # ---- 2. fresh raw CFBD /lines (id-bearing) ----------------------------------------------------
-    raw = _fetch_lines(season)
-    print(f"raw /lines games       : {len(raw)} (single unpaginated GET, seasonType=regular)")
+    # 2. fresh raw CFBD /lines (id-bearing), indexed in BOTH orientations
+    print(f"raw /lines games       : {len(raw)} (single unpaginated GET)")
+    coll_rc = _collision_audit(raw)
     raw_by_canon = defaultdict(list)
     for g in raw:
-        c = _canon(g.get("week"), cff._resolve(str(g.get("homeTeam") or "")),
-                   cff._resolve(str(g.get("awayTeam") or "")))
-        if c:
-            raw_by_canon[c].append(g)
+        rh, ra = K(str(g.get("homeTeam") or "")), K(str(g.get("awayTeam") or ""))
+        wk = g.get("week")
+        if wk is None:
+            continue
+        raw_by_canon[(int(wk), rh, ra)].append(g)   # home-side decision
+        raw_by_canon[(int(wk), ra, rh)].append(g)   # away-side decision (both orientations)
 
-    # ---- 3. stored history CSV --------------------------------------------------------------------
+    # 3. stored history CSV
     if not HIST_CSV.exists():
         print(f"[FATAL] stored history CSV missing: {HIST_CSV}")
         return 2
@@ -125,17 +132,15 @@ def main() -> int:
         print(f"[FATAL] cannot read history CSV ({type(exc).__name__}: {exc})")
         return 2
     hdf = hdf[pd.to_numeric(hdf.get("Season"), errors="coerce") == season]
-    stored_hist = defaultdict(int)                 # canon -> count of stored rows WITH a home spread
+    stored_hist = Counter()
     for _, r in hdf.iterrows():
         if pd.isna(pd.to_numeric(r.get("HomeSpread"), errors="coerce")):
             continue
-        c = _canon(pd.to_numeric(r.get("Week"), errors="coerce"),
-                   cff._resolve(str(r.get("Home", ""))), cff._resolve(str(r.get("Away", ""))))
-        if c:
-            stored_hist[c] += 1
-    print(f"stored history rows    : {len(hdf)} ({season}); distinct line-bearing canon keys {len(stored_hist)}")
+        wk = pd.to_numeric(r.get("Week"), errors="coerce")
+        if pd.notna(wk):
+            stored_hist[(int(wk), K(str(r.get("Home", ""))), K(str(r.get("Away", ""))))] += 1
 
-    # ---- 4. graded results CSV --------------------------------------------------------------------
+    # 4. graded results CSV
     if not RESULTS_CSV.exists():
         print(f"[FATAL] graded results CSV missing: {RESULTS_CSV}")
         return 2
@@ -150,136 +155,98 @@ def main() -> int:
               & (pd.to_numeric(rdf.get("Line"), errors="coerce").notna())]
     graded = set()
     for _, r in rdf.iterrows():
-        c = _canon(pd.to_numeric(r.get("Week"), errors="coerce"),
-                   cff._resolve(str(r.get("Team", ""))), cff._resolve(str(r.get("Opponent", ""))))
-        if c:
-            graded.add(c)
-    print(f"graded decisions       : {len(rdf)} rows ({len(graded)} canon keys)")
+        wk = pd.to_numeric(r.get("Week"), errors="coerce")
+        if pd.notna(wk):
+            graded.add((int(wk), K(str(r.get("Team", ""))), K(str(r.get("Opponent", "")))))
 
-    # ---- normalized replay of the history fetcher on the SAME raw payload -------------------------
-    replay_df = histmod.normalize_payload(raw, season)
+    # normalized replay of the history fetcher on the SAME raw payload
     replay = set()
-    if not replay_df.empty:
-        for _, r in replay_df.iterrows():
+    rep_df = histmod.normalize_payload(raw, season)
+    if not rep_df.empty:
+        for _, r in rep_df.iterrows():
             if pd.isna(pd.to_numeric(r.get("HomeSpread"), errors="coerce")):
                 continue
-            c = _canon(pd.to_numeric(r.get("Week"), errors="coerce"),
-                       cff._resolve(str(r.get("Home", ""))), cff._resolve(str(r.get("Away", ""))))
-            if c:
-                replay.add(c)
+            wk = pd.to_numeric(r.get("Week"), errors="coerce")
+            if pd.notna(wk):
+                replay.add((int(wk), K(str(r.get("Home", ""))), K(str(r.get("Away", "")))))
 
-    fbs = cff._fbs_teams()
+    fbs = {K(t) for t in cff._fbs_teams()}
     if not fbs:
-        print("[FATAL] _fbs_teams() empty — cannot classify the FBS-team universe honestly.")
+        print("[FATAL] _fbs_teams() empty — cannot classify the FBS-team universe.")
         return 2
 
-    # ---- walk every EXPECTED manifest decision through the four stages ----------------------------
     buckets, samples = Counter(), defaultdict(list)
-    expected = ambiguous = 0
+    decisions = ambiguous = absent_raw = 0
+    games_seen = set()
     for mg in manifest["games"]:
         wk = mg.get("week")
         if wk is None or int(wk) > cw or not mg.get("completed") or mg.get("spread_now") is None:
             continue
-        home, away = str(mg.get("home") or ""), str(mg.get("away") or "")
-        rh, ra = cff._resolve(home), cff._resolve(away)
-        for team, opp, rteam, ropp in ((home, away, rh, ra), (away, home, ra, rh)):
+        rh, ra = K(str(mg.get("home") or "")), K(str(mg.get("away") or ""))
+        for rteam, ropp in ((rh, ra), (ra, rh)):
             if rteam not in fbs:
                 continue
-            expected += 1
+            decisions += 1
             key = (int(wk), rteam, ropp)
             raw_hits = raw_by_canon.get(key, [])
             raw_ids = {g.get("id") for g in raw_hits}
-            # charge to the FIRST failing stage
+            games_seen.update(raw_ids)
             if key in graded:
                 reason = "graded_ok"
-            elif len(raw_ids) > 1 or stored_hist.get(key, 0) > 1:
+            elif len(raw_ids) > 1:
                 reason = "ambiguous_legacy_join"
                 ambiguous += 1
             elif not raw_hits:
                 reason = "absent_from_current_raw"
-            elif _nz(home) == "" or _nz(away) == "":
-                reason = "dropped_in_normalize:name_blanked"
-            elif histmod._home_spread(histmod._first_line(raw_hits[0])) is None:
-                reason = "first_book_no_spread (other book has one)"
+                absent_raw += 1
             elif key not in replay:
-                reason = "dropped_in_normalize:other"
+                reason = "dropped_in_normalize"
             elif key not in stored_hist:
                 reason = "in_replay_absent_from_stored_history"
             else:
-                reason = "in_history_but_ungraded (grade/join)"
+                reason = "in_history_but_ungraded"
             buckets[reason] += 1
             if reason != "graded_ok":
                 g0 = raw_hits[0] if raw_hits else {}
                 samples[reason].append(
-                    f"id={g0.get('id')} wk{wk} {team} vs {opp} | "
-                    f"med={_median([l.get('spread') for l in (g0.get('lines') or [])])} "
-                    f"first={histmod._home_spread(histmod._first_line(g0)) if g0 else None} "
-                    f"replay={key in replay} stored={stored_hist.get(key, 0)} graded=False")
+                    f"id={g0.get('id')} wk{wk} {mg.get('home')}/{mg.get('away')} side={rteam} "
+                    f"replay={key in replay} stored={stored_hist.get(key, 0)}")
 
-    # ---- manifest staleness cross-check: raw expected games NOT in the manifest -------------------
-    man_canon = set()
-    for mg in manifest["games"]:
-        c = _canon(mg.get("week"), cff._resolve(str(mg.get("home") or "")),
-                   cff._resolve(str(mg.get("away") or "")))
-        if c:
-            man_canon.add(c)
-    raw_not_in_manifest = 0
-    for g in raw:
-        wk = g.get("week")
-        if wk is None or int(wk) > cw or g.get("homeScore") is None:
-            continue
-        if _median([l.get("spread") for l in (g.get("lines") or [])]) is None:
-            continue
-        rh = cff._resolve(str(g.get("homeTeam") or ""))
-        ra = cff._resolve(str(g.get("awayTeam") or ""))
-        if rh in fbs and (int(wk), rh, ra) not in man_canon:
-            raw_not_in_manifest += 1
-
+    print(f"stored history rows    : {len(hdf)} ({season})")
+    print(f"graded decisions       : {len(rdf)} rows")
     print("-" * 74)
-    print(f"expected FBS-team decisions (from manifest): {expected}")
+    print(f"expected team-side decisions : {decisions}  across {len(games_seen)} distinct game ids")
     print("RECONCILIATION BY STAGE/REASON (mutually exclusive):")
     for reason, n in buckets.most_common():
         print(f"  {n:4}  {reason}")
         for s in samples.get(reason, [])[:8]:
             print(f"          {s}")
     print("-" * 74)
-    print("CROSS-CHECKS (directive point 4):")
-    print(f"  absent_from_runtime_manifest : {raw_not_in_manifest}  "
-          "(fresh-raw completed line-bearing FBS games missing from the manifest snapshot)")
+
+    # cross-checks (directive point 4)
     wk0 = sum(1 for g in raw if g.get("week") == 0)
     starts = [d for d in (_start_date(g) for g in raw) if d]
     s0 = min(starts) if starts else None
-    datewk = 0
-    if s0:
-        for g in raw:
-            sd, wk = _start_date(g), g.get("week")
-            if sd and wk is not None and abs(((sd - s0).days // 7 + 1) - int(wk)) > 1:
-                datewk += 1
-    print(f"  week-0 games in raw          : {wk0}")
-    print(f"  date-vs-numbered-week drift  : {datewk}")
-    print(f"  pagination/truncation        : single unpaginated GET; {len(raw)} games")
-    print("  named FBS-FBS probes:")
-    named = {"washington|washington state", "kansas|missouri", "miami (oh)|pittsburgh",
-             "auburn|southern miss", "app state|maine", "kansas|long island university"}
-    for g in raw:
-        h, a = str(g.get("homeTeam") or "").lower(), str(g.get("awayTeam") or "").lower()
-        if f"{h}|{a}" in named or f"{a}|{h}" in named:
-            lines = g.get("lines") or []
-            key = (int(g.get("week")), cff._resolve(h), cff._resolve(a))
-            print(f"    id={g.get('id')} wk{g.get('week')} {g.get('awayTeam')} @ {g.get('homeTeam')} "
-                  f"books={len(lines)} median={_median([l.get('spread') for l in lines])} "
-                  f"first={histmod._home_spread(histmod._first_line(g))} "
-                  f"replay={key in replay} stored={stored_hist.get(key, 0)} graded={key in graded} "
-                  f"neutral={g.get('neutralSite')}")
+    datewk = sum(1 for g in raw if _start_date(g) and g.get("week") is not None and s0
+                 and abs(((_start_date(g) - s0).days // 7 + 1) - int(g.get("week"))) > 1)
+    print(f"week-0 games in raw          : {wk0}")
+    print(f"date-vs-numbered-week drift  : {datewk}")
+    print(f"pagination/truncation        : single unpaginated GET; {len(raw)} games")
     print("-" * 74)
-    print("RECOMMENDED CORRECTION (not applied): add a GameID column to future NCAAF_GameLines_History +"
-          " NCAAF_GameLineResults rows so this reconciles on the stable id, not a legacy name/date join.")
+
+    rc = 0
+    if coll_rc:
+        print("[EXIT] team-key collisions present (see collision audit above).")
+        rc = 2
+    if absent_raw:
+        print(f"[EXIT] {absent_raw} genuine absent_from_current_raw decision(s) — not a clean reconciliation.")
+        rc = max(rc, 1)
     if ambiguous:
-        print(f"[EXIT 1] {ambiguous} ambiguous legacy join(s) — id-less bridge is unreliable for those; "
-              "treat the table as provisional until GameID is added.")
-        return 1
-    print("[EXIT 0] no ambiguous legacy joins; reconciliation is id-bridged and unambiguous.")
-    return 0
+        print(f"[EXIT] {ambiguous} ambiguous legacy join(s) — id-less bridge unreliable for those.")
+        rc = max(rc, 1)
+    if rc == 0:
+        print("[EXIT 0] clean: no collisions, no absent-from-raw, no ambiguous joins.")
+    return rc
 
 
 if __name__ == "__main__":

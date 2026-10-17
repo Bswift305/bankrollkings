@@ -43,11 +43,10 @@ def _streaks(cases):
     return {team: per.get(cff._resolve(team), {}) for team in cases}, d['through']
 
 
-def _patch_fbs():
+def _patch_fbs(teams=('Georgia', 'Alabama', 'Oregon', 'Ohio State', 'Auburn')):
     """Make the FBS universe deterministic for the sync/membership fixtures. cfb_current_form derives
     _fbs_teams() from cfb_2026_results.json, which now lives in the runtime dir (absent in a clean
     checkout), so pin it to the fixture teams here -- the sync LOGIC is what's under test, not the feed."""
-    teams = ('Georgia', 'Alabama', 'Oregon', 'Ohio State', 'Auburn')
     fn = lambda: frozenset(cff._resolve(t) for t in teams)  # noqa: E731
     fn.cache_clear = lambda: None                            # cff.clear_cache() calls this
     cff._fbs_teams = fn
@@ -274,6 +273,40 @@ def qc_alias_resolution():
     return []
 
 
+def qc_canon_short_long_reconciles():
+    """Wave-local canonicalization: a manifest game under the SHORT CFBD name (App State) reconciles with
+    a graded row under the LONG name (Appalachian State) -- synchronized, 0 missing; the same game under
+    BOTH names collapses (no double-count); an FBS-vs-FCS game retains the FBS side."""
+    issues = []
+    _patch_fbs(('Appalachian State', 'Marshall', 'Southern Mississippi'))
+
+    def row(team, opp, state='Hit', wk=1, date='2026-08-30 18:00:00+00:00', line=-3.5):
+        return {'Sport': 'NCAAF', 'Season': 2026, 'Week': wk, 'GameDate': date, 'Team': team,
+                'Opponent': opp, 'MarketType': 'SPREAD', 'OutcomeState': state, 'Line': line}
+
+    # (a) graded uses LONG name; manifest uses SHORT name -> reconciles. The real grader writes BOTH
+    # team-side rows per game, so include the reciprocal (both teams are FBS here).
+    d = app._cfb_cover_streaks_from_df(pd.DataFrame([row('Appalachian State', 'Marshall', 'Hit'),
+                                                     row('Marshall', 'Appalachian State', 'Miss')]), 2026)
+    games = [{'completed': True, 'week': 1, 'home': 'App State', 'away': 'Marshall', 'spread_now': -3.5}]
+    sync = app._cfb_ats_sync(d, _lm(games), 1, 2026)
+    if not sync['synchronized'] or sync['missing_count'] != 0:
+        issues.append(f'short/long name did not reconcile: {sync}')
+    # (b) same game under BOTH names in the graded df -> collapses to one canonical, no double-count
+    d2 = app._cfb_cover_streaks_from_df(
+        pd.DataFrame([row('Appalachian State', 'Marshall'), row('App State', 'Marshall')]), 2026)
+    rec = d2['per'].get(cff._resolve('Appalachian State'), {})
+    if rec.get('decisions') != 1 or rec.get('cover_streak') != 1 or d2['collapsed'] != 1:
+        issues.append(f'short/long double-counted: decisions={rec.get("decisions")} collapsed={d2["collapsed"]}')
+    # (c) FBS-vs-FCS: FBS side graded under the long name reconciles with the manifest short name
+    d3 = app._cfb_cover_streaks_from_df(pd.DataFrame([row('Southern Mississippi', 'Alcorn State')]), 2026)
+    g3 = [{'completed': True, 'week': 1, 'home': 'Southern Miss', 'away': 'Alcorn State', 'spread_now': -20.0}]
+    s3 = app._cfb_ats_sync(d3, _lm(g3), 1, 2026)
+    if not s3['synchronized'] or s3['missing_count'] != 0:
+        issues.append(f'FBS-vs-FCS FBS side did not reconcile: {s3}')
+    return issues
+
+
 def qc_fail_closed_real():
     app._CFB_WAVE_CACHE.clear()
     ctx = app.build_cfb_wave_context()
@@ -286,7 +319,9 @@ CHECKS = [('truth_table', qc_truth_table), ('edges', qc_edges),
           ('canonical_identity', qc_canonical_identity),
           ('sync_completeness', qc_sync_completeness), ('sync_lineage', qc_sync_lineage),
           ('membership_iterates_streaks', qc_membership_iterates_streaks),
-          ('alias_resolution', qc_alias_resolution), ('fail_closed_real', qc_fail_closed_real)]
+          ('alias_resolution', qc_alias_resolution),
+          ('canon_short_long_reconciles', qc_canon_short_long_reconciles),
+          ('fail_closed_real', qc_fail_closed_real)]
 
 
 def main() -> int:

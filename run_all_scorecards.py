@@ -54,6 +54,11 @@ SCORECARDS = [
     # cover streak >= 3 (not season cover%); push interrupts; bye/ungraded ignored; loss resets;
     # source-through-week fail-closed; model-independent membership; deterministic streak-desc order.
     ("CFB ATS Wave Admission QC", "qc_cfb_ats_wave_admission.py", 120),
+    # CFB wave-local team canonicalization + COLLISION AUDIT: the short/long CFBD name helper
+    # (_cfb_wave_team_key) merges aliases (App State/Appalachian State) but never collapses distinct
+    # teams (Miami FL/OH, USC/South Carolina, the Louisiana schools, Washington/Washington State, FCS
+    # lookalikes). Idempotent; FBS-FCS side retained. Gate for the manifest<->graded reconciliation fix.
+    ("CFB Wave Canon QC", "qc_cfb_wave_canon.py", 120),
     # CFB runtime-data resolver + deploy hardening: runtime copy precedence, live-file fail-closed (no
     # stale seed), atomic-write failure preserves the prior version, the deploy dirty-tracked guard, and
     # a fresh checkout starting safely before its first refresh. No network (fixtures).

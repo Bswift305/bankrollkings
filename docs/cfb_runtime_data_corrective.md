@@ -151,3 +151,28 @@ completed, line-bearing FBS-team games in the manifest that are ungraded. Read-o
 - **Governance (provisional, Darrel):** any completed game with a valid market line belongs in the FBS
   team's ATS record, FCS opponent included — do NOT narrow the expected universe to obtain sync; exclude
   only no-line / cancelled / ungradeable games. Board stays fail-closed until a corrective is approved.
+
+### Root cause (CONFIRMED by the four-stage reconciliation) + Option-1 fix
+The 67 are neither a coverage gap nor a normalization drop: the games ARE in raw + history. They fail to
+match because the two sides of the sync canonicalize names with **two different canonicalizers that
+disagree** for ~a dozen teams — the manifest/expected side resolved the raw CFBD name
+(`cff._resolve("App State")="app state"`), while the graded side resolved the history's
+`normalize_ncaaf_team_name`-expanded name (`cff._resolve("Appalachian State")="appalachian state"`).
+Confirmed diverging teams include App State, Southern Miss, UConn, UL Monroe, UT Martin, Miami (OH).
+
+**Option 1 (wave-local, shipped):** one helper `_cfb_wave_team_key(name) =
+cff._resolve(normalize_ncaaf_team_name(name))` applied to EVERY wave identity — manifest home/away,
+graded team/opponent, active-streak sequences, expected-decision keys, and the FBS-membership set
+(re-keyed). Display names stay original; `cff._resolve`, stored history, and other CFB surfaces are
+untouched. **Collision guard:** proven pre-ship by `qc_cfb_wave_canon.py` (aliases merge; idempotent;
+distinct teams incl. Miami FL/OH, USC/South Carolina, the Louisiana schools, Washington/Washington
+State and FCS lookalikes never collapse; FBS-FCS side retained), and the raw-universe
+`diagnose_cfb_line_coverage.py --collision-audit`; the wave also runs a per-feed collision check at build
+time and **fails closed** if any manifest key would merge two distinct teams. QC: the admission QC now
+asserts short(manifest)↔long(graded) reconciliation, no double-count, and FBS-FCS retention. The
+diagnostic was corrected (both-orientation raw index so a road team isn't a false "absent from raw";
+distinct game ids reported separately from team-side decisions; genuine absent-from-raw / ambiguity /
+collision all exit nonzero). **Recommended follow-up (not applied): a `GameID` column** on future
+history + results rows to reconcile on the stable id instead of the legacy name/date bridge. Board stays
+fail-closed until prod reruns `report_cfb_wave_sync.py` → `synchronized: True` with zero missing,
+collisions, malformed, duplicates, and overdue.
