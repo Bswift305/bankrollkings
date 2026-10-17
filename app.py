@@ -44557,10 +44557,10 @@ CFB_FBS_CONFERENCES = frozenset({
 # else (missing / misspelled / newly renamed) is UNKNOWN, NOT non-FBS, and fails sync closed so a renamed
 # conference can never silently drop an FBS team. YEARLY CHORE alongside the FBS set.
 CFB_NON_FBS_CONFERENCES = frozenset({
-    'Big Sky', 'Coastal Athletic Association', 'CAA', 'Missouri Valley Football', 'MVFC', 'Southern',
-    'Southwestern Athletic', 'SWAC', 'Mid-Eastern Athletic', 'MEAC', 'Patriot', 'Pioneer', 'Ivy League',
-    'Ivy', 'Big South-OVC', 'Northeast', 'NEC', 'United Athletic', 'UAC', 'Southland', 'FCS Independents',
-    'Atlantic Sun', 'ASUN',
+    'Big Sky', 'Coastal Athletic Association', 'Coastal Athletic', 'CAA', 'Missouri Valley Football',
+    'MVFC', 'Southern', 'Southwestern Athletic', 'SWAC', 'Mid-Eastern Athletic', 'MEAC', 'Patriot',
+    'Pioneer', 'Ivy League', 'Ivy', 'Big South-OVC', 'OVC', 'Ohio Valley', 'Northeast', 'NEC',
+    'United Athletic', 'UAC', 'Southland', 'FCS Independents', 'Atlantic Sun', 'ASUN',
 })
 
 
