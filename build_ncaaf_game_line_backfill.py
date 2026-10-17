@@ -176,6 +176,31 @@ def main() -> int:
         print("[FAIL] grader produced 0 rows; leaving the existing results file untouched.")
         return 2
     import bk_runtime
+    from datetime import date as _date
+    today = _date.today()
+    cur_season = today.year if today.month >= 8 else today.year - 1
+    # STRONG pre-publish validation: every AUTHORITATIVE current-season SPREAD result must have a
+    # canonical GameID, a valid TeamSide, exact Team/Opponent names, a valid week/date, a numeric line,
+    # and a conference value present. Else leave the last good results untouched.
+    cur = results[(results["MarketType"].astype(str).str.upper() == "SPREAD")
+                  & (pd.to_numeric(results["Season"], errors="coerce") == cur_season)]
+    bad = 0
+    for _, r in cur.iterrows():
+        gid = bk_runtime.cfb_game_id(r.get("GameID"))
+        side = str(r.get("TeamSide") or "").strip().upper()
+        team = str(r.get("Team") or "").strip()
+        opp = str(r.get("Opponent") or "").strip()
+        wk = pd.to_numeric(r.get("Week"), errors="coerce")
+        dt = str(r.get("GameDate") or "").strip()
+        line = pd.to_numeric(r.get("Line"), errors="coerce")
+        conf = str(r.get("Conf") or "").strip()
+        if (gid is None or side not in ("HOME", "AWAY") or not team or not opp or pd.isna(wk)
+                or not dt or pd.isna(line) or not conf or conf.lower() == "nan"):
+            bad += 1
+    if bad:
+        print(f"[FAIL] {bad} current-season ({cur_season}) result rows fail validation "
+              "(GameID/side/names/week/date/line/conference); leaving the existing file untouched.")
+        return 2
     bk_runtime.write_csv_atomic(results, OUTPUT_PATH)      # temp + fsync + os.replace
     resolved = int(results["OutcomeState"].isin(["Hit", "Miss", "Push"]).sum())
     with_id = int(results["GameID"].apply(lambda v: bk_runtime.cfb_game_id(v) is not None).sum()) \

@@ -172,15 +172,37 @@ def main() -> int:
 
     output = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     output_path = Path(args.output)
-    # Validate before publishing: a non-empty frame with the identity columns. An empty/invalid fetch
-    # must NOT replace the last good history (which would then be graded as stale/missing).
-    required = {"GameID", "HomeTeamRaw", "AwayTeamRaw", "Week", "Season"}
+    required = {"GameID", "HomeTeamRaw", "AwayTeamRaw", "HomeConf", "AwayConf", "Week", "Season", "Date"}
     if output.empty or not required.issubset(output.columns):
-        print(f"[FAIL] history fetch produced {len(output)} rows / missing {required - set(output.columns)};"
-              f" leaving the existing file untouched.")
+        print(f"[FAIL] history fetch produced {len(output)} rows / missing "
+              f"{required - set(output.columns)}; leaving the existing file untouched.")
+        return 2
+    # STRONG pre-publish validation: every AUTHORITATIVE current-season row must carry a canonical
+    # GameID, exact provider names, a valid week/date, and a conference value PRESENT for each side
+    # (an UNKNOWN-but-present conf may still publish for diagnosis; a NULL conf may not). If any fails,
+    # leave the last good history untouched rather than grade a malformed generation.
+    from datetime import date as _date
+    today = _date.today()
+    cur_season = today.year if today.month >= 8 else today.year - 1
+    cur = output[pd.to_numeric(output["Season"], errors="coerce") == cur_season]
+    bad = 0
+    for _, r in cur.iterrows():
+        gid = bk_runtime.cfb_game_id(r.get("GameID"))
+        home = str(r.get("HomeTeamRaw") or "").strip()
+        away = str(r.get("AwayTeamRaw") or "").strip()
+        wk = pd.to_numeric(r.get("Week"), errors="coerce")
+        dt = str(r.get("Date") or "").strip()
+        hc = str(r.get("HomeConf") or "").strip()
+        ac = str(r.get("AwayConf") or "").strip()
+        if (gid is None or not home or not away or pd.isna(wk) or not dt
+                or not hc or hc.lower() == "nan" or not ac or ac.lower() == "nan"):
+            bad += 1
+    if bad:
+        print(f"[FAIL] {bad} current-season ({cur_season}) history rows fail validation "
+              "(GameID/names/week/date/conference); leaving the existing file untouched.")
         return 2
     bk_runtime.write_csv_atomic(output, output_path)       # temp + fsync + os.replace
-    print(f"Wrote {len(output)} rows to {output_path}")
+    print(f"Wrote {len(output)} rows to {output_path} ({len(cur)} current-season {cur_season} rows valid)")
     return 0
 
 

@@ -44620,25 +44620,37 @@ def _cfb_cover_streaks_from_df(df, season):
     df = df[(df['MarketType'].astype(str).str.upper() == 'SPREAD')
             & (pd.to_numeric(df['Season'], errors='coerce') == season)]
     df = df[df['OutcomeState'].astype(str).isin(['Hit', 'Miss', 'Push'])]   # graded decisions only
-    df = df[pd.to_numeric(df['Line'], errors='coerce').notna()]             # must have a line
-    df = df.assign(Week=pd.to_numeric(df['Week'], errors='coerce')).dropna(subset=['Week'])
+
+    def _present(v):
+        return not (v is None or (isinstance(v, float) and pd.isna(v))
+                    or str(v).strip() == '' or str(v).strip().lower() in ('nan', 'none'))
+
     _m = {'Hit': 'W', 'Miss': 'L', 'Push': 'P'}
     canon = {}            # (game_id, side) -> {'res','week','team','opp','conf','date','line'}
     gid_identity = {}     # game_id -> (home/away teams + date) for cross-row consistency
-    conflicts, collapsed, ineligible = [], 0, 0
+    conflicts, collapsed, ineligible, malformed = [], 0, 0, 0
     for _, r in df.iterrows():
         state = _m.get(str(r.get('OutcomeState')))
         if state is None:
             continue
-        gid = bk_runtime.cfb_game_id(r.get('GameID'))
+        raw_gid, raw_line, raw_week = r.get('GameID'), r.get('Line'), r.get('Week')
+        gid = bk_runtime.cfb_game_id(raw_gid)
         side = str(r.get('TeamSide') or '').strip().upper()
         team = str(r.get('Team', '')).strip()
         opp = str(r.get('Opponent', '')).strip()
-        if gid is None or side not in ('HOME', 'AWAY') or not team or not opp:
-            ineligible += 1                       # no stable identity / missing side or names
+        line = pd.to_numeric(raw_line, errors='coerce')
+        week = pd.to_numeric(raw_week, errors='coerce')
+        # MALFORMED: a value is PRESENT but unusable (distinct from truly-missing -> ineligible).
+        if (_present(raw_gid) and gid is None) or (_present(raw_line) and pd.isna(line)) \
+                or (_present(raw_week) and pd.isna(week)):
+            malformed += 1
+            continue
+        if gid is None or side not in ('HOME', 'AWAY') or not team or not opp or pd.isna(line) \
+                or pd.isna(week):
+            ineligible += 1                       # no stable identity / missing side, names, line, week
             continue
         date = str(r.get('GameDate') or '').strip()
-        line = round(float(pd.to_numeric(r.get('Line'), errors='coerce')), 2)
+        line = round(float(line), 2)
         ident = (team if side == 'HOME' else opp, opp if side == 'HOME' else team, date)
         if gid in gid_identity and gid_identity[gid] != ident:
             conflicts.append((gid, 'identity'))   # same GameID, inconsistent teams/kickoff -> fail closed
@@ -44651,7 +44663,7 @@ def _cfb_cover_streaks_from_df(df, season):
             else:
                 conflicts.append(key)              # conflicting duplicate -> fail closed
             continue
-        canon[key] = {'res': state, 'week': int(r['Week']), 'team': team, 'opp': opp,
+        canon[key] = {'res': state, 'week': int(week), 'team': team, 'opp': opp,
                       'conf': r.get('Conf'), 'date': date, 'line': line}
     by_team = {}
     for (gid, side), v in canon.items():
@@ -44681,7 +44693,8 @@ def _cfb_cover_streaks_from_df(df, season):
             'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': max(v['week'] for v in lst),
         }
     return {'per': per, 'through': through, 'graded_keys': graded_keys,
-            'conflicts': conflicts, 'collapsed': collapsed, 'ineligible': ineligible}
+            'conflicts': conflicts, 'collapsed': collapsed, 'ineligible': ineligible,
+            'malformed': malformed}
 
 
 def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
@@ -44698,22 +44711,24 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
     through_week is set only when completeness passes."""
     meta_season = (line_moves or {}).get('season')
     games = (line_moves or {}).get('games')
-    conflicts = len((streak_data or {}).get('conflicts', []))
+    conflicting_dups = len((streak_data or {}).get('conflicts', []))
     ineligible = int((streak_data or {}).get('ineligible', 0))
+    malformed = int((streak_data or {}).get('malformed', 0))
     graded_keys = (streak_data or {}).get('graded_keys', set())
     base = {'manifest_season': meta_season, 'manifest_updated': (line_moves or {}).get('updated'),
-            'completed_week': completed_week, 'conflicts': conflicts, 'ineligible': ineligible,
-            'duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
+            'completed_week': completed_week, 'conflicting_duplicates': conflicting_dups,
+            'ineligible': ineligible, 'malformed_rows': malformed,
+            'exact_duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
             'graded_decisions': len(graded_keys), 'expected_decisions': 0, 'exclusions': 0,
-            'missing': [], 'missing_count': 0, 'manifest_missing_gameid': 0,
+            'missing': [], 'missing_count': 0, 'overdue_decisions': 0, 'manifest_missing_gameid': 0,
             'unknown_conference': 0, 'manifest_dup_gameid': 0}
     if meta_season != season or not isinstance(games, list):
         return {**base, 'synchronized': False, 'through_week': None,
                 'reason': 'manifest season/lineage invalid'}
     if completed_week is None or completed_week < 1:
-        ok = conflicts == 0 and ineligible == 0
+        ok = conflicting_dups == 0 and ineligible == 0 and malformed == 0
         return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None,
-                'reason': None if ok else 'conflicts/ineligible with no completed week'}
+                'reason': None if ok else 'conflicts/ineligible/malformed with no completed week'}
     expected, exclusions, man_missing_gid, unknown_conf = set(), 0, 0, 0
     gid_ident = {}                                # game_id -> (home, away) for manifest-dup detection
     man_dup = 0
@@ -44742,17 +44757,19 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
             else:
                 unknown_conf += 1                 # UNKNOWN conf in a completed line-bearing game -> fail
     missing = sorted(expected - graded_keys)
-    synchronized = (not missing and conflicts == 0 and ineligible == 0 and man_missing_gid == 0
-                    and unknown_conf == 0 and man_dup == 0)
+    synchronized = (not missing and conflicting_dups == 0 and ineligible == 0 and malformed == 0
+                    and man_missing_gid == 0 and unknown_conf == 0 and man_dup == 0)
     reason = None
     if not synchronized:
         why = []
         if missing:
-            why.append(f'{len(missing)} missing decisions')
-        if conflicts:
-            why.append(f'{conflicts} conflicts')
+            why.append(f'{len(missing)} missing/overdue decisions')
+        if conflicting_dups:
+            why.append(f'{conflicting_dups} conflicting duplicates')
         if ineligible:
-            why.append(f'{ineligible} graded rows ineligible (no GameID / side / names)')
+            why.append(f'{ineligible} graded rows ineligible (no GameID / side / names / line / week)')
+        if malformed:
+            why.append(f'{malformed} malformed graded rows')
         if man_missing_gid:
             why.append(f'{man_missing_gid} manifest games without GameID')
         if unknown_conf:
@@ -44765,7 +44782,8 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
             'expected_decisions': len(expected), 'graded_decisions': len(graded_keys),
             'exclusions': exclusions, 'manifest_missing_gameid': man_missing_gid,
             'unknown_conference': unknown_conf, 'manifest_dup_gameid': man_dup,
-            'missing': missing[:40], 'missing_count': len(missing), 'reason': reason}
+            'missing': missing[:40], 'missing_count': len(missing),
+            'overdue_decisions': len(missing), 'reason': reason}
 
 
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',

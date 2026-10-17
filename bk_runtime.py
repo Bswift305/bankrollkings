@@ -106,34 +106,39 @@ def write_csv_atomic(df, path):
 
 def cfb_game_id(value):
     """Canonical CFBD game-id serialization -- the ONE parser used by the manifest, history, grader, sync
-    and diagnostics so CSV type inference (12345 vs '12345' vs 12345.0) never splits an identity.
+    and diagnostics so CSV type inference (123 vs '123' vs 123.0 vs '00123') never splits an identity.
 
-    Accepts an integral numeric or string; emits one canonical digit string. REJECTS (returns None):
-    null/empty/'nan', fractional values, non-numeric, scientific notation (precision-lossy), and integers
-    beyond exact float range. A rejected id is ineligible for authoritative synchronization."""
+    CFBD ids are POSITIVE DECIMAL INTEGERS. Emits one canonical string (leading zeros stripped):
+        123, 123.0, '123', '00123', '123.0'  ->  '123'
+    REJECTS (returns None): zero/negative, fractional, scientific notation, overflow (>= 2**63), null,
+    empty, 'nan'/'none'/'null', Boolean, and any malformed/non-numeric value. A rejected id is ineligible
+    for authoritative synchronization."""
     import math
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return str(value) if 0 <= value < (1 << 63) or -(1 << 63) < value < 0 else None
-    if isinstance(value, float):
+        iv = value
+    elif isinstance(value, float):
         if math.isnan(value) or math.isinf(value) or value != int(value) or abs(value) >= (1 << 53):
             return None
-        return str(int(value))
-    s = str(value).strip()
-    if not s or s.lower() in ('nan', 'none', 'null'):
+        iv = int(value)
+    else:
+        s = str(value).strip()
+        if not s or s.lower() in ('nan', 'none', 'null') or 'e' in s.lower():
+            return None                       # empty / sentinel / scientific notation -> reject
+        if s.isdigit():                       # unsigned integer (strips leading zeros via int())
+            iv = int(s)
+        else:
+            try:                              # tolerate a trailing '.0' from a float-typed CSV column
+                f = float(s)
+            except ValueError:
+                return None
+            if math.isnan(f) or f != int(f) or abs(f) >= (1 << 53):
+                return None
+            iv = int(f)
+    if iv <= 0 or iv >= (1 << 63):            # positive, non-overflow
         return None
-    if 'e' in s.lower():            # scientific notation -> reject (CFBD never emits it; lossy risk)
-        return None
-    if s.lstrip('-').isdigit():
-        return s
-    try:                            # tolerate a trailing '.0' from float-typed CSV columns
-        f = float(s)
-    except ValueError:
-        return None
-    if math.isnan(f) or f != int(f) or abs(f) >= (1 << 53):
-        return None
-    return str(int(f))
+    return str(iv)
 
 
 def publish_json(name: str, obj) -> Path:

@@ -82,10 +82,11 @@ def main() -> int:
 
     print(f"raw /lines games        : {len(raw)}")
     for k in ("completed_week", "expected_decisions", "graded_decisions", "exclusions",
-              "duplicates_collapsed", "conflicts", "ineligible", "manifest_missing_gameid",
-              "missing_count", "synchronized", "reason"):
+              "exact_duplicates_collapsed", "conflicting_duplicates", "malformed_rows", "ineligible",
+              "manifest_missing_gameid", "manifest_dup_gameid", "unknown_conference",
+              "missing_count", "overdue_decisions", "synchronized", "reason"):
         if k in sync:
-            print(f"  {k:24}: {sync[k]}")
+            print(f"  {k:26}: {sync[k]}")
 
     miss = sync.get("missing") or []
     if miss:

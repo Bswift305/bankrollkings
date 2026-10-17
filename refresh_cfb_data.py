@@ -146,15 +146,22 @@ def main() -> int:
             graded_ok = True
 
     # Run the ATS synchronization verifier after SUCCESSFUL grading (a good grade is not a synced board).
+    # The verifier EXIT CODE gates the refresh: nonzero (not synchronized / any integrity counter set) or
+    # a failure to run (exception/timeout) is a refresh FAILURE, not a warning.
     if graded_ok:
-        print("[RUN ] CFB ATS synchronization verifier")
+        verifier = "CFB ATS synchronization verifier"
+        print(f"[RUN ] {verifier}")
         try:
             v = subprocess.run([sys.executable, str(BASE_DIR / "report_cfb_wave_sync.py")],
                                cwd=str(BASE_DIR), timeout=180, capture_output=True, text=True)
-            for line in (v.stdout or "").strip().splitlines():
+            for line in (v.stdout or v.stderr or "").strip().splitlines():
                 print(f"       {line}")
-        except Exception as exc:  # noqa
-            print(f"[WARN] verifier did not run: {type(exc).__name__}: {exc}")
+            if v.returncode != 0:
+                print(f"[FAIL] {verifier}: exit {v.returncode}.")
+                failures.append(verifier)
+        except Exception as exc:  # noqa  (timeout/other -> a failure, never a warning)
+            print(f"[FAIL] {verifier}: {type(exc).__name__}: {exc}")
+            failures.append(verifier)
 
     if failures:
         print(f"CFB refresh finished with {len(failures)} failure(s): {', '.join(failures)}")

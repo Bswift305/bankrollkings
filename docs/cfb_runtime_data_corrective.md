@@ -237,3 +237,24 @@ Fail-closed validation added for: missing provider team names, missing TeamSide,
 teams/date for one GameID, duplicate manifest GameIDs with different identities, UNKNOWN conference,
 history-failure-before-grading, and overlay abstention (never misattribution). Tests:
 `qc_cfb_ats_wave_admission.py` (15 checks).
+
+### Operability patch (final, pre-regeneration)
+- **`report_cfb_wave_sync.py` exits nonzero** when not synchronized, any declared integrity counter is
+  nonzero, the rendered context flips unsynchronized, or `overlay_misattributions` is not exactly 0 —
+  so the refresh can enforce the gate.
+- **`refresh_cfb_data.py` honors the verifier exit code**: a nonzero verifier (or an exception/timeout
+  running it) is a refresh FAILURE, not a warning, so the refresh command itself exits nonzero.
+- **`cfb_game_id` frozen**: positive decimal integers only; `123 / 123.0 / '123' / '00123' / '123.0' ->
+  '123'`; rejects zero/negative, fractional, scientific, overflow, null, Boolean, malformed.
+- **Declared counters all reported**: `malformed_rows`, `overdue_decisions`, `exact_duplicates_collapsed`,
+  `conflicting_duplicates` (plus ineligible / manifest_missing_gameid / manifest_dup_gameid /
+  unknown_conference / missing). `exact_duplicates_collapsed` is informational (identical repeat is
+  harmless); every other counter must be 0.
+- **Pre-publish validation (history + results)**: before an atomic replace, every authoritative
+  current-season row must have a canonical GameID, a valid side (where applicable), exact provider team
+  names, a valid week/date, a numeric line, and a conference value present per side; otherwise the
+  prior file is left untouched. An UNKNOWN conference VALUE may still publish (present but unclassified)
+  for diagnosis — the verifier then fails closed on it.
+
+**Close gate:** CFB closes only when the refresh command and `report_cfb_wave_sync.py` both exit 0, the
+reconciliation exits 0, `synchronized: True`, and every declared integrity counter is visibly zero.
