@@ -90,6 +90,8 @@ def main() -> int:
     }
     for label, val in counters.items():
         print(f'{label:27}: {val}')
+    if sync.get('read_error'):
+        print(f'read_error                 : {sync.get("read_error")}')
     if sync.get('reason'):
         print(f'reason                     : {sync.get("reason")}')
     synced = bool(sync.get('synchronized'))

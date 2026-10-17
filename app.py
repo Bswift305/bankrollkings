@@ -44587,20 +44587,35 @@ def _cfb_active_cover_streaks(season=2026):
     no closing line) are ignored (not in the sequence). The active cover streak counts covers from the
     most recent graded decision backward and STOPS at the first loss OR push (a push interrupts a strict
     consecutive-cover streak: W,W,P,W -> streak 1). Returns the streak-data dict (see below)."""
-    _empty = {'per': {}, 'through': None, 'graded_keys': set(), 'conflicts': [], 'collapsed': 0}
+    _empty = {'per': {}, 'through': None, 'graded_keys': set(), 'conflicts': [], 'collapsed': 0,
+              'ineligible': 0, 'malformed': 0}
+
+    def _unreadable(reason):
+        # READ-PATH fail-closed: a missing / truncated / mixed-schema / uncomputable graded file yields
+        # the UNAVAILABLE state (downstream sync fails closed), NEVER a 500 and never partial membership.
+        # No repair / refetch / mutation; the sentinel is NOT cached, so a later good file recomputes.
+        d = dict(_empty)
+        d['read_error'] = reason
+        return d
     path = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        return dict(_empty)
+        return _unreadable('graded results file absent')
     if _CFB_ATS_STREAK_CACHE.get('mtime') != mtime or _CFB_ATS_STREAK_CACHE.get('season') != season:
         try:
             df = pd.read_csv(path, low_memory=False)
         except Exception:
-            return dict(_empty)
+            return _unreadable('graded results unreadable (truncated/corrupt CSV)')
+        ok, why = bk_runtime.validate_graded_schema(df)   # shared read-path schema gate
+        if not ok:
+            return _unreadable(why)                        # mixed-schema -> unavailable, not a KeyError/500
+        try:
+            computed = _cfb_cover_streaks_from_df(df, season)
+        except Exception as exc:
+            return _unreadable(f'graded results computation failed: {type(exc).__name__}')
         _CFB_ATS_STREAK_CACHE.clear()
-        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season,
-                                      'data': _cfb_cover_streaks_from_df(df, season)})
+        _CFB_ATS_STREAK_CACHE.update({'mtime': mtime, 'season': season, 'data': computed})
     return _CFB_ATS_STREAK_CACHE.get('data', dict(_empty))
 
 
@@ -44634,20 +44649,22 @@ def _cfb_cover_streaks_from_df(df, season):
         if state is None:
             continue
         raw_gid, raw_line, raw_week = r.get('GameID'), r.get('Line'), r.get('Week')
+        raw_date = r.get('GameDate')
         gid = bk_runtime.cfb_game_id(raw_gid)
         side = str(r.get('TeamSide') or '').strip().upper()
         team = str(r.get('Team', '')).strip()
         opp = str(r.get('Opponent', '')).strip()
         line = pd.to_numeric(raw_line, errors='coerce')
         week_ok = bk_runtime.valid_week(raw_week)
+        date_ok = bk_runtime.valid_date(raw_date)
         # MALFORMED: a value is PRESENT but unusable (distinct from truly-missing -> ineligible).
         if (_present(raw_gid) and gid is None) or (_present(raw_line) and pd.isna(line)) \
-                or (_present(raw_week) and not week_ok):
+                or (_present(raw_week) and not week_ok) or (_present(raw_date) and not date_ok):
             malformed += 1
             continue
         if gid is None or side not in ('HOME', 'AWAY') or not bk_runtime.valid_text(team) \
-                or not bk_runtime.valid_text(opp) or pd.isna(line) or not week_ok:
-            ineligible += 1                       # no stable identity / missing side, names, line, week
+                or not bk_runtime.valid_text(opp) or pd.isna(line) or not week_ok or not date_ok:
+            ineligible += 1                       # no stable identity / missing side, names, line, week, date
             continue
         date = str(r.get('GameDate') or '').strip()
         week = int(float(raw_week))
@@ -44722,7 +44739,17 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
             'exact_duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
             'graded_decisions': len(graded_keys), 'expected_decisions': 0, 'exclusions': 0,
             'missing': [], 'missing_count': 0, 'overdue_decisions': 0, 'manifest_missing_gameid': 0,
-            'unknown_conference': 0, 'manifest_dup_gameid': 0}
+            'unknown_conference': 0, 'manifest_dup_gameid': 0, 'read_error': None}
+    # READ-PATH gates FIRST -- a corrupt/mixed-schema graded file or manifest fails closed with an honest
+    # reason (never a 500, never partial membership), BEFORE any completeness math runs.
+    graded_read_error = (streak_data or {}).get('read_error')
+    if graded_read_error:
+        return {**base, 'synchronized': False, 'through_week': None,
+                'read_error': graded_read_error, 'reason': f'graded read-path invalid: {graded_read_error}'}
+    man_ok, man_why = bk_runtime.validate_manifest_schema(line_moves)
+    if not man_ok:
+        return {**base, 'synchronized': False, 'through_week': None,
+                'read_error': man_why, 'reason': f'manifest read-path invalid: {man_why}'}
     if meta_season != season or not isinstance(games, list):
         return {**base, 'synchronized': False, 'through_week': None,
                 'reason': 'manifest season/lineage invalid'}

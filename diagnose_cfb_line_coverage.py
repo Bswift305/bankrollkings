@@ -87,6 +87,8 @@ def main() -> int:
               "missing_count", "overdue_decisions", "synchronized", "reason"):
         if k in sync:
             print(f"  {k:26}: {sync[k]}")
+    if sync.get("read_error"):
+        print(f"  {'read_error':26}: {sync['read_error']}")
 
     miss = sync.get("missing") or []
     if miss:

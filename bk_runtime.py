@@ -126,6 +126,40 @@ def valid_int_counter(v):
     return isinstance(v, int) and not isinstance(v, bool) and v >= 0
 
 
+# READ-PATH schema gates. Applied when the runtime manifest + graded results are READ (not only before
+# they are published), so a post-publication corruption -- a mixed-schema frame missing a column, a
+# truncated file, a hand-edited object -- fails closed to the unavailable state instead of raising a 500
+# or admitting partial membership. These assert SHAPE only; row-level validity (GameID/text/week/date/
+# conference) stays enforced downstream by the admission counters. NO mutation / repair / refetch.
+CFB_GRADED_REQUIRED_COLUMNS = ('MarketType', 'Season', 'OutcomeState', 'GameID', 'TeamSide',
+                               'Team', 'Opponent', 'Line', 'Week', 'GameDate', 'Conf')
+
+
+def validate_graded_schema(df):
+    """(ok, reason) for the graded ATS results frame on READ. Requires a DataFrame-like object carrying
+    every required column. Avoids importing pandas (checks `.columns`); does not mutate/repair/refetch."""
+    cols = getattr(df, 'columns', None)
+    if cols is None:
+        return False, 'graded results not a dataframe'
+    have = {str(c) for c in cols}
+    missing = [c for c in CFB_GRADED_REQUIRED_COLUMNS if c not in have]
+    if missing:
+        return False, f'graded results missing columns {missing}'
+    return True, 'graded schema ok'
+
+
+def validate_manifest_schema(manifest):
+    """(ok, reason) for the runtime line-moves manifest on READ. Requires a dict carrying a 'season' and a
+    'games' LIST. Per-game lineage/identity stays enforced downstream in _cfb_ats_sync."""
+    if not isinstance(manifest, dict):
+        return False, 'manifest not an object'
+    if 'season' not in manifest:
+        return False, 'manifest missing season'
+    if not isinstance(manifest.get('games'), list):
+        return False, 'manifest games not a list'
+    return True, 'manifest schema ok'
+
+
 def write_csv_atomic(df, path):
     """Write a DataFrame to `path` atomically: temp file in the same directory, fsync, os.replace -- so a
     partial write is never observed and a failure leaves the prior file intact."""

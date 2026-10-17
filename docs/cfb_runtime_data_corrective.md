@@ -304,10 +304,24 @@ refresh_exit=0, report_exit=0, recon_exit=0; conference audit UNKNOWN=0. The 4 o
 non-authoritative presentation-only and correctly do not gate — the reason identity is `(GameID,
 TeamSide)`. **CFB Active ATS Wave is OPERATIONAL.**
 
-**Nonblocking follow-up (post-close, defense-in-depth):** apply the same `valid_text`/`valid_date`/
-conference validation on the READ path (`report_cfb_wave_sync` / `build_cfb_wave_context` loading the
-runtime manifest + graded file), not only before publishing. The atomic writers + two pre-publish
-validators protect the normal production path, so this does not change today's result.
+**Read-path validation follow-up — DONE (post-close, defense-in-depth).** The publish-path validators
+are now mirrored on the READ path, so a post-publication corruption fails closed to the unavailable
+state instead of a 500 or partial membership:
+- `bk_runtime.validate_graded_schema` / `validate_manifest_schema` (shared, pandas-free SHAPE gates).
+- `_cfb_active_cover_streaks` now contains every read exception (truncated/corrupt CSV, mixed-schema,
+  uncomputable) and the schema gate, returning a non-cached `read_error` sentinel — never raising.
+- `_cfb_cover_streaks_from_df` now also validates `GameDate` on read (`valid_date`), closing the one
+  row-level validator the read path was missing (present-but-unparseable date -> malformed).
+- `_cfb_ats_sync` fails closed on a graded `read_error` and validates the manifest schema with the
+  shared validator, BEFORE any completeness math, in both the normal and preseason branches.
+- `report_cfb_wave_sync` / `diagnose_cfb_line_coverage` print the `read_error`; the reporter still exits
+  nonzero via `not synchronized`.
+- Reads never rewrite/repair/refetch/mutate. Verified real-data safe: `valid_date` passes 28,964/28,964
+  graded + 7,274/7,274 history rows (tz-aware ISO), so the added date gate does not regress prod.
+Fixtures: `qc_cfb_wave_readpath.py` (11 checks) drives the on-disk read path against invalid
+GameID/side/date/conference/team-name, duplicate identity, mixed-schema + truncated CSV, truncated JSON,
+and a missing graded file — each asserting no-raise + fail-closed unavailable + empty membership +
+reporter-nonzero + no file mutation — plus byte-equivalent membership/ordering on a valid fixture.
 
 **Standing yearly chore:** `CFB_FBS_CONFERENCES` / `CFB_NON_FBS_CONFERENCES` are provider-string maps.
 A conference rename or a new short-form value re-triggers the UNKNOWN fail-closed (as designed) — add
