@@ -27,7 +27,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_key_numbers.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_key_numbers.json")
 
 # Real CFB final-margin frequency, 2016-2025 (24,320 games). Baked so there's no runtime
 # data dependency; recomputed from data/historical/CFBD_Games_2016_2025.csv when present.
@@ -153,8 +154,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_key_numbers.json", json.dumps(data, indent=2))
     print(f"[build_cfb_key_numbers] {args.season}: {len(data['games'])} games on/near/across a "
           f"key number -> {OUT_PATH.name}")
     return 0

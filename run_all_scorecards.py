@@ -54,6 +54,10 @@ SCORECARDS = [
     # cover streak >= 3 (not season cover%); push interrupts; bye/ungraded ignored; loss resets;
     # source-through-week fail-closed; model-independent membership; deterministic streak-desc order.
     ("CFB ATS Wave Admission QC", "qc_cfb_ats_wave_admission.py", 120),
+    # CFB runtime-data resolver + deploy hardening: runtime copy precedence, live-file fail-closed (no
+    # stale seed), atomic-write failure preserves the prior version, the deploy dirty-tracked guard, and
+    # a fresh checkout starting safely before its first refresh. No network (fixtures).
+    ("CFB Runtime-Data QC", "qc_cfb_runtime_data.py", 120),
     # NFL Active ATS Wave on the current-season source (nflverse_games.parquet): explicit active-season
     # gate (never max(season)), game_id identity + reciprocal team-side decisions, recorded-spread sign,
     # event-level completeness (completed Thursday counts mid-week; future ignored; overdue fails closed),

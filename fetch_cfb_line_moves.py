@@ -24,7 +24,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_line_moves.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_line_moves.json")
 
 
 def _median(vals):
@@ -78,8 +79,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_line_moves.json", json.dumps(data, indent=2))
     moved = sum(1 for g in data["games"] if g.get("spread_move"))
     print(f"Wrote {data['n_games']} games ({moved} with spread movement) -> {OUT_PATH}")
     return 0

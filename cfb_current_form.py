@@ -16,7 +16,8 @@ from functools import lru_cache
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-RESULTS_PATH = BASE_DIR / "data" / "scenarios" / "cfb_2026_results.json"
+import bk_runtime
+RESULTS_PATH = bk_runtime.scenario_read_path("cfb_2026_results.json")  # runtime copy; no stale seed
 HOME_EDGE = 2.5
 
 

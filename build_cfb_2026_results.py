@@ -18,7 +18,8 @@ import urllib.request
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_2026_results.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_2026_results.json")
 
 
 def fetch(season: int) -> list[dict]:
@@ -52,8 +53,7 @@ def main() -> int:
     ap.add_argument("--season", type=int, default=2026)
     args = ap.parse_args()
     rows = fetch(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps({"season": args.season, "games": rows}), encoding="utf-8")
+    bk_runtime.publish_json("cfb_2026_results.json", json.dumps({"season": args.season, "games": rows}))
     print(f"Wrote {len(rows)} completed {args.season} games -> {OUT_PATH}")
     return 0
 

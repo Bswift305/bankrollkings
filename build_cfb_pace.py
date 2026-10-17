@@ -27,7 +27,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_pace.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_pace.json")
 API = "https://api.collegefootballdata.com"
 
 
@@ -164,8 +165,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_pace.json", json.dumps(data, indent=2))
     print(f"[build_cfb_pace] {args.season}: {data.get('teams_rated', 0)} teams, "
           f"{len(data.get('games', []))} upcoming games -> {OUT_PATH.name}")
     return 0

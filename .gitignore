@@ -38,6 +38,7 @@ server*.err.txt
 .claude/
 
 # Generated app data and bulky local datasets
+.runtime/
 data/cache/
 data/debug/
 data/franchise/

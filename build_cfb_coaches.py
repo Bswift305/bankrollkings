@@ -18,7 +18,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_coaches_2026.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_coaches_2026.json")
 
 
 def build(season: int) -> dict:
@@ -47,8 +48,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_coaches_2026.json", json.dumps(data, indent=2))
     print(f"Wrote {len(data['coaches'])} team->coach mappings -> {OUT_PATH}")
     return 0
 

@@ -20,7 +20,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_rankings.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_rankings.json")
 POLL = "AP Top 25"
 
 
@@ -79,8 +80,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_rankings.json", json.dumps(data, indent=2))
     fo = sum(1 for t in data["teams"].values() if t["fell_out"])
     print(f"Wrote AP trajectory for {len(data['teams'])} teams ({fo} fallen out) -> {OUT_PATH}")
     return 0

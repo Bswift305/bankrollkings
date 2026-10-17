@@ -26,7 +26,8 @@ from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
 ODDS_PATH = BASE_DIR / "data" / "odds" / "NCAAF_Odds.csv"
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_weather.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_weather.json")
 WIND_FLAG = 15.0  # mph: outdoor wind at/above this leans the total down (context)
 ET = timezone(timedelta(hours=-4))  # EDT for September/October
 
@@ -139,8 +140,7 @@ def main() -> int:
         print("[gated] Open-Meteo ingestion disabled (BK_WEATHER_SOURCE_LICENSED off) — skipping CFB weather.")
         return 0
     data = build()
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_weather.json", json.dumps(data, indent=2))
     windy = sum(1 for g in data["games"] if g.get("wind_flag"))
     print(f"Wrote weather for {len(data['games'])} games ({windy} at {WIND_FLAG}+ mph wind) -> {OUT_PATH}")
     return 0

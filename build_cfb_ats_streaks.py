@@ -28,7 +28,8 @@ from pathlib import Path
 from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "cfb_ats_streaks.json"
+import bk_runtime
+OUT_PATH = bk_runtime.scenario_write_path("cfb_ats_streaks.json")
 
 
 def _median(vals):
@@ -159,8 +160,7 @@ def main() -> int:
     args = ap.parse_args()
     load_local_env(BASE_DIR)
     data = build(args.season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json("cfb_ats_streaks.json", json.dumps(data, indent=2))
     b = data["boards"]
     print(f"[build_cfb_ats_streaks] {args.season} thru wk {data['through_week']}: "
           f"ATS {len(b['cover'])}C/{len(b['fade'])}F, totals {len(b['over'])}O/{len(b['under'])}U "

@@ -82,6 +82,40 @@ Each step is a separate reversible commit; unset `BK_RUNTIME_DIR` to revert cons
 `data/scenarios/` copies; restore the prior `bk-auto-deploy.sh` from git + reinstall. No data loss (the
 runtime dir and the committed seeds are independent).
 
-## Approval asked for
-Steps 2–5 (the resolver + the `cfb_line_moves` migration + the deploy-script change). Step 1 is done;
-Steps 6–7 are prod/SSM verification. I will not touch `bk-auto-deploy.sh` or move files without a go.
+## Implementation status (approved; built)
+- **Classification finalized (exact 9):** `cfb_line_moves`, `cfb_2026_results`, `cfb_2026_ats`,
+  `cfb_ats_streaks`, `cfb_rankings`, `cfb_coaches_2026`, `cfb_key_numbers`, `cfb_pace`, `cfb_weather`.
+  Resolved as NOT runtime (stay tracked seeds/research): `cfb_ats_streak_forward_rates` (offline
+  backtest), `cfb_power` (read-only in cfb_current_form; written only by the offline ratings export),
+  `nfl_usage_by_state` (NFL, offline). NFL daily-lane files are a SEPARATE later migration.
+- **Resolver:** `bk_runtime.py` — `BK_RUNTIME_DIR` (prod) / gitignored `.runtime/generated/` (local);
+  runtime copy wins; a live CFB file with no runtime copy returns a non-existent path → consumer fails
+  closed (never a stale seed); atomic `publish_json`.
+- **Writers (9) → `bk_runtime.publish_json` (atomic).** **Readers → `bk_runtime.scenario_read_path`**
+  (`app.py`, `cfb_current_form`, `cfb_coach_trends`, `report_cfb_wave_sync`). `build_nfl_team_form` only
+  names the file in a docstring — untouched.
+- **Deploy hardening:** `bk-auto-deploy.sh` no longer runs `git checkout -- .`; it HOLDS the deploy and
+  prints offending paths if any TRACKED file is modified (untracked excluded), deleting nothing.
+- **Tests:** `qc_cfb_runtime_data.py` (precedence, live fail-closed, atomic preserve-prior, deploy
+  dirty-guard, fresh-checkout safe) + updated `qc_cfb_ats_wave_admission`/`qc_cfb_wave_wording`.
+
+## Safe production rollout (SSM; in this order)
+1. **Deploy the migration commit** (resolver + writers + readers). Prod now writes runtime outputs; with
+   `BK_RUNTIME_DIR` unset they go to the gitignored in-repo `.runtime/generated/` (already deploy-safe),
+   but set it outside the checkout for cleanliness:
+   - add `BK_RUNTIME_DIR=/opt/bankrollkings-runtime` to `/opt/bankrollkings/.env`;
+   - `sudo -u ubuntu mkdir -p /opt/bankrollkings-runtime/scenarios` (owned by `ubuntu`);
+   - `sudo systemctl restart bankrollkings`.
+2. **Regenerate CFB outputs into the runtime dir + verify:** `sudo -u ubuntu … python refresh_cfb_data.py`
+   then confirm `/opt/bankrollkings-runtime/scenarios/cfb_line_moves.json` has a current `updated`; run
+   `report_cfb_wave_sync.py`.
+3. **Deploy the untrack commit** (git rm --cached + ignore the exact 9) — lands under the OLD deploy
+   script, which cleans the now-unwritten tracked copies and pulls the removal cleanly; runtime copies
+   already exist, so no gap.
+4. **Reinstall the hardened deploy script LAST:**
+   `sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh` (tree is clean by now).
+5. **Verify the daily refresh timer** runs independently, and **re-run `report_cfb_wave_sync.py`** — close
+   CFB only at `synchronized: True`.
+
+The untrack commit (step 3) is held until step 2's runtime copies are verified present (so pulling a
+removal of locally-modified tracked files can't fail and prod never loses fresh data).

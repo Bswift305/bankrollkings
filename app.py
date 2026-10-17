@@ -22,6 +22,7 @@ import pickle
 import re
 import secrets
 import threading
+import bk_runtime
 import season_utils
 import sport_registry
 import franchise_kings as fk
@@ -43730,7 +43731,7 @@ def build_cfb_buy_low_board(limit=18):
     # cfb_current_form caches ratings with lru_cache -> clear it when the inputs change, or prod
     # serves last-deploy ratings (same guard Wave Watch uses).
     scen = os.path.join(BASE_DIR, 'data', 'scenarios')
-    sig = tuple(os.path.getmtime(os.path.join(scen, f)) if os.path.exists(os.path.join(scen, f)) else 0
+    sig = tuple(bk_runtime.scenario_source_mtime(f)
                 for f in ('cfb_2026_results.json', 'cfb_power.json'))
     if _CFB_BUYLOW_MTIME.get('sig') != sig:
         cff.clear_cache()
@@ -43841,7 +43842,7 @@ def build_cfb_period_context():
     venue, and a dog that starts faster than the fav it's catching is flagged."""
     import cfb_current_form as cff
     from collections import defaultdict
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_2026_results.json')
+    path = bk_runtime.scenario_read_path('cfb_2026_results.json')
     try:
         mt = os.path.getmtime(path)
     except OSError:
@@ -44117,7 +44118,7 @@ def build_cfb_ats_streaks_context():
     to cover) the closing spread this season, joined to this week's line. From
     data/scenarios/cfb_ats_streaks.json (build_cfb_ats_streaks.py). Honest: a streak is a
     trend the market prices -- context / eye-test, not a proven edge."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats_streaks.json')
+    path = bk_runtime.scenario_read_path('cfb_ats_streaks.json')
     data = {'boards': {}}
     try:
         mtime = os.path.getmtime(path)
@@ -44167,7 +44168,7 @@ def build_cfb_key_numbers_context():
     actually land on (3 and 7 above all), and where the line has moved across a key. From
     data/scenarios/cfb_key_numbers.json (build_cfb_key_numbers.py). Honest: informs point-
     buying / teaser decisions, not a predictive edge."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_key_numbers.json')
+    path = bk_runtime.scenario_read_path('cfb_key_numbers.json')
     data = {'games': [], 'margin_freq': []}
     try:
         mtime = os.path.getmtime(path)
@@ -44198,7 +44199,7 @@ def build_cfb_pace_context():
     and this week's games read against the posted total. From data/scenarios/cfb_pace.json
     (build_cfb_pace.py). Honest: pace is CONTEXT for a total, not a projection -- the market
     prices tempo, and this read is not opponent-adjusted."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_pace.json')
+    path = bk_runtime.scenario_read_path('cfb_pace.json')
     data = {'games': [], 'fastest': [], 'slowest': []}
     try:
         mtime = os.path.getmtime(path)
@@ -44275,7 +44276,7 @@ _CFB_MOVES_CACHE = {}
 def _cfb_line_move(away, home):
     """Open->current line movement for a CFB game (cfb_line_moves.json). Matches the
     odds-feed team names to CFBD school names via cfb_current_form._resolve."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_line_moves.json')
+    path = bk_runtime.scenario_read_path('cfb_line_moves.json')
     try:
         mtime = os.path.getmtime(path)
         if _CFB_MOVES_CACHE.get('mtime') != mtime:
@@ -44305,7 +44306,7 @@ _CFB_WX_CACHE = {}
 def _cfb_weather(away, home):
     """Kickoff weather for a CFB game (cfb_weather.json), matched by team names.
     Returns a dict only when it's worth surfacing (windy, rain, or a dome)."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_weather.json')
+    path = bk_runtime.scenario_read_path('cfb_weather.json')
     try:
         mtime = os.path.getmtime(path)
         if _CFB_WX_CACHE.get('mtime') != mtime:
@@ -44339,7 +44340,7 @@ _CFB_RANK_CACHE = {}
 
 
 def _cfb_rankings():
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_rankings.json')
+    path = bk_runtime.scenario_read_path('cfb_rankings.json')
     try:
         mtime = os.path.getmtime(path)
         if _CFB_RANK_CACHE.get('mtime') != mtime:
@@ -44396,7 +44397,7 @@ _CFB_STREAK_IDX_CACHE = {}
 def _cfb_streaks_by_team():
     """Index cfb_ats_streaks.json by lowercased team -> {ats:{type,len,rec}, ou:{type,len,rec}},
     so the matchup card can show each side's active cover/fade + over/under run. mtime-cached."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'cfb_ats_streaks.json')
+    path = bk_runtime.scenario_read_path('cfb_ats_streaks.json')
     try:
         mt = os.path.getmtime(path)
     except OSError:
@@ -44677,7 +44678,7 @@ def build_cfb_wave_context():
     scen = os.path.join(BASE_DIR, 'data', 'scenarios')
     files = ['cfb_2026_results.json', 'cfb_2026_ats.json', 'cfb_line_moves.json',
              'cfb_rankings.json', 'cfb_power.json']
-    paths = [os.path.join(scen, f) for f in files]
+    paths = [bk_runtime.scenario_read_path(f) for f in files]
     _ats_results = DATA_DIR / 'tracking' / 'NCAAF_GameLineResults.csv'  # the active-streak source
     sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in paths) + (
         os.path.getmtime(_ats_results) if os.path.exists(_ats_results) else 0,)
@@ -44817,8 +44818,8 @@ def build_cfb_board_context():
     weather context carried through; you bring the eye test."""
     import cfb_current_form as _cff
     scen = os.path.join(BASE_DIR, 'data', 'scenarios')
-    watch = [os.path.join(scen, f) for f in ('cfb_2026_results.json', 'cfb_line_moves.json',
-                                             'cfb_weather.json', 'cfb_power.json')]
+    watch = [bk_runtime.scenario_read_path(f) for f in ('cfb_2026_results.json', 'cfb_line_moves.json',
+                                                        'cfb_weather.json', 'cfb_power.json')]
     sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
     if _CFB_BOARD_CACHE.get('sig') == sig:
         return _CFB_BOARD_CACHE['data']

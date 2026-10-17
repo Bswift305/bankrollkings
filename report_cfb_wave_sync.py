@@ -30,12 +30,8 @@ def _deployed_commit() -> str:
 
 
 def main() -> int:
-    lm_path = BASE / 'data' / 'scenarios' / 'cfb_line_moves.json'
-    try:
-        with open(lm_path, 'r', encoding='utf-8') as fh:
-            lm = json.load(fh)
-    except (OSError, ValueError):
-        lm = {}
+    import bk_runtime
+    lm = bk_runtime.read_json('cfb_line_moves.json', {})   # runtime copy (never the tracked seed)
 
     streak_data = app._cfb_active_cover_streaks(SEASON)
     games = lm.get('games') if isinstance(lm.get('games'), list) else []

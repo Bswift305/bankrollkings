@@ -95,8 +95,14 @@ def run_qc():
     if s2 == 200:
         if "overbought" in h2.lower():
             issues.append("cfb-ats-streaks still says 'overbought'")
-        if "descriptive record" not in h2.lower():
+        # The descriptive-record framing lives in the data-present branch; assert it only when the
+        # board actually has data (the runtime ATS source may be unpopulated in a clean checkout).
+        ats_avail = app.build_cfb_ats_streaks_context().get("ats_available")
+        if ats_avail and "descriptive record" not in h2.lower():
             issues.append("cfb-ats-streaks missing the descriptive-record framing")
+        elif not ats_avail:
+            notes.append("cfb-ats-streaks board unavailable (runtime source not populated) -> "
+                         "descriptive-record framing check skipped")
     else:
         notes.append(f"cfb-ats-streaks returned {s2} (skipped)")
 

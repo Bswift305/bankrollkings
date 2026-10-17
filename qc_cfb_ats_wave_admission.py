@@ -43,6 +43,16 @@ def _streaks(cases):
     return {team: per.get(cff._resolve(team), {}) for team in cases}, d['through']
 
 
+def _patch_fbs():
+    """Make the FBS universe deterministic for the sync/membership fixtures. cfb_current_form derives
+    _fbs_teams() from cfb_2026_results.json, which now lives in the runtime dir (absent in a clean
+    checkout), so pin it to the fixture teams here -- the sync LOGIC is what's under test, not the feed."""
+    teams = ('Georgia', 'Alabama', 'Oregon', 'Ohio State', 'Auburn')
+    fn = lambda: frozenset(cff._resolve(t) for t in teams)  # noqa: E731
+    fn.cache_clear = lambda: None                            # cff.clear_cache() calls this
+    cff._fbs_teams = fn
+
+
 def _sd(graded_keys=None, conflicts=None, collapsed=0):
     """A minimal streak_data payload in the shape _cfb_cover_streaks_from_df returns."""
     return {'per': {}, 'through': None, 'graded_keys': set(graded_keys or set()),
@@ -133,6 +143,7 @@ def qc_sync_completeness():
     required FBS decision fails closed; a no-line/cancelled game is an accepted exclusion; a conflicting
     duplicate fails closed. Expected and graded identities are matched at (week, team, opponent) grain."""
     issues = []
+    _patch_fbs()
     r1, r2 = cff._resolve('Georgia'), cff._resolve('Alabama')
     ro, rohio = cff._resolve('Oregon'), cff._resolve('Ohio State')
     games = [{'completed': True, 'week': 1, 'home': 'Georgia', 'away': 'Alabama', 'spread_now': -7.0},
@@ -163,6 +174,7 @@ def qc_sync_lineage():
     """Manifest lineage gates synchronization: expected and graded match on (week, team, opponent); a
     wrong-season or malformed manifest fails closed with a reason; the manifest `updated` is reported."""
     issues = []
+    _patch_fbs()
     r1, r2 = cff._resolve('Georgia'), cff._resolve('Alabama')
     games = [{'completed': True, 'week': 1, 'home': 'Georgia', 'away': 'Alabama', 'spread_now': -7.0}]
     graded = {(1, r1, r2), (1, r2, r1)}
@@ -200,18 +212,28 @@ def qc_membership_iterates_streaks():
              cff._resolve('Alabama'): s(3, name='Alabama'),
              cff._resolve('Oregon'): s(3, name='Oregon'),
              cff._resolve('Ohio State'): s(2, name='Ohio State')}
+    _patch_fbs()
     o1, o2 = app._cfb_active_cover_streaks, app._cfb_ats_sync
+    o3, o4 = cff._srs_observed, cff.prior_divergence
     app._cfb_active_cover_streaks = lambda season=2026: {'per': synth, 'through': 7, 'graded_keys': set(),
                                                          'conflicts': [], 'collapsed': 0}
     app._cfb_ats_sync = lambda streak_data, line_moves, completed_week, season=2026: {
         'synchronized': True, 'through_week': 7, 'completed_week': 7, 'expected_decisions': 0,
         'graded_decisions': 0, 'exclusions': 0, 'missing_count': 0, 'missing': [], 'conflicts': 0,
         'duplicates_collapsed': 0, 'manifest_season': 2026, 'manifest_updated': 'fixture'}
+    # The fixture forces synchronized=True with no CFB results on disk (clean checkout -> runtime dir
+    # empty); stub the srs/divergence reads the builder makes AFTER the sync gate so it doesn't divide
+    # by an empty ratings set. Membership is what's under test, not the ratings.
+    _srs_stub = lambda: {}                 # noqa: E731
+    _srs_stub.cache_clear = lambda: None   # cff.clear_cache() calls this
+    cff._srs_observed = _srs_stub
+    cff.prior_divergence = lambda *a, **k: None
     try:
         app._CFB_WAVE_CACHE.clear()
         ctx = app.build_cfb_wave_context()
     finally:
         app._cfb_active_cover_streaks, app._cfb_ats_sync = o1, o2
+        cff._srs_observed, cff.prior_divergence = o3, o4
         app._CFB_WAVE_CACHE.clear()
     if ctx.get('wave_unsynced'):
         return ['synced fixture reported unsynced']

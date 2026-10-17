@@ -21,6 +21,8 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
 SCEN = BASE_DIR / "data" / "scenarios"
 
@@ -28,7 +30,7 @@ SCEN = BASE_DIR / "data" / "scenarios"
 @lru_cache(maxsize=1)
 def _load():
     def _j(name):
-        p = SCEN / name
+        p = bk_runtime.scenario_read_path(name)   # runtime copy for live files; seed for research
         try:
             return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
         except Exception:
