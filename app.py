@@ -44547,19 +44547,37 @@ def _cfb_wave_key_collisions(names):
     return {k: sorted(v) for k, v in by_key.items() if len(v) > 1}
 
 
-# CFBD FBS conferences -- authoritative FBS classification comes from the provider conference metadata
-# captured with each game (never fuzzy name resolution). FBS independents (Notre Dame, UConn, ...) carry
-# "FBS Independents". YEARLY CHORE: keep current as realignment moves teams between conferences.
+# CFBD FBS conferences -- authoritative FBS classification from the provider conference captured with the
+# game (never fuzzy names). FBS independents (Notre Dame, UConn, ...) carry "FBS Independents".
 CFB_FBS_CONFERENCES = frozenset({
     'ACC', 'American Athletic', 'Big 12', 'Big Ten', 'Conference USA', 'FBS Independents',
     'Mid-American', 'Mountain West', 'Pac-12', 'SEC', 'Sun Belt',
 })
+# Known NON-FBS (FCS + lower) conferences -- a side in one of these is a LEGITIMATE exclusion. Anything
+# else (missing / misspelled / newly renamed) is UNKNOWN, NOT non-FBS, and fails sync closed so a renamed
+# conference can never silently drop an FBS team. YEARLY CHORE alongside the FBS set.
+CFB_NON_FBS_CONFERENCES = frozenset({
+    'Big Sky', 'Coastal Athletic Association', 'CAA', 'Missouri Valley Football', 'MVFC', 'Southern',
+    'Southwestern Athletic', 'SWAC', 'Mid-Eastern Athletic', 'MEAC', 'Patriot', 'Pioneer', 'Ivy League',
+    'Ivy', 'Big South-OVC', 'Northeast', 'NEC', 'United Athletic', 'UAC', 'Southland', 'FCS Independents',
+    'Atlantic Sun', 'ASUN',
+})
+
+
+def _cfb_conf_class(conf):
+    """Tri-state FBS classification from the provider conference: 'FBS' | 'NON_FBS' | 'UNKNOWN'. UNKNOWN
+    (missing/misspelled/renamed) is NEVER treated as non-FBS -- the caller fails closed and reports it."""
+    c = str(conf or '').strip()
+    if c in CFB_FBS_CONFERENCES:
+        return 'FBS'
+    if c in CFB_NON_FBS_CONFERENCES:
+        return 'NON_FBS'
+    return 'UNKNOWN'
 
 
 def _cfb_side_is_fbs(conf):
-    """True when a team-side's provider conference marks it FBS. The authoritative FBS gate for the wave
-    (game-ID reconciliation) -- never fuzzy name resolution."""
-    return str(conf or '').strip() in CFB_FBS_CONFERENCES
+    """True only when the provider conference is a KNOWN FBS conference (never for UNKNOWN)."""
+    return _cfb_conf_class(conf) == 'FBS'
 
 
 def _cfb_active_cover_streaks(season=2026):
@@ -44612,13 +44630,13 @@ def _cfb_cover_streaks_from_df(df, season):
         state = _m.get(str(r.get('OutcomeState')))
         if state is None:
             continue
-        gid = str(r.get('GameID') or '').strip()
+        gid = bk_runtime.cfb_game_id(r.get('GameID'))
         side = str(r.get('TeamSide') or '').strip().upper()
-        if not gid or gid.lower() in ('nan', 'none') or side not in ('HOME', 'AWAY'):
-            ineligible += 1                       # no stable identity -> cannot sync authoritatively
-            continue
         team = str(r.get('Team', '')).strip()
         opp = str(r.get('Opponent', '')).strip()
+        if gid is None or side not in ('HOME', 'AWAY') or not team or not opp:
+            ineligible += 1                       # no stable identity / missing side or names
+            continue
         date = str(r.get('GameDate') or '').strip()
         line = round(float(pd.to_numeric(r.get('Line'), errors='coerce')), 2)
         ident = (team if side == 'HOME' else opp, opp if side == 'HOME' else team, date)
@@ -44687,7 +44705,8 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
             'completed_week': completed_week, 'conflicts': conflicts, 'ineligible': ineligible,
             'duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
             'graded_decisions': len(graded_keys), 'expected_decisions': 0, 'exclusions': 0,
-            'missing': [], 'missing_count': 0, 'manifest_missing_gameid': 0}
+            'missing': [], 'missing_count': 0, 'manifest_missing_gameid': 0,
+            'unknown_conference': 0, 'manifest_dup_gameid': 0}
     if meta_season != season or not isinstance(games, list):
         return {**base, 'synchronized': False, 'through_week': None,
                 'reason': 'manifest season/lineage invalid'}
@@ -44695,7 +44714,9 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
         ok = conflicts == 0 and ineligible == 0
         return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None,
                 'reason': None if ok else 'conflicts/ineligible with no completed week'}
-    expected, exclusions, man_missing_gid = set(), 0, 0
+    expected, exclusions, man_missing_gid, unknown_conf = set(), 0, 0, 0
+    gid_ident = {}                                # game_id -> (home, away) for manifest-dup detection
+    man_dup = 0
     for g in games:
         wk = g.get('week')
         if not g.get('completed') or wk is None or wk > completed_week:
@@ -44703,17 +44724,26 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
         if g.get('spread_now') is None and g.get('spread_open') is None:
             exclusions += 1                       # no-line / cancelled -> legitimate exclusion
             continue
-        gid = str(g.get('game_id') or '').strip()
-        if not gid or gid.lower() in ('nan', 'none'):
+        gid = bk_runtime.cfb_game_id(g.get('game_id'))
+        if gid is None:
             man_missing_gid += 1                  # a completed line-bearing manifest game with no id
             continue
+        ident = (str(g.get('home', '')), str(g.get('away', '')))
+        if gid in gid_ident and gid_ident[gid] != ident:
+            man_dup += 1                          # same manifest GameID, different identity -> fail closed
+        else:
+            gid_ident[gid] = ident
         for side, conf in (('HOME', g.get('home_conf')), ('AWAY', g.get('away_conf'))):
-            if _cfb_side_is_fbs(conf):
+            cls = _cfb_conf_class(conf)
+            if cls == 'FBS':
                 expected.add((gid, side))         # (GameID, TeamSide) -- authoritative identity
+            elif cls == 'NON_FBS':
+                exclusions += 1                   # known FCS/lower side -> legitimate exclusion
             else:
-                exclusions += 1                   # non-FBS side -> legitimate exclusion
+                unknown_conf += 1                 # UNKNOWN conf in a completed line-bearing game -> fail
     missing = sorted(expected - graded_keys)
-    synchronized = (not missing) and conflicts == 0 and ineligible == 0 and man_missing_gid == 0
+    synchronized = (not missing and conflicts == 0 and ineligible == 0 and man_missing_gid == 0
+                    and unknown_conf == 0 and man_dup == 0)
     reason = None
     if not synchronized:
         why = []
@@ -44722,14 +44752,19 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
         if conflicts:
             why.append(f'{conflicts} conflicts')
         if ineligible:
-            why.append(f'{ineligible} graded rows without GameID')
+            why.append(f'{ineligible} graded rows ineligible (no GameID / side / names)')
         if man_missing_gid:
             why.append(f'{man_missing_gid} manifest games without GameID')
+        if unknown_conf:
+            why.append(f'{unknown_conf} sides with UNKNOWN conference')
+        if man_dup:
+            why.append(f'{man_dup} manifest GameIDs with conflicting identity')
         reason = '; '.join(why)
     return {**base, 'synchronized': synchronized,
             'through_week': completed_week if synchronized else None,
             'expected_decisions': len(expected), 'graded_decisions': len(graded_keys),
             'exclusions': exclusions, 'manifest_missing_gameid': man_missing_gid,
+            'unknown_conference': unknown_conf, 'manifest_dup_gameid': man_dup,
             'missing': missing[:40], 'missing_count': len(missing), 'reason': reason}
 
 
@@ -44762,7 +44797,9 @@ def build_cfb_wave_context():
         except (OSError, ValueError):
             return {}
     ats = _j(paths[1]).get('teams', {})
-    ats_by_resolved = {cff._resolve(s): a for s, a in ats.items()}  # OPTIONAL season context (presentation)
+    # OPTIONAL season context (presentation), keyed by EXACT provider name -- never fuzzy, so a collision
+    # family (Miami/Miami (OH)) can't attach one team's acm to another. No exact key -> omitted.
+    ats_by_name = {str(s): a for s, a in ats.items()}
     # Membership iterates the AUTHORITATIVE per-game streak index (keyed on exact provider names,
     # reconciled on (GameID, TeamSide)); FBS is decided by the provider conference carried in the record,
     # never fuzzy name resolution. The season aggregate can never suppress a qualifying team.
@@ -44790,24 +44827,19 @@ def build_cfb_wave_context():
     for g in moves:
         game_of[str(g['home'])] = (g, True)
         game_of[str(g['away'])] = (g, False)
-    # PRESENTATION overlay only (ranking trajectory + prior divergence -> tier chip + SoS rank). Best-effort
-    # name match via cff._resolve; a miss merely omits the chip and can NEVER change membership or ordering
-    # (which are the factual cover streak + a deterministic team-name tiebreak). Non-authoritative.
+    # PRESENTATION overlay only (AP ranking trajectory -> tier chip). EXACT provider-name match; no exact
+    # key -> the overlay is simply omitted (unavailable), NEVER fuzzy-matched -- so a collision family can
+    # never display another team's ranking. It can change neither membership nor ordering (the factual
+    # cover streak + deterministic team-name tiebreak). SoS-rank and prior-divergence overlays are OMITTED
+    # here: their only sources (cff._srs_observed / cff.prior_divergence) key off the data-dependent
+    # resolver, which cannot be exact-matched safely. overlay_misattributions stays 0 by construction.
     ranks = _cfb_rankings()
-    rank_lc = {str(k).lower(): v for k, v in ranks.items()}
-    obs = cff._srs_observed()
-    obsrank = {cff._resolve(t): i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
+    rank_by_name = {str(k): v for k, v in ranks.items()}
 
     def _status(school):
-        lc = cff._resolve(school)
-        ap = rank_lc.get(lc) or rank_lc.get(str(school).lower())
+        ap = rank_by_name.get(str(school))          # exact provider-name match only
         if ap and ap.get('fell_out'):
             return 'collapsed'
-        d = cff.prior_divergence(school)
-        if d and d['label'] == 'surging':
-            return 'surging'
-        if d and d['label'] == 'regressed':
-            return 'regressed'
         if ap and ap.get('trend') == 'rising':
             return 'rising'
         return ''
@@ -44841,9 +44873,9 @@ def build_cfb_wave_context():
         if not _cfb_side_is_fbs(srec.get('conf')):   # FBS gate from provider conference, not names
             continue
         name = srec['team_name']
-        st = _status(name)
-        orank = obsrank.get(cff._resolve(rteam), 999)         # presentation overlay (best-effort)
-        a = ats_by_resolved.get(cff._resolve(rteam)) or {}
+        st = _status(name)                                    # exact provider-name overlay (or omitted)
+        orank = 999                                           # SoS overlay unavailable (no exact source)
+        a = ats_by_name.get(name) or {}                       # exact provider-name match only
         # Season ATS record DERIVED from the authoritative per-game sequence (aggregate optional: acm only).
         season_rec = f"{srec['covers']}-{srec['losses']}" + (f"-{srec['pushes']}" if srec['pushes'] else '')
         cover_pct = round(100 * srec['covers'] / srec['decisions']) if srec['decisions'] else None
@@ -44874,6 +44906,9 @@ def build_cfb_wave_context():
         'wave_week': wk, 'wave_through_week': sync.get('through_week'), 'wave_unsynced': False,
         'wave_sync': sync, 'wave_members': wave_members, 'wave_fades': wave_fades,
         'wave_count': len(wave_members), 'wave_available': bool(wave_members or wave_fades),
+        # Overlays are exact-provider-name match only (no fuzzy), so a collision family can never attach
+        # another team's ranking/context -> misattributions are 0 by construction.
+        'overlay_misattributions': 0,
     }
     _CFB_WAVE_CACHE['sig'] = sig
     _CFB_WAVE_CACHE['data'] = data

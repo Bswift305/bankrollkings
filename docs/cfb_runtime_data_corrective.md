@@ -213,6 +213,27 @@ inconsistent-GameID fails closed; push/loss/bye unchanged; overlay cannot change
 `GameID` are ineligible and keep the board fail-closed — no fabricated IDs. Follow-up: a stable provider
 team ID for streak grouping if CFBD exposes one.
 
-**Close CFB only when:** `synchronized: True` with zero missing, conflicts, ineligible (GameID-less),
-duplicates, malformed, and overdue; the full reconciliation exits 0. Overlay name-collisions are
-non-authoritative and do not gate closure.
+**Close CFB only when:** `synchronized: True` with zero missing, conflicts, ineligible (GameID-less /
+missing side / missing names), `manifest_missing_gameid`, `manifest_dup_gameid`, `unknown_conference`,
+`overlay_misattributions`, duplicates, malformed, and overdue; the full reconciliation exits 0. Overlay
+name-collisions are non-authoritative and do not gate closure.
+
+### Implementation blockers resolved (pre-regeneration pass)
+1. **Tri-state conference** (`_cfb_conf_class` → FBS / NON_FBS / UNKNOWN). An UNKNOWN side (missing,
+   misspelled, renamed) in a completed line-bearing game increments `unknown_conference` and FAILS sync
+   — never a silent non-FBS exclusion. `diagnose_cfb_line_coverage.py` audits every distinct 2026
+   conference value and flags UNKNOWN ones to extend `CFB_FBS_CONFERENCES` / `CFB_NON_FBS_CONFERENCES`.
+2. **Overlays exact-provider-name match only** (AP ranking). No `cff._resolve`; no exact key → the
+   overlay is omitted (unavailable), never fuzzy-matched. SoS/divergence overlays are omitted (their
+   sources key off the data-dependent resolver). `overlay_misattributions` is 0 by construction.
+3. **Atomic writes + ordered refresh.** History and results publish via `bk_runtime.write_csv_atomic`
+   (temp + fsync + os.replace) with pre-publish validation; `refresh_cfb_data.py` SKIPS grading if the
+   history step fails (never grades stale history) and runs the verifier after successful grading. (Not
+   a single atomic generation across all three outputs — each is written atomically on its own.)
+4. **Canonical GameID** (`bk_runtime.cfb_game_id`): one parser for manifest/history/grader/sync/
+   diagnostics; accepts integral numeric/string (incl. a float-typed CSV `12345.0`), rejects
+   null/fractional/scientific/malformed; CSV round-trip proven.
+Fail-closed validation added for: missing provider team names, missing TeamSide, inconsistent
+teams/date for one GameID, duplicate manifest GameIDs with different identities, UNKNOWN conference,
+history-failure-before-grading, and overlay abstention (never misattribution). Tests:
+`qc_cfb_ats_wave_admission.py` (15 checks).

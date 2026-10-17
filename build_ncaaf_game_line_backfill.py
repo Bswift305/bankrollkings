@@ -168,14 +168,20 @@ def build_results(history: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> int:
     if not INPUT_PATH.exists():
-        raise SystemExit(f"Missing NCAAF historical game lines: {INPUT_PATH}")
-    history = pd.read_csv(INPUT_PATH)
+        print(f"[FAIL] missing NCAAF historical game lines: {INPUT_PATH}")
+        return 2
+    history = pd.read_csv(INPUT_PATH, low_memory=False)
     results = build_results(history)
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    results.to_csv(OUTPUT_PATH, index=False)
-    resolved = int(results.get("OutcomeState", pd.Series(dtype=str)).isin(["Hit", "Miss", "Push"]).sum()) if not results.empty else 0
+    if results.empty:
+        print("[FAIL] grader produced 0 rows; leaving the existing results file untouched.")
+        return 2
+    import bk_runtime
+    bk_runtime.write_csv_atomic(results, OUTPUT_PATH)      # temp + fsync + os.replace
+    resolved = int(results["OutcomeState"].isin(["Hit", "Miss", "Push"]).sum())
+    with_id = int(results["GameID"].apply(lambda v: bk_runtime.cfb_game_id(v) is not None).sum()) \
+        if "GameID" in results.columns else 0
     print(f"Wrote {len(results)} NCAAF game-line backfill rows to {OUTPUT_PATH}")
-    print(f"Resolved rows: {resolved}")
+    print(f"Resolved rows: {resolved} | rows with a canonical GameID: {with_id}")
     return 0
 
 

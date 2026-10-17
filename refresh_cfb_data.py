@@ -103,11 +103,23 @@ def main() -> int:
     last_season = season - 1
     print(f"CFB refresh | season {season} | last completed {last_season}")
 
+    # The grader reads the history, so a failed history fetch must SKIP grading (never grade stale
+    # history) and make the run nonzero. These are NOT published as one atomic generation yet -- each
+    # authoritative output (manifest / history / results) is written atomically on its own.
+    HISTORY_LABEL = "CFB game-lines history"
+    GRADE_LABEL = "CFB graded game-line results"
+
     failures: list[str] = []
+    history_ok = True
+    graded_ok = False
     for label, argv, timeout in _steps(season, last_season):
         script = BASE_DIR / argv[0]
         if not script.exists():
             print(f"[SKIP] {label}: {argv[0]} not found.")
+            continue
+        if label == GRADE_LABEL and not history_ok:
+            print(f"[SKIP] {label}: upstream '{HISTORY_LABEL}' failed; not grading stale history.")
+            failures.append(label)
             continue
         command = [sys.executable, str(script), *argv[1:]]
         print(f"[RUN ] {label}")
@@ -119,6 +131,8 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             print(f"[FAIL] {label}: timed out after {timeout}s.")
             failures.append(label)
+            if label == HISTORY_LABEL:
+                history_ok = False
             continue
         tail = (result.stdout or result.stderr or "").strip().splitlines()
         if tail:
@@ -126,6 +140,21 @@ def main() -> int:
         if result.returncode != 0:
             print(f"[FAIL] {label}: exit {result.returncode}.")
             failures.append(label)
+            if label == HISTORY_LABEL:
+                history_ok = False
+        elif label == GRADE_LABEL:
+            graded_ok = True
+
+    # Run the ATS synchronization verifier after SUCCESSFUL grading (a good grade is not a synced board).
+    if graded_ok:
+        print("[RUN ] CFB ATS synchronization verifier")
+        try:
+            v = subprocess.run([sys.executable, str(BASE_DIR / "report_cfb_wave_sync.py")],
+                               cwd=str(BASE_DIR), timeout=180, capture_output=True, text=True)
+            for line in (v.stdout or "").strip().splitlines():
+                print(f"       {line}")
+        except Exception as exc:  # noqa
+            print(f"[WARN] verifier did not run: {type(exc).__name__}: {exc}")
 
     if failures:
         print(f"CFB refresh finished with {len(failures)} failure(s): {', '.join(failures)}")

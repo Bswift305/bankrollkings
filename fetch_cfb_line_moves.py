@@ -57,7 +57,7 @@ def build(season: int) -> dict:
             # Authoritative identity (game-ID reconciliation): the stable CFBD game id + exact provider
             # names + conference metadata travel with every manifest game. Names are presentation-only;
             # the wave reconciles on (game_id, TeamSide), never on normalized names.
-            "game_id": g.get("id"),
+            "game_id": bk_runtime.cfb_game_id(g.get("id")),
             "home_conf": g.get("homeConference"), "away_conf": g.get("awayConference"),
             "week": g.get("week"), "home": g.get("homeTeam"), "away": g.get("awayTeam"),
             "completed": g.get("homeScore") is not None,

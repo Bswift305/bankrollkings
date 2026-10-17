@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+import bk_runtime
 from app import _format_ncaaf_game_lines_history
 from services.env_loader import load_local_env
 
@@ -102,7 +103,7 @@ def normalize_payload(payload: list[dict], season: int, provider: str = "") -> p
             # Authoritative identity for the ATS grader (game-ID reconciliation): stable CFBD game id,
             # EXACT provider names, and conference metadata. Carried as NEW columns; the existing
             # normalized Home/Away stay for other (presentation) consumers.
-            "GameID": item.get("id") or item.get("game_id"),
+            "GameID": bk_runtime.cfb_game_id(item.get("id") or item.get("game_id")),
             "HomeTeamRaw": item.get("homeTeam") or item.get("home_team"),
             "AwayTeamRaw": item.get("awayTeam") or item.get("away_team"),
             "HomeConf": item.get("homeConference") or item.get("home_conference"),
@@ -171,8 +172,14 @@ def main() -> int:
 
     output = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output.to_csv(output_path, index=False)
+    # Validate before publishing: a non-empty frame with the identity columns. An empty/invalid fetch
+    # must NOT replace the last good history (which would then be graded as stale/missing).
+    required = {"GameID", "HomeTeamRaw", "AwayTeamRaw", "Week", "Season"}
+    if output.empty or not required.issubset(output.columns):
+        print(f"[FAIL] history fetch produced {len(output)} rows / missing {required - set(output.columns)};"
+              f" leaving the existing file untouched.")
+        return 2
+    bk_runtime.write_csv_atomic(output, output_path)       # temp + fsync + os.replace
     print(f"Wrote {len(output)} rows to {output_path}")
     return 0
 

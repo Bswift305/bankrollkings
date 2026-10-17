@@ -100,6 +100,17 @@ def main() -> int:
             else:
                 print(f"  id={gid} {side:4} — not in fresh raw /lines")
     print("-" * 74)
+    # Conference audit: every distinct provider conference value + its tri-state class. UNKNOWN values
+    # fail sync closed (a renamed conference must never silently drop an FBS team) -- surface them here.
+    confs = {}
+    for g in raw:
+        for c in (g.get("homeConference"), g.get("awayConference")):
+            confs[str(c)] = app._cfb_conf_class(c)
+    unknown = sorted(k for k, v in confs.items() if v == "UNKNOWN")
+    print(f"conference audit: {len(confs)} distinct values; UNKNOWN: {len(unknown)}")
+    for c in unknown:
+        print(f"  [UNKNOWN CONFERENCE] {c!r} — add to CFB_FBS_CONFERENCES or CFB_NON_FBS_CONFERENCES")
+    print("-" * 74)
     overlay_rc = _collision_audit(raw)
 
     rc = 0

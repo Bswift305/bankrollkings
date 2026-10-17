@@ -84,6 +84,58 @@ def scenario_source_mtime(name: str) -> float:
         return 0.0
 
 
+def write_csv_atomic(df, path):
+    """Write a DataFrame to `path` atomically: temp file in the same directory, fsync, os.replace -- so a
+    partial write is never observed and a failure leaves the prior file intact."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            df.to_csv(fh, index=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def cfb_game_id(value):
+    """Canonical CFBD game-id serialization -- the ONE parser used by the manifest, history, grader, sync
+    and diagnostics so CSV type inference (12345 vs '12345' vs 12345.0) never splits an identity.
+
+    Accepts an integral numeric or string; emits one canonical digit string. REJECTS (returns None):
+    null/empty/'nan', fractional values, non-numeric, scientific notation (precision-lossy), and integers
+    beyond exact float range. A rejected id is ineligible for authoritative synchronization."""
+    import math
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value) if 0 <= value < (1 << 63) or -(1 << 63) < value < 0 else None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value) or value != int(value) or abs(value) >= (1 << 53):
+            return None
+        return str(int(value))
+    s = str(value).strip()
+    if not s or s.lower() in ('nan', 'none', 'null'):
+        return None
+    if 'e' in s.lower():            # scientific notation -> reject (CFBD never emits it; lossy risk)
+        return None
+    if s.lstrip('-').isdigit():
+        return s
+    try:                            # tolerate a trailing '.0' from float-typed CSV columns
+        f = float(s)
+    except ValueError:
+        return None
+    if math.isnan(f) or f != int(f) or abs(f) >= (1 << 53):
+        return None
+    return str(int(f))
+
+
 def publish_json(name: str, obj) -> Path:
     """Atomically publish `obj` (a dict/list, or a pre-serialized str) to the runtime dir. Temp file in
     the same directory + fsync + os.replace, so a partial write is never visible and a failed write

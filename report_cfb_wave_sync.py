@@ -52,8 +52,10 @@ def main() -> int:
     print(f'legitimate exclusions      : {sync.get("exclusions")}')
     print(f'exact duplicates collapsed : {sync.get("duplicates_collapsed")}')
     print(f'conflicts                  : {sync.get("conflicts")}')
-    print(f'graded rows w/o GameID     : {sync.get("ineligible")}')
+    print(f'graded rows ineligible     : {sync.get("ineligible")}  (no GameID / side / names)')
     print(f'manifest games w/o GameID  : {sync.get("manifest_missing_gameid")}')
+    print(f'manifest dup GameIDs       : {sync.get("manifest_dup_gameid")}')
+    print(f'unknown conference sides   : {sync.get("unknown_conference")}')
     print(f'missing decisions          : {sync.get("missing_count")}')
     if sync.get('reason'):
         print(f'reason                     : {sync.get("reason")}')
@@ -63,6 +65,7 @@ def main() -> int:
     if synced:
         ctx = app.build_cfb_wave_context()
         members = ctx.get('wave_members', []) if not ctx.get('wave_unsynced') else []
+        print(f'overlay misattributions    : {ctx.get("overlay_misattributions")}  (exact-name overlays)')
         print(f'member count               : {len(members)}')
         print('members                    : ' + (', '.join(m['team'] for m in members) or '(none)'))
     else:
