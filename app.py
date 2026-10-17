@@ -44758,16 +44758,42 @@ def build_cfb_wave_context():
         game_of[_cfb_wave_team_key(str(g['away']))] = (g, False)
     fbs_keys = {_cfb_wave_team_key(t) for t in cff._fbs_teams()}   # FBS universe in the wave identity
     ranks = _cfb_rankings()
-    rank_lc = {k.lower(): v for k, v in ranks.items()}
     obs = cff._srs_observed()
+    # The model OVERLAY (ranking trajectory + prior divergence -> status -> tier -> ordering) must use the
+    # same wave identity, or a diverging team (App State vs Appalachian State) silently loses its overlay.
+    # Collision guard on these AUXILIARY maps too (not just the manifest): if the helper would merge two
+    # distinct ranking/observed names, fail closed rather than misattribute an overlay.
+    aux_coll = _cfb_wave_key_collisions(list(ranks.keys()) + list(obs.keys())
+                                        + [n for g in lm_games for n in (g.get('home'), g.get('away')) if n])
+    if aux_coll:
+        data = {'wave_week': wk, 'wave_through_week': None, 'wave_unsynced': True,
+                'wave_sync': {**sync, 'synchronized': False, 'through_week': None,
+                              'reason': f'team-key collision in ranking/observed/manifest maps '
+                                        f'({len(aux_coll)}): ' + '; '.join(f"{k}<-{v}" for k, v in
+                                                                           list(aux_coll.items())[:3])},
+                'wave_members': [], 'wave_fades': [], 'wave_count': 0, 'wave_available': True}
+        _CFB_WAVE_CACHE['sig'] = sig
+        _CFB_WAVE_CACHE['data'] = data
+        return data
+    rank_lc = {_cfb_wave_team_key(k): v for k, v in ranks.items()}
     obsrank = {_cfb_wave_team_key(t): i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
+    # wave_key -> a representative ORIGINAL CFBD name. prior_divergence keys off the raw short form, so
+    # overlays on a graded long-form name (Appalachian State) must be looked up via the raw name
+    # (App State). The manifest carries raw CFBD names; fall back to ranking/observed source names.
+    rep_raw = {}
+    for g in lm_games:
+        for nm in (g.get('home'), g.get('away')):
+            if nm:
+                rep_raw.setdefault(_cfb_wave_team_key(nm), str(nm))
+    for nm in list(ranks.keys()) + list(obs.keys()):
+        rep_raw.setdefault(_cfb_wave_team_key(nm), str(nm))
 
     def _status(school):
-        lc = cff._resolve(school)
-        ap = rank_lc.get(lc)
+        wk_key = _cfb_wave_team_key(school)
+        ap = rank_lc.get(wk_key)
         if ap and ap.get('fell_out'):
             return 'collapsed'
-        d = cff.prior_divergence(school)
+        d = cff.prior_divergence(rep_raw.get(wk_key, school))   # raw short form for divergence lookup
         if d and d['label'] == 'surging':
             return 'surging'
         if d and d['label'] == 'regressed':

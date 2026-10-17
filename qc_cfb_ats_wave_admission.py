@@ -307,6 +307,61 @@ def qc_canon_short_long_reconciles():
     return issues
 
 
+def qc_overlay_identity_short_long():
+    """The model OVERLAY (AP trajectory + prior divergence -> status -> tier -> SoS -> ordering) is
+    identical whether the graded record carries the SHORT form (App State) or the LONG form
+    (Appalachian State). Ranking/observed maps are wave-keyed; divergence is looked up via the
+    representative raw CFBD name."""
+    issues = []
+    short, long = 'App State', 'Appalachian State'
+    ks = app._cfb_wave_team_key(short)
+
+    def mkrec(name):
+        return {'team_name': name, 'cover_streak': 4, 'loss_streak': 0, 'results': ['W'] * 4,
+                'recent': ['W'] * 4, 'covers': 4, 'losses': 0, 'pushes': 0, 'decisions': 4, 'last_week': 6}
+
+    _patch_fbs((short,))
+    o = (app._cfb_active_cover_streaks, app._cfb_ats_sync, app._cfb_rankings,
+         cff.prior_divergence, cff._srs_observed)
+    app._cfb_ats_sync = lambda *a, **k: {'synchronized': True, 'through_week': 6, 'completed_week': 6,
+                                         'expected_decisions': 0, 'graded_decisions': 0, 'exclusions': 0,
+                                         'missing_count': 0, 'missing': [], 'conflicts': 0,
+                                         'duplicates_collapsed': 0, 'manifest_season': 2026,
+                                         'manifest_updated': 'fx'}
+    app._cfb_rankings = lambda: {short: {'trend': 'rising', 'fell_out': False}}   # ranking uses raw short
+    cff.prior_divergence = lambda nm: {'label': 'surging'} if app._cfb_wave_team_key(nm) == ks else None
+    _srs = lambda: {short: 42.0}                       # noqa: E731
+    _srs.cache_clear = lambda: None
+    cff._srs_observed = _srs
+    results = {}
+    try:
+        for form in (short, long):
+            app._cfb_active_cover_streaks = lambda season=2026, _f=form: {
+                'per': {ks: mkrec(_f)}, 'through': 6, 'graded_keys': set(), 'conflicts': [], 'collapsed': 0}
+            app._CFB_WAVE_CACHE.clear()
+            ctx = app.build_cfb_wave_context()
+            if ctx.get('wave_unsynced'):
+                issues.append(f"{form}: unexpectedly unsynced ({ctx.get('wave_sync', {}).get('reason')})")
+                continue
+            mem = ctx.get('wave_members', [])
+            results[form] = mem[0] if mem else None
+    finally:
+        (app._cfb_active_cover_streaks, app._cfb_ats_sync, app._cfb_rankings,
+         cff.prior_divergence, cff._srs_observed) = o
+        app._CFB_WAVE_CACHE.clear()
+    a, b = results.get(short), results.get(long)
+    if not a or not b:
+        return issues + [f'missing member(s): short={a} long={b}']
+    for fld in ('status', 'tier', 'tier_label', 'sos_rank', 'cover_streak'):
+        if a.get(fld) != b.get(fld):
+            issues.append(f'overlay field {fld!r} differs by form: {a.get(fld)!r} vs {b.get(fld)!r}')
+    if a.get('status') != 'surging':
+        issues.append(f'divergence overlay not applied (status={a.get("status")!r}, expected surging)')
+    if a.get('tier') != 0 or a.get('sos_rank') != 1:
+        issues.append(f'overlay values wrong: tier={a.get("tier")} sos_rank={a.get("sos_rank")}')
+    return issues
+
+
 def qc_fail_closed_real():
     app._CFB_WAVE_CACHE.clear()
     ctx = app.build_cfb_wave_context()
@@ -321,6 +376,7 @@ CHECKS = [('truth_table', qc_truth_table), ('edges', qc_edges),
           ('membership_iterates_streaks', qc_membership_iterates_streaks),
           ('alias_resolution', qc_alias_resolution),
           ('canon_short_long_reconciles', qc_canon_short_long_reconciles),
+          ('overlay_identity_short_long', qc_overlay_identity_short_long),
           ('fail_closed_real', qc_fail_closed_real)]
 
 
