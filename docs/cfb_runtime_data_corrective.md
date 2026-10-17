@@ -173,6 +173,46 @@ asserts short(manifest)↔long(graded) reconciliation, no double-count, and FBS-
 diagnostic was corrected (both-orientation raw index so a road team isn't a false "absent from raw";
 distinct game ids reported separately from team-side decisions; genuine absent-from-raw / ambiguity /
 collision all exit nonzero). **Recommended follow-up (not applied): a `GameID` column** on future
-history + results rows to reconcile on the stable id instead of the legacy name/date bridge. Board stays
-fail-closed until prod reruns `report_cfb_wave_sync.py` → `synchronized: True` with zero missing,
-collisions, malformed, duplicates, and overdue.
+history + results rows to reconcile on the stable id instead of the legacy name/date bridge.
+
+### SUPERSEDED — Option 1 (wave-local name canonicalization) was unviable on prod
+The prod collision audit proved the two-step name helper merges distinct teams (`Miami`/`Miami (OH)`,
+`Tennessee`/`UT Martin`, `Louisiana`/`UL Monroe`, `Southern`/`Southern Miss`) because prod's `cff._resolve`
+is **data-dependent** (prefix matching keyed off `_cfbd_names()`), so names cannot be an authoritative
+identity. All fail-closed guards fired correctly; no corruption reached the board. Option 1 is replaced by:
+
+### Game-ID reconciliation (SHIPPED)
+**Authoritative identity = `(GameID, TeamSide)`**, `TeamSide in {HOME, AWAY}`; `GameID` alone identifies the
+game, its two ATS decisions are the two sides. **Authoritative records are never joined on normalized
+names again.** FBS eligibility is decided by the **provider conference** captured with the game
+(`CFB_FBS_CONFERENCES`), never fuzzy names. Name normalization is **presentation-only** (the model/ranking
+overlay, which cannot change membership or ordering).
+
+Persisted through the pipeline (all from the one CFBD `/lines` call both feeds already share):
+- `fetch_cfb_line_moves.py` (manifest): adds `game_id`, `home_conf`, `away_conf`, exact `home`/`away`.
+- `fetch_cfbd_game_lines_history.py`: adds `GameID`, `HomeTeamRaw`/`AwayTeamRaw`, `HomeConf`/`AwayConf`
+  (new columns; the normalized Home/Away stay for other presentation consumers).
+- `build_ncaaf_game_line_backfill.py`: emits **two records per game** with `GameID` + `TeamSide` + exact
+  provider `Team`/`Opponent` + `Conf`/`OppConf` + selected `Line` + grade.
+- Wave (`_cfb_cover_streaks_from_df` / `_cfb_ats_sync` / `build_cfb_wave_context`): decisions keyed on
+  `(GameID, TeamSide)`; streaks grouped by the **exact provider team name** (stable across both feeds);
+  FBS gate from conference. `_cfb_wave_team_key` removed from all authoritative paths (kept only for the
+  non-authoritative overlay + diagnostics). A missing/null `GameID` is **ineligible** and fails the board
+  closed; identical `(GameID, TeamSide)` rows collapse, conflicting ones (or a `GameID` with inconsistent
+  teams/kickoff) fail closed.
+
+Tests (`qc_cfb_ats_wave_admission.py`, game-id model): Miami/Miami (OH), Tennessee/UT Martin,
+Louisiana/UL Monroe, Southern/Southern Miss stay distinct; App State/Appalachian State presentation
+aliases don't affect identity; exactly two decisions per FBS-FBS game; exactly one for an FBS-FCS game;
+same-week doubleheaders distinct; duplicate collapse vs conflict; missing/null GameID fails closed;
+inconsistent-GameID fails closed; push/loss/bye unchanged; overlay cannot change membership/order.
+
+**Migration (prod, SSM):** re-run `refresh_cfb_data.py` (regenerates the manifest, the history with
+`GameID`+conf+raw names, and the graded results with `GameID`+`TeamSide` in one pass), then
+`report_cfb_wave_sync.py` and `diagnose_cfb_line_coverage.py --completed-week 6`. Old rows lacking
+`GameID` are ineligible and keep the board fail-closed — no fabricated IDs. Follow-up: a stable provider
+team ID for streak grouping if CFBD exposes one.
+
+**Close CFB only when:** `synchronized: True` with zero missing, conflicts, ineligible (GameID-less),
+duplicates, malformed, and overdue; the full reconciliation exits 0. Overlay name-collisions are
+non-authoritative and do not gate closure.

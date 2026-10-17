@@ -64,8 +64,15 @@ def build_results(history: pd.DataFrame) -> pd.DataFrame:
         date = game.get("Date")
         season = game.get("Season")
         week = game.get("Week")
-        away = str(game.get("Away") or "").strip()
-        home = str(game.get("Home") or "").strip()
+        # EXACT provider identity for the game-ID reconciliation. Team/Opponent use the raw CFBD names
+        # (names are presentation-only identity, reconciliation is on (GameID, TeamSide)). Fall back to
+        # the normalized columns only for legacy rows, which lack a GameID and are therefore ineligible
+        # for authoritative sync (the wave keeps them fail-closed).
+        game_id = game.get("GameID")
+        away = str(game.get("AwayTeamRaw") or game.get("Away") or "").strip()
+        home = str(game.get("HomeTeamRaw") or game.get("Home") or "").strip()
+        home_conf = game.get("HomeConf")
+        away_conf = game.get("AwayConf")
         if not away or not home:
             continue
 
@@ -83,10 +90,10 @@ def build_results(history: pd.DataFrame) -> pd.DataFrame:
         game_label = f"{away} @ {home}"
 
         spread_rows = [
-            (home, away, home_spread, home_score, away_score),
-            (away, home, away_spread, away_score, home_score),
+            ("HOME", home, away, home_conf, away_conf, home_spread, home_score, away_score),
+            ("AWAY", away, home, away_conf, home_conf, away_spread, away_score, home_score),
         ]
-        for team, opponent, line, team_score, opponent_score in spread_rows:
+        for side, team, opponent, conf, opp_conf, line, team_score, opponent_score in spread_rows:
             if pd.isna(line):
                 continue
             rows.append({
@@ -96,8 +103,12 @@ def build_results(history: pd.DataFrame) -> pd.DataFrame:
                 "GameDate": date,
                 "ResultDate": date,
                 "Game": game_label,
+                "GameID": game_id,
+                "TeamSide": side,
                 "Team": team,
                 "Opponent": opponent,
+                "Conf": conf,
+                "OppConf": opp_conf,
                 "HomeTeam": home,
                 "AwayTeam": away,
                 "MarketType": "SPREAD",

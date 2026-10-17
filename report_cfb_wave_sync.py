@@ -52,6 +52,8 @@ def main() -> int:
     print(f'legitimate exclusions      : {sync.get("exclusions")}')
     print(f'exact duplicates collapsed : {sync.get("duplicates_collapsed")}')
     print(f'conflicts                  : {sync.get("conflicts")}')
+    print(f'graded rows w/o GameID     : {sync.get("ineligible")}')
+    print(f'manifest games w/o GameID  : {sync.get("manifest_missing_gameid")}')
     print(f'missing decisions          : {sync.get("missing_count")}')
     if sync.get('reason'):
         print(f'reason                     : {sync.get("reason")}')
@@ -67,15 +69,11 @@ def main() -> int:
         print('member count               : (withheld - not synchronized; honest unavailable state stands)')
         miss = sync.get('missing') or []
         if miss:
-            # Diagnostic: which expected (week, team, opponent) decisions are ungraded. Lets us tell a
-            # genuine history-coverage gap from a team-name resolution mismatch between the two CFBD feeds.
-            wk_counts = {}
-            for m in miss:
-                wk_counts[m[0]] = wk_counts.get(m[0], 0) + 1
-            print(f'missing by week (sample)   : {dict(sorted(wk_counts.items()))}')
-            print('sample missing (wk,team,opp):')
+            # Each missing entry is the authoritative identity (GameID, TeamSide) -- a completed,
+            # line-bearing FBS-side decision the manifest expects but the graded record lacks.
+            print('sample missing (GameID, side):')
             for m in miss[:25]:
-                print(f'    {m[0]}  {m[1]}  vs  {m[2]}')
+                print(f'    {m}')
     print('-' * 60)
     return 0
 

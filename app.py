@@ -44547,6 +44547,21 @@ def _cfb_wave_key_collisions(names):
     return {k: sorted(v) for k, v in by_key.items() if len(v) > 1}
 
 
+# CFBD FBS conferences -- authoritative FBS classification comes from the provider conference metadata
+# captured with each game (never fuzzy name resolution). FBS independents (Notre Dame, UConn, ...) carry
+# "FBS Independents". YEARLY CHORE: keep current as realignment moves teams between conferences.
+CFB_FBS_CONFERENCES = frozenset({
+    'ACC', 'American Athletic', 'Big 12', 'Big Ten', 'Conference USA', 'FBS Independents',
+    'Mid-American', 'Mountain West', 'Pac-12', 'SEC', 'Sun Belt',
+})
+
+
+def _cfb_side_is_fbs(conf):
+    """True when a team-side's provider conference marks it FBS. The authoritative FBS gate for the wave
+    (game-ID reconciliation) -- never fuzzy name resolution."""
+    return str(conf or '').strip() in CFB_FBS_CONFERENCES
+
+
 def _cfb_active_cover_streaks(season=2026):
     """Per-team CURRENT consecutive graded ATS-cover streak from the chronological graded source
     (data/tracking/NCAAF_GameLineResults.csv, MarketType=SPREAD) — the frozen Active ATS Wave rule
@@ -44574,46 +44589,61 @@ def _cfb_active_cover_streaks(season=2026):
 def _cfb_cover_streaks_from_df(df, season):
     """Pure computation behind the frozen Active ATS Wave rule (testable with a fixture DataFrame).
 
-    Canonical team-GAME identity = (resolved team, resolved opponent, GameDate) -- NOT (week, team),
-    which would collapse two legitimate games a team plays under one numbered week (e.g. a Week-1 label
-    spanning two Saturdays). Chronology is by actual GameDate. Duplicate handling:
-      * exact repeat of the same canonical game + result -> collapsed (reported as duplicates_collapsed);
-      * same canonical game with a CONFLICTING result -> a conflict (fails sync closed);
-      * different opponent or kickoff -> a separate legitimate game, never a duplicate.
-    Returns {'per','through','graded_keys' (manifest-grain (week,team,opp) set),'conflicts','collapsed'}."""
-    import cfb_current_form as cff
+    GAME-ID RECONCILIATION: the authoritative decision identity is (GameID, TeamSide) -- never a
+    normalized team name (prod cff._resolve is data-dependent and merges distinct teams). A row missing a
+    GameID or a HOME/AWAY TeamSide is INELIGIBLE and reported (the board fails closed on any ineligible).
+    Duplicate handling on (GameID, TeamSide): an exact repeat (same result + line) collapses; a conflicting
+    repeat, or a GameID whose teams/kickoff are inconsistent across rows, is a conflict (fail closed).
+
+    Streaks are grouped by the EXACT provider team name (stable across the manifest + graded feeds, both
+    from CFBD /lines), ordered by GameDate; names are presentation only. The per-team record carries the
+    provider conference for the authoritative FBS gate. Returns
+    {'per','through','graded_keys' (set of (GameID,TeamSide)),'conflicts','collapsed','ineligible'}."""
     df = df[(df['MarketType'].astype(str).str.upper() == 'SPREAD')
             & (pd.to_numeric(df['Season'], errors='coerce') == season)]
     df = df[df['OutcomeState'].astype(str).isin(['Hit', 'Miss', 'Push'])]   # graded decisions only
     df = df[pd.to_numeric(df['Line'], errors='coerce').notna()]             # must have a line
     df = df.assign(Week=pd.to_numeric(df['Week'], errors='coerce')).dropna(subset=['Week'])
     _m = {'Hit': 'W', 'Miss': 'L', 'Push': 'P'}
-    canon = {}            # (rteam, ropp, date) -> {'res','week','name'}
-    conflicts, collapsed = [], 0
+    canon = {}            # (game_id, side) -> {'res','week','team','opp','conf','date','line'}
+    gid_identity = {}     # game_id -> (home/away teams + date) for cross-row consistency
+    conflicts, collapsed, ineligible = [], 0, 0
     for _, r in df.iterrows():
         state = _m.get(str(r.get('OutcomeState')))
         if state is None:
             continue
-        date = str(r.get('GameDate') or '').strip()
-        rteam = _cfb_wave_team_key(str(r.get('Team', '')))     # short/long name divergence collapsed
-        ropp = _cfb_wave_team_key(str(r.get('Opponent', '')))
-        key = (rteam, ropp, date)                 # opponent + kickoff distinguish same-week games
-        if key in canon:
-            if canon[key]['res'] == state:
-                collapsed += 1                     # exact repeat of the same game -> dedupe
-            else:
-                conflicts.append(key)              # same game, conflicting result -> fail closed
+        gid = str(r.get('GameID') or '').strip()
+        side = str(r.get('TeamSide') or '').strip().upper()
+        if not gid or gid.lower() in ('nan', 'none') or side not in ('HOME', 'AWAY'):
+            ineligible += 1                       # no stable identity -> cannot sync authoritatively
             continue
-        canon[key] = {'res': state, 'week': int(r['Week']), 'name': str(r.get('Team', ''))}
+        team = str(r.get('Team', '')).strip()
+        opp = str(r.get('Opponent', '')).strip()
+        date = str(r.get('GameDate') or '').strip()
+        line = round(float(pd.to_numeric(r.get('Line'), errors='coerce')), 2)
+        ident = (team if side == 'HOME' else opp, opp if side == 'HOME' else team, date)
+        if gid in gid_identity and gid_identity[gid] != ident:
+            conflicts.append((gid, 'identity'))   # same GameID, inconsistent teams/kickoff -> fail closed
+        else:
+            gid_identity[gid] = ident
+        key = (gid, side)
+        if key in canon:
+            if canon[key]['res'] == state and canon[key]['line'] == line:
+                collapsed += 1                     # identical repeat -> dedupe
+            else:
+                conflicts.append(key)              # conflicting duplicate -> fail closed
+            continue
+        canon[key] = {'res': state, 'week': int(r['Week']), 'team': team, 'opp': opp,
+                      'conf': r.get('Conf'), 'date': date, 'line': line}
     by_team = {}
-    for (rteam, ropp, date), v in canon.items():
-        by_team.setdefault(rteam, []).append((date, v))
+    for (gid, side), v in canon.items():
+        by_team.setdefault(v['team'], []).append(v)   # group a team's streak by its EXACT provider name
     through = max((v['week'] for v in canon.values()), default=None)
-    graded_keys = {(v['week'], rteam, ropp) for (rteam, ropp, _d), v in canon.items()}
+    graded_keys = {key for key in canon}               # authoritative: (GameID, TeamSide)
     per = {}
-    for rteam, lst in by_team.items():
-        lst.sort(key=lambda x: x[0])              # chronological by GameDate, not Week
-        seq = [v['res'] for _d, v in lst]
+    for team, lst in by_team.items():
+        lst.sort(key=lambda v: v['date'])          # chronological by GameDate
+        seq = [v['res'] for v in lst]
         cover_streak = 0
         for ch in reversed(seq):
             if ch == 'W':
@@ -44626,57 +44656,46 @@ def _cfb_cover_streaks_from_df(df, season):
                 loss_streak += 1
             else:
                 break
-        per[rteam] = {
-            'team_name': lst[-1][1]['name'], 'cover_streak': cover_streak, 'loss_streak': loss_streak,
+        per[team] = {
+            'team_name': team, 'conf': next((v['conf'] for v in reversed(lst) if v.get('conf')), None),
+            'cover_streak': cover_streak, 'loss_streak': loss_streak,
             'results': seq, 'recent': seq[-6:], 'covers': seq.count('W'), 'losses': seq.count('L'),
-            'pushes': seq.count('P'), 'decisions': len(seq),
-            'last_week': max(v['week'] for _d, v in lst),
+            'pushes': seq.count('P'), 'decisions': len(seq), 'last_week': max(v['week'] for v in lst),
         }
     return {'per': per, 'through': through, 'graded_keys': graded_keys,
-            'conflicts': conflicts, 'collapsed': collapsed}
+            'conflicts': conflicts, 'collapsed': collapsed, 'ineligible': ineligible}
 
 
 def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
-    """Completeness-based synchronization with MANIFEST-LINEAGE validation (replaces max(Week)).
+    """Completeness synchronization on GAME-ID identity + MANIFEST-LINEAGE validation.
 
-    Lineage first: the expected-game manifest (cfb_line_moves.json) must declare the requested season
-    and carry a games list, or the source fails closed as 'manifest season/lineage invalid' -- a stale
-    or wrong-season manifest can never mark the board synchronized. The manifest's `updated` timestamp
-    is reported for the operator.
+    Lineage first: the manifest (cfb_line_moves.json) must declare the requested season and carry a games
+    list, else fail closed ('manifest season/lineage invalid'). Its `updated` timestamp is reported.
 
-    Completeness next: every completed game through `completed_week` with a spread contributes two
-    team-game decisions at (week, resolved team, resolved opponent) grain -- the SAME grain as the
-    graded source's `graded_keys`. Completed games with no line, and non-FBS slots, are legitimate
-    exclusions. The source is synchronized only when EVERY expected decision is graded and there are
-    no conflicting duplicate identities. through_week is set only when completeness passes."""
-    import cfb_current_form as cff
+    Completeness next: every completed, line-bearing game through `completed_week` contributes one
+    expected decision PER FBS SIDE, keyed by (GameID, TeamSide) -- the SAME identity the grader emits.
+    FBS is decided by the provider CONFERENCE captured with the game, never fuzzy names. A manifest game
+    missing its GameID, or any ineligible (GameID-less) graded row, or any conflict, FAILS CLOSED -- a
+    row without a stable id is never counted. Non-FBS sides and no-line games are legitimate exclusions.
+    through_week is set only when completeness passes."""
     meta_season = (line_moves or {}).get('season')
     games = (line_moves or {}).get('games')
     conflicts = len((streak_data or {}).get('conflicts', []))
+    ineligible = int((streak_data or {}).get('ineligible', 0))
     graded_keys = (streak_data or {}).get('graded_keys', set())
     base = {'manifest_season': meta_season, 'manifest_updated': (line_moves or {}).get('updated'),
-            'completed_week': completed_week, 'conflicts': conflicts,
+            'completed_week': completed_week, 'conflicts': conflicts, 'ineligible': ineligible,
             'duplicates_collapsed': (streak_data or {}).get('collapsed', 0),
             'graded_decisions': len(graded_keys), 'expected_decisions': 0, 'exclusions': 0,
-            'missing': [], 'missing_count': 0}
+            'missing': [], 'missing_count': 0, 'manifest_missing_gameid': 0}
     if meta_season != season or not isinstance(games, list):
         return {**base, 'synchronized': False, 'through_week': None,
                 'reason': 'manifest season/lineage invalid'}
     if completed_week is None or completed_week < 1:
-        ok = conflicts == 0
-        return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None}
-    # Wave-local canonicalization so the manifest-expected keys and the graded keys use ONE identity
-    # (collapses App State/Appalachian State etc.). COLLISION GUARD: within this single manifest feed
-    # each team has one CFBD name, so if the helper merges two distinct manifest names into one key, that
-    # is a team-merge -> FAIL CLOSED rather than corrupt a record.
-    man_names = [str(g.get(side, '')) for g in games for side in ('home', 'away') if g.get(side)]
-    collisions = _cfb_wave_key_collisions(man_names)
-    if collisions:
-        return {**base, 'synchronized': False, 'through_week': None,
-                'reason': f'team-key collision in manifest ({len(collisions)}): '
-                          + '; '.join(f"{k}<-{v}" for k, v in list(collisions.items())[:3])}
-    fbs = {_cfb_wave_team_key(t) for t in cff._fbs_teams()}   # re-key the FBS universe to the same identity
-    expected, exclusions = set(), 0
+        ok = conflicts == 0 and ineligible == 0
+        return {**base, 'synchronized': ok, 'through_week': completed_week if ok else None,
+                'reason': None if ok else 'conflicts/ineligible with no completed week'}
+    expected, exclusions, man_missing_gid = set(), 0, 0
     for g in games:
         wk = g.get('week')
         if not g.get('completed') or wk is None or wk > completed_week:
@@ -44684,19 +44703,34 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
         if g.get('spread_now') is None and g.get('spread_open') is None:
             exclusions += 1                       # no-line / cancelled -> legitimate exclusion
             continue
-        h, a = _cfb_wave_team_key(str(g.get('home', ''))), _cfb_wave_team_key(str(g.get('away', '')))
-        for team, opp in ((h, a), (a, h)):
-            if team in fbs:
-                expected.add((int(wk), team, opp))   # (week, team, opponent) -- manifest grain
+        gid = str(g.get('game_id') or '').strip()
+        if not gid or gid.lower() in ('nan', 'none'):
+            man_missing_gid += 1                  # a completed line-bearing manifest game with no id
+            continue
+        for side, conf in (('HOME', g.get('home_conf')), ('AWAY', g.get('away_conf'))):
+            if _cfb_side_is_fbs(conf):
+                expected.add((gid, side))         # (GameID, TeamSide) -- authoritative identity
             else:
-                exclusions += 1                      # non-FBS slot -> legitimate exclusion
-    graded = {k for k in graded_keys if k[0] <= completed_week and k[1] in fbs}
-    missing = sorted(expected - graded)
-    synchronized = (not missing) and (conflicts == 0)
+                exclusions += 1                   # non-FBS side -> legitimate exclusion
+    missing = sorted(expected - graded_keys)
+    synchronized = (not missing) and conflicts == 0 and ineligible == 0 and man_missing_gid == 0
+    reason = None
+    if not synchronized:
+        why = []
+        if missing:
+            why.append(f'{len(missing)} missing decisions')
+        if conflicts:
+            why.append(f'{conflicts} conflicts')
+        if ineligible:
+            why.append(f'{ineligible} graded rows without GameID')
+        if man_missing_gid:
+            why.append(f'{man_missing_gid} manifest games without GameID')
+        reason = '; '.join(why)
     return {**base, 'synchronized': synchronized,
             'through_week': completed_week if synchronized else None,
-            'expected_decisions': len(expected), 'graded_decisions': len(graded),
-            'exclusions': exclusions, 'missing': missing[:40], 'missing_count': len(missing)}
+            'expected_decisions': len(expected), 'graded_decisions': len(graded_keys),
+            'exclusions': exclusions, 'manifest_missing_gameid': man_missing_gid,
+            'missing': missing[:40], 'missing_count': len(missing), 'reason': reason}
 
 
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
@@ -44728,9 +44762,10 @@ def build_cfb_wave_context():
         except (OSError, ValueError):
             return {}
     ats = _j(paths[1]).get('teams', {})
-    ats_by_resolved = {_cfb_wave_team_key(s): a for s, a in ats.items()}  # OPTIONAL season context only
-    # FROZEN Active ATS Wave rule (docs/ats_wave_contract.md): membership iterates the AUTHORITATIVE
-    # per-game streak index -- never the season aggregate, which must not be able to suppress membership.
+    ats_by_resolved = {cff._resolve(s): a for s, a in ats.items()}  # OPTIONAL season context (presentation)
+    # Membership iterates the AUTHORITATIVE per-game streak index (keyed on exact provider names,
+    # reconciled on (GameID, TeamSide)); FBS is decided by the provider conference carried in the record,
+    # never fuzzy name resolution. The season aggregate can never suppress a qualifying team.
     streak_data = _cfb_active_cover_streaks(2026)
     streaks = streak_data['per']
     lm = _j(paths[2])
@@ -44739,10 +44774,8 @@ def build_cfb_wave_context():
     wk = min((g['week'] for g in moves), default=None)
     moves = [g for g in moves if g['week'] == wk] if wk is not None else []
 
-    # Completeness-based synchronization (NOT max(Week)) with manifest-lineage validation: the manifest
-    # must declare season 2026, and every expected completed-game ATS decision through wk-1 must have a
-    # canonical graded decision at (week, team, opponent) grain, with no conflicting duplicate. Else FAIL
-    # CLOSED -- an honest "not synchronized" report, never a season-cover-% fallback.
+    # GAME-ID completeness sync + manifest-lineage validation: fails closed on any missing decision,
+    # conflict, or GameID-less row (graded or manifest). Never a season-cover-% fallback.
     sync = _cfb_ats_sync(streak_data, lm, (wk - 1) if wk else None, 2026)
     if not sync['synchronized']:
         data = {'wave_week': wk, 'wave_through_week': sync.get('through_week'), 'wave_unsynced': True,
@@ -44752,48 +44785,25 @@ def build_cfb_wave_context():
         _CFB_WAVE_CACHE['data'] = data
         return data
 
+    # This week's game per team, keyed by the EXACT provider name (matches the streak keys).
     game_of = {}
     for g in moves:
-        game_of[_cfb_wave_team_key(str(g['home']))] = (g, True)
-        game_of[_cfb_wave_team_key(str(g['away']))] = (g, False)
-    fbs_keys = {_cfb_wave_team_key(t) for t in cff._fbs_teams()}   # FBS universe in the wave identity
+        game_of[str(g['home'])] = (g, True)
+        game_of[str(g['away'])] = (g, False)
+    # PRESENTATION overlay only (ranking trajectory + prior divergence -> tier chip + SoS rank). Best-effort
+    # name match via cff._resolve; a miss merely omits the chip and can NEVER change membership or ordering
+    # (which are the factual cover streak + a deterministic team-name tiebreak). Non-authoritative.
     ranks = _cfb_rankings()
+    rank_lc = {str(k).lower(): v for k, v in ranks.items()}
     obs = cff._srs_observed()
-    # The model OVERLAY (ranking trajectory + prior divergence -> status -> tier -> ordering) must use the
-    # same wave identity, or a diverging team (App State vs Appalachian State) silently loses its overlay.
-    # Collision guard on these AUXILIARY maps too (not just the manifest): if the helper would merge two
-    # distinct ranking/observed names, fail closed rather than misattribute an overlay.
-    aux_coll = _cfb_wave_key_collisions(list(ranks.keys()) + list(obs.keys())
-                                        + [n for g in lm_games for n in (g.get('home'), g.get('away')) if n])
-    if aux_coll:
-        data = {'wave_week': wk, 'wave_through_week': None, 'wave_unsynced': True,
-                'wave_sync': {**sync, 'synchronized': False, 'through_week': None,
-                              'reason': f'team-key collision in ranking/observed/manifest maps '
-                                        f'({len(aux_coll)}): ' + '; '.join(f"{k}<-{v}" for k, v in
-                                                                           list(aux_coll.items())[:3])},
-                'wave_members': [], 'wave_fades': [], 'wave_count': 0, 'wave_available': True}
-        _CFB_WAVE_CACHE['sig'] = sig
-        _CFB_WAVE_CACHE['data'] = data
-        return data
-    rank_lc = {_cfb_wave_team_key(k): v for k, v in ranks.items()}
-    obsrank = {_cfb_wave_team_key(t): i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
-    # wave_key -> a representative ORIGINAL CFBD name. prior_divergence keys off the raw short form, so
-    # overlays on a graded long-form name (Appalachian State) must be looked up via the raw name
-    # (App State). The manifest carries raw CFBD names; fall back to ranking/observed source names.
-    rep_raw = {}
-    for g in lm_games:
-        for nm in (g.get('home'), g.get('away')):
-            if nm:
-                rep_raw.setdefault(_cfb_wave_team_key(nm), str(nm))
-    for nm in list(ranks.keys()) + list(obs.keys()):
-        rep_raw.setdefault(_cfb_wave_team_key(nm), str(nm))
+    obsrank = {cff._resolve(t): i + 1 for i, t in enumerate(sorted(obs, key=lambda x: -obs[x]))}
 
     def _status(school):
-        wk_key = _cfb_wave_team_key(school)
-        ap = rank_lc.get(wk_key)
+        lc = cff._resolve(school)
+        ap = rank_lc.get(lc) or rank_lc.get(str(school).lower())
         if ap and ap.get('fell_out'):
             return 'collapsed'
-        d = cff.prior_divergence(rep_raw.get(wk_key, school))   # raw short form for divergence lookup
+        d = cff.prior_divergence(school)
         if d and d['label'] == 'surging':
             return 'surging'
         if d and d['label'] == 'regressed':
@@ -44827,13 +44837,13 @@ def build_cfb_wave_context():
                              'total_edge': (tr or {}).get('edge')}
 
     plays, sinks = [], []
-    for rteam, srec in streaks.items():     # iterate the AUTHORITATIVE streak index
-        if rteam not in fbs_keys:
+    for rteam, srec in streaks.items():     # iterate the AUTHORITATIVE streak index (exact provider names)
+        if not _cfb_side_is_fbs(srec.get('conf')):   # FBS gate from provider conference, not names
             continue
         name = srec['team_name']
         st = _status(name)
-        orank = obsrank.get(rteam, 999)
-        a = ats_by_resolved.get(rteam) or {}
+        orank = obsrank.get(cff._resolve(rteam), 999)         # presentation overlay (best-effort)
+        a = ats_by_resolved.get(cff._resolve(rteam)) or {}
         # Season ATS record DERIVED from the authoritative per-game sequence (aggregate optional: acm only).
         season_rec = f"{srec['covers']}-{srec['losses']}" + (f"-{srec['pushes']}" if srec['pushes'] else '')
         cover_pct = round(100 * srec['covers'] / srec['decisions']) if srec['decisions'] else None

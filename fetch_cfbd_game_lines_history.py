@@ -99,6 +99,14 @@ def normalize_payload(payload: list[dict], season: int, provider: str = "") -> p
             "Date": item.get("startDate") or item.get("start_date") or item.get("date"),
             "Season": item.get("season") or season,
             "Week": item.get("week"),
+            # Authoritative identity for the ATS grader (game-ID reconciliation): stable CFBD game id,
+            # EXACT provider names, and conference metadata. Carried as NEW columns; the existing
+            # normalized Home/Away stay for other (presentation) consumers.
+            "GameID": item.get("id") or item.get("game_id"),
+            "HomeTeamRaw": item.get("homeTeam") or item.get("home_team"),
+            "AwayTeamRaw": item.get("awayTeam") or item.get("away_team"),
+            "HomeConf": item.get("homeConference") or item.get("home_conference"),
+            "AwayConf": item.get("awayConference") or item.get("away_conference"),
             "Away": item.get("awayTeam") or item.get("away_team"),
             "Home": item.get("homeTeam") or item.get("home_team"),
             "AwayScore": item.get("awayScore") if item.get("awayScore") is not None else item.get("away_score"),
