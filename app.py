@@ -44661,7 +44661,7 @@ def _cfb_ats_sync(streak_data, line_moves, completed_week, season):
     return {**base, 'synchronized': synchronized,
             'through_week': completed_week if synchronized else None,
             'expected_decisions': len(expected), 'graded_decisions': len(graded),
-            'exclusions': exclusions, 'missing': missing[:12], 'missing_count': len(missing)}
+            'exclusions': exclusions, 'missing': missing[:40], 'missing_count': len(missing)}
 
 
 _WAVE_TIERS = {0: 'Model rates above the line', 1: 'Model agrees with the line',
