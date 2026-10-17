@@ -123,3 +123,28 @@ runtime dir and the committed seeds are independent).
 
 The untrack commit (step 3) is held until step 2's runtime copies are verified present (so pulling a
 removal of locally-modified tracked files can't fail and prod never loses fresh data).
+
+## Post-corrective: the CFB "missing decisions" gap (separate diagnosis, read-only)
+After the runtime fix the manifest is fresh, but the wave still fail-closes on ~67 "missing decisions":
+completed, line-bearing FBS-team games in the manifest that are ungraded. Read-only code findings:
+- **Same endpoint, same universe.** Both feeds call `GET /lines?year=&seasonType=regular` (one call, no
+  pagination). The manifest (`fetch_cfb_line_moves.py`) keeps a game if the **median spread across all
+  books** is present. The history (`fetch_cfbd_game_lines_history.py`) keeps `_first_line` = **`lines[0]`
+  only**. So the loss is in NORMALIZATION, not the raw response / window / season-type / pagination.
+- **Candidate mechanism A — `lines[0]` vs median:** if the first book for a game has a null spread, the
+  history row has no `Line` → the grader marks it Pending → excluded, while the manifest's median still
+  carries a spread. (The manifest also uses `seasonType=regular` only; the history fans `both` but that
+  only ADDS postseason, never drops regular.)
+- **Candidate mechanism B — name normalization join:** `normalize_ncaaf_team_name` does NOT blank unknown
+  (FCS) teams (it returns the cleaned name), so FBS-vs-FCS is not dropped by the empty-name filter; a
+  residual divergence between `normalize_ncaaf_team_name` and `cff._resolve` could still mismatch the
+  graded key vs the manifest key. To be confirmed per game.
+- **Reconciliation tool (read-only, no pipeline change):** `diagnose_cfb_line_coverage.py` replays the
+  history normalization on the same raw `/lines` payload, keyed by the stable CFBD game `id`, and buckets
+  every expected-but-ungraded game by reason (`first_line_null` / `absent_from_history` /
+  `name_blanked` / `in_history_not_graded`) plus the directive's targeted checks (FBS-FCS, the named
+  FBS-FBS games, week-0, neutral/rivalry, date-vs-week). Run on prod, then the corrective plan follows
+  from its reconciliation table. **Governance (provisional, Darrel):** any completed game with a valid
+  market line belongs in the FBS team's ATS record, FCS opponent included — do NOT narrow the expected
+  universe to obtain sync; exclude only no-line / cancelled / ungradeable games. Board stays fail-closed
+  until a corrective is approved.
