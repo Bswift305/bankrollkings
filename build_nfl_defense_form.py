@@ -23,8 +23,12 @@ from pathlib import Path
 
 import pandas as pd
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "nfl_2026_defense.json"
+# Runtime-dir write (atomic) -- never the tracked tree; committed copy is a cold-start seed.
+OUT_NAME = "nfl_2026_defense.json"
+OUT_PATH = bk_runtime.scenario_write_path(OUT_NAME)
 STATS_URL = "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{season}.parquet"
 TEAM_NORM = {"LA": "LAR"}
 
@@ -95,8 +99,7 @@ def main() -> int:
     ap.add_argument("--source", default=None)
     args = ap.parse_args()
     data = build(args.season, args.source)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json(OUT_NAME, json.dumps(data, indent=2))
     print(f"Wrote {data['n_players']} defenders, weeks {data['weeks']} -> {OUT_PATH}")
     return 0
 

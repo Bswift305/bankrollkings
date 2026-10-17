@@ -20,8 +20,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "nfl_scores.json"
+# Runtime-dir write (atomic) -- never the tracked tree; committed copy is a cold-start seed.
+OUT_NAME = "nfl_scores.json"
+OUT_PATH = bk_runtime.scenario_write_path(OUT_NAME)
 GAMES_URL = "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
 STATS_URL = "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{season}.parquet"
 UA = {"User-Agent": "Mozilla/5.0"}
@@ -161,8 +165,7 @@ def main() -> int:
     ap.add_argument("--prior-season", type=int, default=2025)
     args = ap.parse_args()
     data = build(args.season, args.prior_season)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json(OUT_NAME, json.dumps(data, indent=2))
     print(f"Wrote {len(data['games'])} {args.season} games, {len(data['prior'])} prior ratings, "
           f"{len(data['qb1'])} QB1s -> {OUT_PATH}")
     return 0

@@ -25,8 +25,13 @@ from pathlib import Path
 
 import pandas as pd
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "nfl_2026_form.json"
+# Runtime-dir write (atomic) -- NEVER the tracked tree, so prod stops dirtying data/scenarios/. The
+# committed copy is a cold-start seed (bk_runtime seed-fallback). See bk_runtime.NFL_RUNTIME_FILES.
+OUT_NAME = "nfl_2026_form.json"
+OUT_PATH = bk_runtime.scenario_write_path(OUT_NAME)
 STATS_URL = "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{season}.parquet"
 
 # nflverse uses "LA" for the Rams; the odds/props feeds use "LAR". Normalize to the feed code.
@@ -231,8 +236,7 @@ def main() -> int:
     ap.add_argument("--source", default=None, help="local parquet to build from instead of downloading")
     args = ap.parse_args()
     data = build(args.season, args.source)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json(OUT_NAME, json.dumps(data, indent=2))
     print(f"Wrote {data['n_teams']} teams, weeks {data['weeks']} -> {OUT_PATH}")
     return 0
 

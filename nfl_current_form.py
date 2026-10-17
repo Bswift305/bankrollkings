@@ -16,8 +16,12 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-FORM_PATH = BASE_DIR / "data" / "scenarios" / "nfl_2026_form.json"
+# Resolved at READ time (runtime copy if present, else committed seed) -- never frozen at import, so a
+# fresh runtime write is picked up after the lru_cache is cleared. See bk_runtime.NFL_RUNTIME_FILES.
+FORM_NAME = "nfl_2026_form.json"
 
 # Full team name (odds/props feeds) -> nflverse/feed abbreviation.
 NAME_TO_ABBR = {
@@ -38,10 +42,11 @@ ABBR_ALIAS = {"LA": "LAR", "WSH": "WAS", "JAC": "JAX"}
 
 @lru_cache(maxsize=1)
 def _data() -> dict:
-    if not FORM_PATH.exists():
+    p = bk_runtime.scenario_read_path(FORM_NAME)
+    if not p.exists():
         return {}
     try:
-        return json.loads(FORM_PATH.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return {}
 

@@ -21,8 +21,12 @@ from pathlib import Path
 
 import pandas as pd
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "nfl_officiating.json"
+# Runtime-dir write (atomic) -- never the tracked tree; committed copy is a cold-start seed.
+OUT_NAME = "nfl_officiating.json"
+OUT_PATH = bk_runtime.scenario_write_path(OUT_NAME)
 GAMES_URL = "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
 _UA = {"User-Agent": "Mozilla/5.0"}
 _ALIAS = {"Ronald Torbert": "Ron Torbert"}   # nflverse name variants
@@ -100,8 +104,7 @@ def main() -> int:
         "referees": {k: v for k, v in tend.items() if v["n"] >= MIN_GAMES},
         "assignments": assignments,
     }
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    bk_runtime.publish_json(OUT_NAME, json.dumps(data, indent=2))
     print(f"[build_nfl_officiating] {len(data['referees'])} referee profiles, "
           f"{len(assignments)} assignments (wk {assignments[0]['week'] if assignments else '-'}) -> {OUT_PATH.name}")
     return 0

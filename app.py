@@ -43040,11 +43040,19 @@ def unit_sizing_tool():
     return render_template('unit_sizing.html')
 
 
+def _nfl_scenario_path(name):
+    """Read path for an NFL runtime scenario file: the runtime-dir copy if present, else the committed
+    seed (bk_runtime seed-fallback). Builders write ONLY to the runtime dir, so prod never dirties the
+    tracked tree; the committed copy is a cold-start fallback. See docs/cfb_runtime_data_corrective.md
+    (NFL runtime migration) and bk_runtime.NFL_RUNTIME_FILES."""
+    return str(bk_runtime.scenario_read_path(name))
+
+
 def build_nfl_team_rankings_context():
     """Team Rankings board: all 32 teams' offense + defense + turnovers, league-ranked,
     out of the matchup card into its own surface. Run / Pass / Sacks / Forced TOs, from
     nfl_2026_form.json (build_nfl_team_form.py)."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_2026_form.json')
+    path = _nfl_scenario_path('nfl_2026_form.json')
     try:
         with open(path, encoding='utf-8') as fh:
             d = json.load(fh)
@@ -43087,7 +43095,7 @@ def build_nfl_officiating_context():
     """NFL officiating read: this week's crew assignments (when nflverse posts them) +
     the referee totals-lean leaderboard, from data/scenarios/nfl_officiating.json
     (build_nfl_officiating.py). Honest: leans sit near the 49% baseline -- context."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_officiating.json')
+    path = _nfl_scenario_path('nfl_officiating.json')
     try:
         with open(path, encoding='utf-8') as fh:
             d = json.load(fh)
@@ -43120,7 +43128,7 @@ def build_nfl_regression_context():
     and are due to move toward it -- record vs point differential (Pythagorean), one-score
     game luck, and turnover margin. From data/scenarios/nfl_regression.json
     (build_nfl_regression.py). Honest: a regression-to-mean read, NOT a game prediction."""
-    path = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_regression.json')
+    path = _nfl_scenario_path('nfl_regression.json')
     data = {'meta': {}, 'boards': {}}
     try:
         mtime = os.path.getmtime(path)
@@ -45452,7 +45460,7 @@ def build_nfl_board_context():
     the eye test. Never a 'lock' list. Refreshes when the underlying data changes."""
     import nfl_totals as _nt, nfl_current_form as _ncf
     scen = os.path.join(BASE_DIR, 'data', 'scenarios')
-    watch = [os.path.join(scen, 'nfl_scores.json'),
+    watch = [_nfl_scenario_path('nfl_scores.json'),
              DATA_DIR / 'props' / 'NFL_Props.csv', DATA_DIR / 'odds' / 'NFL_Odds.csv',
              DATA_DIR / 'context' / 'NFL_GameWeather.csv']
     sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
@@ -45468,7 +45476,7 @@ def build_nfl_board_context():
     # 2) Totals -- wind / QB-out / model totals; divergence-guarded
     try:
         off, dff, lp = _nt._ratings()
-        sc = json.load(open(os.path.join(scen, 'nfl_scores.json'), encoding='utf-8'))
+        sc = json.load(open(_nfl_scenario_path('nfl_scores.json'), encoding='utf-8'))
         from collections import defaultdict
         act = defaultdict(list)
         for hh, aa2, hs, as_ in sc.get('games', []):
@@ -45544,7 +45552,7 @@ def build_nfl_game_board_context():
     spread edge in this market is usually the model missing news (flagged VOLATILE). A
     QB-out is priced into the margin. Divergence-guarded like the totals board."""
     import nfl_totals as _nt, nfl_current_form as _ncf
-    watch = [os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'),
+    watch = [_nfl_scenario_path('nfl_scores.json'),
              DATA_DIR / 'odds' / 'NFL_Odds.csv',
              DATA_DIR / 'context' / 'NFL_GameWeather.csv']
     sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
@@ -45660,8 +45668,8 @@ def build_nfl_period_board_context():
     import nfl_totals as _nt, nfl_current_form as _ncf
     path = DATA_DIR / 'odds' / 'NFL_FirstHalf.csv'
     sig = os.path.getmtime(path) if path.exists() else 0
-    sig = (sig, os.path.getmtime(os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'))
-           if os.path.exists(os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json')) else 0)
+    _sc = _nfl_scenario_path('nfl_scores.json')
+    sig = (sig, os.path.getmtime(_sc) if os.path.exists(_sc) else 0)
     if _NFL_PERIOD_BOARD_CACHE.get('sig') == sig:
         return _NFL_PERIOD_BOARD_CACHE['data']
     _nt.clear_cache()
@@ -45726,7 +45734,7 @@ def build_nfl_wave_watch_context():
     in the most efficient market, so cover streaks are largely priced. First filter, not
     an edge. Also the mirror: winless-ATS teams the model also fades."""
     import nfl_totals as _nt, nfl_current_form as _ncf
-    watch = [os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json'),
+    watch = [_nfl_scenario_path('nfl_scores.json'),
              DATA_DIR / 'odds' / 'NFL_Odds.csv']
     sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
     if _NFL_WAVE_CACHE.get('sig') == sig:
@@ -46492,7 +46500,7 @@ def build_nfl_upset_summary():
     build_nfl_scores.py in the daily refresh. Read fresh so it's not stuck behind the
     wave-context cache. Situational context: how often the dog just wins outright."""
     try:
-        p = os.path.join(BASE_DIR, 'data', 'scenarios', 'nfl_scores.json')
+        p = _nfl_scenario_path('nfl_scores.json')
         with open(p, encoding='utf-8') as fh:
             return json.load(fh).get('upset_summary') or {}
     except Exception:

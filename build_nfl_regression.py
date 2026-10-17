@@ -26,9 +26,15 @@ from pathlib import Path
 
 import pandas as pd
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-FORM_JSON = BASE_DIR / "data" / "scenarios" / "nfl_2026_form.json"
-OUT_PATH = BASE_DIR / "data" / "scenarios" / "nfl_regression.json"
+# Reads the form file via the resolver (runtime copy if present, else committed seed) -- on prod,
+# build_nfl_team_form has already written the runtime copy earlier in run_daily. Writes to the runtime
+# dir (atomic); committed copy is a cold-start seed.
+FORM_JSON = bk_runtime.scenario_read_path("nfl_2026_form.json")
+OUT_NAME = "nfl_regression.json"
+OUT_PATH = bk_runtime.scenario_write_path(OUT_NAME)
 GAMES_URL = "https://github.com/nflverse/nfldata/raw/master/data/games.csv"
 _UA = {"User-Agent": "Mozilla/5.0"}
 TEAM_NORM = {"LA": "LAR"}  # nflverse uses LA for the Rams; our feeds use LAR
@@ -150,8 +156,7 @@ def main() -> int:
                  "teams": len(rows), "generated": datetime.utcnow().strftime("%Y-%m-%d")},
         "boards": {"due_to_fall": fall, "due_to_rise": rise},
     }
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    bk_runtime.publish_json(OUT_NAME, json.dumps(out, indent=2))
     print(f"[build_nfl_regression] {season} through wk {out['meta']['through_week']}: "
           f"{len(fall)} due-to-fall, {len(rise)} due-to-rise -> {OUT_PATH.name}")
     return 0

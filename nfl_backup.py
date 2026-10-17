@@ -19,8 +19,11 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-PROFILE_PATH = BASE_DIR / "data" / "scenarios" / "nfl_qb_profiles.json"
+# Resolved at READ time (runtime copy if present, else committed seed). See bk_runtime.NFL_RUNTIME_FILES.
+PROFILE_NAME = "nfl_qb_profiles.json"
 ROSTER_PATH = BASE_DIR / "data" / "rosters" / "NFL_CurrentRoster.csv"
 LEAGUE_ATT = 33.0  # ~ a full-time starter's attempts/game
 _SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\.?$", re.I)
@@ -33,10 +36,11 @@ def _nm(s):
 
 @lru_cache(maxsize=1)
 def _profiles() -> dict:
-    if not PROFILE_PATH.exists():
+    p = bk_runtime.scenario_read_path(PROFILE_NAME)
+    if not p.exists():
         return {}
     try:
-        return {_nm(k): v for k, v in json.loads(PROFILE_PATH.read_text(encoding="utf-8")).get("qbs", {}).items()}
+        return {_nm(k): v for k, v in json.loads(p.read_text(encoding="utf-8")).get("qbs", {}).items()}
     except Exception:
         return {}
 

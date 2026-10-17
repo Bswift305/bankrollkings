@@ -35,6 +35,18 @@ CFB_RUNTIME_FILES = frozenset({
 })
 
 
+# NFL runtime-authoritative outputs (prod daily refresh_* via run_daily.py). Unlike the CFB set these use
+# SEED-FALLBACK, not fail-closed: they are NOT listed in CFB_RUNTIME_FILES, so scenario_read_path falls
+# through to the committed data/scenarios/ copy when the runtime copy is absent (a cold-start seed, kept
+# fresh daily by the runtime write). Builders write ONLY to the runtime dir (atomic), so prod never
+# dirties the tracked tree -- the committed copy is a read-only fallback. Listed for documentation; the
+# read resolution is the DEFAULT path (no code branch keys on this set).
+NFL_RUNTIME_FILES = frozenset({
+    "nfl_2026_form.json", "nfl_2026_defense.json", "nfl_regression.json", "nfl_scores.json",
+    "nfl_officiating.json", "nfl_qb_profiles.json",
+})
+
+
 def runtime_dir() -> Path:
     """The private runtime base. `BK_RUNTIME_DIR` on prod (outside the checkout); the gitignored
     `.runtime/generated/` locally. NEVER `data/scenarios/`."""

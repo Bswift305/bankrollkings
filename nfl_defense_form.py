@@ -16,8 +16,11 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-DEF_PATH = BASE_DIR / "data" / "scenarios" / "nfl_2026_defense.json"
+# Resolved at READ time (runtime copy if present, else committed seed). See bk_runtime.NFL_RUNTIME_FILES.
+DEF_NAME = "nfl_2026_defense.json"
 
 CUSHION = 0.75          # tackles of daylight before it's a lean, not a coin flip
 STRONG_EDGE = 1.5       # pace this far past the line = the firmer volume signal
@@ -26,10 +29,11 @@ _SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\.?$", re.I)
 
 @lru_cache(maxsize=1)
 def _data() -> dict:
-    if not DEF_PATH.exists():
+    p = bk_runtime.scenario_read_path(DEF_NAME)
+    if not p.exists():
         return {}
     try:
-        return json.loads(DEF_PATH.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return {}
 

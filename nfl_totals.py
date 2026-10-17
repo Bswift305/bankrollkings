@@ -20,8 +20,11 @@ import statistics
 from functools import lru_cache
 from pathlib import Path
 
+import bk_runtime
+
 BASE_DIR = Path(__file__).resolve().parent
-SCORES_PATH = BASE_DIR / "data" / "scenarios" / "nfl_scores.json"
+# Resolved at READ time (runtime copy if present, else committed seed). See bk_runtime.NFL_RUNTIME_FILES.
+SCORES_NAME = "nfl_scores.json"
 INJ_PATH = BASE_DIR / "data" / "injuries" / "NFL_Injuries.csv"
 CAP = 41.0            # cap a team's points in one game so a blowout can't warp the rating
 PRIOR_GAMES = 6.0     # last-season prior worth this many games (heavy early, decays)
@@ -36,10 +39,11 @@ def _nm(s):
 
 @lru_cache(maxsize=1)
 def _scores() -> dict:
-    if not SCORES_PATH.exists():
+    p = bk_runtime.scenario_read_path(SCORES_NAME)
+    if not p.exists():
         return {}
     try:
-        return json.loads(SCORES_PATH.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
