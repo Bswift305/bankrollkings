@@ -274,3 +274,41 @@ reconciliation exits 0, `synchronized: True`, and every declared integrity count
 Fixtures: `qc_cfb_ats_wave_admission.py` (20 checks) covers no-current-season file, `nan`/`<NA>`
 names+dates, fractional/zero week, invalid date, missing reporter counter, and
 `exact_duplicates_collapsed=1 → exit 1`.
+
+### CLOSED — production regeneration receipt (2026-10-17, d87aa67)
+
+The controlled regeneration ran on the box. The first pass at `1688f93` **fail-closed correctly** on
+125 UNKNOWN-conference sides, which the reconciliation isolated to exactly two provider strings the
+maps lacked in short form: `'Coastal Athletic'` (CAA, FCS) and `'OVC'` (Ohio Valley, FCS). Both are
+FCS, so both were added to `CFB_NON_FBS_CONFERENCES` in `d87aa67` (with long-form hedge `'Ohio
+Valley'`). The second pass closed clean:
+
+```
+deployed commit            : d87aa67
+expected completed FBS dec.: 777
+canonical graded decisions : 1516
+legitimate exclusions      : 717          # 592 -> 717 == +125, exactly the reclassified FCS sides
+missing / overdue          : 0 / 0
+conflicting_duplicates     : 0
+exact_duplicates_collapsed : 0
+malformed_rows / ineligible: 0 / 0
+manifest_missing_gameid    : 0
+manifest_dup_gameid        : 0
+unknown_conference         : 0
+overlay_misattributions    : 0
+synchronized               : True
+member count               : 17
+```
+refresh_exit=0, report_exit=0, recon_exit=0; conference audit UNKNOWN=0. The 4 overlay collisions
+(Louisiana/UL Monroe, Miami/Miami (OH), Southern/Southern Miss, Tennessee/UT Martin) are
+non-authoritative presentation-only and correctly do not gate — the reason identity is `(GameID,
+TeamSide)`. **CFB Active ATS Wave is OPERATIONAL.**
+
+**Nonblocking follow-up (post-close, defense-in-depth):** apply the same `valid_text`/`valid_date`/
+conference validation on the READ path (`report_cfb_wave_sync` / `build_cfb_wave_context` loading the
+runtime manifest + graded file), not only before publishing. The atomic writers + two pre-publish
+validators protect the normal production path, so this does not change today's result.
+
+**Standing yearly chore:** `CFB_FBS_CONFERENCES` / `CFB_NON_FBS_CONFERENCES` are provider-string maps.
+A conference rename or a new short-form value re-triggers the UNKNOWN fail-closed (as designed) — add
+the new string to the correct set and re-run. This is the intended behavior, not a regression.
