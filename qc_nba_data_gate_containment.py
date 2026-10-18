@@ -136,19 +136,78 @@ def run():
     return issues
 
 
+def check_fantasy_projection_gate():
+    """Service boundary: get_fantasy_projection_rows must NOT run the NBA.com-reading builder
+    (_build_fantasy_projection_rows reads NBA_GameLogs + NBA_PlayerTracking/Advanced directly) while the
+    gate is off; NFL is unaffected. Caching is bypassed so the signal is deterministic."""
+    issues = []
+    orig_build = app._build_fantasy_projection_rows
+    orig_cache = app._get_disk_ttl_cached_value
+    calls = []
+    app._build_fantasy_projection_rows = lambda sport_key, scoring=None: (calls.append(sport_key) or [])
+    app._get_disk_ttl_cached_value = lambda key, ttl, fn, version=None: fn()
+    saved_env = os.environ.get('BK_NBA_STATS_ENABLED')
+    try:
+        os.environ['BK_NBA_STATS_ENABLED'] = '0'
+        calls.clear()
+        if app.get_fantasy_projection_rows('nba') != [] or app.get_fantasy_projection_rows('wnba') != []:
+            issues.append('OFF: fantasy nba/wnba did not return [] (gated)')
+        if 'nba' in calls or 'wnba' in calls:
+            issues.append('OFF: NBA/WNBA fantasy builder ran (would read NBA.com files directly)')
+        calls.clear()
+        app.get_fantasy_projection_rows('nfl')
+        if 'nfl' not in calls:
+            issues.append('OFF: NFL fantasy builder did not run (must be unaffected)')
+        os.environ['BK_NBA_STATS_ENABLED'] = '1'
+        calls.clear()
+        app.get_fantasy_projection_rows('nba')
+        if 'nba' not in calls:
+            issues.append('ON: NBA fantasy builder did not run (gate stuck on)')
+    finally:
+        app._build_fantasy_projection_rows = orig_build
+        app._get_disk_ttl_cached_value = orig_cache
+        if saved_env is None:
+            os.environ.pop('BK_NBA_STATS_ENABLED', None)
+        else:
+            os.environ['BK_NBA_STATS_ENABLED'] = saved_env
+    return issues
+
+
+def check_no_ungated_tracking_claim():
+    """Repo-wide: every "Tracking is live" claim in a template must sit behind a nba_stats_gated guard,
+    so no surface claims NBA.com tracking is live while the gate is off. Auto-covers future matches."""
+    import glob
+    issues = []
+    for path in sorted(glob.glob('templates/*.html')):
+        try:
+            lines = open(path, encoding='utf-8').read().splitlines()
+        except OSError:
+            continue
+        for i, line in enumerate(lines):
+            if 'Tracking is live' in line:
+                window = '\n'.join(lines[max(0, i - 8):i + 1])
+                if 'nba_stats_gated' not in window:
+                    issues.append(f'{path}:{i + 1} "Tracking is live" is NOT guarded by nba_stats_gated')
+    return issues
+
+
 def main():
     print('=' * 60)
-    print('NBA.com DATA-RIGHTS GATE CONTAINMENT QC (injury/boost)')
+    print('NBA.com DATA-RIGHTS GATE CONTAINMENT QC (injury/boost/fantasy)')
     print('=' * 60)
     issues = run()
+    issues += check_fantasy_projection_gate()
+    issues += check_no_ungated_tracking_claim()
     if issues:
         for i in issues:
             print(f'[FAIL] {i}')
         print('-' * 60)
         print(f'{len(issues)} containment check(s) FAILED.')
         return 1
-    print('[PASS] OFF exposes no restricted NBA/WNBA values (populated fixtures)')
+    print('[PASS] OFF exposes no restricted NBA/WNBA injury+boost values (populated fixtures)')
     print('[PASS] ON restores them (technical test); NFL unaffected in both states')
+    print('[PASS] fantasy builder never runs for NBA/WNBA while gated; NFL unaffected')
+    print('[PASS] no "Tracking is live" claim is ungated in any template')
     print('-' * 60)
     print('NBA data-rights gate containment verified.')
     return 0

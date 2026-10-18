@@ -27,6 +27,14 @@
     </div>
 </div>
 
+{% if nba_stats_gated %}
+<div style="margin:0 0 20px;padding:14px 18px;border-radius:12px;border:1px solid var(--border);background:rgba(255,159,67,.08);font:600 13px/1.65 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
+  <b>Projections are temporarily unavailable while data rights are reviewed.</b> These rankings are built
+  from player game-log and tracking statistics that are paused right now, so no projections are shown.
+  This does not affect other sports, and nothing is deleted &mdash; the board returns once sourcing is cleared.
+</div>
+{% endif %}
+
 <div class="card mb-24">
     <div class="p-16" style="display:flex; gap:8px; flex-wrap:wrap;">
         {% for tab_key, tab_label in [('overview', 'Overview'), ('rankings', 'Rankings & Projections'), ('builder', 'Lineup Builder'), ('lineups', 'My Lineups'), ('bankroll', 'Bankroll')] %}
@@ -87,7 +95,7 @@
                     <option value="{{ key }}" {% if key == scoring %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                {% if sport_key != 'nfl' %}<button type="button" class="btn btn-secondary btn-sm" id="fantasy-adv-toggle" title="Show usage / true shooting / assist rate (play-by-play) plus touches, drives, speed, and miles (optical player tracking)">Show PBP + Tracking</button>{% endif %}
+                {% if sport_key != 'nfl' and not nba_stats_gated %}<button type="button" class="btn btn-secondary btn-sm" id="fantasy-adv-toggle" title="Show usage / true shooting / assist rate (play-by-play) plus touches, drives, speed, and miles (optical player tracking)">Show PBP + Tracking</button>{% endif %}
             </div>
             <div class="table-scroll" style="max-height: 60vh;">
                 <table class="data-table adv-hidden" id="fantasy-rankings-table">
@@ -162,7 +170,7 @@
             </div>
             {% else %}
             <div class="parlay-surface-soft" style="padding: 20px; font-size: 13px; color: var(--text-muted);">
-                {{ page.title }} rankings open automatically once the season's game logs start flowing. The NBA hub is live now if you want to see the format.
+                {% if nba_stats_gated %}Projections are paused while data rights are reviewed (see the note above); the format is still shown here.{% else %}{{ page.title }} rankings open automatically once the season's game logs start flowing. The NBA hub is live now if you want to see the format.{% endif %}
             </div>
             {% endif %}
         </div>

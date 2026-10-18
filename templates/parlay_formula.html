@@ -263,11 +263,13 @@
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Build quality</div>
             <div style="font-size: 11px; color: var(--text-muted);">Tier comes from a deeper build-score that weighs minutes, role stability, edge, and trend quality.</div>
         </div>
+        {% if not nba_stats_gated|default(false) %}
         <div class="parlay-surface-soft" style="padding: 12px;">
             <div class="parlay-section-label" style="margin-bottom: 4px;">Next Gen + Game Env</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
             <div style="font-size: 11px; color: var(--text-muted);">Touches, drives, speed, TS%, plus spread and total context now help grade anchor and RR builds.</div>
         </div>
+        {% endif %}
     </div>
 </div>
 

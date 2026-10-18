@@ -34792,6 +34792,11 @@ def _build_fantasy_projection_rows(sport_key, scoring=None):
 
 
 def get_fantasy_projection_rows(sport_key, scoring=None):
+    # NBA/WNBA fantasy projections are built from NBA.com game logs + player tracking/advanced (Prohibited
+    # Until Cleared, docs/legal_register_v2.md) -> withheld at the service boundary while the gate is off,
+    # so _build_fantasy_projection_rows (which reads those files directly) never runs.
+    if sport_key in ('nba', 'wnba') and not _nba_source_gate.nba_stats_enabled():
+        return []
     paths = {'nba': DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv', 'nfl': DATA_DIR / 'gamelogs' / 'NFL_GameLogs.csv'}
     path = paths.get(sport_key)
     if path is None:
@@ -34909,6 +34914,9 @@ def fantasy_league(league):
         current_user=current_user,
         scoring=scoring,
         scoring_options=[(key, system['label']) for key, system in systems.items()],
+        # NBA.com data-rights gate: NBA/WNBA fantasy projections are built from gated game logs/tracking,
+        # so when off the template shows the honest banner instead of an empty table.
+        nba_stats_gated=(league_key in ('nba', 'wnba') and not _nba_source_gate.nba_stats_enabled()),
     )
 
 
@@ -40778,7 +40786,8 @@ def _render_sport_parlay(sport_key, current_user, postseason_only):
         handoff_context=handoff_context, parlay_sport_key=sport_key,
         live_feed_sport_label=sport_label,
         focus_mode_label=PARLAY_SPORT_FOCUS_LABELS.get(sport_key, 'Playoff Focus'),
-        regular_mode_label='Full Board')
+        regular_mode_label='Full Board',
+        nba_stats_gated=(not _nba_source_gate.nba_stats_enabled()))
 
 
 @app.route('/parlay')
@@ -40908,7 +40917,8 @@ def parlay():
         query_suffix=query_suffix, sample_mode=sample_mode, saved_parlays=saved_parlays,
         slate_scope_label=slate_scope_label, refresh_meta=refresh_meta, selected_ticket_id=selected_ticket_id,
         current_user=current_user, sort_by=sort_by, sort_dir=sort_dir, model_debug=model_debug,
-        handoff_context=handoff_context, parlay_sport_key=parlay_sport_key)
+        handoff_context=handoff_context, parlay_sport_key=parlay_sport_key,
+        nba_stats_gated=(not _nba_source_gate.nba_stats_enabled()))
 
 
 @app.route('/parlay/tickets')
