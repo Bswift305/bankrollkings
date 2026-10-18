@@ -133,3 +133,8 @@ single `has_authority()` firewall requires both `status=Qualified` and passing h
 prospective validation; the current entry therefore has **zero** ordering, selection, confidence, or
 recommendation authority. `qc_model_registry.py` proves the governance firewall and sport × market ×
 position isolation. No model computation, weight, production ordering, or public flag changed.
+
+The prospective shadow-record foundation is implemented separately in
+`services/model_observations.py`: immutable pre-event snapshots, exact market line/price, input and
+dataset lineage, model version/status-at-capture, idempotency, and later settlement with explicit
+push/void/DNP/ungraded states. It has no production writer, schedule, UI, or authority.

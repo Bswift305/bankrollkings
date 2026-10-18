@@ -100,7 +100,12 @@ price the market already supplies.
    retain their observed labels/gaps as `RESEARCH_ONLY` context, while their live score delta and sort
    boost are forced to zero. `qc_unqualified_authority_containment.py` proves scores and ordering keys
    remain unchanged. The underlying research record is preserved for later angle-specific validation.
-2. **Complete the NFL QB-rushing observation table:** no UI prediction and no weight change.
+2. **Complete the NFL QB-rushing observation table — storage foundation implemented:**
+   `services/model_observations.py` freezes a pre-event decision snapshot with exact line, price,
+   sportsbook, event/entity identity, model version/status, inputs, output and dataset lineage; grading
+   later adds HIT/MISS/PUSH/VOID/DNP/UNGRADED without rewriting the snapshot. The default store is
+   outside the checkout and no ingestion schedule or UI is enabled. The remaining work is the
+   source adapter for the angle-specific inputs.
 3. **Run historical and time-based holdout evaluation:** publish sample, calibration and return at real
    captured prices; failure remains a valid result.
 4. **Prospective shadow mode:** predictions/alignments written before games, invisible to customers,

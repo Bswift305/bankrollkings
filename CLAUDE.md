@@ -400,7 +400,8 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   cross-sport calibration/promotion score mutation. That containment is now implemented: historical
   signals remain `RESEARCH_ONLY` context with zero live score/sort delta
   (`qc_unqualified_authority_containment.py`). Contradictions/Mismatch still abstain pending verified
-  contracts.
+  contracts. Prospective model validation storage exists dark in `services/model_observations.py`
+  (`qc_model_observations.py`): immutable pre-event snapshots + later grading; no prod writer/job/UI.
 
 - **Injury Report "impact" (with/without):** NBA + NFL live; **MLB/WNBA not built** —
   needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`.
