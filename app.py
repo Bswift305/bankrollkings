@@ -17183,13 +17183,18 @@ def _entity_player_keyset(sport):
         return {}
     cache = _ENTITY_KEYSET_CACHE
     if sport == 'nfl':
+        # Signature is the roster FILE mtime (cheap) -- never rebuild the roster lookup on a cache
+        # hit. (Rebuilding it per row is what timed out the multi-row injury report.)
+        try:
+            sig = ('nfl', os.path.getmtime(DATA_DIR / 'rosters' / 'NFL_CurrentRoster.csv'))
+        except OSError:
+            sig = ('nfl', 0)
+        if cache.get('nfl_sig') == sig:
+            return cache.get('nfl_set', {})
         try:
             lookup = build_nfl_current_roster_lookup() or {}
         except Exception:
             lookup = {}
-        sig = ('nfl', len(lookup))
-        if cache.get('nfl_sig') == sig:
-            return cache.get('nfl_set', {})
         counts = {}
         for key, rec in lookup.items():
             pid = str((rec or {}).get('player_id') or key)
