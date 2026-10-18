@@ -197,6 +197,16 @@ data was deleted.
     pages render the honest banner (not zeroes) and Market Edge drops the "Tracking is live" claim.
     NBA/WNBA only — NFL/MLB/CFB unchanged. Verified by an authenticated populated-data sweep on prod.
     Source-level regression: `qc_nba_data_gate_containment.py`.
+  - **Repo-wide sweep follow-up (`3376f8a`):** two more surfaces closed. **Fantasy (direct-read bypass):**
+    `_build_fantasy_projection_rows` read `NBA_GameLogs` + `NBA_PlayerTracking` + `NBA_PlayerAdvanced`
+    DIRECTLY (not via the gated loaders) → `/fantasy/<league>` served NBA.com projections + touches/
+    drives/speed/TS% while gated; now `get_fantasy_projection_rows` returns `[]` for nba/wnba at the
+    service boundary when gated (the builder never runs) + honest banner. **Parlay Builder (copy):**
+    "Tracking is live" now gated like Props/Market Edge. The sweep confirmed all other direct CSV
+    references are the gated loaders themselves or `_build_file_token`/mtime cache tokens. Regression now
+    also asserts the fantasy builder never runs for NBA/WNBA while gated, and that EVERY "Tracking is
+    live" template claim sits behind a `nba_stats_gated` guard. Authenticated desktop + 375px prod
+    renders verified.
 - **nflverse CC-BY-4.0 attribution + link** added to both footers.
 - **Verification:** `qc_legal_containment.py` (registered in `run_all_scorecards.py`) — passes.
 
