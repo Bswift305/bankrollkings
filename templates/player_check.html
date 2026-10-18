@@ -55,6 +55,15 @@
   .pc-change .why a{color:var(--pc);text-decoration:none;}
   .pc-change .empty{font:600 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
   .pc-change .unavailable{border-left:3px solid var(--bkn-mid,#ffd166);padding-left:10px;}
+  .pc-context{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:12px 0 18px;}
+  .pc-context h2{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 3px;}
+  .pc-context .sub{font:600 11px/1.45 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:10px;}
+  .pc-dist{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .pc-dist table{width:100%;min-width:560px;border-collapse:collapse;}
+  .pc-dist th{font:800 8.5px ui-monospace,monospace;text-transform:uppercase;color:var(--text-muted);text-align:right;padding:6px;border-bottom:1px solid var(--border);}
+  .pc-dist th:first-child,.pc-dist td:first-child{text-align:left;}
+  .pc-dist td{font:650 11px ui-monospace,monospace;color:var(--text-bright);text-align:right;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .pc-dist .partial{color:var(--bkn-mid,#ffd166);}
   @media(max-width:600px){ .pc-surf{grid-template-columns:1fr;gap:4px;} .pc-surf .snm{padding-top:10px;} }
 </style>
 
@@ -138,6 +147,26 @@
         <ul class="pc-change-list why">{% for item in lookup_changes.interesting %}<li><a href="#change-{{ item.evidence_id }}">{{ item.sentence }}</a> <span class="meta">See the source event above.</span></li>{% endfor %}</ul>
       {% else %}<div class="empty">No changed inputs to call attention to yet.</div>{% endif %}
     {% endif %}
+  </section>
+  {% endif %}
+
+  {% if lookup_changes.enabled %}
+  <section class="pc-context" aria-labelledby="pc-facts-context-title">
+    <h2 id="pc-facts-context-title">Facts + Context</h2>
+    <div class="sub"><b>Facts:</b> the live book markets below. <b>Context:</b> historical game distributions from {{ lookup_facts_context.source }}. These are descriptions of recorded games, not projections, rankings, or recommendations.</div>
+    {% if lookup_facts_context.availability == 'unavailable' %}
+      <div class="pc-hint">{{ lookup_facts_context.availability_note }}</div>
+    {% else %}
+      <div class="sub">Window: {{ lookup_facts_context.window }}{% if lookup_facts_context.through_week %} &middot; through Week {{ lookup_facts_context.through_week }}{% endif %}. Percentiles describe this window only.</div>
+      <div class="pc-dist"><table>
+        <thead><tr><th>Market</th><th>25th</th><th>Median</th><th>75th</th><th>Std dev</th><th>Sample</th><th>Availability</th></tr></thead>
+        <tbody>{% for d in lookup_facts_context.distributions %}<tr>
+          <td>{{ d.label }}</td><td>{{ '%g'|format(d.p25) }}</td><td>{{ '%g'|format(d.median) }}</td><td>{{ '%g'|format(d.p75) }}</td><td>{{ '%g'|format(d.std_dev) }}</td><td>n={{ d.n }}</td>
+          <td class="{{ 'partial' if d.availability == 'partial' else '' }}">{{ d.availability }}{% if d.unavailable_n %} ({{ d.unavailable_n }} unavailable){% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+    <div class="sub" style="margin-top:10px;margin-bottom:0;"><b>Environment Stability:</b> unavailable until a named Model Registry contract defines the inputs and deterministic rule. No hidden stability score is substituted.</div>
   </section>
   {% endif %}
 

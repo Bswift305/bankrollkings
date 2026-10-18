@@ -31,6 +31,9 @@ def _player_context():
         "player": {"player": "Runner One", "team": "ARI", "pos": "RB", "player_id": "123"},
         "candidates": [], "matchup": "A @ B", "feed_ts": "2026-10-18 05:00",
         "markets": [], "surfaces": {},
+        "lookup_facts_context": {"availability": "unavailable", "distributions": [],
+                                 "source": "nflverse weekly player statistics (CC BY 4.0)",
+                                 "availability_note": "No historical context."},
     }
 
 

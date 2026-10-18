@@ -308,7 +308,16 @@ Is Interesting presentation, a five-field per-user watermark only, first-visit b
 commit, view/update race protection, and account-deletion purge. Newly Significant Information abstains
 until a named Model Registry contract exists. `qc_lookup_change_views.py` is the route/render gate.
 There is no production store, ingestion job, ranking effect, Journal write, or NBA/WNBA statistic.
-Phase 3 remains closed pending review.
+
+**Phase 3 status (2026-10-18):** explicitly authorized and implemented on NFL Player Check behind
+the same dark flag. Facts retain the live Odds API book observations; Context adds descriptive
+current-season nflverse distributions for each supported live market: median, 25th/75th percentile,
+population standard deviation, sample size, exact window, through-week, and availability. Combined
+statistics require every component for a game and never zero-fill a missing component. The page labels
+the distributions as historical descriptions—not projections, rankings, or recommendations—and
+Environment Stability abstains pending a named Model Registry contract. `qc_lookup_facts_context.py`
+is the acceptance gate. There is no consistency score and no ordering or selection change. Phase 4
+remains closed pending review.
 
 ## 12. Acceptance tests (per phase)
 - **Timestamps:** every change item carries `source_updated_at` + `first_captured_at` (+ `displayed_at`

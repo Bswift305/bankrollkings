@@ -31438,6 +31438,88 @@ def _player_check_resolve(query, names):
     return 'not_found', []
 
 
+def _nfl_lookup_facts_context(player_rows, current_season, markets, max_games=10):
+    """Descriptive NFL game distributions for the live prop categories on Player Check.
+
+    This is context, never a projection or ordering input. A multi-column statistic is usable
+    for a game only when every component is present; missing components are not zero-filled.
+    """
+    base = {
+        'availability': 'unavailable',
+        'availability_note': 'Historical game context is unavailable for the live markets.',
+        'source': 'nflverse weekly player statistics (CC BY 4.0)',
+        'window': None,
+        'through_week': None,
+        'distributions': [],
+        'environment_stability_available': False,
+    }
+    if player_rows is None or not isinstance(player_rows, pd.DataFrame) or player_rows.empty:
+        return base
+    if current_season is None or 'season' not in player_rows.columns:
+        return base
+
+    work = player_rows[pd.to_numeric(player_rows['season'], errors='coerce') == int(current_season)].copy()
+    if work.empty:
+        return base
+    if 'week' in work.columns:
+        work['_lookup_week'] = pd.to_numeric(work['week'], errors='coerce')
+        work = work.sort_values('_lookup_week', kind='stable')
+    else:
+        work['_lookup_week'] = pd.NA
+    work = work.tail(max(1, int(max_games)))
+    through = work['_lookup_week'].dropna()
+    through_week = int(through.max()) if len(through) else None
+    window = f'{int(current_season)} season, last {len(work)} recorded game' + ('' if len(work) == 1 else 's')
+
+    seen = set()
+    rows = []
+    for market in markets or []:
+        stat_key = market.get('stat_key')
+        if not stat_key or stat_key in seen:
+            continue
+        seen.add(stat_key)
+        meta = _NFL_FLOOR_STATS.get(stat_key)
+        cols = list((meta or {}).get('cols') or [])
+        if not cols or any(col not in work.columns for col in cols):
+            continue
+        numeric = work[cols].apply(pd.to_numeric, errors='coerce')
+        usable_mask = numeric.notna().all(axis=1)
+        if (meta or {}).get('qb') and 'attempts' in work.columns:
+            usable_mask &= pd.to_numeric(work['attempts'], errors='coerce').fillna(0).gt(0)
+        values = numeric.loc[usable_mask].sum(axis=1)
+        if values.empty:
+            continue
+        vals = values.astype(float)
+        candidate_n = int(len(work))
+        n = int(len(vals))
+        record = {
+            'stat_key': stat_key,
+            'label': (meta or {}).get('label') or market.get('stat') or stat_key,
+            'median': round(float(vals.median()), 1),
+            'p25': round(float(vals.quantile(.25)), 1),
+            'p75': round(float(vals.quantile(.75)), 1),
+            'std_dev': round(float(vals.std(ddof=0)), 1),
+            'n': n,
+            'candidate_n': candidate_n,
+            'unavailable_n': candidate_n - n,
+            'availability': 'verified' if n == candidate_n else 'partial',
+        }
+        if n >= 10:
+            record.update(p10=round(float(vals.quantile(.10)), 1),
+                          p90=round(float(vals.quantile(.90)), 1))
+        rows.append(record)
+    if not rows:
+        return base
+    base.update(
+        availability='verified',
+        availability_note=None,
+        window=window,
+        through_week=through_week,
+        distributions=rows,
+    )
+    return base
+
+
 def evaluate_nfl_player(query):
     """NFL Player Check (spec: docs/nfl_player_check_spec.md). Given a typed player name, returns
     the player's live markets as FACTS and, for each canonical evaluated market, how it flows --
@@ -31447,6 +31529,7 @@ def evaluate_nfl_player(query):
     R = _nfl_incl.Reason
     out = {'query': (query or '').strip(), 'status': 'empty', 'player': None, 'candidates': [],
            'matchup': None, 'feed_ts': None, 'markets': [], 'surfaces': {},
+           'lookup_facts_context': {'availability': 'unavailable', 'distributions': []},
            'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     if not out['query']:
         return out
@@ -31538,6 +31621,7 @@ def evaluate_nfl_player(query):
                     m['surfaces']['menu'] = {'code': mc, 'tier': tier, 'hit': me.get('hit')}
             markets.append(m)
     out['markets'] = markets
+    out['lookup_facts_context'] = _nfl_lookup_facts_context(sub, cur, markets)
 
     # --- Featured (usage) + Green Light (player + primary market) ------------------------
     if urank is None:
