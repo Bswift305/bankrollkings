@@ -53,6 +53,16 @@ set. Nothing is user-visible on deploy. Built to `docs/decision_journal_implemen
   ```
 - Proof (manual backup / permissions / integrity / retention / restore): `qc_dj_backup_retention.py`
   (registered in `run_all_scorecards.py`).
+- **Cadence verification (the one item that closes step 2 — a scheduled, not manual, firing).** After the
+  timer's next automatic fire (daily **08:17 UTC**), capture a three-way timestamp match:
+  ```bash
+  systemctl show bk-decision-journal-backup.timer -p LastTriggerUSec -p NextElapseUSecRealtime
+  systemctl show bk-decision-journal-backup.service -p ExecMainStartTimestamp -p Result
+  sudo -u ubuntu ls -la --time-style=full-iso /var/lib/bankrollkings/decision_journal/backups/daily_*.db | tail -n 3
+  ```
+  Step 2 is fully closed when the timer's `LastTriggerUSec` ≈ the service `ExecMainStartTimestamp` ≈ the
+  newest `daily_…db` timestamp (all ~08:17 UTC), with `Result=success`. The manual `systemctl start`
+  proves the service runs; this proves the timer drives it on schedule.
 
 ## Rollback (zero data loss to the existing tracker)
 - **Instant:** set `DECISION_JOURNAL_ENABLED=0` + restart → feature invisible.
