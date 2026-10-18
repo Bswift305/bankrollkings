@@ -214,6 +214,7 @@
     <div class="parlay-hero-copy">
         <div class="parlay-kicker">Floor Parlay System</div>
         <h1 style="margin-bottom: 12px;">Parlay <span class="accent">Builder</span></h1>
+        {% if parlay_sport_key == 'nfl' %}<div style="margin-bottom:10px;"><a href="/tools/sgp-workbench" class="btn btn-secondary btn-sm">NFL SGP Workbench &rarr;</a> <span style="font-size:11px;color:var(--text-muted);">build a same-game parlay around one game story</span></div>{% endif %}
         {% if model_debug %}
         <div class="badge badge-accent" style="margin-bottom: 10px;">Debug Mode Active</div>
         {% endif %}

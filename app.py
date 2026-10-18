@@ -739,7 +739,7 @@ PRO_ENDPOINTS = {
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
     'nfl_scoreboard_tool', 'nfl_officiating_tool', 'nfl_regression_tool', 'nfl_power_tool',
     'nfl_prop_floor_tool', 'nfl_game_board_tool', 'nfl_period_board_tool', 'nfl_board_tool',
-    'nfl_team_rankings_tool', 'nfl_wave_tool',
+    'nfl_team_rankings_tool', 'nfl_wave_tool', 'sgp_workbench_tool',
     'cfb_ats_streaks_tool', 'cfb_key_numbers_tool', 'cfb_pace_tool', 'cfb_board_tool',
     'cfb_wave_tool', 'cfb_buy_low_tool', 'cfb_first_half_tool',
     'signal_report_tool',  # Learn layer -- how our captured signals actually graded
@@ -45578,6 +45578,288 @@ def _nfl_game_prop_menu(away, home, props_df):
             legs.sort(key=lambda x: (x['player'], x['stat']))
             out.append({'cat': cat, 'legs': legs})
     return out
+
+
+# ===================================================================================================
+# NFL SGP Workbench (/tools/sgp-workbench) -- matchup-first SGP construction/research tool.
+# Reuses _sgp_category + the QB-out/tackle context, but unlike _nfl_game_prop_menu it preserves each
+# book's own line/side-price/timestamp/lineage and adds game totals + team totals. Deterministic
+# alignment/contradiction via services/nfl_sgp.py. No score, ordering authority, or probability claim.
+# ===================================================================================================
+_SGP_TZ_NOTE = 'provider time; tz unverified'
+# Factual leg-category order for the menu (game/team lines first, then player categories). NEVER a score.
+_SGP_MENU_ORDER = ['Game Line', 'Team Total'] + [c for c, _ in _SGP_CATEGORY] + ['Other']
+
+
+def _sgp_price(v):
+    """American odds as int, or None when a side price is not genuinely captured (never synthesized)."""
+    try:
+        n = pd.to_numeric(pd.Series([v]), errors='coerce').iloc[0]
+    except Exception:
+        return None
+    if pd.isna(n):
+        return None
+    n = int(round(float(n)))
+    return n if (n <= -100 or n >= 100) else None
+
+
+def _sgp_leg_id(book, kind, who, stat, direction, line):
+    return '|'.join([str(book), str(kind), str(who), str(stat), str(direction),
+                     ('' if line is None else str(line))])
+
+
+def _nfl_sgp_leg_menu(away, home):
+    """Full per-book leg menu for ONE NFL game, grouped by category and ordered FACTUALLY (category,
+    player/team, stat, line, sportsbook). Book-specific: a book's price is never paired with another
+    book's line. A missing side price stays None -> the UI shows 'price unavailable' (never synthesized).
+    Sources: NFL_Props (player O/U), NFL_Odds (game total + sides), NFL_FirstHalf (team totals + period
+    lines, line-only -- those feeds carry no side prices, so those legs are explicitly price-unavailable)."""
+    am = str(away).split()[-1].lower()
+    hm = str(home).split()[-1].lower()
+    p2tp = _nfl_player_team_pos()
+    qb_out_teams = {}
+    try:
+        import nfl_totals as _nt, nfl_current_form as _ncf, nfl_backup as _nb
+        for full in (away, home):
+            ab = _ncf.resolve(full)
+            if _nt.qb_out(ab):
+                qb_out_teams[ab] = _nb.impact(ab)
+    except Exception:
+        pass
+    try:
+        import nfl_defense_form as _ndf
+    except Exception:
+        _ndf = None
+    legs = []
+
+    # ---- player props: each book row -> an OVER leg and an UNDER leg, each with its own side price ----
+    try:
+        props = load_nfl_props()
+    except Exception:
+        props = None
+    if props is not None and not props.empty and 'Game' in props.columns:
+        gm = props[props['Game'].astype(str).str.lower().str.contains(am)
+                   & props['Game'].astype(str).str.lower().str.contains(hm)]
+        for _, r in gm.iterrows():
+            pl = str(r.get('Player') or '').strip()
+            st = str(r.get('Stat') or '').strip()
+            line = pd.to_numeric(pd.Series([r.get('Line')]), errors='coerce').iloc[0]
+            if not pl or not st or pd.isna(line):
+                continue
+            line = float(line)
+            cat = _sgp_category(st)
+            book = str(r.get('Book') or '').strip() or 'book'
+            ts = str(r.get('LastUpdated') or '').strip()
+            team, pos = p2tp.get(pl.lower(), (str(r.get('Team') or '').strip().upper() or None, None))
+            lean = None
+            if _ndf is not None and cat == 'Defense' and any(k in st for k in ('Tackle', 'Solo', 'Assist')):
+                rd = _ndf.tackle_lean(pl, st, line)
+                if rd and rd.get('lean') != 'COIN FLIP':
+                    lean = rd['lean']
+            inj = _nfl_qb_out_impact(cat, pos, qb_out_teams[team]) if team in qb_out_teams else None
+            for direction, oc in (('OVER', 'OverOdds'), ('UNDER', 'UnderOdds')):
+                legs.append({
+                    'kind': 'player', 'category': cat, 'player': pl, 'team': team, 'position': pos,
+                    'stat': st, 'direction': direction, 'line': line, 'price': _sgp_price(r.get(oc)),
+                    'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
+                    'lineage': 'Odds API player props (NFL_Props.csv)', 'lean': lean, 'inj': inj,
+                    'label': f"{pl} {direction} {st} {line:g}",
+                    'id': _sgp_leg_id(book, 'player', pl, st, direction, line)})
+
+    # ---- game lines: game total (O/U, priced) + spread sides (encoded as opposing OVER/UNDER sides) ----
+    try:
+        odds = _load_cached_csv(DATA_DIR / 'odds' / 'NFL_Odds.csv')
+    except Exception:
+        odds = None
+    if odds is not None and not odds.empty and 'Home' in odds.columns:
+        g = odds[odds['Home'].astype(str).str.lower().str.contains(hm)
+                 & odds['Away'].astype(str).str.lower().str.contains(am)]
+        for _, r in g.iterrows():
+            book = str(r.get('Book') or '').strip() or 'book'
+            ts = str(r.get('LastUpdated') or '').strip()
+            tot = pd.to_numeric(pd.Series([r.get('Total')]), errors='coerce').iloc[0]
+            if not pd.isna(tot):
+                tot = float(tot)
+                for direction, oc in (('OVER', 'OverOdds'), ('UNDER', 'UnderOdds')):
+                    legs.append({
+                        'kind': 'game', 'category': 'Game Line', 'player': None, 'team': None,
+                        'stat': 'Game Total', 'direction': direction, 'line': tot,
+                        'price': _sgp_price(r.get(oc)), 'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE,
+                        'quote_scope': 'individual', 'lineage': 'Odds API game lines (NFL_Odds.csv)',
+                        'label': f"Game Total {direction} {tot:g}",
+                        'id': _sgp_leg_id(book, 'game', 'Game', 'Game Total', direction, tot)})
+            sp = pd.to_numeric(pd.Series([r.get('Spread')]), errors='coerce').iloc[0]
+            if not pd.isna(sp):
+                sp = float(sp)
+                home_ab = str(r.get('Home') or 'Home').strip().upper()
+                away_ab = str(r.get('Away') or 'Away').strip().upper()
+                # Opposing SIDES of one spread -> encoded OVER (home) / UNDER (away) so the engine's
+                # "same game side opposing" rule fires if both are selected. The price (SpreadOdds) is the
+                # quoted home side's; the away side's price is not separately captured -> unavailable.
+                legs.append({
+                    'kind': 'game', 'category': 'Game Line', 'player': None, 'team': home_ab,
+                    'stat': 'Spread', 'direction': 'OVER', 'line': sp, 'price': _sgp_price(r.get('SpreadOdds')),
+                    'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
+                    'lineage': 'Odds API game lines (NFL_Odds.csv)',
+                    'label': f"{home_ab} spread {sp:+g}",
+                    'id': _sgp_leg_id(book, 'game', home_ab, 'Spread', 'OVER', sp)})
+                legs.append({
+                    'kind': 'game', 'category': 'Game Line', 'player': None, 'team': away_ab,
+                    'stat': 'Spread', 'direction': 'UNDER', 'line': -sp, 'price': None,
+                    'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
+                    'lineage': 'Odds API game lines (NFL_Odds.csv)',
+                    'label': f"{away_ab} spread {-sp:+g}",
+                    'id': _sgp_leg_id(book, 'game', away_ab, 'Spread', 'UNDER', -sp)})
+
+    # ---- team totals + period lines (NFL_FirstHalf): line-only, no captured side prices -> unavailable --
+    try:
+        fh = _load_cached_csv(DATA_DIR / 'odds' / 'NFL_FirstHalf.csv')
+    except Exception:
+        fh = None
+    if fh is not None and not fh.empty and 'Home' in fh.columns:
+        g = fh[fh['Home'].astype(str).str.lower().str.contains(hm)
+               & fh['Away'].astype(str).str.lower().str.contains(am)]
+        for _, r in g.iterrows():
+            book = str(r.get('Books') or '').strip() or 'book'
+            ts = str(r.get('LastUpdated') or '').strip()
+            for col, team_full in (('TeamTotalAway', away), ('TeamTotalHome', home)):
+                tt = pd.to_numeric(pd.Series([r.get(col)]), errors='coerce').iloc[0]
+                if pd.isna(tt):
+                    continue
+                tt = float(tt)
+                team_ab = str(team_full).split()[-1].upper()
+                for direction in ('OVER', 'UNDER'):
+                    legs.append({
+                        'kind': 'team_total', 'category': 'Team Total', 'player': None, 'team': team_ab,
+                        'stat': 'Team Total', 'direction': direction, 'line': tt, 'price': None,
+                        'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
+                        'lineage': 'Odds API period/team-total lines (NFL_FirstHalf.csv) — line only',
+                        'label': f"{team_ab} team total {direction} {tt:g}",
+                        'id': _sgp_leg_id(book, 'team_total', team_ab, 'Team Total', direction, tt)})
+
+    # Factual ordering only: category, player/team, stat, line, sportsbook.
+    legs.sort(key=lambda x: (_SGP_MENU_ORDER.index(x['category']) if x['category'] in _SGP_MENU_ORDER else 99,
+                             str(x.get('player') or x.get('team') or ''), str(x['stat']),
+                             x['line'] if x['line'] is not None else 0.0, str(x['book'])))
+    grouped = {}
+    for lg in legs:
+        grouped.setdefault(lg['category'], []).append(lg)
+    return [{'cat': c, 'legs': grouped[c]} for c in _SGP_MENU_ORDER if c in grouped]
+
+
+# Fields the full-fidelity SGP ticket preserves vs what the existing single-leg Parlay Builder handoff
+# (build_parlay_handoff_context) can accept. The difference is REPORTED and the handoff HELD -- never a
+# silent drop (per the SGP Workbench directive).
+_SGP_HANDOFF_REQUIRED = ['game', 'player_or_team', 'stat', 'direction', 'line', 'price', 'sportsbook',
+                         'quote_scope', 'source_timestamp']
+_SGP_HANDOFF_PARLAY_ACCEPTS = ['player_or_team', 'stat', 'direction', 'line']  # single leg, no price/book/ts
+
+
+def _sgp_handoff_state(selected):
+    """V1 handoff: the existing Parlay Builder accepts a single leg (player/stat/direction/line) with no
+    price/sportsbook/timestamp/quote-scope and no multi-leg SGP import. That loses required fields, so the
+    handoff is HELD and the mismatch reported; the user gets a full-fidelity copyable summary instead."""
+    missing = [f for f in _SGP_HANDOFF_REQUIRED if f not in _SGP_HANDOFF_PARLAY_ACCEPTS]
+    return {
+        'status': 'held',
+        'reason': 'contract_mismatch',
+        'multi_leg_unsupported': True,
+        'dropped_fields': missing,  # price, sportsbook, quote_scope, source_timestamp (+ multi-leg)
+        'message': ('The Parlay Builder handoff accepts a single leg (player, stat, direction, line) and '
+                    'cannot yet carry price, sportsbook, quote scope, source timestamp, or a full '
+                    'multi-leg same-game ticket. To avoid silently dropping those, the transfer is held; '
+                    'use the full-fidelity copy below until the Parlay Builder contract is extended.'),
+        'leg_count': len(selected or []),
+    }
+
+
+def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
+    """Context for /tools/sgp-workbench. Matchup-first; facts create visibility; no score/ordering/
+    probability; missing inputs abstain visibly. Reuses the NFL matchup week list + line-move 'What's
+    Changed?'. Single game only -- selection ids that are not in this game's menu are ignored."""
+    import services.nfl_sgp as _sgp
+    try:
+        mctx = build_nfl_matchup_context()
+    except Exception:
+        mctx = {}
+    week_games = mctx.get('mu_week') or mctx.get('week_games') or []
+    theses = [{'key': k, 'label': v} for k, v in _sgp.THESES]
+    thesis = thesis if thesis in {t['key'] for t in theses} else 'custom'
+    ctx = {
+        'week_games': week_games, 'theses': theses, 'thesis': thesis, 'game': game,
+        'menu': [], 'selected': [], 'evaluation': None, 'whats_changed': None,
+        'disclosure': _sgp.CORRELATION_DISCLOSURE, 'independence_label': _sgp.INDEPENDENCE_LABEL,
+        'handoff': None, 'journal_enabled': bool(DECISION_JOURNAL_ENABLED),
+        'available': False, 'abstain': None, 'tz_note': _SGP_TZ_NOTE,
+    }
+    if not game:
+        return ctx
+    # resolve away/home full names from the game token "Away@Home" or a week-game match
+    away = home = None
+    if '@' in str(game):
+        a, h = str(game).split('@', 1)
+        away, home = a.strip(), h.strip()
+    else:
+        for g in week_games:
+            if str(g.get('slug') or g.get('key') or '') == str(game):
+                away, home = g.get('away'), g.get('home')
+                break
+    if not away or not home:
+        ctx['abstain'] = 'Could not resolve that matchup.'
+        return ctx
+    ctx['away'], ctx['home'] = away, home
+    try:
+        ctx['whats_changed'] = _nfl_line_move(away, home)
+    except Exception:
+        ctx['whats_changed'] = None
+    menu = _nfl_sgp_leg_menu(away, home)
+    ctx['menu'] = menu
+    ctx['available'] = bool(menu)
+    if not menu:
+        ctx['abstain'] = 'No genuinely captured legs for this game right now.'
+        return ctx
+    by_id = {lg['id']: lg for grp in menu for lg in grp['legs']}
+    # single-game only by construction (ids not in this game's menu are dropped) + de-duplicated so a
+    # repeated selection is idempotent.
+    cur = list(dict.fromkeys(i for i in (selected_ids or []) if i in by_id))
+    selected = [by_id[i] for i in cur]
+    ctx['selected'] = selected
+    from urllib.parse import urlencode
+
+    def _toggle(leg_id):
+        nxt = [i for i in cur if i != leg_id] if leg_id in cur else cur + [leg_id]
+        return '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)]
+                                                   + [('sel', i) for i in nxt])
+    for grp in menu:
+        for lg in grp['legs']:
+            lg['selected'] = lg['id'] in cur
+            lg['toggle_url'] = _toggle(lg['id'])
+    for lg in selected:
+        lg['remove_url'] = _toggle(lg['id'])
+    # a thesis switch preserves the current selection (same game); clear drops all legs (explicit action)
+    ctx['thesis_url'] = lambda tk: '/tools/sgp-workbench?' + urlencode(
+        [('game', game), ('thesis', tk)] + [('sel', i) for i in cur])
+    ctx['clear_url'] = '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)])
+    # game total line for the remaining-points math (R10)
+    gtl = None
+    for grp in menu:
+        for lg in grp['legs']:
+            if lg['kind'] == 'game' and 'Total' in lg['stat'] and lg['line'] is not None:
+                gtl = lg['line']
+                break
+    ctx['evaluation'] = _sgp.evaluate(selected, thesis, game_total_line=gtl) if selected else None
+    ctx['handoff'] = _sgp_handoff_state(selected) if selected else None
+    return ctx
+
+
+@app.route('/tools/sgp-workbench')
+def sgp_workbench_tool():
+    """NFL SGP Workbench -- matchup-first construction/research tool. Authenticated. NFL-only."""
+    game = str(request.args.get('game') or '').strip() or None
+    thesis = str(request.args.get('thesis') or 'custom').strip().lower()
+    selected_ids = request.args.getlist('sel')
+    ctx = build_sgp_workbench_context(game=game, selected_ids=selected_ids, thesis=thesis)
+    return render_template('sgp_workbench.html', **ctx)
 
 
 def _nfl_line_move(away, home):

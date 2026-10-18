@@ -1,0 +1,211 @@
+{% set active_page = 'sgp_workbench' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL SGP Workbench - Bankroll Kings{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<style>
+.sgp-wb{max-width:1100px;margin:0 auto}
+.sgp-wb h1{margin:0 0 4px}
+.sgp-sec{border:1px solid var(--border);border-radius:14px;padding:16px;margin:0 0 16px;background:var(--surface,rgba(255,255,255,.02))}
+.sgp-sec h2{font-size:14px;letter-spacing:.4px;text-transform:uppercase;color:var(--text-muted);margin:0 0 10px}
+.sgp-games{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.sgp-game{display:block;border:1px solid var(--border);border-radius:12px;padding:10px 12px;text-decoration:none;color:var(--text)}
+.sgp-game.active{border-color:var(--accent);background:rgba(0,255,65,.06)}
+.sgp-game b{display:block;font-size:13px}
+.sgp-game small{color:var(--text-muted)}
+.sgp-chips{display:flex;gap:8px;flex-wrap:wrap}
+.sgp-chip{border:1px solid var(--border);border-radius:999px;padding:7px 13px;text-decoration:none;color:var(--text);font-size:12.5px;font-weight:600}
+.sgp-chip.active{border-color:var(--accent);background:rgba(0,255,65,.08)}
+.sgp-catlabel{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--accent-copper,#b87333);font-weight:800;margin:14px 0 6px}
+.sgp-leg{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:0 0 8px}
+.sgp-leg.sel{border-color:var(--accent);background:rgba(0,255,65,.05)}
+.sgp-leg .meta{flex:1;min-width:0}
+.sgp-leg .lab{font-weight:700;font-size:13.5px}
+.sgp-leg .sub{font-size:11.5px;color:var(--text-muted);line-height:1.5}
+.sgp-leg .warn{color:var(--accent-copper,#b87333);font-weight:600}
+.sgp-price{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.sgp-price.na{color:var(--text-muted);font-weight:500;font-size:12px}
+.sgp-btn{display:inline-block;min-width:44px;min-height:40px;line-height:40px;text-align:center;border-radius:10px;border:1px solid var(--border);text-decoration:none;color:var(--text);font-weight:800;padding:0 12px}
+.sgp-btn.add{border-color:var(--accent);color:var(--accent)}
+.sgp-btn.rm{border-color:var(--danger);color:var(--danger)}
+.sgp-find{border-left:3px solid var(--border);padding:8px 12px;margin:0 0 8px;border-radius:0 8px 8px 0}
+.sgp-find.conflict{border-left-color:var(--danger);background:rgba(255,80,80,.06)}
+.sgp-find.tension{border-left-color:var(--accent-copper,#b87333);background:rgba(184,115,51,.07)}
+.sgp-find.concentration{border-left-color:#f0b429;background:rgba(240,180,41,.06)}
+.sgp-find.supports{border-left-color:var(--accent);background:rgba(0,255,65,.05)}
+.sgp-find.unknown{border-left-color:var(--text-muted);background:rgba(160,160,160,.05)}
+.sgp-find .rl{font-weight:700;font-size:12.5px}
+.sgp-find .lg{font-size:11.5px;color:var(--text-muted);margin-top:3px}
+.sgp-note{font-size:12.5px;color:var(--text-muted);line-height:1.6}
+.sgp-disc{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:rgba(184,115,51,.06);font-weight:600;font-size:12.5px;line-height:1.6}
+.sgp-held{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:rgba(240,180,41,.07);font-size:12.5px;line-height:1.6}
+@media(max-width:760px){
+  .sgp-games{grid-template-columns:1fr}
+  .sgp-leg{flex-wrap:wrap}
+  .sgp-leg .meta{flex:1 1 100%}
+  #sgp-selected{position:sticky;bottom:0;z-index:5;background:var(--bg,#0d0f14);box-shadow:0 -6px 18px rgba(0,0,0,.35);max-height:46vh;overflow:auto}
+}
+</style>
+
+<div class="sgp-wb">
+  <h1>NFL <span class="accent">SGP Workbench</span></h1>
+  <div class="sgp-note" style="margin-bottom:14px;">A matchup-first workspace to assemble a same-game parlay around one coherent game story. It shows legs, alignment, contradictions, and concentration &mdash; it never ranks, scores, or picks a &ldquo;best&rdquo; ticket. Market prices are facts, not our probabilities.</div>
+
+  <!-- 1. MATCHUP SELECTOR -->
+  <div class="sgp-sec">
+    <h2>1 &middot; Choose a matchup</h2>
+    {% if week_games %}
+    <div class="sgp-games">
+      {% for g in week_games %}
+      <a class="sgp-game {% if away and g.away == away and g.home == home %}active{% endif %}" href="/tools/sgp-workbench?game={{ (g.away ~ '@' ~ g.home)|urlencode }}">
+        <b>{{ g.away }} @ {{ g.home }}</b>
+        <small>{{ g.date or '' }} {{ g.time or '' }}{% if g.spread %} &middot; {{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ g.total }}{% endif %}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="sgp-note">No NFL games on the current-week board right now. The Workbench fills when this week&rsquo;s slate posts.</div>
+    {% endif %}
+  </div>
+
+  {% if not away %}
+    <div class="sgp-sec"><div class="sgp-note">Pick a matchup above to begin.</div></div>
+  {% elif abstain %}
+    <div class="sgp-sec"><div class="sgp-note">{{ abstain }}</div></div>
+  {% else %}
+
+  <!-- 2. WHAT'S CHANGED -->
+  <div class="sgp-sec">
+    <h2>2 &middot; What&rsquo;s changed?</h2>
+    {% if whats_changed %}
+    <div class="sgp-note">
+      {% if whats_changed.spread_move %}Spread moved {{ whats_changed.spread_open }} &rarr; {{ whats_changed.spread_now }} ({{ '%+.1f'|format(whats_changed.spread_move) }}).<br>{% endif %}
+      {% if whats_changed.total_move %}Total moved {{ whats_changed.total_open }} &rarr; {{ whats_changed.total_now }} ({{ '%+.1f'|format(whats_changed.total_move) }}).{% endif %}
+    </div>
+    {% else %}
+    <div class="sgp-note">No tracked line movement for this game yet. Injury/QB-out context, where present, is flagged on individual legs below.</div>
+    {% endif %}
+  </div>
+
+  <!-- 3. GAME STORY -->
+  <div class="sgp-sec">
+    <h2>3 &middot; Game story (your thesis)</h2>
+    <div class="sgp-chips">
+      {% for t in theses %}
+      <a class="sgp-chip {% if t.key == thesis %}active{% endif %}" href="{{ thesis_url(t.key) }}">{{ t.label }}</a>
+      {% endfor %}
+    </div>
+    <div class="sgp-note" style="margin-top:8px;">The thesis organizes and explains the ticket (what a leg is logically compatible with). It never declares a leg profitable.</div>
+  </div>
+
+  <!-- 4. AVAILABLE LEGS -->
+  <div class="sgp-sec">
+    <h2>4 &middot; Available legs &mdash; {{ away }} @ {{ home }}</h2>
+    {% if menu %}
+      {% for grp in menu %}
+      <div class="sgp-catlabel">{{ grp.cat }}</div>
+      {% for leg in grp.legs %}
+      <div class="sgp-leg {% if leg.selected %}sel{% endif %}">
+        <div class="meta">
+          <div class="lab">{{ leg.label }}</div>
+          <div class="sub">
+            {{ leg.book }} &middot;
+            {% if leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %}
+            &middot; {{ leg.timestamp or 'time unknown' }} ({{ leg.tz }})
+            <br>{{ leg.lineage }}
+            {% if leg.lean %}<br><span class="warn">Context: tackle-volume lean {{ leg.lean }}</span>{% endif %}
+            {% if leg.inj %}<br><span class="warn">Injury/role: {{ leg.inj }}</span>{% endif %}
+          </div>
+        </div>
+        <a class="sgp-btn {% if leg.selected %}rm{% else %}add{% endif %}" href="{{ leg.toggle_url }}">{% if leg.selected %}&minus;{% else %}+{% endif %}</a>
+      </div>
+      {% endfor %}
+      {% endfor %}
+    {% else %}
+      <div class="sgp-note">No genuinely captured legs for this game right now.</div>
+    {% endif %}
+  </div>
+
+  <!-- 5. SELECTED SGP -->
+  <div class="sgp-sec" id="sgp-selected">
+    <h2>5 &middot; Selected SGP ({{ selected|length }} leg{{ '' if selected|length == 1 else 's' }})</h2>
+    {% if selected %}
+      {% for leg in selected %}
+      <div class="sgp-leg sel">
+        <div class="meta">
+          <div class="lab">{{ leg.label }}</div>
+          <div class="sub">{{ leg.book }} &middot; {% if leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %} &middot; {{ leg.timestamp or 'time unknown' }} ({{ leg.tz }}) &middot; quote scope: {{ leg.quote_scope }}</div>
+        </div>
+        <a class="sgp-btn rm" href="{{ leg.remove_url }}">&minus;</a>
+      </div>
+      {% endfor %}
+      <div style="margin-top:8px;"><a class="sgp-chip" href="{{ clear_url }}">Clear all / switch game</a></div>
+      <div class="sgp-note" style="margin-top:6px;">Only legs from this one game can be added. Choosing another matchup starts a fresh slip.</div>
+    {% else %}
+      <div class="sgp-note">No legs selected yet. Add Over/Under legs from the menu above.</div>
+    {% endif %}
+  </div>
+
+  {% if selected %}
+  <!-- 6. ALIGNMENT & CONTRADICTIONS -->
+  <div class="sgp-sec">
+    <h2>6 &middot; Alignment &amp; contradictions</h2>
+    {% set ev = evaluation %}
+    {% set labels = {'conflict':'Conflicts','tension':'Tension','concentration':'Concentration','supports':'Supports the story','unknown':'Unknown / insufficient evidence'} %}
+    {% set any = ev.findings|length %}
+    {% if any %}
+      {% for bucket in ['conflict','tension','concentration','supports','unknown'] %}
+        {% if ev.buckets[bucket] %}
+        <div class="sgp-catlabel">{{ labels[bucket] }}</div>
+        {% for f in ev.buckets[bucket] %}
+        <div class="sgp-find {{ bucket }}">
+          <div class="rl">{{ f.rule }}</div>
+          <div class="lg">Legs: {{ f.legs|join(' &nbsp;|&nbsp; ')|safe }}</div>
+          <div class="lg" style="opacity:.7">Rule {{ f.rule_id }}</div>
+        </div>
+        {% endfor %}
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <div class="sgp-note">No alignment findings yet for these legs under this story. Absence of a flag is not a positive signal.</div>
+    {% endif %}
+    <div class="sgp-note" style="margin-top:8px;">These are deterministic rules on your selected legs and chosen story. They describe coherence &mdash; never a recommendation, confidence, or win probability.</div>
+  </div>
+
+  <!-- 7. MARKET / PRICE DISCLOSURE -->
+  <div class="sgp-sec">
+    <h2>7 &middot; Market &amp; price disclosure</h2>
+    <div class="sgp-disc">{{ disclosure }}</div>
+    <div class="sgp-note" style="margin-top:8px;">We do not multiply individual leg probabilities into an SGP probability. If you compute a naive product yourself, remember: &ldquo;{{ independence_label }}&rdquo; Each leg shows its own book price; a combined-ticket price is never assigned back to individual legs.</div>
+  </div>
+
+  <!-- 8. HANDOFFS -->
+  <div class="sgp-sec">
+    <h2>8 &middot; Hand off the ticket</h2>
+    {% if handoff and handoff.status == 'held' %}
+    <div class="sgp-held">
+      <b>Parlay Builder transfer held &mdash; contract mismatch.</b> {{ handoff.message }}
+      <div style="margin-top:6px;">Fields the current Parlay Builder cannot carry without loss: <b>{{ handoff.dropped_fields|join(', ') }}</b>{% if handoff.multi_leg_unsupported %}, plus multi-leg same-game import{% endif %}.</div>
+      <div style="margin-top:8px;font-family:monospace;font-size:11.5px;white-space:pre-wrap;border-top:1px dashed var(--border);padding-top:8px;">{{ away }} @ {{ home }}
+{% for leg in selected %}- {{ leg.label }} | {{ leg.book }} | {% if leg.price is not none %}{{ '%+d'|format(leg.price) }}{% else %}price unavailable{% endif %} | {{ leg.timestamp }} ({{ leg.tz }}) | scope: {{ leg.quote_scope }}
+{% endfor %}</div>
+    </div>
+    {% endif %}
+    <div class="sgp-note" style="margin-top:10px;">
+      <b>Decision Journal:</b>
+      {% if journal_enabled %}
+        available.
+      {% else %}
+        <span style="opacity:.7">unavailable while the Decision Journal is in preparation. When it opens, this ticket records against the existing same-game-parlay journal &mdash; not a second log.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %}
+
+  <div class="sgp-note" style="margin-top:16px;opacity:.7">NFL only. Legs come from licensed market data (Odds API) with provider timestamps preserved. Research status: this is a construction/research tool &mdash; no leg here carries Qualified ordering or selection authority.</div>
+</div>
+{% endblock %}

@@ -88,6 +88,7 @@ SCORECARDS = [
     # Player Check acceptance: shared inclusion predicates, floor evaluator codes, and the name
     # resolver (ambiguity/suffix/punctuation). Durable fixtures; live cases are advisory notes.
     ("Player Check QC", "qc_player_check.py", 240),
+    ("NFL SGP Workbench QC", "qc_sgp_workbench.py", 120),
     # NBA postseason phase rule: the thirteen configured-window phase tests + override + NBA
     # scoping + other-sports-unchanged. Cheap; guards the P0 season-state correction.
     ("NBA Postseason Phase QC", "qc_nba_postseason_phase.py", 180),
