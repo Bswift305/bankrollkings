@@ -12481,6 +12481,13 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
     graded['ResultDate'] = ''
     graded['ResultValue'] = np.nan
     graded['DaysToResult'] = np.nan
+    # Season/Week of the RESULT game, carried from the matched gamelog row. The candidate archive
+    # does not carry them, but the graded prop record's consumers (build_nfl_prop_streaks /
+    # build_nfl_prop_hot_start) REQUIRE Season+Week to compute streaks and will drop the whole file
+    # if they are absent -- which left NFL_AllPropResults unreadable after a regen. Resolved rows get
+    # the authoritative game's season/week; unresolved rows stay NaN and are correctly dropped.
+    graded['Season'] = np.nan
+    graded['Week'] = np.nan
     graded['OutcomeState'] = 'Pending'
     graded['MarketMoveBucket'] = ''
     graded['MarketDepthBucket'] = ''
@@ -12583,6 +12590,14 @@ def grade_candidate_archive_rows(archive_df, gamelog_map=None):
         graded.at[idx, 'ResultDate'] = next_game['Date'].strftime('%Y-%m-%d') if pd.notna(next_game['Date']) else ''
         graded.at[idx, 'ResultValue'] = round(float(value), 1)
         graded.at[idx, 'DaysToResult'] = int((next_game['Date'] - snapshot_date).days) if pd.notna(next_game['Date']) else np.nan
+        # Carry the result game's season/week (the gamelog row that produced the outcome), so the
+        # streak boards can key observations by (Player, Stat, Season, Week).
+        _se = pd.to_numeric(next_game.get('Season'), errors='coerce')
+        _wk = pd.to_numeric(next_game.get('Week'), errors='coerce')
+        if pd.notna(_se):
+            graded.at[idx, 'Season'] = int(_se)
+        if pd.notna(_wk):
+            graded.at[idx, 'Week'] = int(_wk)
 
     # A pick is only legitimately Pending while its game is still ahead of it.
     # Once a snapshot is older than the window with no game ever matched, it can

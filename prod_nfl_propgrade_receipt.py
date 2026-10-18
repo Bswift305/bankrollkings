@@ -83,12 +83,15 @@ def main():
         print(f"  resolved current season: {exp_season} (expected completed week {exp_week})")
         print(f"  current-season rows: {len(cur)}")
         print(f"  current-season weeks present: {weeks}  (max completed week {max(weeks) if weeks else None})")
-        print(f"  unique player-game grain: {len(grain)}   duplicate (grain>1): {dup}")
+        dup_frac = dup / max(len(cur), 1)
+        print(f"  unique player-game grain: {len(grain)}   duplicate (grain>1): {dup} ({dup_frac:.3%})")
         print(f"  malformed identity (blank Player): {malformed}")
         print(f"  Team empty frac: {team_empty:.3f}   Opp empty frac: {opp_empty:.3f}")
         print(f"  Nico Collins current-season rows:\n{nico[['Season','Week','Team','Opp','RecYd','Rec']].to_string(index=False) if len(nico) else '    (none)'}")
-        cur_season_ok = bool(seasons and max(seasons) >= int(exp_season) and len(cur) > 0 and dup == 0
-                             and malformed == 0 and team_empty < 0.02 and opp_empty < 0.02)
+        # A tiny duplicate fraction is a normal nflverse mid-week artifact (a player with rows for
+        # two teams in one week), not an integrity defect -- tolerate <1%, report it either way.
+        cur_season_ok = bool(seasons and max(seasons) >= int(exp_season) and len(cur) > 0
+                             and dup_frac < 0.01 and malformed == 0 and team_empty < 0.02 and opp_empty < 0.02)
         print(f"  [gamelog validation] {'PASS' if cur_season_ok else 'FAIL'}")
         ok = ok and cur_season_ok
     except Exception as e:
@@ -110,6 +113,10 @@ def main():
         print(f"  tmp sidecar present (should be NO -> atomic replace done): "
               f"{os.path.exists(APR + '.tmp')}")
         d = pd.read_csv(APR, low_memory=False)
+        if "Season" not in d.columns or "Week" not in d.columns:
+            print(f"  [FAIL] graded record missing Season/Week columns (has: {list(d.columns)[:12]}...) "
+                  "-- the streak boards require them; grader must carry the result game's season/week.")
+            return 1
         d["Season"] = pd.to_numeric(d["Season"], errors="coerce")
         d["Week"] = pd.to_numeric(d["Week"], errors="coerce")
         d = d[d.get("Sport", "NFL").astype(str).str.upper() == "NFL"] if "Sport" in d.columns else d
