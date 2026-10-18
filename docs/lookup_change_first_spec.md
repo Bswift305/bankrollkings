@@ -1,7 +1,8 @@
-# Change-First Lookup — Product Specification (design only, no code)
+# Change-First Lookup — Product Specification and Phase Status
 
-**Status: SPECIFICATION ONLY. No code, no UI, no model tuning, no production selection logic.** Returns
-for approval before any implementation. Builds on the Decision Journal (built, dark —
+**Status: REVISION 3 APPROVED. PHASE 1 IMPLEMENTED LOCALLY FOR REVIEW; PHASE 2+ NOT AUTHORIZED.**
+Phase 1 is dark service/storage code only: no UI, model tuning, production selection logic, or live
+production database. It returns for approval before Phase 2. Builds on the Decision Journal (built, dark —
 `docs/decision_journal_review_spec.md`), the dataset-level legal register
 (`docs/legal_register_v2.md`), and the queued Sport × Market × Angle Model Registry
 (`docs/` — pending). Date: 2026-10-16. **Revision 3** (five frozen product refinements — see §16:
@@ -295,6 +296,12 @@ detection, Research, and Journal integration. No new black-box scores are needed
 Data/validation-gated items (CLV, performance-by-line-range, market-movement, referee, weather, Similar
 Games) wait on their prerequisites (captured market observations, licensed sources, frozen similarity
 definition) and are **not** built in these phases.
+
+**Phase status (2026-10-18):** Phase 1 was explicitly authorized and implemented in
+`services/lookup_changes.py` with the read-only adapter `ingest_lookup_market_changes.py`. The store is
+outside the checkout, has no Flask/UI consumer, accepts only the cleared `odds_api_player_props`
+dataset, and treats the first observation as a baseline. `qc_lookup_change_store.py` is the acceptance
+gate. Phase 2 remains closed pending review.
 
 ## 12. Acceptance tests (per phase)
 - **Timestamps:** every change item carries `source_updated_at` + `first_captured_at` (+ `displayed_at`

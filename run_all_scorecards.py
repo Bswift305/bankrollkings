@@ -116,6 +116,9 @@ SCORECARDS = [
     # journal-only failure mode, descriptive reporting. Runs against throwaway temp DBs; cheap.
     ("Decision Journal QC", "qc_decision_journal.py", 180),
     ("Decision Journal Backup/Retention QC", "qc_dj_backup_retention.py", 120),
+    # Lookup Phase 1: immutable change-event schema, dataset allowlist, timestamp honesty,
+    # correction lineage, stable identity, and Odds API baseline ingestion. Dark: no Flask/UI path.
+    ("Lookup Change Store QC", "qc_lookup_change_store.py", 120),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
