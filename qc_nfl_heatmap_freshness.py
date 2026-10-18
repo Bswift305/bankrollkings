@@ -140,14 +140,16 @@ def run_qc() -> dict:
 
             hurt = _row(board_a, 'Hurt Guy')
             if hurt is None:
-                issues.append("A: Hurt Guy dropped (should persist as historical)")
+                issues.append("A: Hurt Guy dropped (should persist as a paused run)")
             else:
                 if hurt['active']:
                     issues.append("A: an OUT player shown as an active streak")
                 if hurt['availability_status'] != 'OUT':
                     issues.append(f"A: Hurt Guy availability={hurt['availability_status']!r} (want OUT)")
-                if 'Historical' not in hurt['status_label']:
-                    issues.append(f"A: Hurt Guy status not historical: {hurt['status_label']!r}")
+                if hurt.get('availability_state') != 'PAUSED':
+                    issues.append(f"A: Hurt Guy state={hurt.get('availability_state')!r} (want PAUSED)")
+                if 'before absence' not in hurt['status_label']:
+                    issues.append(f"A: Hurt Guy paused run not labeled 'before absence': {hurt['status_label']!r}")
 
             # Active runs must lead; no stale row may sit above an active one.
             seen_stale = False
