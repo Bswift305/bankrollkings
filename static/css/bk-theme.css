@@ -1064,6 +1064,23 @@ body::after {
 .player-link.accent-link {
   color: var(--bk-primary2);
 }
+/* Universal entity links (entity_anchor): inherit the surrounding link color, but always carry a
+   visible keyboard focus state and stay tap-friendly at 375px. */
+.bk-entity-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(157,244,236,0.22);
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.bk-entity-link:hover {
+  color: var(--bk-primary2);
+  border-color: rgba(157,244,236,0.72);
+}
+.bk-entity-link:focus-visible {
+  outline: 2px solid var(--bk-primary2);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .bk-tag {
   display: inline-flex; align-items: center; gap: 3px;
   background: var(--bk-glow-soft);

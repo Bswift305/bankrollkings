@@ -87,6 +87,12 @@ SCORECARDS = [
     # preserved as fact but never "actively continuing", a stale feed fails closed, RETURNED is never
     # fabricated from a missing prop row. Drives the real on-disk + injury-freshness paths.
     ("NFL Wave Season+Injury QC", "qc_nfl_wave_season_injury.py", 180),
+    # Universal entity links: the sport-scoped resolver (services/entity_links.py + player_url/
+    # team_url/entity_anchor). Centralized URL encoding, per-sport destinations, unknown/ambiguous/
+    # historical-only/unsupported -> plain text, identical names never cross-link, prose/heading/
+    # option/decorative placements never linked -- and it FETCHES each resolvable destination through
+    # the test client to prove the page renders the intended entity.
+    ("Universal Entity-Link QC", "qc_entity_links.py", 180),
     # fetch_nfl_player_week --check-only contract: a missing parquet is behind (exit 2), but a file
     # that exists yet cannot be read is a DISTINCT error (exit 3), never a false "week 0" that would
     # read as missing production data. Cheap; guards the post-week retry's operator diagnostics.

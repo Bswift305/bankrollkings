@@ -101,9 +101,9 @@
                     data-team="{{ r.team }}"
                     data-search="{{ (r.player ~ ' ' ~ r.team ~ ' ' ~ r.reason)|lower }}">
                     <td><span class="inj-league">{{ r.league_label }}</span></td>
-                    <td>{{ r.team or '—' }}</td>
+                    <td>{% if r.team %}{{ entity_anchor('team', r.league, r.team) }}{% else %}—{% endif %}</td>
                     <td style="font-weight:600; color:var(--text-bright);">
-                        {{ r.player }}
+                        {{ entity_anchor('player', r.league, r.player) }}
                         {% if r.boosts %}<button type="button" class="inj-expand" aria-label="Show stats when this player is absent">&#9656; impact</button>{% endif %}
                     </td>
                     <td><span class="inj-status inj-sev-{{ r.severity }}">{{ r.status or r.status_bucket }}</span></td>

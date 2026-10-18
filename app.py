@@ -17159,6 +17159,143 @@ def render_matchup_mark(away, home, separator='@', size='sm', extra_class='', sp
     )
 
 
+# ---------------------------------------------------------------------------
+# Universal entity links -- one sport-scoped resolver for player/team page URLs
+# ---------------------------------------------------------------------------
+# services/entity_links.py owns the URL SHAPE + encoding (pure). Here we add the DATA gate: a link
+# is produced only when the entity actually resolves in that sport's CURRENT data, so unknown /
+# ambiguous / historical-only / unsupported entities fall through to plain text. Identical names in
+# different sports never cross-link, because resolution is per sport and the shared /player route is
+# scoped by ?sport=. Templates call entity_anchor(...) / player_url(...) / team_url(...) -- never a
+# hand-built href, and never a lowercased display name.
+import services.entity_links as _entity_links
+
+_ENTITY_KEYSET_CACHE = {}
+
+
+def _entity_player_keyset(sport):
+    """Cached {lookup_key -> distinct-entity count} of CURRENT players for `sport`. Current data only
+    (a historical-only name is not linked); a key with count > 1 is ambiguous. Empty when the source
+    is missing or withheld by the data-rights gate -- in which case every link for that sport becomes
+    plain text, which is correct because the destination page would not render the entity either."""
+    sport = _entity_links.canonical_sport(sport)
+    if sport not in _entity_links.PLAYER_SPORTS:
+        return {}
+    cache = _ENTITY_KEYSET_CACHE
+    if sport == 'nfl':
+        try:
+            lookup = build_nfl_current_roster_lookup() or {}
+        except Exception:
+            lookup = {}
+        sig = ('nfl', len(lookup))
+        if cache.get('nfl_sig') == sig:
+            return cache.get('nfl_set', {})
+        counts = {}
+        for key, rec in lookup.items():
+            pid = str((rec or {}).get('player_id') or key)
+            counts.setdefault(key, set()).add(pid)
+        counts = {k: len(v) for k, v in counts.items()}
+        cache['nfl_sig'] = sig
+        cache['nfl_set'] = counts
+        return counts
+    try:
+        df = {'nba': load_gamelogs, 'wnba': load_wnba_gamelogs, 'mlb': load_mlb_gamelogs}[sport]()
+    except Exception:
+        df = None
+    sig = id(df)
+    if cache.get(sport + '_sig') == sig and (sport + '_set') in cache:
+        return cache[sport + '_set']
+    counts = {}
+    if df is not None and not getattr(df, 'empty', True) and 'Player' in getattr(df, 'columns', []):
+        for nm in df['Player'].dropna().astype(str):
+            nm = nm.strip()
+            if not nm:
+                continue
+            k = normalize_player_lookup_name(nm) or nm.lower()
+            counts.setdefault(k, set()).add(nm)
+        counts = {k: len(v) for k, v in counts.items()}
+    cache[sport + '_sig'] = sig
+    cache[sport + '_set'] = counts
+    return counts
+
+
+def _entity_player_known(sport, name):
+    """True only when `name` resolves to EXACTLY ONE current player in `sport` (unknown or ambiguous
+    -> False -> plain text). NFL uses the roster key; others use the generic lookup key."""
+    sport = _entity_links.canonical_sport(sport)
+    name = str(name or '').strip()
+    if not name or sport not in _entity_links.PLAYER_SPORTS:
+        return False
+    counts = _entity_player_keyset(sport)
+    if sport == 'nfl':
+        key = _normalize_nfl_roster_player_key(name) or _normalize_player_join_key(name)
+    else:
+        key = normalize_player_lookup_name(name) or name.lower()
+    return counts.get(key, 0) == 1
+
+
+def _entity_team_known(sport, team):
+    """True when `team` resolves to a known team in `sport` (NBA: a canonical abbr; CFB: a canonical
+    program). Other sports have no per-team page -> False -> plain text."""
+    sport = _entity_links.canonical_sport(sport)
+    team = str(team or '').strip()
+    if not team or sport not in _entity_links.TEAM_SPORTS:
+        return False
+    if sport == 'cfb':
+        try:
+            return bool(normalize_ncaaf_team_name(team))
+        except Exception:
+            return False
+    try:
+        return bool(normalize_team_abbr(team))   # NBA
+    except Exception:
+        return False
+
+
+def player_url(sport, name, sample=None, stat=None, require_known=True):
+    """Sport-scoped URL for a player's page, or None (-> plain text) when the sport has no player
+    page or the name does not resolve to exactly one current player. Encoding is centralized in
+    services.entity_links; the display name is never lowercased into the URL."""
+    if require_known and not _entity_player_known(sport, name):
+        return None
+    return _entity_links.player_path(sport, name, sample=sample, stat=stat)
+
+
+def team_url(sport, team, postseason=False, require_known=True):
+    """Sport-scoped URL for a team's page, or None (-> plain text) when the sport has no targetable
+    per-team page (NFL/MLB/WNBA) or the team does not resolve."""
+    if require_known and not _entity_team_known(sport, team):
+        return None
+    return _entity_links.team_path(sport, team, postseason=postseason)
+
+
+def entity_anchor(kind, sport, identity, label=None, context='cell', css_class='', **opts):
+    """Render an entity link as Markup, or the plain (escaped) display text when it should not be a
+    link. It is NEVER a link when: the resolver returns no URL (unknown/ambiguous/historical/
+    unsupported), or the placement is non-navigational -- prose, a heading, a disclaimer, a <select>
+    option, or a decorative element (context in {'prose','heading','disclaimer','option',
+    'decorative','text'}). Links get a visible focus state and are single-anchor (callers must not
+    nest this inside another <a>). `kind` is 'player' or 'team'."""
+    text = escape(str(identity if label is None else label))
+    if context in ('prose', 'heading', 'disclaimer', 'option', 'decorative', 'text'):
+        return text
+    if kind == 'team':
+        href = team_url(sport, identity, postseason=bool(opts.get('postseason')))
+    else:
+        href = player_url(sport, identity, sample=opts.get('sample'), stat=opts.get('stat'))
+    if not href:
+        return text
+    cls = ('bk-entity-link ' + css_class).strip()
+    return Markup(f'<a class="{escape(cls)}" href="{escape(href)}">{text}</a>')
+
+
+@app.context_processor
+def inject_entity_links():
+    """Expose the universal entity-link resolver to every template (a dedicated context processor
+    so it reaches all render paths, not only the heavy member-shell context)."""
+    return {'entity_anchor': entity_anchor, 'player_url': player_url, 'team_url': team_url}
+
+
 def glossary_href(section_id, postseason=None):
     postseason_flag = 1 if postseason_only_enabled() else 0 if postseason is None else int(bool(postseason))
     return f"/glossary?postseason={postseason_flag}#{escape(section_id)}"
@@ -38211,7 +38348,13 @@ def player(player_name):
     current_team_map = build_current_team_map(gamelogs, player_snapshot, current_team_overrides)
     sample_mode = request.args.get('sample', 'current')
     selected_stat = normalize_stat_filter(request.args.get('stat', 'PTS'))
-    player_logs_all = gamelogs[gamelogs['Player'] == player_name] if not gamelogs.empty else pd.DataFrame()
+    # Sport scoping (universal entity links): an explicit ?sport=mlb|wnba must NOT render an NBA
+    # player who happens to share the name -- skip the NBA gamelog branch so the request resolves in
+    # the scoped sport's own data (MLB -> statcast/archive below). Absent or ?sport=nba is unchanged.
+    _req_sport = _entity_links.canonical_sport(request.args.get('sport'))
+    player_logs_all = (gamelogs[gamelogs['Player'] == player_name]
+                       if (not gamelogs.empty and _req_sport in ('', 'nba'))
+                       else pd.DataFrame())
     if player_logs_all.empty:
         archived_context = build_archived_player_page_context_service(player_name)
         if archived_context.get('available') or ngs_context.get('available') or statcast_context.get('available'):
