@@ -415,10 +415,16 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   MLB/WNBA gate archiving on it). What genuinely remains is **evidence**, not code —
   the 25% threshold is MLB/WNBA-derived, and football needs its own graded ROI to
   confirm or kill it. Per §10, out-of-sample or it does not count.
-- **`NFL_PlayerStats_<yr>.csv` is built locally and gitignored.** 2023–25 were one-time
-  copied to prod. For in-season freshness, wire
-  `build_nfl_player_stats_from_pbp.py` for the current season into the prod football
-  refresh — today the gamelog rebuild runs off static 2023–25 input.
+- **`NFL_PlayerStats_<yr>.csv` is built locally and gitignored** (2023–25 one-time copied
+  to prod). **`build_nfl_gamelogs.py` now folds the in-season nflverse weekly parquet
+  (`data/tracking/_nflverse_stats_<yr>.parquet`, same schema) into `NFL_GameLogs.csv`** for
+  any season a static CSV doesn't cover — so the gamelog (and the prop grader that resolves
+  against it, `refresh_all_prop_results.py` → `NFL_AllPropResults.csv`) is CURRENT without
+  needing `build_nfl_player_stats_from_pbp.py`. This was the root cause of `NFL_AllPropResults`
+  being stuck at 2025 while the candidate archive held fresh 2026 props: the grader matched 2026
+  candidates against a 2025-only `NFL_GameLogs.csv`, so nothing resolved. Fixed 2026-10-18. (The
+  prop grader uses `load_nfl_gamelogs()`, NOT the parquet directly, so the gamelog file itself had
+  to carry the current season.)
 - **College hoops:** Command Center and themed Props/Market/Trends/Parlay shells are
   built; real data and boards are not.
 - **Fantasy Salary / Value / Own%** need a DFS slate provider decision (SportsDataIO or
