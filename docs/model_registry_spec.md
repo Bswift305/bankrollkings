@@ -1,8 +1,9 @@
 # Sport × Market × Angle Model Registry — Specification (design only, no code)
 
-**Status: SPECIFICATION ONLY. No code, no weight changes, no production selection-logic changes.**
-Returns the registry framework + inventory + prioritized roadmap for approval **before** any weight or
-selection change. Builds on the change-first Lookup (`docs/lookup_change_first_spec.md`), the matchup
+**Status: REGISTRY FOUNDATION IMPLEMENTED DARK; no weight or production selection-logic changes.**
+The metadata registry and its governance firewall were authorized and implemented on 2026-10-18 in
+`services/model_registry.py`. The inventory and prioritized roadmap remain documentation work before
+any model validation or authority change. Builds on the change-first Lookup (`docs/lookup_change_first_spec.md`), the matchup
 product contract (`docs/matchup_page_product_contract.md`), and the market-efficiency discipline
 (out-of-sample or it does not count). Date: 2026-10-16.
 
@@ -116,6 +117,15 @@ the nine contract fields, the validation dataset, the prospective test, and the 
 **No weight or production-selection change is proposed until an entry reaches Qualified, out-of-sample.**
 
 ## 8. Out of scope here
-No code, no weight changes, no production selection logic, no universal score, no undocumented boost.
-This is the registry framework + method; the inventory and prioritized roadmap are returned for
-approval before any model is built or any weight changes.
+No model computation, weight changes, production selection logic, universal score, or undocumented
+boost. The implemented code is registry metadata + the governance firewall only; the inventory and
+prioritized roadmap precede any model validation or authority change.
+
+## 9. Implementation receipt (2026-10-18)
+
+The registry foundation now encodes `nfl_qb_rushing_yards` at **Discovery** and exposes it on the dark
+NFL Player Check Research module only when the player is a QB with a live rushing-yards market. The
+single `has_authority()` firewall requires both `status=Qualified` and passing historical, holdout, and
+prospective validation; the current entry therefore has **zero** ordering, selection, confidence, or
+recommendation authority. `qc_model_registry.py` proves the governance firewall and sport × market ×
+position isolation. No model computation, weight, production ordering, or public flag changed.

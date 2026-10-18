@@ -125,6 +125,8 @@ SCORECARDS = [
     # Lookup Phase 3: descriptive nflverse distributions, no missing-component zero-fill,
     # no score/projection/ordering authority, and the same dark feature gate.
     ("Lookup Facts + Context QC", "qc_lookup_facts_context.py", 120),
+    # Governed model metadata: sport/market/position isolation and the Qualified+validation firewall.
+    ("Model Registry QC", "qc_model_registry.py", 120),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),

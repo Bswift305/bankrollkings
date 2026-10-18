@@ -319,6 +319,13 @@ Environment Stability abstains pending a named Model Registry contract. `qc_look
 is the acceptance gate. There is no consistency score and no ordering or selection change. Phase 4
 remains closed pending review.
 
+**Research foundation status (2026-10-18):** the first governed registry entry,
+`nfl_qb_rushing_yards`, is exposed on Player Check only for quarterbacks with a live rushing-yards
+market. It is labeled **Discovery**, states its required angle-specific evidence and abstention, and
+has no decision authority. The shared firewall requires Qualified status plus passed historical,
+holdout, and prospective validation. This is explanatory metadata only; Mismatch and Contradictions
+still abstain because their verified inputs/materiality contracts are not complete.
+
 ## 12. Acceptance tests (per phase)
 - **Timestamps:** every change item carries `source_updated_at` + `first_captured_at` (+ `displayed_at`
   at render) stored in UTC; each labeled with timezone or "tz unknown"; the clocks are never conflated.

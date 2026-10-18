@@ -168,6 +168,20 @@
     {% endif %}
     <div class="sub" style="margin-top:10px;margin-bottom:0;"><b>Environment Stability:</b> unavailable until a named Model Registry contract defines the inputs and deterministic rule. No hidden stability score is substituted.</div>
   </section>
+
+  {% if lookup_research %}
+  <section class="pc-context" aria-labelledby="pc-research-title">
+    <h2 id="pc-research-title">Research</h2>
+    <div class="sub">Governed angle research that applies to this player&rsquo;s live markets. Discovery and Under Review entries explain hypotheses only; they do not order, select, score, or recommend.</div>
+    {% for r in lookup_research %}
+      <div class="pc-row">
+        <span class="pc-chip {{ 'included' if r.has_authority else 'elig' }}">{{ r.status }}</span>
+        <span class="pc-txt"><b>{{ r.angle }}</b> &middot; {{ r.explanation }}<br>
+        Output: {{ r.output }}. {% if not r.has_authority %}<b>No decision authority.</b> {{ r.abstention }}{% endif %}</span>
+      </div>
+    {% endfor %}
+  </section>
+  {% endif %}
   {% endif %}
 
   <div class="pc-facts">

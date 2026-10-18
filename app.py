@@ -31530,6 +31530,7 @@ def evaluate_nfl_player(query):
     out = {'query': (query or '').strip(), 'status': 'empty', 'player': None, 'candidates': [],
            'matchup': None, 'feed_ts': None, 'markets': [], 'surfaces': {},
            'lookup_facts_context': {'availability': 'unavailable', 'distributions': []},
+           'lookup_research': [],
            'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     if not out['query']:
         return out
@@ -31622,6 +31623,15 @@ def evaluate_nfl_player(query):
             markets.append(m)
     out['markets'] = markets
     out['lookup_facts_context'] = _nfl_lookup_facts_context(sub, cur, markets)
+    from services.model_registry import research_for_market
+    research = []
+    seen_models = set()
+    for market in markets:
+        for entry in research_for_market('nfl', market.get('stat_key'), pos):
+            if entry['model_id'] not in seen_models:
+                seen_models.add(entry['model_id'])
+                research.append(entry)
+    out['lookup_research'] = research
 
     # --- Featured (usage) + Green Light (player + primary market) ------------------------
     if urank is None:

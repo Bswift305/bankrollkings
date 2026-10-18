@@ -393,7 +393,9 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   Missing components are never zero-filled. No production DB/ingestion job exists. The
   current NFL snapshot resolves 2,132/2,269 rows to stable roster IDs in a throwaway proof; 137
   unresolved identities abstain. QCs: `qc_lookup_change_store.py`, `qc_lookup_change_views.py`.
-  `qc_lookup_facts_context.py`. Phase 4 is not authorized pending review.
+  `qc_lookup_facts_context.py`. The dark Research module reads the governed
+  `services/model_registry.py`; its NFL QB-rushing entry remains Discovery with zero authority
+  (`qc_model_registry.py`). Contradictions/Mismatch still abstain pending verified contracts.
 
 - **Injury Report "impact" (with/without):** NBA + NFL live; **MLB/WNBA not built** —
   needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`.
