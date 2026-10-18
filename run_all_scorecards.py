@@ -119,6 +119,9 @@ SCORECARDS = [
     # Lookup Phase 1: immutable change-event schema, dataset allowlist, timestamp honesty,
     # correction lineage, stable identity, and Odds API baseline ingestion. Dark: no Flask/UI path.
     ("Lookup Change Store QC", "qc_lookup_change_store.py", 120),
+    # Lookup Phase 2: change-first Player Check presentation, honest first-visit baseline,
+    # per-user unread watermark, successful-render commit, failure/race preservation, flag-off dark.
+    ("Lookup Change Views QC", "qc_lookup_change_views.py", 180),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),

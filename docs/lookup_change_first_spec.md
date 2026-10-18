@@ -1,8 +1,8 @@
 # Change-First Lookup — Product Specification and Phase Status
 
-**Status: REVISION 3 APPROVED. PHASE 1 IMPLEMENTED LOCALLY FOR REVIEW; PHASE 2+ NOT AUTHORIZED.**
-Phase 1 is dark service/storage code only: no UI, model tuning, production selection logic, or live
-production database. It returns for approval before Phase 2. Builds on the Decision Journal (built, dark —
+**Status: REVISION 3 APPROVED. PHASES 1–2 IMPLEMENTED LOCALLY FOR REVIEW; PHASE 3+ NOT AUTHORIZED.**
+The implementation is feature-flagged dark by default: no model tuning, production selection logic, or
+live production database. It returns for approval before Phase 3. Builds on the Decision Journal (built, dark —
 `docs/decision_journal_review_spec.md`), the dataset-level legal register
 (`docs/legal_register_v2.md`), and the queued Sport × Market × Angle Model Registry
 (`docs/` — pending). Date: 2026-10-16. **Revision 3** (five frozen product refinements — see §16:
@@ -299,9 +299,16 @@ definition) and are **not** built in these phases.
 
 **Phase status (2026-10-18):** Phase 1 was explicitly authorized and implemented in
 `services/lookup_changes.py` with the read-only adapter `ingest_lookup_market_changes.py`. The store is
-outside the checkout, has no Flask/UI consumer, accepts only the cleared `odds_api_player_props`
-dataset, and treats the first observation as a baseline. `qc_lookup_change_store.py` is the acceptance
-gate. Phase 2 remains closed pending review.
+outside the checkout, accepts only the cleared `odds_api_player_props` dataset, and treats the first
+observation as a baseline. `qc_lookup_change_store.py` is the storage acceptance gate.
+
+**Phase 2 status (2026-10-18):** explicitly authorized and implemented on NFL Player Check behind
+`LOOKUP_CHANGE_ENABLED=0` by default. It adds the frozen What's Changed / What Did I Miss? / Why This
+Is Interesting presentation, a five-field per-user watermark only, first-visit baseline, successful-render
+commit, view/update race protection, and account-deletion purge. Newly Significant Information abstains
+until a named Model Registry contract exists. `qc_lookup_change_views.py` is the route/render gate.
+There is no production store, ingestion job, ranking effect, Journal write, or NBA/WNBA statistic.
+Phase 3 remains closed pending review.
 
 ## 12. Acceptance tests (per phase)
 - **Timestamps:** every change item carries `source_updated_at` + `first_captured_at` (+ `displayed_at`

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ALLOWED_DATASETS = {"odds_api_player_props"}
 ENTITY_TYPES = {"player", "team", "game"}
 RELIABILITY_STATES = {"confirmed", "preliminary"}
@@ -173,6 +173,15 @@ CREATE TABLE IF NOT EXISTS change_events (
 CREATE INDEX IF NOT EXISTS ix_change_entity_sequence
   ON change_events(entity_type, entity_id, event_sequence);
 
+CREATE TABLE IF NOT EXISTS viewer_watermarks (
+  user_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('player','team','game')),
+  entity_id TEXT NOT NULL,
+  last_seen_sequence INTEGER NOT NULL CHECK (last_seen_sequence >= 0),
+  last_viewed_at TEXT NOT NULL,
+  PRIMARY KEY(user_id, entity_type, entity_id)
+);
+
 CREATE TRIGGER IF NOT EXISTS observations_no_update
 BEFORE UPDATE ON observations BEGIN SELECT RAISE(ABORT, 'observations are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS observations_no_delete
@@ -218,15 +227,32 @@ class LookupChangeStore:
                     os.chmod(self.path.parent, 0o700)
             self.conn = _connect(self.path)
             if auto_init:
+                has_meta = self.conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'"
+                ).fetchone()
+                if has_meta:
+                    existing = self.conn.execute(
+                        "SELECT version FROM schema_meta WHERE id=1"
+                    ).fetchone()
+                    if not existing or int(existing[0]) < 1 or int(existing[0]) > SCHEMA_VERSION:
+                        raise StoreUnavailable("Lookup change store schema is not safely migratable")
                 self.conn.executescript(SCHEMA_SQL)
                 self.conn.execute(
-                    "INSERT OR IGNORE INTO schema_meta(id,version,applied_at) VALUES(1,?,?)",
+                    """INSERT INTO schema_meta(id,version,applied_at) VALUES(1,?,?)
+                       ON CONFLICT(id) DO UPDATE SET version=excluded.version,
+                         applied_at=excluded.applied_at""",
                     (SCHEMA_VERSION, utc_now()),
                 )
                 if os.name != "nt":
                     os.chmod(self.path, 0o600)
             self._health_check()
+        except StoreUnavailable:
+            if hasattr(self, "conn"):
+                self.conn.close()
+            raise
         except (OSError, sqlite3.Error) as exc:
+            if hasattr(self, "conn"):
+                self.conn.close()
             raise StoreUnavailable("Lookup change store unavailable") from exc
 
     def close(self) -> None:
@@ -387,6 +413,87 @@ class LookupChangeStore:
             (entity_type, entity_id, int(after_sequence)),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def prepare_view(self, user_id: str, entity_type: str, entity_id: str) -> dict[str, Any]:
+        """Read a view without advancing its watermark.
+
+        The caller must invoke ``commit_rendered_view`` only after a successful render.  A first visit
+        returns an empty ``missed_events`` baseline while still returning global ``all_events``.
+        """
+        uid = str(user_id or "").strip()
+        etype = str(entity_type or "").strip().lower()
+        eid = str(entity_id or "").strip()
+        if not uid or etype not in ENTITY_TYPES or not eid:
+            raise ValidationError("user_id and stable entity identity are required for a view")
+        watermark = self.conn.execute(
+            """SELECT last_seen_sequence,last_viewed_at FROM viewer_watermarks
+               WHERE user_id=? AND entity_type=? AND entity_id=?""",
+            (uid, etype, eid),
+        ).fetchone()
+        events = self.events_for_entity(etype, eid)
+        max_rendered = max((int(row["event_sequence"]) for row in events), default=0)
+        first_visit = watermark is None
+        previous = int(watermark["last_seen_sequence"]) if watermark else 0
+        missed = [] if first_visit else [row for row in events if int(row["event_sequence"]) > previous]
+        return {
+            "first_visit": first_visit,
+            "previous_sequence": previous,
+            "previous_viewed_at": watermark["last_viewed_at"] if watermark else None,
+            "all_events": events,
+            "missed_events": missed,
+            "max_rendered_sequence": max_rendered,
+        }
+
+    def commit_rendered_view(
+        self,
+        user_id: str,
+        entity_type: str,
+        entity_id: str,
+        max_rendered_sequence: int,
+        *,
+        viewed_at: str | None = None,
+    ) -> None:
+        """Advance only to the highest sequence actually included in a successful response."""
+        uid = str(user_id or "").strip()
+        etype = str(entity_type or "").strip().lower()
+        eid = str(entity_id or "").strip()
+        if not uid or etype not in ENTITY_TYPES or not eid:
+            raise ValidationError("user_id and stable entity identity are required for a watermark")
+        try:
+            sequence = int(max_rendered_sequence)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("max_rendered_sequence must be a non-negative integer") from exc
+        if sequence < 0:
+            raise ValidationError("max_rendered_sequence must be a non-negative integer")
+        timestamp = _utc_timestamp(viewed_at or utc_now(), required=True)
+        with _transaction(self.conn):
+            self.conn.execute(
+                """INSERT INTO viewer_watermarks(
+                     user_id,entity_type,entity_id,last_seen_sequence,last_viewed_at)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(user_id,entity_type,entity_id) DO UPDATE SET
+                     last_seen_sequence=MAX(viewer_watermarks.last_seen_sequence,
+                                            excluded.last_seen_sequence),
+                     last_viewed_at=excluded.last_viewed_at""",
+                (uid, etype, eid, sequence, timestamp),
+            )
+
+    def watermark_for(self, user_id: str, entity_type: str, entity_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            """SELECT last_seen_sequence,last_viewed_at FROM viewer_watermarks
+               WHERE user_id=? AND entity_type=? AND entity_id=?""",
+            (str(user_id), str(entity_type).lower(), str(entity_id)),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def purge_user_state(self, user_id: str) -> int:
+        """Delete only the account's latest watermarks (no view-history table exists)."""
+        uid = str(user_id or "").strip()
+        if not uid:
+            raise ValidationError("user_id is required")
+        with _transaction(self.conn):
+            cursor = self.conn.execute("DELETE FROM viewer_watermarks WHERE user_id=?", (uid,))
+        return int(cursor.rowcount)
 
     def counts(self) -> dict[str, int]:
         return {

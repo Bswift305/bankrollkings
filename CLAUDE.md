@@ -385,11 +385,13 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
 
 ## 13. Open items
 
-- **Change-First Lookup:** Phase 1 is implemented locally and dark (`services/lookup_changes.py`,
-  `ingest_lookup_market_changes.py`, `qc_lookup_change_store.py`). It stores immutable cleared Odds API
-  observations/events outside the checkout; no Flask/UI consumer and no production DB exist yet.
-  The current NFL snapshot resolves 2,132/2,269 rows to stable roster IDs in a throwaway proof; 137
-  unresolved identities abstain. Phase 2 is not authorized until Phase 1 review.
+- **Change-First Lookup:** Phases 1–2 are implemented locally, feature-flagged dark
+  (`LOOKUP_CHANGE_ENABLED=0`). The immutable store + Odds API adapter live in
+  `services/lookup_changes.py` / `ingest_lookup_market_changes.py`; Player Check contains the
+  change-first modules and minimal per-user watermark. No production DB/ingestion job exists. The
+  current NFL snapshot resolves 2,132/2,269 rows to stable roster IDs in a throwaway proof; 137
+  unresolved identities abstain. QCs: `qc_lookup_change_store.py`, `qc_lookup_change_views.py`.
+  Phase 3 is not authorized pending review.
 
 - **Injury Report "impact" (with/without):** NBA + NFL live; **MLB/WNBA not built** —
   needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`.

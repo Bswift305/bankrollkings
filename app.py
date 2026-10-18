@@ -3040,6 +3040,7 @@ def build_nfl_current_roster_lookup():
         if not player_key:
             continue
         record = {
+            'player_id': str(row.get('PlayerID') or '').strip(),
             'team': _normalize_nfl_team_abbr(row.get('CurrentTeam')),
             'position': str(row.get('Position') or '').strip().upper(),
             'status': str(row.get('Status') or '').strip(),
@@ -31478,7 +31479,8 @@ def evaluate_nfl_player(query):
     rec = roster.get(_normalize_player_join_key(player)) or roster.get(_normalize_nfl_roster_player_key(player)) or {}
     pos = (uinfo.get('pos') or rec.get('position') or '').upper()
     team = uinfo.get('team') or rec.get('team') or ''
-    out['player'] = {'player': player, 'team': team, 'pos': pos}
+    out['player'] = {'player': player, 'team': team, 'pos': pos,
+                     'player_id': str(rec.get('player_id') or '').strip()}
 
     # --- raw book quotes (facts) + canonical evaluated markets ---------------------------
     prows = props[props['Player'].astype(str) == player].copy() if not props.empty and 'Player' in props.columns else pd.DataFrame()
@@ -32239,6 +32241,80 @@ def menu_board_tool():
     return render_template('menu_board.html', **ctx)
 
 
+def _lookup_changes_enabled():
+    return str(os.environ.get('LOOKUP_CHANGE_ENABLED', '0') or '').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
+
+
+def _lookup_change_item(row):
+    """Presentation-only decoding for an immutable observed event (no scoring or ranking)."""
+    try:
+        prior = json.loads(row.get('prior_value_json') or '{}')
+    except (TypeError, ValueError):
+        prior = {}
+    try:
+        current = json.loads(row.get('current_value_json') or '{}')
+    except (TypeError, ValueError):
+        current = {}
+    before = prior.get('line')
+    after = current.get('line')
+    def _line_text(value):
+        try:
+            return f'{float(value):g}'
+        except (TypeError, ValueError):
+            return str(value or '—')
+    book = current.get('book') or 'Sportsbook'
+    stat = current.get('stat') or 'market'
+    if before is not None and after is not None and before != after:
+        sentence = f'{book} moved {stat} from {_line_text(before)} to {_line_text(after)}.'
+    else:
+        changed = []
+        if prior.get('over_price') != current.get('over_price'):
+            changed.append('Over price')
+        if prior.get('under_price') != current.get('under_price'):
+            changed.append('Under price')
+        sentence = f"{book} updated the {stat} {' and '.join(changed) if changed else 'quote'}."
+    source_updated = row.get('source_updated_at')
+    source_updated_label = source_updated or row.get('source_updated_raw') or 'Unavailable'
+    source_tz_known = bool(source_updated)
+    return {
+        'id': row.get('change_event_id'),
+        'sequence': int(row.get('event_sequence') or 0),
+        'sentence': sentence,
+        'comparison_window': row.get('comparison_window'),
+        'source': row.get('source'),
+        'source_updated': source_updated_label,
+        'source_updated_tz_known': source_tz_known,
+        'first_captured_at': row.get('first_captured_at'),
+        'reliability': row.get('reliability_state'),
+        'market_relative_timing': row.get('market_relative_timing') or 'unknown',
+    }
+
+
+def _lookup_change_context(prepared):
+    # Event sequence is capture order, not a quality rank. Newest capture first is a neutral chronology.
+    all_items = [_lookup_change_item(row) for row in prepared.get('all_events', [])]
+    missed = [_lookup_change_item(row) for row in prepared.get('missed_events', [])]
+    all_items.reverse()
+    missed.reverse()
+    return {
+        'enabled': True,
+        'availability': 'verified',
+        'displayed_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'whats_changed': all_items,
+        'missed': missed,
+        'first_visit': bool(prepared.get('first_visit')),
+        'last_viewed_at': prepared.get('previous_viewed_at'),
+        # The attention layer is an index over the same evidence; no new score or computation.
+        'interesting': [
+            {'sentence': item['sentence'], 'evidence_id': item['id']}
+            for item in all_items[:3]
+        ],
+        'newly_significant_available': False,
+    }
+
+
 @app.route('/tools/player-check', methods=['GET'])
 def player_check_tool():
     """NFL Player Check -- search a player and see, per market and per surface, which of our
@@ -32249,7 +32325,45 @@ def player_check_tool():
                                             'candidates': [], 'matchup': None, 'feed_ts': None,
                                             'markets': [], 'surfaces': {}}
     ctx['reason_class'] = _nfl_incl.reason_class
-    return render_template('player_check.html', **ctx)
+    change_store = None
+    prepared = None
+    ctx['lookup_changes'] = {'enabled': False}
+    player = ctx.get('player') or {}
+    player_id = str(player.get('player_id') or '').strip()
+    uid = _card_prefs_uid()
+    if (_lookup_changes_enabled() and ctx.get('status') == 'ok' and player_id and uid):
+        try:
+            from services.lookup_changes import LookupChangeStore
+            change_store = LookupChangeStore()
+            entity_id = f'nfl:espn:{player_id}'
+            prepared = change_store.prepare_view(uid, 'player', entity_id)
+            ctx['lookup_changes'] = _lookup_change_context(prepared)
+        except Exception:
+            if change_store is not None:
+                change_store.close()
+            change_store = None
+            prepared = None
+            ctx['lookup_changes'] = {
+                'enabled': True, 'availability': 'unavailable',
+                'availability_note': 'Change history is temporarily unavailable. Live market facts below are unaffected.',
+            }
+    # Render first; only a successful render may advance the per-user watermark.
+    try:
+        rendered = render_template('player_check.html', **ctx)
+    except Exception:
+        if change_store is not None:
+            change_store.close()
+        raise
+    if change_store is not None and prepared is not None:
+        try:
+            change_store.commit_rendered_view(
+                uid, 'player', f'nfl:espn:{player_id}', prepared['max_rendered_sequence']
+            )
+        except Exception:
+            pass  # A failed watermark write never prevents or falsifies the read-only response.
+        finally:
+            change_store.close()
+    return rendered
 
 
 @app.route('/my-view', methods=['GET', 'POST'])

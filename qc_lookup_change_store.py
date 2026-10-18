@@ -12,6 +12,7 @@ from ingest_lookup_market_changes import ingest_file
 from services.lookup_changes import (
     LookupChangeStore,
     ObservedChangeInput,
+    StoreUnavailable,
     ValidationError,
 )
 
@@ -141,6 +142,102 @@ def qc_concurrent_idempotency():
         return ok, f"results={sorted(results)} errors={errors} counts={counts}"
 
 
+def qc_first_visit_and_render_race():
+    with tempfile.TemporaryDirectory(prefix="lookup_qc_") as td, _store(Path(td)) as store:
+        store.ingest_observed(_item())
+        one = store.ingest_observed(_item(
+            source_observation_id="quote-2", first_captured_at="2026-10-18T10:10:00Z",
+            current_value={"line": 41.5},
+        ))
+        first = store.prepare_view("user-a", "player", "nfl:espn:123")
+        before = store.watermark_for("user-a", "player", "nfl:espn:123")
+        store.commit_rendered_view("user-a", "player", "nfl:espn:123", first["max_rendered_sequence"],
+                                   viewed_at="2026-10-18T10:11:00Z")
+        seeded = store.watermark_for("user-a", "player", "nfl:espn:123")
+
+        two = store.ingest_observed(_item(
+            source_observation_id="quote-3", first_captured_at="2026-10-18T10:20:00Z",
+            effective_time="2026-10-17T08:00:00Z",  # delayed/backfilled fact
+            current_value={"line": 42.5},
+        ))
+        pending = store.prepare_view("user-a", "player", "nfl:espn:123")
+        # Simulate a failed render: no commit. The event must remain unread.
+        pending_again = store.prepare_view("user-a", "player", "nfl:espn:123")
+        store.commit_rendered_view("user-a", "player", "nfl:espn:123",
+                                   pending_again["max_rendered_sequence"],
+                                   viewed_at="2026-10-18T10:21:00Z")
+        done = store.prepare_view("user-a", "player", "nfl:espn:123")
+        other = store.prepare_view("user-b", "player", "nfl:espn:123")
+        ok = (
+            first["first_visit"] and first["missed_events"] == [] and before is None and
+            seeded["last_seen_sequence"] == one["event_sequence"] and
+            [row["event_sequence"] for row in pending["missed_events"]] == [two["event_sequence"]] and
+            [row["event_sequence"] for row in pending_again["missed_events"]] == [two["event_sequence"]] and
+            done["missed_events"] == [] and other["first_visit"] and other["missed_events"] == []
+        )
+        return ok, (f"first={first['first_visit']} pending={len(pending['missed_events'])} "
+                    f"after_failed={len(pending_again['missed_events'])} done={len(done['missed_events'])}")
+
+
+def qc_event_arrives_during_render():
+    with tempfile.TemporaryDirectory(prefix="lookup_qc_") as td, _store(Path(td)) as store:
+        store.ingest_observed(_item())
+        first_change = store.ingest_observed(_item(
+            source_observation_id="quote-2", first_captured_at="2026-10-18T10:10:00Z",
+            current_value={"line": 41.5},
+        ))
+        prepared = store.prepare_view("user-a", "player", "nfl:espn:123")
+        # A new event lands after selection but before the response commits its watermark.
+        late = store.ingest_observed(_item(
+            source_observation_id="quote-3", first_captured_at="2026-10-18T10:11:00Z",
+            current_value={"line": 42.5},
+        ))
+        store.commit_rendered_view("user-a", "player", "nfl:espn:123",
+                                   prepared["max_rendered_sequence"])
+        next_view = store.prepare_view("user-a", "player", "nfl:espn:123")
+        got = [row["event_sequence"] for row in next_view["missed_events"]]
+        ok = prepared["max_rendered_sequence"] == first_change["event_sequence"] and got == [late["event_sequence"]]
+        return ok, f"rendered={prepared['max_rendered_sequence']} next_missed={got}"
+
+
+def qc_minimal_user_state_and_purge():
+    with tempfile.TemporaryDirectory(prefix="lookup_qc_") as td, _store(Path(td)) as store:
+        store.commit_rendered_view("user-a", "player", "nfl:espn:123", 4)
+        store.commit_rendered_view("user-a", "team", "nfl:team:ari", 7)
+        store.commit_rendered_view("user-b", "player", "nfl:espn:123", 2)
+        columns = [row[1] for row in store.conn.execute("PRAGMA table_info(viewer_watermarks)")]
+        removed = store.purge_user_state("user-a")
+        remain_a = store.conn.execute(
+            "SELECT COUNT(*) FROM viewer_watermarks WHERE user_id='user-a'"
+        ).fetchone()[0]
+        remain_b = store.conn.execute(
+            "SELECT COUNT(*) FROM viewer_watermarks WHERE user_id='user-b'"
+        ).fetchone()[0]
+        expected = {"user_id", "entity_type", "entity_id", "last_seen_sequence", "last_viewed_at"}
+        ok = set(columns) == expected and removed == 2 and remain_a == 0 and remain_b == 1
+        return ok, f"columns={columns} removed={removed} remain_a={remain_a} remain_b={remain_b}"
+
+
+def qc_schema_migration_and_future_refusal():
+    with tempfile.TemporaryDirectory(prefix="lookup_qc_") as td:
+        path = Path(td) / "changes.db"
+        with LookupChangeStore(path) as store:
+            store.conn.execute("DROP TABLE viewer_watermarks")
+            store.conn.execute("UPDATE schema_meta SET version=1 WHERE id=1")
+        with LookupChangeStore(path) as migrated:
+            version = migrated.conn.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
+            table = migrated.conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='viewer_watermarks'"
+            ).fetchone()
+            migrated.conn.execute("UPDATE schema_meta SET version=99 WHERE id=1")
+        refused = False
+        try:
+            LookupChangeStore(path)
+        except StoreUnavailable:
+            refused = True
+        return version == 2 and bool(table) and refused, f"migrated={version} table={bool(table)} refused={refused}"
+
+
 def qc_file_ingestion_and_ambiguity():
     with tempfile.TemporaryDirectory(prefix="lookup_qc_") as td:
         root = Path(td)
@@ -190,6 +287,10 @@ CHECKS = [
     ("validation + dataset gate", qc_validation_and_lineage_gate),
     ("market-relative tri-state", qc_market_relative_tristate),
     ("concurrent idempotency", qc_concurrent_idempotency),
+    ("first visit + failed render", qc_first_visit_and_render_race),
+    ("view/update race", qc_event_arrives_during_render),
+    ("minimal user state + purge", qc_minimal_user_state_and_purge),
+    ("schema migration + future refusal", qc_schema_migration_and_future_refusal),
     ("file ingestion + ambiguity abstention", qc_file_ingestion_and_ambiguity),
 ]
 

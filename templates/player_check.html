@@ -43,6 +43,18 @@
   .pc-books summary::-webkit-details-marker{display:none;}
   .pc-books table{width:100%;border-collapse:collapse;margin-top:6px;}
   .pc-books td{font:600 10.5px ui-monospace,monospace;color:var(--text-muted);padding:3px 8px 3px 0;}
+  .pc-change{background:var(--panel,#0f1a29);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:12px 0 18px;}
+  .pc-change h2{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 3px;}
+  .pc-change .sub{font:600 11px/1.45 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin-bottom:11px;}
+  .pc-change h3{font:800 9px ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--pc);margin:13px 0 5px;}
+  .pc-change-list{list-style:none;margin:0;padding:0;}
+  .pc-change-list li{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055);}
+  .pc-change-list li:last-child{border-bottom:0;}
+  .pc-change .statement{font:700 12.5px/1.45 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .pc-change .meta{font:600 9.5px/1.45 ui-monospace,monospace;color:var(--text-muted);margin-top:3px;}
+  .pc-change .why a{color:var(--pc);text-decoration:none;}
+  .pc-change .empty{font:600 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .pc-change .unavailable{border-left:3px solid var(--bkn-mid,#ffd166);padding-left:10px;}
   @media(max-width:600px){ .pc-surf{grid-template-columns:1fr;gap:4px;} .pc-surf .snm{padding-top:10px;} }
 </style>
 
@@ -90,6 +102,45 @@
     <span class="nm">{{ player.player }}</span>
     <span class="mt">{{ player.team }}{% if player.pos %} &middot; {{ player.pos }}{% endif %}</span>
   </div>
+
+  {% if lookup_changes.enabled %}
+  <section class="pc-change" aria-labelledby="pc-change-title">
+    <h2 id="pc-change-title">What&rsquo;s Changed?</h2>
+    {% if lookup_changes.availability == 'unavailable' %}
+      <div class="empty unavailable">{{ lookup_changes.availability_note }}</div>
+    {% else %}
+      <div class="sub">Objective market changes captured by Bankroll Kings. Newest capture first &mdash; chronology, not a ranking or recommendation. Displayed at {{ lookup_changes.displayed_at }}.</div>
+      <h3>New information</h3>
+      {% if lookup_changes.whats_changed %}
+      <ul class="pc-change-list">
+        {% for item in lookup_changes.whats_changed %}
+        <li id="change-{{ item.id }}">
+          <div class="statement">{{ item.sentence }}</div>
+          <div class="meta">{{ item.comparison_window }} &middot; {{ item.source }} &middot; Book Updated {{ item.source_updated }}{% if not item.source_updated_tz_known %} (tz unknown){% endif %} &middot; Feed Captured {{ item.first_captured_at }} &middot; {{ item.reliability }} &middot; market-relative timing {{ item.market_relative_timing }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty">No captured market changes yet. The current quote is a baseline, not a claimed change.</div>{% endif %}
+
+      <h3>Newly significant information</h3>
+      <div class="empty">Unavailable until a named Model Registry contract defines significance. No developer-selected rule is substituted.</div>
+
+      <h3>What Did I Miss?</h3>
+      {% if lookup_changes.first_visit %}
+        <div class="empty">This is your first view, so there is no earlier personal baseline. Future captured changes will appear here.</div>
+      {% elif lookup_changes.missed %}
+        <div class="sub">Since your last successful view{% if lookup_changes.last_viewed_at %} ({{ lookup_changes.last_viewed_at }}){% endif %}:</div>
+        <ul class="pc-change-list">{% for item in lookup_changes.missed %}<li><div class="statement">{{ item.sentence }}</div><div class="meta">Feed Captured {{ item.first_captured_at }} &middot; {{ item.source }}</div></li>{% endfor %}</ul>
+      {% else %}<div class="empty">No newly captured changes since your last successful view.</div>{% endif %}
+
+      <h3>Why This Is Interesting</h3>
+      {% if lookup_changes.interesting %}
+        <ul class="pc-change-list why">{% for item in lookup_changes.interesting %}<li><a href="#change-{{ item.evidence_id }}">{{ item.sentence }}</a> <span class="meta">See the source event above.</span></li>{% endfor %}</ul>
+      {% else %}<div class="empty">No changed inputs to call attention to yet.</div>{% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+
   <div class="pc-facts">
     {% if matchup %}<b>{{ matchup }}</b>{% else %}No live matchup this week{% endif %}
     {% if feed_ts %} &middot; feed updated {{ feed_ts }}{% endif %}
