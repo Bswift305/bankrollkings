@@ -61,7 +61,8 @@
       {% for g in week_games %}
       <a class="sgp-game {% if away and g.away == away and g.home == home %}active{% endif %}" href="/tools/sgp-workbench?game={{ (g.away ~ '@' ~ g.home)|urlencode }}">
         <b>{{ g.away }} @ {{ g.home }}</b>
-        <small>{{ g.date or '' }} {{ g.time or '' }}{% if g.spread %} &middot; {{ g.spread }}{% endif %}{% if g.total %} &middot; O/U {{ g.total }}{% endif %}</small>
+        {% set _tot = (g.total.line if g.total is mapping else g.total) %}
+        <small>{{ g.date or '' }} {{ g.time or '' }}{% if g.spread %} &middot; {{ g.spread }}{% endif %}{% if _tot %} &middot; O/U {{ _tot }}{% endif %}</small>
       </a>
       {% endfor %}
     </div>
