@@ -152,7 +152,11 @@ def main():
     ap.add_argument('--player', default='Nico Collins')
     ap.add_argument('--opponent', default='JAX')
     ap.add_argument('--min-run', type=int, default=3)
+    ap.add_argument('--require-market-line', action='store_true',
+                    help='also FAIL CLOSED (exit 3) when the market-line prop record (NFL_AllPropResults) '
+                         'is behind the current season -- use this in the prop-grader monitor.')
     args = ap.parse_args()
+    market_stale = False
 
     df, manifest = load_logs()
     print('=' * 72)
@@ -177,11 +181,17 @@ def main():
             ad = pd.read_csv(apr, low_memory=False)
             amax = pd.to_numeric(ad.get('Season'), errors='coerce').max()
             amt = datetime.fromtimestamp(os.path.getmtime(apr), tz=timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M')
-            print(f'[MARKET-LINE] NFL_AllPropResults.csv max Season={amax} updated={amt} '
-                  f'(market-line streaks are a SEPARATE product; stale here does not affect milestone streaks)')
+            market_stale = bool(pd.notna(amax) and amax < season)
+            verdict = ('STALE -- max Season %s < current %s (prop-grading lane not advancing)'
+                       % (int(amax) if pd.notna(amax) else '?', season)) if market_stale else 'current'
+            print(f'[MARKET-LINE] NFL_AllPropResults.csv max Season={amax} updated={amt} -> {verdict}')
+            print('              (market-line streaks are a SEPARATE product from milestone streaks; '
+                  'game-stat milestone streaks are unaffected by this)')
         except Exception as e:
+            market_stale = True
             print(f'[MARKET-LINE] NFL_AllPropResults.csv unreadable: {e}')
     else:
+        market_stale = True
         print('[MARKET-LINE] NFL_AllPropResults.csv absent')
 
     # ---- Nico (or --player) MATCHUP trace: milestone streak vs one opponent, across seasons -------
@@ -214,6 +224,10 @@ def main():
             head = ', '.join(f'{n}({r}, thru wk{w})' for n, r, w in members[:8])
             print(f'  {stat} {thr}+ : {len(members)} active -> {head}')
 
+    # Market-line staleness is a SEPARATE fail-closed signal (opt-in), so the prop-grader monitor can
+    # exit non-zero on the stuck record without conflating it with the game-stat milestone health.
+    if args.require_market_line and market_stale and code == 0:
+        code, msg = 3, 'market-line prop record (NFL_AllPropResults) behind the current season'
     print('\n[EXIT]', 'HEALTHY (0)' if code == 0 else f'FAIL-CLOSED ({code}) -- {msg}')
     return code
 
