@@ -13,9 +13,11 @@ authenticated `user_id` and scopes by it). Money is integer cents. Timestamps ar
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -380,6 +382,98 @@ def backup(db_path: str, dest: str) -> bool:
     finally:
         c.close()
     return ic == 'ok' and not fk
+
+
+def backup_dir_for(db_path: str | None = None) -> str:
+    """The private `backups/` directory beside the live DB."""
+    return os.path.join(os.path.dirname(os.path.abspath(db_path or resolve_db_path())), 'backups')
+
+
+def _prune_backups(backup_dir: str, prefix: str, keep: int) -> int:
+    """Keep the newest `keep` `<prefix>_*.db` (timestamped names sort chronologically); remove the rest.
+    keep<=0 means keep none. Returns how many were removed."""
+    files = sorted(glob.glob(os.path.join(backup_dir, f'{prefix}_*.db')))
+    doomed = files if keep <= 0 else files[:-keep]
+    removed = 0
+    for f in doomed:
+        try:
+            os.remove(f)
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def run_scheduled_backup(db_path: str | None = None, backup_dir: str | None = None,
+                         daily_keep: int = 30, monthly_keep: int = 12) -> dict:
+    """Operational backup driver for the recurring timer (ops/bk-decision-journal-backup.sh). Creates a
+    daily snapshot via backup() (VACUUM INTO + 0600 + both integrity checks), adds a monthly snapshot when
+    none exists yet for the current UTC month, then prunes to retention (newest `daily_keep`/`monthly_keep`
+    by timestamped name). Pure read of the live DB -- never writes it; safe while the Journal is dark and
+    empty. Returns a sanitized summary (counts only, never contents). Absent DB -> no-op OK."""
+    db_path = db_path or resolve_db_path()
+    backup_dir = backup_dir or backup_dir_for(db_path)
+    if not os.path.exists(db_path):
+        return {'ok': True, 'skipped': 'no_db', 'daily_count': 0, 'monthly_count': 0}
+    # Microsecond precision so two runs in the same second never collide (VACUUM INTO needs a new file);
+    # still sorts chronologically and ts[:6] is YYYYMM for the monthly check.
+    ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    daily_dest = os.path.join(backup_dir, f'daily_{ts}.db')
+    if not backup(db_path, daily_dest):
+        return {'ok': False, 'error': 'daily_backup_failed'}
+    monthly_made = False
+    month = ts[:6]  # YYYYMM
+    if not glob.glob(os.path.join(backup_dir, f'monthly_{month}*.db')):
+        monthly_made = backup(db_path, os.path.join(backup_dir, f'monthly_{ts}.db'))
+    pruned_d = _prune_backups(backup_dir, 'daily', daily_keep)
+    pruned_m = _prune_backups(backup_dir, 'monthly', monthly_keep)
+    return {
+        'ok': True, 'daily_made': True, 'monthly_made': bool(monthly_made),
+        'daily_count': len(glob.glob(os.path.join(backup_dir, 'daily_*.db'))),
+        'monthly_count': len(glob.glob(os.path.join(backup_dir, 'monthly_*.db'))),
+        'pruned_daily': pruned_d, 'pruned_monthly': pruned_m,
+    }
+
+
+def restore(backup_path: str, db_path: str | None = None) -> bool:
+    """Atomically restore a VERIFIED backup over `db_path`. The backup is opened and must pass BOTH
+    integrity checks FIRST (a bad backup is never restored); it is then copied to a temp file in the DB's
+    directory (chmod 0600) and os.replace'd into place (atomic), and any stale -wal/-shm is removed so the
+    restored file is authoritative. The caller must ensure no writers are active -- during dark/empty
+    operation there are none (the routes are flag-gated). Returns True iff restored."""
+    db_path = db_path or resolve_db_path()
+    try:
+        c = sqlite3.connect(backup_path)
+        try:
+            ic = c.execute('PRAGMA integrity_check').fetchone()[0]
+            fk = c.execute('PRAGMA foreign_key_check').fetchall()
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return False
+    if ic != 'ok' or fk:
+        return False
+    _ensure_dir(db_path)
+    tmp = db_path + '.restore.tmp'
+    try:
+        shutil.copyfile(backup_path, tmp)
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, db_path)  # atomic
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    for sfx in ('-wal', '-shm'):
+        try:
+            os.remove(db_path + sfx)
+        except OSError:
+            pass
+    return True
 
 
 # ---------------------------------------------------------------------------------------------------

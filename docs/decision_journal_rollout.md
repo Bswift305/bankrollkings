@@ -32,11 +32,26 @@ set. Nothing is user-visible on deploy. Built to `docs/decision_journal_implemen
 2. Signed in, open `/journal`, log one prospective decision, grade it, open `/journal/report`.
 3. Take a first snapshot immediately: `sqlite3 journal.db "VACUUM INTO '…/backups/journal_<ts>.db'"`.
 
-## Backups / integrity (freeze: 30 daily, 12 monthly)
-- A `bk-*` systemd timer runs `VACUUM INTO` daily (retain 30) + monthly (retain 12) into a private
-  backup dir. Install via SSM like the other `bk-*` units (not auto-created).
-- `integrity_check` + `foreign_key_check` run on first open and after each snapshot; failure disables
-  journal writes (banner) and alerts — it never takes down other pages.
+## Backups / integrity (freeze: 30 daily, 12 monthly) — BUILT
+- Units (source of record in `ops/`, installed OUTSIDE the repo like the other `bk-*`):
+  `ops/bk-decision-journal-backup.sh` (thin wrapper) → `services.decision_journal.run_scheduled_backup()`
+  (a daily `VACUUM INTO` snapshot via `dj.backup`, a monthly one on the first run of each UTC month, then
+  prune to **30 daily / 12 monthly**), driven by `bk-decision-journal-backup.{service,timer}` (daily).
+  It is a pure READ of the live DB — safe while the Journal is dark and the store empty.
+- `dj.backup` runs `integrity_check` + `foreign_key_check` on every snapshot (0600 file, 0700 dir);
+  `dj.restore` verifies a backup's integrity BEFORE an atomic replace and refuses a bad backup. A failed
+  live `integrity_check` disables journal writes (banner) — never takes down other pages.
+- **Install via SSM** (not auto-created):
+  ```bash
+  sudo install -m 755 ops/bk-decision-journal-backup.sh /usr/local/bin/bk-decision-journal-backup.sh
+  sudo cp ops/bk-decision-journal-backup.service /etc/systemd/system/
+  sudo cp ops/bk-decision-journal-backup.timer   /etc/systemd/system/
+  sudo systemctl daemon-reload && sudo systemctl enable --now bk-decision-journal-backup.timer
+  sudo systemctl start bk-decision-journal-backup.service   # first manual run
+  journalctl -u bk-decision-journal-backup.service -n 20 --no-pager
+  ```
+- Proof (manual backup / permissions / integrity / retention / restore): `qc_dj_backup_retention.py`
+  (registered in `run_all_scorecards.py`).
 
 ## Rollback (zero data loss to the existing tracker)
 - **Instant:** set `DECISION_JOURNAL_ENABLED=0` + restart → feature invisible.

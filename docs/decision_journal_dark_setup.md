@@ -77,11 +77,18 @@ DBP=/var/lib/bankrollkings/decision_journal/journal.db
 # 1. private directory OUTSIDE the checkout, owned by the service user, 0700
 sudo install -d -o "$SVC" -g "$SVC" -m 700 /var/lib/bankrollkings/decision_journal
 
-# 2. set ONLY the DB path; keep the flag OFF (never add DECISION_JOURNAL_ENABLED=1 here)
-grep -q '^DECISION_JOURNAL_DB_PATH=' /opt/bankrollkings/.env \
-  || echo "DECISION_JOURNAL_DB_PATH=$DBP" | sudo tee -a /opt/bankrollkings/.env
-grep -q '^DECISION_JOURNAL_ENABLED=' /opt/bankrollkings/.env \
-  && echo "WARNING: flag present — ensure it is 0" || echo "flag unset -> OFF (correct)"
+# 2. set ONLY the DB path; keep the flag OFF (never add DECISION_JOURNAL_ENABLED=1 here).
+#    READ/EDIT .env AS THE SERVICE USER: .env is 0600/$SVC, so a bare `grep` runs as ssm-user and fails
+#    "Permission denied" -- that silently defeats the idempotency guard and risks a DUPLICATE key
+#    (duplicate env assignments resolve unpredictably). Append via `sudo -u "$SVC" tee` so the file stays
+#    owned by $SVC, then ASSERT exactly one assignment exists.
+sudo -u "$SVC" grep -q '^DECISION_JOURNAL_DB_PATH=' /opt/bankrollkings/.env \
+  || echo "DECISION_JOURNAL_DB_PATH=$DBP" | sudo -u "$SVC" tee -a /opt/bankrollkings/.env >/dev/null
+n=$(sudo -u "$SVC" grep -c '^DECISION_JOURNAL_DB_PATH=' /opt/bankrollkings/.env); \
+  [ "$n" -eq 1 ] && echo "DB path assignment count OK (exactly 1)" \
+                 || echo "ERROR: $n DECISION_JOURNAL_DB_PATH lines present -- dedupe to one before continuing"
+sudo -u "$SVC" grep -q '^DECISION_JOURNAL_ENABLED=' /opt/bankrollkings/.env \
+  && echo "WARNING: DECISION_JOURNAL_ENABLED present -- ensure it is 0" || echo "flag unset -> OFF (correct)"
 
 # 3. restart the service so it reads the new env
 sudo systemctl restart bankrollkings

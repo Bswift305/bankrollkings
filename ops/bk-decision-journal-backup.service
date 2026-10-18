@@ -1,0 +1,20 @@
+[Unit]
+Description=Bankroll Kings - Decision Journal backup (dark; VACUUM INTO, retain 30 daily / 12 monthly)
+
+# Install (source of record: ops/). The wrapper goes OUTSIDE the repo so a mid-run git pull cannot
+# rewrite the executing script. Run via SSM as the application service user (ubuntu):
+#   sudo install -m 755 ops/bk-decision-journal-backup.sh /usr/local/bin/bk-decision-journal-backup.sh
+#   sudo cp ops/bk-decision-journal-backup.service /etc/systemd/system/bk-decision-journal-backup.service
+#   sudo cp ops/bk-decision-journal-backup.timer   /etc/systemd/system/bk-decision-journal-backup.timer
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bk-decision-journal-backup.timer
+# One-shot first run + watch:
+#   sudo systemctl start bk-decision-journal-backup.service
+#   journalctl -u bk-decision-journal-backup.service -n 20 --no-pager
+# NOTE: leaves DECISION_JOURNAL_ENABLED untouched (stays off); it only reads/snapshots the DB.
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/usr/local/bin/bk-decision-journal-backup.sh

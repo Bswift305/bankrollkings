@@ -1,0 +1,13 @@
+[Unit]
+Description=Bankroll Kings - fire the Decision Journal backup once daily
+
+[Timer]
+# Daily at 08:17 UTC (off-peak). Persistent=true runs a missed backup after downtime. The driver creates
+# one daily snapshot each run and a monthly snapshot the first run of each UTC month, then prunes to
+# retention; a flock prevents overlap, so an extra/catch-up tick costs nothing.
+OnCalendar=*-*-* 08:17:00
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
