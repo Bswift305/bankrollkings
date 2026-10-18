@@ -11535,7 +11535,11 @@ def replace_all_prop_results_snapshot_for_sport(df, sport='NBA'):
     sport = str(sport or 'NBA').strip().upper() or 'NBA'
     path = DATA_DIR / 'tracking' / f'{sport}_AllPropResults.csv'
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    # Atomic publication: write to a temp file in the same dir, then os.replace -- a crash mid-write
+    # can never leave a half-written/corrupt published record (a reader always sees old or new).
+    tmp = path.with_name(path.name + '.tmp')
+    df.to_csv(tmp, index=False)
+    os.replace(tmp, path)
     resolved = str(path.resolve())
     for cache_key in list(DATAFRAME_CACHE.keys()):
         if cache_key[0] == resolved:

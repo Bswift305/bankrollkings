@@ -203,7 +203,11 @@ def build():
     out = out.sort_values(["Date", "Player"]).reset_index(drop=True)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    out.to_csv(OUT, index=False)
+    # Atomic publication (temp + os.replace): the grader reads this file immediately after, so a
+    # half-written gamelog must never be observable.
+    tmp = OUT + ".tmp"
+    out.to_csv(tmp, index=False)
+    os.replace(tmp, OUT)
     seasons = ", ".join(str(int(s)) for s in sorted(out["Season"].dropna().unique()))
     print(f"Wrote {OUT}: {len(out):,} game rows | seasons {seasons} | "
           f"{out['Player'].nunique():,} players | positions {out['Position'].value_counts().to_dict()}")
