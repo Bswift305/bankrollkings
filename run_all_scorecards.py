@@ -81,6 +81,12 @@ SCORECARDS = [
     # record): proves an Under streak that is current through the latest graded week disappears once
     # the next graded game goes Over, via the real on-disk read path.
     ("NFL Prop-Streak Integration QC", "qc_nfl_prop_streak_integration.py", 180),
+    # P0 corrective: the prop-streak board is bound to the RESOLVED current season (never max(Season)),
+    # fails closed when the current season is ungraded (no prior-season fallback), and gates on a
+    # freshness-aware 4-state injury model (ACTIVE/PAUSED/STATUS UNKNOWN) -- a paused player's run is
+    # preserved as fact but never "actively continuing", a stale feed fails closed, RETURNED is never
+    # fabricated from a missing prop row. Drives the real on-disk + injury-freshness paths.
+    ("NFL Wave Season+Injury QC", "qc_nfl_wave_season_injury.py", 180),
     # fetch_nfl_player_week --check-only contract: a missing parquet is behind (exit 2), but a file
     # that exists yet cannot be read is a DISTINCT error (exit 3), never a false "week 0" that would
     # read as missing production data. Cheap; guards the post-week retry's operator diagnostics.

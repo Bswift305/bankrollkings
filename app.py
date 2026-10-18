@@ -30459,16 +30459,93 @@ def _nfl_expected_completed_week(today=None):
     return max(0, min(completed, 18)), season
 
 
-def _nfl_player_availability(player_name, inj_lookup):
-    """Current availability for an NFL player from the injury feed, shared by the hot-hand heat
-    map and the Riding-the-Wave prop-streak board so a run for an Out/IR player is never shown
-    as current. rank: 0 Out, 1 Doubtful, 2 Questionable, 3 Other/Active -> available at rank>=2."""
+# NFL injury-report freshness budget. NFL injury designations publish through the game week; past
+# this window the feed is no longer authoritative for the current slate, so negative evidence
+# (absent from the feed == available) can no longer be trusted and availability falls to UNKNOWN.
+_NFL_INJURY_FRESH_BUDGET_H = 96.0
+
+
+def _nfl_injury_source_state():
+    """One source of truth for NFL injury availability AND its trust state, shared by the prop-streak
+    board and the hot-hand heat map (and folded into their cache keys so a feed refresh or a staleness
+    rollover re-evaluates). Returns a dict:
+      lookup  -- {player key: status dict}; empty when the feed is missing OR withheld by a gate
+      updated -- source refresh timestamp as an ET string ('' if unknown)
+      mtime   -- source file mtime (float, 0 if missing) -- a cache-key component
+      fresh   -- True only when the feed EXISTS, is within the freshness budget, and is NOT gated.
+                 Negative evidence (absent == available) is trusted ONLY when fresh.
+      gated   -- True when a data-rights gate withholds this sport's feed (never NFL today, but the
+                 state is explicit so the gate decision is auditable and part of the cache key).
+    A stale / missing / gated feed is never silently 'everyone active': callers map it to STATUS
+    UNKNOWN. A missing prop observation is never, anywhere, treated as evidence a player missed a game."""
+    path = DATA_DIR / 'injuries' / 'NFL_Injuries.csv'
+    # NFL is not under a data-rights gate (unlike NBA/WNBA via _nba_source_gate); kept explicit so the
+    # register decision is part of the cache key and a future gate flips freshness closed automatically.
+    gated = False
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0
+    fresh = False
+    if mtime:
+        age_h = (datetime.now(timezone.utc).timestamp() - mtime) / 3600.0
+        fresh = (0 <= age_h <= _NFL_INJURY_FRESH_BUDGET_H)
+    updated = ''
+    if mtime:
+        try:
+            from services.timeutils import to_eastern_datetime_str as _to_et
+            _iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+            updated = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+        except Exception:
+            updated = ''
+    try:
+        lookup = build_injury_status_lookup(load_sport_injuries('nfl')) if not gated else {}
+    except Exception:
+        lookup = {}
+    return {'lookup': lookup, 'updated': updated, 'mtime': mtime,
+            'fresh': bool(fresh and not gated), 'gated': gated}
+
+
+def _nfl_player_availability(player_name, inj_lookup, feed_fresh=True):
+    """Factual availability STATE for an NFL player, shared by the hot-hand heat map and the
+    Riding-the-Wave prop-streak board. Frozen states (no composite score, no recommendation, no
+    hidden ordering -- this describes availability, it never ranks or suppresses):
+      ACTIVE          fresh feed AND the status affirmatively supports availability -- i.e. absent
+                      from a fresh comprehensive feed, or a documented clear go (Active/Probable/Full).
+      PAUSED          fresh feed AND a documented injury designation that does NOT affirm availability
+                      (Out/Doubtful/Questionable/IR/PUP/Suspended/Inactive/GTD). The graded run is
+                      preserved as fact but is NOT presented as actively continuing.
+      RETURNED        decided by the CALLER: documented missed scheduled game(s) PLUS actual
+                      participation since. It requires an authoritative absence record and is never
+                      inferred from missing prop rows, so this function never asserts it alone.
+      STATUS UNKNOWN  stale / missing / gated / present-but-blank / conflicting feed. Fail closed:
+                      NEVER silently 'active'.
+    `available` is True only for ACTIVE, False for PAUSED, None for STATUS UNKNOWN. Legacy keys
+    (`status`, `label`, `rank`) are retained for existing callers; `rank` is -1 when unknown."""
+    if not feed_fresh:
+        return {'state': 'STATUS UNKNOWN', 'status': 'UNKNOWN', 'label': 'Status unknown',
+                'rank': -1, 'available': None, 'reason': 'injury feed stale or unavailable'}
     inj = inj_lookup.get(player_name) or inj_lookup.get(normalize_player_lookup_name(player_name) or '')
     if not inj:
-        return {'status': 'ACTIVE', 'label': 'Active', 'rank': 3, 'available': True, 'reason': ''}
-    rank, label = _injury_severity_bucket(inj.get('status'))
-    return {'status': str(inj.get('status') or '').upper(), 'label': label, 'rank': rank,
-            'available': rank >= 2, 'reason': str(inj.get('reason') or '').strip()}
+        # Absent from a FRESH, comprehensive league feed -> documented available. This is negative
+        # evidence trusted ONLY because the feed is fresh; it is NOT inferred from prop observations.
+        return {'state': 'ACTIVE', 'status': 'ACTIVE', 'label': 'Active', 'rank': 3,
+                'available': True, 'reason': ''}
+    status = str(inj.get('status') or '').upper().strip()
+    if not status:
+        # A row exists but carries no designation -> incomplete/conflicting -> fail closed.
+        return {'state': 'STATUS UNKNOWN', 'status': 'UNKNOWN', 'label': 'Status unknown',
+                'rank': -1, 'available': None, 'reason': str(inj.get('reason') or '').strip()}
+    rank, sev = _injury_severity_bucket(status)
+    tokens = set(t for t in re.split(r'[^A-Z0-9]+', status) if t)
+    clear_go = bool(tokens & {'ACTIVE', 'PROBABLE', 'FULL', 'AVAILABLE', 'CLEARED'})
+    if clear_go and rank >= 3:
+        return {'state': 'ACTIVE', 'status': status, 'label': 'Active', 'rank': 3,
+                'available': True, 'reason': str(inj.get('reason') or '').strip()}
+    # Any documented injury designation -- including Questionable/GTD -- interrupts "actively
+    # continuing": the run is a factual sequence BEFORE the absence, not this week's live form.
+    return {'state': 'PAUSED', 'status': status, 'label': f'Paused — {sev}', 'rank': rank,
+            'available': False, 'reason': str(inj.get('reason') or '').strip()}
 
 
 def _nfl_prop_matchup(opp_abbr, stat_key):
@@ -30552,14 +30629,14 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
     # have, a finished week is missing -> pending_latest: show the board but never as "current".
     expected_week, _season_lbl = _nfl_expected_completed_week()
     pending_latest = bool(expected_week and through_week is not None and through_week < expected_week)
-    # Fixes 4/5: current availability, so an IR/Out player's old run isn't shown as active.
-    try:
-        inj_lookup = build_injury_status_lookup(load_sport_injuries('nfl'))
-    except Exception:
-        inj_lookup = {}
+    # Fixes 4/5: current availability, so an IR/Out player's old run isn't shown as active. Shared
+    # injury-source state carries freshness: a stale/missing feed yields STATUS UNKNOWN (fail closed),
+    # never a silent "everyone active".
+    _inj_state = _nfl_injury_source_state()
+    inj_lookup = _inj_state['lookup']
 
     def _availability(player_name):
-        return _nfl_player_availability(player_name, inj_lookup)
+        return _nfl_player_availability(player_name, inj_lookup, feed_fresh=_inj_state['fresh'])
     try:
         props = _load_cached_csv(props_path, default=pd.DataFrame())
     except Exception:
@@ -30637,8 +30714,10 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         else:
             weeks_label = ''
         is_active = bool(avail['available'] and weeks_behind == 0 and not pending_latest)
-        if not avail['available']:
-            status_label = f"Historical streak — {avail['label']} before this week"
+        if avail['available'] is None:
+            status_label = f"{int(streak)} straight — status unknown (injury feed stale)"
+        elif not avail['available']:
+            status_label = f"{int(streak)} straight before absence — {avail['label']}"
         elif weeks_behind >= 1:
             status_label = (f"Historical streak — last played Wk {last_played_week}, "
                             f"{weeks_behind} week{'s' if weeks_behind != 1 else ''} behind")
@@ -30656,7 +30735,7 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
             'last_week': last_played_week, 'last_season': last_played_season,
             'weeks_behind': int(weeks_behind), 'active': is_active,
             'availability': avail['label'], 'availability_status': avail['status'],
-            'status_label': status_label,
+            'availability_state': avail['state'], 'status_label': status_label,
         })
     # Preserve the existing ranking (streak length, then clear comfort) but partition so genuinely
     # active runs lead and stale/historical ones sink -- a stale streak must never headline the
@@ -46444,10 +46523,7 @@ def build_nfl_prop_streaks(limit=60):
     d = d.dropna(subset=['Player', 'Stat', 'Line', 'ResultValue', 'Season', 'Week'])
     if d.empty:
         return empty
-    latest_season = int(d['Season'].max())
-    wk = d.loc[d['Season'] == latest_season, 'Week']
-    data_through_week = int(wk.max()) if not wk.empty else None
-    # The actual source refresh timestamp (ET) -- req 3: show how fresh the graded record is.
+    # The actual source refresh timestamp (ET) -- show how fresh the graded record is.
     try:
         _m = os.path.getmtime(DATA_DIR / 'tracking' / 'NFL_AllPropResults.csv')
         _iso = datetime.fromtimestamp(_m, tz=timezone.utc).isoformat()
@@ -46455,81 +46531,102 @@ def build_nfl_prop_streaks(limit=60):
         source_updated = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
     except Exception:
         source_updated = ''
+    # The CURRENT season comes from the schedule resolver (handles Jan/Feb -> prior season label),
+    # NEVER max(Season) and NEVER the raw calendar year. A January NFL game still belongs to the
+    # season that started the previous September; max(Season) would also let a completed prior
+    # season masquerade as current the moment its rows are the newest on disk.
     expected_week, expected_season = _nfl_expected_completed_week()
-    stale_season = bool(expected_season and latest_season and latest_season < expected_season)
-    pending = bool(stale_season or (expected_week and latest_season == expected_season
-                                    and data_through_week is not None and data_through_week < expected_week))
-    try:
-        inj_lookup = build_injury_status_lookup(load_sport_injuries('nfl'))
-    except Exception:
-        inj_lookup = {}
-    # One canonical graded observation per (player, stat, season, week): consensus line + result.
+    base_meta = {'sport': 'NFL', 'season': expected_season, 'expected_week': expected_week,
+                 'expected_season': expected_season, 'source_updated': source_updated}
+    if not expected_season:
+        # No resolved season -> we cannot make any current-season claim. Fail closed.
+        return {**empty, **base_meta, 'unavailable': True, 'unavailable_reason': 'season_unresolved',
+                'through_label': 'Season not resolved — streaks unavailable'}
+    current_season = int(expected_season)
+    # Filter to the resolved CURRENT season BEFORE grouping / streak calculation, so a run can never
+    # span seasons and a prior-season run never appears on this live board at all.
+    d = d[d['Season'] == current_season]
+    data_through_week = int(d['Week'].max()) if not d.empty else None
+    if d.empty or data_through_week is None:
+        # No current-season graded record. Fail closed with an honest unavailable -- there is NO
+        # prior-season fallback and NO historical section in this surface.
+        label = (f"{current_season} results not yet graded"
+                 + (f" · source updated {source_updated}" if source_updated else ''))
+        return {**empty, **base_meta, 'through_season': None, 'through_week': None,
+                'unavailable': True, 'unavailable_reason': 'current_season_ungraded',
+                'through_label': label}
+    pending = bool(expected_week and data_through_week < expected_week)
+    # Shared injury-source state: availability AND its trust (freshness/gate). A stale/missing/gated
+    # feed fails closed to STATUS UNKNOWN -- never a silent "everyone active".
+    inj_state = _nfl_injury_source_state()
+    inj_lookup = inj_state['lookup']
+    # One canonical graded observation per (player, stat, week) within the current season: consensus
+    # line + result. Season is fixed to current_season, so a trailing run is current-season-only.
     team_agg = ('Team', 'first') if 'Team' in d.columns else ('ResultValue', 'size')
-    g = (d.groupby(['Player', 'Stat', 'Season', 'Week'])
+    g = (d.groupby(['Player', 'Stat', 'Week'])
            .agg(line=('Line', 'median'), res=('ResultValue', 'first'), team=team_agg)
            .reset_index())
     # +1 over the line that week, -1 under, 0 landed exactly on it (a push breaks a run)
     g['sign'] = (g['res'] > g['line']).astype(int) - (g['res'] < g['line']).astype(int)
     out = []
     for (player, stat), grp in g.groupby(['Player', 'Stat']):
-        grp = grp.sort_values(['Season', 'Week'])
+        grp = grp.sort_values('Week')
         n, direction = _wave_trailing_run(grp['sign'].tolist())
         if n < _WAVE_MIN_STREAK or direction == 0:
             continue
         side = 'Over' if direction == 1 else 'Under'
         last = grp.iloc[-1]
-        last_season_num = int(last['Season'])
         last_week = int(last['Week'])
-        if last_season_num != latest_season:
-            continue  # the run must reach the latest graded season to be a candidate
         tail = grp.iloc[-n:]
-        run_weeks = [int(w) for w, sea in zip(tail['Week'].tolist(), tail['Season'].tolist())
-                     if sea == latest_season]
-        avail = _nfl_player_availability(str(player), inj_lookup)
-        # Current only if: data isn't pending, the run reaches the data's through-week, and the
-        # player is available. Else it is a historical run before an absence / stale week.
-        reaches_latest = (data_through_week is None) or (last_week == data_through_week)
-        is_active = bool((not pending) and reaches_latest and avail['available'])
-        if not avail['available']:
-            status_label = f"Historical run — {avail['label']} before this week"
-        elif pending and stale_season:
-            status_label = f"Through {last_season_num} — current season results pending"
+        run_weeks = [int(w) for w in tail['Week'].tolist()]
+        streak_start_week = min(run_weeks) if run_weeks else last_week
+        avail = _nfl_player_availability(str(player), inj_lookup, feed_fresh=inj_state['fresh'])
+        # Active ONLY when data isn't pending and the injury feed affirmatively supports availability.
+        # PAUSED (documented injury) and STATUS UNKNOWN (stale/missing feed) are preserved as fact but
+        # never presented as actively continuing. A missing prop week is NOT treated as a missed game.
+        is_active = bool((not pending) and avail['available'])
+        gap_note = (last_week < data_through_week)
+        if avail['available'] is None:
+            status_label = f"{int(n)} straight — status unknown (injury feed stale)"
+        elif not avail['available']:
+            status_label = f"{int(n)} straight before absence — {avail['label']}"
         elif pending:
-            status_label = f"As of Wk {data_through_week} — latest results pending"
-        elif not reaches_latest:
-            status_label = f"Historical run — last graded Wk {last_week}"
+            status_label = (f"As of Wk {data_through_week}"
+                            + (f" · Week {expected_week} results pending" if expected_week else " · latest results pending"))
+        elif gap_note:
+            status_label = f"{int(n)} straight through Wk {last_week} (no prop logged since Wk {data_through_week})"
         else:
             status_label = 'Active run'
-        weeks_label = _compact_weeks(run_weeks)
         out.append({
             'player': str(player), 'stat': str(stat), 'side': side, 'streak': int(n),
+            'sample_size': int(n), 'streak_start_week': int(streak_start_week),
             'team': (str(last['team']) if pd.notna(last.get('team')) else ''),
             'line': (round(float(last['line']), 1) if pd.notna(last['line']) else None),
-            'last_season': str(last_season_num), 'last_week': last_week, 'weeks_label': weeks_label,
+            'last_season': str(current_season), 'season': current_season,
+            'last_week': last_week, 'last_graded_week': last_week,
+            'last_participation_week': last_week, 'weeks_label': _compact_weeks(run_weeks),
             'active': is_active, 'availability': avail['label'],
-            'availability_status': avail['status'], 'status_label': status_label,
+            'availability_status': avail['status'], 'availability_state': avail['state'],
+            'injury_reason': avail['reason'], 'injury_updated': inj_state['updated'],
+            'status_label': status_label,
         })
-    # Active runs lead; stale/historical ones sink so a stale run never headlines as current.
+    # Active runs lead; paused/unknown ones sink so a non-current run never headlines as current.
     out.sort(key=lambda x: (0 if x['active'] else 1, -x['streak']))
     out = out[:limit]
     _stamp = f" · updated {source_updated}" if source_updated else ''
-    if data_through_week is not None and latest_season:
-        if pending:
-            through_label = (f"As of {latest_season} Week {data_through_week}"
-                             + (f" · {expected_season} Week {expected_week} results pending"
-                                if (expected_week and not stale_season) else " · current season results pending")
-                             + _stamp)
-        else:
-            through_label = f"Graded through {latest_season} Week {data_through_week}" + _stamp
-    elif latest_season:
-        through_label = (f"Graded through {latest_season}"
-                         + (" · current season results pending" if stale_season else "") + _stamp)
+    if pending:
+        through_label = (f"Graded through {current_season} Week {data_through_week}"
+                         + (f" · Week {expected_week} results pending" if expected_week else " · latest results pending")
+                         + _stamp)
     else:
-        through_label = ''
-    return {'rows': out, 'through_season': latest_season or None, 'through_week': data_through_week,
-            'pending': pending, 'stale_season': stale_season, 'through_label': through_label,
+        through_label = f"Graded through {current_season} Week {data_through_week}" + _stamp
+    return {'rows': out, 'sport': 'NFL', 'through_season': current_season, 'through_week': data_through_week,
+            'season': current_season, 'graded_through': data_through_week,
+            'pending': pending, 'stale_season': False, 'through_label': through_label,
             'expected_week': expected_week, 'expected_season': expected_season,
-            'source_updated': source_updated}
+            'source_updated': source_updated, 'injury_updated': inj_state['updated'],
+            'injury_fresh': inj_state['fresh'], 'injury_gated': inj_state['gated'],
+            'unavailable': False, 'unavailable_reason': ''}
 
 
 def _season_num_top(s):
@@ -46859,9 +46956,17 @@ def build_nfl_wave_context():
         _ats_ptr_mtime = os.path.getmtime(_fgs.pointer_path())  # pointer swaps on publish AND 304-refresh
     except Exception:
         _ats_ptr_mtime = 0
+    # The player prop-streak board gates on the injury feed AND the resolved current season, so its
+    # cache key must move when either moves -- otherwise a freshly-injured player (or a season
+    # rollover) keeps serving a stale "active" run for the whole TTL. Fold in the injury-source
+    # version + freshness state + data-rights gate state and the resolved season/expected week.
+    _inj = _nfl_injury_source_state()
+    _exp_week, _exp_season = _nfl_expected_completed_week()
+    _inj_sig = f"{_inj['mtime']}:{int(_inj['fresh'])}:{int(_inj['gated'])}"
     # Own cache (not the shared _NFL_WAVE_CACHE, which build_nfl_wave_watch_context also uses) so the
     # two builders can't clobber each other, and the ATS generation pointer is folded into the key.
-    sig = f"{len(hist)}::{_apr_mtime}::{_ats_ptr_mtime}::{sports_today_date()}"
+    sig = (f"{len(hist)}::{_apr_mtime}::{_ats_ptr_mtime}::{sports_today_date()}"
+           f"::{_inj_sig}::{_exp_season}:{_exp_week}")
     if _NFL_RW_CACHE.get('sig') == sig:
         return _NFL_RW_CACHE['data']
 
@@ -47007,7 +47112,13 @@ def build_nfl_wave_context():
             'prop_pending': prop_streaks.get('pending', False),
             'prop_through_season': prop_streaks.get('through_season'),
             'prop_through_week': prop_streaks.get('through_week'),
+            'prop_season': prop_streaks.get('season'),
             'prop_active_count': sum(1 for r in prop_streaks['rows'] if r.get('active')),
+            # Fail-closed signal: no current-season graded record -> honest unavailable, no fallback.
+            'prop_unavailable': prop_streaks.get('unavailable', False),
+            'prop_unavailable_reason': prop_streaks.get('unavailable_reason', ''),
+            'prop_injury_updated': prop_streaks.get('injury_updated', ''),
+            'prop_injury_fresh': prop_streaks.get('injury_fresh', False),
             # ATS current-season source freshness/sync (never the stale 2011-2025 history).
             'ats_season': ats_sync.get('source_season'),
             'ats_through_week': ats_sync.get('graded_through_week'),
