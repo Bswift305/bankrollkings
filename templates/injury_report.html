@@ -34,7 +34,7 @@
         <div class="stat-value" style="color:var(--danger);">{{ out_count }}</div>
         <div class="stat-note">OUT / IL / IR</div>
     </div>
-    {% if impact_count %}
+    {% if impact_count and not nba_stats_gated %}
     <div class="stat-card">
         <div class="page-kicker">Role Shift</div>
         <div class="stat-value" style="color:var(--success);">{{ impact_count }}</div>
