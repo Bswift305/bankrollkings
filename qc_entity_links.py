@@ -43,9 +43,11 @@ def run_qc() -> dict:
         issues.append(f"1: NBA team_path wrong: {el.team_path('nba', 'BOS')!r}")
     if el.team_path('cfb', 'Georgia') != '/tools/cfb-team?team=Georgia':
         issues.append(f"1: CFB team_path wrong: {el.team_path('cfb', 'Georgia')!r}")
-    for s in ('nfl', 'mlb', 'wnba'):
+    if el.team_path('nfl', 'JAX') != '/tools/nfl-team?team=JAX':
+        issues.append(f"1: NFL team_path wrong: {el.team_path('nfl', 'JAX')!r}")
+    for s in ('mlb', 'wnba'):
         if el.team_path(s, 'Anybody') is not None:
-            issues.append(f"1: {s} has no per-team page -> team_path must be None")
+            issues.append(f"1: {s} has no per-team page yet -> team_path must be None")
     # cross-sport: same name, different sports -> different URLs (never one shared/inferred page)
     if el.player_path('nba', 'Josh Allen') == el.player_path('nfl', 'Josh Allen'):
         issues.append("1: identical names across sports produced the SAME url (cross-link risk)")
@@ -155,6 +157,24 @@ def run_qc() -> dict:
                 notes.append(f"fetch CFB: 'Georgia' -> {url} renders the team (200)")
         else:
             notes.append("fetch CFB: 'Georgia' did not resolve locally; live proof is production verification")
+
+        # NFL team -> /tools/nfl-team?team=<abbr> (now targetable); prove it renders that team.
+        if app._entity_team_known('nfl', 'JAX'):
+            url = app.team_url('nfl', 'JAX')
+            if url != '/tools/nfl-team?team=JAX':
+                issues.append(f"4: NFL team_url wrong: {url!r}")
+            resp = client.get(url)
+            body = resp.get_data(as_text=True)
+            if resp.status_code != 200:
+                issues.append(f"4: NFL team destination {url} returned {resp.status_code}")
+            elif 'Jacksonville' not in body:
+                issues.append("4: NFL team page did not pre-select the Jacksonville profile (abbr->full)")
+            else:
+                notes.append(f"fetch NFL team: 'JAX' -> {url} pre-selects the Jacksonville profile (200)")
+        else:
+            issues.append("4: a real NFL team 'JAX' did not resolve as known")
+        if app.team_url('nfl', 'Nonsense') is not None:
+            issues.append("4: a non-NFL team string produced a link (must be plain text)")
 
         # NBA / WNBA / MLB: assert HONEST resolver output locally (data is gated/absent on this box),
         # and when present, fetch. Either way the resolver must be correct, not guessing.

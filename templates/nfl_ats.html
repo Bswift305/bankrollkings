@@ -59,12 +59,12 @@
 </div></div>
 </div>
 
-<script id="na-data" type="application/json">{{ {'teams':na_teams,'coaches':na_coaches,'teamlist':na_teamlist,'meta':na_meta,'tab':na_default_tab}|tojson }}</script>
+<script id="na-data" type="application/json">{{ {'teams':na_teams,'coaches':na_coaches,'teamlist':na_teamlist,'meta':na_meta,'tab':na_default_tab,'selected':na_selected_team}|tojson }}</script>
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('na-data').textContent);
   const $ = s => document.querySelector(s);
-  const S = {tab: DATA.tab || 'teams', team: (DATA.teamlist||[])[0], sortKey:null, dir:-1};
+  const S = {tab: DATA.tab || 'teams', team: DATA.selected || (DATA.teamlist||[])[0], sortKey:null, dir:-1};
 
   const pct = v => (v===null||v===undefined) ? '&mdash;' : (v+'%');
   const cl = v => (v>=53?'hot':(v<=47?'cold':'')); // ~break-even coloring

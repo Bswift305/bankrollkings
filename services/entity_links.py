@@ -15,8 +15,9 @@ Per-sport destinations (decided with the owner, 2026-10-18):
           cfb              -> None  (no CFB player page -> caller renders plain text)
   team    nba              -> /team/<team>?sport=nba
           cfb              -> /tools/cfb-team?team=<team>
-          nfl / mlb / wnba -> None  (no targetable per-team page -> plain text; this is also what
-                              fixes the old bug where a non-NBA team linked into the NBA /team route)
+          nfl              -> /tools/nfl-team?team=<abbr>   (profile pre-selected to that team)
+          mlb / wnba       -> None  (no targetable per-team page yet -> plain text; tracked as
+                              blocked in docs/entity_link_migration.md, pending a product decision)
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from urllib.parse import quote, urlencode
 # Sports recognized by the resolver. Identical names in different sports NEVER share a URL because
 # the sport is part of resolution and (for the shared /player route) an explicit query scope.
 PLAYER_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl'})   # cfb has no player page -> None
-TEAM_SPORTS = frozenset({'nba', 'cfb'})                    # nfl/mlb/wnba have no per-team page -> None
+TEAM_SPORTS = frozenset({'nba', 'cfb', 'nfl'})             # mlb/wnba have no per-team page yet -> None
 KNOWN_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl', 'cfb'})
 
 
@@ -69,6 +70,8 @@ def team_path(sport, team, postseason=False):
         return None
     if sport == 'cfb':
         return '/tools/cfb-team?' + urlencode({'team': team})
+    if sport == 'nfl':
+        return '/tools/nfl-team?' + urlencode({'team': team})
     params = {'sport': 'nba'}
     if postseason:
         params['postseason'] = '1'

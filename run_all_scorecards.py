@@ -93,6 +93,14 @@ SCORECARDS = [
     # option/decorative placements never linked -- and it FETCHES each resolvable destination through
     # the test client to prove the page renders the intended entity.
     ("Universal Entity-Link QC", "qc_entity_links.py", 180),
+    # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
+    # canonical key so a player's season is never dropped and a streak never under-counts (the bug
+    # that hid Nico Collins' 5 straight 100+ vs JAX).
+    ("NFL Identity Resolution QC", "qc_nfl_identity_resolution.py", 120),
+    # NFL milestone streaks (fixed-threshold, game-stats; distinct from market-line): matchup +
+    # season-wide, the membership firewall (a qualifier cannot be hidden by a limit/sort), the
+    # Streak Explainer, milestone-vs-market-line labeling, and fail-closed season-wide.
+    ("NFL Milestone Streak QC", "qc_nfl_milestone_streaks.py", 180),
     # fetch_nfl_player_week --check-only contract: a missing parquet is behind (exit 2), but a file
     # that exists yet cannot be read is a DISTINCT error (exit 3), never a false "week 0" that would
     # read as missing production data. Cheap; guards the post-week retry's operator diagnostics.

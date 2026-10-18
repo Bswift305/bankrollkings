@@ -772,6 +772,7 @@ PRO_ENDPOINTS = {
     'nfl_ats_tool',
     'nfl_team_tool',
     'riding_the_wave_tool',
+    'nfl_milestones_tool',
     'cfb_team_tool',
     'cfb_team_note_save',
     'cfb_ats_games',
@@ -17249,6 +17250,12 @@ def _entity_team_known(sport, team):
     if sport == 'cfb':
         try:
             return bool(normalize_ncaaf_team_name(team))
+        except Exception:
+            return False
+    if sport == 'nfl':
+        try:
+            abbr = _normalize_nfl_team_abbr(team)
+            return bool(abbr) and abbr in NFL_ABBR_TO_FULL   # a real NFL team, not any string
         except Exception:
             return False
     try:
@@ -46625,10 +46632,11 @@ def nfl_wave_tool():
     return render_template('nfl_wave.html', **build_nfl_wave_watch_context())
 
 
-def build_nfl_ats_context(default_tab='teams'):
+def build_nfl_ats_context(default_tab='teams', selected_team=None):
     """NFL Team ATS Trends + per-team profile, from the same dossier as the matchup
     card. Teams ranked best-first (highest ATS%). League table + coaches + a team
-    profile tab, all from real graded games."""
+    profile tab, all from real graded games. `selected_team` (an abbr) pre-selects the
+    profile for a team-name entity link (/tools/nfl-team?team=<abbr>)."""
     d = build_nfl_matchup_dossier()
 
     def _p(cell):
@@ -46647,12 +46655,22 @@ def build_nfl_ats_context(default_tab='teams'):
             'over': _p(a['over']), 'over_rec': a['over']['rec'],
         })
     teams.sort(key=lambda x: -(x['ats'] or 0))  # best-first
+    teamlist = d.get('teamList', [])
+    # Validate the requested team against the real team list (full names). Accept an abbr (JAX),
+    # an alias (JAC), or a full name; map through NFL_ABBR_TO_FULL. An unknown value simply opens
+    # the profile tab on the default team (no broken/guessed selection).
+    sel = None
+    if selected_team:
+        raw = str(selected_team).strip()
+        full = NFL_ABBR_TO_FULL.get(_normalize_nfl_team_abbr(raw))
+        sel = next((t for t in teamlist if str(t) == raw or str(t) == full), None)
     return {
         'na_teams': teams,
         'na_coaches': d.get('coaches', []),
-        'na_teamlist': d.get('teamList', []),
+        'na_teamlist': teamlist,
         'na_meta': d.get('meta', {}),
-        'na_default_tab': default_tab,
+        'na_default_tab': ('profile' if sel else default_tab),
+        'na_selected_team': sel,
     }
 
 
@@ -46665,9 +46683,11 @@ def nfl_ats_tool():
 
 @app.route('/tools/nfl-team')
 def nfl_team_tool():
-    """Quick Tool: NFL Team Profile — one team's full ATS dossier (opens the profile
-    tab of the ATS trends tool)."""
-    return render_template('nfl_ats.html', **build_nfl_ats_context('profile'))
+    """Quick Tool: NFL Team Profile — one team's full ATS dossier. `?team=<abbr>` targets a
+    specific team (the entity-link destination for an NFL team name); no/unknown team opens the
+    profile tab on the default team."""
+    return render_template('nfl_ats.html',
+                           **build_nfl_ats_context('profile', selected_team=request.args.get('team')))
 
 
 _NFL_WAVE_CACHE = {}
@@ -46970,6 +46990,156 @@ def build_nfl_prop_hot_start(min_run=2, limit=400):
     out.sort(key=lambda x: (-x['run'], -x['avg_margin']))
     return {'rows': out[:limit], 'season': season, 'through_week': through_week,
             'total': len(out), 'unavailable': False, 'unavailable_reason': ''}
+
+
+# ---------------------------------------------------------------------------
+# NFL MILESTONE streaks -- a DISTINCT product from market-line streaks
+# ---------------------------------------------------------------------------
+# A MILESTONE streak = the player reached a fixed factual threshold (e.g. 100+ receiving yards),
+# computed from AUTHORITATIVE game statistics only -- NOT graded against a sportsbook line. It is
+# labeled MILESTONE and must never be called a "cover"/"ATS"/prop-line streak. Two views:
+#   * season-wide  -- current-season trailing run of games at/above the threshold (freshness-gated).
+#   * matchup      -- cross-season trailing run vs ONE opponent (the Nico-Collins-vs-JAX case);
+#                     historical, always available from game stats.
+# Identity is grouped by the canonical first-initial+last key (_key), so a short-form season
+# ('N.Collins') can NEVER split or drop a player (see qc_nfl_identity_resolution). Membership is a
+# FIREWALL: every factual qualifier is returned (no model, no confidence, no suppression, no silent
+# truncation) with the counted games attached for a Streak Explainer.
+_NFL_MILESTONE_STATS = {
+    'receiving_yards': ('Receiving Yards', [50, 75, 100, 125]),
+    'receptions': ('Receptions', [5, 7, 10]),
+    'rushing_yards': ('Rushing Yards', [50, 75, 100]),
+    'passing_yards': ('Passing Yards', [200, 250, 300]),
+}
+# Headline thresholds for the cross-season matchup view (kept meaningful, not every band).
+_NFL_MILESTONE_MATCHUP = {
+    'receiving_yards': [100], 'receptions': [7, 10], 'rushing_yards': [100], 'passing_yards': [300],
+}
+_NFL_MILESTONE_CACHE = {}
+
+
+def _milestone_games(sub, stat, thr):
+    """Trailing run of games (newest-first stops at the first miss) at/above `thr`, plus the counted
+    games for the Streak Explainer. `sub` is one player's rows, already chronological."""
+    vals = sub[stat].tolist()
+    weeks = sub['week'].tolist()
+    seasons = sub['__season'].tolist() if '__season' in sub.columns else sub['season'].tolist()
+    opps = sub['opponent_team'].tolist() if 'opponent_team' in sub.columns else [''] * len(vals)
+    run, games = 0, []
+    for v, wk, se, op in zip(reversed(vals), reversed(weeks), reversed(seasons), reversed(opps)):
+        hit = (v is not None) and (not pd.isna(v)) and float(v) >= thr
+        if not hit:
+            break
+        run += 1
+        games.append({'season': int(se) if pd.notna(se) else None,
+                      'week': int(wk) if pd.notna(wk) else None,
+                      'opponent': str(op), 'value': round(float(v), 1), 'threshold': thr, 'hit': True})
+    games.reverse()  # chronological for display
+    return run, games
+
+
+def build_nfl_milestone_streaks(min_run=3, limit=400):
+    """Milestone streaks (fixed-threshold, from game stats) -- season-wide + cross-season matchup.
+    Returns both lists with counted games attached (Streak Explainer) and a membership firewall
+    (ALL qualifiers, with totals). Distinct from market-line streaks; labeled MILESTONE."""
+    base = {'season': None, 'through_week': None, 'source_updated': '', 'available': False,
+            'unavailable_reason': '', 'season_streaks': [], 'matchup_streaks': [],
+            'total_season': 0, 'total_matchup': 0, 'injury_updated': ''}
+    try:
+        df = _nfl_player_week_data()
+    except Exception:
+        df = pd.DataFrame()
+    if df is None or df.empty or '_key' not in df.columns or 'week' not in df.columns:
+        return {**base, 'unavailable_reason': 'no_game_stat_logs'}
+    season_col = '__season' if '__season' in df.columns else 'season'
+    if season_col not in df.columns:
+        return {**base, 'unavailable_reason': 'no_season_column'}
+    d = df.copy()
+    d['week'] = pd.to_numeric(d['week'], errors='coerce')
+    d[season_col] = pd.to_numeric(d[season_col], errors='coerce')
+    d = d.dropna(subset=['week', season_col])
+    d['week'] = d['week'].astype(int)
+    d[season_col] = d[season_col].astype(int)
+    # canonical display: the longest resolved name seen for each key
+    disp_by_key = {}
+    for k, nm in zip(d['_key'], d['_full'].astype(str)):
+        if len(nm) > len(disp_by_key.get(k, '')):
+            disp_by_key[k] = nm
+    team_col = 'recent_team' if 'recent_team' in d.columns else ('team' if 'team' in d.columns else None)
+
+    expected_week, expected_season = _nfl_expected_completed_week()
+    source_updated = ''
+    try:
+        srcs = _nfl_player_log_sources()
+        mt = max((os.path.getmtime(s['path']) for s in srcs if os.path.exists(s['path'])), default=0)
+        if mt:
+            from services.timeutils import to_eastern_datetime_str as _to_et
+            _iso = datetime.fromtimestamp(mt, tz=timezone.utc).isoformat()
+            source_updated = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+    except Exception:
+        source_updated = ''
+    inj_state = _nfl_injury_source_state()
+
+    # ---- season-wide milestone streaks (current season, freshness-gated) --------------------------
+    season_streaks, cur_through = [], None
+    cur = d[d[season_col] == int(expected_season)] if expected_season else pd.DataFrame()
+    season_available = bool(expected_season) and not cur.empty
+    if season_available:
+        cur_through = int(cur['week'].max())
+        for stat, (label, thrs) in _NFL_MILESTONE_STATS.items():
+            if stat not in cur.columns:
+                continue
+            for key, g in cur.groupby('_key'):
+                g = g.sort_values('week')
+                if g['week'].max() != cur_through:
+                    continue  # trailing run must reach the latest graded week to be "current"
+                for thr in thrs:
+                    run, games = _milestone_games(g, stat, thr)
+                    if run < min_run:
+                        continue
+                    avail = _nfl_player_availability(disp_by_key.get(key, key), inj_state['lookup'],
+                                                     feed_fresh=inj_state['fresh'])
+                    season_streaks.append({
+                        'player': disp_by_key.get(key, key), 'key': key, 'stat': stat,
+                        'stat_label': label, 'threshold': thr, 'run': int(run),
+                        'team': (str(g.iloc[-1].get(team_col)) if team_col else ''),
+                        'last_week': int(g['week'].max()), 'games': games,
+                        'events_evaluated': int(len(g)), 'kind': 'season',
+                        'availability_state': avail['state'], 'designation': avail.get('designation', ''),
+                    })
+        season_streaks.sort(key=lambda x: (-x['run'], -x['threshold']))
+
+    # ---- cross-season matchup milestone streaks (the Nico-vs-JAX case) ----------------------------
+    matchup_streaks = []
+    for (key, opp), g in d.groupby(['_key', 'opponent_team']):
+        opp = str(opp).strip().upper()
+        if not opp or opp in ('NAN', 'NONE'):
+            continue
+        g = g.sort_values([season_col, 'week'])
+        for stat, thrs in _NFL_MILESTONE_MATCHUP.items():
+            if stat not in g.columns:
+                continue
+            for thr in thrs:
+                run, games = _milestone_games(g, stat, thr)
+                if run < min_run:
+                    continue
+                last = g.iloc[-1]
+                matchup_streaks.append({
+                    'player': disp_by_key.get(key, key), 'key': key, 'stat': stat,
+                    'stat_label': _NFL_MILESTONE_STATS[stat][0], 'threshold': thr, 'opponent': opp,
+                    'run': int(run), 'team': (str(last.get(team_col)) if team_col else ''),
+                    'last_season': int(last[season_col]), 'last_week': int(last['week']),
+                    'games': games, 'events_evaluated': int(len(g)), 'kind': 'matchup',
+                })
+    matchup_streaks.sort(key=lambda x: (-x['run'], -x['threshold']))
+
+    return {'season': (int(expected_season) if expected_season else None), 'through_week': cur_through,
+            'source_updated': source_updated, 'available': True,
+            'season_available': season_available,
+            'season_unavailable_reason': ('' if season_available else 'current_season_absent_or_stale'),
+            'season_streaks': season_streaks[:limit], 'matchup_streaks': matchup_streaks[:limit],
+            'total_season': len(season_streaks), 'total_matchup': len(matchup_streaks),
+            'injury_updated': inj_state['updated'], 'injury_fresh': inj_state['fresh']}
 
 
 # ---------------------------------------------------------------------------
@@ -47420,6 +47590,15 @@ def riding_the_wave_tool():
     return render_template('riding_the_wave.html',
                            rw_upsets=build_nfl_upset_summary(),
                            **build_nfl_wave_context())
+
+
+@app.route('/tools/nfl-milestones')
+def nfl_milestones_tool():
+    """Quick Tool: Milestone Streaks — fixed-threshold streaks from authoritative game stats
+    (e.g. 100+ receiving yards in N straight games, season-wide AND vs a specific opponent).
+    A MILESTONE product, distinct from market-line/prop-cover streaks: no sportsbook line is
+    graded here. Every qualifier is shown (membership firewall) with a per-game Streak Explainer."""
+    return render_template('nfl_milestones.html', ms=build_nfl_milestone_streaks())
 
 
 _CFB_TOT_CACHE = {}

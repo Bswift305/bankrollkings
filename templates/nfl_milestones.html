@@ -1,0 +1,135 @@
+{% set active_page = 'nfl_milestones' %}
+{% set active_sport = 'nfl' %}
+{% extends 'bk_base.html' %}
+{% block content %}
+<style>
+  .ms-wrap{max-width:960px;margin:0 auto;}
+  .ms-card{background:var(--bg-elevated,#121821);border:1px solid var(--border,#223);border-radius:12px;margin:0 0 16px;overflow:hidden;}
+  .ms-card h3{margin:0;padding:14px 16px 6px;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .ms-tag{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:rgba(132,215,210,.14);border:1px solid rgba(132,215,210,.35);color:var(--bk-primary2,#84d7d2);}
+  .ms-note{font-size:12px;color:var(--text-muted,#8aa);line-height:1.5;padding:0 16px 10px;}
+  .ms-fresh{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-muted,#8aa);padding:0 16px 10px;}
+  .ms-fresh.pending{color:#ffb800;}
+  .ms-fresh .tag{font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:.06em;}
+  .ms-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.05);cursor:pointer;}
+  .ms-row:hover{background:rgba(255,255,255,.02);}
+  .ms-rank{opacity:.5;font-variant-numeric:tabular-nums;min-width:22px;}
+  .ms-name{flex:1;min-width:0;font-weight:700;}
+  .ms-name small{display:block;font-weight:500;color:var(--text-muted,#8aa);font-size:12px;}
+  .ms-badge{text-align:right;font-variant-numeric:tabular-nums;}
+  .ms-badge .n{font-size:20px;font-weight:800;color:var(--bk-primary2,#84d7d2);}
+  .ms-badge .u{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted,#8aa);}
+  .ms-caret{opacity:.5;transition:transform .15s;}
+  .ms-row[aria-expanded="true"] .ms-caret{transform:rotate(90deg);}
+  .ms-exp{display:none;padding:2px 16px 12px 48px;}
+  .ms-exp.open{display:block;}
+  .ms-exp table{width:100%;border-collapse:collapse;font-size:12px;}
+  .ms-exp th,.ms-exp td{text-align:left;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.05);}
+  .ms-exp th{color:var(--text-muted,#8aa);font-weight:600;}
+  .ms-exp .hit{color:var(--bk-primary2,#84d7d2);font-weight:700;}
+  .ms-meta{font-size:11px;color:var(--text-muted,#8aa);padding:6px 16px 14px;line-height:1.6;}
+  .ms-filter{padding:8px 16px;}
+  .ms-filter input{width:100%;max-width:280px;background:var(--bg,#0b1118);border:1px solid var(--border,#223);border-radius:8px;padding:8px 10px;color:inherit;}
+  .ms-empty{padding:16px;color:var(--text-muted,#8aa);}
+</style>
+
+<div class="ms-wrap">
+  <div class="page-kicker" style="margin-bottom:4px;">QUICK TOOLS · NFL</div>
+  <h1 style="margin:0 0 4px;">Milestone Streaks</h1>
+  <div class="page-subtitle" style="margin-bottom:14px;">
+    Fixed-threshold streaks from real game statistics &mdash; e.g. <b>100+ receiving yards in N straight games</b>,
+    season-wide and against a specific opponent. This is a <b>milestone</b> product: it counts what actually
+    happened on the field. It is <b>not</b> a prop-line/cover streak &mdash; no sportsbook line is graded here.
+  </div>
+
+  <!-- ===== Matchup milestones (cross-season, vs one opponent) ===== -->
+  <div class="ms-card">
+    <h3><span class="ms-tag">Milestone</span> Matchup Streaks <small style="font-weight:500;color:var(--text-muted)">· vs a specific opponent, across seasons</small></h3>
+    <div class="ms-note">A player&rsquo;s active run of hitting a threshold every time he faces one team &mdash; the classic &ldquo;owns this matchup&rdquo; angle. Historical fact from game logs; relevant when that matchup comes back around. Click a row to see every counted game.</div>
+    {% if ms.matchup_streaks %}
+    <div class="ms-filter"><input id="ms-opp" type="text" placeholder="Filter by opponent (e.g. JAX)…" aria-label="Filter by opponent"></div>
+    <div id="ms-matchup">
+      {% for r in ms.matchup_streaks %}
+      <div class="ms-row" data-opp="{{ r.opponent }}" role="button" tabindex="0" aria-expanded="false" data-exp="mx{{ loop.index }}">
+        <span class="ms-rank">{{ loop.index }}</span>
+        <span class="ms-name">{{ entity_anchor('player','nfl', r.player) }}
+          <small>{{ r.run }} straight {{ r.threshold }}+ {{ r.stat_label }} vs {{ entity_anchor('team','nfl', r.opponent, label=r.opponent) }}{% if r.team %} &middot; {{ r.team }}{% endif %} &middot; through {{ r.last_season }} Wk {{ r.last_week }}</small></span>
+        <span class="ms-badge"><span class="n">{{ r.run }}</span><span class="u">straight</span></span>
+        <span class="ms-caret">&#9656;</span>
+      </div>
+      <div class="ms-exp" id="mx{{ loop.index }}">
+        <table><thead><tr><th>Season</th><th>Wk</th><th>Opp</th><th>{{ r.stat_label }}</th><th>Mark</th></tr></thead><tbody>
+          {% for g in r.games %}<tr><td>{{ g.season }}</td><td>{{ g.week }}</td><td>{{ g.opponent }}</td><td class="hit">{{ g.value }}</td><td>{{ g.threshold }}+ ✓</td></tr>{% endfor %}
+        </tbody></table>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Membership: factual milestone (reached {{ r.threshold }}+ {{ r.stat_label|lower }} in each of the last {{ r.run }} meetings). Events evaluated vs this opponent: {{ r.events_evaluated }}. No model, no suppression.</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="ms-meta">Showing all <b>{{ ms.total_matchup }}</b> matchup milestone streaks (3+). Source: nflverse game logs{% if ms.source_updated %} · updated {{ ms.source_updated }}{% endif %}. Identity resolved by canonical key, so a short-form season never drops a player.</div>
+    {% else %}
+    <div class="ms-empty">No active matchup milestone streaks of 3+ on record.</div>
+    {% endif %}
+  </div>
+
+  <!-- ===== Season-wide milestones (current season, freshness-gated) ===== -->
+  <div class="ms-card">
+    <h3><span class="ms-tag">Milestone</span> This-Season Streaks <small style="font-weight:500;color:var(--text-muted)">· same threshold every game, current form</small></h3>
+    {% if not ms.season_available %}
+    <div class="ms-fresh pending"><span class="tag">Unavailable</span><span>Current-season game stats are not yet complete/fresh &mdash; this-season milestone streaks are withheld rather than shown stale. Matchup streaks above are historical and unaffected.</span></div>
+    {% elif ms.season_streaks %}
+    <div class="ms-fresh"><span class="tag">Graded data</span><span>Through {{ ms.season }} Week {{ ms.through_week }}{% if ms.source_updated %} · updated {{ ms.source_updated }}{% endif %}.</span>{% if ms.injury_updated %}<span>Availability from injury report updated {{ ms.injury_updated }}.</span>{% endif %}</div>
+    <div>
+      {% for r in ms.season_streaks %}
+      <div class="ms-row" role="button" tabindex="0" aria-expanded="false" data-exp="sw{{ loop.index }}">
+        <span class="ms-rank">{{ loop.index }}</span>
+        <span class="ms-name">{{ entity_anchor('player','nfl', r.player) }}
+          <small>{{ r.run }} straight {{ r.threshold }}+ {{ r.stat_label }}{% if r.team %} &middot; {{ r.team }}{% endif %} &middot; through Wk {{ r.last_week }}
+          {%- if r.availability_state == 'PAUSED' %} &middot; <b style="color:#ff6b6b">Paused</b>
+          {%- elif r.availability_state == 'STATUS UNKNOWN' %} &middot; <b style="opacity:.75">Status unknown</b>
+          {%- elif r.availability_state == 'RETURNED' %} &middot; <b style="color:var(--bk-primary2)">Returned</b>
+          {%- elif r.designation %} &middot; <b style="color:#ffb800">{{ r.designation }}</b>{% endif %}</small></span>
+        <span class="ms-badge"><span class="n">{{ r.run }}</span><span class="u">straight</span></span>
+        <span class="ms-caret">&#9656;</span>
+      </div>
+      <div class="ms-exp" id="sw{{ loop.index }}">
+        <table><thead><tr><th>Season</th><th>Wk</th><th>Opp</th><th>{{ r.stat_label }}</th><th>Mark</th></tr></thead><tbody>
+          {% for g in r.games %}<tr><td>{{ g.season }}</td><td>{{ g.week }}</td><td>{{ g.opponent }}</td><td class="hit">{{ g.value }}</td><td>{{ g.threshold }}+ ✓</td></tr>{% endfor %}
+        </tbody></table>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Membership: factual milestone, current-season trailing run reaching the latest graded week. Events evaluated this season: {{ r.events_evaluated }}. Availability: {{ r.availability_state }}. No model overlay.</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="ms-meta">Showing all <b>{{ ms.total_season }}</b> this-season milestone streaks (3+). A streak only counts as current when its run reaches the latest graded week; an injury designation rides alongside and never erases the factual run.</div>
+    {% else %}
+    <div class="ms-empty">No active this-season milestone streaks of 3+ yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="ms-meta" style="padding-top:0;">Milestone streaks are context, not predictions &mdash; a market already prices a hot matchup. They surface the obvious factual record so you can decide. Separate from any prop-line/cover streak.</div>
+</div>
+
+<script>
+(function(){
+  function toggle(row){
+    var id = row.getAttribute('data-exp'); if(!id) return;
+    var panel = document.getElementById(id); if(!panel) return;
+    var open = panel.classList.toggle('open');
+    row.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  document.querySelectorAll('.ms-row').forEach(function(row){
+    row.addEventListener('click', function(e){ if(e.target.closest('a')) return; toggle(row); });
+    row.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(row); } });
+  });
+  var opp = document.getElementById('ms-opp');
+  if(opp){ opp.addEventListener('input', function(){
+    var q = opp.value.trim().toUpperCase();
+    document.querySelectorAll('#ms-matchup .ms-row').forEach(function(row){
+      var show = !q || (row.getAttribute('data-opp')||'').indexOf(q) !== -1;
+      row.style.display = show ? '' : 'none';
+      var id = row.getAttribute('data-exp'); var p = id && document.getElementById(id);
+      if(p && !show){ p.classList.remove('open'); row.setAttribute('aria-expanded','false'); }
+    });
+  }); }
+})();
+</script>
+{% endblock %}
