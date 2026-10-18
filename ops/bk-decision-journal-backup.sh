@@ -4,8 +4,9 @@
 # WHAT: a daily consistent snapshot (VACUUM INTO) of the private Journal DB plus a monthly snapshot,
 # pruned to retention (30 daily / 12 monthly). It uses services.decision_journal.run_scheduled_backup,
 # which calls the SAME dj.backup routine the verifier uses (0600 + both integrity checks) -- no fragile
-# shell sqlite3. It is a PURE READ of the live DB (VACUUM INTO), never a writer, so it is safe to run
-# while the feature flag is off and there are no routes.
+# shell sqlite3. It is a CONSISTENT, SOURCE-PRESERVING backup: VACUUM INTO writes the backup file (and may
+# briefly take DB locks) but never modifies the live DB -- so it is safe to run while the feature flag is
+# off and there are no routes.
 #
 # Installed OUTSIDE the repo so a mid-run `git pull` (bk-deploy) cannot rewrite the executing script --
 # same rationale as bk-auto-deploy.sh. Source of record: ops/bk-decision-journal-backup.sh

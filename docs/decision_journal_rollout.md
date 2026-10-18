@@ -37,7 +37,8 @@ set. Nothing is user-visible on deploy. Built to `docs/decision_journal_implemen
   `ops/bk-decision-journal-backup.sh` (thin wrapper) → `services.decision_journal.run_scheduled_backup()`
   (a daily `VACUUM INTO` snapshot via `dj.backup`, a monthly one on the first run of each UTC month, then
   prune to **30 daily / 12 monthly**), driven by `bk-decision-journal-backup.{service,timer}` (daily).
-  It is a pure READ of the live DB — safe while the Journal is dark and the store empty.
+  Each snapshot is a consistent, source-preserving backup (`VACUUM INTO` writes the backup file and may
+  briefly take DB locks, but never modifies the live DB) — safe while the Journal is dark and empty.
 - `dj.backup` runs `integrity_check` + `foreign_key_check` on every snapshot (0600 file, 0700 dir);
   `dj.restore` verifies a backup's integrity BEFORE an atomic replace and refuses a bad backup. A failed
   live `integrity_check` disables journal writes (banner) — never takes down other pages.

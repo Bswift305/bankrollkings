@@ -409,8 +409,9 @@ def run_scheduled_backup(db_path: str | None = None, backup_dir: str | None = No
     """Operational backup driver for the recurring timer (ops/bk-decision-journal-backup.sh). Creates a
     daily snapshot via backup() (VACUUM INTO + 0600 + both integrity checks), adds a monthly snapshot when
     none exists yet for the current UTC month, then prunes to retention (newest `daily_keep`/`monthly_keep`
-    by timestamped name). Pure read of the live DB -- never writes it; safe while the Journal is dark and
-    empty. Returns a sanitized summary (counts only, never contents). Absent DB -> no-op OK."""
+    by timestamped name). Each snapshot is a CONSISTENT, SOURCE-PRESERVING backup -- VACUUM INTO writes the
+    backup file (and may briefly take DB locks) but never modifies the live DB; safe while the Journal is
+    dark and empty. Returns a sanitized summary (counts only, never contents). Absent DB -> no-op OK."""
     db_path = db_path or resolve_db_path()
     backup_dir = backup_dir or backup_dir_for(db_path)
     if not os.path.exists(db_path):

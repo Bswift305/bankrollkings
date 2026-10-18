@@ -10,7 +10,8 @@ Description=Bankroll Kings - Decision Journal backup (dark; VACUUM INTO, retain 
 # One-shot first run + watch:
 #   sudo systemctl start bk-decision-journal-backup.service
 #   journalctl -u bk-decision-journal-backup.service -n 20 --no-pager
-# NOTE: leaves DECISION_JOURNAL_ENABLED untouched (stays off); it only reads/snapshots the DB.
+# NOTE: leaves DECISION_JOURNAL_ENABLED untouched (stays off); it takes a consistent, source-preserving
+# snapshot (VACUUM INTO writes the backup + may take locks) and never modifies the live DB.
 
 [Service]
 Type=oneshot

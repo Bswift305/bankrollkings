@@ -210,7 +210,11 @@ def main() -> int:
             restored = ric and rnofk and _rows_match(path, work)
         ok(detected and restored, 'corruption detected and restore recovers a healthy store (temp copy only)')
     finally:
-        for p in (work, work + '-wal', work + '-shm'):
+        # Remove EVERY artifact this verifier created -- including its own `verify_` backup, which lives
+        # in the real backups dir and would otherwise accumulate and evade the daily_/monthly_ retention
+        # prune (it never matches those prefixes).
+        for p in (work, work + '-wal', work + '-shm',
+                  backup, backup + '-wal', backup + '-shm'):
             if os.path.exists(p):
                 try:
                     os.remove(p)
