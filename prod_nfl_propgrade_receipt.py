@@ -170,7 +170,9 @@ def main():
                       "data/tracking/NFL_AllPropResults.csv"])
     print(f"  generated records gitignored (deploy cannot revert): "
           f"{'YES' if 'NFL_GameLogs' in out_o and 'AllPropResults' in out_o else 'CHECK'}")
-    rc_r, out_r = sh(["grep", "-nE", "build_nfl_gamelogs|refresh_all_prop_results", "run_daily.py"])
+    # Match the actual step INVOCATIONS (_python("script.py" ...)), not comment mentions.
+    rc_r, out_r = sh(["grep", "-nE", r'_python\("(build_nfl_gamelogs|refresh_all_prop_results)\.py"',
+                      "run_daily.py"])
     lines = [ln for ln in out_r.splitlines() if ln.strip()]
     gl_ln = next((int(ln.split(":")[0]) for ln in lines if "build_nfl_gamelogs" in ln), 1e9)
     gr_ln = next((int(ln.split(":")[0]) for ln in lines if "refresh_all_prop_results" in ln), -1)

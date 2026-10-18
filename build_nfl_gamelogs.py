@@ -125,8 +125,22 @@ def build():
     # season from his history AND collides distinct players. Build (abbrev, team) ->
     # full-name from the clean full-name rows, then map abbreviated rows back.
     raw = raw.copy()
-    raw["_name"] = raw["player_display_name"].astype(str).str.strip()
-    raw["_team"] = raw.get("team", "").astype(str).str.strip()
+
+    def _clean_name(*vals):
+        # Longest non-empty STRING across the available name columns. NaN/float/missing -> '' (the
+        # parquet carries null display names on some rows, which must never reach _resolve as a float).
+        best = ""
+        for v in vals:
+            if isinstance(v, str):
+                s = v.strip()
+                if len(s) > len(best):
+                    best = s
+        return best
+
+    disp = raw["player_display_name"] if "player_display_name" in raw.columns else [None] * len(raw)
+    pname = raw["player_name"] if "player_name" in raw.columns else [None] * len(raw)
+    raw["_name"] = [_clean_name(d, n) for d, n in zip(disp, pname)]
+    raw["_team"] = raw.get("team", pd.Series([""] * len(raw))).astype(str).str.strip()
 
     def _abbrev(full):
         parts = full.split()
@@ -141,6 +155,8 @@ def build():
         canon[key] = full
 
     def _resolve(name, team):
+        if not isinstance(name, str) or not name:   # NaN / missing identity -> drop
+            return None
         if " " in name:                        # already a full name
             return name
         key = (name, team)                     # abbreviated -> full via team
