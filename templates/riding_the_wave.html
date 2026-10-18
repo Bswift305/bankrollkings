@@ -140,7 +140,11 @@
     {% for r in rw_boards.props[:24] %}
     {% set st = (r.availability_state or '')|upper %}
     <div class="rw-row{% if not r.active %} rw-stale{% endif %}"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.weeks_label %} &middot; {{ r.weeks_label }}{% endif %}{% if st == 'PAUSED' %} &middot; <b style="color:var(--rw-cold)">{{ r.availability }}</b>{% elif st == 'STATUS UNKNOWN' %} &middot; <b style="opacity:.75">Status unknown</b>{% endif %}</small>
+      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.weeks_label %} &middot; {{ r.weeks_label }}{% endif %}
+        {%- if st == 'PAUSED' %} &middot; <b style="color:var(--rw-cold)">{{ r.availability }}</b>
+        {%- elif st == 'STATUS UNKNOWN' %} &middot; <b style="opacity:.75">Status unknown</b>
+        {%- elif st == 'RETURNED' %} &middot; <b style="color:var(--rw-accent)">Returned Wk {{ r.returned_week }}{% if r.missed_games %} (missed {{ r.missed_games }}){% endif %}</b>
+        {%- elif r.designation %} &middot; <b style="color:#ffb800">{{ r.designation }}</b>{% endif %}</small>
         {% if not r.active and r.status_label %}<span class="rw-status">{{ r.status_label }}</span>{% endif %}</span>
       <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}{% if not r.active %} past{% endif %}</span></span></div>
     {% endfor %}

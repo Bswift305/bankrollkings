@@ -61,6 +61,7 @@ def run_qc() -> dict:
         'load_sport_injuries': app.load_sport_injuries,
         '_nfl_expected_completed_week': app._nfl_expected_completed_week,
         '_nfl_injury_source_state': app._nfl_injury_source_state,
+        '_nfl_player_week_data': app._nfl_player_week_data,
     }
     no_inj = pd.DataFrame(columns=['Player', 'Team', 'Status', 'Reason', 'Updated'])
     try:
@@ -69,6 +70,8 @@ def run_qc() -> dict:
         # decoupled from the ambient repo NFL_Injuries.csv mtime so the active-run assertions hold.
         app._nfl_injury_source_state = lambda: {
             'lookup': {}, 'updated': '2026-10-17 18:30 ET', 'mtime': 1.0, 'fresh': True, 'gated': False}
+        # Stub participation empty -> RETURNED deterministic (jw26 parquet otherwise loads from BASE_DIR).
+        app._nfl_player_week_data = lambda: pd.DataFrame()
 
         # Evans: 4 straight UNDERs (results below the 53.5 line) through week 4, plus a couple of
         # other players so it isn't a one-row file. Graded through week 4, calendar expects week 4.

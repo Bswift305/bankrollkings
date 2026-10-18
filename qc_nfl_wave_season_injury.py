@@ -78,8 +78,12 @@ def run_qc() -> dict:
     issues: list[str] = []
     notes: list[str] = []
     saved = {'DATA_DIR': app.DATA_DIR,
-             '_nfl_expected_completed_week': app._nfl_expected_completed_week}
+             '_nfl_expected_completed_week': app._nfl_expected_completed_week,
+             '_nfl_player_week_data': app._nfl_player_week_data}
     try:
+        # Default: no participation record -> RETURNED never fires (the real jw26 parquet otherwise
+        # loads from BASE_DIR and would contaminate). Scenario 7 installs a controlled fixture.
+        app._nfl_player_week_data = lambda: pd.DataFrame()
         # ---- 1: season-crossing run counts ONLY the current (2026) season ---------------------
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -166,6 +170,59 @@ def run_qc() -> dict:
                 issues.append(f"3: paused run not preserved/labeled ({u['streak']}, {u['status_label']!r})")
             if not any(m.startswith('3:') for m in issues):
                 notes.append("injury: absent+fresh=ACTIVE; Out=PAUSED with the factual run preserved")
+
+        # ---- 3b: QUESTIONABLE/LIMITED with expected participation -> ACTIVE + designation shown ----
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            app.DATA_DIR = tmp
+            app._nfl_expected_completed_week = lambda today=None: (3, 2026)
+            _write_props(tmp, _rows('Q Guy', 'TB', 'Rec Yds', {1: OVER, 2: OVER, 3: OVER}, 2026))
+            _write_injuries(tmp, [{'Player': 'Q Guy', 'Team': 'TB', 'Status': 'QUESTIONABLE',
+                                   'Reason': 'Hamstring', 'Updated': '2026-10-17'}], age_hours=1.0)
+            b = app.build_nfl_prop_streaks()
+            q = _find(b, 'Q Guy')
+            if q is None or not q['active'] or q.get('availability_state') != 'ACTIVE':
+                issues.append(f"3b: QUESTIONABLE not kept active (active={q and q['active']}, "
+                              f"state={q and q.get('availability_state')})")
+            elif not q.get('designation'):
+                issues.append("3b: active QUESTIONABLE row dropped its injury designation")
+            else:
+                notes.append(f"injury-nuance: QUESTIONABLE stays ACTIVE with designation {q['designation']!r}")
+
+        # ---- 7: RETURNED FROM ABSENCE from ACTUAL scheduled-game participation --------------------
+        # Participation fixture (nflverse weekly shape): the team plays weeks 1-5; the player appears
+        # 1,2, MISSES 3,4 (team played, no player row), and returns week 5. He is within his first
+        # appearance back -> RETURNED, missed 2. (A teammate supplies the team's played weeks.)
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            app.DATA_DIR = tmp
+            app._nfl_expected_completed_week = lambda today=None: (5, 2026)
+            _write_props(tmp, _rows('Returner', 'TB', 'Rec Yds', {1: OVER, 2: OVER, 5: OVER}, 2026))
+            _write_injuries(tmp, [], age_hours=1.0)  # off the current report (already back)
+            part = []
+            for wk in (1, 2, 3, 4, 5):          # teammate: team played all five weeks
+                part.append({'season': 2026, 'week': wk, '_full': 'Team Mate', '_key': 't.mate',
+                             'recent_team': 'TB'})
+            for wk in (1, 2, 5):                 # returner: missed 3 and 4
+                part.append({'season': 2026, 'week': wk, '_full': 'Returner', '_key': 'r.returner',
+                             'recent_team': 'TB'})
+            app._nfl_player_week_data = lambda: pd.DataFrame(part)
+            try:
+                b = app.build_nfl_prop_streaks()
+            finally:
+                app._nfl_player_week_data = lambda: pd.DataFrame()
+            rp = _find(b, 'Returner')
+            if rp is None:
+                issues.append("7: returning player's run dropped")
+            elif rp.get('availability_state') != 'RETURNED':
+                issues.append(f"7: not flagged RETURNED (state={rp.get('availability_state')})")
+            elif rp.get('returned_week') != 5 or rp.get('missed_games') != 2:
+                issues.append(f"7: return detail wrong (week={rp.get('returned_week')}, "
+                              f"missed={rp.get('missed_games')}; want 5 / 2)")
+            elif not rp['active']:
+                issues.append("7: a returned player should be active (first appearances back)")
+            else:
+                notes.append("returned: missed weeks 3-4 (team played, no appearance), back Wk 5 -> RETURNED x2")
 
         # ---- 4: STALE injury feed -> STATUS UNKNOWN (fail closed) + cache-key fields -----------
         with tempfile.TemporaryDirectory() as td:

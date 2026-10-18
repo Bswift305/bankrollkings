@@ -57,8 +57,13 @@ def run_qc() -> dict:
         'load_sport_injuries': app.load_sport_injuries,
         '_nfl_expected_completed_week': app._nfl_expected_completed_week,
         '_nfl_injury_source_state': app._nfl_injury_source_state,
+        '_nfl_player_week_data': app._nfl_player_week_data,
     }
     no_inj = pd.DataFrame(columns=['Player', 'Team', 'Status', 'Reason', 'Updated'])
+    # Stub participation (empty) so RETURNED-from-absence is deterministic here -- the real parquet
+    # (jw26) loads from BASE_DIR regardless of DATA_DIR. The RETURNED path is covered end-to-end in
+    # qc_nfl_wave_season_injury.py with a controlled participation fixture.
+    app._nfl_player_week_data = lambda: pd.DataFrame()
     # Deterministic injury-source state: decouple the test from the ambient repo NFL_Injuries.csv
     # mtime. `_fresh['v']` toggles the feed-freshness branch (fresh feed vs stale -> STATUS UNKNOWN).
     _fresh = {'v': True}
@@ -150,18 +155,23 @@ def run_qc() -> dict:
         else:
             notes.append("availability: an Out player's current-season run is PAUSED (preserved), not current")
 
-        # ---- Scenario E: QUESTIONABLE is a documented injury -> PAUSED, not actively continuing --
-        # (the Caleb Williams case: on the injury report with a hamstring, "expected to start")
+        # ---- Scenario E: QUESTIONABLE with expected participation -> ACTIVE, designation shown -----
+        # (the Caleb Williams case: on the injury report with a hamstring, "expected to start"). Per
+        # the frozen injury nuance, this is NOT auto-paused: the run stays active and the designation
+        # rides alongside -- "Active" must never erase the injury designation.
         app.load_sport_injuries = lambda sport_key='nfl': pd.DataFrame(
             [{'Player': 'Mike Evans', 'Team': 'TB', 'Status': 'QUESTIONABLE', 'Reason': 'Hamstring',
               'Updated': '2026-10-17'}])
         e = app.build_nfl_prop_streaks()
         ev_e = _evans(e)
-        if ev_e is None or ev_e['active'] or ev_e.get('availability_state') != 'PAUSED':
-            issues.append(f"E: a QUESTIONABLE player shown as actively continuing "
-                          f"(active={ev_e and ev_e['active']}, state={ev_e and ev_e.get('availability_state')})")
+        if ev_e is None or not ev_e['active'] or ev_e.get('availability_state') != 'ACTIVE':
+            issues.append(f"E: a QUESTIONABLE player not kept active (active={ev_e and ev_e['active']}, "
+                          f"state={ev_e and ev_e.get('availability_state')})")
+        elif not ev_e.get('designation'):
+            issues.append("E: QUESTIONABLE active row dropped the injury designation")
         else:
-            notes.append("availability: a QUESTIONABLE (injury-report) player is PAUSED, not active")
+            notes.append(f"injury-nuance: QUESTIONABLE stays active with the designation shown "
+                         f"({ev_e['designation']!r}), never auto-paused")
 
         # ---- Scenario F: STALE injury feed -> STATUS UNKNOWN, nothing active (fail closed) -------
         app.load_sport_injuries = lambda sport_key='nfl': no_inj

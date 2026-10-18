@@ -30510,42 +30510,122 @@ def _nfl_player_availability(player_name, inj_lookup, feed_fresh=True):
     """Factual availability STATE for an NFL player, shared by the hot-hand heat map and the
     Riding-the-Wave prop-streak board. Frozen states (no composite score, no recommendation, no
     hidden ordering -- this describes availability, it never ranks or suppresses):
-      ACTIVE          fresh feed AND the status affirmatively supports availability -- i.e. absent
-                      from a fresh comprehensive feed, or a documented clear go (Active/Probable/Full).
-      PAUSED          fresh feed AND a documented injury designation that does NOT affirm availability
-                      (Out/Doubtful/Questionable/IR/PUP/Suspended/Inactive/GTD). The graded run is
-                      preserved as fact but is NOT presented as actively continuing.
-      RETURNED        decided by the CALLER: documented missed scheduled game(s) PLUS actual
-                      participation since. It requires an authoritative absence record and is never
-                      inferred from missing prop rows, so this function never asserts it alone.
+      ACTIVE          fresh feed AND the player is expected to be available. Two shades, both
+                      available and both eligible to be "actively continuing":
+                        - clean: absent from a fresh comprehensive feed, or a documented clear go
+                          (Active / Full practice / cleared) -> no designation.
+                        - flagged: a documented designation that still expects participation
+                          (Questionable / Limited / GTD / Probable) -> `designation` is set and MUST
+                          be shown beside the row. Active never ERASES the designation.
+      PAUSED          fresh feed AND a documented UNAVAILABLE designation (Out / Doubtful / IR / PUP /
+                      NFI / Inactive / Suspended / IL / season-ending). The graded run is preserved as
+                      fact but is NOT presented as actively continuing.
+      RETURNED        decided by the CALLER from actual scheduled-game participation (a documented
+                      missed scheduled game + the first two appearances since). Never inferred from
+                      missing prop rows, so this function never asserts it alone.
       STATUS UNKNOWN  stale / missing / gated / present-but-blank / conflicting feed. Fail closed:
                       NEVER silently 'active'.
-    `available` is True only for ACTIVE, False for PAUSED, None for STATUS UNKNOWN. Legacy keys
+    `available` is True for ACTIVE (clean or flagged), False for PAUSED, None for STATUS UNKNOWN.
+    `designation` carries the injury label to show on an otherwise-active row (''=clean). Legacy keys
     (`status`, `label`, `rank`) are retained for existing callers; `rank` is -1 when unknown."""
     if not feed_fresh:
         return {'state': 'STATUS UNKNOWN', 'status': 'UNKNOWN', 'label': 'Status unknown',
-                'rank': -1, 'available': None, 'reason': 'injury feed stale or unavailable'}
+                'rank': -1, 'available': None, 'designation': '', 'flagged': False,
+                'reason': 'injury feed stale or unavailable'}
     inj = inj_lookup.get(player_name) or inj_lookup.get(normalize_player_lookup_name(player_name) or '')
     if not inj:
         # Absent from a FRESH, comprehensive league feed -> documented available. This is negative
         # evidence trusted ONLY because the feed is fresh; it is NOT inferred from prop observations.
         return {'state': 'ACTIVE', 'status': 'ACTIVE', 'label': 'Active', 'rank': 3,
-                'available': True, 'reason': ''}
+                'available': True, 'designation': '', 'flagged': False, 'reason': ''}
     status = str(inj.get('status') or '').upper().strip()
+    reason = str(inj.get('reason') or '').strip()
     if not status:
         # A row exists but carries no designation -> incomplete/conflicting -> fail closed.
         return {'state': 'STATUS UNKNOWN', 'status': 'UNKNOWN', 'label': 'Status unknown',
-                'rank': -1, 'available': None, 'reason': str(inj.get('reason') or '').strip()}
+                'rank': -1, 'available': None, 'designation': '', 'flagged': False, 'reason': reason}
     rank, sev = _injury_severity_bucket(status)
     tokens = set(t for t in re.split(r'[^A-Z0-9]+', status) if t)
-    clear_go = bool(tokens & {'ACTIVE', 'PROBABLE', 'FULL', 'AVAILABLE', 'CLEARED'})
+    unavailable = bool(
+        rank <= 1  # 0 Out, 1 Doubtful -> documented unavailable
+        or (tokens & {'OUT', 'IR', 'PUP', 'NFI', 'SUSPENDED', 'SUSPENSION', 'INACTIVE', 'IL'})
+        or ('INJURED' in tokens and 'RESERVE' in tokens) or 'SEASON' in tokens)
+    if unavailable:
+        return {'state': 'PAUSED', 'status': status, 'label': f'Paused — {sev}', 'rank': rank,
+                'available': False, 'designation': sev, 'flagged': True, 'reason': reason}
+    clear_go = bool(tokens & {'ACTIVE', 'FULL', 'AVAILABLE', 'CLEARED'}) and 'LIMITED' not in tokens
     if clear_go and rank >= 3:
         return {'state': 'ACTIVE', 'status': status, 'label': 'Active', 'rank': 3,
-                'available': True, 'reason': str(inj.get('reason') or '').strip()}
-    # Any documented injury designation -- including Questionable/GTD -- interrupts "actively
-    # continuing": the run is a factual sequence BEFORE the absence, not this week's live form.
-    return {'state': 'PAUSED', 'status': status, 'label': f'Paused — {sev}', 'rank': rank,
-            'available': False, 'reason': str(inj.get('reason') or '').strip()}
+                'available': True, 'designation': '', 'flagged': False, 'reason': reason}
+    # Flagged but expected to play: Questionable / Limited / GTD / Probable. Still available and still
+    # "actively continuing" -- but the designation rides ALONG, never erased by the active state.
+    desig = 'Limited' if 'LIMITED' in tokens else (sev if rank == 2 else (sev or status.title()))
+    return {'state': 'ACTIVE', 'status': status, 'label': f'Active · {desig}', 'rank': max(rank, 2),
+            'available': True, 'designation': desig, 'flagged': True, 'reason': reason}
+
+
+def _nfl_player_return_status(player_name, season, through_week=None):
+    """Did this player RETURN from a documented absence this season? Decided ONLY from ACTUAL
+    scheduled-game participation in the nflverse weekly player logs -- a player row == an appearance,
+    and a team's 'played weeks' == the weeks ANY of its players appear (so bye weeks are naturally
+    excluded). A missed scheduled game is a week the team played and this player did not appear. This
+    is NEVER inferred from missing prop rows (a prop gap is not an absence).
+
+    Returns {'returned', 'first_return_week', 'missed_games', 'missed_weeks'}. `returned` is True only
+    when the player missed >=1 scheduled game and is within his FIRST TWO appearances since the most
+    recent missed stretch -- the frozen RETURNED FROM ABSENCE window. Detail is shown "when
+    reconstructable"; an empty participation record yields returned=False (we never guess)."""
+    out = {'returned': False, 'first_return_week': None, 'missed_games': 0, 'missed_weeks': []}
+    try:
+        df = _nfl_player_week_data()
+    except Exception:
+        df = None
+    if df is None or df.empty or 'season' not in df.columns or 'week' not in df.columns:
+        return out
+    d = df[pd.to_numeric(df['season'], errors='coerce') == int(season)].copy()
+    if d.empty:
+        return out
+    d['week'] = pd.to_numeric(d['week'], errors='coerce')
+    d = d.dropna(subset=['week'])
+    if d.empty:
+        return out
+    d['week'] = d['week'].astype(int)
+    if through_week:
+        d = d[d['week'] <= int(through_week)]
+    full = str(player_name).strip().lower()
+    key = _nfl_name_key(player_name)
+    name_match = d['_full'].astype(str).str.strip().str.lower() == full
+    if '_key' in d.columns:
+        name_match = name_match | (d['_key'].astype(str) == key)
+    prows = d[name_match]
+    if prows.empty:
+        return out  # no authoritative participation record -> never assert a return
+    team_col = next((c for c in ('recent_team', 'team', 'posteam') if c in d.columns), None)
+    if not team_col:
+        return out
+    pteam = str(prows.sort_values('week').iloc[-1].get(team_col) or '').strip()
+    if not pteam:
+        return out
+    team_weeks = sorted(set(int(w) for w in d[d[team_col].astype(str).str.strip() == pteam]['week'].tolist()))
+    player_weeks = sorted(set(int(w) for w in prows['week'].tolist()))
+    if not team_weeks or not player_weeks:
+        return out
+    last_app = max(player_weeks)
+    missed = [w for w in team_weeks if w not in player_weeks and w < last_app]
+    if not missed:
+        return out
+    last_missed = max(missed)
+    since = sorted(w for w in player_weeks if w > last_missed)
+    if not (1 <= len(since) <= 2):   # only the first two appearances back count as "returned"
+        return out
+    # The most-recent contiguous missed stretch (over the team's played weeks) ending at last_missed.
+    stretch, i = [], team_weeks.index(last_missed)
+    while i >= 0 and team_weeks[i] in missed:
+        stretch.append(team_weeks[i])
+        i -= 1
+    out.update(returned=True, first_return_week=int(since[0]), missed_games=len(stretch),
+               missed_weeks=sorted(int(w) for w in stretch))
+    return out
 
 
 def _nfl_prop_matchup(opp_abbr, stat_key):
@@ -46581,18 +46661,36 @@ def build_nfl_prop_streaks(limit=60):
         run_weeks = [int(w) for w in tail['Week'].tolist()]
         streak_start_week = min(run_weeks) if run_weeks else last_week
         avail = _nfl_player_availability(str(player), inj_lookup, feed_fresh=inj_state['fresh'])
+        designation = avail.get('designation', '')
         # Active ONLY when data isn't pending and the injury feed affirmatively supports availability.
-        # PAUSED (documented injury) and STATUS UNKNOWN (stale/missing feed) are preserved as fact but
-        # never presented as actively continuing. A missing prop week is NOT treated as a missed game.
+        # PAUSED (documented unavailable) and STATUS UNKNOWN (stale/missing feed) are preserved as fact
+        # but never presented as actively continuing. A missing prop week is NOT a missed game.
         is_active = bool((not pending) and avail['available'])
+        # RETURNED FROM ABSENCE: only an available (active) player, decided from real scheduled-game
+        # participation (never prop rows). It upgrades the state but keeps the player active.
+        ret = _nfl_player_return_status(str(player), current_season, data_through_week) \
+            if avail['available'] else {'returned': False}
+        state = avail['state']
         gap_note = (last_week < data_through_week)
         if avail['available'] is None:
             status_label = f"{int(n)} straight — status unknown (injury feed stale)"
         elif not avail['available']:
             status_label = f"{int(n)} straight before absence — {avail['label']}"
+        elif ret.get('returned'):
+            state = 'RETURNED'
+            mg = ret.get('missed_games') or 0
+            mk = f"returned Wk {ret['first_return_week']}"
+            if mg:
+                mk += f" · missed {mg} game{'s' if mg != 1 else ''}"
+            status_label = (f"Active — {mk}" + (f" · {designation}" if designation else ''))
         elif pending:
             status_label = (f"As of Wk {data_through_week}"
-                            + (f" · Week {expected_week} results pending" if expected_week else " · latest results pending"))
+                            + (f" · Week {expected_week} results pending" if expected_week else " · latest results pending")
+                            + (f" · {designation}" if designation else ''))
+        elif designation:
+            # Flagged-but-expected (Questionable/Limited): active, designation shown beside the row.
+            status_label = (f"Active · {designation}"
+                            + (f" (no prop logged since Wk {data_through_week})" if gap_note else ''))
         elif gap_note:
             status_label = f"{int(n)} straight through Wk {last_week} (no prop logged since Wk {data_through_week})"
         else:
@@ -46606,8 +46704,10 @@ def build_nfl_prop_streaks(limit=60):
             'last_week': last_week, 'last_graded_week': last_week,
             'last_participation_week': last_week, 'weeks_label': _compact_weeks(run_weeks),
             'active': is_active, 'availability': avail['label'],
-            'availability_status': avail['status'], 'availability_state': avail['state'],
-            'injury_reason': avail['reason'], 'injury_updated': inj_state['updated'],
+            'availability_status': avail['status'], 'availability_state': state,
+            'designation': designation, 'injury_reason': avail['reason'],
+            'injury_updated': inj_state['updated'],
+            'returned_week': ret.get('first_return_week'), 'missed_games': ret.get('missed_games') or 0,
             'status_label': status_label,
         })
     # Active runs lead; paused/unknown ones sink so a non-current run never headlines as current.
@@ -46963,10 +47063,16 @@ def build_nfl_wave_context():
     _inj = _nfl_injury_source_state()
     _exp_week, _exp_season = _nfl_expected_completed_week()
     _inj_sig = f"{_inj['mtime']}:{int(_inj['fresh'])}:{int(_inj['gated'])}"
+    # RETURNED-from-absence reads the weekly player-log parquet for participation, so a log refresh
+    # must invalidate too -- fold in the shared player-log signature.
+    try:
+        _plog_sig = hash(_nfl_player_log_signature())
+    except Exception:
+        _plog_sig = 0
     # Own cache (not the shared _NFL_WAVE_CACHE, which build_nfl_wave_watch_context also uses) so the
     # two builders can't clobber each other, and the ATS generation pointer is folded into the key.
     sig = (f"{len(hist)}::{_apr_mtime}::{_ats_ptr_mtime}::{sports_today_date()}"
-           f"::{_inj_sig}::{_exp_season}:{_exp_week}")
+           f"::{_inj_sig}::{_exp_season}:{_exp_week}::{_plog_sig}")
     if _NFL_RW_CACHE.get('sig') == sig:
         return _NFL_RW_CACHE['data']
 
