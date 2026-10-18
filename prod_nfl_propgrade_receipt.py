@@ -25,7 +25,7 @@ PY = sys.executable
 GL = os.path.join(BASE, "data", "gamelogs", "NFL_GameLogs.csv")
 APR = os.path.join(BASE, "data", "tracking", "NFL_AllPropResults.csv")
 ARCH = os.path.join(BASE, "data", "tracking", "NBA_CandidateArchive.csv")
-FIX_COMMIT = "3254d0b"
+FIX_COMMIT = "898958c"  # grader carries Season/Week + receipt hardening; abort if not deployed yet
 
 
 def sh(cmd):
