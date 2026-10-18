@@ -132,10 +132,16 @@ def main():
             buckets = st[~st.isin(["Hit", "Miss", "Push"])].value_counts().to_dict()
         pushes = int((cur[state_col].astype(str) == "Push").sum()) if (state_col and len(cur)) else 0
         gw = sorted(int(x) for x in cur["Week"].dropna().unique())
-        dup_obs = 0
+        # The graded record is a DAILY snapshot series: the same prop is captured on multiple
+        # SnapshotDates before its game, so multiple rows per (Player,Stat,Direction,Season,Week) are
+        # EXPECTED (the board collapses them: median line, one result). A real defect is a CONFLICT --
+        # the same prop-week resolving to DIFFERENT ResultValues. Count conflicts; report multiplicity.
+        snap_multi = conflict = 0
         grain_cols = [c for c in ("Player", "Stat", "Direction", "Season", "Week") if c in cur.columns]
         if grain_cols and len(cur):
-            dup_obs = int((cur.groupby(grain_cols).size() > 1).sum())
+            snap_multi = int((cur.groupby(grain_cols).size() > 1).sum())
+            if "ResultValue" in cur.columns:
+                conflict = int((cur.groupby(grain_cols)["ResultValue"].nunique(dropna=True) > 1).sum())
         malformed_rows = int((cur["Player"].astype(str).str.strip() == "").sum()) if len(cur) else 0
         # candidate archive current-season count
         cand_cur = 0
@@ -153,13 +159,14 @@ def main():
         print(f"  current-season pending/unresolved: {pending}  reason buckets: {buckets}")
         print(f"  graded-through week (current season): {max(gw) if gw else None}")
         print(f"  pushes handled (current season): {pushes}")
-        print(f"  duplicate market observations (current season): {dup_obs}")
+        print(f"  daily-snapshot multiplicity (same prop-week, >1 capture -- EXPECTED, board collapses): {snap_multi}")
+        print(f"  CONFLICTING market observations (same prop-week, different result -- a defect): {conflict}")
         print(f"  malformed rows (blank Player, current season): {malformed_rows}")
         apr_ok = bool(max_season is not None and exp_season and max_season >= int(exp_season)
-                      and graded > 0 and dup_obs == 0 and malformed_rows == 0
+                      and graded > 0 and conflict == 0 and malformed_rows == 0
                       and not os.path.exists(APR + ".tmp"))
         print(f"  [graded-record validation] {'PASS' if apr_ok else 'FAIL'}  "
-              f"(no prior-season row is presented as current: the boards gate on the resolved season)")
+              f"(resolved season = current; no conflicting observations; boards gate on the resolved season)")
         ok = ok and apr_ok
     except Exception as e:
         print(f"[FAIL] graded-record validation error: {e}")
