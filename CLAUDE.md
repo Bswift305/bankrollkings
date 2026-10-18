@@ -395,7 +395,12 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   unresolved identities abstain. QCs: `qc_lookup_change_store.py`, `qc_lookup_change_views.py`.
   `qc_lookup_facts_context.py`. The dark Research module reads the governed
   `services/model_registry.py`; its NFL QB-rushing entry remains Discovery with zero authority
-  (`qc_model_registry.py`). Contradictions/Mismatch still abstain pending verified contracts.
+  (`qc_model_registry.py`). The authority inventory and roadmap are in
+  `docs/model_registry_inventory.md`; the first corrective is characterize-then-contain unqualified
+  cross-sport calibration/promotion score mutation. That containment is now implemented: historical
+  signals remain `RESEARCH_ONLY` context with zero live score/sort delta
+  (`qc_unqualified_authority_containment.py`). Contradictions/Mismatch still abstain pending verified
+  contracts.
 
 - **Injury Report "impact" (with/without):** NBA + NFL live; **MLB/WNBA not built** —
   needs a per-sport gamelog split engine like `calculate_nfl_teammate_boosts`.

@@ -103,18 +103,22 @@ changed by this spec.)*
 - **Status:** **Discovery** (visible context + explanation; zero ordering/selection impact).
 - **Abstention:** stale/absent QB-rushing or opponent-allowance inputs → abstain.
 
-## 6. Inventory — existing mechanisms by sport *(pending the read-only catalog)*
-To be populated from the inventory: each mechanism → sport × market × angle, ordering-impact vs
-context-only, and classification (a/b/c/d) with file:line evidence. Known anchors to classify include
-the prop-board PropScore/confidence/tier computations, football-intelligence adjustments (incl.
-Defense-vs-Channel and any shared rushing term), the Green Light / lens-attribution engine, CFB wave /
-ATS, MLB method boards, and the per-sport current-form engines.
+## 6. Inventory — existing mechanisms by sport
 
-## 7. Prioritized roadmap *(pending the inventory)*
-To be populated: rank the candidate entries by (evidence available × market importance × independence
-from existing priced factors), starting with `nfl_qb_rushing_yards`. For each proposed entry, specify
-the nine contract fields, the validation dataset, the prospective test, and the governance status.
-**No weight or production-selection change is proposed until an entry reaches Qualified, out-of-sample.**
+Completed in `docs/model_registry_inventory.md`. The highest-risk finding is cross-sport live
+calibration and promotion helpers that mutate scores without any Qualified entry. Factual systems
+(Active ATS Wave, market prices, observed usage and historical distributions) remain facts; Green
+Light and Defense-vs-Channel remain context; PropScore v1 remains contained/failed. NBA/WNBA
+statistical candidates remain behind the data-rights gate.
+
+## 7. Prioritized roadmap
+
+The detailed sequence is frozen in `docs/model_registry_inventory.md` §7–§8. Start with NFL QB
+rushing; then NFL WR receiving yards/receptions, RB rushing yards/attempts, and passing markets;
+CFB spread continuation; market-specific MLB entries; NBA/WNBA only after cleared inputs exist.
+Before those builds, characterize and contain unauthorized cross-sport calibration/promotion score
+mutation, sport by sport. **No weight or production-selection change is authorized until an entry
+reaches Qualified out-of-sample.**
 
 ## 8. Out of scope here
 No model computation, weight changes, production selection logic, universal score, or undocumented

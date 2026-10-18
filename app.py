@@ -12332,6 +12332,11 @@ def _calibration_bucket_matches(row, adjustment, score_value):
 
 
 def apply_live_calibration_adjustments(rows, sport, score_field='method_score'):
+    """Attach retrospective calibration context without changing a live score.
+
+    No calibration bucket is a Qualified Sport × Market × Angle registry entry. The historical
+    gap remains useful research evidence, but it has zero ordering/selection authority.
+    """
     if not rows:
         return rows
     adjustments = _load_live_calibration_adjustments(sport)
@@ -12352,19 +12357,15 @@ def apply_live_calibration_adjustments(rows, sport, score_field='method_score'):
             continue
         matched = sorted(matched, key=lambda adj: (abs(float(adj.get('gap') or 0)), int(adj.get('sample_size') or 0)), reverse=True)[:2]
         total_adjustment = max(-8.0, min(sum(float(adj.get('gap') or 0) * 25.0 for adj in matched), 8.0))
-        calibrated_score = round(max(50.0, min(99.0, float(score) + total_adjustment)), 1)
-        row_copy[score_field] = calibrated_score
-        if score_field != 'market_confidence' and row_copy.get('market_confidence') is not None:
-            base_market = pd.to_numeric(row_copy.get('market_confidence'), errors='coerce')
-            if pd.notna(base_market):
-                row_copy['market_confidence'] = round(max(50.0, min(99.0, float(base_market) + total_adjustment)), 1)
-        row_copy['calibration_adjustment'] = round(total_adjustment, 1)
+        row_copy['calibration_adjustment'] = 0.0
+        row_copy['calibration_context_delta'] = round(total_adjustment, 1)
+        row_copy['calibration_authority'] = 'RESEARCH_ONLY'
         row_copy['calibration_note'] = '; '.join(
             f"{adj['classification']} {adj['bucket_type']} ({int(round(float(adj['gap']) * 100)):+d} pts)"
             for adj in matched
         )
         existing_tags = [str(tag).strip() for tag in (row_copy.get('method_tags') or []) if str(tag).strip()]
-        existing_tags.append('CALIBRATED+' if total_adjustment > 0 else 'CALIBRATED-')
+        existing_tags.append('CALIBRATION CONTEXT')
         row_copy['method_tags'] = existing_tags
         adjusted_rows.append(row_copy)
     return adjusted_rows
@@ -26687,10 +26688,13 @@ def attach_promotion_signals_to_props(props, sport='NBA', score_fields=None):
         if boost > 0 and any(str(tag).strip().upper() == 'PASS' for tag in prop.get('guardrail_tags') or []):
             boost = 0.0
 
-        prop['promotion_signal'] = signal_name
+        prop['promotion_research_signal'] = signal_name
+        prop['promotion_signal'] = 'RESEARCH CONTEXT' if signal_name != 'STANDARD' else 'STANDARD'
         prop['promotion_reason'] = signal.get('reason', '')
         prop['promotion_action'] = signal.get('action', '')
-        prop['promotion_boost'] = round(boost, 1)
+        prop['promotion_context_delta'] = round(boost, 1)
+        prop['promotion_boost'] = 0.0
+        prop['promotion_authority'] = 'RESEARCH_ONLY'
         prop['missed_winner_count'] = int(signal.get('missed_count', 0) or 0)
         prop['missed_winner_a_plus_count'] = int(signal.get('bucket_a_plus', 0) or 0)
         prop['missed_winner_avg_grade'] = signal.get('bucket_avg_grade')
@@ -26702,12 +26706,8 @@ def attach_promotion_signals_to_props(props, sport='NBA', score_fields=None):
                 tags.append(signal_name)
             prop['promotion_tags'] = tags
 
-        if boost:
-            for field in score_fields:
-                raw_value = prop.get(field)
-                numeric = pd.to_numeric(raw_value, errors='coerce')
-                if pd.notna(numeric):
-                    prop[field] = round(max(0.0, min(float(numeric) + boost, 99.0)), 1)
+        # Preserve every live score exactly. A retrospective PROMOTE/HOLD label is research
+        # context until an angle-specific registry entry becomes Qualified.
     return props
 
 
