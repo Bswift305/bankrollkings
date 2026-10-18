@@ -46902,16 +46902,28 @@ def build_nfl_prop_hot_start(min_run=2, limit=400):
         d = d[d['SeasonType'].astype(str).str.upper().isin(('REG', ''))]
     d['Season'] = pd.to_numeric(d['Season'], errors='coerce')
     if not d['Season'].notna().any():
-        return {'rows': [], 'season': None, 'through_week': None}
-    season = int(d['Season'].max())
+        return {'rows': [], 'season': None, 'through_week': None, 'unavailable': True,
+                'unavailable_reason': 'no_graded_seasons'}
+    # Current season from the schedule resolver, NEVER max(Season): a graded record that is stale
+    # (e.g. stuck at last season) must not present last season's hot runs as "this season." If the
+    # record does not reach the resolved current season, fail closed -- no prior-season fallback.
+    _exp_week, _exp_season = _nfl_expected_completed_week()
+    if not _exp_season:
+        return {'rows': [], 'season': None, 'through_week': None, 'unavailable': True,
+                'unavailable_reason': 'season_unresolved'}
+    season = int(_exp_season)
     d = d[d['Season'] == season]
+    if d.empty:
+        return {'rows': [], 'season': season, 'through_week': None, 'unavailable': True,
+                'unavailable_reason': 'current_season_ungraded'}
     d = d[d['Direction'].astype(str).str.upper() == 'OVER']  # one row per prop (dedupe O/U pair)
     d['Line'] = pd.to_numeric(d['Line'], errors='coerce')
     d['ResultValue'] = pd.to_numeric(d['ResultValue'], errors='coerce')
     d['Week'] = pd.to_numeric(d['Week'], errors='coerce')
     d = d.dropna(subset=['Player', 'Stat', 'Line', 'ResultValue', 'Week'])
     if d.empty:
-        return {'rows': [], 'season': season, 'through_week': None}
+        return {'rows': [], 'season': season, 'through_week': None, 'unavailable': True,
+                'unavailable_reason': 'current_season_ungraded'}
     through_week = int(d['Week'].max())
     # one graded outcome per player-stat-week (consensus line across books)
     g = (d.groupby(['Player', 'Stat', 'Week'])
@@ -46952,7 +46964,7 @@ def build_nfl_prop_hot_start(min_run=2, limit=400):
     # longest run first, then by how comfortably they've been clearing the number
     out.sort(key=lambda x: (-x['run'], -x['avg_margin']))
     return {'rows': out[:limit], 'season': season, 'through_week': through_week,
-            'total': len(out)}
+            'total': len(out), 'unavailable': False, 'unavailable_reason': ''}
 
 
 # ---------------------------------------------------------------------------
@@ -47355,7 +47367,7 @@ def build_nfl_wave_context():
             'asof': (asof.strftime('%b ') + str(asof.day) + asof.strftime(', %Y')) if pd.notna(asof) else '',
             'min_streak': _WAVE_MIN_STREAK,
             'hot_season': hot.get('season'), 'hot_week': hot.get('through_week'),
-            'hot_total': hot.get('total', 0),
+            'hot_total': hot.get('total', 0), 'hot_unavailable': hot.get('unavailable', False),
             # Player prop-streak freshness (its graded source can lag the live season).
             'prop_through_label': prop_streaks.get('through_label', ''),
             'prop_pending': prop_streaks.get('pending', False),

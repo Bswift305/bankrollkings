@@ -296,6 +296,28 @@ def run_qc() -> dict:
                     issues.append(f"6: row missing marker {k!r}")
             if not any(m.startswith('6:') for m in issues):
                 notes.append("markers: sport/season/graded-through/source-ts/streak-start/sample-size exposed")
+
+        # ---- 8: the Heating Up board is ALSO current-season gated (same page, same defect) --------
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            app.DATA_DIR = tmp
+            app._nfl_expected_completed_week = lambda today=None: (4, 2026)
+            # stale: only 2025 rows while the resolver says 2026 -> fail closed, no prior-season runs
+            _write_props(tmp, _rows('Hot Guy', 'TB', 'Rec Yds', {16: OVER, 17: OVER, 18: OVER}, 2025))
+            hs = app.build_nfl_prop_hot_start()
+            if not hs.get('unavailable') or hs.get('rows'):
+                issues.append(f"8: Heating Up showed stale prior-season runs as current "
+                              f"(unavailable={hs.get('unavailable')}, rows={len(hs.get('rows') or [])})")
+            else:
+                notes.append("heating-up: stale prior-season record -> unavailable, zero current runs")
+            # fresh: current-season rows present -> board populates at the resolved season
+            _write_props(tmp, _rows('Hot Guy', 'TB', 'Rec Yds', {1: OVER, 2: OVER, 3: OVER}, 2026))
+            hs2 = app.build_nfl_prop_hot_start()
+            if hs2.get('unavailable') or hs2.get('season') != 2026 or not hs2.get('rows'):
+                issues.append(f"8: Heating Up did not populate from current-season data "
+                              f"(season={hs2.get('season')}, rows={len(hs2.get('rows') or [])})")
+            else:
+                notes.append("heating-up: current-season data populates at the resolved season (2026)")
     finally:
         for name, val in saved.items():
             setattr(app, name, val)

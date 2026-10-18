@@ -93,6 +93,15 @@
     {% endfor %}
   </div>
 </div>
+{% elif rw_meta.hot_unavailable %}
+<div class="rw-card rw-card-wide" data-cat="hot" style="margin-bottom:16px;">
+  <h3><span class="dot" style="background:var(--rw-hot)"></span>Heating Up &mdash; hitting their mark every game this season</h3>
+  <div class="rw-fresh pending">
+    <span class="tag">Unavailable</span>
+    <span>{% if rw_meta.hot_season %}{{ rw_meta.hot_season }} results are not yet graded.{% else %}Current-season results are not yet graded.{% endif %}</span>
+    <span>No prior-season runs are shown here &mdash; a hot start must come from this season&rsquo;s graded results.</span>
+  </div>
+</div>
 {% endif %}
 
 {% if rw_upsets and rw_upsets.total %}
