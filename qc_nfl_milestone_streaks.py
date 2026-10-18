@@ -111,6 +111,7 @@ def run_qc() -> dict:
             ], columns=COLS)
             return pd.concat([base, extra], ignore_index=True)
         app._nfl_player_week_data = _fix2
+        app._NFL_MILESTONE_CACHE.clear()  # the fixture swap bypasses the signature; force a rebuild
         ms2 = app.build_nfl_milestone_streaks(min_run=3)
         lamb = [r for r in ms2['season_streaks'] if r['key'] == 'c.lamb'
                 and r['stat'] == 'receiving_yards' and r['threshold'] == 100]

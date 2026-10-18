@@ -47045,6 +47045,16 @@ def build_nfl_milestone_streaks(min_run=3, limit=400):
     base = {'season': None, 'through_week': None, 'source_updated': '', 'available': False,
             'unavailable_reason': '', 'season_streaks': [], 'matchup_streaks': [],
             'total_season': 0, 'total_matchup': 0, 'injury_updated': ''}
+    # Cache: the matchup pass scans the full multi-season log, so recomputing per request is wasteful.
+    # Key on the player-log signature + injury-source version + resolved week + params so a data or
+    # injury refresh (or a season rollover) rebuilds, but warm loads are instant.
+    try:
+        _sig = (hash(_nfl_player_log_signature()), _nfl_injury_source_state()['mtime'],
+                _nfl_expected_completed_week(), min_run, limit)
+    except Exception:
+        _sig = None
+    if _sig is not None and _NFL_MILESTONE_CACHE.get('sig') == _sig and 'data' in _NFL_MILESTONE_CACHE:
+        return _NFL_MILESTONE_CACHE['data']
     try:
         df = _nfl_player_week_data()
     except Exception:
@@ -47133,13 +47143,17 @@ def build_nfl_milestone_streaks(min_run=3, limit=400):
                 })
     matchup_streaks.sort(key=lambda x: (-x['run'], -x['threshold']))
 
-    return {'season': (int(expected_season) if expected_season else None), 'through_week': cur_through,
+    data = {'season': (int(expected_season) if expected_season else None), 'through_week': cur_through,
             'source_updated': source_updated, 'available': True,
             'season_available': season_available,
             'season_unavailable_reason': ('' if season_available else 'current_season_absent_or_stale'),
             'season_streaks': season_streaks[:limit], 'matchup_streaks': matchup_streaks[:limit],
             'total_season': len(season_streaks), 'total_matchup': len(matchup_streaks),
             'injury_updated': inj_state['updated'], 'injury_fresh': inj_state['fresh']}
+    if _sig is not None:
+        _NFL_MILESTONE_CACHE['sig'] = _sig
+        _NFL_MILESTONE_CACHE['data'] = data
+    return data
 
 
 # ---------------------------------------------------------------------------
