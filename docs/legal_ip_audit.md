@@ -187,6 +187,16 @@ data was deleted.
   unavailable banner while **licensed Odds API lines still render**. New NBA.com ingestion is stopped at
   10 fetchers (nba_api + stats.nba.com/cdn.nba.com/official.nba.com). Historical NBA data is **not
   deleted** — only un-loaded while the gate is off.
+  - **Injury/boost CSV loaders gated too (2026-10-17, `fff4a69`/`0c7f33d`):** the live NBA loaders were
+    gated, but the PRE-BUILT `NBA_Injuries.csv` / `Teammate_Boosts.csv` / `Active_Boost_Plays.csv` /
+    `WNBA_Injuries.csv` bypassed the gate and leaked NBA/WNBA player game-log averages, boost
+    percentages, and role-change projections on the authenticated `/injuries` + `/tools/injury-report`.
+    Now `load_injuries` / `load_boosts` / `load_active_boosts` / `load_sport_injuries('nba'|'wnba')`
+    return empty while gated (service boundary → covers HTML, the quick tool, exports, cached payloads);
+    the gate is in the role-change cache key; NBA + WNBA market-edge bypass their cached snapshots; the
+    pages render the honest banner (not zeroes) and Market Edge drops the "Tracking is live" claim.
+    NBA/WNBA only — NFL/MLB/CFB unchanged. Verified by an authenticated populated-data sweep on prod.
+    Source-level regression: `qc_nba_data_gate_containment.py`.
 - **nflverse CC-BY-4.0 attribution + link** added to both footers.
 - **Verification:** `qc_legal_containment.py` (registered in `run_all_scorecards.py`) — passes.
 
