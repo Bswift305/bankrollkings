@@ -18186,6 +18186,11 @@ def generate_props_from_gamelogs():
 
 def load_injuries():
     """Load current injury report"""
+    # NBA.com Injuries dataset is Prohibited Until Cleared (docs/legal_register_v2.md §1) and has no
+    # cleared substitute, so it is withheld from EVERY surface while the NBA.com data-rights gate is off
+    # -- a service-boundary gate like load_gamelogs, so no restricted value reaches any response channel.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'injuries' / 'NBA_Injuries.csv'
     manual_path = DATA_DIR / 'injuries' / 'NBA_Injuries_Manual.csv'
     frames = []
@@ -18228,6 +18233,10 @@ def load_injuries():
 
 def load_sport_injuries(sport_key='nba'):
     sport_key = str(sport_key or 'nba').strip().lower()
+    # NBA + WNBA injuries reach NBA.com (Prohibited Until Cleared, docs/legal_register_v2.md) with no
+    # cleared substitute -> gated. Other leagues (NFL/MLB/CFB) are unaffected.
+    if sport_key in ('nba', 'wnba') and not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame(columns=['Player', 'Team', 'Status', 'Reason', 'Updated'])
     if sport_key == 'nba':
         return load_injuries()
 
@@ -18399,6 +18408,9 @@ def build_injury_report_context():
         ],
         'teams': sorted({row['team'] for row in rows if row['team']}),
         'buckets_present': [bucket for bucket in bucket_order if any(row['status_bucket'] == bucket for row in rows)],
+        # NBA/WNBA injuries + boosts are withheld at the loader while the NBA.com data-rights gate is off
+        # (docs/legal_register_v2.md); the template notes it so their absence doesn't read as "no injuries".
+        'nba_stats_gated': (not _nba_source_gate.nba_stats_enabled()),
     }
 
 
@@ -19577,6 +19589,10 @@ def load_return_overrides():
 
 def load_boosts():
     """Load teammate boost data"""
+    # NBA/WNBA teammate boosts are MODEL READS derived from NBA.com game logs (Prohibited Until Cleared,
+    # docs/legal_register_v2.md) -> withheld at the service boundary while the data-rights gate is off.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'injuries' / 'Teammate_Boosts.csv'
     if path.exists():
         return _load_cached_csv(path)
@@ -19619,6 +19635,10 @@ def filter_injury_impacts_to_current_teams(impacts_df):
 
 def load_active_boosts():
     """Load active boost plays"""
+    # Active boost plays carry NBA.com-derived averages/percentages/projections (Prohibited Until
+    # Cleared, docs/legal_register_v2.md) -> withheld at the service boundary while the gate is off.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv'
     if path.exists():
         return filter_injury_impacts_to_current_teams(_load_cached_csv(path))
@@ -33425,7 +33445,10 @@ def _render_wnba_method_page(method_key):
     stat_filter = request.args.get('stat', '').strip().upper()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
     search_query = request.args.get('search', '').strip()
-    if method_key == 'market_edge' and date_filter == 'today' and not stat_filter and direction_filter == 'all' and not search_query:
+    # Never serve a pre-gate cached snapshot while the NBA.com gate is off (covers WNBA stats.nba.com) --
+    # fall through to the live build, whose WNBA gamelog loader is already gated (docs/legal_register_v2.md).
+    if (method_key == 'market_edge' and date_filter == 'today' and not stat_filter
+            and direction_filter == 'all' and not search_query and _nba_source_gate.nba_stats_enabled()):
         snapshot = load_runtime_snapshot('wnba_market_edge_today', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         if snapshot:
             payload = snapshot.get('payload') or {}
@@ -39908,6 +39931,10 @@ def render_nba_market_edge_page():
         and sample_mode == 'current' and not model_debug
         and sort_by == 'confidence' and sort_dir == 'desc'
     )
+    # Never serve a pre-gate cached snapshot while the NBA.com gate is off -- force a fresh build so the
+    # board is gate-clean (gamelog/tracking/advanced loaders are already gated) (docs/legal_register_v2.md).
+    if not _nba_source_gate.nba_stats_enabled():
+        use_default_snapshot = False
     if use_default_snapshot:
         snapshot = load_runtime_snapshot('nba_market_edge_postseason_today_current', max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
         snapshot_payload = (snapshot or {}).get('payload') or {}
@@ -39984,11 +40011,13 @@ def render_nba_market_edge_page():
 
     market_page_limit = 15
 
-    return render_template('smart_picks_v2.html', picks=picks[:market_page_limit], 
+    return render_template('smart_picks_v2.html', picks=picks[:market_page_limit],
         stat_options=STAT_COLUMNS, date_filter=date_filter, direction_filter=direction_filter, upcoming=upcoming,
         postseason_only=postseason_only, team_query=team_query, player_query=player_query, stat_query=stat_query,
         query_suffix=query_suffix, sample_mode=sample_mode, sort_by=sort_by, sort_dir=sort_dir,
-        base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug)
+        base_params=base_params, build_sort_link=build_sort_link, refresh_meta=refresh_meta, model_debug=model_debug,
+        # NBA.com data-rights gate: drives the honest banner + drops the "Tracking is live" claim while off.
+        nba_stats_gated=(not _nba_source_gate.nba_stats_enabled()))
 
 
 @app.route('/sports/nba/market-edge')
@@ -47534,7 +47563,10 @@ def injuries_page():
         DATA_DIR / 'injuries' / 'Active_Boost_Plays.csv',
         DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
     )
-    role_cache_key = f"injury_role_changes::{requested_sport or 'nba'}::{int(bool(postseason_only))}"
+    # Gate state is part of the cache key so a payload cached under one gate state is never served under
+    # the other (docs/legal_register_v2.md containment).
+    role_cache_key = (f"injury_role_changes::{requested_sport or 'nba'}::{int(bool(postseason_only))}"
+                      f"::g{int(_nba_source_gate.nba_stats_enabled())}")
     role_changes = _get_disk_ttl_cached_value(
         role_cache_key,
         43200,
@@ -47555,6 +47587,9 @@ def injuries_page():
         postseason_only=postseason_only,
         active_page='injuries',
         active_sport=requested_sport or 'nba',
+        # Honest data-rights state: this page is NBA/WNBA-centric, so when the NBA.com gate is off the
+        # template shows the Props-style banner instead of zeroed cards (docs/legal_register_v2.md).
+        nba_stats_gated=(not _nba_source_gate.nba_stats_enabled()),
     )
 
 def prewarm_caches():

@@ -472,6 +472,15 @@
     </div>
 </div>
 
+{% if nba_stats_gated|default(false) %}
+<div style="margin:0 0 20px;padding:14px 18px;border-radius:12px;border:1px solid var(--border);background:rgba(255,159,67,.08);font:600 13px/1.65 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
+  <b>NBA statistical context is temporarily unavailable while data rights are reviewed.</b> Player
+  game-log and tracking statistics &mdash; and the model reads built from them &mdash; are paused, so this
+  board shows no statistical picks right now. Current sportsbook markets remain available as factual
+  quotes on the Markets board. Nothing is deleted; the board returns once sourcing is cleared.
+</div>
+{% endif %}
+
 <div class="market-method-panel">
     <div class="market-method-header">
         <div class="market-method-title">How To Use Market Edge</div>
@@ -531,11 +540,13 @@
             <div class="market-stat-value">50-99 scale</div>
             <div class="market-stat-note">A cleaner score built from the adjusted read so the top of the board stays believable.</div>
         </div>
+        {% if not nba_stats_gated|default(false) %}
         <div class="market-stat-tile">
             <div class="market-stat-kicker">Next Gen + Game Env</div>
             <div class="market-stat-value">Tracking is live</div>
             <div class="market-stat-note">Touches, drives, speed, TS%, plus spread and total context are shown directly in the rows.</div>
         </div>
+        {% endif %}
 </div>
 
 {% if not refresh_meta.has_live_props %}

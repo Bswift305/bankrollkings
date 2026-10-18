@@ -13,6 +13,14 @@
     </div>
 </div>
 
+{% if nba_stats_gated %}
+<div style="margin:0 0 20px;padding:14px 18px;border-radius:12px;border:1px solid var(--border);background:rgba(255,159,67,.08);font:600 13px/1.65 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
+  <b>The NBA &amp; WNBA injury and boost board is temporarily unavailable.</b> NBA/WNBA injury status,
+  teammate-boost averages, percentages, and the role-change reads built from league game logs are paused
+  during a data-rights review, so they are not shown right now. This does not affect our licensed odds
+  data or other sports, and nothing is deleted. The board returns once sourcing is cleared.
+</div>
+{% else %}
 <!-- Status Summary -->
 <div class="grid-4 mb-24" style="gap: 16px;">
     <div class="stat-card" style="border-color: var(--danger);">
@@ -178,4 +186,5 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}

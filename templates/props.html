@@ -274,11 +274,13 @@
             <div class="floor-stat-note">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
         </div>
         {% endif %}
+        {% if not nba_stats_gated|default(false) %}
         <div class="floor-stat-tile">
             <div class="floor-stat-kicker">Next Gen + Game Env</div>
             <div class="floor-stat-value">Tracking is live</div>
             <div class="floor-stat-note">Touches, drives, speed, TS%, plus spread and total context now feed the board and are shown directly in the rows.</div>
         </div>
+        {% endif %}
     </div>
 {% else %}
 <div class="card mb-24">
@@ -305,11 +307,13 @@
             <div style="font-size: 11px; color: var(--text-muted);">Tier is stricter than confidence. It blends minutes, role stability, edge, and trend quality into a true build-grade.</div>
         </div>
         {% endif %}
+        {% if not nba_stats_gated|default(false) %}
         <div style="padding: 12px; border-radius: 12px; border: 1px solid rgba(166,233,229,0.16); background: radial-gradient(circle at 50% 42%, rgba(132,215,210,0.08) 0%, rgba(110,162,255,0.06) 28%, rgba(184,115,51,0.04) 48%, transparent 76%), linear-gradient(135deg, rgba(25,49,66,0.96) 0%, rgba(29,48,59,0.94) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);">
             <div style="font-size: 11px; color: var(--accent-copper); letter-spacing: 1px; font-weight: 800; margin-bottom: 6px;">{{ props_tracking_label|upper }}</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-bright);">Tracking is live</div>
             <div style="font-size: 11px; color: var(--text-muted);">{{ props_tracking_note }}</div>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}

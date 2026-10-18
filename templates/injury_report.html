@@ -14,6 +14,14 @@
     </div>
 </div>
 
+{% if nba_stats_gated %}
+<div style="margin:0 0 20px;padding:12px 16px;border-radius:12px;border:1px solid var(--border);background:rgba(255,159,67,.08);font:600 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
+  <b>NBA &amp; WNBA availability is temporarily excluded</b> while their data rights are reviewed, so the
+  leagues below are the other sports only &mdash; their absence here is not "no injuries." Licensed odds
+  and other sports are unaffected, and nothing is deleted.
+</div>
+{% endif %}
+
 <!-- Summary -->
 <div class="control-panel mb-24" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px;">
     <div class="stat-card">
