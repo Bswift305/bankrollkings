@@ -132,16 +132,39 @@ def main():
             buckets = st[~st.isin(["Hit", "Miss", "Push"])].value_counts().to_dict()
         pushes = int((cur[state_col].astype(str) == "Push").sum()) if (state_col and len(cur)) else 0
         gw = sorted(int(x) for x in cur["Week"].dropna().unique())
-        # The graded record is a DAILY snapshot series: the same prop is captured on multiple
-        # SnapshotDates before its game, so multiple rows per (Player,Stat,Direction,Season,Week) are
-        # EXPECTED (the board collapses them: median line, one result). A real defect is a CONFLICT --
-        # the same prop-week resolving to DIFFERENT ResultValues. Count conflicts; report multiplicity.
-        snap_multi = conflict = 0
-        grain_cols = [c for c in ("Player", "Stat", "Direction", "Season", "Week") if c in cur.columns]
-        if grain_cols and len(cur):
-            snap_multi = int((cur.groupby(grain_cols).size() > 1).sum())
-            if "ResultValue" in cur.columns:
-                conflict = int((cur.groupby(grain_cols)["ResultValue"].nunique(dropna=True) > 1).sum())
+        # --- Canonical EVENT identity (Season/Week alone is a label, not an event). Prefer a stable
+        # GameID/EventID; else a validated composite of season + week + teams + the realized game date.
+        id_cols = [c for c in ("GameID", "GameId", "EventID", "EventId", "game_id") if c in cur.columns]
+        if id_cols:
+            event_key = id_cols[:1]
+        else:
+            event_key = [c for c in ("Season", "Week", "Team", "Opponent") if c in cur.columns]
+            for c in ("ResultDate", "GameDay"):   # add the realized game date for extra stability
+                if c in cur.columns:
+                    event_key.append(c)
+                    break
+        event_desc = (f"id={id_cols[0]}" if id_cols else "composite(" + ",".join(event_key) + ")")
+        resolved = cur[cur[state_col].astype(str).isin(["Hit", "Miss", "Push"])].copy() if (state_col and len(cur)) else cur.iloc[0:0]
+
+        # (1) EXPECTED snapshot multiplicity: same event+player+market captured on >1 SnapshotDate.
+        snap_cols = event_key + [c for c in ("Player", "Stat", "Direction") if c in cur.columns]
+        snap_multi = int((cur.groupby(snap_cols)["SnapshotDate"].nunique() > 1).sum()) \
+            if (snap_cols and "SnapshotDate" in cur.columns and len(cur)) else 0
+        # (2) EXACT duplicate observations: identical on event+player+market+line(+book)+snapshot ts.
+        exact_cols = event_key + [c for c in ("Player", "Stat", "Direction", "Line", "Book", "SnapshotDate") if c in cur.columns]
+        exact_dupes = int(cur.duplicated(subset=exact_cols).sum()) if (exact_cols and len(cur)) else 0
+        # (3) CONFLICTING grading: same event+player+stat resolving to a DIFFERENT realized ResultValue
+        # (line-independent -- a line change across snapshots is NOT a conflict), or the same
+        # event+player+market+line settling to a different OutcomeState. Must be zero.
+        conflict_result = conflict_settle = 0
+        if len(resolved):
+            cres = event_key + [c for c in ("Player", "Stat") if c in resolved.columns]
+            if cres and "ResultValue" in resolved.columns:
+                conflict_result = int((resolved.groupby(cres)["ResultValue"].nunique(dropna=True) > 1).sum())
+            cset = event_key + [c for c in ("Player", "Stat", "Direction", "Line") if c in resolved.columns]
+            if cset and state_col:
+                conflict_settle = int((resolved.groupby(cset)[state_col].nunique() > 1).sum())
+        conflict = conflict_result + conflict_settle
         malformed_rows = int((cur["Player"].astype(str).str.strip() == "").sum()) if len(cur) else 0
         # candidate archive current-season count
         cand_cur = 0
@@ -159,14 +182,18 @@ def main():
         print(f"  current-season pending/unresolved: {pending}  reason buckets: {buckets}")
         print(f"  graded-through week (current season): {max(gw) if gw else None}")
         print(f"  pushes handled (current season): {pushes}")
-        print(f"  daily-snapshot multiplicity (same prop-week, >1 capture -- EXPECTED, board collapses): {snap_multi}")
-        print(f"  CONFLICTING market observations (same prop-week, different result -- a defect): {conflict}")
+        print(f"  event identity: {event_desc}")
+        print(f"  (1) EXPECTED snapshot multiplicity (same event+market, >1 SnapshotDate -- allowed, board collapses): {snap_multi}")
+        print(f"  (2) EXACT duplicate observations (identical event+market+line+book+ts -- should be 0 / collapsed): {exact_dupes}")
+        print(f"  (3) CONFLICTING grading (same event+player+stat -> different realized result/settlement -- MUST be 0): {conflict}")
+        print(f"      [result-value conflicts: {conflict_result}  settlement conflicts: {conflict_settle}]")
         print(f"  malformed rows (blank Player, current season): {malformed_rows}")
         apr_ok = bool(max_season is not None and exp_season and max_season >= int(exp_season)
                       and graded > 0 and conflict == 0 and malformed_rows == 0
                       and not os.path.exists(APR + ".tmp"))
         print(f"  [graded-record validation] {'PASS' if apr_ok else 'FAIL'}  "
-              f"(resolved season = current; no conflicting observations; boards gate on the resolved season)")
+              f"(resolved season=current; zero grading conflicts on canonical event identity; "
+              f"snapshot multiplicity & line changes are expected lineage, not conflicts)")
         ok = ok and apr_ok
     except Exception as e:
         print(f"[FAIL] graded-record validation error: {e}")
