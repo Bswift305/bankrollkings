@@ -35,14 +35,22 @@ def main():
     print('=' * 92)
     print(f'COLD PROFILE  {path}  -> status {resp.status_code}  {len(body)/1024:.1f} KB')
     print('=' * 92)
-    s = io.StringIO()
-    st = pstats.Stats(pr, stream=s)
-    st.sort_stats('cumulative').print_stats('app.py:', topn)
-    out = s.getvalue()
-    # keep the header line (total seconds) + only this app's frames, trimmed
-    for line in out.splitlines():
-        if 'function calls' in line or ('app.py:' in line and 'Lib' not in line):
-            print(line.rstrip()[:150])
+
+    def _dump(sort_key, heading):
+        # cumulative = time spent in a frame AND its callees (finds the wrapper); tottime = time spent
+        # in the frame ITSELF, excluding callees (finds the actual hot leaf doing the work). The 77s
+        # culprit inside a builder shows up at the TOP of the tottime list, not the cumulative one.
+        print(f'\n--- {heading} ---')
+        s = io.StringIO()
+        st = pstats.Stats(pr, stream=s)
+        st.sort_stats(sort_key).print_stats('app.py:', topn)
+        out = s.getvalue()
+        for line in out.splitlines():
+            if 'function calls' in line or ('app.py:' in line and 'Lib' not in line):
+                print(line.rstrip()[:150])
+
+    _dump('tottime', 'SELF-TIME (tottime) — the actual hot function')
+    _dump('cumulative', 'CUMULATIVE — the calling wrapper chain')
     return 0
 
 
