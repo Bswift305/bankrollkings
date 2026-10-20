@@ -59,6 +59,55 @@ def run_qc():
     except Exception as exc:
         notes.append(f"milestone guard skipped ({type(exc).__name__}: {exc})")
 
+    # Guard 4: Riding-the-Wave N+1. The participation index must be built ONCE and reused across many
+    # per-player return-status lookups -- the old path re-scanned + .copy()'d the ~103k-row weekly log
+    # on every qualifying player (~5.8s / 137 players). With a shared index, 500 lookups must trigger
+    # ZERO additional reads of the player-week log, and the shared-index result must match the
+    # build-its-own-index result exactly (parity).
+    try:
+        import pandas as pd
+        orig_week_data = app._nfl_player_week_data
+        part = []
+        for wk in (1, 2, 3, 4, 5):                # a teammate: team played all five weeks
+            part.append({'season': 2026, 'week': wk, '_full': 'team mate', '_key': 't.mate',
+                         'recent_team': 'TB'})
+        for wk in (1, 2, 5):                       # returner: missed weeks 3-4, back week 5
+            part.append({'season': 2026, 'week': wk, '_full': 'returner guy', '_key': 'r.guy',
+                         'recent_team': 'TB'})
+        fixture = pd.DataFrame(part)
+        reads = {'n': 0}
+
+        def _counting():
+            reads['n'] += 1
+            return fixture
+
+        app._nfl_player_week_data = _counting
+        try:
+            idx = app._nfl_participation_index(2026, 5)      # 1 read
+            reads_after_build = reads['n']
+            for _ in range(500):
+                app._nfl_player_return_status('Returner Guy', 2026, 5, index=idx)
+            reads_after_lookups = reads['n']
+            shared = app._nfl_player_return_status('Returner Guy', 2026, 5, index=idx)
+            own = app._nfl_player_return_status('Returner Guy', 2026, 5)   # builds its own index
+        finally:
+            app._nfl_player_week_data = orig_week_data
+
+        extra = reads_after_lookups - reads_after_build
+        if extra != 0:
+            issues.append(f"wave participation index not reused: 500 lookups caused {extra} extra "
+                          f"player-log reads (the N+1 regression class)")
+        elif not (shared.get('returned') and shared.get('first_return_week') == 5
+                  and shared.get('missed_games') == 2):
+            issues.append(f"wave index lookup wrong: {shared} (want returned, week 5, missed 2)")
+        elif shared != own:
+            issues.append(f"wave index parity broken: shared={shared} vs own-built={own}")
+        else:
+            notes.append("wave participation index built once, reused across 500 lookups (0 extra "
+                         "reads), shared==own-built parity")
+    except Exception as exc:
+        notes.append(f"wave N+1 guard skipped ({type(exc).__name__}: {exc})")
+
     return {'issues': issues, 'notes': notes}
 
 

@@ -30336,7 +30336,10 @@ def _nfl_player_week_data():
                 key2full[k].add(n)
         resolve = {k: next(iter(v)) for k, v in key2full.items() if len(v) == 1}
         full_vals = [n if ' ' in n else resolve.get(k, n) for n, k in zip(name_vals, key_vals)]
-        df = df.assign(_name=name_vals, _key=key_vals, _full=full_vals)
+        # concat the 3-col identity block in ONE op (assign still fragmented the ~150-col frame);
+        # pd.concat(axis=1) consolidates into a fresh de-fragmented frame.
+        _idcols = pd.DataFrame({'_name': name_vals, '_key': key_vals, '_full': full_vals}, index=df.index)
+        df = pd.concat([df, _idcols], axis=1)
     _NFL_PLAYER_WEEK_CACHE['df'] = df
     _NFL_PLAYER_WEEK_CACHE['sig'] = _sig
     return df
@@ -30865,7 +30868,68 @@ def _nfl_player_availability(player_name, inj_lookup, feed_fresh=True):
             'available': True, 'designation': desig, 'flagged': True, 'reason': reason}
 
 
-def _nfl_player_return_status(player_name, season, through_week=None):
+def _nfl_participation_index(season, through_week=None):
+    """Precompute scheduled-game participation for one season in a SINGLE pass, so the per-player
+    return-status check is an O(1) dict lookup instead of re-filtering + copying the ~103k-row weekly
+    player log once per qualifying player (the Riding-the-Wave N+1). Returns
+    (team_weeks_by_team, player_by_key) or None when the log is unusable.
+      - team_weeks_by_team[team]  -> sorted list of weeks ANY of that team's players appeared
+      - player_by_key[alias]      -> (set_of_weeks_the_player_appeared, team_at_last_appearance),
+        registered under BOTH the first-initial.last `_key` and the lowercased full name, so a lookup
+        by either resolves it -- preserving the old inline path's `_full == name OR _key == key` match.
+    Same semantics the old inline path computed; just hoisted out of the per-player loop."""
+    try:
+        df = _nfl_player_week_data()
+    except Exception:
+        df = None
+    if df is None or getattr(df, 'empty', True) or 'season' not in df.columns or 'week' not in df.columns:
+        return None
+    d = df[pd.to_numeric(df['season'], errors='coerce') == int(season)]
+    if d.empty:
+        return None
+    wk = pd.to_numeric(d['week'], errors='coerce')
+    mask = wk.notna()
+    if through_week:
+        mask = mask & (wk <= int(through_week))
+    d = d[mask]
+    if d.empty:
+        return None
+    team_col = next((c for c in ('recent_team', 'team', 'posteam') if c in d.columns), None)
+    if not team_col or ('_key' not in d.columns and '_full' not in d.columns):
+        return None
+    n = len(d)
+    wk_list = pd.to_numeric(d['week'], errors='coerce').astype(int).tolist()
+    team_list = d[team_col].astype(str).str.strip().tolist()
+    key_list = d['_key'].astype(str).tolist() if '_key' in d.columns else [''] * n
+    full_list = (d['_full'].astype(str).str.strip().str.lower().tolist()
+                 if '_full' in d.columns else [''] * n)
+    team_weeks = {}
+    buckets = {}  # grouping key -> {'weeks': set, 'last': (week, team), 'fulls': set}
+    for w, t, k, f in zip(wk_list, team_list, key_list, full_list):
+        if t:
+            team_weeks.setdefault(t, set()).add(w)
+        gk = k or f
+        if not gk:
+            continue
+        b = buckets.get(gk)
+        if b is None:
+            b = buckets[gk] = {'weeks': set(), 'last': (None, ''), 'fulls': set()}
+        b['weeks'].add(w)
+        if b['last'][0] is None or w > b['last'][0]:
+            b['last'] = (w, t)
+        if f:
+            b['fulls'].add(f)
+    team_weeks_by_team = {t: sorted(ws) for t, ws in team_weeks.items()}
+    player_by_key = {}
+    for gk, b in buckets.items():
+        rec = (b['weeks'], b['last'][1])
+        player_by_key[gk] = rec
+        for f in b['fulls']:
+            player_by_key.setdefault(f, rec)   # full-name alias -> same record (OR-match parity)
+    return (team_weeks_by_team, player_by_key)
+
+
+def _nfl_player_return_status(player_name, season, through_week=None, index=None):
     """Did this player RETURN from a documented absence this season? Decided ONLY from ACTUAL
     scheduled-game participation in the nflverse weekly player logs -- a player row == an appearance,
     and a team's 'played weeks' == the weeks ANY of its players appear (so bye weeks are naturally
@@ -30877,38 +30941,21 @@ def _nfl_player_return_status(player_name, season, through_week=None):
     recent missed stretch -- the frozen RETURNED FROM ABSENCE window. Detail is shown "when
     reconstructable"; an empty participation record yields returned=False (we never guess)."""
     out = {'returned': False, 'first_return_week': None, 'missed_games': 0, 'missed_weeks': []}
-    try:
-        df = _nfl_player_week_data()
-    except Exception:
-        df = None
-    if df is None or df.empty or 'season' not in df.columns or 'week' not in df.columns:
+    # Build the participation index once (or reuse a caller-supplied one). The old per-call path
+    # filtered + copied the 103k-row weekly log on EVERY player (the wave N+1, ~5.8s / 137 players);
+    # now it is a single groupby precompute + an O(1) dict lookup per player.
+    if index is None:
+        index = _nfl_participation_index(season, through_week)
+    team_weeks_by_team, player_by_key = index if index else (None, None)
+    if not player_by_key:
         return out
-    d = df[pd.to_numeric(df['season'], errors='coerce') == int(season)].copy()
-    if d.empty:
-        return out
-    d['week'] = pd.to_numeric(d['week'], errors='coerce')
-    d = d.dropna(subset=['week'])
-    if d.empty:
-        return out
-    d['week'] = d['week'].astype(int)
-    if through_week:
-        d = d[d['week'] <= int(through_week)]
-    full = str(player_name).strip().lower()
-    key = _nfl_name_key(player_name)
-    name_match = d['_full'].astype(str).str.strip().str.lower() == full
-    if '_key' in d.columns:
-        name_match = name_match | (d['_key'].astype(str) == key)
-    prows = d[name_match]
-    if prows.empty:
+    # OR-match parity with the old inline path: first-initial.last key, else lowercased full name.
+    rec = (player_by_key.get(_nfl_name_key(player_name))
+           or player_by_key.get(str(player_name).strip().lower()))
+    if not rec:
         return out  # no authoritative participation record -> never assert a return
-    team_col = next((c for c in ('recent_team', 'team', 'posteam') if c in d.columns), None)
-    if not team_col:
-        return out
-    pteam = str(prows.sort_values('week').iloc[-1].get(team_col) or '').strip()
-    if not pteam:
-        return out
-    team_weeks = sorted(set(int(w) for w in d[d[team_col].astype(str).str.strip() == pteam]['week'].tolist()))
-    player_weeks = sorted(set(int(w) for w in prows['week'].tolist()))
+    player_weeks, pteam = rec
+    team_weeks = team_weeks_by_team.get(pteam) or []
     if not team_weeks or not player_weeks:
         return out
     last_app = max(player_weeks)
@@ -46968,6 +47015,9 @@ def build_nfl_prop_streaks(limit=60):
            .reset_index())
     # +1 over the line that week, -1 under, 0 landed exactly on it (a push breaks a run)
     g['sign'] = (g['res'] > g['line']).astype(int) - (g['res'] < g['line']).astype(int)
+    # Precompute scheduled-game participation ONCE for the season (not per qualifying player): the old
+    # per-player path re-filtered + copied the ~103k-row weekly log on every call (the Wave N+1).
+    _part_index = _nfl_participation_index(current_season, data_through_week)
     out = []
     for (player, stat), grp in g.groupby(['Player', 'Stat']):
         grp = grp.sort_values('Week')
@@ -46988,7 +47038,7 @@ def build_nfl_prop_streaks(limit=60):
         is_active = bool((not pending) and avail['available'])
         # RETURNED FROM ABSENCE: only an available (active) player, decided from real scheduled-game
         # participation (never prop rows). It upgrades the state but keeps the player active.
-        ret = _nfl_player_return_status(str(player), current_season, data_through_week) \
+        ret = _nfl_player_return_status(str(player), current_season, data_through_week, index=_part_index) \
             if avail['available'] else {'returned': False}
         state = avail['state']
         gap_note = (last_week < data_through_week)
