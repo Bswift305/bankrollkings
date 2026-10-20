@@ -30311,26 +30311,32 @@ def _nfl_player_week_data():
     if not df.empty:
         # Names are inconsistent across our season files: most use the full 'Jalen Hurts',
         # but the 2025 build uses the nflverse short form 'J.Hurts' in BOTH name columns.
-        disp = df['player_display_name'] if 'player_display_name' in df.columns else None
-        nm = df['player_name'] if 'player_name' in df.columns else None
+        # Compute the three identity columns as plain lists first, then assign ALL AT ONCE -- three
+        # sequential df[...]=  inserts fragment the ~150-column concatenated frame (the Performance
+        # warnings), which is slow on the cold build every NFL tool shares.
+        disp = df['player_display_name'].tolist() if 'player_display_name' in df.columns else None
+        nm = df['player_name'].tolist() if 'player_name' in df.columns else None
         if disp is not None and nm is not None:
-            df['_name'] = [max([str(a) for a in (x, y) if isinstance(a, str) and a], key=len, default='')
-                           for x, y in zip(disp, nm)]
+            name_vals = [max([str(a) for a in (x, y) if isinstance(a, str) and a], key=len, default='')
+                         for x, y in zip(disp, nm)]
+        elif disp is not None:
+            name_vals = [str(x) if isinstance(x, str) else '' for x in disp]
+        elif nm is not None:
+            name_vals = [str(x) if isinstance(x, str) else '' for x in nm]
         else:
-            df['_name'] = (disp if disp is not None else nm if nm is not None else '')
-        df['_key'] = df['_name'].map(_nfl_name_key)
-        # Resolve a short form ('J.Hurts') to a full name ONLY when its initial+lastname
-        # key maps to exactly one full name in the fuller-named seasons -- so 'J.Hurts' ->
-        # 'Jalen Hurts', but ambiguous 'B.Robinson' (Bijan vs Brian) is left alone rather
-        # than silently grabbing the wrong player.
+            name_vals = [''] * len(df)
+        key_vals = [_nfl_name_key(n) for n in name_vals]
+        # Resolve a short form ('J.Hurts') to a full name ONLY when its initial+lastname key maps to
+        # exactly one full name in the fuller-named seasons -- so 'J.Hurts' -> 'Jalen Hurts', but
+        # ambiguous 'B.Robinson' (Bijan vs Brian) is left alone rather than grabbing the wrong player.
         from collections import defaultdict as _dd
-        fulls = df.loc[df['_name'].astype(str).str.contains(' ', na=False), '_name'].astype(str)
         key2full = _dd(set)
-        for fn in fulls.unique():
-            key2full[_nfl_name_key(fn)].add(fn)
+        for n, k in zip(name_vals, key_vals):
+            if ' ' in n:
+                key2full[k].add(n)
         resolve = {k: next(iter(v)) for k, v in key2full.items() if len(v) == 1}
-        df['_full'] = [n if ' ' in str(n) else resolve.get(k, n)
-                       for n, k in zip(df['_name'], df['_key'])]
+        full_vals = [n if ' ' in n else resolve.get(k, n) for n, k in zip(name_vals, key_vals)]
+        df = df.assign(_name=name_vals, _key=key_vals, _full=full_vals)
     _NFL_PLAYER_WEEK_CACHE['df'] = df
     _NFL_PLAYER_WEEK_CACHE['sig'] = _sig
     return df
