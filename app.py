@@ -47134,21 +47134,21 @@ _NFL_MILESTONE_MATCHUP = {
 _NFL_MILESTONE_CACHE = {}
 
 
-def _milestone_games(sub, stat, thr):
-    """Trailing run of games (newest-first stops at the first miss) at/above `thr`, plus the counted
-    games for the Streak Explainer. `sub` is one player's rows, already chronological."""
-    vals = sub[stat].tolist()
-    weeks = sub['week'].tolist()
-    seasons = sub['__season'].tolist() if '__season' in sub.columns else sub['season'].tolist()
-    opps = sub['opponent_team'].tolist() if 'opponent_team' in sub.columns else [''] * len(vals)
+def _trailing_milestone(vals, weeks, seasons, opps, thr):
+    """Trailing run (newest-first, stops at the first miss) at/above `thr`, plus the counted games for
+    the Streak Explainer. Takes pre-extracted PLAIN LISTS (chronological) -- callers extract each
+    group's columns ONCE and reuse across stats/thresholds, so there is no per-(stat,threshold)
+    DataFrame access (the old `_milestone_games(sub, stat, thr)` did sub[stat].tolist() on every call,
+    ~1.2M DataFrame __getitem__ for one build)."""
     run, games = 0, []
-    for v, wk, se, op in zip(reversed(vals), reversed(weeks), reversed(seasons), reversed(opps)):
-        hit = (v is not None) and (not pd.isna(v)) and float(v) >= thr
-        if not hit:
+    for i in range(len(vals) - 1, -1, -1):
+        v = vals[i]
+        if v is None or v != v or float(v) < thr:   # v != v catches NaN without pd.isna per element
             break
         run += 1
-        games.append({'season': int(se) if pd.notna(se) else None,
-                      'week': int(wk) if pd.notna(wk) else None,
+        se, wk, op = seasons[i], weeks[i], opps[i]
+        games.append({'season': int(se) if (se == se and se is not None) else None,
+                      'week': int(wk) if (wk == wk and wk is not None) else None,
                       'opponent': str(op), 'value': round(float(v), 1), 'threshold': thr, 'hit': True})
     games.reverse()  # chronological for display
     return run, games
@@ -47212,51 +47212,67 @@ def build_nfl_milestone_streaks(min_run=3, limit=400):
     season_available = bool(expected_season) and not cur.empty
     if season_available:
         cur_through = int(cur['week'].max())
-        for stat, (label, thrs) in _NFL_MILESTONE_STATS.items():
-            if stat not in cur.columns:
-                continue
-            for key, g in cur.groupby('_key'):
-                g = g.sort_values('week')
-                if g['week'].max() != cur_through:
-                    continue  # trailing run must reach the latest graded week to be "current"
-                for thr in thrs:
-                    run, games = _milestone_games(g, stat, thr)
+        sstats = [s for s in _NFL_MILESTONE_STATS if s in cur.columns]
+        # Sort ONCE (groupby keeps order with sort=False), then iterate pre-sorted groups over lists.
+        cs = cur.sort_values(['_key', 'week'])
+        for key, g in cs.groupby('_key', sort=False):
+            wk_list = g['week'].tolist()
+            if len(wk_list) < min_run or wk_list[-1] != cur_through:
+                continue  # trailing run must reach the latest graded week to be "current"
+            seasons = g[season_col].tolist()
+            opps = g['opponent_team'].tolist() if 'opponent_team' in g.columns else [''] * len(wk_list)
+            team_last = (str(g.iloc[-1].get(team_col)) if team_col else '')
+            coldata = {s: g[s].tolist() for s in sstats}
+            avail = None
+            for stat in sstats:
+                label = _NFL_MILESTONE_STATS[stat][0]
+                vals = coldata[stat]
+                for thr in _NFL_MILESTONE_STATS[stat][1]:
+                    run, games = _trailing_milestone(vals, wk_list, seasons, opps, thr)
                     if run < min_run:
                         continue
-                    avail = _nfl_player_availability(disp_by_key.get(key, key), inj_state['lookup'],
-                                                     feed_fresh=inj_state['fresh'])
+                    if avail is None:
+                        avail = _nfl_player_availability(disp_by_key.get(key, key), inj_state['lookup'],
+                                                         feed_fresh=inj_state['fresh'])
                     season_streaks.append({
                         'player': disp_by_key.get(key, key), 'key': key, 'stat': stat,
                         'stat_label': label, 'threshold': thr, 'run': int(run),
-                        'team': (str(g.iloc[-1].get(team_col)) if team_col else ''),
-                        'last_week': int(g['week'].max()), 'games': games,
-                        'events_evaluated': int(len(g)), 'kind': 'season',
+                        'team': team_last, 'last_week': int(wk_list[-1]), 'games': games,
+                        'events_evaluated': int(len(wk_list)), 'kind': 'season',
                         'availability_state': avail['state'], 'designation': avail.get('designation', ''),
                     })
         season_streaks.sort(key=lambda x: (-x['run'], -x['threshold']))
 
     # ---- cross-season matchup milestone streaks (the Nico-vs-JAX case) ----------------------------
     matchup_streaks = []
-    for (key, opp), g in d.groupby(['_key', 'opponent_team']):
-        opp = str(opp).strip().upper()
-        if not opp or opp in ('NAN', 'NONE'):
-            continue
-        g = g.sort_values([season_col, 'week'])
-        for stat, thrs in _NFL_MILESTONE_MATCHUP.items():
-            if stat not in g.columns:
-                continue
-            for thr in thrs:
-                run, games = _milestone_games(g, stat, thr)
-                if run < min_run:
-                    continue
-                last = g.iloc[-1]
-                matchup_streaks.append({
-                    'player': disp_by_key.get(key, key), 'key': key, 'stat': stat,
-                    'stat_label': _NFL_MILESTONE_STATS[stat][0], 'threshold': thr, 'opponent': opp,
-                    'run': int(run), 'team': (str(last.get(team_col)) if team_col else ''),
-                    'last_season': int(last[season_col]), 'last_week': int(last['week']),
-                    'games': games, 'events_evaluated': int(len(g)), 'kind': 'matchup',
-                })
+    mstats = [s for s in _NFL_MILESTONE_MATCHUP if s in d.columns]
+    if mstats:
+        dm = d.copy()
+        dm['_opp'] = dm['opponent_team'].astype(str).str.strip().str.upper()
+        dm = dm[~dm['_opp'].isin(['', 'NAN', 'NONE'])]
+        # Sort ONCE by (player, opponent, season, week); groupby(sort=False) keeps that order.
+        dm = dm.sort_values(['_key', '_opp', season_col, 'week'])
+        for (key, opp), g in dm.groupby(['_key', '_opp'], sort=False):
+            if len(g) < min_run:
+                continue  # can't make a run of min_run from fewer meetings
+            weeks = g['week'].tolist()
+            seasons = g[season_col].tolist()
+            opps = g['_opp'].tolist()
+            team_last = (str(g.iloc[-1].get(team_col)) if team_col else '')
+            coldata = {s: g[s].tolist() for s in mstats}
+            for stat in mstats:
+                vals = coldata[stat]
+                for thr in _NFL_MILESTONE_MATCHUP[stat]:
+                    run, games = _trailing_milestone(vals, weeks, seasons, opps, thr)
+                    if run < min_run:
+                        continue
+                    matchup_streaks.append({
+                        'player': disp_by_key.get(key, key), 'key': key, 'stat': stat,
+                        'stat_label': _NFL_MILESTONE_STATS[stat][0], 'threshold': thr, 'opponent': opp,
+                        'run': int(run), 'team': team_last,
+                        'last_season': int(seasons[-1]), 'last_week': int(weeks[-1]),
+                        'games': games, 'events_evaluated': int(len(g)), 'kind': 'matchup',
+                    })
     matchup_streaks.sort(key=lambda x: (-x['run'], -x['threshold']))
 
     data = {'season': (int(expected_season) if expected_season else None), 'through_week': cur_through,
