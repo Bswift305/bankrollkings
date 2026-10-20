@@ -29806,7 +29806,37 @@ def frontpage():
         streak_heat=streak_heat)
 
 
+def _nba_command_center_gated_stub(postseason_only):
+    """Cheap unavailable-state view model for the NBA command center when the NBA.com data-rights gate
+    is OFF. Same keys as the full context so the dashboard + template render unchanged, but built with
+    ZERO loads/boards/model work -- gated builders must not execute, and no pre-gate cached value is
+    served. This is the 47s-cold-dashboard fix: the live build processed props/boards to yield withheld
+    data. Honest: NBA modules show an explicit 'unavailable' rather than fabricated or empty-as-neutral."""
+    mode_labels = get_focus_mode_labels(postseason_only)
+    return {
+        'upcoming': {'today': [], 'tomorrow': [], 'upcoming': []},
+        'upcoming_today': [], 'upcoming_tomorrow': [], 'upcoming_future': [],
+        'total_props': 0, 'teams': [], 'top_plays': [], 'postseason_only': postseason_only,
+        'postseason_matchups': [], 'matchup_lens_board': [], 'tonight_cards': [], 'market_watch': [],
+        'nba_data_pulse': {}, 'best_by_series': [], 'role_changes': [], 'nba_gated': True,
+        'nba_summary': {
+            'focus_label': (mode_labels['focus_mode_label'] if postseason_only
+                            else mode_labels['regular_mode_label']),
+            'focus_copy': 'NBA statistics are temporarily unavailable (data-rights review).',
+            'today_games': 0, 'tomorrow_games': 0, 'board_depth': 0, 'top_plays': 0,
+            'series_angles': 0, 'lens_cards': 0, 'tonight_cards': 0, 'gated': True,
+        },
+    }
+
+
 def build_nba_command_center_context(postseason_only):
+    # Data-rights gate (docs/legal_ip_audit.md): when NBA.com-derived stats are withheld, do NOT run
+    # the heavy command-center build and do NOT serve any pre-gate cached value -- return a cheap
+    # unavailable stub. Short-circuits BEFORE the cache lookup so a stale pre-gate TTL/disk value can
+    # never render. Also the Phase-B2 dashboard fix (the gated live build cost ~47s to produce
+    # withheld data).
+    if not _nba_source_gate.nba_stats_enabled():
+        return _nba_command_center_gated_stub(postseason_only)
     cache_key = f'nba_command_center::{int(bool(postseason_only))}'
     cache_version = _build_file_token(
         DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
