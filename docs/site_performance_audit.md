@@ -1,5 +1,29 @@
 # Site Performance P0 — Phase A baseline + ranked bottleneck table
 
+## Phase B results — confirmed on prod (before → after)
+
+| Route | Before | After | Factor | Commit |
+|---|---|---|---:|---|
+| **injury-report** (slow on EVERY hit → 504) | 63,745 ms warm | **167 ms warm** | ~375× | `9507e4e` (QW1) |
+| **milestones** (cold build → 504 risk) | ~54,000 ms cold | **7,700 ms cold** | ~7× | `17edb8e` (QW2) |
+
+- **QW1** — `_entity_player_keyset` for NBA/WNBA/MLB keyed on `id(df)`, but the gamelog loaders return
+  a `.copy()`, so the keyset rebuilt over the whole gamelog on every `entity_anchor` call
+  (1,479 rows × 2 links). A regression from the entity-link migration; now keyed on the gamelog FILE
+  mtime (+ gate state), matching NFL. Same membership/ordering/gating; `qc_entity_links` green.
+- **QW2** — `build_nfl_milestone_streaks` sorted every (player, opponent)/(player, stat) group
+  individually (56,847 `sort_values`, 52 s) + re-read columns per (stat, threshold). Now sorts once,
+  iterates pre-sorted groups over plain lists, pre-filters tiny groups, computes availability lazily.
+  Same output; `qc_nfl_milestone_streaks` green.
+- Regression guard: `qc_perf_guards.py` (keyset cache-stability, cheap per-row resolve, milestone warm
+  cache) — structural invariants against the per-row-rebuild class, in `run_all_scorecards`.
+
+**Acute risk resolved:** the only two 504-class routes are fixed with prod evidence and no integrity
+regression (no data/freshness/gating/membership/entity-destination change). Remaining items below are
+NBA-Readiness-scoped, Phase-C approval-gated, or low-risk polish.
+
+---
+
 Read-only measurement + static profiling. No remediation here (that is Phase B, after the empirical
 baseline). SGP work held on `a94cbf9`; Green Light B1–B4 + NBA characterization queued behind this P0.
 

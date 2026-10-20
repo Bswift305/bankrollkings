@@ -93,6 +93,10 @@ SCORECARDS = [
     # option/decorative placements never linked -- and it FETCHES each resolvable destination through
     # the test client to prove the page renders the intended entity.
     ("Universal Entity-Link QC", "qc_entity_links.py", 180),
+    # Performance regression guards (Site Performance P0): the entity keyset is cache-stable per source
+    # version (not rebuilt per row -- the injury-report 63s class), per-row resolve stays cheap, and the
+    # milestone builder serves its cached object warm. Structural invariants, not flaky wall-clock.
+    ("Performance Regression Guards", "qc_perf_guards.py", 180),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).
