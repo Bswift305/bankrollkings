@@ -22,6 +22,8 @@ import pickle
 import re
 import secrets
 import threading
+import time
+import contextlib
 import bk_runtime
 import season_utils
 import sport_registry
@@ -419,6 +421,88 @@ def apply_security_headers(response):
             "base-uri 'self'; "
             "form-action 'self'"
         )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Route performance observability (flag-gated, low-overhead) -- Site Performance P0, Phase A.
+# OFF by default (BK_PERF_TIMING unset) -> the hooks are one cheap bool check and return, so normal
+# production is unaffected. When ON, emits a sanitized `Server-Timing` response header with the total
+# request time + any named stage durations, plus X-BK-Cache / X-BK-Rows / X-Request-Id. It NEVER logs
+# or emits user data, ticket contents, tokens, query params or sportsbook records -- only timings,
+# a cache hit/miss token, a rendered-row count, and a random request id. `perf_stage(name)` wraps a
+# hot section; `perf_meta(cache=..., rows=...)` records the two safe metrics. Both are no-ops when off.
+_PERF_TIMING_ON = str(os.getenv('BK_PERF_TIMING', '')).strip().lower() in ('1', 'true', 'yes')
+
+
+@app.before_request
+def _perf_timing_start():
+    if not _PERF_TIMING_ON:
+        return
+    from flask import g
+    g._perf_t0 = time.perf_counter()
+    g._perf_stages = []
+    g._perf_meta = {}
+    g._perf_rid = secrets.token_hex(6)
+
+
+@contextlib.contextmanager
+def perf_stage(name):
+    """Record the wall-time of a hot section into the current request's Server-Timing. No-op when
+    BK_PERF_TIMING is off or there is no request context."""
+    if not _PERF_TIMING_ON:
+        yield
+        return
+    from flask import g, has_request_context
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        try:
+            if has_request_context() and hasattr(g, '_perf_stages'):
+                g._perf_stages.append((str(name), (time.perf_counter() - t0) * 1000.0))
+        except Exception:
+            pass
+
+
+def perf_meta(**kw):
+    """Record safe per-request metrics (cache='hit'/'miss', rows=<int>). No-op when off."""
+    if not _PERF_TIMING_ON:
+        return
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and hasattr(g, '_perf_meta'):
+            g._perf_meta.update({k: v for k, v in kw.items() if k in ('cache', 'rows')})
+    except Exception:
+        pass
+
+
+@app.after_request
+def _perf_timing_emit(response):
+    if not _PERF_TIMING_ON:
+        return response
+    try:
+        from flask import g
+        t0 = getattr(g, '_perf_t0', None)
+        if t0 is None:
+            return response
+        total_ms = (time.perf_counter() - t0) * 1000.0
+        parts = [f'total;dur={total_ms:.1f}']
+        for name, ms in list(getattr(g, '_perf_stages', []))[:25]:
+            safe = re.sub(r'[^A-Za-z0-9_]', '', name)[:40] or 'stage'
+            parts.append(f'{safe};dur={ms:.1f}')
+        response.headers['Server-Timing'] = ', '.join(parts)
+        meta = getattr(g, '_perf_meta', {})
+        if 'cache' in meta:
+            response.headers['X-BK-Cache'] = re.sub(r'[^A-Za-z0-9_-]', '', str(meta['cache']))[:16]
+        if 'rows' in meta:
+            try:
+                response.headers['X-BK-Rows'] = str(int(meta['rows']))
+            except (TypeError, ValueError):
+                pass
+        response.headers['X-Request-Id'] = getattr(g, '_perf_rid', '')
+    except Exception:
+        pass
     return response
 
 
