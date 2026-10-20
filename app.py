@@ -17307,13 +17307,26 @@ def _entity_player_keyset(sport):
         cache['nfl_sig'] = sig
         cache['nfl_set'] = counts
         return counts
+    # Signature = gamelog FILE mtime (+ the data-rights gate state for NBA/WNBA). The loaders return a
+    # .copy() each call, so id(df) changes every time -- keying on it (the old bug) rebuilt this keyset
+    # over the whole gamelog on EVERY entity_anchor call, which is what made the multi-league injury
+    # report take ~63s warm (1,479 rows x 2 links each). mtime is cheap and stable across requests.
+    fn = {'nba': 'NBA_GameLogs.csv', 'wnba': 'WNBA_GameLogs.csv', 'mlb': 'MLB_GameLogs.csv'}[sport]
+    mt = 0
+    for cand in (DATA_DIR / 'gamelogs' / fn, DATA_DIR / 'gamelogs' / fn.replace('GameLogs', 'Gamelogs')):
+        try:
+            mt = os.path.getmtime(cand)
+            break
+        except OSError:
+            continue
+    gate = int(_nba_source_gate.nba_stats_enabled()) if sport in ('nba', 'wnba') else 1
+    sig = (sport, mt, gate)
+    if cache.get(sport + '_sig') == sig and (sport + '_set') in cache:
+        return cache[sport + '_set']
     try:
         df = {'nba': load_gamelogs, 'wnba': load_wnba_gamelogs, 'mlb': load_mlb_gamelogs}[sport]()
     except Exception:
         df = None
-    sig = id(df)
-    if cache.get(sport + '_sig') == sig and (sport + '_set') in cache:
-        return cache[sport + '_set']
     counts = {}
     if df is not None and not getattr(df, 'empty', True) and 'Player' in getattr(df, 'columns', []):
         for nm in df['Player'].dropna().astype(str):
