@@ -6,6 +6,40 @@
 |---|---|---|---:|---|
 | **injury-report** (slow on EVERY hit → 504) | 63,745 ms warm | **167 ms warm** | ~375× | `9507e4e` (QW1) |
 | **milestones** (cold build → 504 risk) | ~54,000 ms cold | **7,700 ms cold** | ~7× | `17edb8e` (QW2) |
+| **riding-the-wave** (N+1 per player) | 11,900 ms cold | **4,463 ms cold** | ~2.7× | `ed0a473` (B2) |
+
+## Phase B2 — the dashboard (the only remaining 504-class route)
+
+**Dashboard `/dashboard` — ~200s cold → warm (de-arrow + vectorize + batch prewarm).** Prod tottime
+profiling pinned the ~200s cold build — paid by the first visitor after every daily refresh, since the
+disk-TTL cache keys on the `*_AllPropResults.csv` + `*_99_Scorecard.csv` that grading+scorecards rewrite
+— to row-wise work in `services/review_center.py`:
+- **`build_player_hit_profiles`** — 340s self-time was pyarrow string boxing (pandas 2.2 `infer_string`
+  → `string[pyarrow]`, scalar-accessed in a 10,880-group loop). `6dd5a68`: `_dearrow_string_columns`
+  at the load boundary + before the per-group loop (values unchanged). `eb54a4f`: per-group loop
+  vectorized to numpy-array slices. **340s → ~5s.**
+- **`enrich_candidate_review_rows`** — iterrows + per-row `.at` over every Miss row → array path
+  (`_failure_from_values`), `eb54a4f`. **15.1s → 1.3s** local.
+- **`_missed_winner_candidates`** — `promoted.iterrows()` + `available.apply(_missed_prop_key)` →
+  `_missed_keys()` (zip raw arrays, same `str(x or '')` NaN semantics). **6.7s → 1.8s.**
+- **`build_missed_opportunities_context` / `build_missed_winner_bucket_frequency`** —
+  `.apply(calculate_missed_opportunity_grade, axis=1)` → `_grade_missed_frame()` (numeric cols coerced
+  once; scalar `_grade_values`).
+- Full cold build **46s → 18.8s local** (prod additionally sheds the ~340s arrow penalty). Every change
+  byte-parity-verified vs pre-change baselines; `qc_perf_guards` Guards 5–6 lock de-arrow parity + the
+  equivalence of all vectorizations to the original per-row functions on a NaN/edge frame.
+
+**Batch prewarm (`6dd5a68`).** Root architectural gap: `prewarm_expensive_pages()` existed but ran with
+`--skip-prewarm` AND before grading/scorecards, so the dashboard cache was never warmed for its final
+file versions. Added `refresh_runtime_snapshots.py --prewarm-only` (warms the dashboard disk-TTL caches
+by calling the builders directly — no HTTP/session/auth) wired as the LAST `run_daily` step, after
+scorecards. Builder failures are non-fatal. With the builder now at a genuine ~20s standalone budget
+(no row-wise defects hidden behind the prewarm, per the directive), the user-facing cold path becomes a
+warm disk read.
+
+**Prod verification (pending paste):** `perf_dashboard_cold.py` (forced recompute — proves the builder
+budget), `refresh_runtime_snapshots.py --prewarm-only` (proves the batch step), `perf_baseline_authed.py`
+(fresh-process `/dashboard` run1 ≤2s = warm disk hit).
 
 - **QW1** — `_entity_player_keyset` for NBA/WNBA/MLB keyed on `id(df)`, but the gamelog loaders return
   a `.copy()`, so the keyset rebuilt over the whole gamelog on every `entity_anchor` call
