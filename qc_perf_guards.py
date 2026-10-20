@@ -108,6 +108,63 @@ def run_qc():
     except Exception as exc:
         notes.append(f"wave N+1 guard skipped ({type(exc).__name__}: {exc})")
 
+    # Guard 5: de-arrow parity. The dashboard's 340s cold-build hot leaf was pyarrow string columns
+    # (read_csv under pandas 2.2 infer_string) boxed scalar-by-scalar in build_player_hit_profiles'
+    # per-group loop. The fix coerces string columns to numpy object. This must (a) actually convert
+    # arrow/string dtypes to object with identical values, and (b) leave build_player_hit_profiles
+    # output IDENTICAL whether the input frame is arrow-backed or object-backed (same rows + order).
+    try:
+        import pandas as pd
+        import services.review_center as rc
+
+        sample = pd.DataFrame({
+            'Player': ['A Back', 'A Back', 'A Back', 'B Wideout', 'B Wideout', 'B Wideout', 'C Guard', 'C Guard'],
+            'Sport': ['NFL'] * 6 + ['NBA', 'NBA'],
+            'Stat': ['Rush Yds'] * 6 + ['Points', 'Points'],
+            'Direction': ['OVER'] * 6 + ['UNDER', 'UNDER'],
+            'OutcomeState': ['Hit', 'Miss', 'Hit', 'Hit', 'Hit', 'Miss', 'Hit', 'Hit'],
+            'SnapshotDate': ['2026-10-0%d' % i for i in range(1, 9)],
+            'ResultDate': [''] * 8,
+            'Matchup': ['g%d' % i for i in range(8)],
+            'Line': [40.5, 55.5, 60.5, 70.5, 80.5, 90.5, 20.5, 24.5],
+            'Confidence': [60, 62, 64, 66, 68, 70, 55, 57],
+        })
+
+        # (a) coercion converts arrow/string -> object, values unchanged
+        de = rc._dearrow_string_columns(sample.copy().astype({'Player': 'string', 'OutcomeState': 'string'}))
+        if 'string' in str(de['Player'].dtype) or 'string' in str(de['OutcomeState'].dtype):
+            issues.append("_dearrow_string_columns left a string-dtype column (coercion failed)")
+        elif de['Player'].tolist() != sample['Player'].tolist():
+            issues.append("_dearrow_string_columns altered values")
+
+        # (b) build_player_hit_profiles identical for arrow- vs object-backed input
+        def _norm(rws):
+            out = []
+            for r in rws:
+                out.append(tuple((k, ('NaN' if isinstance(v, float) and v != v
+                                       else round(v, 6) if isinstance(v, float) else v))
+                                 for k, v in sorted(r.items())))
+            return out
+
+        arrow_in = sample.copy()
+        for c in ('Player', 'Sport', 'Stat', 'Direction', 'OutcomeState', 'SnapshotDate', 'Matchup'):
+            try:
+                arrow_in[c] = arrow_in[c].astype('string[pyarrow]')
+            except Exception:
+                pass
+        rc._REVIEW_RUNTIME_CACHE.clear()
+        out_arrow = _norm(rc.build_player_hit_profiles(arrow_in.copy()))
+        rc._REVIEW_RUNTIME_CACHE.clear()
+        out_obj = _norm(rc.build_player_hit_profiles(sample.copy()))
+        if out_arrow != out_obj:
+            issues.append("build_player_hit_profiles output differs for arrow vs object input (de-arrow "
+                          "changed results)")
+        elif not any(m.startswith('_dearrow') or 'build_player_hit_profiles output' in m for m in issues):
+            notes.append(f"de-arrow parity: string->object preserves values; build_player_hit_profiles "
+                         f"identical arrow vs object ({len(out_obj)} profiles)")
+    except Exception as exc:
+        notes.append(f"de-arrow guard skipped ({type(exc).__name__}: {exc})")
+
     return {'issues': issues, 'notes': notes}
 
 

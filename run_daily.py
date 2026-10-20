@@ -272,6 +272,11 @@ def main() -> int:
         steps.append(("Edge Engine pipeline", _python("run_bk_edge_engine_pipeline.py"), 1800))
     if not args.skip_scorecards:
         steps.append(("All scorecards", _python("run_all_scorecards.py"), 1200))
+    # LAST: warm the /dashboard disk-TTL caches now that grading + scorecards have rewritten the files
+    # its cache-version token keys on. Without this the first visitor after each daily run pays the full
+    # cold rebuild (~200s -> 504). Prewarm-only (no snapshot rebuilds); builder failures are non-fatal.
+    if not args.skip_refresh:
+        steps.append(("Dashboard prewarm", _python("refresh_runtime_snapshots.py", "--prewarm-only"), 600))
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

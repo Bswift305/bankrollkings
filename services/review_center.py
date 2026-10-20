@@ -307,6 +307,21 @@ def load_floor_play_index() -> pd.DataFrame:
     return index
 
 
+def _dearrow_string_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce pyarrow-backed string columns to numpy object dtype IN PLACE (values unchanged).
+
+    Under pandas 2.2 with pyarrow installed, ``pd.read_csv`` infers ``string[pyarrow]`` columns.
+    Per-group scalar access on those (the 10k-group loop in ``build_player_hit_profiles``) boxes every
+    value through pyarrow -- the dashboard's 340s cold-build hot leaf (arrow array __getitem__/
+    __setitem__/take, string_arrow __init__ x2.7M). Converting the string columns to numpy object once,
+    at the load boundary, makes all downstream per-group work plain-Python fast. Same strings, same
+    numbers, same ordering; numeric columns are left untouched."""
+    for col in df.columns:
+        if 'string' in str(df[col].dtype):   # 'string', 'string[pyarrow]', 'large_string[pyarrow]'
+            df[col] = df[col].astype(object)
+    return df
+
+
 def load_all_prop_results_for_review() -> pd.DataFrame:
     cache_key = ('all_prop_results', _all_prop_file_token())
     cached = _REVIEW_RUNTIME_CACHE.get(cache_key)
@@ -328,6 +343,7 @@ def load_all_prop_results_for_review() -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     combined = pd.concat(frames, ignore_index=True, sort=False)
+    combined = _dearrow_string_columns(combined)   # defeat pyarrow scalar-boxing before heavy per-group work
     combined = enrich_candidate_review_rows(combined)
     _REVIEW_RUNTIME_CACHE[cache_key] = combined.copy()
     return combined
@@ -1083,6 +1099,10 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
     resolved['_ProfileDate'] = resolved['ResultDate'].where(resolved['ResultDate'].astype(str).str.strip() != '', resolved['SnapshotDate'])
     resolved['_ProfileLine'] = resolved['LineNum'].round(3).astype(str).where(resolved['LineNum'].notna(), resolved['Line'].astype(str))
     resolved['_ConfidenceSort'] = resolved['ConfidenceNum'].fillna(-1)
+    # The .astype(str) calls above re-infer pyarrow string columns under pandas 2.2; force them back
+    # to numpy object so the 8-column drop_duplicates and the per-(player,stat) group loop below do
+    # NOT box every string through pyarrow (the dashboard's 340s cold-build hot leaf). Values unchanged.
+    resolved = _dearrow_string_columns(resolved)
     resolved = (
         resolved.sort_values('_ConfidenceSort', ascending=False)
         .drop_duplicates(

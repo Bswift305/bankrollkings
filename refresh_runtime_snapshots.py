@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import time
 from datetime import datetime
 
 import pandas as pd
 
+import app as _appmod
 from app import (
     app,
     build_market_edge_board,
@@ -283,6 +285,28 @@ def build_public_home_snapshots() -> None:
         print(f"[CACHE] cross_sport_dashboard_snapshots::{int(postseason_only)}")
 
 
+def prewarm_dashboard_caches() -> None:
+    """Warm the disk-TTL caches the /dashboard COLD build populates, by calling the builders DIRECTLY
+    (no HTTP/session/auth needed). Must run AFTER grading + scorecards, because the dashboard's
+    disk-TTL version token keys on the *_AllPropResults.csv and *_99_Scorecard.csv those steps rewrite.
+    The first real visitor then reads the warm disk pkl (and the fresh Player_Profile_Index.csv) instead
+    of paying the full cold recompute (the ~200s -> 504 risk). Builder failures are reported, not fatal."""
+    builders = [
+        ("live_promotion_signal_context", getattr(_appmod, "_build_live_promotion_signal_context", None)),
+        ("phase2_dashboard_context", getattr(_appmod, "build_phase2_dashboard_context", None)),
+    ]
+    for name, fn in builders:
+        if fn is None:
+            print(f"[PREWARM] {name} -> MISSING builder (skipped)")
+            continue
+        try:
+            t0 = time.perf_counter()
+            fn()
+            print(f"[PREWARM] {name} -> ok ({(time.perf_counter() - t0) * 1000:.0f} ms)")
+        except Exception as exc:  # noqa: BLE001 - prewarm must never fail the daily run
+            print(f"[PREWARM] {name} -> FAIL ({type(exc).__name__}: {exc})")
+
+
 def prewarm_expensive_pages() -> None:
     routes = [
         "/dashboard",
@@ -310,7 +334,18 @@ def main() -> int:
         help="Comma-separated snapshot groups: nba,nfl,wnba,mlb,public. Default: all.",
     )
     parser.add_argument("--skip-prewarm", action="store_true", help="Skip route prewarm requests.")
+    parser.add_argument("--prewarm-only", action="store_true",
+                        help="Only warm the /dashboard disk-TTL caches directly (no snapshot rebuilds). "
+                             "Run as the LAST daily step, after grading + scorecards.")
     args = parser.parse_args()
+
+    if args.prewarm_only:
+        print("=" * 60)
+        print("BANKROLL KINGS - DASHBOARD CACHE PREWARM (post-scorecards)")
+        print("=" * 60)
+        prewarm_dashboard_caches()
+        return 0
+
     groups = {item.strip().lower() for item in args.sports.split(",") if item.strip()}
     valid_groups = {"nba", "nfl", "wnba", "mlb", "public"}
     unknown_groups = groups - valid_groups
