@@ -36,21 +36,30 @@ def main():
     print(f'COLD PROFILE  {path}  -> status {resp.status_code}  {len(body)/1024:.1f} KB')
     print('=' * 92)
 
-    def _dump(sort_key, heading):
+    def _dump(sort_key, heading, restrict=None, keep=None):
         # cumulative = time spent in a frame AND its callees (finds the wrapper); tottime = time spent
-        # in the frame ITSELF, excluding callees (finds the actual hot leaf doing the work). The 77s
-        # culprit inside a builder shows up at the TOP of the tottime list, not the cumulative one.
+        # in the frame ITSELF, excluding callees (finds the actual hot leaf doing the work). restrict
+        # filters the printed frames to a substring; None shows ALL modules (incl. services/*.py and
+        # pandas), which is how a hot leaf OUTSIDE app.py is revealed.
         print(f'\n--- {heading} ---')
         s = io.StringIO()
         st = pstats.Stats(pr, stream=s)
-        st.sort_stats(sort_key).print_stats('app.py:', topn)
+        if restrict:
+            st.sort_stats(sort_key).print_stats(restrict, topn)
+        else:
+            st.sort_stats(sort_key).print_stats(topn)
         out = s.getvalue()
         for line in out.splitlines():
-            if 'function calls' in line or ('app.py:' in line and 'Lib' not in line):
-                print(line.rstrip()[:150])
+            if 'function calls' in line:
+                print(line.rstrip()[:160])
+            elif keep is None or keep in line:
+                # a profiled frame line looks like "<ncalls> <tottime> ... path:line(func)"
+                if '(' in line and (':' in line) and 'Ordered by' not in line:
+                    print(line.rstrip()[:160])
 
-    _dump('tottime', 'SELF-TIME (tottime) — the actual hot function')
-    _dump('cumulative', 'CUMULATIVE — the calling wrapper chain')
+    _dump('tottime', 'SELF-TIME (tottime) — ALL modules — the true hot leaf (incl. services/ + pandas)')
+    _dump('tottime', 'SELF-TIME (tottime) — app.py only', restrict='app.py:', keep='app.py:')
+    _dump('cumulative', 'CUMULATIVE — app.py calling chain', restrict='app.py:', keep='app.py:')
     return 0
 
 
