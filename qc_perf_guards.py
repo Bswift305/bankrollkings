@@ -165,6 +165,74 @@ def run_qc():
     except Exception as exc:
         notes.append(f"de-arrow guard skipped ({type(exc).__name__}: {exc})")
 
+    # Guard 6: the dashboard cold-build vectorizations must stay equivalent to the ORIGINAL per-row
+    # scalar functions they replaced -- _missed_keys vs _missed_prop_key, _grade_missed_frame vs
+    # calculate_missed_opportunity_grade, and the enrich FailureReason/Signals path vs
+    # candidate_failure_reason. Compared on a synthetic frame with NaN/missing/edge values.
+    try:
+        import pandas as pd
+        import numpy as np
+        import services.review_center as rc
+
+        frame = pd.DataFrame({
+            'SnapshotDate': ['2026-10-01', '2026-10-02', '', '2026-10-03', '2026-10-01'],
+            'Sport': ['NFL', 'nba', 'MLB', 'NFL', 'WNBA'],
+            'Player': ['A Back', 'b guard', 'C Bat', 'A Back', 'D Wing'],
+            'Stat': ['Rush Yds', 'Points', 'Hits', 'Rush Yds', 'Points'],
+            'Direction': ['OVER', 'under', 'OVER', 'OVER', 'UNDER'],
+            'Line': [40.5, 0.0, np.nan, 40.5, 18.5],
+            'Matchup': ['g1', 'g2', '', 'g1', 'g3'],
+            'OutcomeState': ['Hit', 'Miss', 'Miss', 'Miss', 'Hit'],
+            'Confidence': [91.0, np.nan, 62.0, 77.0, 55.0],
+            'BetTier': ['Tier 1', '', 'Tier 2', np.nan, 'Tier 3'],
+            'MarketGate': ['CLEAR', 'HOLD', np.nan, 'SPLIT', ''],
+            'VolatilityFlag': ['STABLE', 'HIGH', '', 'ELEVATED', np.nan],
+            'MarketDepthBucket': ['multi', 'single', '', 'two', 'multi'],
+            'BookCount': [5, 1, np.nan, 2, 4],
+            'MarketMoveBucket': ['toward', 'Against', 'No Move Data', '', np.nan],
+            'EdgePct': [16.0, np.nan, 7.0, 9.0, 3.0],
+            'Situations': ['', 'SINGLE BOOK', np.nan, 'AVOID', 'clean'],
+            'SampleMode': ['available', '', 'full_board', np.nan, 'x'],
+            'Method': ['available props', 'promoted', '', 'main board', 'y'],
+            'MarketTags': [np.nan, 'ANCHOR', '', 'CONFIRMED', 'CALIBRATED+'],
+            'MethodLabels': ['ANCHOR', '', 'MULTI-BOOK', '', ''],
+            'ClvLine': [1.0, -1.0, np.nan, -2.0, 0.5],
+            'RoleLabel': ['STAR', 'SUPPORT', '', 'BENCH', np.nan],
+            'WeightProfile': ['r2', 'r3_r4', '', 'r1_early', np.nan],
+        })
+
+        # _missed_keys vs _missed_prop_key (row-wise)
+        want_keys = [rc._missed_prop_key(r) for _, r in frame.iterrows()]
+        got_keys = rc._missed_keys(frame)
+        if got_keys != want_keys:
+            issues.append("_missed_keys != per-row _missed_prop_key")
+
+        # _grade_missed_frame vs calculate_missed_opportunity_grade (row-wise)
+        want_grades = [rc.calculate_missed_opportunity_grade(r) for _, r in frame.iterrows()]
+        gs, gl, gr = rc._grade_missed_frame(frame)
+        if [g[0] for g in want_grades] != gs or [g[1] for g in want_grades] != gl \
+                or [g[2] for g in want_grades] != gr:
+            issues.append("_grade_missed_frame != per-row calculate_missed_opportunity_grade")
+
+        # enrich FailureReason/FailureSignals vs candidate_failure_reason (row-wise) on the Miss rows
+        enriched = rc.enrich_candidate_review_rows(frame.copy())
+        wr, ws = [], []
+        for _, r in enriched.iterrows():
+            if str(r.get('OutcomeState') or '').strip() == 'Miss':
+                a, b = rc.candidate_failure_reason(r)
+            else:
+                a, b = '', ''
+            wr.append(a)
+            ws.append(b)
+        if enriched['FailureReason'].tolist() != wr or enriched['FailureSignals'].tolist() != ws:
+            issues.append("enrich FailureReason/FailureSignals != per-row candidate_failure_reason")
+
+        if not any('_missed_keys' in m or '_grade_missed_frame' in m or 'enrich Failure' in m for m in issues):
+            notes.append("dashboard vectorizations == original per-row functions (keys, grade, failure "
+                         "signals) on NaN/edge frame")
+    except Exception as exc:
+        notes.append(f"vectorization-equivalence guard skipped ({type(exc).__name__}: {exc})")
+
     return {'issues': issues, 'notes': notes}
 
 

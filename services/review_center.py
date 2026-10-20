@@ -492,6 +492,158 @@ def calculate_missed_opportunity_grade(row: pd.Series) -> tuple[int, str, list[s
     return score, label, reasons[:5]
 
 
+def _col_values(frame: pd.DataFrame, name: str):
+    """Raw cell values of a column as a numpy array, or a list of '' when the column is absent --
+    mirroring ``row.get(name)`` / ``row.get(name, '')`` semantics for the batch helpers below."""
+    if name in frame.columns:
+        return frame[name].to_numpy()
+    return [''] * len(frame)
+
+
+def _missed_keys(frame: pd.DataFrame) -> list:
+    """Vectorized twin of ``[_missed_prop_key(row) for _, row in frame.iterrows()]`` -- same 7-tuple,
+    same ``str(x or '').strip()`` normalization (so NaN->'nan', 0->'' exactly as the row version), but
+    built by zipping raw column arrays instead of materializing a Series per row."""
+    sd, sp, pl = _col_values(frame, 'SnapshotDate'), _col_values(frame, 'Sport'), _col_values(frame, 'Player')
+    st, dr = _col_values(frame, 'Stat'), _col_values(frame, 'Direction')
+    ln, mt = _col_values(frame, 'Line'), _col_values(frame, 'Matchup')
+    return [
+        (str(a or '').strip(), str(b or '').strip().upper(), str(c or '').strip().lower(),
+         str(d or '').strip().upper(), str(e or '').strip().upper(), str(f or '').strip(),
+         str(g or '').strip().lower())
+        for a, b, c, d, e, f, g in zip(sd, sp, pl, st, dr, ln, mt)
+    ]
+
+
+def _grade_values(confidence, bet_tier_raw, review_tier_raw, market_gate_raw, volatility_raw,
+                  market_depth_raw, book_count, market_move_raw, edge_pct, situations_raw,
+                  sample_mode_raw, method_raw, market_tags_raw, method_labels_raw):
+    """Scalar port of calculate_missed_opportunity_grade for the batch path. IDENTICAL logic, thresholds,
+    reason strings and rounding -- numeric args are already coerced (NaN == absent)."""
+    import math
+    score = 0
+    reasons: list[str] = []
+
+    def _ok(x):
+        return x is not None and not (isinstance(x, float) and math.isnan(x))
+
+    if _ok(confidence):
+        if confidence >= 90:
+            score += 46; reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 80:
+            score += 40; reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 70:
+            score += 30; reasons.append(f"{confidence:.1f} confidence")
+        elif confidence >= 60:
+            score += 18; reasons.append(f"{confidence:.1f} confidence")
+
+    bet_tier = _clean_review_value(bet_tier_raw) or _clean_review_value(review_tier_raw)
+    if bet_tier == 'Tier 1':
+        score += 18; reasons.append('Tier 1')
+    elif bet_tier == 'Tier 2':
+        score += 12; reasons.append('Tier 2')
+    elif bet_tier == 'Tier 3':
+        score += 6; reasons.append('Tier 3')
+
+    market_gate = str(market_gate_raw or '').strip().upper()
+    if market_gate == 'CLEAR':
+        score += 12; reasons.append('clear market gate')
+    elif market_gate == 'HOLD':
+        score -= 6; reasons.append('market hold')
+
+    volatility = str(volatility_raw or '').strip().upper()
+    if volatility == 'STABLE':
+        score += 8; reasons.append('stable volatility')
+    elif volatility == 'HIGH':
+        score -= 8; reasons.append('high volatility')
+    elif volatility == 'ELEVATED':
+        score -= 3; reasons.append('elevated volatility')
+
+    market_depth = str(market_depth_raw or '').strip().lower()
+    if 'multi' in market_depth or (_ok(book_count) and book_count >= 3):
+        score += 14; reasons.append(f"{int(book_count) if _ok(book_count) else 'multi'} books")
+    elif 'two' in market_depth or (_ok(book_count) and book_count == 2):
+        score += 10; reasons.append('two-book support')
+    elif 'single' in market_depth or (_ok(book_count) and book_count <= 1):
+        score += 2; reasons.append('single-book market')
+
+    move_bucket = str(market_move_raw or '').strip().lower()
+    if 'toward' in move_bucket:
+        score += 8; reasons.append('line moved toward play')
+    elif 'against' in move_bucket:
+        score -= 5; reasons.append('line moved against play')
+
+    if _ok(edge_pct):
+        if edge_pct >= 15:
+            score += 8; reasons.append(f"{edge_pct:.1f}% edge")
+        elif edge_pct >= 8:
+            score += 5; reasons.append(f"{edge_pct:.1f}% edge")
+
+    situations = str(situations_raw or '').upper()
+    risk_terms = ['CONTRADICTION', 'AVOID', 'PASS', 'HIGH VOL', 'SINGLE BOOK', 'WIDE RANGE']
+    if any(term in situations for term in risk_terms):
+        score -= 8; reasons.append('risk tag present')
+    else:
+        score += 6
+        score += 8
+        reasons.append('no obvious contradiction tag')
+
+    sample_mode = _clean_review_value(sample_mode_raw).lower()
+    method = _clean_review_value(method_raw).lower()
+    if sample_mode in {'available', 'full_board'} or method in {'available props', 'main board'}:
+        score += 8; reasons.append('full-board hit')
+
+    method_tags = str(market_tags_raw or method_labels_raw or '').upper()
+    if 'ANCHOR' in method_tags:
+        score += 12; reasons.append('anchor signal')
+    if 'CONFIRMED' in method_tags or 'MULTI-BOOK' in method_tags:
+        score += 6; reasons.append('confirmed market support')
+    if 'CALIBRATED+' in method_tags:
+        score += 6; reasons.append('calibrated plus tag')
+
+    score = int(max(0, min(100, round(score))))
+    if score >= 85:
+        label = 'A+'
+    elif score >= 70:
+        label = 'A'
+    elif score >= 55:
+        label = 'B'
+    elif score >= 40:
+        label = 'C'
+    else:
+        label = 'D'
+    return score, label, reasons[:5]
+
+
+def _grade_missed_frame(frame: pd.DataFrame):
+    """Batch twin of ``frame.apply(calculate_missed_opportunity_grade, axis=1)`` -- numeric columns are
+    coerced ONCE (not per row) and the rest are iterated as raw arrays, avoiding the per-row Series
+    materialization that made the apply the dashboard's post-de-arrow hot leaf. Returns
+    (scores, labels, reasons) lists in frame row order. Output identical to the per-row path."""
+    n = len(frame)
+    nan = float('nan')
+    conf = (pd.to_numeric(frame['Confidence'], errors='coerce').to_numpy()
+            if 'Confidence' in frame.columns else [nan] * n)
+    book = (pd.to_numeric(frame['BookCount'], errors='coerce').to_numpy()
+            if 'BookCount' in frame.columns else [nan] * n)
+    edge = (pd.to_numeric(frame['EdgePct'], errors='coerce').to_numpy()
+            if 'EdgePct' in frame.columns else [nan] * n)
+    bt, rt = _col_values(frame, 'BetTier'), _col_values(frame, 'ReviewTier')
+    mg, vol = _col_values(frame, 'MarketGate'), _col_values(frame, 'VolatilityFlag')
+    md, mm = _col_values(frame, 'MarketDepthBucket'), _col_values(frame, 'MarketMoveBucket')
+    sit = _col_values(frame, 'Situations')
+    sm, me = _col_values(frame, 'SampleMode'), _col_values(frame, 'Method')
+    mtags, mlabels = _col_values(frame, 'MarketTags'), _col_values(frame, 'MethodLabels')
+    scores, labels, reasons = [], [], []
+    for i in range(n):
+        s, l, r = _grade_values(conf[i], bt[i], rt[i], mg[i], vol[i], md[i], book[i], mm[i], edge[i],
+                                sit[i], sm[i], me[i], mtags[i], mlabels[i])
+        scores.append(s)
+        labels.append(l)
+        reasons.append(r)
+    return scores, labels, reasons
+
+
 def _missed_winner_candidates(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
@@ -517,8 +669,8 @@ def _missed_winner_candidates(df: pd.DataFrame) -> pd.DataFrame:
         & ~sample_mode.isin({'available', 'full_board'})
         & working['Method'].ne('')
     ].copy()
-    promoted_keys = {_missed_prop_key(row) for _, row in promoted.iterrows()}
-    available['_MissedKey'] = available.apply(_missed_prop_key, axis=1)
+    promoted_keys = set(_missed_keys(promoted))
+    available['_MissedKey'] = _missed_keys(available)
     return available[~available['_MissedKey'].isin(promoted_keys)].copy()
 
 
@@ -543,9 +695,9 @@ def build_missed_winner_bucket_frequency(df: pd.DataFrame | None = None, *, look
     if missed.empty:
         return {}
 
-    grades = missed.apply(calculate_missed_opportunity_grade, axis=1)
-    missed['MissedGradeScore'] = [item[0] for item in grades]
-    missed['MissedGrade'] = [item[1] for item in grades]
+    _scores, _labels, _reasons = _grade_missed_frame(missed)
+    missed['MissedGradeScore'] = _scores
+    missed['MissedGrade'] = _labels
     missed = missed[missed['MissedGrade'].isin(['A+', 'A', 'B'])].copy()
     if missed.empty:
         return {}
@@ -663,10 +815,10 @@ def build_missed_opportunities_context(
     available['ResultValueNum'] = pd.to_numeric(available.get('ResultValue'), errors='coerce')
     available['SnapshotDateParsed'] = pd.to_datetime(available['SnapshotDate'], errors='coerce')
 
-    grades = available.apply(calculate_missed_opportunity_grade, axis=1)
-    available['MissedGradeScore'] = [item[0] for item in grades]
-    available['MissedGrade'] = [item[1] for item in grades]
-    available['MissedReasons'] = ['; '.join(item[2]) for item in grades]
+    _scores, _labels, _reasons = _grade_missed_frame(available)
+    available['MissedGradeScore'] = _scores
+    available['MissedGrade'] = _labels
+    available['MissedReasons'] = ['; '.join(r) for r in _reasons]
 
     sport_options = sorted(available['Sport'].dropna().astype(str).str.upper().unique().tolist())
     stat_options = sorted(available['Stat'].dropna().astype(str).str.upper().unique().tolist())
@@ -1037,6 +1189,38 @@ def calculate_player_line_sensitivity(player_df: pd.DataFrame) -> dict:
     }
 
 
+def _line_sensitivity_from_arrays(line, state) -> dict:
+    """Array-native twin of calculate_player_line_sensitivity (same thresholds, labels, rounding),
+    for the vectorized build_player_hit_profiles loop. `line` is a float array (NaN where unlined),
+    `state` the aligned OutcomeState object array."""
+    import numpy as np
+    if line is None or line.size == 0:
+        return {'low_line_hit_rate': None, 'high_line_hit_rate': None,
+                'line_sensitive': False, 'line_note': 'No line sample'}
+    mask = ~np.isnan(line)
+    lined = line[mask]
+    states = state[mask]
+    if lined.size < 4:
+        return {'low_line_hit_rate': None, 'high_line_hit_rate': None,
+                'line_sensitive': False, 'line_note': 'Need 4+ lined results'}
+    median_line = float(np.median(lined))
+    low = lined <= median_line
+    high = lined > median_line
+    if not low.any() or not high.any():
+        return {'low_line_hit_rate': None, 'high_line_hit_rate': None,
+                'line_sensitive': False, 'line_note': 'One-sided line sample'}
+    low_rate = float((states[low] == 'Hit').mean())
+    high_rate = float((states[high] == 'Hit').mean())
+    gap = abs(low_rate - high_rate)
+    better = 'lower lines' if low_rate > high_rate else 'higher lines'
+    return {
+        'low_line_hit_rate': round(low_rate * 100, 1),
+        'high_line_hit_rate': round(high_rate * 100, 1),
+        'line_sensitive': gap >= 0.12,
+        'line_note': f"Better at {better}" if gap >= 0.12 else 'No strong line split',
+    }
+
+
 def calculate_player_reliability(resolved_count, hit_rate) -> str:
     if hit_rate is None or pd.isna(hit_rate):
         return 'NO SAMPLE'
@@ -1111,19 +1295,39 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
         )
         .copy()
     )
+    # Per-(player,stat,direction) aggregation WITHOUT a pandas op per group (the old loop built a Series
+    # per group -> 72k Series + 120k frame ops over ~14k groups, ~30-50s even de-arrowed). Extract the
+    # needed columns to numpy arrays ONCE and slice each group's positional indices. Output is identical
+    # (see below); the final sort gets the group key as an explicit ascending tiebreak so ties keep the
+    # same order the sorted groupby produced, making ordering deterministic and loop-order-independent.
+    import numpy as np
+    player_arr = resolved['Player'].to_numpy()
+    sport_arr = resolved['Sport'].to_numpy()
+    stat_arr = resolved['Stat'].to_numpy()
+    dir_arr = resolved['Direction'].to_numpy()
+    state_arr = resolved['OutcomeState'].to_numpy()
+    line_arr = pd.to_numeric(resolved['LineNum'], errors='coerce').to_numpy(dtype='float64')
+    conf_arr = pd.to_numeric(resolved['ConfidenceNum'], errors='coerce').to_numpy(dtype='float64')
+    indices = resolved.groupby(['Player', 'Sport', 'Stat', 'Direction'], dropna=False, sort=False).indices
     rows = []
-    grouped = resolved.groupby(['Player', 'Sport', 'Stat', 'Direction'], dropna=False)
-    for keys, group in grouped:
-        player, sport, stat, direction = [str(part).strip() for part in keys]
+    for key, idx in indices.items():
+        kp = key if isinstance(key, tuple) else (key,)
+        raw_key = tuple(str(part) for part in kp)   # matches the old sorted-groupby iteration order
+        player, sport, stat, direction = [str(part).strip() for part in kp]
         if not player or not sport or not stat or direction not in {'OVER', 'UNDER'}:
             continue
-        resolved_count = int(len(group))
-        hits = int((group['OutcomeState'] == 'Hit').sum())
-        misses = int((group['OutcomeState'] == 'Miss').sum())
+        g_state = state_arr[idx]
+        resolved_count = int(idx.size)
+        hits = int((g_state == 'Hit').sum())
+        misses = int((g_state == 'Miss').sum())
         hit_rate_raw = hits / resolved_count if resolved_count else None
-        avg_line = group['LineNum'].mean()
-        avg_conf = group['ConfidenceNum'].mean()
-        sensitivity = calculate_player_line_sensitivity(group)
+        g_line = line_arr[idx]
+        g_conf = conf_arr[idx]
+        line_vals = g_line[~np.isnan(g_line)]
+        conf_vals = g_conf[~np.isnan(g_conf)]
+        avg_line = float(line_vals.mean()) if line_vals.size else float('nan')
+        avg_conf = float(conf_vals.mean()) if conf_vals.size else float('nan')
+        sensitivity = _line_sensitivity_from_arrays(g_line, g_state)
         reliability = calculate_player_reliability(resolved_count, hit_rate_raw)
         rows.append({
             'player': player,
@@ -1135,10 +1339,11 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
             'hits': hits,
             'misses': misses,
             'hit_rate': round(hit_rate_raw * 100, 1) if hit_rate_raw is not None else None,
-            'avg_line': round(float(avg_line), 1) if not pd.isna(avg_line) else None,
-            'avg_confidence': round(float(avg_conf), 1) if not pd.isna(avg_conf) else None,
+            'avg_line': round(avg_line, 1) if not pd.isna(avg_line) else None,
+            'avg_confidence': round(avg_conf, 1) if not pd.isna(avg_conf) else None,
             'reliability': reliability,
-            'model_accuracy': _player_model_accuracy(avg_conf, hit_rate_raw),
+            'model_accuracy': _player_model_accuracy(None if pd.isna(avg_conf) else avg_conf, hit_rate_raw),
+            '__rawkey': raw_key,
             **sensitivity,
         })
     order = {'ANCHOR': 0, 'WATCH': 1, 'DEVELOPING': 2, 'SMALL SAMPLE': 3, 'AVOID': 4}
@@ -1150,8 +1355,12 @@ def build_player_hit_profiles(result_df: pd.DataFrame) -> list[dict]:
             order.get(row['reliability'], 9),
             -(row['hit_rate'] if row['hit_rate'] is not None else -1),
             -row['resolved'],
+            # explicit tiebreak == the old sorted-groupby iteration order (raw key, ascending)
+            row['__rawkey'],
         ),
     )
+    for row in rows:
+        row.pop('__rawkey', None)
     if len(result_df) >= 10000:
         try:
             PLAYER_PROFILE_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -2071,6 +2280,49 @@ def candidate_failure_reason(row) -> tuple[str, str]:
     return signals[0], ' | '.join(dict.fromkeys(signals[:4]))
 
 
+def _failure_from_values(confidence, clv_line, book_count, role_raw, volatility_raw, gate_raw,
+                         move_raw, profile_raw, tier_raw) -> tuple[str, str]:
+    """Scalar twin of candidate_failure_reason for the batch enrich path (caller guarantees the row is a
+    Miss, and ReviewTier is already set so derive_review_tier is unreachable). Identical signal rules and
+    ordering; numeric args pre-coerced (NaN == absent, matching _to_float_value)."""
+    import math
+
+    def _ok(x):
+        return not (x is None or (isinstance(x, float) and math.isnan(x)))
+
+    signals: list[str] = []
+    role = str(role_raw or '').strip().upper()
+    volatility = str(volatility_raw or '').strip().upper()
+    market_gate = str(gate_raw or '').strip().upper()
+    move = str(move_raw or '').strip()
+    profile = str(profile_raw or '').strip()
+    tier = str(tier_raw or '').strip()
+
+    if _ok(confidence) and float(confidence) >= 75:
+        signals.append('Confidence Overstated')
+    if role in {'SUPPORT', 'BENCH'}:
+        signals.append('Role Fragility')
+    if volatility in {'HIGH', 'ELEVATED'}:
+        signals.append('Volatility Drag')
+    if market_gate in {'HOLD', 'SPLIT'}:
+        signals.append('Market Gate Warning')
+    if 'Against' in move:
+        signals.append('Market Moved Against')
+    elif move in {'No Move Data', ''}:
+        signals.append('No Move Confirmation')
+    if _ok(clv_line) and float(clv_line) < 0:
+        signals.append('Lost Closing Line')
+    if _ok(book_count) and float(book_count) <= 1:
+        signals.append('Thin Book Market')
+    if profile in {'r3_r4', 'r1_early', 'r1_late'}:
+        signals.append('Context Weight Risk')
+    if tier == 'Tier 1' and not signals:
+        signals.append('Tier 1 Formula Miss')
+    if not signals:
+        signals.append('Unclassified Miss')
+    return signals[0], ' | '.join(dict.fromkeys(signals[:4]))
+
+
 def enrich_candidate_review_rows(graded: pd.DataFrame) -> pd.DataFrame:
     if graded is None or graded.empty:
         return graded
@@ -2089,10 +2341,29 @@ def enrich_candidate_review_rows(graded: pd.DataFrame) -> pd.DataFrame:
     working['FailureSignals'] = ''
     miss_mask = working.get('OutcomeState', pd.Series('', index=working.index)).astype(str).eq('Miss')
     if miss_mask.any():
-        for idx, row in working.loc[miss_mask].iterrows():
-            reason, signals = candidate_failure_reason(row)
-            working.at[idx, 'FailureReason'] = reason
-            working.at[idx, 'FailureSignals'] = signals
+        # Array path (was iterrows + per-row .at over every Miss row -> ~15s of the dashboard cold build).
+        sub = working.loc[miss_mask]
+        n = len(sub)
+        conf = (pd.to_numeric(sub.get('Confidence'), errors='coerce').to_numpy()
+                if 'Confidence' in sub.columns else [float('nan')] * n)
+        clv = (pd.to_numeric(sub.get('ClvLine'), errors='coerce').to_numpy()
+               if 'ClvLine' in sub.columns else [float('nan')] * n)
+        book = (pd.to_numeric(sub.get('BookCount'), errors='coerce').to_numpy()
+                if 'BookCount' in sub.columns else [float('nan')] * n)
+        role = _col_values(sub, 'RoleLabel')
+        vol = _col_values(sub, 'VolatilityFlag')
+        gate = _col_values(sub, 'MarketGate')
+        move = _col_values(sub, 'MarketMoveBucket')
+        prof = _col_values(sub, 'WeightProfile')
+        tier = _col_values(sub, 'ReviewTier')
+        reasons, sigs = [], []
+        for i in range(n):
+            r, s = _failure_from_values(conf[i], clv[i], book[i], role[i], vol[i], gate[i],
+                                        move[i], prof[i], tier[i])
+            reasons.append(r)
+            sigs.append(s)
+        working.loc[miss_mask, 'FailureReason'] = reasons
+        working.loc[miss_mask, 'FailureSignals'] = sigs
     return working
 
 
