@@ -278,10 +278,27 @@ def build_ncaaf_team_map() -> dict[str, str]:
     )
 
 
+def _wnba_ingestion_allowed() -> bool:
+    """WNBA injury ingestion is gated with the NBA/WNBA data gate (BK_NBA_STATS_ENABLED)."""
+    try:
+        from services.nba_source_gate import nba_stats_enabled
+        return nba_stats_enabled()
+    except Exception:
+        import os
+        return (os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def fetch_sport_injuries(sport_key: str) -> pd.DataFrame:
     sport_key = str(sport_key or "").strip().lower()
     if sport_key not in SPORT_CONFIG:
         raise ValueError(f"Unsupported sport: {sport_key}")
+
+    # WNBA injury ingestion is gated: when BK_NBA_STATS_ENABLED is off, make NO network request, NO file
+    # mutation, NO cache refresh, NO derived output — abstain before touching anything. NFL/MLB/NCAAF via
+    # this shared fetcher are unaffected.
+    if sport_key == "wnba" and not _wnba_ingestion_allowed():
+        print("[gated] WNBA injury ingestion disabled (BK_NBA_STATS_ENABLED=0) — no network or file write.")
+        return pd.DataFrame()
 
     config = dict(SPORT_CONFIG[sport_key])
     prefix = config["prefix"]
