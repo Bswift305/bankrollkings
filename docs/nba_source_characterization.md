@@ -180,3 +180,24 @@ NBA: unprefixed loaders (`load_props`/`load_gamelogs`/`load_schedule`/`load_game
 This is characterization only. **No** new NBA.com/stats.nba.com/cdn.nba.com/official.nba.com calls, **no**
 ingestion automation, **no** public exposure, **no** change to `BK_NBA_STATS_ENABLED` (stays `0`). The
 cleared-substitute column is input to a separate, reviewed licensing decision — not a switch to flip here.
+
+## G. Before/after containment call graph
+```
+BEFORE (bypasses)                                   AFTER (contained; flag OFF)
+--------------------------------------------------  --------------------------------------------------
+fetch_wnba_injuries -> fetch_sport_injuries("wnba")  fetch_sport_injuries("wnba") -> _wnba_ingestion_allowed()
+   -> [NO GATE] ESPN GET + CSV write (even OFF)          -> OFF: return empty; NO net / read / write
+fetch_injuries -> stats.nba.com widget JSON          fetch_injuries: spoofed-header path REMOVED;
+   with SPOOFED x-nba-stats-token/origin headers         only official.nba.com / cdn.nba.com (gated) + ESPN
+fetch_schedule / floor refresh: on ImportError       plain imports (ImportError if missing); deps declared
+   -> os.system("pip install ... ") at RUNTIME           in requirements.txt, installed via controlled deploy
+load_schedule -> reads NBA_Schedule.csv (NBA.com     load_schedule -> OFF: skip NBA_Schedule.csv,
+   start times) regardless of gate -> consumers          return licensed Odds-API schedule only
+load_playoff_results -> reads NBA_Playoff_Results    load_playoff_results -> OFF: return empty
+   regardless of gate
+board cache: gate state in key (already present)     board cache: gate state in key (unchanged; pre-gate
+                                                          cache cannot serve post-gate)
+UNCHANGED either way: licensed Odds-API loaders (load_props / load_wnba_props / load_game_market_odds /
+   load_wnba_game_market_odds) render the market-only board; NFL / MLB / CFB loaders untouched.
+```
+Verified in both flag states by `qc_nba_containment.py`.
