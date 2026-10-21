@@ -8,6 +8,14 @@
 | **milestones** (cold build → 504 risk) | ~54,000 ms cold | **7,700 ms cold** | ~7× | `17edb8e` (QW2) |
 | **riding-the-wave** (N+1 per player) | 11,900 ms cold | **4,463 ms cold** | ~2.7× | `ed0a473` (B2) |
 | **dashboard** (200s cold → 504 after every refresh) | 200,672 ms | **79 ms** (user-facing) | ~2,500× | `6dd5a68`+`eb54a4f` |
+| **injury-report** (835KB to every visitor) | 835.7 KB / 1453 rows | **123.0 KB / 201 `<tr>`** | ~6.8× | `5c215ae` |
+
+### Injury Report — prod-confirmed (2026-10-20), progressive disclosure CLOSED
+Server-side filtering + pagination; default page = 100 most-severe rows. Prod before→after:
+**835.7 KB → 123.0 KB** payload, DOM `<tr>` **1453 → 201**, warm render **172 ms → ~115 ms**. Membership
+proven complete + page-size-independent (`qc_injury_report_progressive`); filters faithful; no-JS
+fallback; auth gated on page + fragment. Prod serves **gzip** (confirmed; Brotli NOT enabled → Phase-C
+nginx note). Remaining for this item: CWV/INP/CLS + 375px from a logged-in browser (P4 matrix).
 
 ### Dashboard — prod-confirmed (2026-10-20), CLOSED
 - `build_player_hit_profiles` forced recompute: **340s → 2.3s** (161k rows, 10,880 profiles).
