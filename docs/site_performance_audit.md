@@ -7,6 +7,15 @@
 | **injury-report** (slow on EVERY hit → 504) | 63,745 ms warm | **167 ms warm** | ~375× | `9507e4e` (QW1) |
 | **milestones** (cold build → 504 risk) | ~54,000 ms cold | **7,700 ms cold** | ~7× | `17edb8e` (QW2) |
 | **riding-the-wave** (N+1 per player) | 11,900 ms cold | **4,463 ms cold** | ~2.7× | `ed0a473` (B2) |
+| **dashboard** (200s cold → 504 after every refresh) | 200,672 ms | **79 ms** (user-facing) | ~2,500× | `6dd5a68`+`eb54a4f` |
+
+### Dashboard — prod-confirmed (2026-10-20), CLOSED
+- `build_player_hit_profiles` forced recompute: **340s → 2.3s** (161k rows, 10,880 profiles).
+- Full `build_phase2_dashboard_context` forced cold build: **~200s → 10.1s** (the real standalone budget;
+  no row-wise defects, dominated by legit CSV I/O + aggregation).
+- Warm read: **0.2 ms**. User-facing `/dashboard` run1 in a fresh process (reads the prewarmed disk
+  pkl): **200,672 ms → 79 ms**. Meets cold ≤2s / warm ≤800ms; no 504; membership/order byte-identical;
+  NBA gate untouched.
 
 ## Phase B2 — the dashboard (the only remaining 504-class route)
 
