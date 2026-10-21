@@ -208,6 +208,12 @@ first use once enabled, but only under a root that passes §8.
 **Status — done & verified on prod 2026-10-21 (`20f5faa`):** `kings_tickets` created `drwx------ ubuntu
 ubuntu`; a dark open smoke-test produced `active_drafts.db` at `-rw------- ubuntu ubuntu` (0600); QC green.
 The flag remains `0`.
+
+**CLOSED — sanitized closure receipt all-green on prod (`ca55ef5`):** `verify_kings_tickets_dark.py`
+confirmed schema v2, `integrity_check=ok`, empty `foreign_key_check`, `drafts=0`/`draft_legs=0`, PRAGMAs
+(journal_mode=wal, synchronous=FULL, foreign_keys=ON, busy_timeout=5000), flag OFF in the service env, no
+draft routes / repository import / Journal import, no backup or purge timer installed, dir `0700` + db
+`0600` owned by the service user. Dark setup is closed; enabling remains gated behind §11.
 Verify the module loads + the QC passes on prod Linux (so the POSIX symlink/owner/mode checks actually run):
 ```bash
 sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && python3 qc_kings_tickets_drafts.py'
