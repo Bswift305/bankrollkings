@@ -115,6 +115,10 @@ SCORECARDS = [
     # King's Tickets DARK draft store (Step 4): flag off by default; 2-5 + unique-leg; one draft/account;
     # optimistic CAS (no silent overwrite); transactional rollback; purge; account-bound; degrades, never crashes.
     ("King's Tickets Draft Store QC", "qc_kings_tickets_drafts.py", 120),
+    # Green Light preference workspace (store + lens registry): preferences only order/show/hide the existing
+    # factual lenses (same universe), deterministically; hides are VIEW-class; reset restores default; no
+    # model-based suppression; validation fails safe; no Journal/draft-store coupling.
+    ("Green Light Preferences QC", "qc_green_light_preferences.py", 60),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).

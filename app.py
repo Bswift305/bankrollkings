@@ -32947,6 +32947,41 @@ def mark_seen_start(uid):
             json.dump(d, fh)
 
 
+def load_greenlight_prefs(uid):
+    """The user's saved Green Light workspace prefs (validated), or {} (= house defaults) if unset/invalid.
+    UI configuration only (lens order/visibility, preferred sport/markets, display) — never ticket contents,
+    prices, outcomes, journal reasoning or sportsbook activity. Reuses the account-bound card-prefs store."""
+    from services.green_light_lenses import validate_greenlight_prefs
+    if not uid:
+        return {}
+    try:
+        with open(os.path.join(_CARD_PREFS_DIR, f'{uid}.json'), encoding='utf-8') as fh:
+            raw = (json.load(fh) or {}).get('greenlight')
+    except (OSError, ValueError):
+        return {}
+    return validate_greenlight_prefs(raw)
+
+
+def save_greenlight_prefs(uid, prefs):
+    """Store validated Green Light workspace prefs under the 'greenlight' key (read-merge-write). Anon ->
+    no-op. Validation drops anything that is not UI configuration, so legs/prices/outcomes can never land
+    here even if passed."""
+    from services.green_light_lenses import validate_greenlight_prefs
+    if not uid:
+        return
+    clean = validate_greenlight_prefs(prefs)
+    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
+    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
+    try:
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh) or {}
+    except (OSError, ValueError):
+        d = {}
+    d['greenlight'] = clean
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(d, fh)
+
+
 def _card_prefs_from_request(saved):
     """Query/form knobs override the saved profile for this view; saved is the fallback."""
     src = request.form if request.method == 'POST' else request.args
