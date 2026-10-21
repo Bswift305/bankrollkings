@@ -155,5 +155,18 @@ wrapper so the post-restart warming takes effect:
 - [x] Auth/plan gates intact (page + injury fragment in PRO_ENDPOINTS); NBA gate unchanged; SGP isolated.
 - [x] CLS ≤0.003, INP 56 ms, LCP passes warm/disk on every route; mobile 375px clean (no h-scroll).
 - [x] Heat Map cold resolved (disk-cached: 6.58 s → 0.73 s); Injury initial records = page size (now 50).
-- [ ] **Owner sign-off** after a final `--prewarm-only` on prod (post-restart) so all disk artifacts are
-      pre-written and the first real visitor per board pays the disk read, not the cold build.
+- [x] **Operational prewarm verified on prod (2026-10-20):** receipt = ALL ARTIFACTS OK (NFL boards 0600,
+      atomic, validated, distinct fingerprints); fresh-process baseline reads the prewarmed artifacts within
+      budget — **riding-the-wave 1,667→126ms, heat-map 2,222→13ms, prop-floor 10ms, milestones 426ms,
+      dashboard 390ms**. Lifecycle wiring installed (deploy wrapper reinstalled; run_daily + post-week warm).
+
+## 7. SITE PERFORMANCE P0 — CLOSED (2026-10-20)
+Both 504-class routes fixed (dashboard 200,672→79ms; injury-report 835.7KB→~95KB), four NFL boards
+disk-materialized + prewarmed (wave/heat-map/floor/milestones all sub-second on a fresh process), the
+prewarm is operational across refresh + deploy with a schema version, receipt, and proven invariants.
+Lab matrix: CLS ≤0.003, INP 56ms, no 504s, 0 failed resources, gzip confirmed.
+
+**Monitored follow-ups (non-blocking):** (1) Matchup-Edge `limit`-in-key quirk → the first follow-up
+(same cache-full-slice fix applied to hot-hand). (2) `the-menu` warm ~720ms (under budget; aggregates many
+builders). (3) `player-check` ~3.5s cold rebuild (the known "cache /player shared feeds on signature"
+item; one-time per worker after a schema bump / daily refresh). (4) Brotli on nginx (Phase-C).
