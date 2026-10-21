@@ -44,6 +44,11 @@ keep a **cross-process disk cache** keyed on a **process-stable** signature (NOT
   customer problem).
 - `qc_perf_guards` Guard 7 proves the artifacts are stable-keyed + read back byte-identical.
 
+**Prod-confirmed (2026-10-20):** prewarm did the real cold build (milestones 8.9s, floor 4.6s) and
+persisted; the next fresh process read the artifacts — **milestones 8,623ms → 422ms**, **prop-floor
+4,915ms → 11ms**. (Non-disk-cached `heat-map` bounced 2.2s→5.3s cold-process = noise, unchanged code,
+11ms warm.)
+
 **Manual ops step (like the other `bk-*` units):** the post-week wrapper changed, so after prod pulls,
 reinstall it: `sudo install -m 755 ops/bk-nfl-postweek-refresh.sh /usr/local/bin/bk-nfl-postweek-refresh.sh`.
 
