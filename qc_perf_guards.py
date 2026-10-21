@@ -248,7 +248,7 @@ def run_qc():
         import os
         # Remove any existing artifacts so the build must RE-STORE (otherwise the builder reads the
         # disk artifact left by an earlier guard and never calls the store we are capturing).
-        for pat in ('nfl_milestone_streaks*', 'nfl_floor_board*', 'nfl_hot_hand*'):
+        for pat in ('nfl_milestone_streaks*', 'nfl_floor_board*', 'nfl_hot_hand*', 'nfl_wave_context*'):
             for p in glob.glob(os.path.join(str(app.DATA_DIR), 'cache', pat)):
                 try:
                     os.remove(p)
@@ -270,11 +270,13 @@ def run_qc():
             app.build_nfl_floor_board()
             app._NFL_HOTHAND_CACHE.clear()
             app.build_nfl_hot_hand()
+            app._NFL_RW_CACHE.clear()
+            app.build_nfl_wave_context()
         finally:
             app._nfl_disk_cache_store = orig_store
 
         checked = 0
-        for token in ('milestone', 'floor_board', 'hot_hand'):
+        for token in ('milestone', 'floor_board', 'hot_hand', 'wave_context'):
             # find the captured disk key (nfl_milestone_streaks:: / nfl_floor_board:: / nfl_hot_hand::)
             dkey = next((k for k in captured if token in k), None)
             if dkey is None:

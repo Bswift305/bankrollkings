@@ -47805,7 +47805,9 @@ def build_nfl_wave_context():
     # RETURNED-from-absence reads the weekly player-log parquet for participation, so a log refresh
     # must invalidate too -- fold in the shared player-log signature.
     try:
-        _plog_sig = hash(_nfl_player_log_signature())
+        # Process-STABLE: the raw signature tuple's repr, NOT hash() (PYTHONHASHSEED-salted, which would
+        # make the disk key differ per process and never match the batch prewarm's artifact).
+        _plog_sig = _nfl_player_log_signature()
     except Exception:
         _plog_sig = 0
     # Own cache (not the shared _NFL_WAVE_CACHE, which build_nfl_wave_watch_context also uses) so the
@@ -47814,6 +47816,12 @@ def build_nfl_wave_context():
            f"::{_inj_sig}::{_exp_season}:{_exp_week}::{_plog_sig}")
     if _NFL_RW_CACHE.get('sig') == sig:
         return _NFL_RW_CACHE['data']
+    _dkey = 'nfl_wave_context'
+    _disk = _nfl_disk_cache_load(_dkey, sig)   # cross-process: batch prewarm warms live workers
+    if _disk is not None:
+        _NFL_RW_CACHE['sig'] = sig
+        _NFL_RW_CACHE['data'] = _disk
+        return _disk
 
     from collections import defaultdict
     m2f = _nfl_mascot_to_full()
@@ -47977,6 +47985,7 @@ def build_nfl_wave_context():
     }
     _NFL_RW_CACHE['sig'] = sig
     _NFL_RW_CACHE['data'] = data
+    _nfl_disk_cache_store(_dkey, sig, data)   # cross-process: batch prewarm warms live workers
     return data
 
 
