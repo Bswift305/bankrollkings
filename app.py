@@ -819,6 +819,7 @@ PRO_ENDPOINTS = {
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
+    'green_light_lens_status',  # lazy per-lens live status for the Green Light preference workspace
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -44470,13 +44471,127 @@ def nfl_featured_players_tool():
     return render_template('nfl_featured.html', **ctx)
 
 
-@app.route('/tools/green-light')
+# --- Green Light preference workspace -------------------------------------------------------------------
+# Organizes factual research by how each user prefers to decide (NOT a picks/confidence model). The shell is
+# fast (registry + prefs only, no lens builders called); each lens card pulls its live availability lazily
+# from the per-lens status endpoint (cache-backed). Preferences only order/show/hide and user-filter; they
+# never fabricate facts, alter membership, suppress qualifiers invisibly, or make an unqualified model
+# authoritative. See docs/green_light_preferences_contract.md.
+_GL_LENS_LINKS = {
+    'whats_changed': '/tools/nfl-matchup-center', 'heat_map': '/tools/nfl-heatmap',
+    'riding_the_wave': '/tools/riding-the-wave', 'milestone_streaks': '/tools/nfl-milestones',
+    'market_line_streaks': '/tools/riding-the-wave', 'ats_waves': '/tools/cfb-wave',
+    'matchup_context': '/tools/nfl-matchup-center', 'injuries_return': '/tools/injury-report',
+    'weather': '/tools/nfl-matchup-center', 'line_movement': '/tools/market-movers',
+    'contradictions': '/tools/nfl-matchup-center', 'governed_models': None,
+}
+_GL_LENS_SOURCE = {
+    'whats_changed': 'Slate deltas since the last capture (Matchup Center).',
+    'heat_map': 'Recent hot-hand runs from the nflverse weekly log.',
+    'riding_the_wave': 'Live player-prop over/under streaks (graded record).',
+    'milestone_streaks': 'Fixed-threshold runs from game stats (matchup + season).',
+    'market_line_streaks': 'Graded over/under runs vs the market line.',
+    'ats_waves': 'Active cover/fade runs vs the spread.',
+    'matchup_context': 'This-week game environment (market, weather, line move, injuries).',
+    'injuries_return': 'Injury changes + return-from-participation status.',
+    'weather': 'Game wind (validated totals-under flag at 15+ mph).',
+    'line_movement': 'Captured line movement snapshots (not open/close).',
+    'contradictions': 'Deterministic contradiction guardrails across the board.',
+    'governed_models': 'Governed research registry — RESEARCH-ONLY, never authoritative.',
+}
+
+
+def _green_light_lens_status(key):
+    """Live availability for one lens, cache-backed, called LAZILY (never in the shell). Only
+    milestone_streaks is wired to its builder in this release; the rest resolve in their dedicated tool
+    (deep link), reported honestly as not-yet-wired rather than fabricated."""
+    if key == 'milestone_streaks':
+        try:
+            d = build_nfl_milestone_streaks()
+            return {'wired': True, 'available': bool(d.get('available')),
+                    'data_through': d.get('source_updated') or '',
+                    'count': int(d.get('total_season', 0) or 0) + int(d.get('total_matchup', 0) or 0),
+                    'unavailable_reason': d.get('unavailable_reason') or ''}
+        except Exception:
+            return {'wired': True, 'available': None, 'unavailable_reason': 'status_unavailable'}
+    return {'wired': False}
+
+
+def _greenlight_prefs_from_form():
+    """Parse the workspace form into a RAW prefs dict; save_greenlight_prefs validates/sanitizes it."""
+    f = request.form
+    order = f.getlist('lens_order') or [k for k in f.get('order', '').split(',') if k]
+    return {'lens_order': order, 'lens_hidden': f.getlist('hidden'),
+            'sports': f.getlist('sports'), 'markets': f.getlist('markets'),
+            'display': {'density': f.get('density'), 'why_expanded': f.get('why_expanded') == 'on'}}
+
+
+def build_green_light_workspace(uid):
+    """Fast shell for the preference workspace. Calls NO lens builders (cards pull live status lazily).
+    Presents all 12 lenses as the default composition; preferences order/show/hide + user-filter only."""
+    from services.green_light_lenses import (LENS_KEYS, SPORTS, apply_lens_preferences, lens_label,
+                                             lens_classification, lens_scope, is_governed_model,
+                                             markets_for_sports, HIDDEN_BY_USER, OUT_OF_SPORT)
+    prefs = load_greenlight_prefs(uid)
+    res = apply_lens_preferences(LENS_KEYS, prefs)
+    hidden_set = set(prefs.get('lens_hidden') or [])
+    visible = [{'key': k, 'label': lens_label(k), 'classification': lens_classification(k),
+                'scope': list(lens_scope(k)), 'source': _GL_LENS_SOURCE.get(k, ''),
+                'link': _GL_LENS_LINKS.get(k), 'governed': is_governed_model(k),
+                'wired': k == 'milestone_streaks'} for k in res['visible']]
+    hidden = [{'key': h['key'], 'label': h['label'], 'reason': h['reason'],
+               'governed': is_governed_model(h['key'])} for h in res['hidden']]
+    # Three DISTINCT, never-combined count categories. (a) lens-level now; (b) lens-level now + item-level
+    # applied inside each lens' tool; (c) accrues lazily from each lens' live status (client-side).
+    counts = {'lenses_hidden_by_user': sum(1 for h in res['hidden'] if h['reason'] == HIDDEN_BY_USER),
+              'lenses_out_of_sport': sum(1 for h in res['hidden'] if h['reason'] == OUT_OF_SPORT)}
+    panel = [{'key': k, 'label': lens_label(k), 'hidden': k in hidden_set,
+              'governed': is_governed_model(k)} for k in res['order']]
+    selected_sports = prefs.get('sports') or []
+    display = prefs.get('display') or {}
+    ctx = {'visible_lenses': visible, 'hidden_lenses': hidden, 'counts': counts, 'panel_lenses': panel,
+           'all_sports': list(SPORTS), 'selected_sports': selected_sports,
+           'all_markets': markets_for_sports(selected_sports), 'selected_markets': prefs.get('markets') or [],
+           'density': display.get('density', 'comfortable'), 'why_expanded': bool(display.get('why_expanded')),
+           'has_prefs': bool(prefs)}
+    # Browser-only proposed ticket via the SAME shared builder + editor as Daily Cards / King's Tickets.
+    try:
+        tc = build_daily_cards(**load_card_prefs(uid))
+        ctx['cards'] = tc.get('cards') or []
+        ctx['bench'] = tc.get('bench') or []
+    except Exception:
+        ctx['cards'], ctx['bench'] = [], []
+    ctx['surface'] = 'green_light_workspace'
+    return ctx
+
+
+@app.route('/tools/green-light', methods=['GET', 'POST'])
 def green_light_tool():
     """Green Light -- the convergence assembly engine. Ranks plays by how many INDEPENDENT
     lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the Concentration TD
     angle), gated by the market (a play goes green only when it's also un-priced). Evidence
-    assembly, not a score. The destination the whole averaging audit earned the right to build."""
+    assembly, not a score. `?view=workspace` is the preference workspace (opt-in while it is
+    being verified; the default board is unchanged)."""
+    if request.method == 'POST':
+        uid = _card_prefs_uid()
+        if request.form.get('action') == 'reset':
+            reset_greenlight_prefs(uid)
+        else:
+            save_greenlight_prefs(uid, _greenlight_prefs_from_form())
+        return redirect(url_for('green_light_tool', view='workspace'))
+    if request.args.get('view') == 'workspace':
+        return render_template('green_light_workspace.html', **build_green_light_workspace(_card_prefs_uid()))
     return render_template('green_light.html', **build_green_light(pos=request.args.get('pos')))
+
+
+@app.route('/tools/green-light/lens/<key>')
+def green_light_lens_status(key):
+    """Lazy per-lens live status for the workspace (JSON). Cache-backed; keeps the shell fast."""
+    from services.green_light_lenses import LENS_KEYS, lens_label, is_governed_model
+    if key not in LENS_KEYS:
+        return jsonify({'error': 'unknown lens'}), 404
+    return jsonify({'key': key, 'label': lens_label(key), 'governed': is_governed_model(key),
+                    'link': _GL_LENS_LINKS.get(key), **_green_light_lens_status(key)})
 
 
 @app.route('/tools/nfl-dvp')

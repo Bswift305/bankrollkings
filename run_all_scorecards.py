@@ -122,6 +122,10 @@ SCORECARDS = [
     # factual lenses (same universe), deterministically; hides are VIEW-class; reset restores default; no
     # model-based suppression; validation fails safe; no Journal/draft-store coupling.
     ("Green Light Preferences QC", "qc_green_light_preferences.py", 60),
+    # Green Light preference workspace route + template (opt-in ?view=workspace): full 12-lens default,
+    # default board unchanged, CSRF-protected save, accurate hidden-by-user count, reset restores default,
+    # lens status endpoint, shared-editor no-drift, no journal/draft-store coupling.
+    ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).
