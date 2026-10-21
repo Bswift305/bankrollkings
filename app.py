@@ -32836,7 +32836,22 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
             'n_floors': len(floors), 'n_swings': len(swings)}
 
 
-_CARD_PREFS_DIR = os.path.join(BASE_DIR, 'data', 'user_prefs')
+# Per-user preference store. Defaults inside the checkout (gitignored -> survives `git pull --ff-only` +
+# restart). BK_USER_PREFS_DIR relocates it (e.g. to the persistent BK_RUNTIME_DIR) with no code change; see
+# docs/user_prefs_store_operations.md for retention / deletion / backup / disaster-recovery behavior.
+_CARD_PREFS_DIR = os.environ.get('BK_USER_PREFS_DIR') or os.path.join(BASE_DIR, 'data', 'user_prefs')
+
+
+def delete_user_prefs(uid):
+    """Account-deletion hook: remove ALL of a user's stored preferences (card/home/seen_start/greenlight)
+    by deleting their prefs file + any stray lock. Idempotent; anon -> no-op."""
+    if not uid:
+        return
+    for suffix in ('.json', '.json.lock'):
+        try:
+            os.remove(os.path.join(_CARD_PREFS_DIR, f'{uid}{suffix}'))
+        except OSError:
+            pass
 
 
 def _card_prefs_uid():

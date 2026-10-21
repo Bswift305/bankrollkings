@@ -28,27 +28,42 @@ _TLOCK = threading.Lock()  # in-process guard; the file lock covers cross-proces
 
 @contextlib.contextmanager
 def file_lock(path):
-    """Best-effort exclusive lock around a prefs file, via a sidecar ``.lock`` (never replaced). fcntl on
-    POSIX; a safe degrade elsewhere (in-process threads are still serialized by the caller's thread lock)."""
-    fh = None
+    """Exclusive CROSS-PROCESS lock around a prefs file, via a sidecar ``.lock`` (never replaced): fcntl on
+    POSIX (prod gunicorn workers; auto-released on process death) and msvcrt byte-range on Windows. Degrades
+    safely if neither is available (the caller's thread lock still serializes in-process)."""
+    fd = os.open(path + '.lock', os.O_RDWR | os.O_CREAT, 0o600)
+    locked = False
     try:
-        fh = open(path + '.lock', 'a+')
         if os.name == 'posix':
             try:
                 import fcntl
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                locked = True
+            except (OSError, ImportError):
+                pass
+        else:
+            try:
+                import msvcrt
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b'0')
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)  # blocks (retries) until exclusive
+                locked = True
             except (OSError, ImportError):
                 pass
         yield
     finally:
-        if fh is not None:
-            try:
-                if os.name == 'posix':
-                    import fcntl
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            except (OSError, ImportError):
-                pass
-            fh.close()
+        try:
+            if locked and os.name == 'posix':
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            elif locked:
+                import msvcrt
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except (OSError, ImportError):
+            pass
+        os.close(fd)
 
 
 def atomic_write_json(path, data):
