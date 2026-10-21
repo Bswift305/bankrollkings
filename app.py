@@ -44803,18 +44803,19 @@ def green_light_tool():
     """Green Light -- the convergence assembly engine. Ranks plays by how many INDEPENDENT
     lenses agree (Opportunity, Matchup, Game Identity, Coaching, + the Concentration TD
     angle), gated by the market (a play goes green only when it's also un-priced). Evidence
-    assembly, not a score. `?view=workspace` is the preference workspace (opt-in while it is
-    being verified; the default board is unchanged)."""
+    assembly, not a score. The DEFAULT is now the preference workspace (which composes the lenses the way
+    each user decides); the former convergence board is preserved at `?view=classic` for rollback."""
     if request.method == 'POST':
         uid = _card_prefs_uid()
         if request.form.get('action') == 'reset':
             reset_greenlight_prefs(uid)
         else:
             save_greenlight_prefs(uid, _greenlight_prefs_from_form())
-        return redirect(url_for('green_light_tool', view='workspace'))
-    if request.args.get('view') == 'workspace':
-        return render_template('green_light_workspace.html', **build_green_light_workspace(_card_prefs_uid()))
-    return render_template('green_light.html', **build_green_light(pos=request.args.get('pos')))
+        return redirect(url_for('green_light_tool'))
+    if request.args.get('view') == 'classic':
+        return render_template('green_light.html', **build_green_light(pos=request.args.get('pos')))
+    # default (and the ?view=workspace alias) -> the preference workspace
+    return render_template('green_light_workspace.html', **build_green_light_workspace(_card_prefs_uid()))
 
 
 @app.route('/tools/green-light/lens/<key>')

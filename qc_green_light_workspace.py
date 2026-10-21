@@ -52,20 +52,20 @@ def run_qc():
     c = app.app.test_client()
     pf = os.path.join('data', 'user_prefs', 'qc-glw-local.json')
     try:
-        # 1. full 12-lens default workspace
-        h = c.get('/tools/green-light?view=workspace').get_data(as_text=True)
+        # 1. the DEFAULT /tools/green-light (no param) is now the full 12-lens workspace
+        h = c.get('/tools/green-light').get_data(as_text=True)
         ok('Preference Workspace' in h and _cards(h) == 12,
-           f'default workspace is not the full 12-lens page (cards={_cards(h)})',
-           'no saved prefs -> full 12-lens default workspace')
+           f'default route is not the full 12-lens workspace (cards={_cards(h)})',
+           'default /tools/green-light -> full 12-lens workspace (flipped)')
         ok(all(s in h for s in ['Lenses you hid', 'Eligible items hidden by your sport/market',
                                 'data / freshness / legal / model gate']),
            'the three distinct counts are not all present', 'three distinct, separately-labeled counts')
 
-        # 2. default board unchanged
-        h_def = c.get('/tools/green-light').get_data(as_text=True)
-        ok('Preference Workspace' not in h_def and 'green-light' in h_def.lower(),
-           'default /tools/green-light no longer renders the classic board',
-           'default board unchanged (workspace is opt-in via ?view=workspace)')
+        # 2. the classic convergence board is preserved at ?view=classic (rollback)
+        h_classic = c.get('/tools/green-light?view=classic').get_data(as_text=True)
+        ok('Preference Workspace' not in h_classic and 'green-light' in h_classic.lower(),
+           'classic board not preserved at ?view=classic',
+           'classic board preserved at ?view=classic (instant rollback)')
 
         # 3. CSRF-protected save: a POST with no token is rejected
         ok(c.post('/tools/green-light', data={'hidden': ['heat_map']}).status_code == 400,

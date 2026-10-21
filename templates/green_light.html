@@ -3,6 +3,11 @@
 {% block title %}Green Light - Bankroll Kings{% endblock %}
 
 {% block content %}
+<div style="border:1px dashed rgba(255,255,255,.22);border-radius:8px;padding:8px 11px;margin:0 0 14px;
+     font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);">
+  You're viewing the <b>classic convergence board</b>. The default Green Light is now the
+  <a href="{{ url_for('green_light_tool') }}" style="color:#4ed48a;font-weight:700;">preference workspace &rarr;</a>
+</div>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
 <style>
   .kw{--kw:#4ed48a;--kw-dim:rgba(78,212,138,.16);}
