@@ -25,6 +25,28 @@ nginx note). Remaining for this item: CWV/INP/CLS + 375px from a logged-in brows
   pkl): **200,672 ms → 79 ms**. Meets cold ≤2s / warm ≤800ms; no 504; membership/order byte-identical;
   NBA gate untouched.
 
+## Phase B2 #2 — safe prewarm of the remaining NFL cold builders (`9fc25d3`)
+
+The NFL tool caches are **in-memory per gunicorn worker**, so a batch prewarm process cannot warm live
+workers (unlike the dashboard's disk pkl). The two worst (milestones ~8.6s, floor ~4.9s cold) now also
+keep a **cross-process disk cache** keyed on a **process-stable** signature (NOT a `hash()` of it —
+`PYTHONHASHSEED` would make the key differ per process and never match):
+- `_nfl_disk_cache_load` / `_nfl_disk_cache_store` (atomic temp+replace, backstop TTL, picklable version).
+- milestones: cold 5.7s → **disk-warm 0.048s** (local), byte-identical; floor: 2.4s → **0.017s**, per-param
+  artifacts independent.
+- `refresh_runtime_snapshots --prewarm-only` warms them (`prewarm_nfl_tool_caches`); the NFL **post-week**
+  ops script re-warms after the parquet advances. Warming is attached to the jobs that actually
+  invalidate each cache (run_daily = props/injuries/date; post-week = parquet), not the daily job blindly.
+- **Deliberately NOT disk-cached:** usage/matchup-edge + hot-hand ("Heating Up") apply `limit` inside the
+  cached payload but not in the key (pre-existing first-caller-wins quirk) — disk-caching with a prewarm
+  default limit would change what other callers see. Left in-memory (non-504, warm after first hit).
+  Fixing the limit-key quirk is a separate correctness change (candidate for #3 only if measured as a
+  customer problem).
+- `qc_perf_guards` Guard 7 proves the artifacts are stable-keyed + read back byte-identical.
+
+**Manual ops step (like the other `bk-*` units):** the post-week wrapper changed, so after prod pulls,
+reinstall it: `sudo install -m 755 ops/bk-nfl-postweek-refresh.sh /usr/local/bin/bk-nfl-postweek-refresh.sh`.
+
 ## Phase B2 — the dashboard (the only remaining 504-class route)
 
 **Dashboard `/dashboard` — ~200s cold → warm (de-arrow + vectorize + batch prewarm).** Prod tottime
