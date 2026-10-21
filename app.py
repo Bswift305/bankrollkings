@@ -819,7 +819,7 @@ PRO_ENDPOINTS = {
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
-    'green_light_lens_status',  # lazy per-lens live status for the Green Light preference workspace
+    'green_light_lens_status', 'green_light_counts',  # Green Light preference workspace: lens envelopes + real counts
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -44516,20 +44516,239 @@ _GL_LENS_SOURCE = {
 }
 
 
-def _green_light_lens_status(key):
-    """Live availability for one lens, cache-backed, called LAZILY (never in the shell). Only
-    milestone_streaks is wired to its builder in this release; the rest resolve in their dedicated tool
-    (deep link), reported honestly as not-yet-wired rather than fabricated."""
-    if key == 'milestone_streaks':
-        try:
-            d = build_nfl_milestone_streaks()
-            return {'wired': True, 'available': bool(d.get('available')),
-                    'data_through': d.get('source_updated') or '',
-                    'count': int(d.get('total_season', 0) or 0) + int(d.get('total_matchup', 0) or 0),
-                    'unavailable_reason': d.get('unavailable_reason') or ''}
-        except Exception:
-            return {'wired': True, 'available': None, 'unavailable_reason': 'status_unavailable'}
-    return {'wired': False}
+from services import green_light_adapters as _gla  # Green Light adapter framework (no app import; no cycle)
+
+
+def _gl_env(key, sport, market, mem, source, data_through, prefs, include_items, availability=None, note=''):
+    """Build one lens envelope from canonical membership via the adapter framework."""
+    from services.green_light_lenses import lens_label, lens_classification
+    return _gla.build_envelope(key, lens_label(key), lens_classification(key), sport, market, mem,
+                               source=source, data_through=data_through or '', availability=availability,
+                               context_note=note, prefs=prefs, include_items=include_items)
+
+
+def _gl_adapt_heat_map(prefs, items):
+    d = build_nfl_hot_hand() or {}
+    rows = d.get('streaks') or []
+    mem = [{'id': f"{r.get('player')}|{r.get('stat_key') or r.get('stat')}", 'sport': 'nfl',
+            'market': r.get('stat_key') or r.get('stat'),
+            'label': (f"{r.get('player','')} {r.get('stat','')}").strip(),
+            'why': r.get('status_label') or r.get('weeks_label') or 'active run',
+            'data_through': d.get('through_label'),
+            'stale': not bool(r.get('active', True))} for r in rows]
+    return _gl_env('heat_map', 'nfl', None, mem, 'nflverse weekly log', d.get('data_updated'), prefs, items,
+                   note=('' if mem else 'no current-season hot runs'))
+
+
+def _gl_adapt_riding_the_wave(prefs, items):
+    d = build_nfl_wave_context() or {}
+    hot = (d.get('rw_hot') or [])
+    sit = (d.get('rw_situational') or [])
+    mem = [{'id': f"hot|{r.get('player')}|{r.get('stat')}", 'sport': 'nfl', 'market': r.get('stat_key') or r.get('stat'),
+            'label': (f"{r.get('player','')} {r.get('stat','')}").strip(), 'why': r.get('status_label') or 'hot start',
+            'data_through': (d.get('rw_meta') or {}).get('asof')} for r in hot]
+    mem += [{'id': f"sit|{s.get('who')}|{s.get('label')}", 'sport': 'nfl', 'market': None,
+             'label': f"{s.get('who','')} — {s.get('label','')}".strip(' —'), 'why': s.get('detail') or s.get('label') or '',
+             'data_through': (d.get('rw_meta') or {}).get('asof')} for s in sit]
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('riding_the_wave', 'nfl', None, mem, 'live momentum (hot + situational)',
+                   (d.get('rw_meta') or {}).get('asof'), prefs, items, availability=av,
+                   note=('' if mem else 'no live wave right now'))
+
+
+def _gl_adapt_milestone_streaks(prefs, items):
+    d = build_nfl_milestone_streaks() or {}
+    def mk(r, kind):
+        return {'id': f"{r.get('key')}|{kind}|{r.get('stat')}|{r.get('threshold')}|{r.get('opponent','')}",
+                'sport': 'nfl', 'market': r.get('stat'),
+                'label': f"{r.get('player','')} {r.get('threshold','')}+ {r.get('stat_label') or r.get('stat','')}".strip(),
+                'why': (f"{r.get('run','')} straight vs {r.get('opponent')}" if kind == 'matchup'
+                        else f"{r.get('run','')} straight"),
+                'data_through': d.get('source_updated'),
+                'stale': (kind == 'season' and not d.get('season_available', True))}
+    mem = [mk(r, 'season') for r in (d.get('season_streaks') or [])] + \
+          [mk(r, 'matchup') for r in (d.get('matchup_streaks') or [])]
+    av = None if d.get('available') else _gla.UNAVAILABLE
+    return _gl_env('milestone_streaks', 'nfl', None, mem, 'game stats (matchup + season)',
+                   d.get('source_updated'), prefs, items, availability=av,
+                   note=d.get('unavailable_reason') or ('' if mem else 'no qualifying milestone runs'))
+
+
+def _gl_adapt_market_line_streaks(prefs, items):
+    d = build_nfl_prop_streaks() or {}
+    rows = d.get('rows') or []
+    mem = [{'id': f"{r.get('player')}|{r.get('stat')}|{r.get('side')}", 'sport': 'nfl', 'market': r.get('stat'),
+            'label': f"{r.get('player','')} {r.get('side','')} {r.get('stat','')}".strip(),
+            'why': r.get('status_label') or r.get('weeks_label') or 'graded run',
+            'data_through': d.get('through_label'), 'stale': not bool(r.get('active', True))} for r in rows]
+    av = _gla.UNAVAILABLE if (
+        d.get('unavailable') or not mem) else None
+    return _gl_env('market_line_streaks', 'nfl', None, mem, 'graded over/under record (NFL_AllPropResults)',
+                   d.get('source_updated'), prefs, items, availability=av,
+                   note=d.get('unavailable_reason') or ('' if mem else 'current season not yet graded'))
+
+
+def _gl_adapt_ats_waves(prefs, items):
+    from services import green_light_adapters as _gla
+    mem = []
+    try:
+        nfl = build_nfl_ats_wave() or {}
+        for r in (nfl.get('members') or []):
+            mem.append({'id': f"nfl|{r.get('team')}", 'sport': 'nfl', 'market': 'spread',
+                        'label': f"{r.get('team','')} ATS", 'why': r.get('weeks_label') or f"{r.get('streak','')} run",
+                        'data_through': (nfl.get('sync') or {}).get('last_refresh')})
+    except Exception:
+        pass
+    dt = ''
+    try:
+        cfb = build_cfb_wave_context() or {}
+        dt = cfb.get('wave_through_week') and f"wk {cfb.get('wave_through_week')}" or ''
+        for r in (cfb.get('wave_members') or []) + (cfb.get('wave_fades') or []):
+            mem.append({'id': f"cfb|{r.get('team')}", 'sport': 'cfb', 'market': 'spread',
+                        'label': f"{r.get('team','')} ATS {r.get('ats','')}".strip(),
+                        'why': r.get('tier_label') or 'active ATS run', 'data_through': dt})
+    except Exception:
+        pass
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('ats_waves', 'nfl', 'spread', mem, 'cover/fade runs vs the spread (NFL + CFB)', dt,
+                   prefs, items, availability=av, note=('' if mem else 'no synced ATS wave right now'))
+
+
+def _gl_matchup_games(prefs):
+    return (build_nfl_matchup_center_context() or {})
+
+
+def _gl_adapt_matchup_context(prefs, items):
+    d = _gl_matchup_games(prefs)
+    mem = [{'id': g.get('game_id'), 'sport': 'nfl', 'market': None, 'label': g.get('matchup', ''),
+            'why': (g.get('why_interesting') or ['game environment'])[0] if g.get('why_interesting') else 'game environment',
+            'data_through': d.get('as_of'), 'contradiction': bool(g.get('contradictions'))}
+           for g in (d.get('games') or [])]
+    av = None if d.get('available') else _gla.UNAVAILABLE
+    return _gl_env('matchup_context', 'nfl', None, mem, 'this-week game environment (Matchup Center)',
+                   d.get('as_of'), prefs, items, availability=av, note=('' if mem else 'no current slate'))
+
+
+def _gl_adapt_whats_changed(prefs, items):
+    d = _gl_matchup_games(prefs)
+    mem = []
+    for g in (d.get('games') or []):
+        for ch in (g.get('whats_changed') or []):
+            mem.append({'id': f"{g.get('game_id')}|{ch.get('what')}", 'sport': 'nfl', 'market': None,
+                        'label': f"{g.get('matchup','')}: {ch.get('what','')}".strip(': '),
+                        'why': f"{ch.get('prior')} → {ch.get('current')}", 'data_through': d.get('as_of')})
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('whats_changed', 'nfl', None, mem, 'slate deltas since the last capture',
+                   d.get('as_of'), prefs, items, availability=av, note=('' if mem else 'nothing changed since the last capture'))
+
+
+def _gl_adapt_contradictions(prefs, items):
+    d = _gl_matchup_games(prefs)
+    mem = []
+    for g in (d.get('games') or []):
+        for i, ct in enumerate(g.get('contradictions') or []):
+            mem.append({'id': f"{g.get('game_id')}|c{i}", 'sport': 'nfl', 'market': None,
+                        'label': f"{g.get('matchup','')}", 'why': f"{ct.get('a')} vs {ct.get('b')}",
+                        'data_through': d.get('as_of'), 'contradiction': True})
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('contradictions', 'nfl', None, mem, 'deterministic contradiction guardrails',
+                   d.get('as_of'), prefs, items, availability=av, note=('' if mem else 'no contradictions flagged'))
+
+
+def _gl_adapt_injuries_return(prefs, items):
+    rows = build_nfl_injury_changes(limit=200) or []
+    mem = [{'id': f"{r.get('player')}|{r.get('team')}", 'sport': 'nfl', 'market': None,
+            'label': f"{r.get('player','')} ({r.get('team','')})".strip(),
+            'why': f"{r.get('prev','')} → {r.get('new','')} ({r.get('change_type','')})".strip(),
+            'data_through': None} for r in rows]
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('injuries_return', 'nfl', None, mem, 'injury status changes', '', prefs, items,
+                   availability=av, note=('' if mem else 'no recent injury changes'))
+
+
+def _gl_adapt_weather(prefs, items):
+    wm = _nfl_game_wind_map() or {}
+    mem = []
+    for (date, home), v in wm.items():
+        wind = (v or {}).get('wind')
+        if wind is None:
+            continue
+        high = wind >= 15
+        mem.append({'id': f"{date}:{home}", 'sport': 'nfl', 'market': 'total',
+                    'label': f"{home} — {wind:.0f} mph", 'data_through': str(date),
+                    'why': ('15+ mph: validated totals-under flag' if high else f"{wind:.0f} mph wind")})
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('weather', 'nfl', 'total', mem, 'game wind (NFL_GameWeather)', '', prefs, items,
+                   availability=av, note=('' if mem else 'no outdoor wind data for the slate'))
+
+
+def _gl_adapt_line_movement(prefs, items):
+    mem = []
+    try:
+        df = _load_line_movement_current('nfl')
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                try:
+                    ss = float(row.get('CurrentSpread')) - float(row.get('OpenSpread'))
+                except (TypeError, ValueError):
+                    ss = 0.0
+                try:
+                    ts = float(row.get('CurrentTotal')) - float(row.get('OpenTotal'))
+                except (TypeError, ValueError):
+                    ts = 0.0
+                if abs(ss) < 0.5 and abs(ts) < 0.5:
+                    continue
+                aw, hm = row.get('Away'), row.get('Home')
+                mem.append({'id': f"{row.get('Date')}:{aw}@{hm}", 'sport': 'nfl',
+                            'market': 'spread' if abs(ss) >= abs(ts) else 'total',
+                            'label': f"{aw} @ {hm}", 'data_through': str(row.get('Date')),
+                            'why': (f"spread {ss:+.1f}" if abs(ss) >= 0.5 else '') + (f" total {ts:+.1f}" if abs(ts) >= 0.5 else '').strip()})
+    except Exception:
+        pass
+    av = None if mem else _gla.UNAVAILABLE
+    return _gl_env('line_movement', 'nfl', None, mem, 'captured line movement (not open/close)', '', prefs, items,
+                   availability=av, note=('' if mem else 'no captured movement snapshots'))
+
+
+def _gl_adapt_governed_models(prefs, items):
+    from services import green_light_adapters as _gla
+    try:
+        from services.model_registry import registry_entries
+        entries = registry_entries() or []
+    except Exception:
+        entries = []
+    mem = [{'id': e.get('model_id'), 'sport': (e.get('sport') or '').lower(), 'market': e.get('market'),
+            'label': f"{e.get('model_id','')} ({e.get('status','')})",
+            'why': e.get('angle') or e.get('explanation') or 'research model',
+            'gated': not e.get('has_authority'), 'data_through': e.get('version')} for e in entries]
+    # all current entries are research-only (gated); membership exists but carries no authority
+    av = _gla.GATED if mem and all(m['gated'] for m in mem) else (None if mem else _gla.UNAVAILABLE)
+    return _gl_env('governed_models', 'nfl', None, mem, 'governed research registry (RESEARCH-ONLY)', '',
+                   prefs, items, availability=av,
+                   note='research-only — no entry currently holds decision authority')
+
+
+_GL_ADAPTERS = {
+    'whats_changed': _gl_adapt_whats_changed, 'heat_map': _gl_adapt_heat_map,
+    'riding_the_wave': _gl_adapt_riding_the_wave, 'milestone_streaks': _gl_adapt_milestone_streaks,
+    'market_line_streaks': _gl_adapt_market_line_streaks, 'ats_waves': _gl_adapt_ats_waves,
+    'matchup_context': _gl_adapt_matchup_context, 'injuries_return': _gl_adapt_injuries_return,
+    'weather': _gl_adapt_weather, 'line_movement': _gl_adapt_line_movement,
+    'contradictions': _gl_adapt_contradictions, 'governed_models': _gl_adapt_governed_models,
+}
+
+
+def _green_light_lens_envelope(key, uid, include_items=False):
+    """One lens' envelope, cache-backed, failure-isolated (a broken lens abstains, never breaks the page)."""
+    from services.green_light_lenses import lens_label, lens_classification, lens_scope
+    from services import green_light_adapters as _gla
+    prefs = load_greenlight_prefs(uid)
+    fn = _GL_ADAPTERS.get(key)
+    if fn is None:
+        return _gla.abstain_envelope(key, key, 'fact', reason='unknown_lens')
+    sport0 = (lens_scope(key)[0] if lens_scope(key) else '')
+    return _gla.safe_adapter(key, lens_label(key), lens_classification(key),
+                             lambda: fn(prefs, include_items), sport=sport0)
 
 
 def _greenlight_prefs_from_form():
@@ -44552,8 +44771,7 @@ def build_green_light_workspace(uid):
     hidden_set = set(prefs.get('lens_hidden') or [])
     visible = [{'key': k, 'label': lens_label(k), 'classification': lens_classification(k),
                 'scope': list(lens_scope(k)), 'source': _GL_LENS_SOURCE.get(k, ''),
-                'link': _GL_LENS_LINKS.get(k), 'governed': is_governed_model(k),
-                'wired': k == 'milestone_streaks'} for k in res['visible']]
+                'link': _GL_LENS_LINKS.get(k), 'governed': is_governed_model(k)} for k in res['visible']]
     hidden = [{'key': h['key'], 'label': h['label'], 'reason': h['reason'],
                'governed': is_governed_model(h['key'])} for h in res['hidden']]
     # Three DISTINCT, never-combined count categories. (a) lens-level now; (b) lens-level now + item-level
@@ -44601,12 +44819,45 @@ def green_light_tool():
 
 @app.route('/tools/green-light/lens/<key>')
 def green_light_lens_status(key):
-    """Lazy per-lens live status for the workspace (JSON). Cache-backed; keeps the shell fast."""
-    from services.green_light_lenses import LENS_KEYS, lens_label, is_governed_model
+    """One lens' full envelope incl. its compact items (JSON), cache-backed + failure-isolated. Lazy detail."""
+    from services.green_light_lenses import LENS_KEYS
     if key not in LENS_KEYS:
         return jsonify({'error': 'unknown lens'}), 404
-    return jsonify({'key': key, 'label': lens_label(key), 'governed': is_governed_model(key),
-                    'link': _GL_LENS_LINKS.get(key), **_green_light_lens_status(key)})
+    env = _green_light_lens_envelope(key, _card_prefs_uid(), include_items=True)
+    env['link'] = _GL_LENS_LINKS.get(key)
+    return jsonify(env)
+
+
+@app.route('/tools/green-light/counts')
+def green_light_counts():
+    """Server-computed REAL counts for the workspace: builds every lens' envelope (cache-backed), partitions
+    visible / out-of-sport / hidden-by-user, and returns the three never-combined counts PLUS a per-lens
+    compact summary (availability, counts, data-through) so the client fills every card from one call. Off
+    the first-render path (async), so the shell stays fast."""
+    from services.green_light_lenses import (LENS_KEYS, apply_lens_preferences, lens_scope, HIDDEN_BY_USER,
+                                             OUT_OF_SPORT)
+    uid = _card_prefs_uid()
+    prefs = load_greenlight_prefs(uid)
+    res = apply_lens_preferences(LENS_KEYS, prefs)
+    hidden_by_user = [h['key'] for h in res['hidden'] if h['reason'] == HIDDEN_BY_USER]
+    out_of_sport_keys = [h['key'] for h in res['hidden'] if h['reason'] == OUT_OF_SPORT]
+    visible_envs, oos_envs, summary = [], [], {}
+    for k in res['visible']:
+        env = _green_light_lens_envelope(k, uid, include_items=False)
+        visible_envs.append(env)
+        summary[k] = _gl_summary(env)
+    for k in out_of_sport_keys:
+        env = _green_light_lens_envelope(k, uid, include_items=False)
+        oos_envs.append(env)
+        summary[k] = _gl_summary(env)
+    counts = _gla.aggregate_counts(visible_envs, oos_envs, hidden_by_user)
+    return jsonify({'counts': counts, 'lenses': summary})
+
+
+def _gl_summary(env):
+    return {k: env.get(k) for k in ('availability', 'membership_count', 'eligible_count', 'filtered_by_pref',
+                                    'unavailable_count', 'contradictions', 'data_through', 'source',
+                                    'governed', 'universe_hash', 'gl_hash', 'no_suppression', 'context_note')}
 
 
 @app.route('/tools/nfl-dvp')

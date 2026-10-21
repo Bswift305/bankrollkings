@@ -146,23 +146,26 @@ def safe_adapter(key, label, classification, fn, sport='', market=None):
                                 f'adapter_exception:{type(exc).__name__}')
 
 
-def aggregate_counts(envelopes, hidden_by_user_keys, out_of_sport_keys):
+def aggregate_counts(visible_envs, out_of_sport_envs, hidden_by_user_keys):
     """The THREE real, never-combined counts, derived from the SAME canonical universe the envelopes carry:
-      - lenses_hidden_by_user         : lens-level (user hid the lens)
-      - eligible_items_hidden_by_pref : item-level, summed filtered_by_pref over VISIBLE lenses
-      - items_unavailable_by_gate     : item-level, summed unavailable_count over VISIBLE lenses
-                                        + lenses that are wholly unavailable/gated/stale (counted as >=1)
+      1. lenses_hidden_by_user         : lens-level (the user hid the lens).
+      2. eligible_items_hidden_by_pref : item-level — items removed by the sport/market filter. That is the
+                                         filtered_by_pref of each VISIBLE lens PLUS the whole membership of
+                                         each lens hidden because it is out of the user's sports (all its
+                                         items are filtered).
+      3. items_unavailable_by_gate     : item-level — unavailable/stale/gated items in VISIBLE lenses, plus
+                                         a wholly-unavailable visible lens counted as >=1 (never a silent 0).
     """
-    items_filtered = sum(e.get('filtered_by_pref', 0) for e in envelopes)
+    items_filtered = (sum(e.get('filtered_by_pref', 0) for e in visible_envs)
+                      + sum(e.get('membership_count', 0) for e in out_of_sport_envs))
     items_unavailable = 0
-    for e in envelopes:
+    for e in visible_envs:
         if e.get('availability') in (UNAVAILABLE, GATED, STALE) and e.get('membership_count', 0) == 0:
             items_unavailable += 1  # a wholly-unavailable lens is not a silent zero
         else:
             items_unavailable += e.get('unavailable_count', 0)
     return {
         'lenses_hidden_by_user': len(set(hidden_by_user_keys)),
-        'lenses_out_of_sport': len(set(out_of_sport_keys)),
         'eligible_items_hidden_by_pref': items_filtered,
         'items_unavailable_by_gate': items_unavailable,
     }

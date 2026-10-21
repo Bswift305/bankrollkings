@@ -30,6 +30,11 @@ def _cards(html):
     return len(re.findall(r'class="glw-card', html))
 
 
+def _gl_states():
+    import services.green_light_adapters as ga
+    return ga.AVAILABILITY_STATES
+
+
 def run_qc():
     import app
     owner = sorted(app.OWNER_EMAILS)[0] if app.OWNER_EMAILS else None
@@ -45,7 +50,7 @@ def run_qc():
         ok('Preference Workspace' in h and _cards(h) == 12,
            f'default workspace is not the full 12-lens page (cards={_cards(h)})',
            'no saved prefs -> full 12-lens default workspace')
-        ok(all(s in h for s in ['Lenses you hid', 'filtered by your sport/market choice',
+        ok(all(s in h for s in ['Lenses you hid', 'Eligible items hidden by your sport/market',
                                 'data / freshness / legal / model gate']),
            'the three distinct counts are not all present', 'three distinct, separately-labeled counts')
 
@@ -77,12 +82,28 @@ def run_qc():
         ok(_cards(h3) == 12, f'reset did not restore the 12-lens default (cards={_cards(h3)})',
            'reset restores the house default (removes only the greenlight key)')
 
-        # 5. lens status endpoint
-        rj = c.get('/tools/green-light/lens/milestone_streaks')
-        ok(rj.status_code == 200 and rj.is_json and (rj.get_json() or {}).get('key') == 'milestone_streaks',
-           'lens status endpoint did not return JSON', 'per-lens status endpoint returns JSON')
-        ok(c.get('/tools/green-light/lens/bogus').status_code == 404,
-           'unknown lens was not 404', 'unknown lens -> 404')
+        # 5. ALL 12 live adapters return a real envelope (no deep-link-only cards); universe == GL universe
+        import app as _app
+        from services.green_light_lenses import LENS_KEYS
+        bad = []
+        for k in LENS_KEYS:
+            e = c.get('/tools/green-light/lens/' + k).get_json() or {}
+            if not (e.get('key') == k and e.get('availability') in _gl_states()
+                    and isinstance(e.get('membership_count'), int) and e.get('no_suppression') is True
+                    and e.get('universe_hash') == e.get('gl_hash')):
+                bad.append(k)
+        ok(not bad, f'lenses with a bad/deep-link-only envelope: {bad}',
+           'all 12 live adapters return a real envelope (universe_hash == gl_hash, no suppression)')
+        ok(c.get('/tools/green-light/lens/bogus').status_code == 404, 'unknown lens was not 404',
+           'unknown lens -> 404')
+        # counts endpoint: the three real, never-combined counts, all ints
+        cj = c.get('/tools/green-light/counts').get_json() or {}
+        cc = cj.get('counts') or {}
+        ok(set(cc) == {'lenses_hidden_by_user', 'eligible_items_hidden_by_pref', 'items_unavailable_by_gate'}
+           and all(isinstance(v, int) for v in cc.values()),
+           f'counts endpoint shape wrong: {cc}', 'counts endpoint returns three real int counts (never combined)')
+        ok(isinstance(cj.get('lenses'), dict) and len(cj['lenses']) >= 1,
+           'counts endpoint has no per-lens summary', 'counts endpoint returns per-lens summaries')
     finally:
         try:
             os.remove(pf)

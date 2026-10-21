@@ -4,19 +4,19 @@
 
 {% block content %}
 <style>
-  .glw{--glw:#4ed48a;--glw-gov:#c9a227;--glw-dim:rgba(78,212,138,.14);}
+  .glw{--glw:#4ed48a;--glw-gov:#c9a227;--glw-dim:rgba(78,212,138,.14);--glw-amber:#e4b23a;--glw-grey:#8a94a0;}
   .glw-head{margin:0 0 6px;font:700 22px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
-  .glw-sub{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 14px;max-width:70ch;}
+  .glw-sub{font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 14px;max-width:72ch;}
   .glw-sub a{color:var(--glw);}
   .glw-counts{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px;}
-  .glw-count{flex:1 1 180px;min-width:150px;border:1px solid var(--border,rgba(255,255,255,.12));border-radius:10px;
+  .glw-count{flex:1 1 200px;min-width:160px;border:1px solid var(--border,rgba(255,255,255,.12));border-radius:10px;
     padding:10px 12px;background:var(--bg-card,rgba(255,255,255,.03));}
   .glw-count .n{font:800 20px/1 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
   .glw-count .l{font:600 10.5px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:4px;}
   .glw-wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;}
   .glw-col{flex:1 1 320px;min-width:280px;}
   .glw-panel{border:1px solid var(--border,rgba(255,255,255,.12));border-radius:12px;padding:14px;background:var(--bg-card,rgba(255,255,255,.03));}
-  .glw-panel h3{font:700 13px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;}
+  .glw-panel h3,.glw-h{font:700 13px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;}
   .glw-lenrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06);}
   .glw-lenrow:last-child{border-bottom:0;}
   .glw-lenrow .nm{flex:1;font:600 13px/1.3 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
@@ -27,7 +27,7 @@
   .glw-chip{font:700 9.5px/1 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.05em;
     padding:3px 6px;border-radius:5px;background:var(--glw-dim);color:var(--glw);}
   .glw-chip.gov{background:rgba(201,162,39,.16);color:var(--glw-gov);}
-  .glw-fieldset{margin:14px 0 0;}
+  .glw-fieldset{margin:14px 0 0;border:0;padding:0;}
   .glw-fieldset legend{font:700 11px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding:0;margin-bottom:6px;}
   .glw-opts{display:flex;flex-wrap:wrap;gap:6px;}
   .glw-opts label{font:600 11.5px/1 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);border:1px solid rgba(255,255,255,.14);
@@ -39,33 +39,48 @@
   .glw-card.gov{border-left-color:var(--glw-gov);}
   .glw-card .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .glw-card .ttl{font:700 15px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .glw-badge{font:700 9.5px/1 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:.04em;padding:3px 6px;border-radius:5px;}
+  .glw-badge.available{background:var(--glw-dim);color:var(--glw);}
+  .glw-badge.partial,.glw-badge.stale{background:rgba(228,178,58,.16);color:var(--glw-amber);}
+  .glw-badge.unavailable{background:rgba(138,148,160,.18);color:var(--glw-grey);}
+  .glw-badge.gated{background:rgba(201,162,39,.16);color:var(--glw-gov);}
   .glw-card .src{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:6px 0 0;}
   .glw-card .why{font:600 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--glw);margin:4px 0 0;}
-  .glw-card .status{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:6px 0 0;}
-  .glw-card .status b{color:var(--text-bright);}
-  .glw-card a.open{color:var(--glw);font-weight:700;text-decoration:none;}
-  .glw-hidden{margin-top:14px;}
+  .glw-card .sum{font:600 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:7px 0 0;}
+  .glw-card .meta{font:500 11px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:3px 0 0;}
+  .glw-card .meta b{color:var(--text-bright);}
+  .glw-more{background:transparent;border:1px solid rgba(255,255,255,.18);color:var(--glw);border-radius:6px;
+    font:700 11px/1 'Helvetica Neue',Arial,sans-serif;padding:5px 9px;cursor:pointer;margin-top:8px;}
+  .glw-items{margin:8px 0 0;padding:0;list-style:none;}
+  .glw-items li{padding:6px 0;border-top:1px solid rgba(255,255,255,.06);font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .glw-items .iw{color:var(--text-muted);}
+  .glw-items .ist{font:700 9px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.04em;color:var(--glw-amber);margin-left:6px;}
+  .glw-items .ic{color:#e4803a;font-weight:700;margin-left:6px;}
+  .glw-card a.open{color:var(--glw);font-weight:700;text-decoration:none;font-size:11px;}
   .glw-hidden .h{font:600 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);}
   .glw-note{font:500 11px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:4px 0 0;}
   .glw-disc{border:1px dashed rgba(255,255,255,.2);border-radius:8px;padding:9px 11px;margin:16px 0 10px;
     font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .glw.compact .glw-card{padding:9px 11px;margin-bottom:7px;}
   @media (max-width:760px){.glw-wrap{gap:14px;}.glw-col{flex:1 1 100%;}}
 </style>
 
-<div class="glw">
+<div class="glw {{ 'compact' if density == 'compact' }}" id="glw-root"{% if why_expanded %} data-why-expanded="1"{% endif %}>
   <h1 class="glw-head">Green Light &mdash; Preference Workspace</h1>
-  <p class="glw-sub">Your research lenses, organized the way <b>you</b> decide. This arranges and filters
-    factual material &mdash; it never scores, ranks a pick, or hides a factual qualifier. Preferences control
-    visibility and workflow only. &nbsp;<a href="{{ url_for('green_light_tool') }}">&larr; Classic convergence board</a></p>
+  <p class="glw-sub">Your research lenses, composed the way <b>you</b> decide. Each lens shows a live, cache-backed
+    summary from its real source &mdash; this arranges and filters factual material, it never scores, ranks a
+    pick, hides a factual qualifier, or makes an unqualified model authoritative.
+    &nbsp;<a href="{{ url_for('green_light_tool') }}">&larr; Classic convergence board</a></p>
 
-  <!-- THREE DISTINCT COUNTS, never combined -->
+  <!-- THREE DISTINCT, never-combined counts. #1 is lens-level (instant); #2/#3 are item-level, derived
+       server-side from the same canonical universe and loaded with the summaries. -->
   <div class="glw-counts">
     <div class="glw-count"><div class="n">{{ counts.lenses_hidden_by_user }}</div>
       <div class="l">Lenses you hid</div></div>
-    <div class="glw-count"><div class="n">{{ counts.lenses_out_of_sport }}</div>
-      <div class="l">Lenses filtered by your sport/market choice</div></div>
-    <div class="glw-count"><div class="n" id="glw-unavail">&mdash;</div>
-      <div class="l">Lenses unavailable (data / freshness / legal / model gate)</div></div>
+    <div class="glw-count"><div class="n" id="glw-filtered">&middot;&middot;&middot;</div>
+      <div class="l">Eligible items hidden by your sport/market</div></div>
+    <div class="glw-count"><div class="n" id="glw-unavail">&middot;&middot;&middot;</div>
+      <div class="l">Items unavailable &mdash; data / freshness / legal / model gate</div></div>
   </div>
 
   <div class="glw-wrap">
@@ -88,31 +103,25 @@
           {% endfor %}
         </div>
 
-        <fieldset class="glw-fieldset" style="border:0;padding:0;">
-          <legend>Preferred sports</legend>
+        <fieldset class="glw-fieldset"><legend>Preferred sports</legend>
           <div class="glw-opts">
             {% for s in all_sports %}<label><input type="checkbox" name="sports" value="{{ s }}"
               {{ 'checked' if s in selected_sports }}>{{ s|upper }}</label>{% endfor %}
-          </div>
-        </fieldset>
+          </div></fieldset>
 
-        <fieldset class="glw-fieldset" style="border:0;padding:0;">
-          <legend>Preferred markets</legend>
+        <fieldset class="glw-fieldset"><legend>Preferred markets</legend>
           <div class="glw-opts">
             {% for m in all_markets %}<label><input type="checkbox" name="markets" value="{{ m }}"
               {{ 'checked' if m in selected_markets }}>{{ m }}</label>{% endfor %}
           </div>
-          <p class="glw-note">Markets are validated against the sports you pick; an unsupported combination is rejected.</p>
-        </fieldset>
+          <p class="glw-note">Markets are validated against your sports; an unsupported combination is rejected.</p></fieldset>
 
-        <fieldset class="glw-fieldset" style="border:0;padding:0;">
-          <legend>Display</legend>
+        <fieldset class="glw-fieldset"><legend>Display</legend>
           <div class="glw-opts">
             <label><input type="radio" name="density" value="comfortable" {{ 'checked' if density != 'compact' }}>Comfortable</label>
             <label><input type="radio" name="density" value="compact" {{ 'checked' if density == 'compact' }}>Compact</label>
-            <label><input type="checkbox" name="why_expanded" {{ 'checked' if why_expanded }}>Expand &ldquo;why&rdquo; by default</label>
-          </div>
-        </fieldset>
+            <label><input type="checkbox" name="why_expanded" {{ 'checked' if why_expanded }}>Expand items by default</label>
+          </div></fieldset>
 
         <div class="glw-actions">
           <button type="submit" class="glw-btn glw-save">Save preferences</button>
@@ -124,47 +133,44 @@
 
     <!-- COMPOSITION -->
     <div class="glw-col" style="flex:2 1 420px;">
-      <h3 style="font:700 13px/1.2 'Helvetica Neue',Arial;color:var(--text-bright);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;">Your lenses</h3>
+      <div class="glw-h">Your lenses</div>
       {% for l in visible_lenses %}
-      <div class="glw-card {{ 'gov' if l.governed }}" data-lens="{{ l.key }}" data-wired="{{ '1' if l.wired else '0' }}">
+      <div class="glw-card {{ 'gov' if l.governed }}" data-lens="{{ l.key }}">
         <div class="top">
           <span class="ttl">{{ l.label }}</span>
           {% if l.governed %}<span class="glw-chip gov">governed model &middot; research-only</span>
           {% else %}<span class="glw-chip">fact</span>{% endif %}
+          <span class="glw-badge unavailable" data-badge>loading</span>
         </div>
         <div class="src">Source: {{ l.source }}</div>
         <div class="why">Why showing: you kept this lens visible{% if selected_sports %} for {{ selected_sports|join('/')|upper }}{% endif %}.</div>
-        <div class="status" data-status>
-          {% if l.link %}<a class="open" href="{{ l.link }}">Open the live board &rarr;</a>{% else %}
-            Governed research registry &mdash; no public board; not authoritative.{% endif %}
-        </div>
+        <div class="sum" data-sum>&middot;&middot;&middot;</div>
+        <div class="meta" data-meta></div>
         {% if l.governed %}<div class="glw-note">A governed-model read never gains sort or membership authority (model_registry firewall).</div>{% endif %}
+        <button class="glw-more" type="button" data-more>Show items</button>
+        <ul class="glw-items" data-items hidden></ul>
+        {% if l.link %}<div style="margin-top:6px;"><a class="open" href="{{ l.link }}">Open the full board &rarr;</a></div>{% endif %}
       </div>
       {% endfor %}
 
       {% if hidden_lenses %}
       <div class="glw-hidden">
-        <h3 style="font:700 12px/1.2 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px;">Hidden by your preferences</h3>
+        <div class="glw-h" style="font-size:12px;color:var(--text-muted);">Hidden by your preferences</div>
         {% for h in hidden_lenses %}
         <div class="h">{{ h.label }} &mdash;
-          {% if h.reason == 'HIDDEN_BY_USER' %}you hid this lens{% elif h.reason == 'OUT_OF_SPORT' %}outside your selected sports{% else %}{{ h.reason }}{% endif %}
-          &nbsp;<a class="open" href="{{ url_for('green_light_tool', view='workspace') }}" style="font-size:10.5px;">adjust &rarr;</a></div>
+          {% if h.reason == 'HIDDEN_BY_USER' %}you hid this lens{% elif h.reason == 'OUT_OF_SPORT' %}outside your selected sports{% else %}{{ h.reason }}{% endif %}</div>
         {% endfor %}
       </div>
       {% endif %}
 
-      <!-- BROWSER-ONLY PROPOSED TICKET (shared editor; nothing persisted) -->
       <div class="glw-disc">
         <b>Proposed ticket &mdash; working copy.</b> Built from today's board with the same editor as Daily Cards and
         King's Tickets. Edits stay on this page and are <b>not saved</b> (no draft store, no history). The combined
         price is <b>illustrative</b> &mdash; calculated from the individual board numbers assuming independent legs,
         not a sportsbook quote. To keep it, copy it or rebuild it in King's Tickets.
       </div>
-      {% if cards %}
-        {% include "_ticket_editor.html" %}
-      {% else %}
-        <div class="glw-note">No proposed ticket could be built from the current slate &mdash; the lenses above still stand on their own.</div>
-      {% endif %}
+      {% if cards %}{% include "_ticket_editor.html" %}
+      {% else %}<div class="glw-note">No proposed ticket could be built from the current slate &mdash; the lenses above still stand on their own.</div>{% endif %}
     </div>
   </div>
 </div>
@@ -173,48 +179,77 @@
 {% block extra_js %}
 <script>
 (function(){
-  // Lazy per-lens live status -> fills each wired card + aggregates the "unavailable" count. Shell made no
-  // builder calls; this runs after paint so the page is fast.
-  var unavailable = 0, pending = 0, settled = 0, cards = document.querySelectorAll('.glw-card[data-wired="1"]');
-  function done(){ if(settled>=pending){ var el=document.getElementById('glw-unavail'); if(el) el.textContent = unavailable; } }
-  cards.forEach(function(c){
-    pending++;
-    var key = c.getAttribute('data-lens'), slot = c.querySelector('[data-status]');
-    fetch('/tools/green-light/lens/'+encodeURIComponent(key), {headers:{'Accept':'application/json'}})
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(d){
-        settled++;
-        if(d && d.wired){
-          if(d.available){
-            slot.innerHTML = '<b>Live</b>'+(d.count? ' &middot; '+d.count+' qualifying' : '')
-              +(d.data_through? ' &middot; through '+d.data_through : '')
-              +(d.link? ' &middot; <a class="open" href="'+d.link+'">open &rarr;</a>' : '');
-          } else {
-            unavailable++;
-            slot.innerHTML = 'Unavailable right now'+(d.unavailable_reason? ' ('+d.unavailable_reason+')':'')
-              +' &mdash; gated by data/freshness, not hidden by you.';
-          }
-        }
-        done();
-      })
-      .catch(function(){ settled++; done(); });
-  });
-  if(pending===0){ var el=document.getElementById('glw-unavail'); if(el) el.textContent='0'; }
+  var root = document.getElementById('glw-root');
+  var whyOpen = root && root.getAttribute('data-why-expanded') === '1';
+  function badge(el, state){ el.className = 'glw-badge ' + state; el.textContent = state; }
 
-  // Reorder controls -> keep the hidden "order" field in sync (degrades to current order without JS).
-  var list = document.getElementById('glw-lenlist'), orderField = document.getElementById('glw-order');
-  function sync(){ if(!list||!orderField) return;
-    orderField.value = Array.prototype.map.call(list.querySelectorAll('.glw-lenrow'), function(r){ return r.getAttribute('data-key'); }).join(','); }
-  if(list){
-    list.addEventListener('click', function(e){
-      var up = e.target.closest('.glw-up'), down = e.target.closest('.glw-down'); if(!up && !down) return;
-      var row = e.target.closest('.glw-lenrow'); if(!row) return;
-      if(up && row.previousElementSibling){ row.parentNode.insertBefore(row, row.previousElementSibling); }
-      else if(down && row.nextElementSibling){ row.parentNode.insertBefore(row.nextElementSibling, row); }
-      sync();
+  // One cache-backed call fills every card summary + the two item-level count tiles (real, server-derived).
+  fetch('/tools/green-light/counts', {headers:{'Accept':'application/json'}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      if(!d) return;
+      var f=document.getElementById('glw-filtered'), u=document.getElementById('glw-unavail');
+      if(f) f.textContent = d.counts.eligible_items_hidden_by_pref;
+      if(u) u.textContent = d.counts.items_unavailable_by_gate;
+      Object.keys(d.lenses||{}).forEach(function(key){
+        var s = d.lenses[key], card = document.querySelector('.glw-card[data-lens="'+key+'"]'); if(!card) return;
+        badge(card.querySelector('[data-badge]'), s.availability);
+        var sum = card.querySelector('[data-sum]'), meta = card.querySelector('[data-meta]');
+        if(s.availability === 'unavailable' || s.membership_count === 0){
+          sum.textContent = 'Unavailable right now' + (s.context_note ? ' ('+s.context_note+')' : '') + ' — gated by data/freshness, not hidden by you.';
+          card.querySelector('[data-more]').style.display='none';
+        } else {
+          sum.innerHTML = '<b>'+s.membership_count+'</b> factual records'
+            + (s.eligible_count !== s.membership_count ? ' · '+s.eligible_count+' match your filter' : '')
+            + (s.data_through ? ' · through '+s.data_through : '');
+          var bits = [];
+          if(s.filtered_by_pref) bits.push(s.filtered_by_pref+' hidden by your sport/market');
+          if(s.unavailable_count) bits.push(s.unavailable_count+' stale/gated');
+          if(s.contradictions) bits.push(s.contradictions+' contradiction(s)');
+          if(s.governed) bits.push('governed model — research-only, not authoritative');
+          meta.innerHTML = bits.join(' · ');
+          if(whyOpen) card.querySelector('[data-more]').click();
+        }
+      });
+    }).catch(function(){});
+
+  // Lazy item detail per lens (one request on demand).
+  document.querySelectorAll('.glw-card[data-lens]').forEach(function(card){
+    var key = card.getAttribute('data-lens'), more = card.querySelector('[data-more]'),
+        list = card.querySelector('[data-items]'), loaded = false;
+    if(!more) return;
+    more.addEventListener('click', function(){
+      if(loaded){ list.hidden = !list.hidden; more.textContent = list.hidden ? 'Show items' : 'Hide items'; return; }
+      more.textContent = 'Loading…';
+      fetch('/tools/green-light/lens/'+encodeURIComponent(key), {headers:{'Accept':'application/json'}})
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(e){
+          loaded = true; list.innerHTML = '';
+          (e && e.items || []).forEach(function(it){
+            var li = document.createElement('li');
+            li.innerHTML = '<span>'+(it.label||'')+'</span>'
+              + (it.why ? ' <span class="iw">— '+it.why+'</span>' : '')
+              + (it.state && it.state !== 'available' ? ' <span class="ist">'+it.state+'</span>' : '')
+              + (it.contradiction ? ' <span class="ic">⚠ contradiction</span>' : '');
+            list.appendChild(li);
+          });
+          if(!list.children.length) list.innerHTML = '<li class="iw">No individual records to list.</li>';
+          list.hidden = false; more.textContent = 'Hide items';
+        })
+        .catch(function(){ more.textContent = 'Show items'; });
     });
+  });
+
+  // Reorder controls keep the hidden "order" field in sync (degrades to current order without JS).
+  var l = document.getElementById('glw-lenlist'), of = document.getElementById('glw-order');
+  function sync(){ if(l&&of) of.value = Array.prototype.map.call(l.querySelectorAll('.glw-lenrow'), function(r){ return r.getAttribute('data-key'); }).join(','); }
+  if(l){ l.addEventListener('click', function(ev){
+    var up=ev.target.closest('.glw-up'), dn=ev.target.closest('.glw-down'); if(!up&&!dn) return;
+    var row=ev.target.closest('.glw-lenrow'); if(!row) return;
+    if(up&&row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
+    else if(dn&&row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
     sync();
-  }
+  }); sync(); }
 })();
 </script>
 {% endblock %}

@@ -99,17 +99,20 @@ def run_qc():
     ok(mr['membership_count'] == 1 and mr['items'][0]['id'] == '', 'malformed row crashed compaction')
     NOTES.append('seven failure modes (missing file/stale/legal/malformed/cache-miss/empty-season/exception) clean')
 
-    # 6. three real counts, never combined; wholly-unavailable lens counted (not zeroed)
-    envs = [
+    # 6. three real counts, never combined; wholly-unavailable lens counted (not zeroed); out-of-sport
+    # lens contributes its whole membership to the sport/market-filtered count.
+    visible = [
         ga.build_envelope('a', 'A', 'fact', 'nfl', None, [_m(0), _m(1, unavailable=True)]),      # 1 unavailable item
         ga.build_envelope('b', 'B', 'fact', 'nfl', None, mem, prefs={'sports': ['nfl']}),         # 2 filtered
-        ga.abstain_envelope('c', 'C', 'fact', reason='missing_file'),                             # wholly unavailable
+        ga.abstain_envelope('c', 'C', 'fact', reason='missing_file'),                             # wholly unavailable -> +1
     ]
-    counts = ga.aggregate_counts(envs, hidden_by_user_keys=['z1', 'z2'], out_of_sport_keys=['y1'])
-    ok(counts['lenses_hidden_by_user'] == 2 and counts['lenses_out_of_sport'] == 1, 'lens counts wrong')
-    ok(counts['eligible_items_hidden_by_pref'] == 2, f'filtered items wrong: {counts["eligible_items_hidden_by_pref"]}')
+    out_of_sport = [ga.build_envelope('d', 'D', 'fact', 'cfb', None, [_m(0, sport='cfb'), _m(1, sport='cfb')])]  # 2 items
+    counts = ga.aggregate_counts(visible, out_of_sport, hidden_by_user_keys=['z1', 'z2'])
+    ok(counts['lenses_hidden_by_user'] == 2, 'hidden-by-user count wrong')
+    ok(counts['eligible_items_hidden_by_pref'] == 4,
+       f'filtered items wrong: {counts["eligible_items_hidden_by_pref"]} (2 visible + 2 out-of-sport)')
     ok(counts['items_unavailable_by_gate'] == 2, f'unavailable count wrong: {counts["items_unavailable_by_gate"]}')
-    NOTES.append('three distinct counts derived from the same universe; wholly-unavailable lens counted, not zeroed')
+    NOTES.append('three distinct counts from the same universe; out-of-sport membership -> filtered; wholly-unavailable lens counted')
 
     return {'issues': ISSUES, 'notes': NOTES}
 
