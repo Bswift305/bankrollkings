@@ -111,24 +111,39 @@ def run_qc():
            f'counts endpoint shape wrong: {cc}', 'counts endpoint returns three real int counts (never combined)')
         ok(isinstance(cj.get('lenses'), dict) and len(cj['lenses']) >= 1,
            'counts endpoint has no per-lens summary', 'counts endpoint returns per-lens summaries')
+        # lazy, browser-only proposed-ticket fragment
+        rt = c.get('/tools/green-light/ticket')
+        ok(rt.status_code == 200, f'ticket fragment not 200 (got {rt.status_code})',
+           'lazy proposed-ticket fragment returns 200')
     finally:
         try:
             os.remove(pf)
         except OSError:
             pass
 
-    # 6. no-drift + no journal/draftstore coupling (static)
+    # 6. lazy ticket + no-drift + no journal/draftstore coupling (static)
     src = open('app.py', encoding='utf-8', errors='replace').read()
-    block = src[src.find('# --- Green Light preference workspace'):src.find('def green_light_lens_status')]
-    ok('build_daily_cards(' in block,
-       'workspace does not reuse build_daily_cards (ticket could drift)',
-       'proposed ticket reuses build_daily_cards (no drift from Daily Cards / King\'s Tickets)')
+
+    def _fn(name):
+        i = src.find('def ' + name + '(')
+        return src[i:src.find('\ndef ', i + 1)] if i >= 0 else ''
+    shell, ticket = _fn('build_green_light_workspace'), _fn('green_light_ticket')
+    ok('build_daily_cards(' not in shell, 'shell still calls build_daily_cards (not lazy)',
+       'shell calls NO builder (proposed ticket is lazy-loaded)')
+    ok('build_daily_cards(' in ticket and '_ticket_editor.html' in ticket,
+       'lazy ticket endpoint does not reuse the shared builder/editor',
+       'lazy ticket reuses build_daily_cards + shared _ticket_editor.html (cannot drift)')
+    ok(not re.search(r'journal|KingsTicketDraftStore|DraftService|kings_tickets_drafts', ticket),
+       'lazy ticket couples to a dark store', 'lazy ticket touches neither the Decision Journal nor the draft store')
     tpl = open('templates/green_light_workspace.html', encoding='utf-8', errors='replace').read()
-    ok('_ticket_editor.html' in tpl, 'workspace does not include the shared ticket editor',
-       'workspace includes the shared _ticket_editor.html partial')
-    ok(not re.search(r'journal|KingsTicketDraftStore|DraftService|kings_tickets_drafts', block),
-       'workspace code couples to the journal or draft store',
-       'workspace touches neither the Decision Journal nor the draft store')
+    ok('glw-ticket' in tpl and 'green_light_ticket' in tpl and '_ticket_editor.html' not in tpl,
+       'template does not lazy-load the ticket (or still inlines the editor)',
+       'template lazy-loads the proposed ticket (no inline build in the shell)')
+    # the whole GL workspace region (shell + adapters + endpoints) is clean of dark-store coupling
+    region = src[src.find('# --- Green Light preference workspace'):src.find('def green_light_ticket') + len(ticket)]
+    ok(not re.search(r'journal|KingsTicketDraftStore|DraftService|kings_tickets_drafts', region),
+       'workspace region couples to the journal or draft store',
+       'workspace region touches neither the Decision Journal nor the draft store')
 
     return {'issues': ISSUES, 'notes': NOTES}
 

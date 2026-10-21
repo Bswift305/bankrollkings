@@ -169,8 +169,9 @@
         price is <b>illustrative</b> &mdash; calculated from the individual board numbers assuming independent legs,
         not a sportsbook quote. To keep it, copy it or rebuild it in King's Tickets.
       </div>
-      {% if cards %}{% include "_ticket_editor.html" %}
-      {% else %}<div class="glw-note">No proposed ticket could be built from the current slate &mdash; the lenses above still stand on their own.</div>{% endif %}
+      <div id="glw-ticket" data-src="{{ url_for('green_light_ticket') }}">
+        <div class="glw-note">Loading the proposed ticket&hellip;</div>
+      </div>
     </div>
   </div>
 </div>
@@ -239,6 +240,27 @@
         .catch(function(){ more.textContent = 'Show items'; });
     });
   });
+
+  // Browser-only proposed ticket, lazy-loaded after paint (the shell called no builder). Inject the shared
+  // editor fragment and re-execute its inline script so editing works identically to Daily Cards.
+  var tk = document.getElementById('glw-ticket');
+  if(tk){
+    var loadTicket = function(){
+      fetch(tk.getAttribute('data-src'), {headers:{'Accept':'text/html'}})
+        .then(function(r){ return r.ok ? r.text() : null; })
+        .then(function(html){
+          if(html === null){ tk.innerHTML = '<div class="glw-note">The proposed ticket is unavailable right now.</div>'; return; }
+          tk.innerHTML = html;
+          tk.querySelectorAll('script').forEach(function(old){
+            var s = document.createElement('script');
+            if(old.src) s.src = old.src; else s.textContent = old.textContent;
+            old.parentNode.replaceChild(s, old);
+          });
+        })
+        .catch(function(){ tk.innerHTML = '<div class="glw-note">The proposed ticket is unavailable right now.</div>'; });
+    };
+    if('requestIdleCallback' in window) requestIdleCallback(loadTicket, {timeout: 1500}); else setTimeout(loadTicket, 300);
+  }
 
   // Reorder controls keep the hidden "order" field in sync (degrades to current order without JS).
   var l = document.getElementById('glw-lenlist'), of = document.getElementById('glw-order');

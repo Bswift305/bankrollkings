@@ -819,7 +819,7 @@ PRO_ENDPOINTS = {
     'bet_tracker_tool', 'bet_tracker_add', 'bet_tracker_settle', 'bet_tracker_delete',  # personal bet log + CLV
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
-    'green_light_lens_status', 'green_light_counts',  # Green Light preference workspace: lens envelopes + real counts
+    'green_light_lens_status', 'green_light_counts', 'green_light_ticket',  # Green Light workspace: envelopes + counts + lazy ticket
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -44787,13 +44787,8 @@ def build_green_light_workspace(uid):
            'all_markets': markets_for_sports(selected_sports), 'selected_markets': prefs.get('markets') or [],
            'density': display.get('density', 'comfortable'), 'why_expanded': bool(display.get('why_expanded')),
            'has_prefs': bool(prefs)}
-    # Browser-only proposed ticket via the SAME shared builder + editor as Daily Cards / King's Tickets.
-    try:
-        tc = build_daily_cards(**load_card_prefs(uid))
-        ctx['cards'] = tc.get('cards') or []
-        ctx['bench'] = tc.get('bench') or []
-    except Exception:
-        ctx['cards'], ctx['bench'] = [], []
+    # The browser-only proposed ticket is LAZY-loaded from /tools/green-light/ticket so the shell calls NO
+    # builders (fast first render); it reuses the same build_daily_cards + shared _ticket_editor.html.
     ctx['surface'] = 'green_light_workspace'
     return ctx
 
@@ -44859,6 +44854,23 @@ def _gl_summary(env):
     return {k: env.get(k) for k in ('availability', 'membership_count', 'eligible_count', 'filtered_by_pref',
                                     'unavailable_count', 'contradictions', 'data_through', 'source',
                                     'governed', 'universe_hash', 'gl_hash', 'no_suppression', 'context_note')}
+
+
+@app.route('/tools/green-light/ticket')
+def green_light_ticket():
+    """Lazy, browser-only proposed-ticket fragment for the workspace. The SAME build_daily_cards + shared
+    _ticket_editor.html as Daily Cards / King's Tickets, so membership/order are identical and cannot drift.
+    GET only (no CSRF needed), PRO-gated, browser-only: it makes NO draft-store or Decision Journal calls and
+    persists nothing. Honest unavailable state on failure."""
+    try:
+        tc = build_daily_cards(**load_card_prefs(_card_prefs_uid()))
+        if not (tc.get('cards')):
+            return ('<div class="glw-note">No proposed ticket could be built from the current slate &mdash; '
+                    'the lenses above still stand on their own.</div>')
+        return render_template('_ticket_editor.html', **tc)
+    except Exception:
+        return ('<div class="glw-note">The proposed ticket is unavailable right now. The lenses above are '
+                'unaffected.</div>')
 
 
 @app.route('/tools/nfl-dvp')
