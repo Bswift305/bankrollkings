@@ -59,6 +59,35 @@ def run_qc():
     import os
     if not os.path.exists('templates/_ticket_editor.html'):
         issues.append("_ticket_editor.html (the shared component) is missing")
+
+    # ---- Step 3.2: the two surfaces cannot drift ----
+    # identical inputs -> identical ordered leg identities across Today's Cards and King's Tickets.
+    q = '?sizes=3&sizes=4&risk=balanced&legs=all&timeframe=smart'
+    c1, h1 = _render('/tools/daily-card' + q)
+    c2, h2 = _render('/tools/kings-tickets' + q)
+    if c2 != 200:
+        issues.append(f"/tools/kings-tickets returned {c2}")
+    else:
+        # King's Tickets is its own branded surface (not a Daily Cards redirect)
+        if "King&rsquo;s <span class=\"accent\">Tickets" not in h2 and "King's" not in h2:
+            issues.append("King's Tickets page is not branded as King's Tickets")
+        if 'dc-grid' not in h2 and 'bkn-empty' not in h2:
+            issues.append("King's Tickets renders neither the shared editor nor an honest empty state")
+        if c1 == 200:
+            d_legs, k_legs = legs_by_card(h1), legs_by_card(h2)
+            if d_legs != k_legs:
+                issues.append(f"SURFACES DRIFTED: daily-card legs != kings-tickets legs "
+                              f"({sum(len(c) for c in d_legs)} vs {sum(len(c) for c in k_legs)} legs / "
+                              f"{len(d_legs)} vs {len(k_legs)} cards)")
+            else:
+                notes.append(f"no drift: both surfaces produce identical ordered leg identities "
+                             f"({len(k_legs)} cards, {sum(len(c) for c in k_legs)} legs) from the same builder")
+    # saved Daily Cards URL (a shared/legacy view) still resolves
+    sc, _ = _render('/tools/daily-card')
+    if sc != 200:
+        issues.append(f"existing /tools/daily-card URL no longer resolves ({sc})")
+    else:
+        notes.append("existing Today's Cards URL still resolves (compatibility intact)")
     return {'issues': issues, 'notes': notes}
 
 

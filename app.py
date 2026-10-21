@@ -812,6 +812,7 @@ FREE_ENDPOINTS = {
 
 PRO_ENDPOINTS = {
     'daily_card_tool', 'daily_card_image',  # the auto-generated best-bet cards -- premium capstone
+    'kings_tickets_tool',  # King's Tickets -- first-class editable 2-5 leg ticket (same engine)
     'menu_board_tool',  # The Menu -- full board of options, build-your-own ticket
     'my_view_tool',  # "how do you bet?" -- pick your post-sign-in landing surface
     'start_here_tool',  # guided onboarding -- the loop walkthrough
@@ -32971,6 +32972,25 @@ def daily_card_tool():
     ctx['saved'] = saved
     ctx['is_saved_view'] = (prefs == saved)
     return render_template('daily_cards.html', **ctx)
+
+
+@app.route('/tools/kings-tickets', methods=['GET', 'POST'])
+def kings_tickets_tool():
+    """King's Tickets -- the first-class editable 2-5-leg ticket surface. SAME builder
+    (build_daily_cards) and the SAME shared editor component as Today's Cards, so leg membership and
+    ordering are identical across the two surfaces; only the branding + entry framing differ. No new
+    ticket implementation, no persistence (Step 4 gated) -- edits are browser-page-only."""
+    uid = _card_prefs_uid()
+    saved = load_card_prefs(uid)
+    prefs = _card_prefs_from_request(saved)
+    if request.method == 'POST':
+        save_card_prefs(uid, prefs)                 # prefs are SHARED with Today's Cards (one default)
+        return redirect(url_for('kings_tickets_tool'))
+    ctx = build_daily_cards(**prefs)
+    ctx['saved'] = saved
+    ctx['is_saved_view'] = (prefs == saved)
+    ctx['surface'] = 'kings_tickets'
+    return render_template('kings_tickets.html', **ctx)
 
 
 @app.route('/tools/menu', methods=['GET'])

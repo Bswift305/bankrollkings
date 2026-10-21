@@ -1,0 +1,48 @@
+{% set active_page = 'kings_tickets' %}
+{% set active_sport = 'nfl' %}
+{% extends "bk_base.html" %}
+{% block title %}King's Tickets - Bankroll Kings{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-nfl.css') }}?v=20260930b">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bk-tickets.css') }}?v=20261021">
+<div class="bkn" style="max-width:none;">
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">Build &middot; the ticket{% if generated %} &middot; {{ generated }}{% endif %}</div>
+    <h1>King&rsquo;s <span class="accent">Tickets</span></h1>
+    <div class="page-subtitle">Your editable <b>2&ndash;5 leg</b> ticket. Swap any leg from the bench, reroll, or
+      resize &mdash; the price re-computes live as you edit. Cross-game legs, one per game, weighted toward
+      <b>floors</b> (high historical hit rate at the number) plus a plus-money swing. <b>Options you edit &mdash; not a graded pick.</b>
+      Edits here are <b>browser-page only</b> for now; refreshing resets the ticket.</div>
+  </div>
+</div>
+
+<form class="dc-ctrl" method="get" action="/tools/kings-tickets" onchange="this.submit()">
+  <div class="dc-cg"><span class="lb">Legs</span>
+    {% for n in [2,3,4,5] %}<label class="dc-pill {{ 'on' if n in prefs.sizes }}"><input type="checkbox" name="sizes" value="{{ n }}" {{ 'checked' if n in prefs.sizes }}>{{ n }}-leg</label>{% endfor %}
+  </div>
+  <div class="dc-cg"><span class="lb">Risk</span>
+    {% for r, lbl in [('safe','Safe'),('balanced','Balanced'),('aggressive','Aggressive')] %}<label class="dc-pill {{ 'on' if prefs.risk == r }}"><input type="radio" name="risk" value="{{ r }}" {{ 'checked' if prefs.risk == r }}>{{ lbl }}</label>{% endfor %}
+  </div>
+  <div class="dc-cg"><span class="lb">From</span>
+    {% for s, lbl in [('all','Everything'),('props','Props'),('lines','Team lines')] %}<label class="dc-pill {{ 'on' if prefs.legs == s }}"><input type="radio" name="legs" value="{{ s }}" {{ 'checked' if prefs.legs == s }}>{{ lbl }}</label>{% endfor %}
+  </div>
+  <div class="dc-cg"><span class="lb">When</span>
+    {% for t, lbl in [('smart','Smart'),('weekend','Weekend'),('week','Week')] %}<label class="dc-pill {{ 'on' if prefs.timeframe == t }}"><input type="radio" name="timeframe" value="{{ t }}" {{ 'checked' if prefs.timeframe == t }}>{{ lbl }}</label>{% endfor %}
+  </div>
+  {% if is_saved_view %}<span class="dc-savedtag dc-savebtn" style="margin-left:auto;cursor:default;border-style:dashed;">&#10003; Your default</span>{% else %}<button class="dc-savebtn" type="submit" formmethod="post">&#11088; Save as my default</button>{% endif %}
+</form>
+
+{% if not available %}
+  <div class="bkn-empty">
+    <b>No active ticket yet.</b> Nothing is fabricated — there's simply no slate to build from with these
+    settings right now. Try <b>Everything</b> for the source or widen the <b>Legs</b>, or start one from
+    <a href="/tools/green-light">Green Light</a>, <a href="/tools/menu">The Menu</a>, or
+    <a href="/tools/daily-card">Today's Cards</a>. Tickets fill in as this slate's props and lines load.
+  </div>
+{% else %}
+  {% include "_ticket_editor.html" %}
+{% endif %}
+</div>
+{% endblock %}

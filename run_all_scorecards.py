@@ -109,6 +109,9 @@ SCORECARDS = [
     # date:AWAY@HOME identity, every module abstains (available+source, never a zeroed value), derived
     # reads labelled, deterministic order, cached route (no cold regression).
     ("NFL Matchup Center QC", "qc_nfl_matchup_center.py", 180),
+    # Shared ticket editor (King's Tickets): Today's Cards + King's Tickets render one shared
+    # component from one builder; identical inputs -> identical ordered legs (the surfaces cannot drift).
+    ("Shared Ticket Editor QC", "qc_ticket_editor_shared.py", 180),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).
