@@ -47,35 +47,19 @@ for d in [GAMELOGS_DIR, SCHEDULES_DIR, PROPS_DIR, INJURIES_DIR, TRACKING_DIR]:
 
 print_flush(f"\n[{datetime.now().strftime('%H:%M:%S')}] Checking dependencies...")
 
-try:
-    import pandas as pd
-    print_flush("  ✓ pandas")
-except ImportError:
-    print_flush("  Installing pandas...")
-    os.system('pip install pandas --break-system-packages')
-    import pandas as pd
-
-try:
-    from nba_api.stats.static import players, teams
-    from nba_api.stats.endpoints import (
-        playergamelog, 
-        scoreboardv2,
-        leaguedashptstats,
-        leaguedashplayerstats,
-        leaguedashptdefend
-    )
-    print_flush("  ✓ nba_api")
-except ImportError:
-    print_flush("  Installing nba_api...")
-    os.system('pip install nba_api --break-system-packages')
-    from nba_api.stats.static import players, teams
-    from nba_api.stats.endpoints import (
-        playergamelog, 
-        scoreboardv2,
-        leaguedashptstats,
-        leaguedashplayerstats,
-        leaguedashptdefend
-    )
+# Dependencies are declared in requirements.txt and installed only through the controlled deploy —
+# never installed at runtime (a missing dependency fails fast with ImportError).
+import pandas as pd
+print_flush("  ✓ pandas")
+from nba_api.stats.static import players, teams
+from nba_api.stats.endpoints import (
+    playergamelog,
+    scoreboardv2,
+    leaguedashptstats,
+    leaguedashplayerstats,
+    leaguedashptdefend
+)
+print_flush("  ✓ nba_api")
 
 # Get current season
 now = datetime.now()

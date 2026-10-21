@@ -37,21 +37,11 @@ ODDS_DIR = DATA_DIR / "odds"
 
 SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
 
-try:
-    import pandas as pd
-except ImportError:
-    print("Installing pandas...")
-    os.system("pip install pandas --break-system-packages")
-    import pandas as pd
-
-try:
-    from nba_api.stats.endpoints import scoreboardv2
-    from nba_api.stats.static import teams
-except ImportError:
-    print("Installing nba_api...")
-    os.system("pip install nba_api --break-system-packages")
-    from nba_api.stats.endpoints import scoreboardv2
-    from nba_api.stats.static import teams
+# Dependencies are declared in requirements.txt and installed only through the controlled deploy —
+# never installed at runtime. A missing dependency fails fast with ImportError (the correct signal).
+import pandas as pd
+from nba_api.stats.endpoints import scoreboardv2
+from nba_api.stats.static import teams
 
 
 def get_team_abbrev_map():
