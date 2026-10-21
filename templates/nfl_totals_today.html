@@ -1,6 +1,6 @@
 {% set active_page = 'nfl_totals_today' %}
 {% extends "bk_base.html" %}
-{% block title %}NFL Totals - Bankroll Kings{% endblock %}
+{% block title %}NFL Game Totals (Over/Under) - Bankroll Kings{% endblock %}
 
 {% block content %}
 <style>
@@ -43,7 +43,7 @@
 <div class="page-hero">
   <div>
     <div class="page-kicker">NFL &middot; Live Board</div>
-    <h1>NFL <span class="accent">Totals</span></h1>
+    <h1>NFL Game <span class="accent">Totals</span> <span style="font-size:.5em;font-weight:600;opacity:.65;">(Over/Under)</span></h1>
     <div class="page-subtitle">This week&rsquo;s slate by over/under &mdash; the posted total, the first-half total, each team&rsquo;s over rate, and the game-day <b>wind</b>. High wind outdoors is the one totals signal our backtest says the market underprices.</div>
   </div>
   <div class="hero-actions"><a href="{{ sport_home_href('nfl') }}" class="btn btn-secondary btn-sm">NFL Board</a></div>
