@@ -135,7 +135,12 @@ fix regardless of the licensing decision.
 
 ---
 
-## C. Containment gaps (fix regardless of the licensing decision)
+## C. Containment gaps — ALL REMEDIATED (separate reversible commits; `qc_nba_containment.py`)
+Status after remediation: ① WNBA injury ingestion gated (`6bdf21d`); ② header spoofing removed (`bb5ebbf`);
+③ runtime `pip install` removed (`60dc05e`); ④ `load_schedule`/`load_playoff_results` gated (this commit).
+Both-flag-state containment QC is green. The mechanical repo search found **no additional** NBA/WNBA bypass
+beyond these four. Original findings, for the record:
+
 1. **WNBA injury ingestion is not gated.** `fetch_sport_injuries.py` (ESPN, used by `fetch_wnba_injuries.py`)
    has **no** `BK_NBA_STATS_ENABLED` ingestion check — only the *display* loader (`load_sport_injuries`) is
    gated. So WNBA injury ingestion can run while the gate is OFF. ESPN (not NBA.com), but it should be gated

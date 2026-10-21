@@ -128,6 +128,10 @@ SCORECARDS = [
     # Green Light lens-adapter framework: common envelope, canonical-universe hashes (no add/suppress),
     # preference filtering, availability (never a silent zero), failure isolation + 7 failure modes.
     ("Green Light Adapter Framework QC", "qc_green_light_adapters.py", 60),
+    # NBA/WNBA restricted-data containment (4 remediated gaps, both flag states): no runtime pip install,
+    # no header spoofing, WNBA injury ingestion gated, load_schedule/load_playoff_results gated + sentinels
+    # contained, cache key folds gate state, licensed Odds loaders + other sports unaffected.
+    ("NBA Containment QC", "qc_nba_containment.py", 120),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug

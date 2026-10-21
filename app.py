@@ -3693,6 +3693,9 @@ def load_ncaaf_live_props_feed(max_age_hours=6, require_fresh=False):
 
 
 def load_playoff_results():
+    # NBA.com (scoreboardv2) + ESPN-derived playoff results — contained while the data gate is off.
+    if not _nba_source_gate.nba_stats_enabled():
+        return pd.DataFrame()
     path = DATA_DIR / 'tracking' / 'NBA_Playoff_Results.csv'
     return _load_cached_csv(path, transform=_format_playoff_results)
 
@@ -20236,7 +20239,10 @@ def load_schedule():
     odds_schedule_path = DATA_DIR / 'schedules' / 'NBA_Odds.csv'
     odds_primary_path = DATA_DIR / 'odds' / 'NBA_Odds.csv'
 
-    schedule_df = _load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
+    # Containment: NBA_Schedule.csv can carry NBA.com-derived start times. While the data gate is off, do
+    # NOT read it — return only the licensed Odds-API-derived schedule (NBA_Odds.csv) below.
+    schedule_df = (_load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
+                   if _nba_source_gate.nba_stats_enabled() else pd.DataFrame())
     odds_df = pd.DataFrame()
     if odds_schedule_path.exists():
         odds_df = _load_cached_csv(odds_schedule_path, transform=_format_schedule, default=pd.DataFrame())
