@@ -204,6 +204,10 @@ sudo ls -ld /var/lib/bankrollkings/kings_tickets   # expect: drwx------ ubuntu u
 ```
 Pre-creating sets ownership/perms deterministically; the service would also create+validate the leaf on
 first use once enabled, but only under a root that passes §8.
+
+**Status — done & verified on prod 2026-10-21 (`20f5faa`):** `kings_tickets` created `drwx------ ubuntu
+ubuntu`; a dark open smoke-test produced `active_drafts.db` at `-rw------- ubuntu ubuntu` (0600); QC green.
+The flag remains `0`.
 Verify the module loads + the QC passes on prod Linux (so the POSIX symlink/owner/mode checks actually run):
 ```bash
 sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && python3 qc_kings_tickets_drafts.py'
@@ -230,10 +234,8 @@ enabling, not now.
 **Stop point:** awaiting the enablement decision. No routes, UI, or flag flip until approved.
 
 ## Corrective #2 QC output (qc_kings_tickets_drafts.py)
-Verified green on **prod Linux** at `23bb619` and on the Windows dev host. A follow-up root-rule hardening
-(accept a root-owned `0755` runtime root; reject a group/other-writable one; prove a full prod-style open)
-extended the POSIX block — re-run on prod to refresh this capture; the POSIX line below shows the extended
-assertion:
+Verified green on **prod Linux** at `20f5faa` (live `ubuntu@` run via SSM) and on the Windows dev host. The
+two prod-style-open lines and the POSIX line run only on Linux, so the capture below is the prod run:
 ```
 ====================================================================
 BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
@@ -258,6 +260,7 @@ BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
 [NOTE] schema singleton + exact-version fail-closed
 [NOTE] unsupported DB byte-identical after a failed startup (no pre-validation mutation)
 [NOTE] path escape (outside, or nested too deep beneath, the runtime root) rejected
+[NOTE] prod-style open: a 0755 root + a 0700 leaf works end-to-end
 [NOTE] POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm owner+mode fail closed; 0755 root accepted (not o/g-writable); prod-style open works
 [NOTE] corruption degrades to StoreUnavailable (no crash, no Journal fallback)
 [NOTE] authoritative boundary: references resolved server-side; client-supplied fields cannot override
