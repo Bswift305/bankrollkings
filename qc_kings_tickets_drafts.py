@@ -372,8 +372,23 @@ def _run_qc_inner():
             raises(kd.StoreUnavailable, lambda: kd._validate_prod_files(Path(permdb)),
                    'too-open dir mode (0755) accepted')
             os.chmod(ktdir, 0o700)
-            NOTES.append('POSIX: symlinked ancestor rejected; clean dir+db validates; '
-                         'wrong dir/db/-wal/-shm owner+mode fail closed')
+            # runtime ROOT may be a traversable 0755 parent (the real /var/lib layout), but NOT
+            # group/other-writable; a full prod-style open succeeds with a 0755 root + a 0700 leaf.
+            proot = os.path.join(td, 'proot'); os.mkdir(proot, 0o755)
+            kd._require_safe_root(Path(proot))                         # 0755 owner-only-writable root accepted
+            os.environ['BK_RUNTIME_DIR'] = proot
+            e2e = kd.KingsTicketDraftStore()
+            try:
+                e2e.save_draft('e2e', _legs(2), expected_revision=0)
+                ok(e2e.get_draft('e2e') is not None, 'prod-style open under a 0755 root failed',
+                   'prod-style open: a 0755 root + a 0700 leaf works end-to-end')
+            finally:
+                e2e.close()
+            os.chmod(proot, 0o777)
+            raises(kd.StoreUnavailable, lambda: kd._require_safe_root(Path(proot)),
+                   'group/other-writable runtime root accepted')
+            NOTES.append('POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm '
+                         'owner+mode fail closed; 0755 root accepted (not o/g-writable); prod-style open works')
         else:
             NOTES.append('symlink + owner/mode checks are POSIX-only (verified on prod Linux via SSM)')
 

@@ -169,6 +169,17 @@ create the DB `O_EXCL|O_NOFOLLOW` 0600 → validate owner + mode of the dir, DB,
 too-open mode **fails closed** (the operator setup corrects it explicitly — the app never silently repairs).
 The draft dir must be the runtime root or exactly one controlled level beneath it; anything else is rejected.
 
+Two different rules, because the root and the leaf play different roles:
+- **Runtime root** (e.g. `/var/lib/bankrollkings`, a root-owned `0755` parent that also holds the Decision
+  Journal dir): must be a real directory, not a symlink, **owned by root or the service user**, and **not
+  writable by group/other**. It may be group/other *readable/traversable* — the sensitive data is protected
+  at the leaf, not here.
+- **Draft dir** (the `kings_tickets` leaf that holds the DB): must be owned by the **service user** and
+  **`0700`** (owner-only). The DB is `0600`; `-wal`/`-shm` inherit it.
+
+On prod the service runs as `ubuntu` with `BK_RUNTIME_DIR` unset (root = `/var/lib/bankrollkings`, root-owned
+`0755`), so the leaf must be created `ubuntu:ubuntu 0700` — see §10.
+
 ## 9. Privacy disclosure (draft text, pending review)
 > **Your in-progress ticket draft.** When you build a King's Tickets ticket, we keep your current draft for
 > up to **24 hours** so it's still here if you refresh or move around the site. It is **not** a placed bet and
@@ -184,11 +195,15 @@ user-clearable immediately, included in a data-access response (or described the
 state), purged after 24h, and **excluded from analytics, model training and historical performance reporting**.
 
 ## 10. Production dark-setup (flag stays 0)
-Create the private store directory on prod (SSM, as the service user). Pre-creating sets ownership/perms
-deterministically; the service also validates (and, for a brand-new install, creates) it on first use:
+The runtime root `/var/lib/bankrollkings` is **root-owned `0755`** (it already holds `decision_journal`,
+which is `ubuntu:ubuntu 0700`). So the draft leaf must be created **as root** with an explicit owner,
+mirroring the journal dir — `sudo -u ubuntu install …` cannot write under a root-owned parent:
 ```bash
-sudo -u ubuntu bash -lc 'install -d -m 700 "${BK_RUNTIME_DIR:-/var/lib/bankrollkings}/kings_tickets"'
+sudo install -d -m 700 -o ubuntu -g ubuntu /var/lib/bankrollkings/kings_tickets
+sudo ls -ld /var/lib/bankrollkings/kings_tickets   # expect: drwx------ ubuntu ubuntu
 ```
+Pre-creating sets ownership/perms deterministically; the service would also create+validate the leaf on
+first use once enabled, but only under a root that passes §8.
 Verify the module loads + the QC passes on prod Linux (so the POSIX symlink/owner/mode checks actually run):
 ```bash
 sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && python3 qc_kings_tickets_drafts.py'
@@ -215,8 +230,10 @@ enabling, not now.
 **Stop point:** awaiting the enablement decision. No routes, UI, or flag flip until approved.
 
 ## Corrective #2 QC output (qc_kings_tickets_drafts.py)
-Verified green on **prod Linux** at `23bb619` (and on the Windows dev host). On prod the POSIX
-symlink/owner/mode block runs for real — the line below is the live `ubuntu@` run via SSM:
+Verified green on **prod Linux** at `23bb619` and on the Windows dev host. A follow-up root-rule hardening
+(accept a root-owned `0755` runtime root; reject a group/other-writable one; prove a full prod-style open)
+extended the POSIX block — re-run on prod to refresh this capture; the POSIX line below shows the extended
+assertion:
 ```
 ====================================================================
 BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
@@ -241,7 +258,7 @@ BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
 [NOTE] schema singleton + exact-version fail-closed
 [NOTE] unsupported DB byte-identical after a failed startup (no pre-validation mutation)
 [NOTE] path escape (outside, or nested too deep beneath, the runtime root) rejected
-[NOTE] POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm owner+mode fail closed
+[NOTE] POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm owner+mode fail closed; 0755 root accepted (not o/g-writable); prod-style open works
 [NOTE] corruption degrades to StoreUnavailable (no crash, no Journal fallback)
 [NOTE] authoritative boundary: references resolved server-side; client-supplied fields cannot override
 [NOTE] flag-off DraftService refuses and opens nothing

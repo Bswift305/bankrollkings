@@ -337,7 +337,30 @@ _LEG_INSERT_COLS = ('draft_id', 'position') + _LEG_COLS + ('inserted_at', 'last_
 
 
 # ---------------------------------------------------------------- production path safety
+def _require_safe_root(p, label='runtime root'):
+    """The runtime ROOT is a shared parent (e.g. a root-owned ``/var/lib/bankrollkings`` at 0755 that also
+    holds the Decision Journal dir), NOT the sensitive leaf. It must be a real directory, not a symlink,
+    owned by root or the service user, and NOT writable by group/other -- so no untrusted user can plant
+    the draft dir beneath it. It may be group/other *readable/traversable*; the DB is protected at the 0700
+    leaf validated by `_require_safe_dir`."""
+    try:
+        lst = os.lstat(p)
+    except OSError as exc:
+        raise StoreUnavailable(f'{label} missing: {exc}')
+    if stat.S_ISLNK(lst.st_mode):
+        raise StoreUnavailable(f'{label} is a symlink')
+    if not stat.S_ISDIR(lst.st_mode):
+        raise StoreUnavailable(f'{label} is not a directory')
+    if os.name == 'posix':
+        if lst.st_uid not in (0, os.getuid()):
+            raise StoreUnavailable(f'{label} must be owned by root or the service user')
+        if lst.st_mode & 0o022:
+            raise StoreUnavailable(f'{label} is writable by group/other')
+
+
 def _require_safe_dir(p, label):
+    """The sensitive leaf (the draft dir that holds the DB): a real directory, not a symlink, owned by the
+    service user, owner-only (0700)."""
     try:
         lst = os.lstat(p)
     except OSError as exc:
@@ -374,7 +397,7 @@ def _prepare_prod_dir(path):
     # the draft dir must be the runtime root itself or exactly one controlled level beneath it
     if parent != root and parent.parent != root:
         raise StoreUnavailable('draft dir must be within the private runtime root')
-    _require_safe_dir(root, 'runtime root')                 # root must be a real, owner-only directory
+    _require_safe_root(root)                                # trusted parent (root- or service-owned, not o/g-writable)
     _assert_no_symlink_chain(path)                          # no symlinked ancestor or target
     if parent != root and not os.path.lexists(parent):
         os.mkdir(parent, 0o700)                             # create ONLY the missing child, owner-only
