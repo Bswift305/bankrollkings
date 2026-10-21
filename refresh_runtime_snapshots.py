@@ -319,6 +319,7 @@ def prewarm_nfl_tool_caches() -> None:
         ("nfl_floor_board", lambda: _appmod.build_nfl_floor_board()),
         ("nfl_hot_hand", lambda: _appmod.build_nfl_hot_hand()),
         ("nfl_wave_context", lambda: _appmod.build_nfl_wave_context()),
+        ("nfl_matchup_center", lambda: _appmod.build_nfl_matchup_center_context()),
     ]
     for name, fn in jobs:
         try:

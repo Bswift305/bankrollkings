@@ -105,6 +105,10 @@ SCORECARDS = [
     # fingerprint change AND on an APP_CACHE_VERSION (deploy) change, reuse on unchanged inputs, fail
     # closed on corruption, and publish atomically (no partial reads, last complete write wins).
     ("Prewarm Cache Lifecycle QC", "qc_prewarm_lifecycle.py", 120),
+    # NFL Matchup Center (Green Light B1/step 2): every slate game present (no suppression), canonical
+    # date:AWAY@HOME identity, every module abstains (available+source, never a zeroed value), derived
+    # reads labelled, deterministic order, cached route (no cold regression).
+    ("NFL Matchup Center QC", "qc_nfl_matchup_center.py", 180),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).

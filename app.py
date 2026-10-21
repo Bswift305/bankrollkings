@@ -853,6 +853,7 @@ PRO_ENDPOINTS = {
     'nfl_totals_today_tool',
     'weekend_tool',
     'nfl_spots_tool',
+    'nfl_matchup_center_tool',
     'nfl_matchup_tool',
     'nfl_ats_tool',
     'nfl_team_tool',
@@ -48722,6 +48723,224 @@ _NFL_SPOTS_PROPSCORE_FLOOR = 10.0
 _NFL_SPOTS_PROPSCORE_PREMIUM = 20.0
 
 
+_MC_FULL_TO_ABBR = {full.lower(): abbr for abbr, full in NFL_ABBR_TO_FULL.items()}
+_NFL_MATCHUP_CENTER_CACHE = {}
+
+
+def _mc_abbr(name):
+    """Canonical NFL team ABBR for a display name OR abbr -- the single identity used to JOIN every
+    module (never a raw display-name join). Returns '' for an unresolved team (the caller abstains)."""
+    s = str(name or '').strip()
+    if not s:
+        return ''
+    if s.upper() in NFL_ABBR_TO_FULL:
+        return s.upper()
+    return _MC_FULL_TO_ABBR.get(s.lower(), '')
+
+
+def _mc_mod(available, source='', as_of='', note='', **value):
+    """One matchup-center module cell. ALWAYS carries availability + source + freshness; an unknown
+    renders unavailable (never a zero). `value` holds the module's own fields."""
+    cell = {'available': bool(available), 'source': source, 'as_of': as_of, 'note': note}
+    cell.update(value)
+    return cell
+
+
+def build_nfl_matchup_center_context():
+    """NFL Matchup Center: EVERY current-slate game as a card of FACTUAL modules, joined on one
+    canonical identity (date + away/home ABBR). Facts create visibility; no model or missing module
+    suppresses a game. Each module carries its own source + freshness and abstains (unavailable, never
+    zero) when its feed is missing. Derived reads (ATS wave, tendencies) are labelled context, not
+    recommendations. Cached on a source signature + disk-materialized (reuses the prewarm path) so the
+    nine slate-wide feeds are built ONCE, not per game -- no cold-route regression."""
+    odds_path = DATA_DIR / 'odds' / 'NFL_Odds.csv'
+    inj_path = DATA_DIR / 'injuries' / 'NFL_Injuries.csv'
+    sig = (_build_file_token(odds_path, inj_path), _nfl_player_log_signature(),
+           str(sports_today_date()))
+    _dkey = 'nfl_matchup_center'
+    if _NFL_MATCHUP_CENTER_CACHE.get('sig') == sig and 'data' in _NFL_MATCHUP_CENTER_CACHE:
+        return _NFL_MATCHUP_CENTER_CACHE['data']
+    _disk = _nfl_disk_cache_load(_dkey, sig)
+    if _disk is not None:
+        _NFL_MATCHUP_CENTER_CACHE.update(sig=sig, data=_disk)
+        return _disk
+
+    def _mtime_et(path):
+        try:
+            from services.timeutils import to_eastern_datetime_str as _et
+            from datetime import datetime as _dt, timezone as _tz
+            iso = _dt.fromtimestamp(os.path.getmtime(path), _tz.utc).isoformat()
+            return (_et(iso) + ' ET') if _et(iso) else ''
+        except Exception:
+            return ''
+
+    # ---- membership: EVERY this-week game (do NOT drop games missing a total) ----
+    try:
+        games = build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week')
+    except Exception:
+        games = []
+
+    # ---- slate-wide feeds, each built ONCE and indexed by the canonical ABBR ----
+    odds_as_of = _mtime_et(odds_path)
+    inj_as_of = _mtime_et(inj_path)
+    inj_state = _nfl_injury_source_state()          # freshness + legal-gate state (shared rule)
+    inj_by_team = {}
+    if inj_state.get('fresh'):
+        try:
+            for ch in build_nfl_injury_changes(limit=200).get('changes', []) if isinstance(build_nfl_injury_changes(limit=200), dict) else []:
+                inj_by_team.setdefault(_mc_abbr(ch.get('team')), []).append(ch)
+        except Exception:
+            inj_by_team = {}
+    wave_by_team, wave_as_of = {}, ''
+    try:
+        _wave = build_nfl_wave_watch_context()
+        wave_as_of = _wave.get('updated', '') if isinstance(_wave, dict) else ''
+        for r in (_wave.get('rows', []) if isinstance(_wave, dict) else []):
+            wave_by_team.setdefault(_mc_abbr(r.get('team')), r)
+    except Exception:
+        wave_by_team = {}
+    ms_by_team, ms_as_of = {}, ''
+    try:
+        _ms = build_nfl_milestone_streaks()
+        ms_as_of = _ms.get('source_updated', '') if isinstance(_ms, dict) else ''
+        for r in (_ms.get('season_streaks', []) if isinstance(_ms, dict) else []):
+            ms_by_team.setdefault(_mc_abbr(r.get('team')), []).append(r)
+    except Exception:
+        ms_by_team = {}
+    wind = _nfl_game_wind_map()
+    try:
+        ou_raw = _nfl_ou_tendencies()
+        ou_by_team = {_mc_abbr(t.get('team')): t for t in ou_raw.get('teams', [])}
+        ou_season = ou_raw.get('season')
+    except Exception:
+        ou_by_team, ou_season = {}, None
+    try:
+        mv_df = _load_line_movement_current('nfl')
+    except Exception:
+        mv_df = None
+
+    rows = []
+    for g in games:
+        away, home = str(g.get('away') or ''), str(g.get('home') or '')
+        aa, ha = _mc_abbr(away), _mc_abbr(home)
+        date = str(g.get('date') or '')
+        game_id = f"{date}:{aa}@{ha}"            # canonical identity (never display-name only)
+        resolved = bool(aa and ha)
+
+        total = pd.to_numeric(g.get('total'), errors='coerce')
+        spread = g.get('spread')
+        book = str(g.get('book') or '').strip()
+
+        # weather (wind only has outdoor data; absence is unavailable, not "0 mph")
+        w = wind.get((date, home.strip().lower())) if wind else None
+        weather = _mc_mod(bool(w), source='NFL_GameWeather', as_of=odds_as_of,
+                          wind_mph=(round(w['wind']) if w else None),
+                          high_wind=bool(w and w['wind'] >= 15),
+                          note=('' if w else 'No outdoor wind forecast on file (dome or not published).'))
+
+        # line movement -- identify book + captured times; label first/last CAPTURED, never open/close
+        mv = None
+        if mv_df is not None and aa and ha:
+            try:
+                mv = _line_movement_for_game(mv_df, date, aa, ha)
+            except Exception:
+                mv = None
+        line_move = _mc_mod(bool(mv), source=(f"line-movement:{(mv or {}).get('book','')}" if mv else 'line-movement'),
+                            as_of=((mv or {}).get('last_captured') or odds_as_of),
+                            first_captured=(mv or {}).get('first_captured'),
+                            last_captured=(mv or {}).get('last_captured'),
+                            spread_first=(mv or {}).get('spread_first'), spread_last=(mv or {}).get('spread_last'),
+                            total_first=(mv or {}).get('total_first'), total_last=(mv or {}).get('total_last'),
+                            note='First/last CAPTURED snapshots (not open/close).')
+
+        inj_av = inj_state.get('fresh') and inj_state.get('available') is not False
+        injuries = _mc_mod(bool(inj_av and (inj_by_team.get(aa) or inj_by_team.get(ha))),
+                           source='NFL_Injuries', as_of=inj_as_of,
+                           away=inj_by_team.get(aa, []), home=inj_by_team.get(ha, []),
+                           note=('' if inj_av else inj_state.get('reason', 'injury feed stale/gated')))
+
+        ats = _mc_mod(bool(wave_by_team.get(aa) or wave_by_team.get(ha)),
+                      source='ATS Wave (factual context)', as_of=wave_as_of,
+                      away=wave_by_team.get(aa), home=wave_by_team.get(ha),
+                      note='Team ATS form — factual context, not a recommendation.')
+
+        milestones = _mc_mod(bool(ms_by_team.get(aa) or ms_by_team.get(ha)),
+                             source='Milestone streaks (game stats)', as_of=ms_as_of,
+                             away=ms_by_team.get(aa, []), home=ms_by_team.get(ha, []),
+                             note='MILESTONE streaks (fixed-threshold game stats) — distinct from market-line/prop streaks.')
+
+        tend = _mc_mod(bool(ou_by_team.get(aa) or ou_by_team.get(ha)),
+                       source='O/U tendencies (derived)', as_of=odds_as_of,
+                       away_over=((ou_by_team.get(aa) or {}).get('over_rate')),
+                       home_over=((ou_by_team.get(ha) or {}).get('over_rate')),
+                       note='Season over/under tendency — derived context.')
+
+        # entity links: resolve to the intended team page or stay plain text
+        away_url = team_url('nfl', aa) if resolved else ''
+        home_url = team_url('nfl', ha) if resolved else ''
+
+        # ---- What's Changed? objective prior/current pairs only ----
+        changed = []
+        if mv and mv.get('spread_first') is not None and mv.get('spread_last') is not None \
+                and mv.get('spread_first') != mv.get('spread_last'):
+            changed.append({'what': 'Spread', 'prior': mv['spread_first'], 'current': mv['spread_last']})
+        if mv and mv.get('total_first') is not None and mv.get('total_last') is not None \
+                and mv.get('total_first') != mv.get('total_last'):
+            changed.append({'what': 'Total', 'prior': mv['total_first'], 'current': mv['total_last']})
+        for side_abbr in (aa, ha):
+            for ch in inj_by_team.get(side_abbr, []):
+                if ch.get('prev') or ch.get('status'):
+                    changed.append({'what': f"{ch.get('player','')} ({side_abbr})",
+                                    'prior': ch.get('prev', '—'), 'current': ch.get('status', '—')})
+
+        # ---- Why This Game Is Interesting: deterministic facts, no score/recommendation ----
+        why = []
+        if weather['available'] and weather.get('high_wind'):
+            why.append(f"Outdoor wind {weather['wind_mph']} mph (15+ = the validated totals-under flag).")
+        if changed:
+            why.append(f"{len(changed)} objective change(s) since first capture (see What's Changed).")
+        if milestones['available']:
+            why.append("An active milestone streak is in this game.")
+        if ats['available']:
+            why.append("A team ATS-form run is in this game.")
+
+        # ---- Contradictions: show BOTH sides, never resolve into a pick ----
+        contradictions = []
+        if weather.get('high_wind') and tend['available'] \
+                and ((tend.get('away_over') or 0) >= 0.55 or (tend.get('home_over') or 0) >= 0.55):
+            contradictions.append({'a': 'High wind leans the total UNDER',
+                                   'b': 'A team in this game trends OVER on the season'})
+
+        rows.append({
+            'game_id': game_id, 'resolved': resolved,
+            'away': away, 'home': home, 'away_abbr': aa, 'home_abbr': ha,
+            'away_url': away_url, 'home_url': home_url,
+            'matchup': g.get('matchup') or f"{away} @ {home}",
+            'date': date, 'time': str(g.get('time') or ''),
+            'market': _mc_mod(not pd.isna(total) or spread is not None, source='game market', as_of=odds_as_of,
+                              total=(float(total) if not pd.isna(total) else None),
+                              spread=_format_signed_line(spread) if spread is not None else None,
+                              book=(book or None),
+                              note=('' if (not pd.isna(total) or spread is not None) else 'No game market posted yet.')),
+            'weather': weather, 'line_move': line_move, 'injuries': injuries,
+            'ats_wave': ats, 'milestones': milestones, 'tendencies': tend,
+            'whats_changed': changed, 'why_interesting': why, 'contradictions': contradictions,
+        })
+
+    data = {
+        'games': rows, 'count': len(rows),
+        'as_of': odds_as_of, 'season': ou_season,
+        'module_freshness': {
+            'market': odds_as_of, 'injuries': inj_as_of, 'ats_wave': wave_as_of,
+            'milestones': ms_as_of, 'weather': odds_as_of,
+        },
+        'available': bool(rows),
+    }
+    _NFL_MATCHUP_CENTER_CACHE.update(sig=sig, data=data)
+    _nfl_disk_cache_store(_dkey, sig, data)
+    return data
+
+
 def build_nfl_spots_context(limit=12):
     """This week's NFL 'spots' board on the three PROVEN prop signals only
     (research/nfl_edge/FINDINGS.md, 2024 scout + 2025 out-of-sample, real ROI):
@@ -48758,6 +48977,19 @@ def build_nfl_spots_context(limit=12):
         pass
 
     return ctx
+
+
+@app.route('/tools/nfl-matchup-center')
+def nfl_matchup_center_tool():
+    """NFL Matchup Center: every current-slate game as a card of factual modules (market, weather, line
+    movement, injuries, ATS wave, milestone streaks, tendencies) joined on one canonical identity, each
+    with its own freshness + abstention. Facts create visibility; nothing suppresses a game. The nav
+    label flips to 'NFL Matchup Center' only after this passes content + production checks."""
+    import time as _t
+    _t0 = _t.perf_counter()
+    ctx = build_nfl_matchup_center_context()
+    ctx['_build_ms'] = round((_t.perf_counter() - _t0) * 1000.0, 1)
+    return render_template('nfl_matchup_center.html', **ctx)
 
 
 @app.route('/tools/nfl-spots')

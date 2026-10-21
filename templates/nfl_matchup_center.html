@@ -1,0 +1,176 @@
+{% set active_page = 'nfl_matchup_center' %}
+{% extends "bk_base.html" %}
+{% block title %}NFL Matchup Center - Bankroll Kings{% endblock %}
+
+{% macro freshness(mod) %}{% if mod.as_of %}<span class="mc-asof" title="source freshness">{{ mod.source }} · {{ mod.as_of }}</span>{% elif mod.source %}<span class="mc-asof">{{ mod.source }}</span>{% endif %}{% endmacro %}
+{% macro na(mod) %}<span class="mc-na">Unavailable{% if mod.note %} — {{ mod.note }}{% endif %}</span>{% endmacro %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <div class="page-kicker">NFL &middot; Every game on the slate</div>
+    <h1>NFL Matchup <span class="accent">Center</span></h1>
+    <div class="page-subtitle">Every current-slate game, each as a card of <b>factual</b> modules joined on one
+      game identity. Facts create visibility — no model or missing feed hides a game. Anything we don't have
+      renders <b>Unavailable</b>, never a zero. Derived reads (ATS wave, tendencies) are labelled context, not
+      recommendations.</div>
+  </div>
+  <div class="hero-actions"><a href="{{ sport_home_href('nfl') }}" class="btn btn-secondary btn-sm">NFL Board</a></div>
+</div>
+
+<div class="mc-meta">
+  <span><b>{{ count }}</b> game{{ 's' if count != 1 }} on the slate</span>
+  {% if module_freshness.market %}<span>Market: {{ module_freshness.market }}</span>{% endif %}
+  {% if module_freshness.injuries %}<span>Injuries: {{ module_freshness.injuries }}</span>{% endif %}
+  {% if module_freshness.milestones %}<span>Milestones: {{ module_freshness.milestones }}</span>{% endif %}
+</div>
+
+{% if not games %}
+<div class="empty-state" style="padding:20px;">
+  <div class="empty-state-title">No NFL games on the current slate</div>
+  <div class="empty-state-copy">The week's board hasn't posted yet. Nothing is hidden — there's simply no slate.</div>
+</div>
+{% endif %}
+
+<div class="mc-grid">
+  {% for g in games %}
+  <section class="mc-card" id="g-{{ g.game_id|replace(':','_')|replace('@','_') }}">
+    <header class="mc-head">
+      <div class="mc-teams">
+        {% if g.away_url %}<a href="{{ g.away_url }}">{{ g.away_abbr or g.away }}</a>{% else %}<span>{{ g.away_abbr or g.away }}</span>{% endif %}
+        <span class="mc-at">@</span>
+        {% if g.home_url %}<a href="{{ g.home_url }}">{{ g.home_abbr or g.home }}</a>{% else %}<span>{{ g.home_abbr or g.home }}</span>{% endif %}
+      </div>
+      <div class="mc-when">{{ g.date }}{% if g.time %} · {{ g.time }}{% endif %}</div>
+    </header>
+
+    <!-- Market facts -->
+    <div class="mc-mod">
+      <div class="mc-label">Market {{ freshness(g.market) }}</div>
+      {% if g.market.available %}
+        <div class="mc-vals">
+          <span>Total <b>{% if g.market.total is not none %}{{ g.market.total }}{% else %}—{% endif %}</b></span>
+          <span>Spread <b>{{ g.market.spread or '—' }}</b></span>
+          {% if g.market.book %}<span class="mc-dim">{{ g.market.book }}</span>{% endif %}
+        </div>
+      {% else %}{{ na(g.market) }}{% endif %}
+    </div>
+
+    <!-- Line movement (captured, not open/close) -->
+    <div class="mc-mod">
+      <div class="mc-label">Line movement {{ freshness(g.line_move) }}</div>
+      {% if g.line_move.available %}
+        <div class="mc-vals">
+          {% if g.line_move.spread_first is not none %}<span>Spread <b>{{ g.line_move.spread_first }}</b> → <b>{{ g.line_move.spread_last }}</b></span>{% endif %}
+          {% if g.line_move.total_first is not none %}<span>Total <b>{{ g.line_move.total_first }}</b> → <b>{{ g.line_move.total_last }}</b></span>{% endif %}
+        </div>
+        <div class="mc-foot">First → last <b>captured</b> snapshot{% if g.line_move.first_captured %} · {{ g.line_move.first_captured }} → {{ g.line_move.last_captured }}{% endif %} (not open/close).</div>
+      {% else %}{{ na(g.line_move) }}{% endif %}
+    </div>
+
+    <!-- Weather -->
+    <div class="mc-mod">
+      <div class="mc-label">Weather {{ freshness(g.weather) }}</div>
+      {% if g.weather.available %}
+        <div class="mc-vals"><span>Wind <b>{{ g.weather.wind_mph }} mph</b>{% if g.weather.high_wind %} <span class="mc-flag">15+ totals-under flag</span>{% endif %}</span></div>
+      {% else %}{{ na(g.weather) }}{% endif %}
+    </div>
+
+    <!-- Injuries -->
+    <div class="mc-mod">
+      <div class="mc-label">Injury / availability {{ freshness(g.injuries) }}</div>
+      {% if g.injuries.available %}
+        {% for side in [('away', g.away_abbr, g.injuries.away), ('home', g.home_abbr, g.injuries.home)] %}
+          {% if side[2] %}<div class="mc-sub">{{ side[1] }}: {% for ch in side[2] %}<span class="mc-chip">{{ ch.player }} {{ ch.status }}</span>{% endfor %}</div>{% endif %}
+        {% endfor %}
+      {% else %}{{ na(g.injuries) }}{% endif %}
+    </div>
+
+    <!-- ATS Wave (factual context) -->
+    <div class="mc-mod">
+      <div class="mc-label">ATS wave <span class="mc-tag">factual context</span> {{ freshness(g.ats_wave) }}</div>
+      {% if g.ats_wave.available %}
+        <div class="mc-vals">
+          {% if g.ats_wave.away %}<span>{{ g.away_abbr }} <b>{{ g.ats_wave.away.ats }}</b></span>{% endif %}
+          {% if g.ats_wave.home %}<span>{{ g.home_abbr }} <b>{{ g.ats_wave.home.ats }}</b></span>{% endif %}
+        </div>
+        <div class="mc-foot">{{ g.ats_wave.note }}</div>
+      {% else %}{{ na(g.ats_wave) }}{% endif %}
+    </div>
+
+    <!-- Milestone streaks (distinct from market-line) -->
+    <div class="mc-mod">
+      <div class="mc-label">Milestone streaks <span class="mc-tag">game stats</span> {{ freshness(g.milestones) }}</div>
+      {% if g.milestones.available %}
+        {% for side in [(g.away_abbr, g.milestones.away), (g.home_abbr, g.milestones.home)] %}
+          {% for s in side[1] %}<div class="mc-sub">{{ s.player }} — {{ s.run }}× {{ s.threshold }}+ {{ s.stat_label or s.stat }}</div>{% endfor %}
+        {% endfor %}
+        <div class="mc-foot">{{ g.milestones.note }}</div>
+      {% else %}{{ na(g.milestones) }}{% endif %}
+    </div>
+
+    <!-- Tendencies (derived) -->
+    <div class="mc-mod">
+      <div class="mc-label">O/U tendency <span class="mc-tag">derived</span> {{ freshness(g.tendencies) }}</div>
+      {% if g.tendencies.available %}
+        <div class="mc-vals">
+          {% if g.tendencies.away_over is not none %}<span>{{ g.away_abbr }} over <b>{{ (g.tendencies.away_over*100)|round|int }}%</b></span>{% endif %}
+          {% if g.tendencies.home_over is not none %}<span>{{ g.home_abbr }} over <b>{{ (g.tendencies.home_over*100)|round|int }}%</b></span>{% endif %}
+        </div>
+      {% else %}{{ na(g.tendencies) }}{% endif %}
+    </div>
+
+    {% if g.whats_changed %}
+    <div class="mc-mod mc-changed">
+      <div class="mc-label">What's changed?</div>
+      {% for c in g.whats_changed %}<div class="mc-sub">{{ c.what }}: <b>{{ c.prior }}</b> → <b>{{ c.current }}</b></div>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if g.why_interesting %}
+    <div class="mc-mod mc-why">
+      <div class="mc-label">Why this game is interesting</div>
+      <ul>{% for w in g.why_interesting %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if g.contradictions %}
+    <div class="mc-mod mc-contra">
+      <div class="mc-label">Mixed context</div>
+      {% for c in g.contradictions %}<div class="mc-sub"><b>{{ c.a }}</b> &nbsp;vs&nbsp; <b>{{ c.b }}</b></div>{% endfor %}
+      <div class="mc-foot">Both sides shown — not resolved into a pick.</div>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+<style>
+  .mc-meta{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 16px;font:600 12px/1.4 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+  .mc-card{border:1px solid var(--border);border-radius:14px;background:var(--surface,transparent);padding:14px 15px;}
+  .mc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px solid var(--border);padding-bottom:9px;margin-bottom:10px;}
+  .mc-teams{font:800 17px 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);}
+  .mc-teams a{color:var(--text-bright);text-decoration:none;border-bottom:1px dotted var(--accent);}
+  .mc-teams a:hover{color:var(--accent);}
+  .mc-at{opacity:.5;margin:0 5px;font-weight:600;}
+  .mc-when{font:600 12px 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);white-space:nowrap;}
+  .mc-mod{padding:7px 0;border-top:1px solid rgba(255,255,255,.04);}
+  .mc-mod:first-of-type{border-top:none;}
+  .mc-label{font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+  .mc-vals{display:flex;flex-wrap:wrap;gap:12px;font-size:13.5px;color:var(--text-bright);}
+  .mc-vals b{color:var(--text-bright);}
+  .mc-dim{color:var(--text-muted);}
+  .mc-sub{font-size:13px;color:var(--text);margin:2px 0;}
+  .mc-chip{display:inline-block;border:1px solid var(--border);border-radius:5px;padding:1px 6px;margin:2px 4px 2px 0;font-size:12px;}
+  .mc-foot{font-size:11px;color:var(--text-muted);margin-top:3px;}
+  .mc-asof{font-weight:400;font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--text-muted);opacity:.8;}
+  .mc-na{font-size:12.5px;color:var(--text-muted);font-style:italic;}
+  .mc-tag{font-weight:700;font-size:9.5px;color:var(--warning);border:1px solid var(--border);border-radius:4px;padding:0 5px;letter-spacing:.02em;}
+  .mc-flag{font-weight:700;font-size:10.5px;color:var(--danger);}
+  .mc-changed .mc-label{color:var(--accent);}
+  .mc-contra .mc-label{color:var(--warning);}
+  .mc-why ul{margin:3px 0 0;padding-left:16px;font-size:13px;color:var(--text);}
+  .mc-why li{margin:2px 0;}
+</style>
+{% endblock %}
