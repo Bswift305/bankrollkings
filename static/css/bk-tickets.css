@@ -68,3 +68,14 @@
 .dc-illus{font:800 8.5px ui-monospace,monospace;letter-spacing:.03em;color:#0b1118;background:var(--bkn-mid,#ffd166);border-radius:4px;padding:1px 5px;text-transform:uppercase;vertical-align:middle;}
 .dc-pay .dc-illus{margin-right:4px;}
 .dc-prov{font:500 10.5px/1.45 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-6px 0 11px;opacity:.9;}
+/* Shared add/remove/reorder controls (King's Tickets Step 3.3) */
+.dc-legctrls{flex:0 0 auto;display:inline-flex;gap:3px;align-self:center;}
+.dc-mv,.dc-rm{cursor:pointer;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);min-height:28px;min-width:26px;line-height:1;padding:0 6px;font:800 11px 'Helvetica Neue',Arial,sans-serif;}
+.dc-mv:hover:not(:disabled),.dc-rm:hover:not(:disabled){color:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);}
+.dc-rm:hover:not(:disabled){color:var(--danger,#ff6b6b);border-color:var(--danger,#ff6b6b);}
+.dc-mv:focus-visible,.dc-rm:focus-visible,.dc-addleg:focus-visible{outline:2px solid var(--bk-gold2,#ffd16d);outline-offset:2px;}
+.dc-mv:disabled,.dc-rm:disabled,.dc-addleg:disabled{opacity:.3;cursor:default;}
+.dc-cardfoot{margin-top:11px;}
+.dc-addleg{cursor:pointer;width:100%;background:transparent;border:1px dashed var(--border);border-radius:9px;color:var(--text-muted);min-height:34px;font:800 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.02em;}
+.dc-addleg:hover:not(:disabled){color:var(--bkn-accent,#3fbf7f);border-color:var(--bkn-accent,#3fbf7f);background:rgba(63,191,127,.06);}
+.dc-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}

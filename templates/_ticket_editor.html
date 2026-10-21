@@ -18,9 +18,16 @@
       <span class="rs">{{ l.game }} &middot; {{ l.reason }}</span>
     </span>
     <span class="pr" title="Individual board number — sportsbook and capture time not recorded.">{{ '%+d'|format(l.price) }}</span>
-    <button type="button" class="dc-swap" title="View eligible replacements" aria-label="Choose a replacement for {{ l.label }}">&#8635; Swap</button>
+    <span class="dc-legctrls">
+      <button type="button" class="dc-mv dc-up" title="Move up" aria-label="Move {{ l.label }} up">&#9650;</button>
+      <button type="button" class="dc-mv dc-down" title="Move down" aria-label="Move {{ l.label }} down">&#9660;</button>
+      <button type="button" class="dc-swap" title="View eligible replacements" aria-label="Choose a replacement for {{ l.label }}">&#8635; Swap</button>
+      <button type="button" class="dc-rm" title="Remove leg" aria-label="Remove {{ l.label }} from the ticket">&times;</button>
+    </span>
   </div>
   {% endfor %}
+  <div class="dc-cardfoot"><button type="button" class="dc-addleg" title="Add a leg from a new game" aria-label="Add a leg to this ticket">&#43; Add leg</button></div>
+  <div class="dc-live" role="status" aria-live="polite"></div>
 </div>
 {% endfor %}
 </div>
@@ -41,15 +48,20 @@
 <script>
 (function(){
   var bench=[]; try{ bench=JSON.parse(document.getElementById('dc-bench').textContent)||[]; }catch(e){}
+  var grid=document.querySelector('.dc-grid');
   function dec(p){ p=+p; return p>0 ? 1+p/100 : 1+100/Math.abs(p); }
   function amer(d){ return d>=2 ? Math.round((d-1)*100) : Math.round(-100/(d-1)); }
   function sgn(n){ return (n>0?'+':'')+n; }
   function tierClass(t){ return t==='floor'?'floor':'swing'; }
+  function priceValid(l){ var raw=l.dataset.price, p=+raw; return raw!=='' && raw!=null && !isNaN(p) && p!==0; }
   function reprice(card){
-    var legs=card.querySelectorAll('.dc-leg'), d=1, nf=0, ns=0;
-    legs.forEach(function(l){ d*=dec(l.dataset.price); if(l.dataset.tier==='floor')nf++;else ns++; });
-    card.querySelector('.odnum').textContent=sgn(amer(d));   /* update the number only; keep the 'illus.' label */
-    var pay=(5*d); card.querySelector('.dc-paynum').textContent=(pay%1===0?pay:pay.toFixed(2));
+    var legs=[].slice.call(card.querySelectorAll('.dc-leg')), d=1, nf=0, ns=0, bad=false;
+    legs.forEach(function(l){ if(!priceValid(l)){bad=true;} else { d*=dec(l.dataset.price); } if(l.dataset.tier==='floor')nf++;else ns++; });
+    var odnum=card.querySelector('.odnum'), paynum=card.querySelector('.dc-paynum');
+    // Invalid/unknown pricing ABSTAINS -- never fabricate a combined number. Recompute only when every
+    // leg has a usable board number; the result stays labelled illustrative (assumes independent legs).
+    if(bad){ if(odnum)odnum.textContent='—'; if(paynum)paynum.textContent='—'; }
+    else { if(odnum)odnum.textContent=sgn(amer(d)); var pay=5*d; if(paynum)paynum.textContent=(pay%1===0?pay:pay.toFixed(2)); }
     var m=card.querySelector('.dc-mix'); if(m) m.textContent=nf+' floor'+(nf!==1?'s':'')+' + '+ns+' swing'+(ns!==1?'s':'');
   }
   function writeLeg(leg, b){
@@ -63,25 +75,22 @@
     leg.querySelector('.dc-swap').setAttribute('aria-label','Choose a replacement for '+b.label);
   }
   var CSRF="{{ csrf_token() }}";
-  document.querySelectorAll('.dc-saveimg').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var card=btn.closest('.dc-card');
-      var legs=[].map.call(card.querySelectorAll('.dc-leg'), function(l){
-        return {label:l.dataset.label, price:+l.dataset.price, tier:l.dataset.tier,
-                sport:l.dataset.sport, game:l.dataset.game, reason:l.dataset.reason};
-      });
-      var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
-      fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({legs:legs})})
-        .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
-        .then(function(blob){
-          var url=URL.createObjectURL(blob), a=document.createElement('a');
-          a.href=url; a.download='bankrollkings_card_'+legs.length+'leg.png';
-          document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-          btn.disabled=false; btn.innerHTML=orig;
-        })
-        .catch(function(){ btn.disabled=false; btn.innerHTML=orig; alert('Could not render the card image.'); });
+  function downloadImage(card, btn){
+    var legs=[].map.call(card.querySelectorAll('.dc-leg'), function(l){
+      return {label:l.dataset.label, price:+l.dataset.price, tier:l.dataset.tier,
+              sport:l.dataset.sport, game:l.dataset.game, reason:l.dataset.reason};
     });
-  });
+    var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
+    fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({legs:legs})})
+      .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+      .then(function(blob){
+        var url=URL.createObjectURL(blob), a=document.createElement('a');
+        a.href=url; a.download='bankrollkings_ticket_'+legs.length+'leg.png';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        btn.disabled=false; btn.innerHTML=orig;
+      })
+      .catch(function(){ btn.disabled=false; btn.innerHTML=orig; alert('Could not render the ticket image.'); });
+  }
   function eligibleSwaps(leg, card){
     var onCard=[].filter.call(card.querySelectorAll('.dc-leg'), function(x){return x!==leg;})
       .map(function(x){return x.dataset.game;});
@@ -128,23 +137,72 @@
     document.body.classList.add('dc-modal-open');
     var first=swapList.querySelector('button'); if(first) first.focus(); else swapBackdrop.querySelector('.dc-swapclose').focus();
   }
-  document.querySelectorAll('.dc-swap').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var leg=btn.closest('.dc-leg'), card=btn.closest('.dc-card');
-      openSwap(leg,card,btn);
-    });
-  });
   swapBackdrop.querySelector('.dc-swapclose').addEventListener('click',closeSwap);
   swapBackdrop.addEventListener('click',function(e){ if(e.target===swapBackdrop) closeSwap(); });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape' && swapBackdrop.classList.contains('open')) closeSwap(); });
-  document.querySelectorAll('.dc-reroll').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var card=btn.closest('.dc-card'), any=false;
-      [].forEach.call(card.querySelectorAll('.dc-leg'), function(leg){
-        var options=eligibleSwaps(leg,card); if(options.length){writeLeg(leg,options[0]);any=true;}
-      });
-      if(any) reprice(card);
+
+  // ---- Shared add / remove / reorder (the SAME logic on both surfaces, via one component) ----
+  var MIN=2, MAX=5;
+  function cardLegs(card){ return [].slice.call(card.querySelectorAll('.dc-leg')); }
+  function legKey(l){ return (l.dataset.game||'')+'|'+(l.dataset.label||''); }
+  function announce(card,msg){ var lr=card.querySelector('.dc-live'); if(lr){ lr.textContent=''; setTimeout(function(){ lr.textContent=msg; },30); } }
+  function enforce(card){
+    var legs=cardLegs(card), n=legs.length;
+    legs.forEach(function(l,i){
+      var up=l.querySelector('.dc-up'), dn=l.querySelector('.dc-down'), rm=l.querySelector('.dc-rm');
+      if(up) up.disabled=(i===0);
+      if(dn) dn.disabled=(i===n-1);
+      if(rm){ rm.disabled=(n<=MIN); rm.title=(n<=MIN?'A ticket needs at least '+MIN+' legs':'Remove leg'); }
     });
+    var add=card.querySelector('.dc-addleg'); if(add){ add.disabled=(n>=MAX); add.title=(n>=MAX?'A ticket holds at most '+MAX+' legs':'Add a leg from a new game'); }
+    var hdr=card.querySelector('.n'); if(hdr) hdr.textContent=n+'-Leg';
+  }
+  function eligibleAdds(card){
+    var legs=cardLegs(card), games=legs.map(function(l){return l.dataset.game;}), keys=legs.map(legKey);
+    return bench.filter(function(b){ return games.indexOf(b.game)<0 && keys.indexOf(b.game+'|'+b.label)<0; });  // no duplicate canonical leg / same-game
+  }
+  function removeLeg(leg, card){
+    if(cardLegs(card).length<=MIN){ announce(card,'A ticket needs at least '+MIN+' legs — nothing removed.'); return; }
+    var lbl=leg.dataset.label; leg.remove(); reprice(card); enforce(card);
+    announce(card, lbl+' removed. '+cardLegs(card).length+' legs.');
+  }
+  function moveLeg(leg, dir){
+    var card=leg.closest('.dc-card'); if(!card) return;
+    if(dir<0){ var prev=leg.previousElementSibling; if(prev && prev.classList.contains('dc-leg')) card.insertBefore(leg, prev); }
+    else { var next=leg.nextElementSibling; if(next && next.classList.contains('dc-leg')) card.insertBefore(next, leg); }
+    enforce(card);
+    var pos=cardLegs(card).indexOf(leg)+1;
+    announce(card, leg.dataset.label+' moved to position '+pos+'.');
+    var keep=leg.querySelector(dir<0?'.dc-up':'.dc-down'); if(keep && !keep.disabled) keep.focus(); else leg.querySelector('.dc-swap').focus();
+  }
+  function addLeg(card){
+    var legs=cardLegs(card); if(legs.length>=MAX){ announce(card,'A ticket holds at most '+MAX+' legs.'); return; }
+    var opt=eligibleAdds(card)[0];
+    if(!opt){ announce(card,'No eligible leg from a new game to add.'); return; }
+    var node=legs[0].cloneNode(true);           // clone preserves markup; delegation handles its buttons
+    writeLeg(node, opt);
+    card.insertBefore(node, card.querySelector('.dc-cardfoot'));
+    reprice(card); enforce(card);
+    announce(card, opt.label+' added. '+cardLegs(card).length+' legs.');
+  }
+  function doReroll(card){
+    var any=false;
+    cardLegs(card).forEach(function(leg){ var o=eligibleSwaps(leg,card); if(o.length){ writeLeg(leg,o[0]); any=true; } });
+    if(any){ reprice(card); enforce(card); announce(card,'Ticket rerolled with fresh picks.'); }
+  }
+  // One delegated handler so dynamically-added legs behave identically (no per-node wiring to drift).
+  grid.addEventListener('click', function(e){
+    var card=e.target.closest('.dc-card'); if(!card) return;
+    var t=e.target;
+    if(t.closest('.dc-swap')){ var leg=t.closest('.dc-leg'); openSwap(leg,card,t.closest('.dc-swap')); return; }
+    if(t.closest('.dc-up')){ moveLeg(t.closest('.dc-leg'),-1); return; }
+    if(t.closest('.dc-down')){ moveLeg(t.closest('.dc-leg'),1); return; }
+    if(t.closest('.dc-rm')){ removeLeg(t.closest('.dc-leg'),card); return; }
+    if(t.closest('.dc-addleg')){ addLeg(card); return; }
+    if(t.closest('.dc-reroll')){ if(window.confirm('Replace every leg on this '+cardLegs(card).length+'-leg ticket with fresh picks? Your current legs will be lost.')){ doReroll(card); } return; }
+    if(t.closest('.dc-saveimg')){ downloadImage(card, t.closest('.dc-saveimg')); return; }
   });
+  cardLegs; eligibleAdds;  // (referenced above)
+  [].forEach.call(document.querySelectorAll('.dc-card'), enforce);
 })();
 </script>

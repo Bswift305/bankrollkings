@@ -12,7 +12,11 @@ import re
 import app
 
 REQUIRED = ['class="dc-grid"', 'class="dc-leg"', 'class="dc-swap"', 'dc-reroll', 'dc-saveimg',
-            'dc-swapbackdrop', 'id="dc-bench"', 'function reprice', 'function writeLeg', 'eligibleSwaps']
+            'dc-swapbackdrop', 'id="dc-bench"', 'function reprice', 'function writeLeg', 'eligibleSwaps',
+            # Step 3.3 shared add/remove/reorder controls + behaviours
+            'dc-up', 'dc-down', 'dc-rm', 'dc-addleg', 'dc-live', 'aria-live="polite"',
+            'function addLeg', 'function removeLeg', 'function moveLeg', 'function enforce',
+            'eligibleAdds', 'window.confirm', 'grid.addEventListener']
 LEG_RE = re.compile(r'class="dc-leg" data-game="([^"]*)" data-price="([^"]*)" data-tier="([^"]*)" '
                     r'data-sport="([^"]*)" data-reason="([^"]*)" data-label="([^"]*)"')
 
