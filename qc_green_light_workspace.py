@@ -36,7 +36,14 @@ def _gl_states():
 
 
 def run_qc():
-    import app
+    try:
+        import app
+    except ModuleNotFoundError as e:
+        if 'flask' in str(e).lower():
+            NOTES.append('SKIPPED: run under the app virtualenv (Flask not importable with this python) — '
+                         'e.g. <venv>/bin/python3 qc_green_light_workspace.py')
+            return {'issues': ISSUES, 'notes': NOTES}
+        raise
     owner = sorted(app.OWNER_EMAILS)[0] if app.OWNER_EMAILS else None
     if not owner:
         NOTES.append('no OWNER_EMAILS configured; workspace route QC skipped')
