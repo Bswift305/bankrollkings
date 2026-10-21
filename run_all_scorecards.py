@@ -97,6 +97,10 @@ SCORECARDS = [
     # version (not rebuilt per row -- the injury-report 63s class), per-row resolve stays cheap, and the
     # milestone builder serves its cached object warm. Structural invariants, not flaky wall-clock.
     ("Performance Regression Guards", "qc_perf_guards.py", 180),
+    # Injury Report progressive disclosure (Site Performance P0 / P3): server-side paging + filtering
+    # must not drop, duplicate, or reorder any record -- paged membership is complete and page-size
+    # independent, filters are faithful + order-preserving, and the default page ships one page, not all.
+    ("Injury Report Progressive QC", "qc_injury_report_progressive.py", 180),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).

@@ -1,0 +1,39 @@
+{#- Shared Injury Report row partial. Rendered by injury_report.html (first page) AND by the
+    /tools/injury-report/rows Load-More fragment, so markup, entity links and gating stay identical and
+    server-side. Expects `rows` (one page) + `entity_anchor`. No record is ever dropped here. -#}
+{% for r in rows %}
+<tr class="inj-row{% if r.boosts %} inj-has-impact{% endif %}"
+    data-league="{{ r.league }}"
+    data-bucket="{{ r.status_bucket }}"
+    data-team="{{ r.team }}">
+    <td><span class="inj-league">{{ r.league_label }}</span></td>
+    <td>{% if r.team %}{{ entity_anchor('team', r.league, r.team) }}{% else %}—{% endif %}</td>
+    <td style="font-weight:600; color:var(--text-bright);">
+        {{ entity_anchor('player', r.league, r.player) }}
+        {% if r.boosts %}<button type="button" class="inj-expand" aria-expanded="false" aria-label="Show stats when this player is absent">&#9656; impact</button>{% endif %}
+    </td>
+    <td><span class="inj-status inj-sev-{{ r.severity }}">{{ r.status or r.status_bucket }}</span></td>
+    <td class="inj-reason">{{ r.reason or '—' }}</td>
+    <td class="inj-updated">{{ r.updated or '—' }}</td>
+</tr>
+{% if r.boosts %}
+<tr class="inj-boost-row inj-hidden">
+    <td colspan="6">
+        <div class="inj-boost-detail">
+            <div class="inj-boost-head">When <strong>{{ r.player }}</strong> sits, teammates over recent games without them:</div>
+            <div class="inj-boost-grid">
+                {% for b in r.boosts %}
+                <div class="inj-boost-item">
+                    <span class="inj-boost-ben">{{ b.beneficiary }}</span>
+                    <span class="inj-boost-stat">{{ b.stat }}</span>
+                    <span class="inj-boost-nums"><strong>{{ b.avg_without }}</strong> <span class="muted">without</span> &middot; {{ b.avg_with }} <span class="muted">with</span></span>
+                    {% if b.boost_pct is not none %}<span class="inj-boost-pct">+{{ b.boost_pct|round(0)|int }}%</span>{% endif %}
+                    {% if b.games_without %}<span class="muted">&middot; {{ b.games_without|round(0)|int }} gm</span>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </td>
+</tr>
+{% endif %}
+{% endfor %}

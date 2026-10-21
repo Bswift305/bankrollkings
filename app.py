@@ -830,6 +830,7 @@ PRO_ENDPOINTS = {
     'dashboard',
     'method_hub',
     'injury_report_tool',
+    'injury_report_rows',
     'scenario_lab_tool',
     'real_vs_luck_tool',
     'mlb_situational_tool',
@@ -18612,11 +18613,36 @@ def _injury_boost_lookup(active_boosts):
     return lookup
 
 
-def build_injury_report_context():
+INJURY_REPORT_PAGE_SIZE = 100
+
+
+def _injury_row_matches(row, league, team, status, q):
+    """Server-side equivalent of the old client-side filter (league/status-bucket/team/search).
+    Search is a case-insensitive substring over player + team + reason, matching the data-search the
+    template used to build. Every predicate is a plain equality/substring so membership is deterministic."""
+    if league and row['league'] != league:
+        return False
+    if status and row['status_bucket'] != status:
+        return False
+    if team and row['team'] != team:
+        return False
+    if q:
+        hay = f"{row['player']} {row['team']} {row['reason']}".lower()
+        if q not in hay:
+            return False
+    return True
+
+
+def build_injury_report_context(league='', team='', status='', q='', page=1, page_size=INJURY_REPORT_PAGE_SIZE):
     """Aggregate every league's current injuries into one filterable table for
     the multi-league Injury Report quick tool. Uses load_sport_injuries (already
     normalized to Player/Team/Status/Reason/Updated), tags each row with its
-    league and a severity bucket, and precomputes the filter option lists."""
+    league and a severity bucket, and precomputes the filter option lists.
+
+    Progressive disclosure: filtering + pagination are done SERVER-SIDE (GET params), so a request
+    renders only one page (default 100 rows) instead of all ~1,500. Filter option lists and the
+    report-wide summary counts are still computed over the FULL set; `total_matching` reflects the
+    active filters; every record stays reachable by paging. No record is ever dropped."""
     # "How the team plays when this player is absent" splits, from the with/without
     # boost engines. Keyed per league by the injured player's name; the strongest few
     # beneficiaries per player attach to that player's injury row so a bettor sees the
@@ -18642,14 +18668,14 @@ def build_injury_report_context():
             player = str(record.get('Player') or '').strip()
             if not player:
                 continue
-            status = str(record.get('Status') or '').strip()
-            severity, bucket = _injury_severity_bucket(status)
+            rec_status = str(record.get('Status') or '').strip()   # NOT `status`: that is a filter param
+            severity, bucket = _injury_severity_bucket(rec_status)
             rows.append({
                 'league': key,
                 'league_label': label,
                 'team': str(record.get('Team') or '').strip(),
                 'player': player,
-                'status': status,
+                'status': rec_status,
                 'status_bucket': bucket,
                 'severity': severity,
                 'reason': str(record.get('Reason') or '').strip(),
@@ -18660,12 +18686,47 @@ def build_injury_report_context():
         if count:
             league_counts[label] = count
 
-    # Most severe first (Out -> Doubtful -> Questionable -> Other), then league/team/player.
+    # Most severe first (Out -> Doubtful -> Questionable -> Other), then league/team/player. This fully
+    # determines ordering (ties broken by league/team/player), so pagination is stable across requests.
     rows.sort(key=lambda item: (item['severity'], item['league_label'], item['team'], item['player']))
     bucket_order = ['Out', 'Doubtful', 'Questionable', 'Other']
+
+    # Normalize filter inputs, then filter the full ordered set. Option lists + report-wide summary are
+    # computed over ALL rows (so the filter UI shows every choice and the stat cards stay report-wide).
+    league = str(league or '').strip()
+    team = str(team or '').strip()
+    status = str(status or '').strip()
+    q = str(q or '').strip().lower()
+    filtered = [row for row in rows if _injury_row_matches(row, league, team, status, q)]
+    total_matching = len(filtered)
+
+    try:
+        page = max(1, int(page or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(int(page_size or INJURY_REPORT_PAGE_SIZE), 500))
+    except (TypeError, ValueError):
+        page_size = INJURY_REPORT_PAGE_SIZE
+    page_count = max(1, (total_matching + page_size - 1) // page_size)
+    if page > page_count:
+        page = page_count
+    start = (page - 1) * page_size
+    page_rows = filtered[start:start + page_size]
+    shown_to = start + len(page_rows)
+
     return {
-        'rows': rows,
-        'total': len(rows),
+        'rows': page_rows,                       # ONLY this page (progressive disclosure)
+        'total': len(rows),                      # report-wide grand total (all leagues)
+        'total_matching': total_matching,        # count under the active filters
+        'page': page,
+        'page_size': page_size,
+        'page_count': page_count,
+        'has_more': shown_to < total_matching,
+        'shown_from': (start + 1) if page_rows else 0,
+        'shown_to': shown_to,
+        'filters': {'league': league, 'team': team, 'status': status, 'q': q},
+        'has_filters': bool(league or team or status or q),
         'out_count': sum(1 for row in rows if row['severity'] == 0),
         'impact_count': sum(1 for row in rows if row['boosts']),
         'league_counts': league_counts,
@@ -43783,13 +43844,48 @@ def best_lines_tool():
     )
 
 
+def _injury_report_request_args():
+    """Filter + page params from the query string (GET), shared by the page and the Load-More fragment.
+    Bad/absent values fall back to safe defaults; the builder re-validates."""
+    try:
+        page = int(request.args.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    return {
+        'league': str(request.args.get('league', '') or '').strip(),
+        'team': str(request.args.get('team', '') or '').strip(),
+        'status': str(request.args.get('status', '') or '').strip(),
+        'q': str(request.args.get('q', '') or '').strip(),
+        'page': page,
+    }
+
+
 @app.route('/tools/injury-report')
 def injury_report_tool():
     """Quick Tool: one filterable injury table across every active league, so a
     bettor checking a few games' availability doesn't have to open each sport
-    page. Filtering is client-side (league / status / team / search)."""
-    context = build_injury_report_context()
+    page. Filtering + pagination are SERVER-SIDE (GET params) so only one page
+    (default 100 rows) ships per request; every record stays reachable by paging,
+    and the filter form works with no JavaScript."""
+    context = build_injury_report_context(**_injury_report_request_args())
     return render_template('injury_report.html', **context)
+
+
+@app.route('/tools/injury-report/rows')
+def injury_report_rows():
+    """Progressive-disclosure fragment for the Injury Report 'Load More' / paging. Renders the SAME row
+    partial as the full page (so links, gating and presentation stay identical and server-side) for one
+    page under the active filters. Gated identically to the page (PRO_ENDPOINTS). `X-Has-More` /
+    `X-Next-Page` headers let the client decide whether to keep loading; no JSON field exposure."""
+    context = build_injury_report_context(**_injury_report_request_args())
+    html = render_template('_injury_rows.html', **context)
+    resp = make_response(html)
+    resp.headers['X-Has-More'] = '1' if context.get('has_more') else '0'
+    resp.headers['X-Next-Page'] = str((context.get('page') or 1) + 1)
+    resp.headers['X-Total-Matching'] = str(context.get('total_matching') or 0)
+    resp.headers['X-Shown-To'] = str(context.get('shown_to') or 0)
+    resp.headers['Cache-Control'] = 'private, no-store'   # per-request filtered view; never shared-cache
+    return resp
 
 
 @app.route('/tools/unit-sizing')
