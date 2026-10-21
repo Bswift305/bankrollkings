@@ -125,6 +125,9 @@ SCORECARDS = [
     # Green Light preference workspace route + template (opt-in ?view=workspace): full 12-lens default,
     # default board unchanged, CSRF-protected save, accurate hidden-by-user count, reset restores default,
     # lens status endpoint, shared-editor no-drift, no journal/draft-store coupling.
+    # Green Light lens-adapter framework: common envelope, canonical-universe hashes (no add/suppress),
+    # preference filtering, availability (never a silent zero), failure isolation + 7 failure modes.
+    ("Green Light Adapter Framework QC", "qc_green_light_adapters.py", 60),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
