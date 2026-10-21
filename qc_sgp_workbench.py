@@ -204,9 +204,36 @@ def t14_journal_stays_dark():
         'Decision Journal flag must be OFF for this scoped task'
 
 
+@check
+def t15_leg_interaction_perf():
+    """Deterministic populated-fixture performance guard for leg interaction (the prod workbench showed
+    'No legs yet' at capture time, so leg-interaction perf is proven HERE, locally, not in the browser).
+    A realistic multi-leg ticket evaluates in well under the interaction budget AND is deterministic
+    (identical output across repeats)."""
+    import time
+    legs = [
+        _leg(player='QB1', direction='OVER', cat='pass', stat='pass_yards'),
+        _leg(player='WR1', direction='OVER', cat='rec', stat='rec_yards'),
+        _leg(player='WR1', direction='UNDER', cat='rec', stat='receptions'),
+        _leg(player='RB1', direction='OVER', cat='rush', stat='rush_yards'),
+        _leg(player='QB1', direction='UNDER', cat='pass', stat='pass_yards'),   # same-player opposing
+        _leg(team='AAA', direction='OVER', cat='team_total', stat='team_total'),
+        _leg(direction='UNDER', cat='game_total', stat='game_total'),
+        _leg(player='WR2', direction='OVER', cat='rec', stat='rec_yards'),
+    ]
+    first = sgp.evaluate(legs, thesis='custom', game_total_line=44.5)
+    N = 300
+    t0 = time.perf_counter()
+    for _ in range(N):
+        out = sgp.evaluate(legs, thesis='custom', game_total_line=44.5)
+    per_ms = (time.perf_counter() - t0) * 1000.0 / N
+    assert out == first, 'evaluate() is not deterministic across repeats'
+    assert per_ms < 25.0, f'leg-interaction evaluate() ~{per_ms:.2f}ms/call (>25ms interaction budget)'
+
+
 def main():
     print('=' * 60)
-    print('NFL SGP WORKBENCH ACCEPTANCE QC (14 mechanical of 16)')
+    print('NFL SGP WORKBENCH ACCEPTANCE QC (15 mechanical of 16)')
     print('=' * 60)
     failed = 0
     for fn in CHECKS:

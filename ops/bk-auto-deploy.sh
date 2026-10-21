@@ -82,6 +82,19 @@ for _ in $(seq 1 20); do
     CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" 2>/dev/null) || CODE=000
     if [ -n "$CODE" ] && [ "$CODE" != 000 ]; then
         echo "deployed $(git rev-parse --short HEAD) | service: $STATE | probe: HTTP $CODE"
+        # POST-RESTART cache warming (lifecycle event #2: a deploy may bump APP_CACHE_VERSION, which
+        # invalidates every disk artifact). We warm AFTER the restart -- not before -- because the
+        # artifacts must be rebuilt by the NEW code at the NEW schema; a pre-restart warm would publish
+        # old-schema artifacts the new workers would then reject. Running it here, synchronously, before
+        # the deploy reports success, keeps the first real visitor from becoming the warmer. It runs as
+        # this (ubuntu) service user, makes no upstream network calls, writes no user data, and is
+        # time-bounded. A warm failure is logged LOUDLY (never a silent cold deploy) but does not fail
+        # the deploy: the app still serves (cold) and the next source refresh re-warms.
+        if timeout 300 venv/bin/python refresh_runtime_snapshots.py --prewarm-only; then
+            echo "prewarm: ok (disk artifacts warmed for $(git rev-parse --short HEAD))"
+        else
+            echo "WARNING: post-deploy prewarm failed/timed out for $(git rev-parse --short HEAD) - routes may be COLD until the next refresh"
+        fi
         exit 0
     fi
 done

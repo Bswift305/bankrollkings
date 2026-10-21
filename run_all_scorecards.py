@@ -101,6 +101,10 @@ SCORECARDS = [
     # must not drop, duplicate, or reorder any record -- paged membership is complete and page-size
     # independent, filters are faithful + order-preserving, and the default page ships one page, not all.
     ("Injury Report Progressive QC", "qc_injury_report_progressive.py", 180),
+    # Prewarm cache lifecycle (Site Performance P0): disk-materialized artifacts invalidate on a source
+    # fingerprint change AND on an APP_CACHE_VERSION (deploy) change, reuse on unchanged inputs, fail
+    # closed on corruption, and publish atomically (no partial reads, last complete write wins).
+    ("Prewarm Cache Lifecycle QC", "qc_prewarm_lifecycle.py", 120),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).

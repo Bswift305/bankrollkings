@@ -951,8 +951,18 @@ def _get_path_mtime_token(path_like):
         return None
 
 
+# Application cache SCHEMA version. Folded into every cache token below so a DEPLOY that changes a cached
+# builder's OUTPUT STRUCTURE invalidates stale artifacts even when the source data (and thus the source
+# fingerprint) is unchanged. Bump this string whenever a cached builder's returned shape changes; a prod
+# restart on the new code then rejects old-schema artifacts and rebuilds. Source fingerprints (file
+# mtimes) handle data freshness; this handles code/shape freshness. The disk-materialized NFL boards also
+# stamp it as an explicit `app_version` field (see _nfl_disk_cache_load/_store).
+APP_CACHE_VERSION = '2026-10-20.1'
+
+
 def _build_file_token(*paths):
-    return tuple(_get_path_mtime_token(path) for path in paths)
+    # Lead with the schema version so a deploy that bumps it invalidates every cache keyed on this token.
+    return (APP_CACHE_VERSION,) + tuple(_get_path_mtime_token(path) for path in paths)
 
 
 def _get_ttl_cache_build_lock(cache_key):
@@ -1065,14 +1075,20 @@ def _get_disk_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
 def _nfl_disk_cache_load(cache_key, version, ttl_seconds=86400):
     """Cross-process read for the NFL tool boards, whose primary cache is an in-memory per-worker dict
     (so a batch prewarm process cannot warm live gunicorn workers). Returns the disk-materialized value
-    when it matches `version` and is within the backstop TTL, else None. `version` MUST be process-stable
-    and picklable -- never a str/tuple hash() (PYTHONHASHSEED-salted, so it would differ per process and
-    the prewarmed artifact would never match a worker)."""
+    ONLY when BOTH the source fingerprint (`version`) AND the application schema (`APP_CACHE_VERSION`)
+    match and it is within the backstop TTL -- else None (rebuild). `version` MUST be process-stable and
+    picklable -- never a str/tuple hash() (PYTHONHASHSEED-salted, so it would differ per process and the
+    prewarmed artifact would never match a worker). A corrupt / partial / unreadable artifact returns
+    None here (fail-closed: the caller rebuilds)."""
     try:
         doc = _load_disk_ttl_document(cache_key)
     except Exception:
         doc = None
-    if not doc or doc.get('version') != version:
+    if not isinstance(doc, dict):
+        return None
+    if doc.get('version') != version or doc.get('app_version') != APP_CACHE_VERSION:
+        return None
+    if 'value' not in doc:                    # structurally incomplete artifact -> fail closed
         return None
     try:
         if datetime.now().timestamp() >= float(doc.get('expires_at', 0) or 0):
@@ -1083,20 +1099,30 @@ def _nfl_disk_cache_load(cache_key, version, ttl_seconds=86400):
 
 
 def _nfl_disk_cache_store(cache_key, version, value, ttl_seconds=86400):
-    """Companion writer for _nfl_disk_cache_load. Atomic-ish (temp file + replace) so a reader never sees
-    a half-written pickle. Best-effort: a disk failure never breaks the request (the in-memory cache and
-    the live rebuild still serve)."""
-    payload = {'expires_at': datetime.now().timestamp() + int(ttl_seconds or 0), 'version': version, 'value': value}
+    """Companion writer for _nfl_disk_cache_load. ATOMIC (write a per-PID temp file, fsync, then
+    os.replace) so a concurrent reader never sees a half-written pickle and two concurrent warmers can
+    never publish partial output -- the last complete replace wins. The artifact carries the source
+    fingerprint AND APP_CACHE_VERSION. The file is created 0600 (owner-only). Best-effort: a disk failure
+    never breaks the request (the in-memory cache and the live rebuild still serve)."""
+    payload = {'expires_at': datetime.now().timestamp() + int(ttl_seconds or 0),
+               'version': version, 'app_version': APP_CACHE_VERSION, 'value': value}
+    tmp = None
     try:
         cache_path = _disk_ttl_cache_path(cache_key)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache_path.with_suffix(cache_path.suffix + f'.tmp-{os.getpid()}')
         with tmp.open('wb') as handle:
             pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        os.replace(tmp, cache_path)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, cache_path)           # atomic publish
     except Exception:
         try:
-            if tmp.exists():
+            if tmp is not None and tmp.exists():
                 tmp.unlink()
         except Exception:
             pass
