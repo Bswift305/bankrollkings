@@ -192,6 +192,7 @@
       <div style="margin-top:8px;font-family:monospace;font-size:11.5px;white-space:pre-wrap;border-top:1px dashed var(--border);padding-top:8px;">{{ away }} @ {{ home }}
 {% for leg in selected %}- {{ leg.label }} | {{ leg.book }} | {% if leg.price is not none %}{{ '%+d'|format(leg.price) }}{% else %}price unavailable{% endif %} | {{ leg.timestamp }} ({{ leg.tz }}) | scope: {{ leg.quote_scope }}
 {% endfor %}</div>
+      <div style="margin-top:8px;">Building a ticket from these? The full-fidelity copy above preserves book, price, timestamp and scope &mdash; a direct import is <b>held</b>, so copy it and build in <a href="/tools/kings-tickets">King&rsquo;s Tickets</a>. (King&rsquo;s Tickets is cross-game; these SGP legs are same-game &mdash; nothing is auto-transferred.)</div>
     </div>
     {% endif %}
     <div class="sgp-note" style="margin-top:10px;">
