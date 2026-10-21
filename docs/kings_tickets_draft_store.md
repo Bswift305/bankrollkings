@@ -215,10 +215,8 @@ enabling, not now.
 **Stop point:** awaiting the enablement decision. No routes, UI, or flag flip until approved.
 
 ## Corrective #2 QC output (qc_kings_tickets_drafts.py)
-Run on the Windows dev host below (all green). The symlink/owner/mode checks are POSIX-only and therefore
-**noted, not exercised, on Windows**; they run for real on prod Linux via the §10 command, where that single
-`[NOTE]` line is replaced by:
-`[NOTE] POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm owner+mode fail closed`.
+Verified green on **prod Linux** at `23bb619` (and on the Windows dev host). On prod the POSIX
+symlink/owner/mode block runs for real — the line below is the live `ubuntu@` run via SSM:
 ```
 ====================================================================
 BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
@@ -243,7 +241,7 @@ BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective #2)
 [NOTE] schema singleton + exact-version fail-closed
 [NOTE] unsupported DB byte-identical after a failed startup (no pre-validation mutation)
 [NOTE] path escape (outside, or nested too deep beneath, the runtime root) rejected
-[NOTE] symlink + owner/mode checks are POSIX-only (verified on prod Linux via SSM)
+[NOTE] POSIX: symlinked ancestor rejected; clean dir+db validates; wrong dir/db/-wal/-shm owner+mode fail closed
 [NOTE] corruption degrades to StoreUnavailable (no crash, no Journal fallback)
 [NOTE] authoritative boundary: references resolved server-side; client-supplied fields cannot override
 [NOTE] flag-off DraftService refuses and opens nothing
