@@ -433,25 +433,10 @@ def fetch_nba_injury_report():
     except Exception as e:
         print(f"  Error fetching from NBA API: {e}")
 
-    if not injuries:
-        try:
-            print("  Trying stats.nba.com fallback...")
-            url = "https://stats.nba.com/js/data/widgets/injuries.json"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json',
-                'Referer': 'https://www.nba.com/',
-                'x-nba-stats-origin': 'stats',
-                'x-nba-stats-token': 'true',
-            }
-            response = session.get(url, headers=headers, timeout=15)
-            if response.status_code == 200:
-                injuries = parse_fallback_injury_payload(response.json())
-                print(f"  Fallback returned {len(injuries)} injuries")
-            else:
-                print(f"  Fallback returned status {response.status_code}")
-        except Exception as e:
-            print(f"  Fallback also failed: {e}")
+    # The stats.nba.com widget fallback was removed: it reached an undocumented endpoint by SPOOFING
+    # NBA's internal `x-nba-stats-token` / `x-nba-stats-origin` headers (an access-evasion technique).
+    # Removed outright, with no substitute evasion. Remaining fallbacks are the documented official.nba.com
+    # report / cdn.nba.com live JSON (gated) and ESPN below.
 
     if not injuries:
         try:
