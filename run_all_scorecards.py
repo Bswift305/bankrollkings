@@ -112,6 +112,9 @@ SCORECARDS = [
     # Shared ticket editor (King's Tickets): Today's Cards + King's Tickets render one shared
     # component from one builder; identical inputs -> identical ordered legs (the surfaces cannot drift).
     ("Shared Ticket Editor QC", "qc_ticket_editor_shared.py", 180),
+    # King's Tickets DARK draft store (Step 4): flag off by default; 2-5 + unique-leg; one draft/account;
+    # optimistic CAS (no silent overwrite); transactional rollback; purge; account-bound; degrades, never crashes.
+    ("King's Tickets Draft Store QC", "qc_kings_tickets_drafts.py", 120),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
     # that hid Nico Collins' 5 straight 100+ vs JAX).
