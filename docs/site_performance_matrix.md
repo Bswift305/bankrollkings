@@ -117,6 +117,37 @@ All verified by QC in `run_all_scorecards` — **no data removed, order/membersh
 - First-ever-build LCPs (wave 2.78 s, heat-map 6.58 s) are eliminated for users by the scheduled prewarm
   that pre-writes the disk artifact; the warm/disk LCPs (0.51 s / 0.73 s) are what users see.
 
+## 5b. Operational prewarm (survives refreshes + deploys — no manual run)
+
+The disk prewarm is wired into both lifecycle events and carries an application schema version so a
+deploy invalidates stale artifacts:
+
+- **Source refresh** (fingerprint change) → `run_daily` runs `refresh_runtime_snapshots.py --prewarm-only`
+  as its LAST step (after grading + scorecards); the NFL **post-week** ops script re-warms after the
+  parquet advances.
+- **Deploy** (schema change) → `bk-auto-deploy.sh` runs `--prewarm-only` **post-restart**, synchronously,
+  before reporting success. **Documented choice — post-restart, not before:** the artifacts must be
+  rebuilt by the NEW code at the NEW schema; warming before the restart would publish artifacts the new
+  workers reject. Runs as the `ubuntu` service user, no upstream network, no user data, time-bounded
+  (300 s); a warm failure is logged LOUDLY (never a silent cold deploy) and does not fail the deploy.
+- **Schema version** — `APP_CACHE_VERSION` is folded into `_build_file_token` (dashboard/promotion + every
+  token-keyed cache) and stamped as an explicit `app_version` field on the NFL board artifacts. Bump it
+  whenever a cached builder's output shape changes; the next restart rejects old-schema artifacts.
+- **Hardening** — atomic publish (`temp(.tmp-<pid>)` + `fsync` + `os.replace`), `0600` perms, fail-closed
+  reads (corrupt / incomplete / wrong-schema / wrong-fingerprint → rebuild).
+- **Receipt** — `prewarm_receipt.py` (run as the service user) rebuilds each artifact and prints a
+  sanitized per-artifact line: fingerprint (short hash, not contents), schema, build ms, path category,
+  size, atomic method, validation, perms, status; exit non-zero if any fails.
+- **Invariants proven** — `qc_prewarm_lifecycle.py`: source-version change → rebuild; app-version change →
+  rebuild; unchanged inputs → reuse; corrupt/incomplete/wrong-schema → fail closed; atomic (no partial
+  reads, last complete write wins, crashed-writer temp isolated). `qc_sgp_workbench.py` t15 = deterministic
+  populated-fixture leg-interaction perf (evaluate() deterministic + <25 ms/call), since the prod
+  workbench had no live legs.
+
+**Manual ops step (both `bk-*` wrappers live outside the repo):** after prod pulls, reinstall the deploy
+wrapper so the post-restart warming takes effect:
+`sudo install -m 755 ops/bk-auto-deploy.sh /usr/local/bin/bk-auto-deploy.sh`.
+
 ## 6. Closure checklist
 - [x] No 504s; 0 failed resources; 0 redirects (all captured routes).
 - [x] Membership/order parity (QCs: injury progressive, perf guards 1–7, milestone/wave/floor/identity).
