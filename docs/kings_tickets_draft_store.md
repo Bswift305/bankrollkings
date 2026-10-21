@@ -5,27 +5,40 @@ Implemented DARK (`8650b74`): `services/kings_tickets_drafts.py` + `qc_kings_tic
 flag flip, no Decision Journal writes, no persistent history. Returned per directive for the enablement
 decision.
 
-## 1. Complete DDL
+## 1. Complete DDL (revised after review)
+`STRICT` is appended to each table when the deployed SQLite is ≥ 3.37 (keeps strings out of numeric columns).
 ```sql
-CREATE TABLE schema_meta(version INTEGER NOT NULL CHECK(version > 0));
+CREATE TABLE schema_meta(
+  id INTEGER PRIMARY KEY CHECK(id=1),              -- singleton; exact version validated at startup
+  version INTEGER NOT NULL
+) STRICT;
 CREATE TABLE drafts(
   account_user_id TEXT NOT NULL UNIQUE,            -- one active draft per account
   draft_id        TEXT NOT NULL PRIMARY KEY,
   revision        INTEGER NOT NULL CHECK(revision > 0),
   leg_count       INTEGER NOT NULL CHECK(leg_count BETWEEN 2 AND 5),
   originating_surface TEXT,
-  risk_amount     REAL,                            -- only if entered
-  combined_price            INTEGER,               -- ONLY when a sportsbook supplied a combined quote
+  risk_amount_cents INTEGER CHECK(risk_amount_cents IS NULL OR
+                                  (risk_amount_cents >= 0 AND risk_amount_cents <= 100000000)),  -- integer cents
+  combined_price            INTEGER CHECK(combined_price IS NULL OR combined_price <= -100 OR combined_price >= 100),
   combined_price_source     TEXT,
   combined_price_scope      TEXT,
   combined_price_timestamp  TEXT,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+  combined_price_book       TEXT,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+  -- combined price is ALL-OR-NOTHING and must be a sportsbook combined-ticket quote, or entirely NULL
+  CHECK((combined_price IS NULL AND combined_price_source IS NULL AND combined_price_scope IS NULL
+         AND combined_price_timestamp IS NULL AND combined_price_book IS NULL)
+     OR (combined_price IS NOT NULL AND combined_price_source IS NOT NULL
+         AND combined_price_scope='combined-ticket' AND combined_price_timestamp IS NOT NULL
+         AND combined_price_book IS NOT NULL))
   -- NO result / settlement / win-loss / graded columns. A draft is never history.
-);
+) STRICT;
 CREATE TABLE draft_legs(
   draft_id TEXT NOT NULL REFERENCES drafts(draft_id) ON DELETE CASCADE,
   position INTEGER NOT NULL,
-  canonical_leg_id TEXT NOT NULL,
+  selection_key TEXT NOT NULL,                     -- server-reconstructed: event+subject+market+direction
+  quote_observation_id TEXT,                       -- server-reconstructed: exact book/line/price/capture (nullable)
   sport TEXT, league TEXT, event_id TEXT, event_start TEXT,
   player_id TEXT, player_name TEXT, team_id TEXT, team_name TEXT,
   market_key TEXT, direction TEXT, line REAL, price INTEGER, price_format TEXT, sportsbook TEXT,
@@ -34,11 +47,18 @@ CREATE TABLE draft_legs(
   quote_state TEXT NOT NULL CHECK(quote_state IN ('current','stale','missing','unknown')),
   inserted_at TEXT, last_validated_at TEXT,
   PRIMARY KEY(draft_id, position),
-  UNIQUE(draft_id, canonical_leg_id)               -- unique canonical legs per draft
-);
+  UNIQUE(draft_id, selection_key),                 -- no duplicate underlying selection
+  CHECK(price IS NULL OR price <= -100 OR price >= 100)
+) STRICT;
 CREATE INDEX idx_drafts_expires ON drafts(expires_at);
 ```
-PRAGMAs on every connection: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL`, `busy_timeout=5000`.
+PRAGMAs on every connection: `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=FULL`, `busy_timeout=5000`,
+`isolation_level=None` (so writes use an explicit `BEGIN IMMEDIATE`). **Identity** is reconstructed
+server-side from authoritative candidate fields — `selection_key` (event+subject+market+direction, display
+label excluded) blocks duplicate selections; a leg lacking minimum identity (sport/league, event, market,
+direction, player/team) is rejected; client-supplied canonical ids are ignored. **Service boundary:** routes
+import only `DraftService`, which refuses every op while the flag is off *without opening/initializing the
+store* and never falls back to the Decision Journal.
 
 ## 2. Operation pseudocode
 ```
@@ -85,10 +105,12 @@ contents are logged.
 
 ## 6. Privacy disclosure (draft text, pending review)
 > **Your in-progress ticket draft.** When you build a King's Tickets ticket, we keep your current draft for
-> up to **24 hours** so it's still here if you refresh or move around the site. It is **not** a placed bet,
-> is **not** shared, and is **not** part of your betting or performance history. It's deleted automatically
-> after 24 hours, and you can clear it any time with **Clear Draft**. You can ask to see or delete it as
-> part of your account data rights.
+> up to **24 hours** so it's still here if you refresh or move around the site. It is **not** a placed bet and
+> is **not** part of your betting or performance history. It is **visible only within your authenticated
+> account and processed by Bankroll Kings to provide the draft feature**; as with the rest of your account
+> data, our infrastructure/service providers may process it on our behalf under our privacy policy. It's
+> deleted automatically after 24 hours, and you can clear it any time with **Clear Draft**. You can ask to
+> see or delete it as part of your account data rights.
 
 Classification: **product/data**, not a legal conclusion — privacy/legal review required before broad
 enablement. The draft is account-bound, cleared on account deletion, user-clearable immediately, included
@@ -119,3 +141,31 @@ Verify the module loads + the QC passes on prod; the DB file is created 0600 on 
 - [ ] Then, and only then, set `KINGS_TICKETS_DRAFTS_ENABLED=1`.
 
 **Stop point:** awaiting the enablement decision. No routes, UI, or flag flip until approved.
+
+## Corrective QC output (qc_kings_tickets_drafts.py — all green, dark)
+```
+====================================================================
+BANKROLL KINGS - KING'S TICKETS DRAFT STORE QC (dark, corrective)
+====================================================================
+[NOTE] flag dark by default
+[NOTE] create requires expected_revision=0
+[NOTE] CAS: update requires the current revision; omission/stale rejected
+[NOTE] 2-5 leg bounds enforced
+[NOTE] identity reconstructed server-side: client id ignored, dup selection + bare leg rejected
+[NOTE] stale clear rejected; correct-revision clear works
+[NOTE] combined price all-or-nothing (stored only when complete)
+[NOTE] numeric validation rejects NaN/inf/bool/negative/oversized + invalid American + strings
+[NOTE] expired-on-read: absent at boundary, purged, TTL not extended
+[NOTE] fault injection at update/delete-legs/leg-insert/commit all roll back to prior revision
+[NOTE] threaded CAS race: exactly one save wins, the other gets DraftConflict (not a lock error)
+[NOTE] race left one complete draft with a single revision increment
+[NOTE] account-bound reads isolated
+[NOTE] perms check skipped (non-POSIX dev host)
+[NOTE] schema singleton + exact-version fail-closed
+[NOTE] path-escape rejected; symlink/owner checks are POSIX-only
+[NOTE] corruption degrades to StoreUnavailable (no crash, no Journal fallback)
+[NOTE] flag-off DraftService refuses without opening/initializing the store
+[NOTE] route-layer import guard: app.py does not touch the repository directly
+
+No draft-store issues detected.
+```
