@@ -5,9 +5,10 @@
 <div class="dc-grid">
 {% for c in cards %}
 <div class="dc-card {{ 'hero' if c.n == 3 else '' }}">
-  <div class="dc-h"><span class="n">{{ c.n }}-Leg</span><span class="od">{{ '%+d'|format(c.american) }}</span></div>
-  <div class="dc-pay"><b>$5</b> &rarr; <b>$<span class="dc-paynum">{{ '%g'|format(c.payout_5) }}</span></b> &middot; <span class="dc-mix">{{ c.n - 1 }} floors + 1 swing</span></div>
-  <button type="button" class="dc-save dc-saveimg">&#128229; Save card image</button>
+  <div class="dc-h"><span class="n">{{ c.n }}-Leg</span><span class="od" title="Illustrative: calculated by multiplying the individual leg prices and assuming the legs are independent. NOT a sportsbook combined quote."><span class="odnum">{{ '%+d'|format(c.american) }}</span> <span class="dc-illus">illus.</span></span></div>
+  <div class="dc-pay"><span class="dc-illus">Illustrative</span> <b>$5</b> &rarr; <b>$<span class="dc-paynum">{{ '%g'|format(c.payout_5) }}</span></b> &middot; <span class="dc-mix">{{ c.n - 1 }} floors + 1 swing</span> &middot; assumes independent legs</div>
+  <div class="dc-prov">Leg prices are current <b>board numbers</b> (no book or capture time recorded). The combined number is <b>calculated</b> &mdash; not a sportsbook quote.</div>
+  <button type="button" class="dc-save dc-saveimg">&#8681; Download image</button>
   <button type="button" class="dc-save dc-reroll" style="margin-left:7px;">&#8635; Reroll</button>
   {% for l in c.legs %}
   <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}">
@@ -16,7 +17,7 @@
       <span class="tp">{{ l.label }} <span class="dc-sp">{{ l.sport }}</span></span>
       <span class="rs">{{ l.game }} &middot; {{ l.reason }}</span>
     </span>
-    <span class="pr">{{ '%+d'|format(l.price) }}</span>
+    <span class="pr" title="Individual board number — sportsbook and capture time not recorded.">{{ '%+d'|format(l.price) }}</span>
     <button type="button" class="dc-swap" title="View eligible replacements" aria-label="Choose a replacement for {{ l.label }}">&#8635; Swap</button>
   </div>
   {% endfor %}
@@ -47,7 +48,7 @@
   function reprice(card){
     var legs=card.querySelectorAll('.dc-leg'), d=1, nf=0, ns=0;
     legs.forEach(function(l){ d*=dec(l.dataset.price); if(l.dataset.tier==='floor')nf++;else ns++; });
-    card.querySelector('.od').textContent=sgn(amer(d));
+    card.querySelector('.odnum').textContent=sgn(amer(d));   /* update the number only; keep the 'illus.' label */
     var pay=(5*d); card.querySelector('.dc-paynum').textContent=(pay%1===0?pay:pay.toFixed(2));
     var m=card.querySelector('.dc-mix'); if(m) m.textContent=nf+' floor'+(nf!==1?'s':'')+' + '+ns+' swing'+(ns!==1?'s':'');
   }

@@ -63,3 +63,8 @@
     .dc-swapoption{grid-template-columns:auto minmax(0,1fr);}
     .dc-optionprice{grid-column:2;}
   }
+/* Price-honesty labels (King's Tickets corrections): the combined number is illustrative/calculated,
+   not a sportsbook quote; leg prices are board numbers with no captured book/timestamp. */
+.dc-illus{font:800 8.5px ui-monospace,monospace;letter-spacing:.03em;color:#0b1118;background:var(--bkn-mid,#ffd166);border-radius:4px;padding:1px 5px;text-transform:uppercase;vertical-align:middle;}
+.dc-pay .dc-illus{margin-right:4px;}
+.dc-prov{font:500 10.5px/1.45 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:-6px 0 11px;opacity:.9;}
