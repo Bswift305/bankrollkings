@@ -18653,7 +18653,8 @@ def _injury_boost_lookup(active_boosts):
     return lookup
 
 
-INJURY_REPORT_PAGE_SIZE = 100
+INJURY_REPORT_PAGE_SIZE = 50        # default DATA records per page (frozen target 50-100; conservative end)
+INJURY_REPORT_PAGE_SIZE_MAX = 100   # ceiling a user may request via ?page_size (keeps DOM/mobile bounded)
 
 
 def _injury_row_matches(row, league, team, status, q):
@@ -31124,9 +31125,22 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
     # completed-week calendar advances with the calendar even when no file changed).
     props_sig = os.path.getmtime(props_path) if props_path.exists() else 0
     inj_sig = os.path.getmtime(inj_path) if inj_path.exists() else 0
-    sig = (props_sig, inj_sig, _nfl_player_log_signature(), str(sports_today_date()))
+    # Key on min_streak (it changes which streaks qualify) but NOT limit: cache the FULL row set and
+    # slice to `limit` at return. This fixes a first-caller-wins quirk (the heatmap route asks for 50,
+    # the hub for 60, and whoever built first set the cached slice for both) AND lets the sig-keyed disk
+    # artifact serve every caller. Signature is process-stable (raw log signature, not hash()).
+    sig = (props_sig, inj_sig, _nfl_player_log_signature(), str(sports_today_date()), int(min_streak))
+    _dkey = f'nfl_hot_hand::{int(min_streak)}'
+
+    def _slice(d):
+        return {**d, 'streaks': (d.get('streaks') or [])[:limit]}
+
     if _NFL_HOTHAND_CACHE.get('sig') == sig and 'data' in _NFL_HOTHAND_CACHE:
-        return _NFL_HOTHAND_CACHE['data']
+        return _slice(_NFL_HOTHAND_CACHE['data'])
+    _disk = _nfl_disk_cache_load(_dkey, sig)
+    if _disk is not None:
+        _NFL_HOTHAND_CACHE.update(sig=sig, data=_disk)
+        return _slice(_disk)
     empty = {'streaks': [], 'available': False, 'pending_latest': False,
              'through_week': None, 'through_label': '', 'data_updated': '',
              'expected_week': None,
@@ -31286,13 +31300,14 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
                              + (f" · updated {data_updated}" if data_updated else ''))
     else:
         through_label = ''
-    data = {'streaks': rows[:limit], 'count': len(rows), 'available': bool(rows),
+    data = {'streaks': rows, 'count': len(rows), 'available': bool(rows),   # cache FULL rows; slice at return
             'active_count': active_count, 'pending_latest': pending_latest,
             'through_week': through_week, 'expected_week': expected_week,
             'through_label': through_label, 'data_updated': data_updated,
             'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     _NFL_HOTHAND_CACHE.update(sig=sig, data=data)
-    return data
+    _nfl_disk_cache_store(_dkey, sig, data)   # cross-process: batch prewarm warms live workers
+    return _slice(data)
 
 
 _NFL_USAGE_CACHE = {}
@@ -43897,12 +43912,22 @@ def _injury_report_request_args():
         page = int(request.args.get('page', 1))
     except (TypeError, ValueError):
         page = 1
+    # Optional user-selectable page size, clamped to the target ceiling so a hand-edited query can't
+    # request the whole set back (defeating progressive disclosure). Absent -> builder default (50).
+    page_size = INJURY_REPORT_PAGE_SIZE
+    raw_ps = request.args.get('page_size')
+    if raw_ps is not None:
+        try:
+            page_size = max(10, min(int(raw_ps), INJURY_REPORT_PAGE_SIZE_MAX))
+        except (TypeError, ValueError):
+            page_size = INJURY_REPORT_PAGE_SIZE
     return {
         'league': str(request.args.get('league', '') or '').strip(),
         'team': str(request.args.get('team', '') or '').strip(),
         'status': str(request.args.get('status', '') or '').strip(),
         'q': str(request.args.get('q', '') or '').strip(),
         'page': page,
+        'page_size': page_size,
     }
 
 

@@ -248,37 +248,39 @@ def run_qc():
         import os
         # Remove any existing artifacts so the build must RE-STORE (otherwise the builder reads the
         # disk artifact left by an earlier guard and never calls the store we are capturing).
-        for pat in ('nfl_milestone_streaks*', 'nfl_floor_board*'):
+        for pat in ('nfl_milestone_streaks*', 'nfl_floor_board*', 'nfl_hot_hand*'):
             for p in glob.glob(os.path.join(str(app.DATA_DIR), 'cache', pat)):
                 try:
                     os.remove(p)
                 except Exception:
                     pass
 
-        captured = {}
-        orig_store = app._nfl_disk_cache_store
+        captured = {}   # key -> (version, stored_value): compare loaded to what was STORED, not to the
+        orig_store = app._nfl_disk_cache_store   # builder return (hot-hand stores full rows, returns a slice)
 
         def _cap(key, version, value, ttl_seconds=86400):
-            captured[key] = version
+            captured[key] = (version, value)
             return orig_store(key, version, value, ttl_seconds)
 
         app._nfl_disk_cache_store = _cap
         try:
             app._NFL_MILESTONE_CACHE.clear()
-            mdata = app.build_nfl_milestone_streaks()
+            app.build_nfl_milestone_streaks()
             app._NFL_FLOOR_BOARD_CACHE.clear()
-            fdata = app.build_nfl_floor_board()
+            app.build_nfl_floor_board()
+            app._NFL_HOTHAND_CACHE.clear()
+            app.build_nfl_hot_hand()
         finally:
             app._nfl_disk_cache_store = orig_store
 
         checked = 0
-        for token, data in (('milestone', mdata), ('floor_board', fdata)):
-            # find the captured disk key (nfl_milestone_streaks:: / nfl_floor_board::)
+        for token in ('milestone', 'floor_board', 'hot_hand'):
+            # find the captured disk key (nfl_milestone_streaks:: / nfl_floor_board:: / nfl_hot_hand::)
             dkey = next((k for k in captured if token in k), None)
             if dkey is None:
                 # a builder may legitimately not persist (e.g. empty/unavailable board) -> skip quietly
                 continue
-            version = captured[dkey]
+            version, stored = captured[dkey]
             # version must survive pickle + be equality-stable (process-stable key)
             try:
                 import pickle as _pk
@@ -290,7 +292,7 @@ def run_qc():
             if loaded is None:
                 issues.append(f"{token} disk artifact not readable back with its own version "
                               "(cross-process prewarm would miss)")
-            elif _njson(loaded) != _njson(data):
+            elif _njson(loaded) != _njson(stored):
                 issues.append(f"{token} disk round-trip changed the data (prewarm would serve a different board)")
             else:
                 checked += 1

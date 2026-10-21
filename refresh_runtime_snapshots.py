@@ -317,6 +317,7 @@ def prewarm_nfl_tool_caches() -> None:
     jobs = [
         ("nfl_milestone_streaks", lambda: _appmod.build_nfl_milestone_streaks()),
         ("nfl_floor_board", lambda: _appmod.build_nfl_floor_board()),
+        ("nfl_hot_hand", lambda: _appmod.build_nfl_hot_hand()),
     ]
     for name, fn in jobs:
         try:
