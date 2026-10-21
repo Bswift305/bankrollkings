@@ -132,6 +132,10 @@ SCORECARDS = [
     # no header spoofing, WNBA injury ingestion gated, load_schedule/load_playoff_results gated + sentinels
     # contained, cache key folds gate state, licensed Odds loaders + other sports unaffected.
     ("NBA Containment QC", "qc_nba_containment.py", 120),
+    # Streak integrity audit (market-line / Riding-the-Wave prop streaks): directed fixtures through the
+    # real builder prove source->canonical->calc->membership->ordering, prior seasons can't extend a live
+    # streak, missing obs != missed game, pushes break, dedup, full membership, and fail-closed sources.
+    ("Streak Integrity Audit", "qc_streak_integrity.py", 120),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
