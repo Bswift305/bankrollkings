@@ -32861,18 +32861,9 @@ def load_card_prefs(uid):
 
 
 def save_card_prefs(uid, prefs):
-    if not uid:
-        return
-    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
-    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
-    try:
-        with open(path, encoding='utf-8') as fh:
-            d = json.load(fh) or {}
-    except (OSError, ValueError):
-        d = {}
-    d['card'] = prefs
-    with open(path, 'w', encoding='utf-8') as fh:
-        json.dump(d, fh)
+    # atomic + multi-worker-safe; touches ONLY the 'card' key (see services.user_prefs_store)
+    from services.user_prefs_store import update_prefs
+    update_prefs(_CARD_PREFS_DIR, uid, lambda d: d.__setitem__('card', prefs))
 
 
 # --- Home view: "how do you bet?" -> the surface the user lands on after sign-in. Each key
@@ -32907,16 +32898,8 @@ def load_home_view(uid):
 def save_home_view(uid, key):
     if not uid or key not in HOME_VIEWS:
         return
-    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
-    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
-    try:
-        with open(path, encoding='utf-8') as fh:
-            d = json.load(fh) or {}
-    except (OSError, ValueError):
-        d = {}
-    d['home'] = key
-    with open(path, 'w', encoding='utf-8') as fh:
-        json.dump(d, fh)
+    from services.user_prefs_store import update_prefs
+    update_prefs(_CARD_PREFS_DIR, uid, lambda d: d.__setitem__('home', key))
 
 
 def load_seen_start(uid):
@@ -32932,19 +32915,8 @@ def load_seen_start(uid):
 
 
 def mark_seen_start(uid):
-    if not uid:
-        return
-    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
-    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
-    try:
-        with open(path, encoding='utf-8') as fh:
-            d = json.load(fh) or {}
-    except (OSError, ValueError):
-        d = {}
-    if not d.get('seen_start'):
-        d['seen_start'] = True
-        with open(path, 'w', encoding='utf-8') as fh:
-            json.dump(d, fh)
+    from services.user_prefs_store import update_prefs
+    update_prefs(_CARD_PREFS_DIR, uid, lambda d: d.__setitem__('seen_start', True))
 
 
 def load_greenlight_prefs(uid):
@@ -32963,23 +32935,20 @@ def load_greenlight_prefs(uid):
 
 
 def save_greenlight_prefs(uid, prefs):
-    """Store validated Green Light workspace prefs under the 'greenlight' key (read-merge-write). Anon ->
-    no-op. Validation drops anything that is not UI configuration, so legs/prices/outcomes can never land
-    here even if passed."""
+    """Store validated Green Light workspace prefs under the 'greenlight' key only (atomic + multi-worker
+    safe). Anon -> no-op. Validation drops anything that is not UI configuration, so legs/prices/outcomes can
+    never land here even if passed."""
     from services.green_light_lenses import validate_greenlight_prefs
-    if not uid:
-        return
+    from services.user_prefs_store import update_prefs
     clean = validate_greenlight_prefs(prefs)
-    os.makedirs(_CARD_PREFS_DIR, exist_ok=True)
-    path = os.path.join(_CARD_PREFS_DIR, f'{uid}.json')
-    try:
-        with open(path, encoding='utf-8') as fh:
-            d = json.load(fh) or {}
-    except (OSError, ValueError):
-        d = {}
-    d['greenlight'] = clean
-    with open(path, 'w', encoding='utf-8') as fh:
-        json.dump(d, fh)
+    update_prefs(_CARD_PREFS_DIR, uid, lambda d: d.__setitem__('greenlight', clean))
+
+
+def reset_greenlight_prefs(uid):
+    """Reset ONLY Green Light prefs to the house default by removing the 'greenlight' key; every other
+    saved setting (card / home / seen_start) is preserved."""
+    from services.user_prefs_store import update_prefs
+    update_prefs(_CARD_PREFS_DIR, uid, lambda d: d.pop('greenlight', None))
 
 
 def _card_prefs_from_request(saved):

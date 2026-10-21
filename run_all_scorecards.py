@@ -115,6 +115,9 @@ SCORECARDS = [
     # King's Tickets DARK draft store (Step 4): flag off by default; 2-5 + unique-leg; one draft/account;
     # optimistic CAS (no silent overwrite); transactional rollback; purge; account-bound; degrades, never crashes.
     ("King's Tickets Draft Store QC", "qc_kings_tickets_drafts.py", 120),
+    # Per-user preference store: atomic writes (no torn/truncated JSON), multi-worker lock, key-scoped
+    # mutation (no lost update), reset preserves unrelated settings, corrupt file degrades safely.
+    ("User Preference Store QC", "qc_user_prefs_store.py", 60),
     # Green Light preference workspace (store + lens registry): preferences only order/show/hide the existing
     # factual lenses (same universe), deterministically; hides are VIEW-class; reset restores default; no
     # model-based suppression; validation fails safe; no Journal/draft-store coupling.
