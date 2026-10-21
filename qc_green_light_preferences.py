@@ -83,17 +83,26 @@ def run_qc():
 
     # 6. validation fails safe
     dirty = {'lens_order': ['heat_map', 'NOPE', 123, 'heat_map'], 'lens_hidden': ['weather', 'bogus'],
-             'sports': ['nfl', 'martian'], 'markets': ['rec_yds', 'BAD KEY!', 'x' * 99],
+             'sports': ['nfl', 'martian'], 'markets': ['receptions', 'BAD KEY!', 'x' * 99, 'nope_market'],
              'display': {'density': 'ultrawide', 'why_expanded': 'yes'}, 'junk': {'a': 1}}
     v = gl.validate_greenlight_prefs(dirty)
     ok(v.get('lens_order') == ['heat_map'], f'unknown/dup lens_order keys not cleaned: {v.get("lens_order")}')
     ok(v.get('lens_hidden') == ['weather'], 'unknown lens_hidden keys not cleaned')
     ok(v.get('sports') == ['nfl'], 'unknown sports not dropped')
-    ok(v.get('markets') == ['rec_yds'], f'bad markets not dropped: {v.get("markets")}')
+    ok(v.get('markets') == ['receptions'], f'unknown markets not dropped: {v.get("markets")}')
     ok('display' not in v, 'invalid display values not dropped')
     ok('junk' not in v, 'unknown top-level key retained')
     ok(gl.validate_greenlight_prefs('not a dict') == {} and gl.validate_greenlight_prefs(None) == {},
        'non-dict prefs not coerced to defaults', 'validation fails safe: unknown/invalid fields dropped')
+
+    # 6b. sport-aware market vocabulary: reject unknown sport/market combinations
+    ok(gl.validate_greenlight_prefs({'sports': ['cfb'], 'markets': ['total', 'receptions']}).get('markets')
+       == ['total'], 'cfb kept a non-cfb (player-prop) market — sport/market combo not rejected')
+    ok(gl.validate_greenlight_prefs({'sports': ['nfl'], 'markets': ['receptions', 'spread']}).get('markets')
+       == ['receptions', 'spread'], 'nfl dropped a valid market')
+    ok('markets' not in gl.validate_greenlight_prefs({'sports': ['nfl'], 'markets': ['moneyline_xyz']}),
+       'an unknown market was accepted')
+    NOTES.append('sport-aware market vocab: unknown markets + unknown sport/market combos rejected')
 
     # 7. no Journal / draft-store coupling in the module
     src = open(gl.__file__, encoding='utf-8', errors='replace').read()

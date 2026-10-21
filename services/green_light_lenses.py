@@ -14,8 +14,6 @@ never gains authority.
 """
 from __future__ import annotations
 
-import re
-
 FACT = 'fact'
 GOVERNED_MODEL = 'governed-model'
 
@@ -44,8 +42,27 @@ OUT_OF_SPORT = 'OUT_OF_SPORT'
 VIEW_REASONS = (HIDDEN_BY_USER, OUT_OF_SPORT)
 
 _DENSITIES = ('comfortable', 'compact')
-_MARKET_RE = re.compile(r'^[a-z0-9_]{1,40}$')
 _MAX_MARKETS = 50
+
+# Controlled, sport-aware market vocabulary (keys drawn from the live NFL board stat keys + game lines;
+# CFB is a sides/totals program — team game-lines only). A market the user requests is kept ONLY when it is
+# valid for a sport they selected; unknown markets and unknown sport/market combinations are rejected.
+_NFL_MARKETS = ('passing_yards', 'completions', 'attempts', 'passing_tds', 'rushing_yards', 'carries',
+                'rushing_tds', 'receiving_yards', 'receptions', 'receiving_tds', 'targets', 'rush_rec_yds',
+                'anytime_td', 'spread', 'total', 'moneyline')
+_CFB_MARKETS = ('spread', 'total', 'moneyline')
+MARKETS_BY_SPORT = {'nfl': _NFL_MARKETS, 'cfb': _CFB_MARKETS, 'mlb': (), 'nba': (), 'wnba': ()}
+
+
+def markets_for_sports(sports):
+    """Controlled markets valid for the given sports (all sports if none), de-duplicated, stable order."""
+    seen, out = set(), []
+    for s in (sports or SPORTS):
+        for m in MARKETS_BY_SPORT.get(s, ()):
+            if m not in seen:
+                seen.add(m)
+                out.append(m)
+    return out
 
 
 def default_lens_order():
@@ -104,8 +121,8 @@ def validate_greenlight_prefs(raw):
             out['sports'] = clean
     markets = raw.get('markets')
     if isinstance(markets, (list, tuple)):
-        clean = [m for m in dict.fromkeys(markets)
-                 if isinstance(m, str) and _MARKET_RE.match(m)][:_MAX_MARKETS]
+        allowed = set(markets_for_sports(out.get('sports')))  # sport-aware: only markets valid for the selection
+        clean = [m for m in dict.fromkeys(markets) if isinstance(m, str) and m in allowed][:_MAX_MARKETS]
         if clean:
             out['markets'] = clean
     display = raw.get('display')
