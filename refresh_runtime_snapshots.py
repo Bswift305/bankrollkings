@@ -307,6 +307,26 @@ def prewarm_dashboard_caches() -> None:
             print(f"[PREWARM] {name} -> FAIL ({type(exc).__name__}: {exc})")
 
 
+def prewarm_nfl_tool_caches() -> None:
+    """Warm the DISK-materialized NFL tool caches (milestones, prop floor) so the first live request
+    after a source refresh / restart reads the artifact instead of paying the cold build (milestones
+    ~8s, floor ~2.4s). These builders keep an in-memory per-worker cache AND a cross-process disk cache
+    keyed on their real source signature; calling them here writes that disk artifact. Default params =
+    what the public routes request (the disk key includes the params, so other callers' combos still
+    build on demand). Builder failures are reported, never fatal."""
+    jobs = [
+        ("nfl_milestone_streaks", lambda: _appmod.build_nfl_milestone_streaks()),
+        ("nfl_floor_board", lambda: _appmod.build_nfl_floor_board()),
+    ]
+    for name, fn in jobs:
+        try:
+            t0 = time.perf_counter()
+            fn()
+            print(f"[PREWARM] {name} -> ok ({(time.perf_counter() - t0) * 1000:.0f} ms)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[PREWARM] {name} -> FAIL ({type(exc).__name__}: {exc})")
+
+
 def prewarm_expensive_pages() -> None:
     routes = [
         "/dashboard",
@@ -341,9 +361,10 @@ def main() -> int:
 
     if args.prewarm_only:
         print("=" * 60)
-        print("BANKROLL KINGS - DASHBOARD CACHE PREWARM (post-scorecards)")
+        print("BANKROLL KINGS - DASHBOARD + NFL TOOL CACHE PREWARM (post-refresh)")
         print("=" * 60)
         prewarm_dashboard_caches()
+        prewarm_nfl_tool_caches()
         return 0
 
     groups = {item.strip().lower() for item in args.sports.split(",") if item.strip()}

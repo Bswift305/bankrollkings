@@ -34,6 +34,11 @@ echo "[postweek] completed week missing - pulling nflverse player stats"
 
 if "$PY" fetch_nfl_player_week.py --check-only; then
   echo "[postweek] completed week now present"
+  # The parquet (player-log signature) just advanced, which invalidates the milestone + prop-floor
+  # DISK caches. Re-warm them NOW so the first live request after the week lands reads the artifact
+  # instead of paying the cold build (milestones ~8s, floor ~2.4s). Non-fatal.
+  echo "[postweek] re-warming NFL tool caches for the new parquet"
+  "$PY" refresh_runtime_snapshots.py --prewarm-only || true
 else
   echo "[postweek] still pending - will retry on the next tick"
 fi

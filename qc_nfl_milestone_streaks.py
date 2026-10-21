@@ -51,8 +51,14 @@ def run_qc() -> dict:
     issues: list[str] = []
     notes: list[str] = []
     saved = {k: getattr(app, k) for k in ('_nfl_player_week_data', '_nfl_expected_completed_week',
-                                          '_nfl_injury_source_state', '_nfl_player_log_sources')}
+                                          '_nfl_injury_source_state', '_nfl_player_log_sources',
+                                          '_nfl_disk_cache_load', '_nfl_disk_cache_store')}
     try:
+        # Neutralize the cross-process DISK cache: this QC swaps the data loader but not the file
+        # signature, so successive synthetic scenarios would otherwise share a disk artifact. The disk
+        # transport is proven separately (qc_perf_guards Guard 7); here we exercise builder LOGIC only.
+        app._nfl_disk_cache_load = lambda *a, **k: None
+        app._nfl_disk_cache_store = lambda *a, **k: None
         app._nfl_player_week_data = lambda: _fixture()
         app._nfl_expected_completed_week = lambda today=None: (6, 2026)  # current season, no 2026 rows
         app._nfl_injury_source_state = lambda: {'lookup': {}, 'updated': '', 'mtime': 1.0,

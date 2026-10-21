@@ -1062,6 +1062,46 @@ def _get_disk_ttl_cached_value(cache_key, ttl_seconds, builder, version=None):
         lock.release()
 
 
+def _nfl_disk_cache_load(cache_key, version, ttl_seconds=86400):
+    """Cross-process read for the NFL tool boards, whose primary cache is an in-memory per-worker dict
+    (so a batch prewarm process cannot warm live gunicorn workers). Returns the disk-materialized value
+    when it matches `version` and is within the backstop TTL, else None. `version` MUST be process-stable
+    and picklable -- never a str/tuple hash() (PYTHONHASHSEED-salted, so it would differ per process and
+    the prewarmed artifact would never match a worker)."""
+    try:
+        doc = _load_disk_ttl_document(cache_key)
+    except Exception:
+        doc = None
+    if not doc or doc.get('version') != version:
+        return None
+    try:
+        if datetime.now().timestamp() >= float(doc.get('expires_at', 0) or 0):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return doc.get('value')
+
+
+def _nfl_disk_cache_store(cache_key, version, value, ttl_seconds=86400):
+    """Companion writer for _nfl_disk_cache_load. Atomic-ish (temp file + replace) so a reader never sees
+    a half-written pickle. Best-effort: a disk failure never breaks the request (the in-memory cache and
+    the live rebuild still serve)."""
+    payload = {'expires_at': datetime.now().timestamp() + int(ttl_seconds or 0), 'version': version, 'value': value}
+    try:
+        cache_path = _disk_ttl_cache_path(cache_key)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_suffix(cache_path.suffix + f'.tmp-{os.getpid()}')
+        with tmp.open('wb') as handle:
+            pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp, cache_path)
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+
+
 def _read_disk_ttl_cached_value(cache_key, version=None):
     now = datetime.now().timestamp()
     cached = RUNTIME_TTL_CACHE.get(cache_key)
@@ -30611,8 +30651,9 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     NFL_Props.csv is unchanged -- no restart required."""
     props_path = DATA_DIR / 'props' / 'NFL_Props.csv'
     props_mtime = os.path.getmtime(props_path) if props_path.exists() else 0
-    sig = (props_mtime, _nfl_player_log_signature())
+    sig = (props_mtime, _nfl_player_log_signature())   # process-stable + picklable
     pkey = (int(limit), int(min_hit), int(min_games))
+    _dkey = f'nfl_floor_board::{pkey[0]}::{pkey[1]}::{pkey[2]}'
     if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
         _NFL_FLOOR_BOARD_CACHE.clear()
         _NFL_FLOOR_BOARD_CACHE['sig'] = sig
@@ -30620,6 +30661,10 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     _bucket = _NFL_FLOOR_BOARD_CACHE['by_params']
     if pkey in _bucket:
         return _bucket[pkey]
+    _disk = _nfl_disk_cache_load(_dkey, sig)   # cross-process: batch prewarm warms live workers
+    if _disk is not None:
+        _bucket[pkey] = _disk
+        return _disk
     empty = {'floors': [], 'floor_count': 0, 'available': False,
              'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     log = _nfl_player_week_data()
@@ -30671,6 +30716,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     data = {'floors': rows[:limit], 'floor_count': len(rows), 'available': bool(rows),
             'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     _bucket[pkey] = data
+    _nfl_disk_cache_store(_dkey, sig, data)
     return data
 
 
@@ -47346,13 +47392,22 @@ def build_nfl_milestone_streaks(min_run=3, limit=400):
     # Cache: the matchup pass scans the full multi-season log, so recomputing per request is wasteful.
     # Key on the player-log signature + injury-source version + resolved week + params so a data or
     # injury refresh (or a season rollover) rebuilds, but warm loads are instant.
+    # Process-STABLE signature (raw log signature, not hash() -- PYTHONHASHSEED would make a hashed key
+    # differ per process and break the cross-process disk cache the prewarm relies on).
     try:
-        _sig = (hash(_nfl_player_log_signature()), _nfl_injury_source_state()['mtime'],
+        _sig = (_nfl_player_log_signature(), _nfl_injury_source_state()['mtime'],
                 _nfl_expected_completed_week(), min_run, limit)
     except Exception:
         _sig = None
     if _sig is not None and _NFL_MILESTONE_CACHE.get('sig') == _sig and 'data' in _NFL_MILESTONE_CACHE:
         return _NFL_MILESTONE_CACHE['data']
+    _dkey = f'nfl_milestone_streaks::{min_run}::{limit}'
+    if _sig is not None:
+        _disk = _nfl_disk_cache_load(_dkey, _sig)
+        if _disk is not None:
+            _NFL_MILESTONE_CACHE['sig'] = _sig
+            _NFL_MILESTONE_CACHE['data'] = _disk
+            return _disk
     try:
         df = _nfl_player_week_data()
     except Exception:
@@ -47467,6 +47522,7 @@ def build_nfl_milestone_streaks(min_run=3, limit=400):
     if _sig is not None:
         _NFL_MILESTONE_CACHE['sig'] = _sig
         _NFL_MILESTONE_CACHE['data'] = data
+        _nfl_disk_cache_store(_dkey, _sig, data)   # cross-process: lets the batch prewarm warm live workers
     return data
 
 

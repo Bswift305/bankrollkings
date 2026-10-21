@@ -233,6 +233,73 @@ def run_qc():
     except Exception as exc:
         notes.append(f"vectorization-equivalence guard skipped ({type(exc).__name__}: {exc})")
 
+    # Guard 7: NFL tool DISK materialization (cross-process prewarm). The milestone + floor boards now
+    # write a disk artifact keyed on a PROCESS-STABLE signature, so a batch prewarm can warm live
+    # gunicorn workers. Prove: (a) the builder writes an artifact under a version, (b) loading with that
+    # same version returns BYTE-IDENTICAL data (a fresh worker hits it instead of rebuilding), and (c)
+    # the version is picklable + repr-stable (no PYTHONHASHSEED-salted hash()).
+    try:
+        import json
+
+        def _njson(o):
+            return json.dumps(o, sort_keys=True, default=str)
+
+        import glob
+        import os
+        # Remove any existing artifacts so the build must RE-STORE (otherwise the builder reads the
+        # disk artifact left by an earlier guard and never calls the store we are capturing).
+        for pat in ('nfl_milestone_streaks*', 'nfl_floor_board*'):
+            for p in glob.glob(os.path.join(str(app.DATA_DIR), 'cache', pat)):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+        captured = {}
+        orig_store = app._nfl_disk_cache_store
+
+        def _cap(key, version, value, ttl_seconds=86400):
+            captured[key] = version
+            return orig_store(key, version, value, ttl_seconds)
+
+        app._nfl_disk_cache_store = _cap
+        try:
+            app._NFL_MILESTONE_CACHE.clear()
+            mdata = app.build_nfl_milestone_streaks()
+            app._NFL_FLOOR_BOARD_CACHE.clear()
+            fdata = app.build_nfl_floor_board()
+        finally:
+            app._nfl_disk_cache_store = orig_store
+
+        checked = 0
+        for token, data in (('milestone', mdata), ('floor_board', fdata)):
+            # find the captured disk key (nfl_milestone_streaks:: / nfl_floor_board::)
+            dkey = next((k for k in captured if token in k), None)
+            if dkey is None:
+                # a builder may legitimately not persist (e.g. empty/unavailable board) -> skip quietly
+                continue
+            version = captured[dkey]
+            # version must survive pickle + be equality-stable (process-stable key)
+            try:
+                import pickle as _pk
+                if _pk.loads(_pk.dumps(version)) != version:
+                    issues.append(f"{token} disk version not stable across pickle round-trip")
+            except Exception as exc:
+                issues.append(f"{token} disk version not picklable ({type(exc).__name__})")
+            loaded = app._nfl_disk_cache_load(dkey, version)
+            if loaded is None:
+                issues.append(f"{token} disk artifact not readable back with its own version "
+                              "(cross-process prewarm would miss)")
+            elif _njson(loaded) != _njson(data):
+                issues.append(f"{token} disk round-trip changed the data (prewarm would serve a different board)")
+            else:
+                checked += 1
+        if checked and not any('disk' in m for m in issues):
+            notes.append(f"NFL disk materialization: {checked} board(s) write a stable-keyed artifact and "
+                         "read back byte-identical (prewarm reaches fresh workers)")
+    except Exception as exc:
+        notes.append(f"NFL disk-materialization guard skipped ({type(exc).__name__}: {exc})")
+
     return {'issues': issues, 'notes': notes}
 
 
