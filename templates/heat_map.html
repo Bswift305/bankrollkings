@@ -57,7 +57,7 @@
       <div class="bk-heat-main">
         <span class="bk-heat-rank">{{ loop.index }}</span>
         <span class="bk-heat-player">
-          <strong><a href="/player/{{ row.player|urlencode }}">{{ row.player }}</a></strong>
+          <strong>{{ entity_anchor('player', row.sport, row.player) }}</strong>
           <small>{{ row.sport }} | {{ row.stat }} {{ row.direction }} | {{ row.resolved }} resolved | {{ row.hit_rate }}%</small>
         </span>
         <span class="bk-heat-streak">

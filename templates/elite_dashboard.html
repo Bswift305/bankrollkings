@@ -126,7 +126,7 @@
                 {% for row in streak_heat %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
                         {% if row.team %}<div class="cell-meta" style="display:flex; align-items:center; gap:5px; margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
                         <div class="bk-streak-chips" style="margin-top:4px;">
                             {% for r in (row.last_10 or []) %}<i class="{{ 'hit' if r in ['H','Hit'] else 'miss' }}">{{ 'H' if r in ['H','Hit'] else 'M' }}</i>{% endfor %}
@@ -171,7 +171,7 @@
             <tbody>
                 {% for row in mlb_power_suppression.rows %}
                 <tr>
-                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }} | {{ row.game }}</div></td>
+                    <td>{{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}<div class="cell-meta">{{ row.team }} | {{ row.game }}</div></td>
                     <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}<div class="cell-meta">{{ row.book }} {{ '+' if row.under_price > 0 }}{{ row.under_price }}</div></td>
                     <td>
                         <div class="cell-meta">HR {{ row.hr_rate }}% | TB/G {{ row.tb_per_game }}</div>
@@ -324,7 +324,7 @@
                 {% for row in sharp_money %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
                         {% if row.team %}<div class="cell-meta" style="display:flex;align-items:center;gap:5px;margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
                         <div class="cell-meta">{{ row.sport }} · {{ row.stat }}{% if row.game %} · {{ row.game }}{% endif %}</div>
                     </td>
@@ -503,7 +503,7 @@
                     {% for row in alert_history.recent %}
                     <div class="parlay-surface-soft" style="padding:10px;">
                         <div style="display:flex; justify-content:space-between; gap:10px;">
-                        <a class="player-link" href="/player/{{ row.Player|urlencode }}">{{ row.Player }}</a>
+                        {{ entity_anchor('player', row.sport, row.Player, css_class='player-link') }}
                             <span class="badge">{{ row.OutcomeState or 'Pending' }}</span>
                         </div>
                         <div class="cell-meta" style="margin-top:5px;">{{ row.Sport }} | {{ row.SharpSide }} {{ row.Stat }} {{ row.CurrentLine }} | {{ row.Alignment }} | {{ row.Book }}</div>
@@ -541,7 +541,7 @@
                 {% for row in best_books %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
                         {% if row.team %}<div class="cell-meta" style="display:flex;align-items:center;gap:5px;margin-top:2px;">{{ team_mark(row.team, size='xs') }}<span>{{ row.team }}</span></div>{% endif %}
                         <div class="cell-meta">{{ row.sport }} · {{ row.direction }} {{ row.stat }} {{ row.line }}{% if row.matchup %} · {{ row.matchup }}{% endif %}</div>
                     </td>

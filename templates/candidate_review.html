@@ -516,7 +516,7 @@
         <div class="heat-tier-{{ row.heat_tier }}" style="display:grid; grid-template-columns:42px minmax(180px,1.2fr) minmax(120px,.8fr) minmax(150px,1fr) minmax(110px,.7fr) minmax(110px,.7fr) 96px; gap:12px; align-items:center; padding:11px 12px; border-radius:8px; border:1px solid rgba(132,215,210,0.12); background:rgba(14,30,40,0.72);">
             <div style="font-size:18px; font-weight:900; color:var(--accent);">#{{ loop.index }}</div>
             <div>
-                <a href="/player/{{ row.player|urlencode }}" style="color:var(--text-bright); font-weight:900; text-decoration:none;">{{ row.player }}</a>
+                {% set _pu = player_url(row.sport, row.player) %}{% if _pu %}<a class="bk-entity-link" href="{{ _pu }}" style="color:var(--text-bright); font-weight:900; text-decoration:none;">{{ row.player }}</a>{% else %}<span style="color:var(--text-bright); font-weight:900;">{{ row.player }}</span>{% endif %}
                 <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">{{ row.total_resolved }} resolved | {{ row.hits }}-{{ row.misses }} | {{ row.hit_rate }}%</div>
             </div>
             <div>
@@ -575,7 +575,7 @@
                 {% for row in charts.streak_heat_chart[:15] %}
                 <tr>
                     <td data-sort-value="{{ loop.index }}">{{ loop.index }}</td>
-                    <td data-sort-value="{{ row.player }}"><a href="/player/{{ row.player|urlencode }}" style="font-weight:900;">{{ row.player }}</a></td>
+                    <td data-sort-value="{{ row.player }}">{% set _pu = player_url(row.sport, row.player) %}{% if _pu %}<a class="bk-entity-link" href="{{ _pu }}" style="font-weight:900;">{{ row.player }}</a>{% else %}<span style="font-weight:900;">{{ row.player }}</span>{% endif %}</td>
                     <td data-sort-value="{{ row.sport }}">{{ row.sport }}</td>
                     <td data-sort-value="{{ row.stat }}">{{ row.stat }}</td>
                     <td data-sort-value="{{ row.direction }}"><span class="badge">{{ row.direction }}</span></td>
@@ -718,7 +718,7 @@
                 {% for row in charts.player_profiles[:15] %}
                 <tr>
                     <td data-sort-value="{{ row.player }}">
-                        <a href="/player/{{ row.player|urlencode }}" style="color:var(--text-bright); font-weight:800;">{{ row.player }}</a>
+                        {% set _pu = player_url(row.sport, row.player) %}{% if _pu %}<a class="bk-entity-link" href="{{ _pu }}" style="color:var(--text-bright); font-weight:800;">{{ row.player }}</a>{% else %}<span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>{% endif %}
                     </td>
                     <td data-sort-value="{{ row.sport }}">{{ row.sport }}</td>
                     <td data-sort-value="{{ row.stat }}">{{ row.stat }}</td>
