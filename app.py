@@ -44540,7 +44540,7 @@ def _gl_adapt_heat_map(prefs, items):
             'market': r.get('stat_key') or r.get('stat'),
             'label': (f"{r.get('player','')} {r.get('stat','')}").strip(),
             'why': r.get('status_label') or r.get('weeks_label') or 'active run',
-            'data_through': d.get('through_label'),
+            'data_through': d.get('through_label'), 'url': player_url('nfl', r.get('player')),
             'stale': not bool(r.get('active', True))} for r in rows]
     return _gl_env('heat_map', 'nfl', None, mem, 'nflverse weekly log', d.get('data_updated'), prefs, items,
                    note=('' if mem else 'no current-season hot runs'))
@@ -44551,7 +44551,7 @@ def _gl_adapt_riding_the_wave(prefs, items):
     hot = (d.get('rw_hot') or [])
     sit = (d.get('rw_situational') or [])
     mem = [{'id': f"hot|{r.get('player')}|{r.get('stat')}", 'sport': 'nfl', 'market': r.get('stat_key') or r.get('stat'),
-            'label': (f"{r.get('player','')} {r.get('stat','')}").strip(), 'why': r.get('status_label') or 'hot start',
+            'label': (f"{r.get('player','')} {r.get('stat','')}").strip(), 'why': r.get('status_label') or 'hot start', 'url': player_url('nfl', r.get('player')),
             'data_through': (d.get('rw_meta') or {}).get('asof')} for r in hot]
     mem += [{'id': f"sit|{s.get('who')}|{s.get('label')}", 'sport': 'nfl', 'market': None,
              'label': f"{s.get('who','')} — {s.get('label','')}".strip(' —'), 'why': s.get('detail') or s.get('label') or '',
@@ -44570,7 +44570,7 @@ def _gl_adapt_milestone_streaks(prefs, items):
                 'label': f"{r.get('player','')} {r.get('threshold','')}+ {r.get('stat_label') or r.get('stat','')}".strip(),
                 'why': (f"{r.get('run','')} straight vs {r.get('opponent')}" if kind == 'matchup'
                         else f"{r.get('run','')} straight"),
-                'data_through': d.get('source_updated'),
+                'data_through': d.get('source_updated'), 'url': player_url('nfl', r.get('player')),
                 'stale': (kind == 'season' and not d.get('season_available', True))}
     mem = [mk(r, 'season') for r in (d.get('season_streaks') or [])] + \
           [mk(r, 'matchup') for r in (d.get('matchup_streaks') or [])]
@@ -44585,7 +44585,7 @@ def _gl_adapt_market_line_streaks(prefs, items):
     rows = d.get('rows') or []
     mem = [{'id': f"{r.get('player')}|{r.get('stat')}|{r.get('side')}", 'sport': 'nfl', 'market': r.get('stat'),
             'label': f"{r.get('player','')} {r.get('side','')} {r.get('stat','')}".strip(),
-            'why': r.get('status_label') or r.get('weeks_label') or 'graded run',
+            'why': r.get('status_label') or r.get('weeks_label') or 'graded run', 'url': player_url('nfl', r.get('player')),
             'data_through': d.get('through_label'), 'stale': not bool(r.get('active', True))} for r in rows]
     av = _gla.UNAVAILABLE if (
         d.get('unavailable') or not mem) else None

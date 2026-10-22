@@ -228,7 +228,9 @@
           loaded = true; list.innerHTML = '';
           (e && e.items || []).forEach(function(it){
             var li = document.createElement('li');
-            li.innerHTML = '<span>'+(it.label||'')+'</span>'
+            // name uses the server-produced resolver URL when present (no client-side resolution), else plain text
+            var nm = it.url ? '<a class="bk-entity-link" href="'+it.url+'">'+(it.label||'')+'</a>' : '<span>'+(it.label||'')+'</span>';
+            li.innerHTML = nm
               + (it.why ? ' <span class="iw">— '+it.why+'</span>' : '')
               + (it.state && it.state !== 'available' ? ' <span class="ist">'+it.state+'</span>' : '')
               + (it.contradiction ? ' <span class="ic">⚠ contradiction</span>' : '');

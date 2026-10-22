@@ -124,7 +124,10 @@ def _compact(m):
         state = UNAVAILABLE
     return {'id': str(m.get('id', '')), 'sport': m.get('sport'), 'market': m.get('market'),
             'label': m.get('label', ''), 'why': m.get('why', ''), 'data_through': m.get('data_through'),
-            'contradiction': bool(m.get('contradiction')), 'state': state}
+            'contradiction': bool(m.get('contradiction')), 'state': state,
+            # server-produced entity-link URL (resolver), so the client renders a link without duplicating
+            # resolution logic; None -> plain text (unknown/ambiguous/historical/gated).
+            'url': m.get('url')}
 
 
 def abstain_envelope(key, label, classification, sport='', market=None, reason='adapter_error'):
