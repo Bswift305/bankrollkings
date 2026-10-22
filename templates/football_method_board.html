@@ -496,7 +496,7 @@
                 {% for row in method_view.history_player_rows %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                        {{ entity_anchor('player', sport_key, row.player, css_class='player-link') }}
                         <div class="cell-meta">{{ team_mark(row.team, size='xs', sport_key=sport_key) }}{% if row.position %} | {{ row.position }}{% endif %}{% if row.opponent %} | vs {{ team_mark(row.opponent, size='xs', sport_key=sport_key) }}{% endif %}</div>
                         {% if row.context_matchup_note %}
                         <div class="cell-meta">{{ row.context_matchup_note }}</div>

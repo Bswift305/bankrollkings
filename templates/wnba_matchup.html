@@ -110,7 +110,7 @@
                 {% for prop in matchup_props %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
+                        {{ entity_anchor('player', 'wnba', prop.player, css_class='player-link') }}
                         {% if prop.has_injury_flag %}
                         <div style="margin-top: 6px;">
                             <span class="badge badge-injury" title="{{ prop.injury_reason }}">
