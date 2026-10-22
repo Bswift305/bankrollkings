@@ -102,6 +102,24 @@ def run_qc():
            f'ordering wrong: {[(r["player"], r["streak"]) for r in res["rows"]]}',
            'rendered ordering is active-first, longest-first')
 
+        # source -> render universe hash: the rendered membership must equal the rule-qualifying set exactly
+        import hashlib
+
+        def _uhash(pairs):
+            return hashlib.sha256('\n'.join(sorted('%s|%s' % p for p in pairs)).encode()).hexdigest()[:16]
+        rendered = {(r['player'], r['stat']) for r in res['rows']}
+        expected = {('Nico Collins', 'receiving_yards'), ('Caleb Williams', 'passing_yards'),
+                    ('Prior Guy', 'rushing_yards'), ('Gap Guy', 'receptions'), ('Dup Guy', 'receptions')}
+        ok(_uhash(rendered) == _uhash(expected),
+           f'source->render universe hash mismatch: rendered={rendered}',
+           f'source->render universe hash matches the rule-qualifying set ({_uhash(expected)}) — no silent add/suppress')
+        # Caleb Williams / Nico Collins trace receipts (through the general logic, not hardcoded membership)
+        for nm, st in (('Nico Collins', 'receiving_yards'), ('Caleb Williams', 'passing_yards')):
+            r = by[nm, st]
+            NOTES.append(f'TRACE {nm} · {st}: source graded weeks -> canonical obs -> '
+                         f'{r["streak"]} straight {r["side"]} (start Wk {r["streak_start_week"]}, '
+                         f'{r["weeks_label"]}) -> rendered row')
+
         # fail-closed
         app._load_nfl_all_prop_results = lambda: pd.DataFrame()
         ok(app.build_nfl_prop_streaks().get('rows') == [], 'empty source did not fail closed',
