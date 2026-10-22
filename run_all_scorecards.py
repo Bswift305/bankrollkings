@@ -128,6 +128,10 @@ SCORECARDS = [
     # Green Light lens-adapter framework: common envelope, canonical-universe hashes (no add/suppress),
     # preference filtering, availability (never a silent zero), failure isolation + 7 failure modes.
     ("Green Light Adapter Framework QC", "qc_green_light_adapters.py", 60),
+    # Entity-link authenticated crawl: owner test-client renders every entity-bearing route, follows every
+    # generated entity URL (status/sport/entity), and asserts no broken links, no nested anchors, no cross-
+    # sport resolution, no gated NBA/WNBA stat leakage. Server-side (no owner browser needed).
+    ("Entity-Link Crawl", "qc_entity_link_crawl.py", 180),
     # NBA/WNBA restricted-data containment (4 remediated gaps, both flag states): no runtime pip install,
     # no header spoofing, WNBA injury ingestion gated, load_schedule/load_playoff_results gated + sentinels
     # contained, cache key folds gate state, licensed Odds loaders + other sports unaffected.
