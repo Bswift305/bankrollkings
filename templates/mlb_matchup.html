@@ -123,7 +123,7 @@
     <span class="badge badge-accent">{{ matchup.best_anchor.hit_rate }}%</span>
   </div>
   <div class="p-16">
-    <a class="player-link accent-link" href="/player/{{ matchup.best_anchor.player|urlencode }}">{{ matchup.best_anchor.player }}</a>
+    {{ entity_anchor('player', 'mlb', matchup.best_anchor.player, css_class='player-link accent-link') }}
     <div class="cell-meta" style="margin-top:6px;">{{ matchup.best_anchor.stat }} {{ matchup.best_anchor.direction }} · {{ matchup.best_anchor.hit_rate }}%</div>
   </div>
 </div>
@@ -155,7 +155,7 @@
         {% for prop in rows %}
         <tr>
           <td>
-            <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
+            {{ entity_anchor('player', 'mlb', prop.player, css_class='player-link') }}
             <div class="cell-meta">{{ prop.team }}{% if prop.book %} · {{ prop.book }}{% endif %}</div>
           </td>
           <td><span class="badge">{{ prop.stat }}</span></td>

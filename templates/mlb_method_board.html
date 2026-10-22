@@ -159,7 +159,7 @@
                     </td>
                     <td>
                         {% if game.best_anchor %}
-                        <a class="player-link accent-link" href="/player/{{ game.best_anchor.player|urlencode }}">{{ game.best_anchor.player }}</a>
+                        {{ entity_anchor('player', 'mlb', game.best_anchor.player, css_class='player-link accent-link') }}
                         <div class="cell-meta">{{ game.best_anchor.stat }} {{ game.best_anchor.direction }} · {{ game.best_anchor.hit_rate }}%</div>
                         {% else %}
                         <span class="cell-meta">No anchor yet</span>
@@ -232,7 +232,7 @@
                 {% for prop in rows %}
                 <tr>
                     <td>
-                        <a class="player-link" href="/player/{{ prop.player|urlencode }}">{{ prop.player }}</a>
+                        {{ entity_anchor('player', 'mlb', prop.player, css_class='player-link') }}
                         {% if prop.has_injury_flag %}
                         <div style="margin-top: 6px;">
                             <span class="badge badge-injury" title="{{ prop.injury_reason }}">

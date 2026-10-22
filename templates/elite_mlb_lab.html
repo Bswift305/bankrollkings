@@ -92,7 +92,7 @@
             <tbody>
                 {% for row in suppression.rows %}
                 <tr>
-                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }}</div></td>
+                    <td>{{ entity_anchor('player', 'mlb', row.player, css_class='player-link') }}<div class="cell-meta">{{ row.team }}</div></td>
                     <td>{{ row.game }}</td>
                     <td><span class="badge">UNDER</span> {{ row.stat }} {{ row.line }}</td>
                     <td>
@@ -138,7 +138,7 @@
             <tbody>
                 {% for row in one_sided_power.rows %}
                 <tr>
-                    <td><a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a><div class="cell-meta">{{ row.team }}</div></td>
+                    <td>{{ entity_anchor('player', 'mlb', row.player, css_class='player-link') }}<div class="cell-meta">{{ row.team }}</div></td>
                     <td>{{ row.game }}</td>
                     <td><span class="badge">YES</span> {{ row.stat }} {{ row.line }}</td>
                     <td>
@@ -173,7 +173,7 @@
             {% for row in pitcher_cards %}
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div style="display:flex; justify-content:space-between; gap:10px;">
-                    <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                    {{ entity_anchor('player', 'mlb', row.player, css_class='player-link') }}
                     <span class="badge">{{ row.tag }}</span>
                 </div>
                 <div class="cell-meta" style="margin-top:5px;">{{ row.team }} | {{ row.games }} games | WHIP {{ row.whip }} | H/9 {{ row.h_per_9 }} | K/9 {{ row.k_per_9 }} | Outs {{ row.outs_avg }}</div>

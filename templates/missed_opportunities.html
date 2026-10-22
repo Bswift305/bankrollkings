@@ -149,7 +149,7 @@
                 <div class="bk-compact-row-main">
                     <div>
                         <div class="bk-compact-title">
-                            <a class="player-link" href="/player/{{ row.player|urlencode }}">{{ row.player }}</a>
+                            {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
                         </div>
                         <span class="bk-compact-meta">{{ row.sport }} | {{ row.team }} | {{ row.snapshot_date }}</span>
                     </div>
