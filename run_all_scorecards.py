@@ -136,6 +136,10 @@ SCORECARDS = [
     # real builder prove source->canonical->calc->membership->ordering, prior seasons can't extend a live
     # streak, missing obs != missed game, pushes break, dedup, full membership, and fail-closed sources.
     ("Streak Integrity Audit", "qc_streak_integrity.py", 120),
+    # Streak integrity audit (milestone family): directed fixtures through build_nfl_milestone_streaks prove
+    # canonical _key alias merge (N.Collins+Nico Collins), season boundary, bye=gap-not-reset, the freshness
+    # gate (a run not reaching the latest week isn't "current"), and fail-closed sources.
+    ("Streak Integrity Audit (milestone)", "qc_streak_integrity_milestone.py", 120),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
