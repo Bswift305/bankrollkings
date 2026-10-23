@@ -45,31 +45,49 @@ graded records `NFL_AllPropResults.csv` (7h) + `NFL_PropLines_Graded.csv` (7h), 
 milestone record is current** (the earlier item-5 staleness is not present now). Surfaces bound to the
 stale odds/props feeds must fail closed (show unavailable), not present 2-day-old lines as live.
 
-**Confirm root cause (minimal — NOT a job re-run):**
+**Confirm root cause — run as `ubuntu` (NOT ssm-user; do NOT edit ssm-user git config), NO keys in any
+command, NOT a job re-run.** The provider confirmation is a **secret-safe probe built into the
+diagnostic** (`--probe`): it loads the key internally, makes exactly ONE health request per provider,
+prints HTTP status + nonsecret quota headers + a sanitized error, redacts keys/query-strings/Authorization/
+response-ids, and refuses repeat calls within a cooldown (`--force` to override). It never prints or
+persists a key — so no API key ever goes into a curl URL or the terminal.
 ```
-# fix the ssm-user git ownership (the pull failed on 'dubious ownership')
-git config --global --add safe.directory /opt/bankrollkings
+# 1) existing-log analysis only (zero API calls) -- §2b prints the real 429 / CFBD body
+sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && git log --oneline -1 && \
+  venv/bin/python3 diag_refresh_incident.py --log logs/daily_operator_20261023_130000.log'
 
-# re-run the diagnostic (reads the log only, zero API calls) -- §2b now prints the real 429 / CFBD body
-cd /opt/bankrollkings && venv/bin/python3 diag_refresh_incident.py --log logs/daily_operator_20261023_130000.log
+# 2) + 3) one Odds health/quota probe AND one CFBD auth probe (one request each; no keys printed)
+sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && venv/bin/python3 diag_refresh_incident.py --probe'
 
-# DECISIVE Odds-credits check -- one FREE /v4/sports call, key not printed in the output (headers only)
-KEY=$(sudo grep -oP '(?<=^ODDS_API_KEY=).*' /opt/bankrollkings/.env)   # use the real var name from the .env names probe
-curl -sS -D - "https://api.the-odds-api.com/v4/sports?apiKey=$KEY" -o /dev/null | grep -i x-requests
-# x-requests-remaining ~0  => credits exhausted (confirms the 429 cause)
-
-# ONE CFBD probe to confirm that independent failure (cheap free-tier key)
-cd /opt/bankrollkings && venv/bin/python3 refresh_cfb_data.py 2>&1 | tail -30   # expect the 401 / schema line
+# the two failing QCs, run directly for their REAL failing assertion (local QCs, no API calls)
+sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && venv/bin/python3 qc_nba_residual_authority.py 2>&1 | tail -8; \
+  echo ---; venv/bin/python3 qc_cfb_wave_canon.py 2>&1 | tail -8'
 ```
+Paste the literal sanitized §2b + the `--probe` classification. **Classification:** `429
+OUT_OF_USAGE_CREDITS` or `x-requests-remaining=0` → Odds exhaustion; `401`/`403` → auth (deactivated/
+expired key — note a *deactivated* key from a payment lapse also shows 401, distinct from quota); HTTP
+200 + schema/validation error → provider-contract change; DNS/TLS/timeout → infrastructure.
 
-**Root-cause fixes (item 9), after confirmation — each separate + reversible:**
-- *Odds credits exhausted:* an **account action (yours), not a code re-run** — top up credits or wait for
-  the monthly reset; do **not** re-run fetches (they only burn more credits or confirm nothing). Then run
-  the single controlled recovery pass. Consider trimming daily credit burn separately.
-- *CFBD 401:* rotate/renew `CFBD_API_KEY` in `/opt/bankrollkings/.env` (SSM, the getpass here-doc method),
-  restart, then the recovery pass refreshes CFB.
-- *QC regressions:* fix `NBA Residual-Authority QC` + `CFB Wave Canon QC` as their own commits (the Canon
-  QC may be the yearly conference-string chore) — independent of the provider recovery.
+**Root-cause fixes (item 9) — ONLY after the production probe proves the class; each separate + reversible:**
+- *Odds `x-requests-remaining=0` / 429:* an **account action (yours)** — top up / wait for the monthly
+  reset. Do **not** re-run fetches. (The local dev key currently returns 401 `DEACTIVATED_KEY`, a payment
+  lapse — if prod shares it the fix is **reactivate the subscription**, not buy credits. The probe
+  distinguishes these: 401 DEACTIVATED vs `x-requests-remaining=0`.)
+- *Odds / CFBD `401`/`403`:* reactivate/rotate the relevant key in `/opt/bankrollkings/.env` (SSM getpass
+  method), restart. **Do not rotate CFBD until the probe shows 401/403** (it may be HTTP 200 + schema).
+- *QC regressions:* **CFB Wave Canon QC passes locally** → its prod FAIL is almost certainly **downstream
+  of the CFBD outage** (stale/empty CFB data); re-check after CFB refresh recovers. **NBA Residual-Authority
+  QC** fails locally only on a local-env auth artifact (no owner row) → get its real prod assertion from the
+  command above and fix as its own commit.
+
+**Containment posture (item 7) — code-level, confirm on the authed pages:**
+- **Props boards fail closed:** many surfaces call `load_*_live_props_feed(require_fresh=True)` (stale > 6h
+  → empty) and `props.html` / dashboards render `is_stale` + the stale warning, so the 31–55h-stale props
+  show as **unavailable**, not old-as-current. The nflverse graded records are **fresh (7h)** and are a
+  *historical* record, correctly distinct from the stale *current* markets.
+- **To verify/patch:** the game-LINES (odds) boards do not visibly share the `require_fresh` props gate —
+  confirm on the authed NBA/MLB/WNBA game-lines pages that a 31–55h-stale line shows a stale/unavailable
+  marker; if any line surface renders an old line as current, that is the ungated surface to patch.
 
 ---
 

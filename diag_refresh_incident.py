@@ -15,21 +15,29 @@ quota / disk probes are intentionally left to the shell block in docs/refresh_in
 from __future__ import annotations
 
 import argparse
+import json
 import re
-import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
 DATA_DIR = BASE_DIR / "data"
+ENV_PATH = BASE_DIR / ".env"
+COOLDOWN_PATH = LOG_DIR / ".diag_probe_cooldown.json"
+DEFAULT_COOLDOWN = 600  # seconds; one health call per provider at most this often (unless --force)
 
 # Redact anything that looks like a secret so the report is safe to paste.
 _REDACTIONS = [
     (re.compile(r'(--api[-_]?key[=\s]+)\S+', re.I), r'\1<REDACTED>'),
-    (re.compile(r'((?:api[_-]?key|apikey|key|token|secret)["\']?\s*[:=]\s*["\']?)[A-Za-z0-9._\-]{8,}', re.I), r'\1<REDACTED>'),
-    (re.compile(r'\b[0-9a-fA-F]{24,}\b'), '<REDACTED_HEX>'),
-    (re.compile(r'(apiKey=)[^&\s"\']+'), r'\1<REDACTED>'),
+    (re.compile(r'((?:api[_-]?key|apikey|key|token|secret|authorization|bearer)["\']?\s*[:=]\s*["\']?)[A-Za-z0-9._\-]{6,}', re.I), r'\1<REDACTED>'),
+    # response identifiers (request/correlation/trace ids) in JSON or headers
+    (re.compile(r'("(?:requestId|request_id|requestID|correlationId|correlation_id|traceId|trace_id|id)"\s*:\s*")[^"]+', re.I), r'\1<REDACTED_ID>'),
+    (re.compile(r'\b[0-9a-fA-F]{16,}\b'), '<REDACTED_HEX>'),
+    (re.compile(r'(apiKey=)[^&\s"\']+', re.I), r'\1<REDACTED>'),
+    (re.compile(r'([?&](?:api[_-]?key|apikey|key|token)=)[^&\s"\']+', re.I), r'\1<REDACTED>'),
 ]
 
 
@@ -156,11 +164,158 @@ FEEDS = [
 ]
 
 
+# --------------------------------------------------------------------------------------------------
+# Secret-safe provider health probes. Each makes EXACTLY ONE request per provider, loads credentials
+# internally (env -> .env), prints HTTP status + nonsecret quota headers + a sanitized error, and
+# NEVER prints or persists the key, the query string, the Authorization header, or response ids.
+# Cooldown-guarded so it cannot be hammered. --probe runs these; the default run makes no network call.
+# --------------------------------------------------------------------------------------------------
+def _load_env_file(path: Path) -> dict:
+    vals = {}
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            vals[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return vals
+
+
+def _get_key(names):
+    """Return (var_name, key) from the process env, else from .env. Never logged."""
+    import os
+    for n in names:
+        v = os.environ.get(n)
+        if v and v.strip():
+            return n, v.strip()
+    envf = _load_env_file(ENV_PATH)
+    for n in names:
+        if envf.get(n):
+            return n, envf[n].strip()
+    return None, None
+
+
+def _cooldown(provider: str, cooldown: int, force: bool):
+    data = {}
+    try:
+        data = json.loads(COOLDOWN_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    last = int(data.get(provider, 0) or 0)
+    remaining = cooldown - int(time.time() - last)
+    if (not force) and remaining > 0:
+        return False, remaining
+    data[provider] = int(time.time())
+    try:
+        COOLDOWN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        COOLDOWN_PATH.write_text(json.dumps(data), encoding="utf-8")   # timestamps only, never keys
+    except OSError:
+        pass
+    return True, 0
+
+
+def _http_once(req, timeout=15):
+    """One request. Returns (status, headers_lower, body_text). Network errors raise."""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read(2000).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        hdrs = {k.lower(): v for k, v in (e.headers.items() if e.headers else [])}
+        return e.code, hdrs, (e.read(2000).decode("utf-8", "replace") if hasattr(e, "read") else "")
+
+
+def probe_odds(cooldown: int, force: bool):
+    print("\n  [Odds API] one free /v4/sports health call (reports account quota; consumes no credits)")
+    name, key = _get_key(("ODDS_API_KEY", "THE_ODDS_API_KEY"))
+    if not key:
+        print("    no Odds key in env or .env (ODDS_API_KEY / THE_ODDS_API_KEY) — run where .env is readable")
+        return
+    ok, rem = _cooldown("odds", cooldown, force)
+    if not ok:
+        print(f"    SKIPPED — cooldown {rem}s remaining (pass --force to override)")
+        return
+    from urllib.parse import quote
+    req = urllib.request.Request("https://api.the-odds-api.com/v4/sports?apiKey=" + quote(key, safe=""),
+                                 headers={"User-Agent": "bk-diag/1.0"})
+    try:
+        status, hdr, body = _http_once(req)
+    except Exception as e:
+        print(f"    NETWORK/DNS/TLS error: {type(e).__name__}: {_sanitize(str(e))[:160]}  -> infra/availability")
+        return
+    remaining, used = hdr.get("x-requests-remaining"), hdr.get("x-requests-used")
+    print(f"    HTTP {status}  (key var {name}, value redacted; query string redacted)")
+    print(f"    quota headers: x-requests-remaining={remaining}  x-requests-used={used}")
+    if status != 200 or (remaining is not None and str(remaining).strip() in ("0", "0.0")):
+        print(f"    body: {_sanitize(body)[:200]}")
+    # classification
+    if remaining is not None and str(remaining).strip() in ("0", "0.0"):
+        print("    => CONFIRMED: Odds credits EXHAUSTED (x-requests-remaining=0).")
+    elif status in (401, 403):
+        print(f"    => CONFIRMED: Odds AUTH failure (HTTP {status}).")
+    elif status == 200:
+        print("    => Odds key valid AND has quota. If paid fetches still fail, it is NOT exhaustion — "
+              "capture a paid-fetch error body separately.")
+
+
+def probe_cfbd(cooldown: int, force: bool):
+    print("\n  [CFBD] one authenticated /conferences health call")
+    name, key = _get_key(("CFBD_API_KEY",))
+    if not key:
+        print("    no CFBD_API_KEY in env or .env — run where .env is readable")
+        return
+    ok, rem = _cooldown("cfbd", cooldown, force)
+    if not ok:
+        print(f"    SKIPPED — cooldown {rem}s remaining (pass --force to override)")
+        return
+    req = urllib.request.Request("https://api.collegefootballdata.com/conferences",
+                                 headers={"Authorization": "Bearer " + key, "User-Agent": "bk-diag/1.0",
+                                          "Accept": "application/json"})
+    try:
+        status, hdr, body = _http_once(req)
+    except Exception as e:
+        print(f"    NETWORK/DNS/TLS error: {type(e).__name__}: {_sanitize(str(e))[:160]}  -> infra/availability")
+        return
+    print(f"    HTTP {status}  (Authorization: Bearer <redacted>)")
+    if status != 200:
+        print(f"    body: {_sanitize(body)[:200]}")
+    # classification
+    if status in (401, 403):
+        print(f"    => CONFIRMED: CFBD AUTH failure (HTTP {status}) — key invalid/expired/forbidden.")
+    elif status == 200:
+        print("    => CFBD auth OK — the CFB refresh failure is elsewhere (schema/endpoint/rate), NOT the key.")
+    elif status == 429:
+        print("    => CFBD rate-limited (HTTP 429).")
+
+
+def run_probes(cooldown: int, force: bool):
+    print("=" * 78)
+    print("BANKROLL KINGS — PROVIDER HEALTH PROBE (one request per provider; no secrets printed)")
+    print("=" * 78)
+    probe_odds(cooldown, force)
+    probe_cfbd(cooldown, force)
+    print("\nClassification: 429 OUT_OF_USAGE_CREDITS or x-requests-remaining=0 => Odds exhaustion; "
+          "401/403 => auth; HTTP 200 + schema/validation error => provider-contract change; "
+          "DNS/TLS/timeout => infrastructure.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Daily-refresh incident diagnostic (read-only, no secrets).")
     ap.add_argument("--log", help="Specific daily_operator log to analyze (default: the most recent).")
     ap.add_argument("--history", type=int, default=12, help="How many recent logs to include in the chronology.")
+    ap.add_argument("--probe", action="store_true",
+                    help="Make ONE secret-safe health request per provider (Odds, CFBD) and classify it. "
+                         "No log analysis. Credentials loaded internally and never printed.")
+    ap.add_argument("--force", action="store_true", help="Override the per-provider probe cooldown.")
+    ap.add_argument("--cooldown", type=int, default=DEFAULT_COOLDOWN,
+                    help=f"Minimum seconds between probes of the same provider (default {DEFAULT_COOLDOWN}).")
     args = ap.parse_args()
+
+    if args.probe:
+        return run_probes(args.cooldown, args.force)
 
     if args.log:
         target = Path(args.log)
