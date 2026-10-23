@@ -48,6 +48,14 @@
   .rw-soon{margin-top:22px;background:linear-gradient(180deg,rgba(91,141,239,.07),transparent);border:1px dashed var(--border);
     border-radius:12px;padding:14px 16px;font:500 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
   .rw-soon b{color:var(--text-bright);}
+  .rw-drow{border-top:1px solid rgba(255,255,255,.05);}
+  .rw-drow summary{display:flex;align-items:center;gap:12px;padding:11px 16px;cursor:pointer;list-style:none;}
+  .rw-drow summary::-webkit-details-marker{display:none;}
+  .rw-drow summary:hover,.rw-drow[open] summary{background:rgba(91,141,239,.06);}
+  .rw-caret{flex:0 0 auto;opacity:.5;transition:transform .15s;font-size:11px;color:var(--text-muted);}
+  .rw-drow[open] .rw-caret{transform:rotate(90deg);}
+  .rw-exp{padding:2px 16px 14px 48px;}
+  .rw-drow.rw-stale summary{opacity:.6;}
 </style>
 
 <div class="rw-wrap">
@@ -148,14 +156,23 @@
   <div class="rw-props">
     {% for r in rw_boards.props[:24] %}
     {% set st = (r.availability_state or '')|upper %}
-    <div class="rw-row{% if not r.active %} rw-stale{% endif %}"><span class="rw-rank">{{ loop.index }}</span>
-      <span class="rw-name">{{ r.player }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.weeks_label %} &middot; {{ r.weeks_label }}{% endif %}
+    <details class="rw-drow{% if not r.active %} rw-stale{% endif %}">
+      <summary><span class="rw-rank">{{ loop.index }}</span>
+      <span class="rw-name">{{ entity_anchor('player', 'nfl', r.player) }}<small>{{ r.stat }}{% if r.team %} &middot; {{ r.team }}{% endif %}{% if r.line is not none %} &middot; line ~{{ r.line }}{% endif %}{% if r.weeks_label %} &middot; {{ r.weeks_label }}{% endif %}
         {%- if st == 'PAUSED' %} &middot; <b style="color:var(--rw-cold)">{{ r.availability }}</b>
         {%- elif st == 'STATUS UNKNOWN' %} &middot; <b style="opacity:.75">Status unknown</b>
         {%- elif st == 'RETURNED' %} &middot; <b style="color:var(--rw-accent)">Returned Wk {{ r.returned_week }}{% if r.missed_games %} (missed {{ r.missed_games }}){% endif %}</b>
         {%- elif r.designation %} &middot; <b style="color:#ffb800">{{ r.designation }}</b>{% endif %}</small>
         {% if not r.active and r.status_label %}<span class="rw-status">{{ r.status_label }}</span>{% endif %}</span>
-      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}{% if not r.active %} past{% endif %}</span></span></div>
+      <span class="rw-badge {{ 'hot' if r.side == 'Over' else 'cold' }}"><span class="n">{{ r.streak }}</span><span class="u">{{ r.side }}{% if not r.active %} past{% endif %}</span></span>
+      <span class="rw-caret">&#9656;</span></summary>
+      <div class="rw-exp">
+        {% set ex = streak_explainer('wave', r, {'source': 'graded prop record (NFL_AllPropResults.csv)',
+           'season': r.season, 'data_through': rw_meta.prop_through_label,
+           'freshness': ('pending' if rw_meta.prop_pending else 'fresh')}) %}
+        {% include '_streak_explainer.html' %}
+      </div>
+    </details>
     {% endfor %}
   </div>
 </div>
