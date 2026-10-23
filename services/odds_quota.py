@@ -13,6 +13,19 @@ Never logs the URL, key, Authorization, or any response identifier. Pure stdlib.
 from __future__ import annotations
 
 
+def odds_credit_cost(n_markets, n_regions, n_paid_calls=1):
+    """The Odds API DOCUMENTED credit cost (https://the-odds-api.com/liveapi/guides/v4/#usage-quota-costs):
+    each /v4/sports/{sport}/odds (bulk OR per-event) request costs (markets x regions) credits; /v4/sports
+    and /events are FREE. Total = n_paid_calls x markets x regions.
+
+    Use this to set --expected-cost from the provider's formula, NOT from observed consumption:
+      game lines (h2h,spreads,totals x us, one bulk call) -> 3x1x1 = 3
+      props      (per event, e.g. 1 market x us x N events) -> 1x1xN
+      futures    (outrights x us, one call per sport)       -> 1x1x1
+    """
+    return int(max(0, int(n_markets)) * max(0, int(n_regions)) * max(0, int(n_paid_calls)))
+
+
 def _to_int(v):
     try:
         return int(float(str(v).strip()))

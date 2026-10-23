@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from services.feed_validation import FUTURES_SPEC, GAME_LINES_SPEC, PLAYER_PROPS_SPEC, validate_feed
-from services.odds_quota import QuotaRecorder
+from services.odds_quota import QuotaRecorder, odds_credit_cost
 
 
 def _good_lines(n=4, ts="2026-10-26T12:00:00Z"):
@@ -141,8 +141,18 @@ def run_qc():
     else:
         notes.append("paid response with NO usage headers -> receipt FAILED (no guessing)")
 
+    # ---------- documented cost formula (expected-cost derived, not observed) ----------
+    if odds_credit_cost(3, 1, 1) != 3:
+        issues.append("game-lines documented cost (3 markets x 1 region x 1 call) != 3")
+    elif odds_credit_cost(1, 1, 5) != 5:
+        issues.append("per-event props documented cost (1x1x5) != 5")
+    elif odds_credit_cost(1, 1, 1) != 1:
+        issues.append("futures documented cost (1x1x1) != 1")
+    else:
+        notes.append("documented credit-cost formula (markets x regions x calls) correct")
+
     if not issues:
-        notes.append("Odds recovery preflight (validation + quota accounting) verified")
+        notes.append("Odds recovery preflight (validation + quota accounting + cost formula) verified")
     return {"issues": issues, "notes": notes}
 
 

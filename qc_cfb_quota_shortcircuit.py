@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 import contextlib
-import types
 
 import refresh_cfb_data as r
 
@@ -122,8 +122,34 @@ def run_qc():
         except OSError:
             pass
 
+    # (e) CROSS-PROCESS: a FRESH interpreter (simulating a service restart) honors the persisted state
+    # and makes NO CFBD call. Write state in one process; a separate python process must SKIP (exit 3).
+    import subprocess as _sp
+    tmp2 = tempfile.mkdtemp(prefix="qc_cfbd_xp_")
+    env = dict(os.environ)
+    env["BK_RUNTIME_DIR"] = tmp2
+    env["CFBD_API_KEY"] = "qc-fake-key"
+    env.pop("BK_CFBD_FORCE", None)
+    try:
+        # process 1: persist the exhausted state
+        p1 = _sp.run([sys.executable, "-c",
+                      "import refresh_cfb_data as r; r._write_cfbd_state({'exhausted':True,'provider':'cfbd',"
+                      "'detected_at':'t','reset_at':None,'reason':'xp test'})"],
+                     cwd=str(r.BASE_DIR), env=env, capture_output=True, text=True)
+        # process 2: fresh interpreter -> must SKIP without any CFBD request
+        p2 = _sp.run([sys.executable, "-c", "import refresh_cfb_data as r; raise SystemExit(r.main())"],
+                     cwd=str(r.BASE_DIR), env=env, capture_output=True, text=True)
+        if p2.returncode != 3 or "[SKIP]" not in (p2.stdout + p2.stderr):
+            issues.append(f"cross-process: fresh interpreter did not SKIP persisted state (rc={p2.returncode})")
+        else:
+            notes.append("cross-process/restart: a fresh interpreter honors persisted backoff (SKIP, exit 3, no call)")
+    finally:
+        with contextlib.suppress(Exception):
+            import shutil
+            shutil.rmtree(tmp2, ignore_errors=True)
+
     if not issues:
-        notes.append("CFBD quota short-circuit + persistent backoff verified")
+        notes.append("CFBD quota short-circuit + persistent backoff (incl. cross-process) verified")
     return {"issues": issues, "notes": notes}
 
 

@@ -64,6 +64,10 @@ SCORECARDS = [
     # quota accounting (x-requests-last/used/remaining -> fetch cost; fail the receipt if headers absent
     # or cost over budget). Gates the game-lines fetcher's atomic publish. Pure.
     ("Odds Recovery Preflight QC", "qc_odds_recovery_preflight.py", 60),
+    # Recovery receipt-wrapper safety guards (Oct 23 item 5): redacts keys in the printed command, refuses
+    # concurrent execution (lock), refuses when a refresh/fetch job is running, leaves authoritative bytes
+    # unchanged on a failed fetch. Pure (fetch is a local python -c; process scan monkeypatched).
+    ("Recover-Odds Wrapper QC", "qc_recover_odds_wrapper.py", 60),
     # CFB Wave Watch wording remediation (Gate 1): no betting-authority language survives and the
     # template filters no qualifier (every builder team renders; the model groups, never removes).
     ("CFB Wave Wording QC", "qc_cfb_wave_wording.py", 120),
