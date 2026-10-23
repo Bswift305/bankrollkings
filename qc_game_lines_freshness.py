@@ -179,8 +179,35 @@ def run_qc():
     else:
         notes.append(f"/sports/nfl/totals did not render 200 (stale={st_ts}, fresh={st_tf}) -- skipped")
 
+    # (4) standalone totals builders fail closed at the SOURCE (gates both /tools/*-totals routes AND
+    # the pill) -- resolves the CFB totals contradiction.
+    o_cfb = app.load_ncaaf_game_market_odds
+    o_nfl = app.load_nfl_game_market_odds
+    try:
+        app.load_ncaaf_game_market_odds = lambda: _odds_fixture(50)
+        app.load_nfl_game_market_odds = lambda: _odds_fixture(50)
+        cfb_s = app.build_cfb_totals_board_context('week', 'all')
+        nfl_s = app.build_nfl_totals_board_context('week', 'all')
+        app.load_ncaaf_game_market_odds = lambda: _odds_fixture(1)
+        cfb_f = app.build_cfb_totals_board_context('week', 'all')
+    finally:
+        app.load_ncaaf_game_market_odds = o_cfb
+        app.load_nfl_game_market_odds = o_nfl
+    if not cfb_s.get('tb_stale') or cfb_s.get('tb_count') != 0:
+        issues.append(f"standalone CFB totals NOT fail-closed when stale: {cfb_s.get('tb_stale')}/{cfb_s.get('tb_count')}")
+    else:
+        notes.append("standalone CFB totals builder fails closed when stale (0 rows + tb_stale)")
+    if not nfl_s.get('nt_stale') or nfl_s.get('nt_count') != 0:
+        issues.append(f"standalone NFL totals NOT fail-closed when stale: {nfl_s.get('nt_stale')}/{nfl_s.get('nt_count')}")
+    else:
+        notes.append("standalone NFL totals builder fails closed when stale (0 rows + nt_stale)")
+    if cfb_f.get('tb_stale'):
+        issues.append("CFB totals wrongly flagged stale when fresh")
+    else:
+        notes.append("CFB totals builder serves rows when fresh (not falsely suppressed)")
+
     if not issues:
-        notes.append("game-lines + totals-pill freshness containment verified")
+        notes.append("game-lines + totals (pill + standalone) freshness containment verified")
     return {"issues": issues, "notes": notes}
 
 

@@ -49400,9 +49400,17 @@ def build_cfb_totals_board_context(date_filter='today', band='all'):
             return None
         return r[idx[label]]
 
+    # FAIL CLOSED on a stale odds feed: the posted totals below come from the licensed odds feed, so a
+    # stale feed must not surface current totals as live (incident 2026-10-23). This gates EVERY caller
+    # -- the standalone /tools/cfb-totals* routes AND the totals pill.
+    _odds = load_ncaaf_game_market_odds()
+    _tmeta = get_lines_refresh_meta(_odds)
+    if _tmeta.get('is_stale'):
+        return {'tb_rows': [], 'tb_band': band, 'tb_date': date_filter, 'tb_count': 0,
+                'tb_stale': True, 'tb_stale_note': _tmeta.get('warning', '')}
     fh_rows = load_football_first_half('ncaaf')
     try:
-        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
+        games = build_football_live_games(_odds, load_ncaaf_schedule(), date_filter=date_filter)
     except Exception:
         games = []
 
@@ -49441,7 +49449,7 @@ def build_cfb_totals_board_context(date_filter='today', band='all'):
         })
     rows.sort(key=lambda r: -r['total'])
     return {
-        'tb_rows': rows, 'tb_band': band, 'tb_date': date_filter, 'tb_count': len(rows),
+        'tb_rows': rows, 'tb_band': band, 'tb_date': date_filter, 'tb_count': len(rows), 'tb_stale': False,
     }
 
 
@@ -49466,9 +49474,15 @@ def build_nfl_totals_board_context(date_filter='week', band='all'):
         if full:
             ou[full] = t
     wind = _nfl_game_wind_map()
+    # FAIL CLOSED on a stale odds feed (gates the standalone route AND the pill).
+    _odds = load_nfl_game_market_odds()
+    _tmeta = get_lines_refresh_meta(_odds)
+    if _tmeta.get('is_stale'):
+        return {'nt_rows': [], 'nt_band': band, 'nt_date': date_filter, 'nt_count': 0,
+                'nt_stale': True, 'nt_stale_note': _tmeta.get('warning', ''), 'nt_season': None}
     fh_rows = load_football_first_half('nfl')
     try:
-        games = build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter=date_filter)
+        games = build_football_live_games(_odds, load_nfl_schedule(), date_filter=date_filter)
     except Exception:
         games = []
     rows = []
@@ -49504,7 +49518,7 @@ def build_nfl_totals_board_context(date_filter='week', band='all'):
         })
     rows.sort(key=lambda r: (0 if r['read'] == 'wind_under' else 1, -r['total']))
     return {'nt_rows': rows, 'nt_band': band, 'nt_date': date_filter,
-            'nt_count': len(rows), 'nt_season': ou_raw.get('season')}
+            'nt_count': len(rows), 'nt_season': ou_raw.get('season'), 'nt_stale': False}
 
 
 @app.route('/tools/nfl-totals-today')
