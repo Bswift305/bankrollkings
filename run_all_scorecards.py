@@ -63,6 +63,13 @@ SCORECARDS = [
     # stale seed), atomic-write failure preserves the prior version, the deploy dirty-tracked guard, and
     # a fresh checkout starting safely before its first refresh. No network (fixtures).
     ("CFB Runtime-Data QC", "qc_cfb_runtime_data.py", 120),
+    # CFB Matchup "This Week's Matchups" total-render contract (regression for da2c3c2): the header
+    # O/U line must show the posted number from g.total.line and never the raw Python object, because
+    # build_cfb_matchup_context sets g.total to a MAPPING (total_read: proj_total/line/lean/edge/...)
+    # or None. Renders the real route+template with a fixed mu_week across all five g.total shapes
+    # (mapping w/ numeric line, line=None, missing, legacy scalar, malformed mapping) and asserts no
+    # dict/None/malformed-object text leaks. Mirror-guard of the NFL defect fixed in 24273df.
+    ("CFB Matchup Total QC", "qc_cfb_matchup_total.py", 120),
     # NFL Active ATS Wave on the current-season source (nflverse_games.parquet): explicit active-season
     # gate (never max(season)), game_id identity + reciprocal team-side decisions, recorded-spread sign,
     # event-level completeness (completed Thursday counts mid-week; future ignored; overdue fails closed),

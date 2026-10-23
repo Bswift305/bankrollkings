@@ -6,6 +6,17 @@
 > It supersedes the older root `DEVELOPER_HANDOFF.md` and `docs/developer_handoff.md`, which
 > are now stale stubs pointing here.
 
+> ⚠️ **Branch & deploy — read this before any production work.** The live Flask app is on
+> **`master`** (deploys to `bankrollkings.com`). GitHub's **default `main` is an inactive
+> Aug-2025 Next.js prototype** — a fresh clone or a rebooted/worktree agent session lands on
+> `main` and it looks "stale," but it is *not* the app. Do all production work on **`master`
+> only**. Deploy with `git push origin master` — the prod `bk-deploy` timer pulls and restarts
+> within ~2 min; manual server work goes through **AWS Session Manager, not SSH** (SSH is pinned
+> to a stale /32). **Before every push, print and verify** branch, HEAD, upstream, dirty tracked
+> files, and the exact outgoing commit range. **Never repoint or reset a worktree that holds
+> uncommitted work.** (If a worktree is on a `main`-based branch, create/repoint a branch from
+> `origin/master` *before* starting — and only when the worktree is clean.)
+
 **What the product is:** a Flask sports-betting **analytics** platform (`bankrollkings.com`).
 It is **not** a sportsbook — it accepts no wagers and custodies no funds. The core pipeline,
 true of every page: `game context → market context → prop context → confidence / risk label`.
