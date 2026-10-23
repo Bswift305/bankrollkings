@@ -201,17 +201,21 @@ def main() -> int:
               f"PASS={c['PASS']} FAIL={c['FAIL']} SKIP={c['SKIP']} steps={len(p['steps'])}  -> {tag}")
     print(f"\n  Last fully-successful run : {last_all_pass or '(none in window)'}")
     print(f"  First degraded run        : {first_degraded or '(none in window)'}")
-    print("  NOTE: the operator ABORTS on the first FAIL, so a low step-count DEGRADED run means every")
-    print("        step after the first FAIL NEVER RAN (not that they individually failed).")
 
-    # ---- Target run detail ----
+    # ---- Target run detail + execution mode ----
     p = parse_log(target)
     c = _counts(p)
+    completed = bool(p["finished"])
+    many_after_fail = c["PASS"] > 0 and c["FAIL"] > 1 and len(p["steps"]) > 20
+    mode = ("continue-on-error (ran every step; FAILs are INDEPENDENT, not a cascade)"
+            if completed and many_after_fail else
+            "abort-on-first-FAIL (steps after the first FAIL did NOT run)")
     print(f"\n## Target run: {target.name}")
     print(f"  started={p['started']}  finished={p['finished'] or '(no Finished line -> run did not complete)'}")
     print(f"  sports={p['sports']}  PASS={c['PASS']} FAIL={c['FAIL']} SKIP={c['SKIP']} steps={len(p['steps'])}")
+    print(f"  execution mode: {mode}")
 
-    # ---- 2. First actual failure (per the abort model, there is usually ONE) ----
+    # ---- 2. First actual failure (overall) ----
     print("\n## 2. First failure (sanitized exception / HTTP status)")
     ff = _first_fail(p)
     if ff is None:
@@ -224,6 +228,50 @@ def main() -> int:
         print("  --- sanitized tail of step output ---")
         tail = "\n".join(_sanitize(ff['output']).splitlines()[-18:])
         print("  " + tail.replace("\n", "\n  "))
+
+    # ---- 2b. First failure PER PROVIDER FAMILY (item 2) -- from the log, no new API calls ----
+    # Real operator steps carry a "Command:" line; nested '[FAIL] foo exited with code 1' summaries
+    # inside a step's captured stdout do NOT. Aggregate each real step with its nested children so the
+    # actual HTTP body / exception (which lands under a child) is surfaced.
+    def _full_body(steps, i):
+        parts = [steps[i]["output"]]
+        j = i + 1
+        while j < len(steps) and not steps[j]["command"]:
+            child = steps[j]
+            parts.append(f"[{child['status']}] {child['label']}")
+            if child["output"]:
+                parts.append(child["output"])
+            j += 1
+        return "\n".join(x for x in parts if x).strip()
+
+    print("\n## 2b. First failure per provider family (sanitized; from this log only)")
+    families = ["Odds API (health guard)", "Odds API game lines", "Odds API player props",
+                "Odds API futures", "Odds API per-event (1H)", "Odds API game lines (NFL preseason)",
+                "CFBD (results/lines/coaches/ATS)", "ESPN scoreboard", "nflverse"]
+    real_fail_idx = [i for i, s in enumerate(p["steps"]) if "FAIL" in s["status"] and s["command"]]
+    seen = set()
+    for fam in families:
+        idx = next((i for i in real_fail_idx
+                    if _provider_for(p["steps"][i]["label"], p["steps"][i]["command"]) == fam), None)
+        if idx is None:
+            continue
+        seen.add(fam)
+        step = p["steps"][idx]
+        body = _sanitize(_full_body(p["steps"], idx))
+        print(f"\n  [{fam}]  first failing step: {step['label']}")
+        print(f"    error: {_first_error_line(body)}")
+        if body:
+            tail = "\n".join(body.splitlines()[-12:])
+            print("    --- aggregated output tail (step + nested children) ---")
+            print("    " + tail.replace("\n", "\n    "))
+        else:
+            print("    (no output body in the daily log -- summary only; use a targeted probe)")
+    if not seen:
+        print("  (no provider-family failures in this run)")
+    print("\n  NOTE: the daily operator log stores step SUMMARIES; a sub-script's raw HTTP body (e.g. a 429")
+    print("  OUT_OF_USAGE_CREDITS payload) may live only in that sub-runner's own log. If a family shows")
+    print("  only 'exited with code 1', get the raw error with ONE targeted probe (see the incident doc)")
+    print("  -- that is a single call, not a job re-run.")
 
     # ---- 3. Provider failure / status table ----
     print("\n## 3. Provider-level step table (this run)")

@@ -15,7 +15,65 @@ confirm the root cause before any recovery.
 
 ---
 
-## Code-level findings (from the repo — these shape the diagnosis)
+## Diagnostic results (2026-10-23, from the prod logs — supersedes the code-level hypotheses below)
+
+The prod operator runs **`--continue-on-error`**: the Oct 23 run executed all 155 steps (Finished
+13:36:24), so **the failures are INDEPENDENT, not an abort cascade** (my earlier abort hypothesis was
+wrong for prod; the preseason gate fix is still valid defense, just not the cause). The chronology shows
+small failures Oct 10–17 escalating to **29 fails Oct 22 and 36 fails Oct 23** — the real incident is
+Oct 22–23.
+
+**Three independent problem clusters — do not bundle them:**
+
+1. **Odds API — all PAID endpoints failing (leading cause of the freshness incident).** The health guard
+   reports **key VALID** (`/v4/sports` OK — a free endpoint) and tripped only on **`Futures 48h old`**.
+   But every *paid* Odds call fails fast (~0.7–1.0s) across **all** sports — game lines, player props,
+   futures for NFL/NCAAF/NBA/WNBA/MLB. Key-valid + account-wide paid-endpoint failure + instant rejection
+   = the **usage-credits-exhausted (HTTP 429 `OUT_OF_USAGE_CREDITS`)** signature. **Confirm** with diag §2b
+   (now surfaces the nested HTTP body) + the credits-header probe below.
+2. **CFBD — independent provider failure since ~Oct 12.** `CFB data refresh` and every sub-step
+   (results/coaches/ATS/roster/stats/returning-production/portal) FAIL with exit 1. Different provider
+   from Odds; **not** downstream of it. Likely a CFBD **key (401)** or schema change — confirm via §2b /
+   the probe. `schedules/NCAAF_Odds.csv` is 7h fresh but ~empty (120 B), consistent with CFB lines thin.
+3. **QC regressions (not freshness):** `NBA Residual-Authority QC` and `CFB Wave Canon QC` fail the
+   scorecards; the `NBA/WNBA 99` + `Prelaunch` scorecards then FAIL downstream of stale NBA/WNBA data.
+   These are code/data, independent of the provider outages.
+
+**Customer impact (item 7):** STALE (>36h) — `NBA_Odds` 55h, `NBA_Props` 55h, `WNBA_Props` 55h,
+`MLB_Props` 55h; ~31h — `NFL_Odds`, `NFL_Props`, `NCAAF_Props`, `WNBA_Odds`. **FRESH** — the nflverse
+graded records `NFL_AllPropResults.csv` (7h) + `NFL_PropLines_Graded.csv` (7h), so the **NFL Wave /
+milestone record is current** (the earlier item-5 staleness is not present now). Surfaces bound to the
+stale odds/props feeds must fail closed (show unavailable), not present 2-day-old lines as live.
+
+**Confirm root cause (minimal — NOT a job re-run):**
+```
+# fix the ssm-user git ownership (the pull failed on 'dubious ownership')
+git config --global --add safe.directory /opt/bankrollkings
+
+# re-run the diagnostic (reads the log only, zero API calls) -- §2b now prints the real 429 / CFBD body
+cd /opt/bankrollkings && venv/bin/python3 diag_refresh_incident.py --log logs/daily_operator_20261023_130000.log
+
+# DECISIVE Odds-credits check -- one FREE /v4/sports call, key not printed in the output (headers only)
+KEY=$(sudo grep -oP '(?<=^ODDS_API_KEY=).*' /opt/bankrollkings/.env)   # use the real var name from the .env names probe
+curl -sS -D - "https://api.the-odds-api.com/v4/sports?apiKey=$KEY" -o /dev/null | grep -i x-requests
+# x-requests-remaining ~0  => credits exhausted (confirms the 429 cause)
+
+# ONE CFBD probe to confirm that independent failure (cheap free-tier key)
+cd /opt/bankrollkings && venv/bin/python3 refresh_cfb_data.py 2>&1 | tail -30   # expect the 401 / schema line
+```
+
+**Root-cause fixes (item 9), after confirmation — each separate + reversible:**
+- *Odds credits exhausted:* an **account action (yours), not a code re-run** — top up credits or wait for
+  the monthly reset; do **not** re-run fetches (they only burn more credits or confirm nothing). Then run
+  the single controlled recovery pass. Consider trimming daily credit burn separately.
+- *CFBD 401:* rotate/renew `CFBD_API_KEY` in `/opt/bankrollkings/.env` (SSM, the getpass here-doc method),
+  restart, then the recovery pass refreshes CFB.
+- *QC regressions:* fix `NBA Residual-Authority QC` + `CFB Wave Canon QC` as their own commits (the Canon
+  QC may be the yearly conference-string chore) — independent of the provider recovery.
+
+---
+
+## Code-level findings (from the repo — these shaped the initial hypothesis; prod reality above)
 
 1. **The operator aborts on the first `FAIL`.** `run_daily.py` breaks out of the step loop on the first
    non-skipped failure (no `--continue-on-error`). **Every step after the first FAIL never runs** and its
