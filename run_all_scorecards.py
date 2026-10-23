@@ -100,6 +100,12 @@ SCORECARDS = [
     # option/decorative placements never linked -- and it FETCHES each resolvable destination through
     # the test client to prove the page renders the intended entity.
     ("Universal Entity-Link QC", "qc_entity_links.py", 180),
+    # Additive NBA/WNBA market-only entity destinations (Option A): while the NBA.com stats gate is OFF,
+    # NBA/WNBA player + NBA team entity links resolve from the LICENSED Odds feed to the new minimal
+    # market-only pages (/tools/nba-player, /tools/wnba-player, /tools/nba-team) -- never the gated rich
+    # /player /team pages; unknown/ambiguous -> plain text; pages abstain on stats.nba.com statistics
+    # visibly, no nested anchors; gate ON reverts to the rich pages. Fixture-driven (no live data).
+    ("NBA/WNBA Market-Only Entity QC", "qc_entity_nba_wnba_market.py", 120),
     # Performance regression guards (Site Performance P0): the entity keyset is cache-stable per source
     # version (not rebuilt per row -- the injury-report 63s class), per-row resolve stays cheap, and the
     # milestone builder serves its cached object warm. Structural invariants, not flaky wall-clock.

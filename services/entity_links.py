@@ -63,6 +63,34 @@ def player_path(sport, name, sample=None, stat=None):
     return f'/player/{_seg(name)}?' + urlencode(params)
 
 
+# Market-only destinations (additive). While the NBA.com stats gate is OFF, NBA/WNBA entity links
+# point here instead of the rich stats pages: identity resolves from the LICENSED Odds feed and the
+# page shows cleared market/schedule facts only. app.py chooses rich-vs-market by the gate; this
+# module only owns the URL shapes. Kept separate from team_path/player_path so the frozen /team and
+# /player routes are never touched.
+MARKET_PLAYER_SPORTS = frozenset({'nba', 'wnba'})
+
+
+def market_player_path(sport, name):
+    """URL for the minimal, cleared market-only player page for `sport` (nba|wnba), or None. Identity
+    is percent-encoded here, never lowercased. The destination (`/tools/<sport>-player`) renders
+    licensed Odds markets only and abstains on stats.nba.com statistics."""
+    sport = canonical_sport(sport)
+    name = str(name or '').strip()
+    if not name or sport not in MARKET_PLAYER_SPORTS:
+        return None
+    return f'/tools/{sport}-player?' + urlencode({'q': name})
+
+
+def nba_market_team_path(team):
+    """URL for the minimal, cleared market-only NBA team page, or None. Licensed Odds schedule/lines
+    only; abstains on stats.nba.com statistics. Additive -- never the frozen /team route."""
+    team = str(team or '').strip()
+    if not team:
+        return None
+    return '/tools/nba-team?' + urlencode({'team': team})
+
+
 def team_path(sport, team, postseason=False):
     """URL for a single team's page in `sport`, or None if that sport has no targetable per-team
     page (-> caller renders plain text)."""

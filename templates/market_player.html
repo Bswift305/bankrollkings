@@ -1,0 +1,59 @@
+{% set active_page = sport %}
+{% set active_sport = sport %}
+{% extends "bk_base.html" %}
+{% block title %}{{ player }} — {{ sport_label }} — Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .mp-wrap{max-width:860px;}
+  .mp-h{font:800 24px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 4px;}
+  .mp-sub{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 14px;}
+  .mp-banner{border:1px solid rgba(255,255,255,.14);border-left:3px solid #e4b23a;border-radius:8px;padding:10px 12px;
+    margin:0 0 16px;background:var(--bg-card,rgba(255,255,255,.03));font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mp-tbl{width:100%;border-collapse:collapse;margin:0 0 16px;}
+  .mp-tbl th{font:600 10px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:left;padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.12);}
+  .mp-tbl td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);font:500 12.5px/1.4 'Helvetica Neue',Arial;color:var(--text-bright);}
+  .mp-tbl td.num{font-variant-numeric:tabular-nums;color:var(--text-muted);}
+  .mp-links a{color:#4ed48a;font-weight:700;text-decoration:none;margin-right:16px;}
+  .mp-empty{color:var(--text-muted);font:500 13px/1.6 'Helvetica Neue',Arial;padding:18px 0;}
+</style>
+<div class="mp-wrap">
+  <h1 class="mp-h">{{ player }} <span style="font:600 12px/1 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">· {{ sport_label }}{% if team %} · {{ team }}{% endif %}</span></h1>
+  <p class="mp-sub">Source: {{ source }}{% if data_through %} · data through {{ data_through }}{% endif %}.</p>
+
+  {% if not found %}
+    <div class="mp-empty"><b>{{ player }}</b> doesn&rsquo;t resolve to a current {{ sport_label }} player with live
+      markets, so no page is shown. Browse the <a href="/sports/{{ sport }}/props" style="color:#4ed48a;">{{ sport_label }} props</a>.</div>
+  {% else %}
+  <div class="mp-banner">
+    This is a <b>market-only</b> page built from licensed Odds-API player props. Detailed player
+    <b>statistics are not available here</b> &mdash; it shows this player&rsquo;s currently posted prop
+    markets only, and makes no projection or recommendation.
+  </div>
+
+  {% if markets %}
+  <table class="mp-tbl">
+    <thead><tr><th>Market</th><th>Line</th><th>Over</th><th>Under</th><th>Book</th></tr></thead>
+    <tbody>
+      {% for m in markets %}
+      <tr>
+        <td>{{ m.stat }}</td>
+        <td class="num">{{ m.line or '&mdash;'|safe }}</td>
+        <td class="num">{{ m.over or '&mdash;'|safe }}</td>
+        <td class="num">{{ m.under or '&mdash;'|safe }}</td>
+        <td>{{ m.book }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="mp-empty">No live prop markets on file for {{ player }} right now.</div>
+  {% endif %}
+
+  <div class="mp-links">
+    <a href="/sports/{{ sport }}/props">{{ sport_label }} props &rarr;</a>
+    <a href="/sports/{{ sport }}">{{ sport_label }} board &rarr;</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

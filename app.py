@@ -822,6 +822,9 @@ PRO_ENDPOINTS = {
     'green_light_lens_status', 'green_light_counts', 'green_light_ticket',  # Green Light workspace: envelopes + counts + lazy ticket
     'mlb_team_tool',  # minimal cleared MLB team page (destination for team_url('mlb', …))
     'wnba_team_tool',  # minimal cleared WNBA team page (licensed schedule only; obeys BK_NBA_STATS_ENABLED)
+    'nba_team_tool',  # minimal cleared NBA team page (licensed schedule only; obeys BK_NBA_STATS_ENABLED)
+    'nba_player_tool',  # minimal cleared NBA market-only player page (licensed props only; obeys the stats gate)
+    'wnba_player_tool',  # minimal cleared WNBA market-only player page (licensed props only; obeys the stats gate)
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -17417,13 +17420,70 @@ def _entity_player_keyset(sport):
     return counts
 
 
+_ENTITY_MARKET_KEYSET_CACHE = {}
+
+
+def _entity_market_player_keyset(sport):
+    """Cached {lookup_key -> distinct-entity count} of players present in the LICENSED Odds player-prop
+    feed for `sport` (nba|wnba). This is the cleared identity source for the market-only player pages:
+    it resolves regardless of BK_NBA_STATS_ENABLED and never touches stats.nba.com, so NBA/WNBA entity
+    links keep working while the stats gate is off. Empty (-> plain text) when the props file is absent.
+    Cached by the props-file mtime (cheap + stable across requests; never rebuilt per entity_anchor)."""
+    sport = _entity_links.canonical_sport(sport)
+    if sport not in _entity_links.MARKET_PLAYER_SPORTS:
+        return {}
+    fn = {'nba': 'NBA_Props.csv', 'wnba': 'WNBA_Props.csv'}[sport]
+    path = DATA_DIR / 'props' / fn
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        mt = 0
+    cache = _ENTITY_MARKET_KEYSET_CACHE
+    sig = (sport, mt)
+    if cache.get(sport + '_sig') == sig and (sport + '_set') in cache:
+        return cache[sport + '_set']
+    try:
+        df = {'nba': load_props, 'wnba': load_wnba_props}[sport]()
+    except Exception:
+        df = None
+    counts = {}
+    if df is not None and not getattr(df, 'empty', True) and 'Player' in getattr(df, 'columns', []):
+        for nm in df['Player'].dropna().astype(str):
+            nm = nm.strip()
+            if not nm:
+                continue
+            k = normalize_player_lookup_name(nm) or nm.lower()
+            counts.setdefault(k, set()).add(nm)
+        counts = {k: len(v) for k, v in counts.items()}
+    cache[sport + '_sig'] = sig
+    cache[sport + '_set'] = counts
+    return counts
+
+
+def _nba_market_gated(sport):
+    """True when NBA/WNBA entity links should use the cleared market-only destinations (the stats gate
+    is off). nba + wnba both ride BK_NBA_STATS_ENABLED (stats.nba.com family)."""
+    if _entity_links.canonical_sport(sport) not in ('nba', 'wnba'):
+        return False
+    try:
+        return not _nba_source_gate.nba_stats_enabled()
+    except Exception:
+        return True  # fail closed to the cleared market-only path
+
+
 def _entity_player_known(sport, name):
     """True only when `name` resolves to EXACTLY ONE current player in `sport` (unknown or ambiguous
-    -> False -> plain text). NFL uses the roster key; others use the generic lookup key."""
+    -> False -> plain text). NFL uses the roster key; others use the generic lookup key. For NBA/WNBA
+    while the stats gate is off, resolution uses the LICENSED market (props) keyset, not the withheld
+    stats.nba.com keyset -- so the market-only link resolves without touching gated data."""
     sport = _entity_links.canonical_sport(sport)
     name = str(name or '').strip()
     if not name or sport not in _entity_links.PLAYER_SPORTS:
         return False
+    if _nba_market_gated(sport):
+        counts = _entity_market_player_keyset(sport)
+        key = normalize_player_lookup_name(name) or name.lower()
+        return counts.get(key, 0) == 1
     counts = _entity_player_keyset(sport)
     if sport == 'nfl':
         key = _normalize_nfl_roster_player_key(name) or _normalize_player_join_key(name)
@@ -17462,8 +17522,17 @@ def _entity_team_known(sport, team):
             return bool(key) and any(_normalize_mlb_team_key(t) == key for t in _wnba_current_team_set())
         except Exception:
             return False
+    # NBA. While the stats gate is off, resolve identity from the LICENSED Odds schedule (the market-
+    # only team page's source) so the link works without touching stats.nba.com. When stats are on,
+    # the rich /team page resolves by the canonical abbr as before.
+    if _nba_market_gated('nba'):
+        try:
+            key = _normalize_mlb_team_key(team)   # sport-agnostic string fold
+            return bool(key) and any(_normalize_mlb_team_key(t) == key for t in _nba_current_team_set())
+        except Exception:
+            return False
     try:
-        return bool(normalize_team_abbr(team))   # NBA
+        return bool(normalize_team_abbr(team))   # NBA (stats enabled -> rich page)
     except Exception:
         return False
 
@@ -17589,20 +17658,179 @@ def wnba_team_tool():
     return render_template('wnba_team.html', **build_wnba_team_page(request.args.get('team', '')))
 
 
+_NBA_TEAM_SET_CACHE = {}
+
+
+def _nba_current_team_set():
+    """Current NBA team names from the LICENSED Odds schedule/odds (Away + Home). This is the Odds-API
+    identity source, NOT stats.nba.com -- so it resolves regardless of BK_NBA_STATS_ENABLED and never
+    touches gated statistics. An unknown/stale name falls to plain text."""
+    try:
+        sched = load_game_market_odds()
+        if sched is None or sched.empty:
+            return set()
+        teams = set()
+        for col in ('Away', 'Home'):
+            if col in sched.columns:
+                teams |= {str(t).strip() for t in sched[col].dropna() if str(t).strip()}
+        return teams
+    except Exception:
+        return set()
+
+
+def build_nba_team_page(team):
+    """Minimal, cleared NBA team page: identity + the team's scheduled games and market lines from the
+    LICENSED Odds-API schedule/odds only. NBA player/team STATISTICS are stats.nba.com-gated
+    (BK_NBA_STATS_ENABLED) and are NOT shown here -- this page abstains on them visibly and renders only
+    cleared market/schedule facts, so the link works while the stats gate is off. No authority language.
+    Additive: never touches the frozen /team route. Unknown team -> found False (honest 'not current')."""
+    team = str(team or '').strip()
+    key = _normalize_mlb_team_key(team)   # sport-agnostic string fold
+    sched = load_game_market_odds()
+    display, found, games = team, False, []
+    if key and sched is not None and not sched.empty and {'Away', 'Home'}.issubset(sched.columns):
+        for _, r in sched.iterrows():
+            aw, hm = str(r.get('Away', '')).strip(), str(r.get('Home', '')).strip()
+            ka, kh = _normalize_mlb_team_key(aw), _normalize_mlb_team_key(hm)
+            if key not in (ka, kh):
+                continue
+            found = True
+            is_home = (kh == key)
+            display = hm if is_home else aw
+            games.append({'date': str(r.get('Date', '') or ''), 'time': str(r.get('Time', '') or ''),
+                          'home': is_home, 'opponent': (aw if is_home else hm)})
+    data_through = ''
+    try:
+        for cand in (DATA_DIR / 'odds' / 'NBA_Odds.csv', DATA_DIR / 'schedules' / 'NBA_Odds.csv'):
+            if cand.exists():
+                from services.timeutils import to_eastern_datetime_str as _to_et
+                _iso = datetime.fromtimestamp(os.path.getmtime(cand), tz=timezone.utc).isoformat()
+                data_through = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+                break
+    except Exception:
+        data_through = ''
+    return {'team': display, 'found': found, 'games': games[:60],
+            'source': 'The Odds API (licensed) + schedule', 'data_through': data_through}
+
+
+@app.route('/tools/nba-team')
+def nba_team_tool():
+    """Minimal cleared NBA team page (licensed Odds-API schedule/lines only; stats.nba.com statistics
+    abstain visibly and are never shown, so it obeys BK_NBA_STATS_ENABLED). Additive market-only
+    destination for team_url('nba', …) while the stats gate is off; never the frozen /team route."""
+    return render_template('nba_team.html', **build_nba_team_page(request.args.get('team', '')))
+
+
+def _fmt_american_odds(value):
+    """Plain American-odds string for display (e.g. +110 / -125), or '' when absent/non-numeric."""
+    try:
+        v = pd.to_numeric(pd.Series([value]), errors='coerce').iloc[0]
+        if pd.isna(v):
+            return ''
+        v = int(round(float(v)))
+        return f'+{v}' if v > 0 else str(v)
+    except Exception:
+        return ''
+
+
+def build_market_player_page(sport, name):
+    """Minimal, cleared market-only player page for NBA/WNBA: identity + that player's LIVE licensed
+    Odds player-prop markets (stat · line · over/under price · book) only. Player/team STATISTICS are
+    stats.nba.com-gated and are NOT shown here -- the page abstains on them visibly. Identity resolves
+    from the props feed (cleared), so the link works while the stats gate is off. Unknown/ambiguous
+    name -> found False (honest 'not a current player'). No projection, no authority language."""
+    sport = _entity_links.canonical_sport(sport)
+    name = str(name or '').strip()
+    label = {'nba': 'NBA', 'wnba': 'WNBA'}.get(sport, sport.upper())
+    out = {'sport': sport, 'sport_label': label, 'player': name, 'found': False, 'team': '',
+           'markets': [], 'source': 'The Odds API (licensed) player props', 'data_through': ''}
+    if sport not in _entity_links.MARKET_PLAYER_SPORTS or not name:
+        return out
+    # Resolve to exactly one current player in the licensed props feed (ambiguous -> not found).
+    if not _entity_player_known(sport, name):
+        return out
+    try:
+        props = {'nba': load_props, 'wnba': load_wnba_props}[sport]()
+    except Exception:
+        props = None
+    if props is None or getattr(props, 'empty', True) or 'Player' not in getattr(props, 'columns', []):
+        return out
+    target_key = normalize_player_lookup_name(name) or name.lower()
+    markets = []
+    display_name = name
+    for _, r in props.iterrows():
+        nm = str(r.get('Player', '') or '').strip()
+        if not nm:
+            continue
+        if (normalize_player_lookup_name(nm) or nm.lower()) != target_key:
+            continue
+        display_name = nm
+        line = r.get('CurrentLine')
+        if pd.isna(pd.to_numeric(pd.Series([line]), errors='coerce').iloc[0]):
+            line = r.get('Line')
+        line_num = pd.to_numeric(pd.Series([line]), errors='coerce').iloc[0]
+        if not out['team']:
+            out['team'] = str(r.get('Team', '') or '').strip()
+        markets.append({
+            'stat': str(r.get('Stat', '') or '').strip() or 'Prop',
+            'line': ('%g' % float(line_num)) if pd.notna(line_num) else '',
+            'over': _fmt_american_odds(r.get('OverOdds')),
+            'under': _fmt_american_odds(r.get('UnderOdds')),
+            'book': str(r.get('Book', '') or '').strip(),
+        })
+    if markets:
+        out['found'] = True
+        out['player'] = display_name
+        # Stable, readable order: by stat then line.
+        markets.sort(key=lambda m: (m['stat'], m['line']))
+        out['markets'] = markets[:80]
+    try:
+        fn = {'nba': 'NBA_Props.csv', 'wnba': 'WNBA_Props.csv'}[sport]
+        p = DATA_DIR / 'props' / fn
+        if p.exists():
+            from services.timeutils import to_eastern_datetime_str as _to_et
+            _iso = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc).isoformat()
+            out['data_through'] = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+    except Exception:
+        pass
+    return out
+
+
+@app.route('/tools/nba-player')
+def nba_player_tool():
+    """Minimal cleared NBA market-only player page (licensed Odds player props only; stats.nba.com
+    statistics abstain visibly). Additive destination for player_url('nba', …) while the stats gate is off."""
+    return render_template('market_player.html', **build_market_player_page('nba', request.args.get('q', '')))
+
+
+@app.route('/tools/wnba-player')
+def wnba_player_tool():
+    """Minimal cleared WNBA market-only player page (licensed Odds player props only; stats.nba.com
+    statistics abstain visibly). Additive destination for player_url('wnba', …) while the stats gate is off."""
+    return render_template('market_player.html', **build_market_player_page('wnba', request.args.get('q', '')))
+
+
 def player_url(sport, name, sample=None, stat=None, require_known=True):
     """Sport-scoped URL for a player's page, or None (-> plain text) when the sport has no player
     page or the name does not resolve to exactly one current player. Encoding is centralized in
-    services.entity_links; the display name is never lowercased into the URL."""
+    services.entity_links; the display name is never lowercased into the URL. For NBA/WNBA while the
+    stats gate is off, the URL is the cleared market-only page (/tools/<sport>-player), not the gated
+    rich /player stats page -- so the link resolves against the licensed props feed."""
     if require_known and not _entity_player_known(sport, name):
         return None
+    if _nba_market_gated(sport):
+        return _entity_links.market_player_path(sport, name)
     return _entity_links.player_path(sport, name, sample=sample, stat=stat)
 
 
 def team_url(sport, team, postseason=False, require_known=True):
     """Sport-scoped URL for a team's page, or None (-> plain text) when the sport has no targetable
-    per-team page (NFL/MLB/WNBA) or the team does not resolve."""
+    per-team page or the team does not resolve. For NBA while the stats gate is off, the URL is the
+    cleared market-only page (/tools/nba-team), not the frozen rich /team page."""
     if require_known and not _entity_team_known(sport, team):
         return None
+    if _entity_links.canonical_sport(sport) == 'nba' and _nba_market_gated('nba'):
+        return _entity_links.nba_market_team_path(team)
     return _entity_links.team_path(sport, team, postseason=postseason)
 
 
