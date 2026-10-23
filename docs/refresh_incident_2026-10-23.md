@@ -85,9 +85,12 @@ expired key — note a *deactivated* key from a payment lapse also shows 401, di
   → empty) and `props.html` / dashboards render `is_stale` + the stale warning, so the 31–55h-stale props
   show as **unavailable**, not old-as-current. The nflverse graded records are **fresh (7h)** and are a
   *historical* record, correctly distinct from the stale *current* markets.
-- **To verify/patch:** the game-LINES (odds) boards do not visibly share the `require_fresh` props gate —
-  confirm on the authed NBA/MLB/WNBA game-lines pages that a 31–55h-stale line shows a stale/unavailable
-  marker; if any line surface renders an old line as current, that is the ungated surface to patch.
+- **Game-LINES gate ADDED (football):** `get_lines_refresh_meta` + the football game-lines/totals board now
+  render a visible **"Game Lines Are Stale"** banner when the odds feed is older than 24h (it previously
+  surfaced only the *props* feed's freshness, so stale lines could read as current). Guarded by
+  `qc_game_lines_freshness.py`. **Remaining:** wire the same `get_lines_refresh_meta` banner into the
+  **NBA / MLB / WNBA command-center** line boards (same pattern) — confirm on the authed pages whether a
+  31–55h-stale line there still renders as current, and patch identically.
 
 ---
 

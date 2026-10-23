@@ -3652,6 +3652,37 @@ def get_props_refresh_meta(props_df, max_age_hours=6):
     }
 
 
+def get_lines_refresh_meta(odds_df, max_age_hours=24):
+    """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta, so a
+    line board can show a VISIBLE stale/unavailable banner instead of presenting day-old lines as current
+    (incident containment, 2026-10-23). Reads the `LastUpdated` column the Odds fetch writes; flags
+    is_stale past max_age_hours. Self-contained: never mutates or depends on the props path."""
+    if odds_df is None or getattr(odds_df, 'empty', True):
+        return {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False,
+                'status': 'unavailable', 'warning': '', 'has_lines': False}
+    last_updated, age_hours = 'Unknown', None
+    if 'LastUpdated' in odds_df.columns:
+        parsed = pd.to_datetime(odds_df['LastUpdated'], errors='coerce').dropna()
+        if not parsed.empty:
+            freshest = parsed.max()
+            try:
+                last_updated = freshest.strftime('%b %d, %Y %I:%M %p')
+            except Exception:
+                last_updated = str(freshest)
+            try:
+                now_ts = pd.Timestamp.now(tz=freshest.tz) if getattr(freshest, 'tzinfo', None) else pd.Timestamp.now()
+                age_hours = round(float((now_ts - freshest).total_seconds()) / 3600.0, 2)
+            except Exception:
+                age_hours = None
+    is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
+    warning = ''
+    if is_stale:
+        warning = (f"These game lines are {age_hours:.0f}h old (last updated {last_updated}). "
+                   "They may not reflect the current market — shown as stale, not live.")
+    return {'last_updated': last_updated, 'age_hours': age_hours, 'is_stale': is_stale,
+            'status': 'stale' if is_stale else 'live', 'warning': warning, 'has_lines': True}
+
+
 def load_live_props_feed(max_age_hours=6, require_fresh=False):
     props_df = load_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
@@ -34236,6 +34267,10 @@ def _render_football_method_page(sport_key, method_key):
         live_props, live_refresh_meta = live_config['props'](require_fresh=True)
         method_view['live_data_checked'] = True
         method_view['live_refresh_meta'] = live_refresh_meta
+        # Game-LINES freshness (odds feed), separate from the props feed above: on a game-lines/totals
+        # page a stale odds feed must be shown as stale, never as current (incident containment).
+        if method_key in {'game_lines', 'totals'}:
+            method_view['lines_refresh_meta'] = get_lines_refresh_meta(live_odds)
         if sport_key == 'nfl' and method_key in {'game_lines', 'totals'}:
             method_view['game_line_board'] = build_football_game_line_intelligence(
                 sport_key,
