@@ -187,8 +187,22 @@ def get_api_key(cli_value: str | None) -> str:
     return api_key.strip()
 
 
+from services.odds_quota import QuotaRecorder
+
+_QUOTA = QuotaRecorder()
+
+
+def _sport_tokens(sport: str):
+    s = (sport or "").lower()
+    for needle, token in (("ncaaf", "NCAAF"), ("nfl", "NFL"), ("wnba", "WNBA"), ("nba", "NBA"), ("mlb", "MLB")):
+        if needle in s:
+            return (token,)
+    return ()
+
+
 def get_json(url: str) -> list | dict:
     with urlopen(url, timeout=30) as response:
+        _QUOTA.record(response.headers, paid=True)   # per-request quota accounting (never logs url/key)
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -549,6 +563,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--days", type=int, default=5, help="How many days ahead of events to include")
     parser.add_argument("--output", help="Output CSV path")
     parser.add_argument("--markets", help="Comma-separated market keys")
+    parser.add_argument("--expected-cost", type=int, default=None,
+                        help="Documented expected credit cost; fail if the actual cost exceeds it (recovery safety).")
+    parser.add_argument("--allow-collapse", action="store_true",
+                        help="Explicit override to allow an unusually small row count vs the last valid artifact.")
     return parser.parse_args()
 
 
@@ -592,16 +610,37 @@ def main() -> int:
         print("No new prop rows were fetched. Preserving existing CSV instead of overwriting with an empty dataset.")
         return 1
 
+    # Per-request quota receipt (prove the cost from usage headers; fail rather than guess).
+    cost_ok, _r = _QUOTA.print_receipt(endpoint_family="player_props /events + /odds", sport=sport,
+                                       markets=markets, expected_cost=getattr(args, "expected_cost", None))
+    if not cost_ok:
+        print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing props.")
+        return 1
+
     existing = load_existing_history(output_path)
     df = merge_market_history(df, existing)
 
-    # Atomic + validated publish (incident 2026-10-23): temp -> validate -> os.replace, so a crash or a
-    # bad frame cannot truncate the authoritative props file; a validation failure preserves last-good.
+    # Strong semantic validation + atomic replace: a structurally-wrong props fetch (bad schema,
+    # non-finite lines, timestamp regression, conflicting duplicates, wrong-sport path, empty slice,
+    # implausible collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
+    from services.feed_validation import PLAYER_PROPS_SPEC, validate_feed
+    try:
+        prior = pd.read_csv(output_path) if output_path.exists() else None
+    except Exception:
+        prior = None
+    ok, errs = validate_feed(df, PLAYER_PROPS_SPEC, prior_df=prior, path=output_path,
+                             sport_tokens=_sport_tokens(sport),
+                             allow_collapse=bool(getattr(args, "allow_collapse", False)))
+    if not ok:
+        print("Strong validation FAILED, preserving existing props CSV:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
     try:
         atomic_write_csv(df, output_path, index=False, required_cols=["Player"], min_rows=1)
     except CsvValidationError as exc:
-        print(f"Validation failed, preserving existing props CSV: {exc}")
+        print(f"Atomic publish failed, preserving existing props CSV: {exc}")
         return 1
     write_market_coverage(df, sport, markets, output_path)
 

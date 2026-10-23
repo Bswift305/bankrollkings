@@ -49,8 +49,14 @@ def build_url(path: str, **params) -> str:
     return f"https://api.the-odds-api.com{path}?{urlencode(clean_params)}"
 
 
-def get_json(url: str) -> list | dict:
+from services.odds_quota import QuotaRecorder
+
+_QUOTA = QuotaRecorder()
+
+
+def get_json(url: str, paid: bool = True) -> list | dict:
     with urlopen(url, timeout=45) as response:
+        _QUOTA.record(response.headers, paid=paid)   # per-request quota accounting (never logs url/key)
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -62,7 +68,7 @@ def to_iso_local(value: str | None) -> str:
 
 def fetch_sports(api_key: str, include_inactive: bool = False) -> list[dict]:
     url = build_url("/v4/sports", apiKey=api_key, all="true" if include_inactive else "")
-    payload = get_json(url)
+    payload = get_json(url, paid=False)   # /v4/sports is free -> don't require usage headers for the cost receipt
     return payload if isinstance(payload, list) else []
 
 
@@ -241,6 +247,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="Latest futures odds CSV path.")
     parser.add_argument("--sports-output", default=str(DEFAULT_SPORTS_OUTPUT), help="Futures sports catalog CSV path.")
     parser.add_argument("--skip-movement", action="store_true", help="Do not append rows to futures movement tracking files.")
+    parser.add_argument("--expected-cost", type=int, default=None,
+                        help="Documented expected credit cost; fail if the actual cost exceeds it (recovery safety).")
+    parser.add_argument("--allow-collapse", action="store_true",
+                        help="Explicit override for a narrow one-sport fetch (fewer rows than the full file).")
     return parser.parse_args()
 
 
@@ -281,15 +291,37 @@ def main() -> int:
     output_path = Path(args.output).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Per-request quota receipt (prove cost from usage headers; fail rather than guess).
+    markets_req = sorted({str(s.get("key", "")) for s in selected})
+    cost_ok, _r = _QUOTA.print_receipt(endpoint_family="futures /sports + /odds(outrights)",
+                                       sport=",".join(markets_req) or "(all)", markets=["outrights"],
+                                       expected_cost=getattr(args, "expected_cost", None))
+
     if df.empty and output_path.exists():
         print("No futures rows fetched. Preserving existing latest futures file.")
+    elif not cost_ok:
+        print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing futures file.")
+        return 1
     else:
-        # Atomic + validated publish (incident 2026-10-23): temp -> validate -> os.replace.
+        # Strong validation + atomic replace. A structurally-wrong futures fetch must not replace
+        # last-known-good (incident 2026-10-23).
         from services.atomic_csv import atomic_write_csv, CsvValidationError
+        from services.feed_validation import FUTURES_SPEC, validate_feed
+        try:
+            prior = pd.read_csv(output_path) if output_path.exists() else None
+        except Exception:
+            prior = None
+        ok, errs = validate_feed(df, FUTURES_SPEC, prior_df=prior, path=output_path,
+                                 allow_collapse=bool(getattr(args, "allow_collapse", False)))
+        if not ok:
+            print("Strong validation FAILED, preserving existing futures file:")
+            for e in errs:
+                print(f"  - {e}")
+            return 1
         try:
             atomic_write_csv(df, output_path, index=False)
         except CsvValidationError as exc:
-            print(f"Validation failed, preserving existing futures file: {exc}")
+            print(f"Atomic publish failed, preserving existing futures file: {exc}")
             return 1
         if not args.skip_movement:
             append_futures_movement_snapshot(df)

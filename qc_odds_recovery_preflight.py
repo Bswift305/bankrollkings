@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from services.feed_validation import GAME_LINES_SPEC, validate_feed
+from services.feed_validation import FUTURES_SPEC, GAME_LINES_SPEC, PLAYER_PROPS_SPEC, validate_feed
 from services.odds_quota import QuotaRecorder
 
 
@@ -83,6 +83,39 @@ def run_qc():
         issues.append("wrong-sport output path not caught")
     else:
         notes.append("wrong-sport output path rejected (NFL fetch cannot overwrite NBA file)")
+
+    # ---------- props spec: alternate lines allowed, bad values rejected ----------
+    alt = pd.DataFrame([
+        {"Player": "A. Smith", "Stat": "Receiving Yards", "Book": "DK", "Line": 49.5,
+         "OverOdds": -110, "UnderOdds": -110, "LastUpdated": "2026-10-26T12:00:00Z"},
+        {"Player": "A. Smith", "Stat": "Receiving Yards", "Book": "DK", "Line": 59.5,   # alt line, same key
+         "OverOdds": 120, "UnderOdds": -140, "LastUpdated": "2026-10-26T12:00:00Z"},
+    ])
+    ok, errs = validate_feed(alt, PLAYER_PROPS_SPEC, sport_tokens=("NFL",), path="NFL_Props.csv")
+    if not ok:
+        issues.append(f"props alternate lines wrongly rejected: {errs}")
+    else:
+        notes.append("props alternate lines accepted (not flagged as conflicting)")
+    badprop = alt.assign(Line=[float("inf"), 59.5])
+    ok, _ = validate_feed(badprop, PLAYER_PROPS_SPEC, sport_tokens=("NFL",), path="NFL_Props.csv")
+    if ok:
+        issues.append("props non-finite Line not rejected")
+    else:
+        notes.append("props non-finite Line rejected")
+
+    # ---------- futures spec ----------
+    fut = pd.DataFrame([{"SportKey": "americanfootball_nfl_super_bowl_winner", "Outcome": "Chiefs",
+                         "Price": 550, "LastUpdated": "2026-10-26T12:00:00Z"}])
+    ok, errs = validate_feed(fut, FUTURES_SPEC)
+    if not ok:
+        issues.append(f"valid futures rejected: {errs}")
+    else:
+        notes.append("valid futures frame accepted")
+    ok, _ = validate_feed(fut.assign(Outcome=[""]), FUTURES_SPEC)
+    if ok:
+        issues.append("futures blank identity not rejected")
+    else:
+        notes.append("futures blank identity rejected")
 
     # ---------- odds_quota ----------
     q = QuotaRecorder()

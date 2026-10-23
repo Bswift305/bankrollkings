@@ -143,8 +143,23 @@ PLAYER_PROPS_SPEC = FeedSpec(
     required_cols=("Player", "Stat", "LastUpdated"),
     numeric_cols=("Line", "OverOdds", "UnderOdds"),
     timestamp_col="LastUpdated",
-    id_cols=("Player", "Stat", "Book"),
-    value_cols=("Line",),
+    # No conflicting-duplicate check: props legitimately carry ALTERNATE lines (same Player/Stat/Book,
+    # different Line), and the fetcher already dedups on the full (Player,Stat,MarketKey,Line,Game,Book)
+    # key, so a same-key conflict cannot survive. A coarse key here would false-positive on alt lines.
+    id_cols=(),
+    value_cols=(),
     identity_cols=("Player",),
+    min_rows=1,
+)
+
+FUTURES_SPEC = FeedSpec(
+    kind="futures",
+    required_cols=("SportKey", "Outcome", "Price", "LastUpdated"),
+    numeric_cols=("Price",),
+    timestamp_col="LastUpdated",
+    # dedup is on (SportKey,EventID,MarketKey,Outcome,Book); a same-key conflict cannot survive -> skip.
+    id_cols=(),
+    value_cols=(),
+    identity_cols=("Outcome",),
     min_rows=1,
 )
