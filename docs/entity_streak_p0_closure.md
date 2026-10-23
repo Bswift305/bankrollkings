@@ -1,132 +1,124 @@
-# Universal Entity Links + Streak Explainability — P0 closure report
+# Universal Entity Links + Streak Explainability — P0 status report
 
-Status at `e4e5bf5` (pushed to `master`; `bk-deploy.timer` auto-pull + restart). Categories per the
-governing directive: **(1)** implemented + locally verified, deployed, awaiting your prod receipt;
-**(2)** implemented, awaiting your owner-session **visual** check; **(3)** genuinely unresolved;
-**(4)** intentionally unavailable behind a data/legal gate.
+**Supersedes** the premature `b080a3b` closure (which pre-declared closure while Option A was still an
+open A/B decision and the explainers on Heat Map / NFL ATS / CFB ATS were declined). This report states
+the **true** status per the current directive, which (1) resolves the open decision as **Option A** and
+(2) overrides the earlier declines (explainers are now authorized). It is accurate as of the HEAD below.
 
 Standing constraints held throughout: all feature/data gates OFF, `?view=classic` retained,
 `BK_NBA_STATS_ENABLED=0`, Decision Journal + King's Tickets draft store disabled, no NBA.com/WNBA
-ingestion, no gate lifted. I cannot run SSM/`curl` against the authed prod gate or drive the prod
-browser — so "verified" below means **compile + the owner test-client (server-side gate bypass) +
-the QC suite**, with the prod receipt and the visual pass being yours to run.
+stats ingestion, no gate lifted. "Verified" means compile + the owner test-client (server-side gate
+bypass) + the QC suite; the authenticated prod receipt + the owner-session visual pass remain yours
+to run (this session has no SSH/SSM/AWS-CLI and the authed prod gate returns 401 to an anonymous client).
+
+Latest relevant commits on `master`:
+- `6fbc4dc` — Option A: additive NBA/WNBA market-only entity destinations (**this session**).
+- `90dbae0` — CFB matchup total-render regression guard + prod receipt (this session; see
+  `docs/cfb_matchup_total_fix_receipt.md`).
+- `da2c3c2` — CFB matchup O/U dict-leak fix.
 
 ---
 
-## 1. Implemented + locally verified + deployed (awaiting your prod receipt)
+## DONE this session — implemented, verified, deployed
 
-### Destination pages (close the "no destination exists" gap — items 3)
-- **MLB team page** — `/tools/mlb-team?team=<team>` (`6ac3746`). Identity + licensed Odds-API
-  schedule/lines only; a visible "statistics are not available here" banner; opponents entity-linked;
-  unknown/stale team → honest "not a current team" (plain text, never a guess). PRO-gated.
-- **WNBA team page** — `/tools/wnba-team?team=<team>` (`6868dd1`). Same shape, **obeys the stats gate**:
-  the licensed Odds schedule resolves and renders *while `BK_NBA_STATS_ENABLED=0`* (identity source is
-  `_wnba_current_team_set()` off the Odds schedule, **not** stats.nba.com), and statistics abstain
-  visibly. This decouples the WNBA team *link contract* from the *stats gate*.
-- Resolver: `services/entity_links.py` `TEAM_SPORTS += {mlb, wnba}`, `team_path` branches. App:
-  `_entity_team_known` mlb/wnba branches, `build_{mlb,wnba}_team_page`, routes, PRO_ENDPOINTS.
-- Fetch tests in `qc_entity_links.py` assert each destination renders the **right sport + entity +
-  cleared-only banner** and that an unknown team yields plain text. `qc_entity_link_crawl.py` crawls 7
-  authed routes, follows **115** distinct entity URLs, and asserts 200 / correct sport / no nested
-  anchors / no gated-stat leakage.
+### Item 1 — NBA/WNBA market-only entity destinations (Option A) ✅ `6fbc4dc`
+The open "A or B" decision is resolved as **A** and built. Additive, cleared, market-only pages whose
+identity resolves from the **licensed Odds feed** (never stats.nba.com), so NBA/WNBA entity links work
+while the stats gate is off and revert to the rich pages when it is on. The frozen `/team` `/player`
+routes are **untouched**.
+- Routes/builders: `/tools/nba-team` (`build_nba_team_page`), `/tools/nba-player` + `/tools/wnba-player`
+  (`build_market_player_page`); templates `nba_team.html`, `market_player.html`. All PRO-gated.
+- Identity: `_entity_market_player_keyset` (licensed props, mtime-cached), `_nba_current_team_set`
+  (licensed Odds schedule). Gate-aware `_entity_player_known` / `_entity_team_known` / `player_url` /
+  `team_url`: market-only page while gated, rich page when `BK_NBA_STATS_ENABLED=1`; unknown/ambiguous
+  → plain text.
+- Resolver: `services/entity_links.py` `market_player_path`, `nba_market_team_path`.
+- QC: **`qc_entity_nba_wnba_market.py`** (registered in `run_all_scorecards.py`) — gate-off → market
+  pages, unknown/ambiguous → plain text, abstain banner present, **no nested anchors**, gate-on reverts
+  to rich pages. Green. Existing `qc_entity_links.py` + `qc_entity_link_crawl.py` still green (they
+  already treat no-local-data as plain text, consistent with the gated path).
+- Docs: `docs/entity_destination_matrix.md` NBA/WNBA rows now **COMPLETE**.
 
-### Shared streak explainer (normalized view-model — item 8)
-- `services/streak_explainer.py` `normalize(family, row, meta)` → ONE model
-  (threshold · direction · current_streak · current_season · counted_events · excluded_events ·
-  source · data_through · freshness · availability · membership_reason · model_status). A field the
-  source cannot provide is labeled `unavailable` and **never synthesized**; governed-model status is
-  carried **separately** from factual membership. All six families map
-  (`milestone/prop/market_line/wave/ats/hot_hand`).
-- Partial `templates/_streak_explainer.html` renders the model identically everywhere; opponent names
-  inside it go through the centralized entity resolver.
-- **Wired as an inline disclosure** on the two player-prop streak surfaces:
-  - Milestone Streaks (`/tools/nfl-milestones`) — matchup + season expands (prior commit `52d6827`).
-  - Riding the Wave (`/tools/riding-the-wave`) — each Player Prop Streak row is now a native
-    `<details>` disclosure (keyboard/mobile-accessible, no JS) rendering the shared model; the player
-    name is entity-linked (`e4e5bf5`). Proven end-to-end through the owner test client: explainer
-    renders, membership reason + threshold come from the row, per-game values correctly marked
-    unavailable, model status separate, **no nested anchors**.
+> Local data (`data/props/*.csv`, `data/odds/NBA_Odds.csv`) is absent off-season (gitignored), so the
+> QC is fixture-driven and the **live-data** render is a prod/owner-visual check (below). The fail-closed
+> path (no data → plain text / "not a current player/team") is covered by the QC.
 
-### Streak integrity audits (every live family — item 7)
-All green locally; each proves current-season resolution, canonical identity, duplicate/conflict
-handling, freshness/fail-closed, membership/ordering, and the frozen ATS rules (active consecutive
-covers; earlier losses allowed; pushes interrupt; byes/ungraded ignored; FBS side of FBS–FCS retained;
-`(GameID, TeamSide)` authoritative for CFB):
-`qc_streak_integrity.py` (prop/market-line + Nico/Caleb traces + source→render hash),
-`qc_streak_integrity_milestone.py`, `qc_streak_integrity_ats.py` (NFL + CFB),
-`qc_streak_integrity_hothand.py`, `qc_streak_explainer.py`.
+### Phase-1 corrective — CFB matchup total-render guard ✅ `90dbae0`
+Permanent regression QC (`qc_cfb_matchup_total.py`, registered) for the `da2c3c2` O/U dict-leak fix,
+with positive + negative controls, plus `docs/cfb_matchup_total_fix_receipt.md` (deploy source-of-truth,
+`/healthz` probe, authed test-client render) and a prominent branch/deploy guard added to
+`docs/PROJECT_MAP.md`.
 
-**Your prod receipt** (venv python, as before), expected ALL-PASS:
+---
+
+## REMAINING — authorized, not yet implemented (precise status + next step)
+
+### Item 2 — one server-generated resolver payload across the client-rendered surfaces — NOT STARTED
+Server-rendered surfaces are converted and crawl-clean. The JS-rendered surfaces (King's Tickets, SGP
+Workbench, Daily Cards, Matchup Center, and the live Wave / Heat-Map tables) still print names as plain
+text in the browser. Correct approach (unchanged): emit **one** server-generated resolver payload
+(`{kind, sport, identity} → href | null`, computed by the existing `player_url`/`team_url` so no alias/URL
+logic is reimplemented in JS) and thread it through each surface's client renderer; never build hrefs in
+JS. This is a multi-surface workstream touching 5 prod-verified surfaces — it must be done per-surface
+with a crawl/nested-anchor check each, not as a drive-by. **Next:** add the payload emitter + a single
+reference surface (SGP Workbench is the most self-contained) with a QC, then replicate.
+
+### Items 3 + 4 — explainers on Heat Map, NFL ATS, CFB ATS + canonical game details — NOT STARTED (design nailed down this session)
+The shared view-model (`services/streak_explainer.py`) and partial (`_streak_explainer.html`) exist and
+the `ats` + `hot_hand` families are already audited. Findings that shape the build (so it is correct, not
+rushed into audited code):
+- **CFB ATS** (`/tools/cfb-ats-streaks`): rows carry `r.streak` + `r.last` (a space-separated W/L/push
+  sequence, newest last) + `kind` ∈ {cover, total}. The `ats` view-model currently hardcodes
+  direction/"straight covers" — it must be generalized to respect `kind` (cover vs over/under) before
+  wiring, or it will mislabel total streaks. Per-game **opponents/weeks/dates are not on the row**, so
+  canonical game detail is carried where available (the result markers) and the rest is labeled
+  `unavailable` (honest), unless `build_cfb_ats_streaks.py` is extended to emit them.
+- **NFL ATS**: `/tools/nfl-ats` is a cover-**rate** table (no streak/results array) — the streak
+  explainer belongs on the **NFL ATS Wave** streak board (`build_nfl_ats_wave`), not the rate table.
+  Confirm which surface is intended before wiring; the rate table would need a *rate*-explainer, not the
+  `ats` streak family.
+- **Heat Map** (Hot Hand): each row is a single navigational `<a>` (row-click → `/tools/nfl-floor`). An
+  inline `<details>` would nest anchors. The directive wants the explainer visible, so the row must be
+  **restructured** so the disclosure is a sibling of the row-link (not nested) — e.g. a separate
+  expander control outside the `<a>` — preserving the row-click contract while exposing the explainer.
+**Next:** generalize the `ats` branch for `kind` (with a `qc_streak_explainer.py` case), wire CFB ATS +
+NFL ATS Wave via the proven `<details>` pattern (as on Riding-the-Wave), and restructure the Heat-Map row
+to carry a non-nested disclosure; extend the CFB/NFL ATS builders to emit per-game canonical detail where
+the source has it.
+
+### Item 5 — repair + synchronize the stale NFL Wave results pipeline — NOT STARTED (diagnosis stands)
+Prod `NFL_AllPropResults.csv` is stale at 2025 Wk18 (the prop-grading refresh is not advancing on prod),
+so the live Player-Prop Wave rows correctly render "unavailable" (the surface fails closed — not an
+entity/streak code gap). `diag_nfl_streak_audit.py` is the fail-closed health probe. This needs a prod
+investigation of why the grading refresh job isn't advancing (SSM; the daily refresh log / the
+prop-grading step), then a code fix if the step errors vs an ops fix if the job isn't running. **Next:**
+run `diag_nfl_streak_audit.py` on prod via SSM, read the prop-grading step in the daily refresh log,
+classify code-vs-ops, and fix accordingly.
+
+### Item 6 — rerun crawl / nested-anchor scan / universe hashes / production receipts — PARTIAL
+Re-run locally after Option A: `qc_entity_links.py`, `qc_entity_link_crawl.py` (7 pages, nested-anchor
+scan clean), and the new `qc_entity_nba_wnba_market.py` — all green. The **authenticated prod** crawl +
+receipts still need owner/prod execution (local data is absent, so the crawl follows 0 live entity URLs
+here). **Next:** run the receipt block below on prod after Items 2–4 land, and capture the universe hashes
+from the streak-integrity audits on the real on-disk sources.
+
+### Item 7 — accurate final report — THIS DOCUMENT ✅ (supersedes `b080a3b`)
+
+---
+
+## Your prod receipt (venv python), expected ALL-PASS
 ```
-cd /opt/bankrollkings && for q in qc_entity_links qc_entity_link_crawl qc_streak_integrity \
-  qc_streak_integrity_milestone qc_streak_integrity_ats qc_streak_integrity_hothand \
-  qc_streak_explainer; do echo "== $q =="; venv/bin/python3 $q.py 2>&1 | tail -3; done
+cd /opt/bankrollkings && for q in qc_entity_links qc_entity_link_crawl qc_entity_nba_wnba_market \
+  qc_streak_integrity qc_streak_integrity_milestone qc_streak_integrity_ats \
+  qc_streak_integrity_hothand qc_streak_explainer qc_cfb_matchup_total; do \
+  echo "== $q =="; venv/bin/python3 $q.py 2>&1 | tail -3; done
+sudo -u ubuntu git -C /opt/bankrollkings log --oneline -1   # expect 6fbc4dc at/after HEAD
+systemctl is-active bankrollkings                           # expect: active
 ```
 
----
-
-## 2. Implemented — awaiting your owner-session VISUAL check
-
-The built-in browser hits the "All Access Required" gate on bankrollkings.com, so I can verify
-server-side but not *look* at the signed-in pages. Please eyeball, desktop + 375px:
-- `/tools/mlb-team?team=<a current MLB team>` and `/tools/wnba-team?team=<a current WNBA team>` —
-  identity, schedule table, the cleared/gated banner, opponent links.
-- `/tools/riding-the-wave` — expand a Player Prop Streak row; confirm the explainer reads cleanly and
-  the player link works. (Live prop rows only appear once prod's `NFL_AllPropResults.csv` is current —
-  see §4.)
-
----
-
-## 3. Genuinely unresolved (need a decision or a separate build)
-
-- **NBA/WNBA market-only PLAYER + TEAM pages (item 4) — needs your design decision.** The intent is
-  clear (resolve identity from the cleared Odds feed so the link persists while the stats gate is off,
-  render market-only facts, abstain on NBA.com stats). The blocker is *where*: the existing NBA
-  destinations are `/player/<name>?sport=nba` and `/team/<team>?sport=nba` — the **rich stats pages**,
-  and the NBA board/`/team` surface is the one you've explicitly **frozen** (NBA containment Days 3–5
-  not authorized). Two safe implementations exist and I won't guess between them:
-  **(A)** new minimal market-only routes (`/tools/nba-team`, `/tools/nba-player`, WNBA likewise)
-  mirroring the MLB/WNBA team pages, with the resolver pointing there while gated — additive, never
-  touches the frozen `/team` `/player` routes; or **(B)** make the existing `/team` `/player` routes
-  gate-aware (market-only when gated) — fewer URLs, but edits the frozen NBA surface.
-  Today these names are **already plain text** while gated, so nothing regresses by leaving this for
-  your call. One word — **A** or **B** — and I'll build it.
-- **Client-rendered entity links via one server resolver payload (items 2/11) — separate build.**
-  Server-rendered surfaces are converted and crawl-clean. The JS-rendered surfaces (King's Tickets,
-  SGP Workbench, Daily Cards, Matchup Center, and the live Wave/Heat-Map tables) still render names as
-  plain text in the browser. Doing this *correctly* means emitting ONE server-generated resolver
-  payload (no alias/URL logic reimplemented in JS) and threading it through each of those prod-verified
-  surfaces — a multi-surface workstream of its own, not a drive-by. Scoped, not started.
-
----
-
-## 4. Intentionally unavailable (data / legal / UI-contract)
-
-- **CFB player page** — no cleared per-player identity dataset exists (CFB is a sides/totals program;
-  player props are contaminated/unproven, per `docs/cfb_research_audit`). CFB player names stay plain
-  text by design; counted as a documented gap, not a silent drop.
-- **WNBA/NBA player & team STATISTICS** — stats.nba.com-gated behind `BK_NBA_STATS_ENABLED=0` pending a
-  licensing decision. The WNBA team page shows cleared schedule only and abstains on stats visibly.
-- **Hot Hand Heat Map explainer disclosure** — each Heat Map row is itself a single navigational
-  `<a>` (row-click → `/tools/nfl-floor`). An inline `<details>` explainer there would nest anchors and
-  break the row-click contract the directive says to preserve, so the row stays a link and its player
-  name is intentionally plain. The `hot_hand` family is still in the shared view-model and is audited
-  (`qc_streak_integrity_hothand.py`); it is simply not inlined into a row-as-link grid.
-- **ATS team boards (NFL/CFB, Riding the Wave)** — team-level compact rows carrying no per-game result
-  array; the `ats` view-model is audited (`qc_streak_integrity_ats.py`) but an inline disclosure adds
-  only "N straight covers" over the existing freshness line, so it was not inlined to avoid clutter on
-  a prod-verified surface. Available to wire on request.
-- **Live Wave prop rows on prod** — currently render as "unavailable" because prod's
-  `NFL_AllPropResults.csv` is stale at 2025 Wk18 (the prop-grading refresh isn't advancing on prod — a
-  known data-pipeline item, diagnosed separately via `diag_nfl_streak_audit.py`; `qc_...integration`
-  confirms the surface is correct and fails closed). Not an entity/streak code gap.
-
----
-
-## Closure artifacts delivered
-Occurrence-level coverage report (`docs/entity_link_migration.md`) + destination matrix
-(`docs/entity_destination_matrix.md`, MLB/WNBA team rows now COMPLETE); fetch-based destination tests;
-authenticated crawl (source→render, nested-anchor scan, cross-sport isolation, gated-leak scan); all
-five streak families audited with game-level traces; shared explainer view-model audited across all
-families. Zero wrong-sport destinations, zero nested anchors, zero unclassified occurrences in the
-coverage report.
+## Owner-session visual pass (desktop + 375px)
+- `/tools/nba-player?q=<a current NBA player>`, `/tools/wnba-player?q=<a current WNBA player>`,
+  `/tools/nba-team?team=<a current NBA team>` — identity, the market/schedule table, the
+  cleared/abstain banner, opponent links; an unknown name shows the honest "not a current …" state.
+- `/tools/mlb-team`, `/tools/wnba-team`, `/tools/riding-the-wave` (expand a Player-Prop Streak row) —
+  as before. Live Wave prop rows appear once prod's `NFL_AllPropResults.csv` is current (Item 5).
