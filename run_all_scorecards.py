@@ -59,6 +59,11 @@ SCORECARDS = [
     # helper the Odds fetchers (game lines, player props, futures) now publish through -- a crash or bad
     # frame can't truncate an authoritative file and a validation failure preserves last-known-good. Cheap.
     ("Atomic CSV Publish QC", "qc_atomic_csv.py", 60),
+    # Odds recovery preflight (Oct 23): strong semantic feed validation (wrong sport/schema, non-finite
+    # lines, timestamp regression, conflicting duplicates, row-count collapse, empty slice) + per-request
+    # quota accounting (x-requests-last/used/remaining -> fetch cost; fail the receipt if headers absent
+    # or cost over budget). Gates the game-lines fetcher's atomic publish. Pure.
+    ("Odds Recovery Preflight QC", "qc_odds_recovery_preflight.py", 60),
     # CFB Wave Watch wording remediation (Gate 1): no betting-authority language survives and the
     # template filters no qualifier (every builder team renders; the model groups, never removes).
     ("CFB Wave Wording QC", "qc_cfb_wave_wording.py", 120),

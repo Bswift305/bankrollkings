@@ -20,13 +20,68 @@ Run: python refresh_cfb_data.py
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+# ---- CFBD quota-exhaustion persistent backoff (incident 2026-10-23) ----
+# Once CFBD returns a monthly-quota 429, persist that state so SCHEDULED refreshes SKIP without making
+# ANY CFBD request (one wasted call every run otherwise) until the quota resets or an operator override.
+def _cfbd_state_path() -> Path:
+    root = os.environ.get("BK_RUNTIME_DIR") or str(BASE_DIR / "data" / "tracking")
+    return Path(root) / "cfbd_quota_state.json"
+
+
+def _read_cfbd_state() -> dict:
+    try:
+        return json.loads(_cfbd_state_path().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_cfbd_state(state: dict) -> None:
+    p = _cfbd_state_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except OSError as exc:
+        print(f"  (could not persist CFBD quota state: {exc})")
+
+
+def _clear_cfbd_state() -> None:
+    try:
+        _cfbd_state_path().unlink()
+    except OSError:
+        pass
+
+
+def _cfbd_force() -> bool:
+    return (os.environ.get("BK_CFBD_FORCE", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _cfbd_blocked():
+    """Return (blocked, state). Blocked = a persisted quota-exhausted state that has not reset and is not
+    overridden -> SKIP CFBD entirely, making no request. The reset time is NEVER guessed: it blocks until
+    a configured BK_CFBD_RESET_AT passes, or an operator override (BK_CFBD_FORCE=1 / clearing the file)."""
+    if _cfbd_force():
+        return False, None
+    st = _read_cfbd_state()
+    if not st.get("exhausted"):
+        return False, None
+    reset = st.get("reset_at")
+    if reset:
+        try:
+            if datetime.now(timezone.utc) >= datetime.fromisoformat(reset):
+                return False, None
+        except ValueError:
+            pass
+    return True, st
 
 
 def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
@@ -107,6 +162,14 @@ def main() -> int:
         print("refresh_cfb_data: CFBD_API_KEY not set - skipping CFB refresh.")
         return 0
 
+    blocked, st = _cfbd_blocked()
+    if blocked:
+        print(f"[SKIP] CFB refresh: CFBD quota EXHAUSTED state persisted (detected {st.get('detected_at')}, "
+              f"reason '{st.get('reason')}', reset {st.get('reset_at') or 'unknown'}). Making NO CFBD "
+              f"request until the quota resets or an operator override (set BK_CFBD_FORCE=1, configure "
+              f"BK_CFBD_RESET_AT, or delete {_cfbd_state_path()}). Last-known-good CFB artifacts preserved.")
+        return 3
+
     season = datetime.now().year
     last_season = season - 1
     print(f"CFB refresh | season {season} | last completed {last_season}")
@@ -159,9 +222,17 @@ def main() -> int:
             if _is_provider_quota_exhausted(out):
                 quota_exhausted = True
                 remaining = [s[0] for s in steps[idx + 1:]]
+                _write_cfbd_state({
+                    "exhausted": True, "provider": "cfbd",
+                    "detected_at": datetime.now(timezone.utc).isoformat(),
+                    "reset_at": (os.environ.get("BK_CFBD_RESET_AT") or "").strip() or None,
+                    "reason": f"HTTP 429 (monthly quota) at step '{label}'",
+                    "override": "set BK_CFBD_FORCE=1, configure BK_CFBD_RESET_AT, or delete this file",
+                })
                 print(f"[PROVIDER_QUOTA_EXHAUSTED] {label}: CFBD monthly call quota exceeded (HTTP 429). "
-                      f"Stopping; not attempting {len(remaining)} further CFBD step(s) until the quota "
-                      f"resets or the plan is upgraded. Last-known-good CFB artifacts preserved.")
+                      f"Stopping; not attempting {len(remaining)} further CFBD step(s). Persisted the "
+                      f"exhausted state so future scheduled runs SKIP CFBD without a request until reset/"
+                      f"override. Last-known-good CFB artifacts preserved.")
                 break
         elif label == GRADE_LABEL:
             graded_ok = True
@@ -194,6 +265,8 @@ def main() -> int:
     if failures:
         print(f"CFB refresh finished with {len(failures)} failure(s): {', '.join(failures)}")
         return 1
+    # Clean run -> CFBD is healthy again; clear any persisted quota-exhausted state.
+    _clear_cfbd_state()
     print("CFB refresh complete.")
     return 0
 

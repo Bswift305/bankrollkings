@@ -92,8 +92,23 @@ def get_api_key(cli_value: str | None) -> str:
     return api_key.strip()
 
 
+from services.odds_quota import QuotaRecorder
+
+_QUOTA = QuotaRecorder()   # per-run quota accounting; get_json records each paid response's usage headers
+
+
+def _sport_tokens(sport: str):
+    """League token(s) the output filename must contain, so e.g. an NFL fetch cannot overwrite the NBA file."""
+    s = (sport or "").lower()
+    for needle, token in (("ncaaf", "NCAAF"), ("nfl", "NFL"), ("wnba", "WNBA"), ("nba", "NBA"), ("mlb", "MLB")):
+        if needle in s:
+            return (token,)
+    return ()
+
+
 def get_json(url: str) -> list | dict:
     with urlopen(url, timeout=30) as response:
+        _QUOTA.record(response.headers, paid=True)   # capture x-requests-* (never logs the url/key)
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -366,6 +381,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schedules-output", help="Optional schedule fallback output CSV path")
     parser.add_argument("--schedule-alias-output", help="Canonical schedule CSV path to keep in sync with fresh game lines")
     parser.add_argument("--skip-line-movement", action="store_true", help="Do not append this fetch to line movement tracking files.")
+    parser.add_argument("--expected-cost", type=int, default=None,
+                        help="Documented expected credit cost; the fetch fails if the actual cost exceeds it (recovery safety).")
+    parser.add_argument("--allow-collapse", action="store_true",
+                        help="Explicit override to allow an unusually small row count vs the last valid artifact.")
     return parser.parse_args()
 
 
@@ -398,22 +417,44 @@ def main() -> int:
         print(f"ERROR: {exc}")
         fetch_failed = True
 
+    # Per-request quota receipt (incident 2026-10-23): prove the fetch cost from the response usage
+    # headers; FAIL the receipt rather than guess if the provider omitted them.
+    cost_ok, _receipt = _QUOTA.print_receipt(
+        endpoint_family="game_lines /events + /odds", sport=sport, markets=markets,
+        expected_cost=getattr(args, "expected_cost", None),
+        status="HTTP 200" if not fetch_failed else "fetch error")
+
     df = build_dataframe(all_rows)
     if fetch_failed and df.empty:
         print()
         print("No new game-line rows were fetched. Preserving existing CSV files instead of overwriting with an empty dataset.")
         return 1
+    if not cost_ok:
+        print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing files.")
+        return 1
 
-    # Atomic + validated publish: write a temp, validate, os.replace. A crash mid-write or a bad frame
-    # can no longer leave a truncated/partial authoritative file; a validation failure preserves
-    # last-known-good (incident 2026-10-23). df is non-empty here (the empty+failed case returned above).
+    # Strong semantic validation on the TEMP frame + atomic replace. A structurally-wrong fetch (bad
+    # schema, non-finite lines, timestamp regression, conflicting duplicates, wrong-sport path, implausible
+    # collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
+    from services.feed_validation import GAME_LINES_SPEC, validate_feed
+    try:
+        prior = pd.read_csv(output_path) if output_path.exists() else None
+    except Exception:
+        prior = None
+    ok, errs = validate_feed(df, GAME_LINES_SPEC, prior_df=prior, path=output_path,
+                             sport_tokens=_sport_tokens(sport), allow_collapse=bool(getattr(args, "allow_collapse", False)))
+    if not ok:
+        print("Strong validation FAILED, preserving existing files:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
     try:
         atomic_write_csv(df, output_path, index=False, required_cols=["Away", "Home"])
         atomic_write_csv(df, schedules_output_path, index=False, required_cols=["Away", "Home"])
         atomic_write_csv(build_schedule_alias(df), schedule_alias_output_path, index=False)
     except CsvValidationError as exc:
-        print(f"Validation failed, preserving existing files: {exc}")
+        print(f"Atomic publish failed, preserving existing files: {exc}")
         return 1
     if not args.skip_line_movement:
         append_line_movement_snapshot(df, sport)

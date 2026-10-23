@@ -36,44 +36,94 @@ def run_qc():
     if not issues:
         notes.append("_is_provider_quota_exhausted classifies 429/quota vs auth/timeout/schema correctly")
 
-    # Simulate: first CFBD sub-step returns 429 -> must stop after ONE call, print the marker, exit 3.
+    import tempfile
     calls = {"n": 0}
+    mode = {"rc": 1, "out": "CFBD responded HTTP 429: Monthly call quota exceeded"}
 
     def fake_run(command, **kwargs):
         calls["n"] += 1
-        return _FakeResult(1, stdout="CFBD responded HTTP 429: Monthly call quota exceeded")
+        return _FakeResult(mode["rc"], stdout=mode["out"])
 
-    orig_run = r.subprocess.run
-    orig_env = os.environ.get("CFBD_API_KEY")
-    os.environ["CFBD_API_KEY"] = "qc-fake-key"
-    r.subprocess.run = fake_run
-    try:
+    def _run_main():
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = r.main()
-        out = buf.getvalue()
+        return rc, buf.getvalue()
+
+    saved = {k: os.environ.get(k) for k in ("CFBD_API_KEY", "BK_RUNTIME_DIR", "BK_CFBD_FORCE")}
+    tmp = tempfile.mkdtemp(prefix="qc_cfbd_")
+    os.environ["CFBD_API_KEY"] = "qc-fake-key"
+    os.environ["BK_RUNTIME_DIR"] = tmp
+    os.environ.pop("BK_CFBD_FORCE", None)
+    orig_run = r.subprocess.run
+    r.subprocess.run = fake_run
+    try:
+        r._clear_cfbd_state()
+
+        # (a) first 429 run: stop after ONE call, exit 3, persist exhausted state
+        calls["n"] = 0
+        rc, out = _run_main()
+        if rc != 3 or "PROVIDER_QUOTA_EXHAUSTED" not in out:
+            issues.append(f"429 run: expected exit 3 + PROVIDER_QUOTA_EXHAUSTED (got rc={rc})")
+        elif calls["n"] != 1:
+            issues.append(f"429 run did not short-circuit: {calls['n']} sub-steps (want 1)")
+        else:
+            notes.append("429 run -> exit 3, PROVIDER_QUOTA_EXHAUSTED, 1 sub-step (not ~14)")
+        st = r._read_cfbd_state()
+        if not st.get("exhausted"):
+            issues.append("exhausted state was not persisted after the 429")
+        else:
+            notes.append("quota-exhausted state persisted (detected_at/reason recorded)")
+
+        # (b) next scheduled run: BLOCKED -> SKIP, makes NO CFBD request (0 calls), exit 3
+        calls["n"] = 0
+        rc, out = _run_main()
+        if rc != 3 or "[SKIP]" not in out:
+            issues.append(f"blocked run did not SKIP (rc={rc})")
+        elif calls["n"] != 0:
+            issues.append(f"blocked run STILL made {calls['n']} CFBD request(s) (want 0)")
+        else:
+            notes.append("persisted-exhausted -> next run SKIPs with ZERO CFBD requests")
+
+        # (c) operator override (BK_CFBD_FORCE=1) ignores the backoff and attempts again
+        os.environ["BK_CFBD_FORCE"] = "1"
+        calls["n"] = 0
+        rc, out = _run_main()
+        if calls["n"] == 0:
+            issues.append("BK_CFBD_FORCE=1 did not override the backoff")
+        else:
+            notes.append("BK_CFBD_FORCE=1 overrides the backoff (attempts again)")
+        os.environ.pop("BK_CFBD_FORCE", None)
+
+        # (d) a clean run (override so it is not blocked) clears the persisted state
+        mode["rc"], mode["out"] = 0, "ok"
+        r._write_cfbd_state({"exhausted": True, "provider": "cfbd", "detected_at": "x", "reset_at": None,
+                             "reason": "test"})
+        os.environ["BK_CFBD_FORCE"] = "1"   # override the block so the clean run actually executes
+        calls["n"] = 0
+        rc, out = _run_main()
+        os.environ.pop("BK_CFBD_FORCE", None)
+        if r._read_cfbd_state().get("exhausted"):
+            issues.append("a clean CFB run did NOT clear the persisted exhausted state")
+        elif rc != 0:
+            issues.append(f"clean run did not exit 0 (rc={rc})")
+        else:
+            notes.append("a clean run (post-reset/override) clears the persisted exhausted state")
     finally:
         r.subprocess.run = orig_run
-        if orig_env is None:
-            os.environ.pop("CFBD_API_KEY", None)
-        else:
-            os.environ["CFBD_API_KEY"] = orig_env
-
-    if rc != 3:
-        issues.append(f"expected exit 3 (PROVIDER_QUOTA_EXHAUSTED), got {rc}")
-    else:
-        notes.append("exit 3 (PROVIDER_QUOTA_EXHAUSTED) on CFBD 429")
-    if "PROVIDER_QUOTA_EXHAUSTED" not in out:
-        issues.append("did not print PROVIDER_QUOTA_EXHAUSTED")
-    else:
-        notes.append("printed PROVIDER_QUOTA_EXHAUSTED")
-    if calls["n"] != 1:
-        issues.append(f"did not short-circuit: ran {calls['n']} CFBD sub-steps (want 1)")
-    else:
-        notes.append("short-circuited after the first 429 (1 sub-step attempted, not ~14)")
+        r._clear_cfbd_state()
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        try:
+            os.rmdir(tmp)
+        except OSError:
+            pass
 
     if not issues:
-        notes.append("CFBD quota short-circuit verified")
+        notes.append("CFBD quota short-circuit + persistent backoff verified")
     return {"issues": issues, "notes": notes}
 
 

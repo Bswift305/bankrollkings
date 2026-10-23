@@ -207,6 +207,42 @@ So on your narrow fetches, a crash or a malformed frame cannot truncate an autho
 validation failure preserves the prior artifact (your step-2 proof: temp-file write, validation, atomic
 replacement — now true for each of the three).
 
+## Recovery preflight (conservative hardening before spending the first credit)
+Done + verified (game-lines path, the first narrow fetch):
+- **Per-request quota accounting** — `services/odds_quota.py`; `fetch_game_lines` `get_json` records each
+  paid response's `x-requests-last/used/remaining` and prints a **QUOTA RECEIPT** (endpoint family, sport,
+  markets, sanitized status, total cost = sum of `x-requests-last`). If headers are absent on a paid call,
+  or the cost exceeds `--expected-cost`, the fetch **fails the receipt and preserves** (never guesses).
+- **Strong artifact validation** — `services/feed_validation.py` (`GAME_LINES_SPEC`): wrong-sport output
+  path, schema, non-finite lines/prices, unparseable/ **regressing** timestamps, blank identity,
+  conflicting duplicate lines, empty current slice, and implausible row-count **collapse** (needs
+  `--allow-collapse`). Runs on the temp frame before the atomic replace; failure preserves last-known-good.
+- **One-command receipt** — `recover_odds_fetch.py` wraps a narrow fetch: pre/post `sha/size/rows/
+  schema-fingerprint/data-through`, command + exit, the fetcher's quota receipt, atomic-publish status,
+  and last-known-good-on-failure — content-free, no secrets.
+- **CFBD persistent backoff** — a persisted `cfbd_quota_state.json` (detected_at, provider, reason,
+  reset_at, override); scheduled runs **SKIP CFBD with ZERO requests** until a configured `BK_CFBD_RESET_AT`
+  passes or an operator override (`BK_CFBD_FORCE=1` / delete the file); a clean run clears it. The reset is
+  never guessed. (`qc_cfb_quota_shortcircuit.py`.)
+
+QCs: `qc_odds_recovery_preflight.py`, `qc_atomic_csv.py`, `qc_cfb_quota_shortcircuit.py` — all green.
+
+Remaining preflight (before the PROPS and FUTURES fetches, and before any refresh):
+- apply quota accounting + strong validation (`PLAYER_PROPS_SPEC`) to `fetch_player_props`, and to
+  `fetch_futures_odds` **plus a narrow `--sport/--market` futures recovery mode** (today it fetches every
+  configured outright — do not use the broad script as the probe);
+- **complete non-football containment** (NBA/WNBA/MLB + CFB current lines, totals pills, JSON/export/
+  snapshot/lazy endpoints, freshness in cache keys) with populated-sentinel render+export tests.
+
+### Narrow game-lines recovery (run as `ubuntu`, after the production preflight)
+```
+sudo -u ubuntu bash -lc 'cd /opt/bankrollkings && git log --oneline -1 && \
+  venv/bin/python3 recover_odds_fetch.py --artifact data/odds/NFL_Odds.csv -- \
+    venv/bin/python3 fetch_game_lines.py --sport americanfootball_nfl --days 2 --expected-cost 12'
+```
+Return the full receipt (pre/post fingerprints, quota cost, atomic status) and STOP. Props only after
+game-lines is accepted; futures only after props.
+
 ## Recovery — run ONE controlled refresh ONLY after the root cause is fixed (step 10)
 Fix the actual root cause first, in a **separate reversible commit/config change** (e.g. rotate the Odds
 API key if 401; top up / wait out quota if 429; fix a provider/schema break). Then **one** pass:
