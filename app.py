@@ -3652,11 +3652,18 @@ def get_props_refresh_meta(props_df, max_age_hours=6):
     }
 
 
-def get_lines_refresh_meta(odds_df, max_age_hours=24):
-    """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta, so a
-    line board can show a VISIBLE stale/unavailable banner instead of presenting day-old lines as current
-    (incident containment, 2026-10-23). Reads the `LastUpdated` column the Odds fetch writes; flags
-    is_stale past max_age_hours. Self-contained: never mutates or depends on the props path."""
+# Documented live-market freshness policy for current game lines. Aligned to the live PROPS policy
+# (get_props_refresh_meta / load_*_live_props_feed use 6h): a current betting line older than this is
+# treated as NOT live. It is deliberately the live-market window, NOT a lax 24h convenience value --
+# an active-slate line that has not moved in 6h is stale and must fail closed, not stay actionable.
+LIVE_LINES_MAX_AGE_HOURS = 6
+
+
+def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
+    """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta. Reads
+    the `LastUpdated` column the Odds fetch writes; flags is_stale past max_age_hours (the documented
+    live-market window). Callers FAIL CLOSED on is_stale (suppress current-line rows), not merely warn.
+    Self-contained: never mutates or depends on the props path."""
     if odds_df is None or getattr(odds_df, 'empty', True):
         return {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False,
                 'status': 'unavailable', 'warning': '', 'has_lines': False}
@@ -34267,10 +34274,16 @@ def _render_football_method_page(sport_key, method_key):
         live_props, live_refresh_meta = live_config['props'](require_fresh=True)
         method_view['live_data_checked'] = True
         method_view['live_refresh_meta'] = live_refresh_meta
-        # Game-LINES freshness (odds feed), separate from the props feed above: on a game-lines/totals
-        # page a stale odds feed must be shown as stale, never as current (incident containment).
+        # Game-LINES freshness (odds feed), separate from the props feed above. On a game-lines/totals
+        # page a stale odds feed must FAIL CLOSED: the current-line rows are SUPPRESSED (not shown with a
+        # warning), because a stale betting line must never remain actionable. The board then renders the
+        # honest unavailable/stale state. Mirrors the props require_fresh gate.
         if method_key in {'game_lines', 'totals'}:
-            method_view['lines_refresh_meta'] = get_lines_refresh_meta(live_odds)
+            lines_meta = get_lines_refresh_meta(live_odds)
+            method_view['lines_refresh_meta'] = lines_meta
+            if lines_meta.get('is_stale'):
+                cols = list(live_odds.columns) if hasattr(live_odds, 'columns') else None
+                live_odds = pd.DataFrame(columns=cols)   # suppress stale current-line rows
         if sport_key == 'nfl' and method_key in {'game_lines', 'totals'}:
             method_view['game_line_board'] = build_football_game_line_intelligence(
                 sport_key,

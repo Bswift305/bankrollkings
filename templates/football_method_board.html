@@ -79,16 +79,17 @@
 {% if method_view.lines_refresh_meta and method_view.lines_refresh_meta.is_stale %}
 <div class="card mb-24 panel-glow fmb-warn" style="border-color: rgba(201,128,58,0.28);">
     <div class="card-header panel-header-gloss">
-        <div class="card-title">Game Lines Are Stale</div>
-        <span class="badge">Stale Lines</span>
+        <div class="card-title">Current Lines Unavailable</div>
+        <span class="badge">Stale Feed &mdash; Withheld</span>
     </div>
     <div class="p-16">
         <div class="parlay-surface-soft" style="padding: 12px; color: var(--warning); font-weight: 700;">
             &#9888; {{ method_view.lines_refresh_meta.warning }}
         </div>
         <div class="cell-meta" style="margin-top: 10px; line-height: 1.55;">
-            The posted lines below were last refreshed {{ method_view.lines_refresh_meta.last_updated }} and are
-            shown as stale, not current. Shop your book for the live number before acting.
+            The odds feed last refreshed {{ method_view.lines_refresh_meta.last_updated }}, past the live-market
+            window, so the current game-line rows are <b>withheld</b> rather than shown as live. They will return
+            automatically once the feed refreshes. Any history below is labeled with its own data-through date.
         </div>
     </div>
 </div>

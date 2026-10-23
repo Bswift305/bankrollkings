@@ -18,7 +18,7 @@ import pandas as pd
 
 import app
 
-BANNER_MARK = "Game Lines Are Stale"
+BANNER_MARK = "Current Lines Unavailable"
 
 
 def _odds_fixture(age_hours):
@@ -69,31 +69,68 @@ def run_qc():
     if not issues:
         notes.append("get_lines_refresh_meta handles stale/fresh/empty/no-column correctly")
 
-    # (2) route render: banner present only when the odds feed is stale
+    # (2) route render: FAIL CLOSED -- when the odds feed is stale the current-line rows are SUPPRESSED
+    # (the board builders receive an EMPTY odds frame), not merely warned. Capture the odds actually
+    # passed to the live game-line board builders (deterministic; independent of dropdowns/history).
+    captured = {}
+
+    def _wrap(name):
+        orig = getattr(app, name)
+
+        def w(*a, **k):
+            # odds df is the 2nd positional for the slate board, kwarg for the intelligence board
+            odds = k.get("odds_df")
+            if odds is None and len(a) >= 2:
+                odds = a[1]
+            captured.setdefault(name, []).append(0 if odds is None else int(len(odds)))
+            return orig(*a, **k)
+        return orig, w
+
     orig_odds = app.load_nfl_game_market_odds
     orig_user = app.get_current_user
+    o1, w1 = _wrap("build_football_live_game_method_board")
+    o2, w2 = _wrap("build_football_game_line_intelligence")
     app.get_current_user = _owner_user
+    app.build_football_live_game_method_board = w1
+    app.build_football_game_line_intelligence = w2
     try:
-        app.load_nfl_game_market_odds = lambda: _odds_fixture(50)
+        app.load_nfl_game_market_odds = lambda: _odds_fixture(50)   # stale
+        captured.clear()
         st_s, html_s = _render_game_lines()
-        app.load_nfl_game_market_odds = lambda: _odds_fixture(1)
+        cap_s = dict(captured)
+        app.load_nfl_game_market_odds = lambda: _odds_fixture(1)    # fresh
+        captured.clear()
         st_f, html_f = _render_game_lines()
+        cap_f = dict(captured)
     finally:
         app.load_nfl_game_market_odds = orig_odds
         app.get_current_user = orig_user
+        app.build_football_live_game_method_board = o1
+        app.build_football_game_line_intelligence = o2
 
     if st_s != 200 or st_f != 200:
         notes.append(f"/sports/nfl/game-lines did not render 200 locally (stale={st_s}, fresh={st_f}) "
                      "-- route render check skipped; unit contract above still holds")
     else:
+        # fail-closed: stale -> every odds frame handed to a live line-board builder is EMPTY
+        stale_counts = [n for lst in cap_s.values() for n in lst]
+        fresh_counts = [n for lst in cap_f.values() for n in lst]
+        if stale_counts and any(n > 0 for n in stale_counts):
+            issues.append(f"stale odds NOT suppressed: live line-board got non-empty odds {cap_s}")
+        else:
+            notes.append(f"stale odds -> current-line rows SUPPRESSED (board odds empty: {cap_s})")
+        if fresh_counts and all(n == 0 for n in fresh_counts):
+            issues.append(f"fresh odds wrongly suppressed: board got empty odds {cap_f}")
+        elif fresh_counts:
+            notes.append(f"fresh odds -> current-line rows rendered (board odds non-empty: {cap_f})")
         if BANNER_MARK not in html_s:
-            issues.append("stale odds feed did NOT show the 'Game Lines Are Stale' banner on the page")
+            issues.append("stale odds feed did NOT show the 'Current Lines Unavailable' banner")
         else:
-            notes.append("stale odds feed -> stale-lines banner rendered on /sports/nfl/game-lines")
+            notes.append("stale odds feed -> 'Current Lines Unavailable' banner rendered")
         if BANNER_MARK in html_f:
-            issues.append("fresh odds feed wrongly showed the stale-lines banner")
+            issues.append("fresh odds feed wrongly showed the unavailable banner")
         else:
-            notes.append("fresh odds feed -> no stale banner (correct)")
+            notes.append("fresh odds feed -> no unavailable banner (correct)")
 
     if not issues:
         notes.append("game-lines freshness containment verified")

@@ -85,12 +85,18 @@ expired key — note a *deactivated* key from a payment lapse also shows 401, di
   → empty) and `props.html` / dashboards render `is_stale` + the stale warning, so the 31–55h-stale props
   show as **unavailable**, not old-as-current. The nflverse graded records are **fresh (7h)** and are a
   *historical* record, correctly distinct from the stale *current* markets.
-- **Game-LINES gate ADDED (football):** `get_lines_refresh_meta` + the football game-lines/totals board now
-  render a visible **"Game Lines Are Stale"** banner when the odds feed is older than 24h (it previously
-  surfaced only the *props* feed's freshness, so stale lines could read as current). Guarded by
-  `qc_game_lines_freshness.py`. **Remaining:** wire the same `get_lines_refresh_meta` banner into the
-  **NBA / MLB / WNBA command-center** line boards (same pattern) — confirm on the authed pages whether a
-  31–55h-stale line there still renders as current, and patch identically.
+- **Game-LINES gate ADDED + FAIL-CLOSED (football):** when the odds feed is older than the documented
+  live-market window `LIVE_LINES_MAX_AGE_HOURS = 6` (aligned to the props policy, **not** a lax 24h), the
+  football game-lines/totals render now **suppresses the current-line rows** (hands the board builders an
+  empty odds frame) and shows a **"Current Lines Unavailable — Withheld"** state — a stale betting line is
+  never left actionable behind a warning. Labeled *historical* rows (with their own data-through date)
+  remain, separated from current markets. Proven by `qc_game_lines_freshness.py` (captures that the
+  line-board builders receive empty odds when stale, non-empty when fresh).
+  **Remaining fail-closed hardening (documented, not yet done):** replicate for the **NBA / MLB / WNBA**
+  command-center line boards and the **NFL/CFB totals pill** (it re-loads odds internally, so it must gate
+  too); extend to **JSON / export / cached-snapshot / lazy** endpoints; fold **freshness/gate state into
+  cache keys** so an old cached payload can't bypass containment; add populated-fixture export tests that a
+  stale sentinel line never renders *or* exports.
 
 ---
 
