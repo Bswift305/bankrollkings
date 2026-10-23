@@ -188,6 +188,18 @@ No zero-byte / partial / malformed replacement is expected (fetchers preserve on
 
 ---
 
+## Recovery-gate: atomic + validated publish for the 3 Odds fetchers (DONE)
+Before the narrow per-family recovery, each selected fetcher must write temp -> validate -> atomic-replace
+(not a direct `to_csv`). Audited and **hardened** via `services/atomic_csv.atomic_write_csv` (temp in the
+same dir, schema/min-row/non-zero validation, `os.replace`, last-known-good preserved on failure; guarded
+by `qc_atomic_csv.py`):
+- **game lines** — `fetch_game_lines.py` (odds + schedules require `Away/Home`; alias atomic).
+- **player props** — `fetch_player_props.py` (requires `Player`, min 1 row — never publishes an empty props file).
+- **futures** — `fetch_futures_odds.py` (latest futures artifact atomic).
+So on your narrow fetches, a crash or a malformed frame cannot truncate an authoritative file, and a
+validation failure preserves the prior artifact (your step-2 proof: temp-file write, validation, atomic
+replacement — now true for each of the three).
+
 ## Recovery — run ONE controlled refresh ONLY after the root cause is fixed (step 10)
 Fix the actual root cause first, in a **separate reversible commit/config change** (e.g. rotate the Odds
 API key if 401; top up / wait out quota if 429; fix a provider/schema break). Then **one** pass:

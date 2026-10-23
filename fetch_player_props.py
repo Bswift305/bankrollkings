@@ -595,8 +595,14 @@ def main() -> int:
     existing = load_existing_history(output_path)
     df = merge_market_history(df, existing)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False)
+    # Atomic + validated publish (incident 2026-10-23): temp -> validate -> os.replace, so a crash or a
+    # bad frame cannot truncate the authoritative props file; a validation failure preserves last-good.
+    from services.atomic_csv import atomic_write_csv, CsvValidationError
+    try:
+        atomic_write_csv(df, output_path, index=False, required_cols=["Player"], min_rows=1)
+    except CsvValidationError as exc:
+        print(f"Validation failed, preserving existing props CSV: {exc}")
+        return 1
     write_market_coverage(df, sport, markets, output_path)
 
     print(f"Saved {len(df)} props to {output_path}")

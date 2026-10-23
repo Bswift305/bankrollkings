@@ -284,7 +284,13 @@ def main() -> int:
     if df.empty and output_path.exists():
         print("No futures rows fetched. Preserving existing latest futures file.")
     else:
-        df.to_csv(output_path, index=False)
+        # Atomic + validated publish (incident 2026-10-23): temp -> validate -> os.replace.
+        from services.atomic_csv import atomic_write_csv, CsvValidationError
+        try:
+            atomic_write_csv(df, output_path, index=False)
+        except CsvValidationError as exc:
+            print(f"Validation failed, preserving existing futures file: {exc}")
+            return 1
         if not args.skip_movement:
             append_futures_movement_snapshot(df)
 

@@ -55,6 +55,10 @@ SCORECARDS = [
     # never as current. get_lines_refresh_meta flags it and the football game-lines/totals board renders
     # a visible "Game Lines Are Stale" banner. Mirrors the props fail-closed protection. Fixture-driven.
     ("Game-Lines Freshness QC", "qc_game_lines_freshness.py", 180),
+    # Atomic + validated artifact publish (Oct 23 recovery gate): the shared temp->validate->os.replace
+    # helper the Odds fetchers (game lines, player props, futures) now publish through -- a crash or bad
+    # frame can't truncate an authoritative file and a validation failure preserves last-known-good. Cheap.
+    ("Atomic CSV Publish QC", "qc_atomic_csv.py", 60),
     # CFB Wave Watch wording remediation (Gate 1): no betting-authority language survives and the
     # template filters no qualifier (every builder team renders; the model groups, never removes).
     ("CFB Wave Wording QC", "qc_cfb_wave_wording.py", 120),

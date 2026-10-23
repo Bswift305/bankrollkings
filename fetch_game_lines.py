@@ -404,12 +404,17 @@ def main() -> int:
         print("No new game-line rows were fetched. Preserving existing CSV files instead of overwriting with an empty dataset.")
         return 1
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    schedules_output_path.parent.mkdir(parents=True, exist_ok=True)
-    schedule_alias_output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_path, index=False)
-    df.to_csv(schedules_output_path, index=False)
-    build_schedule_alias(df).to_csv(schedule_alias_output_path, index=False)
+    # Atomic + validated publish: write a temp, validate, os.replace. A crash mid-write or a bad frame
+    # can no longer leave a truncated/partial authoritative file; a validation failure preserves
+    # last-known-good (incident 2026-10-23). df is non-empty here (the empty+failed case returned above).
+    from services.atomic_csv import atomic_write_csv, CsvValidationError
+    try:
+        atomic_write_csv(df, output_path, index=False, required_cols=["Away", "Home"])
+        atomic_write_csv(df, schedules_output_path, index=False, required_cols=["Away", "Home"])
+        atomic_write_csv(build_schedule_alias(df), schedule_alias_output_path, index=False)
+    except CsvValidationError as exc:
+        print(f"Validation failed, preserving existing files: {exc}")
+        return 1
     if not args.skip_line_movement:
         append_line_movement_snapshot(df, sport)
 
