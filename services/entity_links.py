@@ -16,8 +16,10 @@ Per-sport destinations (decided with the owner, 2026-10-18):
   team    nba              -> /team/<team>?sport=nba
           cfb              -> /tools/cfb-team?team=<team>
           nfl              -> /tools/nfl-team?team=<abbr>   (profile pre-selected to that team)
-          mlb / wnba       -> None  (no targetable per-team page yet -> plain text; tracked as
-                              blocked in docs/entity_link_migration.md, pending a product decision)
+          mlb              -> /tools/mlb-team?team=<team>   (minimal cleared market/schedule page)
+          wnba             -> /tools/wnba-team?team=<team>  (minimal cleared market/schedule page;
+                              licensed Odds schedule renders even while the NBA/WNBA stats gate is
+                              off -- restricted statistics abstain visibly, they are never shown)
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from urllib.parse import quote, urlencode
 # Sports recognized by the resolver. Identical names in different sports NEVER share a URL because
 # the sport is part of resolution and (for the shared /player route) an explicit query scope.
 PLAYER_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl'})   # cfb has no player page -> None
-TEAM_SPORTS = frozenset({'nba', 'cfb', 'nfl', 'mlb'})      # mlb now has a minimal cleared team page; wnba -> None
+TEAM_SPORTS = frozenset({'nba', 'cfb', 'nfl', 'mlb', 'wnba'})   # mlb + wnba now have minimal cleared team pages
 KNOWN_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl', 'cfb'})
 
 
@@ -63,7 +65,7 @@ def player_path(sport, name, sample=None, stat=None):
 
 def team_path(sport, team, postseason=False):
     """URL for a single team's page in `sport`, or None if that sport has no targetable per-team
-    page (NFL/MLB/WNBA today -> None -> caller renders plain text)."""
+    page (-> caller renders plain text)."""
     sport = canonical_sport(sport)
     team = str(team or '').strip()
     if not team or sport not in TEAM_SPORTS:
@@ -74,6 +76,8 @@ def team_path(sport, team, postseason=False):
         return '/tools/nfl-team?' + urlencode({'team': team})
     if sport == 'mlb':
         return '/tools/mlb-team?' + urlencode({'team': team})
+    if sport == 'wnba':
+        return '/tools/wnba-team?' + urlencode({'team': team})
     params = {'sport': 'nba'}
     if postseason:
         params['postseason'] = '1'

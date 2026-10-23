@@ -1,0 +1,56 @@
+{% set active_page = 'wnba' %}
+{% set active_sport = 'wnba' %}
+{% extends "bk_base.html" %}
+{% block title %}{{ team }} — WNBA — Bankroll Kings{% endblock %}
+
+{% block content %}
+<style>
+  .mt-wrap{max-width:860px;}
+  .mt-h{font:800 24px/1.2 'Helvetica Neue',Arial,sans-serif;color:var(--text-bright);margin:0 0 4px;}
+  .mt-sub{font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);margin:0 0 14px;}
+  .mt-banner{border:1px solid rgba(255,255,255,.14);border-left:3px solid #e4b23a;border-radius:8px;padding:10px 12px;
+    margin:0 0 16px;background:var(--bg-card,rgba(255,255,255,.03));font:500 12px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .mt-tbl{width:100%;border-collapse:collapse;margin:0 0 16px;}
+  .mt-tbl th{font:600 10px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);text-align:left;padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.12);}
+  .mt-tbl td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);font:500 12.5px/1.4 'Helvetica Neue',Arial;color:var(--text-bright);}
+  .mt-links a{color:#4ed48a;font-weight:700;text-decoration:none;margin-right:16px;}
+  .mt-empty{color:var(--text-muted);font:500 13px/1.6 'Helvetica Neue',Arial;padding:18px 0;}
+</style>
+<div class="mt-wrap">
+  <h1 class="mt-h">{{ team }} <span style="font:600 12px/1 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">· WNBA</span></h1>
+  <p class="mt-sub">Source: {{ source }}{% if data_through %} · data through {{ data_through }}{% endif %}.</p>
+
+  {% if not found %}
+    <div class="mt-empty"><b>{{ team }}</b> isn&rsquo;t a current WNBA team in today&rsquo;s schedule, so no page is shown.
+      Browse the <a href="/sports/wnba" style="color:#4ed48a;">WNBA board</a>.</div>
+  {% else %}
+  <div class="mt-banner">
+    This is a <b>market &amp; schedule</b> page built from licensed Odds-API data. Detailed player and team
+    <b>statistics are not available here</b> &mdash; WNBA statistics are gated pending a licensing decision,
+    so this page shows identity and scheduled games only, and makes no projection or recommendation.
+  </div>
+
+  {% if games %}
+  <table class="mt-tbl">
+    <thead><tr><th>Date</th><th>Time</th><th></th><th>Opponent</th></tr></thead>
+    <tbody>
+      {% for g in games %}
+      <tr>
+        <td>{{ g.date }}</td>
+        <td>{{ g.time }}</td>
+        <td>{{ 'vs' if g.home else '@' }}</td>
+        <td>{{ entity_anchor('team', 'wnba', g.opponent, label=g.opponent) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="mt-empty">No scheduled games on file for {{ team }} right now.</div>
+  {% endif %}
+
+  <div class="mt-links">
+    <a href="/sports/wnba">WNBA board &rarr;</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

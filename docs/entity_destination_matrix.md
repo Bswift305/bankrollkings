@@ -22,16 +22,17 @@ resolution → plain text when unknown/ambiguous/historical/unsupported/gated).
 | **NFL** | `/tools/player-check?q=<name>` ✅ (id-backed) | `/tools/nfl-team?team=<abbr>` ✅ | `build_nfl_current_roster_lookup` (NFL_CurrentRoster.csv, id-backed); team `NFL_ABBR_TO_FULL` | nflverse stats (open), Odds API market | — | name-key now; `pid` target = nflverse id → ambiguous resolves | **COMPLETE** |
 | **CFB** | — (no player page) → plain text | `/tools/cfb-team?team=<team>` ✅ | team by CFBD conference/name; player: none | CFBD/public team facts, Odds API market | player stats thin/unproven (see cfb_research_audit) | team name-key; player always plain | player **GAP** (plain text, intentional today); team complete |
 | **NBA** | `/player/<name>?sport=nba` ⚠️ gated | `/team/<team>?sport=nba` ⚠️ gated | current-data keyset (`_entity_player_keyset('nba')`), **empty while `BK_NBA_STATS_ENABLED=0`** | **Odds API market facts (cleared)** | **NBA.com stats (PROHIBITED while gated)** | name-key; ambiguous → plain | **CONTRACT GAP:** while gated the keyset is empty → links vanish. Item 4 wants the link to a **market-facts** page to persist (identity + schedule/market only) — needs identity from the **cleared Odds feed**, not the gated stats. Tracked as a build. |
-| **WNBA** | `/player/<name>?sport=wnba` ⚠️ gated | **none** → plain text | current-data keyset (gated with NBA) | Odds API market facts (cleared) | stats.nba.com WNBA gamelogs (gated) | name-key; ambiguous → plain | player: same gated-identity gap as NBA; **team: BUILD a minimal WNBA team page** |
-| **MLB** | `/player/<name>?sport=mlb` ✅ | **none** → plain text | current-data keyset (MLB props/roster) | pybaseball/public + Odds API | — | name-key; ambiguous → plain | player **COMPLETE**; **team: BUILD a minimal MLB team page** |
+| **WNBA** | `/player/<name>?sport=wnba` ⚠️ gated | `/tools/wnba-team?team=<team>` ✅ | team by **licensed Odds schedule** (`_wnba_current_team_set`, NOT stats.nba.com → resolves while gated); player: current-data keyset (gated with NBA) | Odds API market facts (cleared) | stats.nba.com WNBA gamelogs (gated) | name-key; ambiguous → plain | **team COMPLETE** (cleared schedule page; stats abstain visibly); player: same gated-identity gap as NBA |
+| **MLB** | `/player/<name>?sport=mlb` ✅ | `/tools/mlb-team?team=<team>` ✅ | team by licensed Odds schedule (`_mlb_current_team_set`); player: current-data keyset (MLB props/roster) | pybaseball/public + Odds API | — | name-key; ambiguous → plain | player **COMPLETE**; **team COMPLETE** |
 
 ## Capability gaps → builds (item 3, separate reversible commits)
 A **minimal honest destination** contains only: cleared identity (name + team + sport), schedule/market facts
 (Odds API — cleared), links to the relevant boards, and a visible "detailed stats unavailable" notice where a
 richer page is gated or not built. It must **not** expose NBA/WNBA restricted statistics or invent identity.
-1. **MLB team page** — `/team/<team>?sport=mlb` (or `/tools/mlb-team`): team identity + its schedule/game
-   lines from the Odds feed + links to the MLB board. No stat tables beyond cleared sources.
-2. **WNBA team page** — same shape, obeying the gate (market facts render, stats abstain visibly).
+1. **MLB team page** — ✅ BUILT `/tools/mlb-team` (`6ac3746`): team identity + its schedule/game lines from
+   the Odds feed + links to the MLB board. No stat tables beyond cleared sources.
+2. **WNBA team page** — ✅ BUILT `/tools/wnba-team`: same shape, obeying the gate — the licensed Odds
+   schedule renders and resolves while `BK_NBA_STATS_ENABLED=0`; stats.nba.com statistics abstain visibly.
 3. **NBA/WNBA player+team gated pages** — resolve **identity from the cleared Odds participant/team list** so
    the link persists while `BK_NBA_STATS_ENABLED=0`, render the market-only facts, and **abstain visibly** on
    every NBA.com-derived stat. This decouples the *link contract* from the *stat gate* (item 4).

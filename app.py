@@ -821,6 +821,7 @@ PRO_ENDPOINTS = {
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
     'green_light_lens_status', 'green_light_counts', 'green_light_ticket',  # Green Light workspace: envelopes + counts + lazy ticket
     'mlb_team_tool',  # minimal cleared MLB team page (destination for team_url('mlb', …))
+    'wnba_team_tool',  # minimal cleared WNBA team page (licensed schedule only; obeys BK_NBA_STATS_ENABLED)
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -17455,6 +17456,12 @@ def _entity_team_known(sport, team):
             return bool(key) and any(_normalize_mlb_team_key(t) == key for t in _mlb_current_team_set())
         except Exception:
             return False
+    if sport == 'wnba':
+        try:
+            key = _normalize_mlb_team_key(team)   # sport-agnostic string fold
+            return bool(key) and any(_normalize_mlb_team_key(t) == key for t in _wnba_current_team_set())
+        except Exception:
+            return False
     try:
         return bool(normalize_team_abbr(team))   # NBA
     except Exception:
@@ -17517,6 +17524,69 @@ def mlb_team_tool():
     """Minimal cleared MLB team page (licensed Odds-API schedule/lines only; no player/team statistics,
     no authority language). The destination for team_url('mlb', …)."""
     return render_template('mlb_team.html', **build_mlb_team_page(request.args.get('team', '')))
+
+
+_WNBA_TEAM_SET_CACHE = {}
+
+
+def _wnba_current_team_set():
+    """Current WNBA team names from the LICENSED schedule/odds (Away + Home). This is the Odds-API
+    identity source, NOT stats.nba.com — so it resolves regardless of BK_NBA_STATS_ENABLED and never
+    touches gated statistics. An unknown/stale name falls to plain text."""
+    try:
+        sched = load_wnba_schedule()
+        if sched is None or sched.empty:
+            return set()
+        teams = set()
+        for col in ('Away', 'Home'):
+            if col in sched.columns:
+                teams |= {str(t).strip() for t in sched[col].dropna() if str(t).strip()}
+        return teams
+    except Exception:
+        return set()
+
+
+def build_wnba_team_page(team):
+    """Minimal, cleared WNBA team page: identity + the team's scheduled games from the LICENSED
+    Odds-API schedule only. WNBA player/team STATISTICS are stats.nba.com-gated (BK_NBA_STATS_ENABLED)
+    and are NOT shown here — this page abstains on them visibly and renders only cleared market/schedule
+    facts, so the link works while the stats gate is off. No authority language. Unknown team ->
+    found False (honest 'not a current team')."""
+    team = str(team or '').strip()
+    key = _normalize_mlb_team_key(team)   # sport-agnostic string fold
+    sched = load_wnba_schedule()
+    display, found, games = team, False, []
+    if key and sched is not None and not sched.empty and {'Away', 'Home'}.issubset(sched.columns):
+        for _, r in sched.iterrows():
+            aw, hm = str(r.get('Away', '')).strip(), str(r.get('Home', '')).strip()
+            ka, kh = _normalize_mlb_team_key(aw), _normalize_mlb_team_key(hm)
+            if key not in (ka, kh):
+                continue
+            found = True
+            is_home = (kh == key)
+            display = hm if is_home else aw
+            games.append({'date': str(r.get('Date', '') or ''), 'time': str(r.get('Time', '') or ''),
+                          'home': is_home, 'opponent': (aw if is_home else hm)})
+    data_through = ''
+    try:
+        for cand in (DATA_DIR / 'odds' / 'WNBA_Odds.csv', DATA_DIR / 'schedules' / 'WNBA_Odds.csv',
+                     DATA_DIR / 'schedules' / 'WNBA_Schedule.csv'):
+            if cand.exists():
+                from services.timeutils import to_eastern_datetime_str as _to_et
+                _iso = datetime.fromtimestamp(os.path.getmtime(cand), tz=timezone.utc).isoformat()
+                data_through = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+                break
+    except Exception:
+        data_through = ''
+    return {'team': display, 'found': found, 'games': games[:60],
+            'source': 'The Odds API (licensed) + schedule', 'data_through': data_through}
+
+
+@app.route('/tools/wnba-team')
+def wnba_team_tool():
+    """Minimal cleared WNBA team page (licensed Odds-API schedule only; stats.nba.com statistics abstain
+    visibly and are never shown, so it obeys BK_NBA_STATS_ENABLED). The destination for team_url('wnba', …)."""
+    return render_template('wnba_team.html', **build_wnba_team_page(request.args.get('team', '')))
 
 
 def player_url(sport, name, sample=None, stat=None, require_known=True):

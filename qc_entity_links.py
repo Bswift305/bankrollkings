@@ -47,8 +47,8 @@ def run_qc() -> dict:
         issues.append(f"1: NFL team_path wrong: {el.team_path('nfl', 'JAX')!r}")
     if el.team_path('mlb', 'Atlanta Braves') != '/tools/mlb-team?team=Atlanta+Braves':
         issues.append(f"1: MLB team_path wrong: {el.team_path('mlb', 'Atlanta Braves')!r}")
-    if el.team_path('wnba', 'Anybody') is not None:   # WNBA still has no per-team page -> None
-        issues.append("1: wnba has no per-team page yet -> team_path must be None")
+    if el.team_path('wnba', 'Las Vegas Aces') != '/tools/wnba-team?team=Las+Vegas+Aces':
+        issues.append(f"1: WNBA team_path wrong: {el.team_path('wnba', 'Las Vegas Aces')!r}")
     # cross-sport: same name, different sports -> different URLs (never one shared/inferred page)
     if el.player_path('nba', 'Josh Allen') == el.player_path('nfl', 'Josh Allen'):
         issues.append("1: identical names across sports produced the SAME url (cross-link risk)")
@@ -198,6 +198,28 @@ def run_qc() -> dict:
                 issues.append("4b: an unknown MLB team produced a link (must be plain text)")
         else:
             notes.append('MLB team: no current teams locally; resolver returns correct output, live proof is prod')
+
+        # WNBA team -> /tools/wnba-team (minimal cleared page; licensed schedule only, stats gated).
+        # Same cleared-only contract, and it must resolve while BK_NBA_STATS_ENABLED is OFF.
+        _wnba_teams = sorted(app._wnba_current_team_set())
+        if _wnba_teams:
+            t = _wnba_teams[0]
+            url = app.team_url('wnba', t)
+            if not url or not url.startswith('/tools/wnba-team'):
+                issues.append(f"4c: WNBA team_url wrong: {url!r}")
+            else:
+                resp = client.get(url)
+                body = resp.get_data(as_text=True)
+                if resp.status_code != 200:
+                    issues.append(f"4c: WNBA team destination {url} returned {resp.status_code}")
+                elif t not in body or 'statistics are not available' not in body:
+                    issues.append("4c: WNBA team page missing identity or the cleared-only banner")
+                else:
+                    notes.append(f"fetch WNBA team: {t!r} -> {url} renders identity + stats-gated banner (200)")
+            if app.team_url('wnba', 'Nonexistent FC') is not None:
+                issues.append("4c: an unknown WNBA team produced a link (must be plain text)")
+        else:
+            notes.append('WNBA team: no current teams locally; resolver returns correct output, live proof is prod')
 
         # NBA / WNBA / MLB: assert HONEST resolver output locally (data is gated/absent on this box),
         # and when present, fetch. Either way the resolver must be correct, not guessing.
