@@ -132,8 +132,55 @@ def run_qc():
         else:
             notes.append("fresh odds feed -> no unavailable banner (correct)")
 
+    # (3) totals pill re-loads odds internally -> must also be suppressed when the feed is stale.
+    tcalls = {"n": 0}
+    orig_tot = app.build_nfl_totals_board_context
+    orig_odds2 = app.load_nfl_game_market_odds
+    orig_user2 = app.get_current_user
+
+    def _tot(*a, **k):
+        tcalls["n"] += 1
+        return {}
+
+    app.get_current_user = _owner_user
+    app.build_nfl_totals_board_context = _tot
+
+    def _render_totals():
+        c = app.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = "qc-owner"
+            s["user_email"] = _owner_user()["email"]
+        r = c.get("/sports/nfl/totals")
+        return r.status_code
+
+    try:
+        app.load_nfl_game_market_odds = lambda: _odds_fixture(50)   # stale
+        tcalls["n"] = 0
+        st_ts = _render_totals()
+        stale_calls = tcalls["n"]
+        app.load_nfl_game_market_odds = lambda: _odds_fixture(1)    # fresh
+        tcalls["n"] = 0
+        st_tf = _render_totals()
+        fresh_calls = tcalls["n"]
+    finally:
+        app.build_nfl_totals_board_context = orig_tot
+        app.load_nfl_game_market_odds = orig_odds2
+        app.get_current_user = orig_user2
+
+    if st_ts == 200 and st_tf == 200:
+        if stale_calls != 0:
+            issues.append(f"stale totals pill NOT suppressed: builder called {stale_calls}x")
+        else:
+            notes.append("stale odds -> NFL totals pill suppressed (builder not called)")
+        if fresh_calls == 0:
+            issues.append("fresh totals pill wrongly suppressed (builder never called)")
+        else:
+            notes.append("fresh odds -> NFL totals pill built")
+    else:
+        notes.append(f"/sports/nfl/totals did not render 200 (stale={st_ts}, fresh={st_tf}) -- skipped")
+
     if not issues:
-        notes.append("game-lines freshness containment verified")
+        notes.append("game-lines + totals-pill freshness containment verified")
     return {"issues": issues, "notes": notes}
 
 

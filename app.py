@@ -34291,10 +34291,13 @@ def _render_football_method_page(sport_key, method_key):
                 odds_df=live_odds,
                 limit=20,
             )
+        # The totals pills re-load the odds feed internally, so they must obey the SAME stale gate as the
+        # line board above -- otherwise a stale odds feed would still surface current totals as live.
+        _lines_stale = bool(method_view.get('lines_refresh_meta', {}).get('is_stale'))
         # CFB Totals pill: fold in the per-game "Today's Totals" board (posted total,
         # 1H total, each team's over rate + pace + scoring-environment read). The
         # standalone Today's Totals tool now lives here inside Live & Lines.
-        if sport_key == 'ncaaf' and method_key == 'totals':
+        if sport_key == 'ncaaf' and method_key == 'totals' and not _lines_stale:
             try:
                 method_view['cfb_totals_board'] = build_cfb_totals_board_context(
                     date_filter if date_filter in ('today', 'week') else 'week', 'all')
@@ -34302,7 +34305,7 @@ def _render_football_method_page(sport_key, method_key):
                 method_view['cfb_totals_board'] = {}
         # NFL Totals pill: fold in the per-game totals board with the validated WIND
         # flag (the one football totals edge), same as the CFB fold.
-        if sport_key == 'nfl' and method_key == 'totals':
+        if sport_key == 'nfl' and method_key == 'totals' and not _lines_stale:
             try:
                 method_view['nfl_totals_board'] = build_nfl_totals_board_context(
                     date_filter if date_filter in ('today', 'week') else 'week', 'all')
