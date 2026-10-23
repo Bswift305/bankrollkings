@@ -148,6 +148,9 @@ SCORECARDS = [
     # earlier losses allowed, pushes interrupt, (GameID,TeamSide) authority (CFB), dedup/conflict/ineligible,
     # universe hashes, fail-closed, and game-level traces.
     ("Streak Integrity Audit (ATS)", "qc_streak_integrity_ats.py", 120),
+    # Streak integrity audit (Hot Hand / Heat Map): directed fixtures through build_nfl_hot_hand prove
+    # consecutive clears of the current prop line (miss breaks), current-season-only, fail-closed.
+    ("Streak Integrity Audit (Hot Hand)", "qc_streak_integrity_hothand.py", 120),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
