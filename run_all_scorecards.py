@@ -144,6 +144,10 @@ SCORECARDS = [
     # canonical _key alias merge (N.Collins+Nico Collins), season boundary, bye=gap-not-reset, the freshness
     # gate (a run not reaching the latest week isn't "current"), and fail-closed sources.
     ("Streak Integrity Audit (milestone)", "qc_streak_integrity_milestone.py", 120),
+    # Streak integrity audit (NFL + CFB ATS): pure df->streak cores prove active consecutive covers,
+    # earlier losses allowed, pushes interrupt, (GameID,TeamSide) authority (CFB), dedup/conflict/ineligible,
+    # universe hashes, fail-closed, and game-level traces.
+    ("Streak Integrity Audit (ATS)", "qc_streak_integrity_ats.py", 120),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug
