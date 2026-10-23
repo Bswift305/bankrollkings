@@ -75,6 +75,13 @@ expired key — note a *deactivated* key from a payment lapse also shows 401, di
   distinguishes these: 401 DEACTIVATED vs `x-requests-remaining=0`.)
 - *Odds / CFBD `401`/`403`:* reactivate/rotate the relevant key in `/opt/bankrollkings/.env` (SSM getpass
   method), restart. **Do not rotate CFBD until the probe shows 401/403** (it may be HTTP 200 + schema).
+- *CFBD 429 (CONFIRMED, independent outage):* **do not retry, do not rotate the key.** `refresh_cfb_data`
+  now **halts on the first CFBD 429 and reports `PROVIDER_QUOTA_EXHAUSTED` (exit 3)** instead of hammering
+  all ~14 sub-steps (`qc_cfb_quota_shortcircuit.py`); last-known-good CFB artifacts are preserved and CFB
+  current-data surfaces fail closed on their own freshness checks. Historical CFB content stays labeled
+  with its data-through date. The CFBD monthly quota resets at the start of the provider's billing month
+  (confirm the exact reset/upgrade with the provider account); recheck CFB Wave Canon only after CFBD is
+  back. The operator can classify exit 3 as a documented outage (follow-up) rather than a code FAIL.
 - *QC regressions:* **CFB Wave Canon QC passes locally** → its prod FAIL is almost certainly **downstream
   of the CFBD outage** (stale/empty CFB data); re-check after CFB refresh recovers. **NBA Residual-Authority
   QC** fails locally only on a local-env auth artifact (no owner row) → get its real prod assertion from the

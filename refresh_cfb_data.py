@@ -94,6 +94,14 @@ def _steps(season: int, last_season: int) -> list[tuple[str, list[str], int]]:
     ]
 
 
+def _is_provider_quota_exhausted(text: str) -> bool:
+    """True when a CFBD sub-step's output signals provider monthly-quota exhaustion (HTTP 429)."""
+    t = (text or "").lower()
+    return ("429" in t and ("quota" in t or "rate" in t or "limit" in t)) \
+        or "monthly call quota" in t or "quota exceeded" in t or "out_of_usage" in t \
+        or "too many requests" in t
+
+
 def main() -> int:
     if not (os.getenv("CFBD_API_KEY") or "").strip():
         print("refresh_cfb_data: CFBD_API_KEY not set - skipping CFB refresh.")
@@ -112,7 +120,9 @@ def main() -> int:
     failures: list[str] = []
     history_ok = True
     graded_ok = False
-    for label, argv, timeout in _steps(season, last_season):
+    quota_exhausted = False
+    steps = list(_steps(season, last_season))
+    for idx, (label, argv, timeout) in enumerate(steps):
         script = BASE_DIR / argv[0]
         if not script.exists():
             print(f"[SKIP] {label}: {argv[0]} not found.")
@@ -134,7 +144,8 @@ def main() -> int:
             if label == HISTORY_LABEL:
                 history_ok = False
             continue
-        tail = (result.stdout or result.stderr or "").strip().splitlines()
+        out = (result.stdout or "") + "\n" + (result.stderr or "")
+        tail = out.strip().splitlines()
         if tail:
             print(f"       {tail[-1]}")
         if result.returncode != 0:
@@ -142,6 +153,16 @@ def main() -> int:
             failures.append(label)
             if label == HISTORY_LABEL:
                 history_ok = False
+            # Provider monthly-quota exhaustion (CFBD HTTP 429) is an EXTERNAL outage, not a per-step
+            # bug: stop hammering the remaining CFBD sub-steps (each would just 429 again). Report it
+            # once as PROVIDER_QUOTA_EXHAUSTED; the fetchers already preserve last-known-good CFB files.
+            if _is_provider_quota_exhausted(out):
+                quota_exhausted = True
+                remaining = [s[0] for s in steps[idx + 1:]]
+                print(f"[PROVIDER_QUOTA_EXHAUSTED] {label}: CFBD monthly call quota exceeded (HTTP 429). "
+                      f"Stopping; not attempting {len(remaining)} further CFBD step(s) until the quota "
+                      f"resets or the plan is upgraded. Last-known-good CFB artifacts preserved.")
+                break
         elif label == GRADE_LABEL:
             graded_ok = True
 
@@ -163,6 +184,13 @@ def main() -> int:
             print(f"[FAIL] {verifier}: {type(exc).__name__}: {exc}")
             failures.append(verifier)
 
+    if quota_exhausted:
+        # Distinct, documented external-outage signal. Exit 3 so the operator can classify it as a
+        # provider outage (preserve last-known-good + mark CFB surfaces stale) rather than a code FAIL
+        # to retry. The CFB current-data surfaces fail closed on their own freshness checks.
+        print("CFB refresh halted: PROVIDER_QUOTA_EXHAUSTED (CFBD). Documented external outage; do not "
+              "retry until the monthly quota resets or the plan is upgraded.")
+        return 3
     if failures:
         print(f"CFB refresh finished with {len(failures)} failure(s): {', '.join(failures)}")
         return 1

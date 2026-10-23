@@ -75,6 +75,9 @@ SCORECARDS = [
     # stale seed), atomic-write failure preserves the prior version, the deploy dirty-tracked guard, and
     # a fresh checkout starting safely before its first refresh. No network (fixtures).
     ("CFB Runtime-Data QC", "qc_cfb_runtime_data.py", 120),
+    # CFBD provider-quota containment (Oct 23 incident): on a CFBD HTTP 429 the refresh must STOP and
+    # report PROVIDER_QUOTA_EXHAUSTED (exit 3), not hammer every remaining sub-step. Pure (subprocess mocked).
+    ("CFBD Quota Short-Circuit QC", "qc_cfb_quota_shortcircuit.py", 60),
     # CFB Matchup "This Week's Matchups" total-render contract (regression for da2c3c2): the header
     # O/U line must show the posted number from g.total.line and never the raw Python object, because
     # build_cfb_matchup_context sets g.total to a MAPPING (total_read: proj_total/line/lean/edge/...)
