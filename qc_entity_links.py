@@ -45,9 +45,10 @@ def run_qc() -> dict:
         issues.append(f"1: CFB team_path wrong: {el.team_path('cfb', 'Georgia')!r}")
     if el.team_path('nfl', 'JAX') != '/tools/nfl-team?team=JAX':
         issues.append(f"1: NFL team_path wrong: {el.team_path('nfl', 'JAX')!r}")
-    for s in ('mlb', 'wnba'):
-        if el.team_path(s, 'Anybody') is not None:
-            issues.append(f"1: {s} has no per-team page yet -> team_path must be None")
+    if el.team_path('mlb', 'Atlanta Braves') != '/tools/mlb-team?team=Atlanta+Braves':
+        issues.append(f"1: MLB team_path wrong: {el.team_path('mlb', 'Atlanta Braves')!r}")
+    if el.team_path('wnba', 'Anybody') is not None:   # WNBA still has no per-team page -> None
+        issues.append("1: wnba has no per-team page yet -> team_path must be None")
     # cross-sport: same name, different sports -> different URLs (never one shared/inferred page)
     if el.player_path('nba', 'Josh Allen') == el.player_path('nfl', 'Josh Allen'):
         issues.append("1: identical names across sports produced the SAME url (cross-link risk)")
@@ -175,6 +176,28 @@ def run_qc() -> dict:
             issues.append("4: a real NFL team 'JAX' did not resolve as known")
         if app.team_url('nfl', 'Nonsense') is not None:
             issues.append("4: a non-NFL team string produced a link (must be plain text)")
+
+        # MLB team -> /tools/mlb-team (minimal cleared page). Resolve a CURRENT team, fetch, assert the
+        # cleared-only contract (identity renders, no restricted stats, honest unknown -> plain text).
+        _mlb_teams = sorted(app._mlb_current_team_set())
+        if _mlb_teams:
+            t = _mlb_teams[0]
+            url = app.team_url('mlb', t)
+            if not url or not url.startswith('/tools/mlb-team'):
+                issues.append(f"4b: MLB team_url wrong: {url!r}")
+            else:
+                resp = client.get(url)
+                body = resp.get_data(as_text=True)
+                if resp.status_code != 200:
+                    issues.append(f"4b: MLB team destination {url} returned {resp.status_code}")
+                elif t not in body or 'statistics are not available' not in body:
+                    issues.append("4b: MLB team page missing identity or the cleared-only banner")
+                else:
+                    notes.append(f"fetch MLB team: {t!r} -> {url} renders identity + cleared-only banner (200)")
+            if app.team_url('mlb', 'Nonexistent FC') is not None:
+                issues.append("4b: an unknown MLB team produced a link (must be plain text)")
+        else:
+            notes.append('MLB team: no current teams locally; resolver returns correct output, live proof is prod')
 
         # NBA / WNBA / MLB: assert HONEST resolver output locally (data is gated/absent on this box),
         # and when present, fetch. Either way the resolver must be correct, not guessing.

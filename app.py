@@ -820,6 +820,7 @@ PRO_ENDPOINTS = {
     # NFL + CFB intelligence tools -- premium, gated to match the rest of each suite.
     'green_light_tool',  # the convergence assembly engine (Green Light) -- premium destination
     'green_light_lens_status', 'green_light_counts', 'green_light_ticket',  # Green Light workspace: envelopes + counts + lazy ticket
+    'mlb_team_tool',  # minimal cleared MLB team page (destination for team_url('mlb', …))
     'player_check_tool',  # NFL Player Check -- per-market, per-surface inclusion explainer
     'nfl_dvp_tool',  # Defense vs Position matchup log
     'nfl_hub_tool', 'nfl_featured_players_tool', 'nfl_buy_low_tool', 'nfl_matchup_edge_tool', 'nfl_heatmap_tool',
@@ -17448,10 +17449,74 @@ def _entity_team_known(sport, team):
             return bool(abbr) and abbr in NFL_ABBR_TO_FULL   # a real NFL team, not any string
         except Exception:
             return False
+    if sport == 'mlb':
+        try:
+            key = _normalize_mlb_team_key(team)
+            return bool(key) and any(_normalize_mlb_team_key(t) == key for t in _mlb_current_team_set())
+        except Exception:
+            return False
     try:
         return bool(normalize_team_abbr(team))   # NBA
     except Exception:
         return False
+
+
+_MLB_TEAM_SET_CACHE = {}
+
+
+def _mlb_current_team_set():
+    """Current MLB team names from the licensed schedule/odds (Away + Home). Resolution source for the MLB
+    team page: a name resolves only when it is a CURRENT team, so an unknown/stale name falls to plain text."""
+    try:
+        sched = load_mlb_schedule()
+        if sched is None or sched.empty:
+            return set()
+        teams = set()
+        for col in ('Away', 'Home'):
+            if col in sched.columns:
+                teams |= {str(t).strip() for t in sched[col].dropna() if str(t).strip()}
+        return teams
+    except Exception:
+        return set()
+
+
+def build_mlb_team_page(team):
+    """Minimal, cleared MLB team page: identity + the team's scheduled games and market lines from the
+    LICENSED Odds-API schedule/odds only. No player/team statistics (those are not on this page); no
+    authority language. Unknown team -> found False (honest 'not a current team')."""
+    team = str(team or '').strip()
+    key = _normalize_mlb_team_key(team)
+    sched = load_mlb_schedule()
+    display, found, games = team, False, []
+    if key and sched is not None and not sched.empty and {'Away', 'Home'}.issubset(sched.columns):
+        for _, r in sched.iterrows():
+            aw, hm = str(r.get('Away', '')).strip(), str(r.get('Home', '')).strip()
+            ka, kh = _normalize_mlb_team_key(aw), _normalize_mlb_team_key(hm)
+            if key not in (ka, kh):
+                continue
+            found = True
+            is_home = (kh == key)
+            display = hm if is_home else aw
+            games.append({'date': str(r.get('Date', '') or ''), 'time': str(r.get('Time', '') or ''),
+                          'home': is_home, 'opponent': (aw if is_home else hm)})
+    data_through = ''
+    try:
+        p = DATA_DIR / 'odds' / 'MLB_Odds.csv'
+        if p.exists():
+            from services.timeutils import to_eastern_datetime_str as _to_et
+            _iso = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc).isoformat()
+            data_through = (_to_et(_iso) + ' ET') if _to_et(_iso) else ''
+    except Exception:
+        data_through = ''
+    return {'team': display, 'found': found, 'games': games[:60],
+            'source': 'The Odds API (licensed) + schedule', 'data_through': data_through}
+
+
+@app.route('/tools/mlb-team')
+def mlb_team_tool():
+    """Minimal cleared MLB team page (licensed Odds-API schedule/lines only; no player/team statistics,
+    no authority language). The destination for team_url('mlb', …)."""
+    return render_template('mlb_team.html', **build_mlb_team_page(request.args.get('team', '')))
 
 
 def player_url(sport, name, sample=None, stat=None, require_known=True):

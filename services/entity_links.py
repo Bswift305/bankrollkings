@@ -26,7 +26,7 @@ from urllib.parse import quote, urlencode
 # Sports recognized by the resolver. Identical names in different sports NEVER share a URL because
 # the sport is part of resolution and (for the shared /player route) an explicit query scope.
 PLAYER_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl'})   # cfb has no player page -> None
-TEAM_SPORTS = frozenset({'nba', 'cfb', 'nfl'})             # mlb/wnba have no per-team page yet -> None
+TEAM_SPORTS = frozenset({'nba', 'cfb', 'nfl', 'mlb'})      # mlb now has a minimal cleared team page; wnba -> None
 KNOWN_SPORTS = frozenset({'nba', 'wnba', 'mlb', 'nfl', 'cfb'})
 
 
@@ -72,6 +72,8 @@ def team_path(sport, team, postseason=False):
         return '/tools/cfb-team?' + urlencode({'team': team})
     if sport == 'nfl':
         return '/tools/nfl-team?' + urlencode({'team': team})
+    if sport == 'mlb':
+        return '/tools/mlb-team?' + urlencode({'team': team})
     params = {'sport': 'nba'}
     if postseason:
         params['postseason'] = '1'
