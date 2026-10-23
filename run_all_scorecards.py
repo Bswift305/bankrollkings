@@ -32,6 +32,10 @@ SCORECARDS = [
     # at runtime -- football archived all its picks and graded none of them -- so
     # this is the check that turns "silently absent" into a hard failure.
     ("Sport Registry", "qc_sport_registry.py", 240),
+    # Daily operator season-gate: NFL preseason jobs must SKIP (not run, not FAIL) outside the ~Aug
+    # window. The operator aborts on the first FAIL, so an out-of-window preseason fetch that errored
+    # would stall every downstream refresh (the Oct 23 incident class). Pure; cheap.
+    ("Daily Operator Season-Gate QC", "qc_daily_operator_season_gate.py", 60),
     # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
     # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
     ("Quick Tools QC", "qc_quick_tools.py", 300),

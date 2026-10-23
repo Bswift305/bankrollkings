@@ -16,10 +16,40 @@ batch script without pulling in pandas.
 from __future__ import annotations
 
 import csv
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def nfl_preseason_active(today: Optional[date] = None) -> bool:
+    """True only inside the NFL preseason window (~mid-July through mid-September).
+
+    The preseason Odds-API sport key (`americanfootball_nfl_preseason`) only has events during
+    this window; outside it the fetch has nothing to do. Because the regular season gate keys on
+    `NFL_Props.csv` (which is populated in-season), 'NFL preseason lines' is NOT treated as an
+    off-season NFL step in October -- so an out-of-window preseason fetch that errors (e.g. a
+    transient Odds API 4xx) would otherwise hard-FAIL the daily operator and, because the operator
+    aborts on the first FAIL, stall every downstream refresh. Gating the preseason job on this
+    window makes it a clean SKIP out of season (never a FAIL), which is the correct season-gate.
+
+    Conservative window: Jul 20 -> Sep 12 (Hall of Fame game through the final preseason week,
+    before the regular season opener). Date-only; dependency-free (stdlib)."""
+    d = today or date.today()
+    m, day = d.month, d.day
+    if m == 7:
+        return day >= 20
+    if m == 8:
+        return True
+    if m == 9:
+        return day <= 12
+    return False
+
+
+def is_preseason_step(label: str) -> bool:
+    """True for a daily-operator step that only applies during the NFL preseason window."""
+    return "PRESEASON" in (label or "").upper()
 
 # Sport -> live props file. A sport is "active" (in-season) when its props file
 # exists and has at least one data row. Reactivates automatically when props

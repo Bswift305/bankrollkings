@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from season_utils import active_sports, sport_for_label
+from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -290,7 +290,23 @@ def main() -> int:
     ]
     active = active_sports()
     failed = False
+    preseason_open = nfl_preseason_active()
     for label, command, timeout in steps:
+        # Season-gate NFL preseason jobs: outside the preseason window the preseason Odds sport key
+        # has no events, so this step is SKIPPED (not run) -- it must never FAIL the operator. Because
+        # the operator aborts on the first FAIL, an out-of-window preseason fetch that errored would
+        # otherwise stall every downstream refresh (the Oct 23 class of incident). Skipping it is
+        # visible in the log and costs no API credits; in-window (August) it runs and a real failure
+        # is still a FAIL.
+        if is_preseason_step(label) and not preseason_open:
+            print(f"[SKIP (out of preseason window)] {label}")
+            lines += [
+                f"[SKIP (out of preseason window)] {label}",
+                "Command: " + " ".join(command),
+                "(skipped: NFL preseason window closed -- not run, cannot fail the operator)",
+                "",
+            ]
+            continue
         print(f"[RUN] {label}")
         ok, output = _run_step(label, command, timeout)
         if ok:
