@@ -151,6 +151,9 @@ SCORECARDS = [
     # Streak integrity audit (Hot Hand / Heat Map): directed fixtures through build_nfl_hot_hand prove
     # consecutive clears of the current prop line (miss breaks), current-season-only, fail-closed.
     ("Streak Integrity Audit (Hot Hand)", "qc_streak_integrity_hothand.py", 120),
+    # Shared streak-explainer normalized view-model: every family maps into one common model; absent
+    # fields labeled unavailable (never synthesized); governed-model status separate from factual membership.
+    ("Streak Explainer View-Model", "qc_streak_explainer.py", 60),
     ("Green Light Workspace QC", "qc_green_light_workspace.py", 200),
     # NFL identity resolution: short-form names ('N.Collins', the 2025 build) must resolve to one
     # canonical key so a player's season is never dropped and a streak never under-counts (the bug

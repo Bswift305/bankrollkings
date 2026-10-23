@@ -17346,6 +17346,7 @@ def render_matchup_mark(away, home, separator='@', size='sm', extra_class='', sp
 # scoped by ?sport=. Templates call entity_anchor(...) / player_url(...) / team_url(...) -- never a
 # hand-built href, and never a lowercased display name.
 import services.entity_links as _entity_links
+import services.streak_explainer as _streak_explainer  # shared normalized streak-explainer view-model
 
 _ENTITY_KEYSET_CACHE = {}
 
@@ -17494,7 +17495,8 @@ def entity_anchor(kind, sport, identity, label=None, context='cell', css_class='
 def inject_entity_links():
     """Expose the universal entity-link resolver to every template (a dedicated context processor
     so it reaches all render paths, not only the heavy member-shell context)."""
-    return {'entity_anchor': entity_anchor, 'player_url': player_url, 'team_url': team_url}
+    return {'entity_anchor': entity_anchor, 'player_url': player_url, 'team_url': team_url,
+            'streak_explainer': _streak_explainer.normalize}
 
 
 def glossary_href(section_id, postseason=None):

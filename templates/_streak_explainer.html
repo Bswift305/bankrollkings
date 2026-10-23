@@ -1,0 +1,41 @@
+{# Shared streak explainer. Expects `ex` = streak_explainer(family, row, meta). Renders ONE normalized view
+   for every streak surface. A field labeled 'unavailable' is shown as-is (never hidden, never synthesized).
+   Optional `ex_sport` scopes the opponent entity link (defaults to nfl). #}
+<div class="sx">
+  <div class="sx-why"><b>Why this is showing:</b> {{ ex.membership_reason }}</div>
+  <div class="sx-grid">
+    <span><i>Threshold</i> {{ ex.threshold }}{% if ex.direction and ex.direction != 'unavailable' %} · {{ ex.direction }}{% endif %}</span>
+    <span><i>Current streak</i> {{ ex.current_streak }}</span>
+    <span><i>Current season</i> {{ ex.current_season }}</span>
+    <span><i>Source</i> {{ ex.source }}</span>
+    <span><i>Data through</i> {{ ex.data_through }}</span>
+    <span><i>Freshness</i> {{ ex.freshness }}</span>
+    <span><i>Availability</i> {{ ex.availability }}</span>
+  </div>
+  {% if ex.counted_events == 'unavailable' %}
+    <div class="sx-note">Per-game detail is <b>unavailable</b> from this source.</div>
+  {% elif ex.counted_events %}
+    <table class="sx-ev"><thead><tr><th>Wk</th><th>Opp</th><th>Value</th><th>Line</th><th>Result</th></tr></thead>
+      <tbody>{% for e in ex.counted_events %}<tr>
+        <td>{{ e.week }}</td>
+        <td>{% if e.opponent and e.opponent != 'unavailable' %}{{ entity_anchor('team', ex_sport|default('nfl'), e.opponent, label=e.opponent) }}{% else %}{{ e.opponent }}{% endif %}</td>
+        <td>{{ e.value }}</td><td>{{ e.line }}</td><td>{{ e.result }}</td>
+      </tr>{% endfor %}</tbody></table>
+  {% endif %}
+  {% if ex.excluded_events %}
+    <div class="sx-note"><b>Excluded:</b> {% for x in ex.excluded_events %}{{ x.reason }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+  {% endif %}
+  <div class="sx-model"><i>Model status</i> {{ ex.model_status }}</div>
+</div>
+<style>
+  .sx{font:500 11.5px/1.5 'Helvetica Neue',Arial,sans-serif;color:var(--text-muted);}
+  .sx-why{color:var(--text-bright);margin-bottom:6px;}
+  .sx-grid{display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:6px;}
+  .sx-grid i,.sx-model i{font-style:normal;color:var(--text-muted);opacity:.7;margin-right:4px;text-transform:uppercase;font-size:9.5px;letter-spacing:.04em;}
+  .sx-grid span{color:var(--text-bright);}
+  .sx-ev{width:100%;border-collapse:collapse;margin:4px 0;}
+  .sx-ev th{font:600 9.5px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);text-align:left;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.1);}
+  .sx-ev td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--text-bright);}
+  .sx-note{margin:4px 0;}
+  .sx-model{margin-top:6px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.12);}
+</style>

@@ -58,10 +58,9 @@
         <span class="ms-caret">&#9656;</span>
       </div>
       <div class="ms-exp" id="mx{{ loop.index }}">
-        <table><thead><tr><th>Season</th><th>Wk</th><th>Opp</th><th>{{ r.stat_label }}</th><th>Mark</th></tr></thead><tbody>
-          {% for g in r.games %}<tr><td>{{ g.season }}</td><td>{{ g.week }}</td><td>{{ g.opponent }}</td><td class="hit">{{ g.value }}</td><td>{{ g.threshold }}+ ✓</td></tr>{% endfor %}
-        </tbody></table>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Membership: factual milestone (reached {{ r.threshold }}+ {{ r.stat_label|lower }} in each of the last {{ r.run }} meetings). Events evaluated vs this opponent: {{ r.events_evaluated }}. No model, no suppression.</div>
+        {% set ex = streak_explainer('milestone', r, {'source': 'nflverse game logs', 'season': r.last_season,
+           'data_through': 'through ' ~ r.last_season ~ ' Wk ' ~ r.last_week, 'freshness': 'historical matchup'}) %}
+        {% include '_streak_explainer.html' %}
       </div>
       {% endfor %}
     </div>
@@ -92,10 +91,10 @@
         <span class="ms-caret">&#9656;</span>
       </div>
       <div class="ms-exp" id="sw{{ loop.index }}">
-        <table><thead><tr><th>Season</th><th>Wk</th><th>Opp</th><th>{{ r.stat_label }}</th><th>Mark</th></tr></thead><tbody>
-          {% for g in r.games %}<tr><td>{{ g.season }}</td><td>{{ g.week }}</td><td>{{ g.opponent }}</td><td class="hit">{{ g.value }}</td><td>{{ g.threshold }}+ ✓</td></tr>{% endfor %}
-        </tbody></table>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Membership: factual milestone, current-season trailing run reaching the latest graded week. Events evaluated this season: {{ r.events_evaluated }}. Availability: {{ r.availability_state }}. No model overlay.</div>
+        {% set ex = streak_explainer('milestone', r, {'source': 'nflverse game logs', 'season': ms.season,
+           'data_through': (ms.source_updated or ('Wk ' ~ ms.through_week)),
+           'freshness': ('pending' if ms.pending else 'fresh')}) %}
+        {% include '_streak_explainer.html' %}
       </div>
       {% endfor %}
     </div>
