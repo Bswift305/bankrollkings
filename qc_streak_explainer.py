@@ -44,6 +44,19 @@ def run_qc():
        'prop per-game events synthesized (source has none)',
        'prop: per-game values labeled unavailable (never synthesized)')
 
+    # wave WITH canonical per-game events (the graded record DOES carry them) -> they must be carried
+    # verbatim, not discarded. (Correction 4: settle for unavailable only when the source truly lacks it.)
+    wave = se.normalize('wave', {'line': 62.5, 'side': 'Under', 'streak': 3, 'status_label': 'Active run',
+                                 'events': [{'week': 16, 'value': 40.0, 'line': 62.5, 'result': 'Under', 'opponent': 'ATL'},
+                                            {'week': 17, 'value': 55.0, 'line': 61.0, 'result': 'Under', 'opponent': 'NO'},
+                                            {'week': 18, 'value': 30.0, 'line': 60.0, 'result': 'Under', 'opponent': 'CAR'}]},
+                        meta={'source': 'graded record', 'season': 2025})
+    ok(isinstance(wave['counted_events'], list) and len(wave['counted_events']) == 3
+       and wave['counted_events'][0]['value'] == 40.0 and wave['counted_events'][0]['opponent'] == 'ATL'
+       and wave['counted_events'][-1]['result'] == 'Under',
+       f'wave per-game events not carried: {wave["counted_events"]}',
+       'wave: canonical per-game events carried (week+value+line+result+opponent), not discarded')
+
     # ats: results signs -> counted events (result only); threshold is the spread
     ats = se.normalize('ats', {'cover_streak': 3, 'results': ['L', 'W', 'W', 'W']},
                        meta={'source': 'nflverse games', 'data_through': 'Wk 6'})

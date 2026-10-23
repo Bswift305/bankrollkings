@@ -49777,9 +49777,13 @@ def build_nfl_prop_streaks(limit=60):
     # One canonical graded observation per (player, stat, week) within the current season: consensus
     # line + result. Season is fixed to current_season, so a trailing run is current-season-only.
     team_agg = ('Team', 'first') if 'Team' in d.columns else ('ResultValue', 'size')
-    g = (d.groupby(['Player', 'Stat', 'Week'])
-           .agg(line=('Line', 'median'), res=('ResultValue', 'first'), team=team_agg)
-           .reset_index())
+    # Opponent is carried per week when the graded record supplies it, so the explainer can show the
+    # real per-game events of the run (never invented -- unavailable only when the source truly lacks it).
+    _opp_col = next((c for c in ('Opponent', 'Opp', 'OpponentAbbr') if c in d.columns), None)
+    agg_kwargs = dict(line=('Line', 'median'), res=('ResultValue', 'first'), team=team_agg)
+    if _opp_col:
+        agg_kwargs['opp'] = (_opp_col, 'first')
+    g = (d.groupby(['Player', 'Stat', 'Week']).agg(**agg_kwargs).reset_index())
     # +1 over the line that week, -1 under, 0 landed exactly on it (a push breaks a run)
     g['sign'] = (g['res'] > g['line']).astype(int) - (g['res'] < g['line']).astype(int)
     # Precompute scheduled-game participation ONCE for the season (not per qualifying player): the old
@@ -49797,6 +49801,18 @@ def build_nfl_prop_streaks(limit=60):
         tail = grp.iloc[-n:]
         run_weeks = [int(w) for w in tail['Week'].tolist()]
         streak_start_week = min(run_weeks) if run_weeks else last_week
+        # Canonical per-game events of the counted run, straight from the graded record (never invented).
+        # Each row's result is relative to THAT week's consensus line; side is the run's direction.
+        run_events = []
+        for _, _ev in tail.iterrows():
+            _sgn = int(_ev['sign'])
+            run_events.append({
+                'week': int(_ev['Week']),
+                'value': round(float(_ev['res']), 1),
+                'line': round(float(_ev['line']), 1),
+                'result': ('Over' if _sgn > 0 else 'Under' if _sgn < 0 else 'Push'),
+                'opponent': (str(_ev['opp']).strip() if _opp_col and pd.notna(_ev.get('opp')) else None),
+            })
         avail = _nfl_player_availability(str(player), inj_lookup, feed_fresh=inj_state['fresh'])
         designation = avail.get('designation', '')
         # Active ONLY when data isn't pending and the injury feed affirmatively supports availability.
@@ -49845,7 +49861,7 @@ def build_nfl_prop_streaks(limit=60):
             'designation': designation, 'injury_reason': avail['reason'],
             'injury_updated': inj_state['updated'],
             'returned_week': ret.get('first_return_week'), 'missed_games': ret.get('missed_games') or 0,
-            'status_label': status_label,
+            'status_label': status_label, 'events': run_events,
         })
     # Active runs lead; paused/unknown ones sink so a non-current run never headlines as current.
     out.sort(key=lambda x: (0 if x['active'] else 1, -x['streak']))
