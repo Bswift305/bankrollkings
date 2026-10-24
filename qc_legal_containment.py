@@ -10,6 +10,10 @@ Renders through the real authenticated route (owner session). Exits 0 when conta
 """
 from __future__ import annotations
 
+import contextlib
+
+import pandas as pd
+
 import app
 from services.nba_source_gate import nba_stats_enabled
 
@@ -23,20 +27,64 @@ FORMER_URLS = [
 ]
 DISCLAIMER = 'not affiliated with, endorsed by, or sponsored by'
 
+# Portable authenticated principal (2026-10-24): the legal-containment proof must NOT depend on a
+# 'qc-owner' row existing in the local/prod user store (previously it 401'd everywhere but a box that
+# happened to hold that account, so the protected-page content was never actually tested). Instead we
+# authenticate through the app's real boundary (get_current_user -> load_users) against an ISOLATED,
+# in-memory owner store -- deterministic, reverted after the run, never written to any database. No
+# application authentication code is changed.
+_OWNER_EMAIL = next(iter(app.OWNER_EMAILS))
+_OWNER_ROW = {
+    'UserId': 'qc-legal-owner', 'Email': _OWNER_EMAIL, 'DisplayName': 'QC Legal Containment',
+    'Plan': 'all_access', 'BillingCycle': 'monthly', 'PlanStatus': 'active', 'Role': 'owner',
+    'IsAdmin': '1', 'IsFounder': '0', 'Bankroll': 0,
+}
 
-def _client():
+
+@contextlib.contextmanager
+def _isolated_owner_store():
+    """Swap load_users for a one-row in-memory owner store for the duration; revert afterward."""
+    orig = app.load_users
+    app.load_users = lambda: pd.DataFrame([_OWNER_ROW])
+    try:
+        yield
+    finally:
+        app.load_users = orig
+
+
+def _authed_client():
     c = app.app.test_client()
     with c.session_transaction() as s:
-        s['user_id'] = 'qc-owner'
-        s['user_email'] = next(iter(app.OWNER_EMAILS))
+        s['user_id'] = _OWNER_ROW['UserId']
+        s['user_email'] = _OWNER_EMAIL
     return c
+
+
+_PROTECTED_PROBE = '/sports/nba/props'
 
 
 def run_qc():
     issues, notes = [], []
     marks_on = app.BK_OFFICIAL_MARKS_ENABLED
     nba_on = nba_stats_enabled()
-    c = _client()
+
+    # ---- prove BOTH auth states before any content assertion; FAIL (never skip) if setup is wrong ----
+    unauth = app.app.test_client()  # no session
+    unauth_status = unauth.get(_PROTECTED_PROBE).status_code
+    if unauth_status != 401:
+        issues.append(f'auth-boundary: unauthenticated {_PROTECTED_PROBE} returned {unauth_status} (want 401)')
+    with _isolated_owner_store():
+        c = _authed_client()
+        authed_status = c.get(_PROTECTED_PROBE).status_code
+        if authed_status != 200:
+            issues.append(f'auth-boundary: authenticated QC principal got {authed_status} on {_PROTECTED_PROBE} '
+                          '(want 200) -- isolated-owner-store auth setup FAILED; cannot test protected content')
+            return {'issues': issues, 'notes': notes}  # fail loudly rather than test nothing
+        notes.append('auth boundary proven: unauth -> 401, isolated owner principal -> 200 (no DB user needed)')
+        return _run_content_checks(c, marks_on, nba_on, issues, notes)
+
+
+def _run_content_checks(c, marks_on, nba_on, issues, notes):
 
     # ---- official marks containment (only asserted while OFF) ----
     if marks_on:
@@ -91,6 +139,8 @@ def run_qc():
             issues.append('NBA board missing the honest unavailable banner while the NBA gate is off')
         notes.append('NBA.com-derived stats withheld (gamelogs/tracking/advanced/snapshot + snapshots + '
                      'cache key); NBA board shows the paused banner; licensed odds + other sports unaffected')
+        notes.append('restricted NBA/WNBA injury names/statuses non-exposure is proven with populated '
+                     'fixtures in qc_nba_data_gate_containment.py (loaders + injury-report route context)')
 
     # ---- service worker cache bumped ----
     try:
