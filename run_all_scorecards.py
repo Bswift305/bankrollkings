@@ -198,6 +198,10 @@ SCORECARDS = [
     # a WATCH, honest, never a failure; a MISSING schedule keeps the strict default so real gaps aren't
     # masked. In-season behavior unchanged. Pure/offline (temp injuries + schedule dirs).
     ("Injury Feed Season-Aware QC", "qc_injury_feed_season_aware.py", 60),
+    # Fast-smoke command markers must be SEASON-ROBUST (Oct 24 scorecard follow-up): the CFB command fast
+    # route false-failed in-season because both markers were preseason-only; every football command fast
+    # route must carry the season-neutral "Command Surface" title token. Pure/offline.
+    ("Smoke Markers Season-Robust QC", "qc_smoke_markers_season_robust.py", 60),
     # Prewarm cache lifecycle (Site Performance P0): disk-materialized artifacts invalidate on a source
     # fingerprint change AND on an APP_CACHE_VERSION (deploy) change, reuse on unchanged inputs, fail
     # closed on corruption, and publish atomically (no partial reads, last complete write wins).

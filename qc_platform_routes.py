@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
@@ -45,7 +46,12 @@ ROUTE_CHECKS: tuple[RouteCheck, ...] = (
     RouteCheck("/sports/nfl/trends?postseason=1", "NFL Trends", ("Historical Coverage", "NFL Trends"), "football"),
     RouteCheck("/sports/nfl/props?postseason=1", "NFL Props", ("Historical Coverage", "NFL Props"), "football"),
     RouteCheck("/sports/nfl/matchup/game/car-at-tb?postseason=1", "NFL Matchup", ("Best Floor Plays", "Workbook"), "football"),
-    RouteCheck("/sports/ncaaf?postseason=1", "CFB Command", ("College Football Preseason Intelligence", "Roster Coverage"), "football", True),
+    # "Command Surface" is the season-NEUTRAL page title ({{ sport_title }} Command Surface, always
+    # rendered); the other two markers only render in preseason_mode (not has_live_props), so in-season
+    # (live NCAAF props) they vanish and the smoke false-failed a healthy page. NFL already passes via its
+    # "NFL Command Surface" title token; this gives CFB the same season-robust marker (test-contract fix).
+    RouteCheck("/sports/ncaaf?postseason=1", "CFB Command",
+               ("College Football Preseason Intelligence", "Roster Coverage", "Command Surface"), "football", True),
     RouteCheck("/sports/ncaaf/game-lines?postseason=1", "CFB Game Lines", ("Current Team Signals", "Top Returning Teams"), "football"),
     RouteCheck("/sports/ncaaf/totals?postseason=1", "CFB Totals", ("Top Returning Teams", "Current Team Signals"), "football"),
     RouteCheck("/sports/ncaaf/trends?postseason=1", "CFB Trends", ("Current Team Signals", "Top Returning Teams"), "football"),
@@ -97,6 +103,7 @@ def run_qc(tier: str = "fast", batch_size: int = 8) -> dict:
     with client.session_transaction() as sess:
         sess["user_id"] = qc_user["user_id"]
         sess["user_email"] = qc_user["email"]
+    unauth_client = app.test_client()  # no session -> to separate an auth-fixture problem from a real failure
     checks = _select_checks(tier)
     if tier == "fast":
         batches = [checks]
@@ -111,28 +118,53 @@ def run_qc(tier: str = "fast", batch_size: int = 8) -> dict:
         batch_failures = 0
         batch_results: list[dict] = []
         for check in batch_checks:
-            response = client.get(check.path, follow_redirects=True)
-            text = response.get_data(as_text=True)
-            ok = response.status_code == 200 and any(marker in text for marker in check.markers)
+            started = time.perf_counter()
+            exc_text = ""
+            try:
+                response = client.get(check.path, follow_redirects=True)
+                status_code = response.status_code
+                text = response.get_data(as_text=True)
+            except Exception as exc:  # a route that 500s/raises must be a diagnosable failure, not a crash
+                status_code = 0
+                text = ""
+                exc_text = f"{type(exc).__name__}: {exc}"
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            ok = status_code == 200 and any(marker in text for marker in check.markers)
             result = {
                 "group": check.group,
                 "label": check.label,
                 "path": check.path,
-                "status_code": response.status_code,
+                "status_code": status_code,
                 "ok": ok,
                 "content_length": len(text),
+                "elapsed_ms": elapsed_ms,
                 "batch": batch_index,
             }
             results.append(result)
             batch_results.append(result)
             if not ok:
                 batch_failures += 1
+                # Separate an AUTH-FIXTURE problem (fails authed, differs unauthed) from a real failure,
+                # and capture the precise WHY: status, timing, which markers were missing, a short snippet,
+                # and any exception. No secrets -- our own rendered page.
+                try:
+                    un = unauth_client.get(check.path, follow_redirects=True)
+                    unauth_status = un.status_code
+                except Exception as exc:
+                    unauth_status = f"EXC {type(exc).__name__}"
+                missing = [m for m in check.markers if m not in text]
+                snippet = " ".join(text.split())[:200]
                 failures.append({
                     "group": check.group,
                     "label": check.label,
                     "path": check.path,
-                    "status_code": response.status_code,
+                    "status_code": status_code,
                     "markers": list(check.markers),
+                    "missing_markers": missing,
+                    "elapsed_ms": elapsed_ms,
+                    "exception": exc_text,
+                    "unauth_status": unauth_status,
+                    "snippet": snippet,
                     "batch": batch_index,
                 })
         batch_reports.append({
@@ -216,8 +248,12 @@ def main() -> int:
     for failure in report["failures"]:
         print(
             f"[FAIL] batch={failure['batch']} | {failure['group']} | {failure['label']} | {failure['path']} | "
-            f"status={failure['status_code']} | markers={', '.join(failure['markers'])}"
+            f"status={failure['status_code']} | authed_vs_unauth={failure['status_code']}/{failure.get('unauth_status')} | "
+            f"{failure.get('elapsed_ms')}ms"
         )
+        print(f"        missing_markers={failure.get('missing_markers')} | "
+              f"exception={failure.get('exception') or 'none'}")
+        print(f"        snippet={failure.get('snippet')!r}")
     return 1
 
 
