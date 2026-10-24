@@ -64,6 +64,11 @@ SCORECARDS = [
     # lookup when the whole odds feed is stale -- so no board annotates a stale current line as live. A
     # feed with any recent update (or no LastUpdated) is not suppressed. Pure.
     ("Market Lookup Freshness QC", "qc_market_lookup_freshness.py", 60),
+    # ONE freshness contract (Oct 24 directive #1): the single declared source (services/
+    # freshness_contract.py) for both clocks -- CLOCK A render/live-market (6h, data timestamp) and
+    # CLOCK B refresh cadence (30h props/lines, file mtime). Proves qc_odds_feed, generate_run_status
+    # and report_feed_availability can never again call one 39-40h file both FRESH and STALE. Offline.
+    ("Freshness Contract QC", "qc_freshness_contract.py", 60),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

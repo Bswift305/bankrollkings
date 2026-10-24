@@ -30,12 +30,17 @@ come back NO_MARKETS_POSTED at 0 cost; that is a real answer, not a failure):
   - NO_SCHEDULE ........  no readable schedule on disk -> cannot justify spend; refresh
                           the schedule feed first (usually free) before any paid props.
 
+Staleness is NOT a hand-picked threshold: props age is judged against the ONE declared freshness
+contract (services/freshness_contract.py, CLOCK B = refresh cadence, file mtime), the SAME source
+qc_odds_feed and generate_run_status use -- so this report can never call a file STALE while those
+call it FRESH. --stale-hours overrides it uniformly for what-if analysis only.
+
 Timezone: event dates are compared against EASTERN "today" (CLAUDE.md s5), so the
 UTC prod box does not roll a day early and mis-count tonight's slate.
 
-Run on the box that has the data (prod or a data-populated dev box):
-    python report_feed_availability.py
-    python report_feed_availability.py --sports nfl,ncaaf,nba,mlb --props-window 7 --lines-window 5
+Run on the box that has the data (prod or a data-populated dev box), with the app venv python:
+    /opt/bankrollkings/venv/bin/python3 report_feed_availability.py
+    .../python3 report_feed_availability.py --sports nfl,ncaaf,nba,mlb --props-window 7
 Exit code is always 0 (this is a report, not a gate that should fail a run).
 """
 from __future__ import annotations
@@ -51,6 +56,8 @@ except Exception:  # pragma: no cover - zoneinfo always present on 3.9+ prod
     _EASTERN = None
 
 import pandas as pd
+
+from services.freshness_contract import refresh_cadence_hours
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -153,7 +160,10 @@ def _verdict(lines_age, props_age, upcoming_props_window: int, has_schedule: boo
             f"(expect UPDATED, or a legitimate NO_MARKETS_POSTED at 0 cost if books have not posted yet)")
 
 
-def build_report(sports: list[str], props_window: int, lines_window: int, stale_hours: float) -> dict:
+def build_report(sports: list[str], props_window: int, lines_window: int,
+                 stale_hours: float | None = None) -> dict:
+    """stale_hours None => use the declared freshness contract's props cadence per sport (CLOCK B);
+    a number overrides it uniformly (for what-if analysis only)."""
     today = _eastern_today()
     windows = sorted({2, props_window, lines_window})
     rows = []
@@ -164,9 +174,10 @@ def build_report(sports: list[str], props_window: int, lines_window: int, stale_
         props = _first_existing(spec["props"])
         lines_age = _age_hours(lines)
         props_age = _age_hours(props)
+        props_stale_hours = stale_hours if stale_hours is not None else refresh_cadence_hours("props", sport)
         counts, sched_note = _upcoming_counts(sched, today, windows)
         verdict, rationale = _verdict(lines_age, props_age, counts.get(props_window, 0),
-                                      has_schedule=sched is not None, stale_hours=stale_hours)
+                                      has_schedule=sched is not None, stale_hours=props_stale_hours)
         rows.append({
             "sport": sport,
             "schedule_file": str(sched.relative_to(BASE_DIR)) if sched else "(none)",
@@ -177,6 +188,7 @@ def build_report(sports: list[str], props_window: int, lines_window: int, stale_
             "lines_age_h": round(lines_age, 1) if lines_age is not None else None,
             "props_file": str(props.relative_to(BASE_DIR)) if props else "(none)",
             "props_age_h": round(props_age, 1) if props_age is not None else None,
+            "props_stale_hours": props_stale_hours,
             "verdict": verdict,
             "rationale": rationale,
         })
@@ -185,7 +197,7 @@ def build_report(sports: list[str], props_window: int, lines_window: int, stale_
         "eastern_today": today.isoformat(),
         "props_window_days": props_window,
         "lines_window_days": lines_window,
-        "stale_hours": stale_hours,
+        "stale_hours_override": stale_hours,
         "rows": rows,
         "probe_justified": [r["sport"] for r in rows if r["verdict"] == "PROBE_JUSTIFIED"],
     }
@@ -201,8 +213,9 @@ def main() -> int:
                         help="Comma-separated sports (nfl,ncaaf,nba,wnba,mlb). Default: nfl,ncaaf,nba,mlb")
     parser.add_argument("--props-window", type=int, default=7, help="Days ahead props are posted/fetched. Default 7.")
     parser.add_argument("--lines-window", type=int, default=5, help="Days ahead game lines are fetched. Default 5.")
-    parser.add_argument("--stale-hours", type=float, default=6.0,
-                        help="Age beyond which a current-market feed is STALE. Default 6 (the live-market window).")
+    parser.add_argument("--stale-hours", type=float, default=None,
+                        help="Override the declared props cadence (services/freshness_contract.py CLOCK B) "
+                             "uniformly, for what-if analysis. Default: use the contract per sport.")
     args = parser.parse_args()
 
     requested = [s.strip().upper() for s in args.sports.split(",") if s.strip()]
@@ -212,12 +225,14 @@ def main() -> int:
         return 2
 
     report = build_report(requested, args.props_window, args.lines_window, args.stale_hours)
+    thr_note = (f"override stale>{args.stale_hours:.0f}h" if args.stale_hours is not None
+                else "stale = freshness_contract props cadence")
 
     print("=" * 78)
     print("BANKROLL KINGS - FEED AVAILABILITY (zero-network)")
     print("=" * 78)
     print(f"Eastern today: {report['eastern_today']}   props window: {args.props_window}d   "
-          f"lines window: {args.lines_window}d   stale>{args.stale_hours:.0f}h")
+          f"lines window: {args.lines_window}d   {thr_note}")
     print("-" * 78)
     pw = args.props_window
     for r in report["rows"]:
@@ -225,7 +240,7 @@ def main() -> int:
         print(f"       schedule: {r['schedule_file']} ({r['schedule_note']}) | "
               f"events next2d={r['events_next_2d']} next{pw}d={r[f'events_next_{pw}d']}")
         print(f"       lines:    {r['lines_file']} age={_fmt_age(r['lines_age_h'])} | "
-              f"props: {r['props_file']} age={_fmt_age(r['props_age_h'])}")
+              f"props: {r['props_file']} age={_fmt_age(r['props_age_h'])} (props stale>{r['props_stale_hours']:.0f}h)")
         print(f"       -> {r['rationale']}")
         print()
 

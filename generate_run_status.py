@@ -13,10 +13,10 @@ from qc_odds_feed import (
     GAME_LINE_FEEDS,
     PROPS_FEEDS,
     FUTURES_FEED,
-    STALE_HOURS as ODDS_STALE_HOURS,
     _age_hours as _odds_age,
     _state as _odds_state,
 )
+from services.freshness_contract import refresh_cadence_hours
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -198,8 +198,8 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
     rows: list[dict] = []
     reasons: list[str] = []
 
-    def _row(name: str, age, note: str) -> dict:
-        state = _odds_state(age)
+    def _row(name: str, age, note: str, family: str = "props", sport: str | None = None) -> dict:
+        state = _odds_state(age, family, sport)
         return {
             "Name": name,
             "Status": state,
@@ -213,17 +213,23 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
     for sport in GAME_LINE_FEEDS:
         gl_age = _odds_age(BASE_DIR / GAME_LINE_FEEDS[sport])
         pr_age = _odds_age(BASE_DIR / PROPS_FEEDS[sport])
-        gl_state, pr_state = _odds_state(gl_age), _odds_state(pr_age)
-        rows.append(_row(f"{sport} game lines", gl_age, f"Current {sport} game-line feed (stale>{ODDS_STALE_HOURS}h)."))
-        rows.append(_row(f"{sport} props", pr_age, f"Current {sport} player-prop feed (stale>{ODDS_STALE_HOURS}h)."))
+        gl_state = _odds_state(gl_age, "game_lines", sport)
+        pr_state = _odds_state(pr_age, "props", sport)
+        gl_thr = refresh_cadence_hours("game_lines", sport)
+        pr_thr = refresh_cadence_hours("props", sport)
+        rows.append(_row(f"{sport} game lines", gl_age, f"Current {sport} game-line feed (stale>{gl_thr:.0f}h).",
+                         "game_lines", sport))
+        rows.append(_row(f"{sport} props", pr_age, f"Current {sport} player-prop feed (stale>{pr_thr:.0f}h).",
+                         "props", sport))
         if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
             reasons.append(f"{sport} props {pr_state} while {sport} game lines FRESH (props pipeline broken "
                            f"or no markets posted)")
 
     fut_age = _odds_age(BASE_DIR / FUTURES_FEED)
-    rows.append(_row("Futures", fut_age, f"Always-on futures feed (stale>{ODDS_STALE_HOURS}h)."))
-    if _odds_state(fut_age) in ("STALE", "MISSING"):
-        reasons.append(f"Futures feed {_odds_state(fut_age)} (always-on)")
+    fut_thr = refresh_cadence_hours("futures")
+    rows.append(_row("Futures", fut_age, f"Always-on futures feed (stale>{fut_thr:.0f}h).", "futures"))
+    if _odds_state(fut_age, "futures") in ("STALE", "MISSING"):
+        reasons.append(f"Futures feed {_odds_state(fut_age, 'futures')} (always-on)")
     return rows, reasons
 
 

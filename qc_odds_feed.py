@@ -9,7 +9,8 @@ good file. This check makes that failure LOUD instead of silent:
 1. Key validity — a free `/v4/sports` call (no quota). A dead/expired/rotated key
    returns 401; this is the single unambiguous "the feed is broken" signal.
 2. Freshness of the ALWAYS-ON odds files (NFL + NCAAF game lines, Futures) — these
-   refresh every day year-round, so >40h old means the fetch pipeline is broken.
+   refresh every day year-round, so >30h old (one daily cycle + margin) means the
+   fetch pipeline missed a cycle and is likely broken.
    Season-gated files (MLB/WNBA/NBA) are deliberately excluded to avoid off-season
    false positives (their fetch legitimately doesn't run out of season).
 
@@ -27,6 +28,7 @@ from pathlib import Path
 
 from services.qc_tracking import append_qc_run_log
 from services.env_loader import load_local_env
+from services.freshness_contract import cadence_state, refresh_cadence_hours
 
 # Load the service .env so a STANDALONE run (not just the systemd service) has the Odds API key.
 # Without this, running this QC by hand falsely reported "key not set" even though the key exists.
@@ -38,7 +40,9 @@ GAME_LINE_FEEDS = {s: f"data/odds/{s}_Odds.csv" for s in ("NFL", "NCAAF", "NBA",
 PROPS_FEEDS = {s: f"data/props/{s}_Props.csv" for s in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")}
 FUTURES_FEED = "data/futures/Futures_Odds.csv"
 GRADING_FEEDS = {"NFL graded record": "data/tracking/NFL_AllPropResults.csv"}
-STALE_HOURS = 40  # daily refresh cadence + margin
+# Thresholds live in the ONE declared freshness contract (services/freshness_contract.py, CLOCK B).
+# STALE_HOURS kept as a back-compat alias == the props cadence window (other code imports it).
+STALE_HOURS = refresh_cadence_hours("props")
 # Back-compat (other code imports ALWAYS_ON_ODDS).
 ALWAYS_ON_ODDS = {"NFL game lines": GAME_LINE_FEEDS["NFL"], "NCAAF game lines": GAME_LINE_FEEDS["NCAAF"],
                   "Futures": FUTURES_FEED}
@@ -51,10 +55,9 @@ def _age_hours(path: Path):
         return None
 
 
-def _state(age):
-    if age is None:
-        return "MISSING"
-    return "FRESH" if age <= STALE_HOURS else "STALE"
+def _state(age, family: str = "props", sport: str | None = None):
+    """FRESH/STALE/MISSING against the contract's CLOCK-B cadence window for this family/sport."""
+    return cadence_state(age, family, sport)
 
 
 def _odds_api_key() -> str:
@@ -91,7 +94,8 @@ def run_qc(check_key: bool = True) -> dict:
     for sport in GAME_LINE_FEEDS:
         gl_age = _age_hours(BASE_DIR / GAME_LINE_FEEDS[sport])
         pr_age = _age_hours(BASE_DIR / PROPS_FEEDS[sport])
-        gl_state, pr_state = _state(gl_age), _state(pr_age)
+        gl_state = _state(gl_age, "game_lines", sport)
+        pr_state = _state(pr_age, "props", sport)
         families[f"{sport} game lines"] = f"{gl_state} ({gl_age:.0f}h)" if gl_age is not None else "MISSING"
         families[f"{sport} props"] = f"{pr_state} ({pr_age:.0f}h)" if pr_age is not None else "MISSING"
         # TRUTH RULE: if a sport's GAME LINES are FRESH (the sport is active -- games are being lined) but
@@ -104,15 +108,17 @@ def run_qc(check_key: bool = True) -> dict:
                             f"pipeline broken or no markets posted (verify with the availability report).")
     # futures (always-on)
     fut_age = _age_hours(BASE_DIR / FUTURES_FEED)
-    families["Futures"] = f"{_state(fut_age)} ({fut_age:.0f}h)" if fut_age is not None else "MISSING"
-    if _state(fut_age) in ("STALE", "MISSING"):
-        failures.append(f"Futures feed is {_state(fut_age)} (always-on; the Odds-health guard tracks it).")
+    fut_state = _state(fut_age, "futures")
+    families["Futures"] = f"{fut_state} ({fut_age:.0f}h)" if fut_age is not None else "MISSING"
+    if fut_state in ("STALE", "MISSING"):
+        failures.append(f"Futures feed is {fut_state} (always-on; the Odds-health guard tracks it).")
     # historical grading (nflverse-fed, NOT Odds API -> informational WARNING, never a hard odds failure)
     for label, rel in GRADING_FEEDS.items():
         g_age = _age_hours(BASE_DIR / rel)
-        families[label] = f"{_state(g_age)} ({g_age:.0f}h)" if g_age is not None else "MISSING"
-        if _state(g_age) in ("STALE", "MISSING"):
-            warnings.append(f"{label} is {_state(g_age)} (nflverse grading, separate from the Odds feed).")
+        g_state = _state(g_age, "grading")
+        families[label] = f"{g_state} ({g_age:.0f}h)" if g_age is not None else "MISSING"
+        if g_state in ("STALE", "MISSING"):
+            warnings.append(f"{label} is {g_state} (nflverse grading, separate from the Odds feed).")
 
     fam_line = "; ".join(f"{k}={v}" for k, v in families.items())
     notes = key_note + " || FAMILIES: " + fam_line

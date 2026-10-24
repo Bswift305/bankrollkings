@@ -71,8 +71,27 @@ the only action — nothing to fix in code.
 | 6 | `refresh_cfb_data.py` / operator | CFBD 429 / "key not set" → exit 0 → PASS | `.env` now loaded in the QC/CFBD/operator (833c417); 429 short-circuits to exit 3 + `PROVIDER_QUOTA_EXHAUSTED`; operator maps that to `SKIP (PROVIDER_QUOTA_EXHAUSTED)` (not PASS, not FAIL); Run Status → DEGRADED. |
 | — | paid-fetch decision | "feeds stale → refetch everything" burned credits on sports with no events | New **`report_feed_availability.py`** (zero-network): PROBE_JUSTIFIED / NO_FETCH / FRESH / NO_SCHEDULE per sport. |
 
-QCs: `qc_odds_feed` (manual), `qc_run_status_degraded.py`, `qc_feed_availability.py` (both
-registered in `run_all_scorecards.py`).
+QCs: `qc_odds_feed` (manual), `qc_run_status_degraded.py`, `qc_feed_availability.py`,
+`qc_freshness_contract.py` (registered in `run_all_scorecards.py`).
+
+### 3a. One declared freshness contract (directive #1)
+
+The incident also exposed a *contradiction between monitoring tools*: the availability report called
+39–40h NFL/NCAAF props STALE (`>6h`) while `qc_odds_feed` called the same files FRESH (`<40h`). Two
+hand-picked thresholds, opposite verdicts on one file. Resolved by a single declared source,
+`services/freshness_contract.py`, with **two labeled clocks** (they answer different questions, so they
+may differ for one feed — but no two tools answering the *same* question may differ):
+
+| Clock | Reads | Window | Question | Used by |
+|---|---|---|---|---|
+| **A — render / live-market** | the feed's own `LastUpdated` timestamp | `LIVE_MARKET_MAX_AGE_HOURS = 6h` | is this current price fresh enough to show as live? | `app.py` `get_props_refresh_meta` / `get_lines_refresh_meta` / board fail-closed gates |
+| **B — refresh cadence** | file mtime | `refresh_cadence_hours(family,sport)` = 30h props/lines/futures, 54h grading | did the daily job advance this artifact? | `qc_odds_feed`, `generate_run_status`, `report_feed_availability` |
+
+30h = one ~24h daily-operator cycle + 6h margin (the window Run Status already uses for daily
+artifacts); it does not flap under healthy daily operation and flags a *missed* cycle (the NFL/NCAAF
+39h case — correctly STALE, not a legitimate slower feed). No sport has a longer cadence today;
+`REFRESH_CADENCE_OVERRIDES` is the one place to declare one, with a rationale, if that ever changes.
+`qc_freshness_contract.py` proves all three monitoring surfaces agree a 39h props file is STALE.
 
 ## 4. The per-sport outcome vocabulary
 

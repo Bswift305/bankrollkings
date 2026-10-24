@@ -36,6 +36,10 @@ import power_ratings as pr
 import pandas as pd
 import numpy as np
 from services.env_loader import load_local_env
+# The ONE declared freshness contract (CLOCK A = render/live-market window). Imported at module top so
+# the props/lines freshness helpers below can use it as a def-time default, keeping customer-facing
+# freshness on the exact same source as monitoring (qc_odds_feed / generate_run_status).
+from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS as _LIVE_MARKET_MAX_AGE_HOURS
 from services.football_intelligence import (
     build_ncaaf_current_season_context as build_ncaaf_current_season_context_service,
     build_ncaaf_matchup_signal_context as build_ncaaf_matchup_signal_context_service,
@@ -3600,7 +3604,7 @@ def load_nfl_player_stats_history():
     return combined
 
 
-def get_props_refresh_meta(props_df, max_age_hours=6):
+def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
     if props_df is None or props_df.empty:
         return {
             'last_updated': 'Unknown',
@@ -3652,11 +3656,13 @@ def get_props_refresh_meta(props_df, max_age_hours=6):
     }
 
 
-# Documented live-market freshness policy for current game lines. Aligned to the live PROPS policy
-# (get_props_refresh_meta / load_*_live_props_feed use 6h): a current betting line older than this is
-# treated as NOT live. It is deliberately the live-market window, NOT a lax 24h convenience value --
-# an active-slate line that has not moved in 6h is stale and must fail closed, not stay actionable.
-LIVE_LINES_MAX_AGE_HOURS = 6
+# Documented live-market freshness policy for current game lines. Sourced from the ONE declared
+# freshness contract (services/freshness_contract.py, CLOCK A = render/live-market window on the data's
+# own LastUpdated timestamp), the same source monitoring reads -- so customer-facing and monitoring
+# freshness can never drift to different hand-picked numbers. A current betting line older than this is
+# treated as NOT live (fails closed, not a lax 24h convenience value). get_props_refresh_meta /
+# load_*_live_props_feed share this window via _LIVE_MARKET_MAX_AGE_HOURS (imported at module top).
+LIVE_LINES_MAX_AGE_HOURS = _LIVE_MARKET_MAX_AGE_HOURS
 
 
 def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
@@ -3690,7 +3696,7 @@ def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
             'status': 'stale' if is_stale else 'live', 'warning': warning, 'has_lines': True}
 
 
-def load_live_props_feed(max_age_hours=6, require_fresh=False):
+def load_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
     props_df = load_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
     if require_fresh and refresh_meta.get('is_stale'):
@@ -3699,7 +3705,7 @@ def load_live_props_feed(max_age_hours=6, require_fresh=False):
     return props_df, refresh_meta
 
 
-def load_wnba_live_props_feed(max_age_hours=6, require_fresh=False):
+def load_wnba_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
     props_df = load_wnba_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
     if require_fresh and refresh_meta.get('is_stale'):
@@ -3708,7 +3714,7 @@ def load_wnba_live_props_feed(max_age_hours=6, require_fresh=False):
     return props_df, refresh_meta
 
 
-def load_mlb_live_props_feed(max_age_hours=6, require_fresh=False):
+def load_mlb_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
     props_df = load_mlb_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
     if require_fresh and refresh_meta.get('is_stale'):
@@ -3717,7 +3723,7 @@ def load_mlb_live_props_feed(max_age_hours=6, require_fresh=False):
     return props_df, refresh_meta
 
 
-def load_nfl_live_props_feed(max_age_hours=6, require_fresh=False):
+def load_nfl_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
     props_df = load_nfl_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
     if require_fresh and refresh_meta.get('is_stale'):
@@ -3726,7 +3732,7 @@ def load_nfl_live_props_feed(max_age_hours=6, require_fresh=False):
     return props_df, refresh_meta
 
 
-def load_ncaaf_live_props_feed(max_age_hours=6, require_fresh=False):
+def load_ncaaf_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
     props_df = load_ncaaf_props()
     refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
     if require_fresh and refresh_meta.get('is_stale'):
