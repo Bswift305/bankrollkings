@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from datetime import datetime
@@ -296,6 +297,11 @@ def main() -> int:
     ]
     active = active_sports()
     failed = False
+    # Structured per-step outcomes written to data/tracking/Last_Operator_Summary.json so Run Status
+    # and the incident diag read a MACHINE-READABLE record of what each step did -- never re-parse the
+    # free-text operator log (which conflated nested child messages with steps during the Oct 2026
+    # incident). Additive: does not change the operator's abort/continue control flow.
+    step_outcomes: list[dict] = []
     preseason_open = nfl_preseason_active()
     for label, command, timeout in steps:
         # Season-gate NFL preseason jobs: outside the preseason window the preseason Odds sport key
@@ -312,6 +318,7 @@ def main() -> int:
                 "(skipped: NFL preseason window closed -- not run, cannot fail the operator)",
                 "",
             ]
+            step_outcomes.append({"label": label, "status": "SKIP (out of preseason window)"})
             continue
         print(f"[RUN] {label}")
         ok, output = _run_step(label, command, timeout)
@@ -337,6 +344,7 @@ def main() -> int:
             output or "(no output)",
             "",
         ]
+        step_outcomes.append({"label": label, "status": status})
         if status == "FAIL":
             failed = True
             if not args.continue_on_error:
@@ -345,6 +353,29 @@ def main() -> int:
     lines.append(f"Finished: {datetime.now().isoformat(timespec='seconds')}")
     log_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Log saved: {log_path}")
+
+    # Structured summary for Run Status + the incident diag (machine-readable; never parse the log text).
+    provider_exhausted = sorted({o["label"] for o in step_outcomes
+                                 if "PROVIDER_QUOTA_EXHAUSTED" in o["status"]})
+    failed_steps = [o["label"] for o in step_outcomes if o["status"] == "FAIL"]
+    summary = {
+        "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "log": log_path.name,
+        "sports": sorted(sports),
+        "blocking_failure": bool(failed),
+        "failed_steps": failed_steps,
+        "provider_exhausted_steps": provider_exhausted,
+        "steps": step_outcomes,
+    }
+    summary_path = BASE_DIR / "data" / "tracking" / "Last_Operator_Summary.json"
+    try:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = summary_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        tmp.replace(summary_path)
+        print(f"Summary saved: {summary_path}")
+    except OSError as exc:
+        print(f"[WARN] could not write operator summary: {exc}")
 
     print("[RUN] Run status")
     ok, output = _run_step("Run status", _python("generate_run_status.py"), 300)

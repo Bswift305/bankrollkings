@@ -64,6 +64,15 @@ SCORECARDS = [
     # lookup when the whole odds feed is stale -- so no board annotates a stale current line as live. A
     # feed with any recent update (or no LastUpdated) is not suppressed. Pure.
     ("Market Lookup Freshness QC", "qc_market_lookup_freshness.py", 60),
+    # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
+    # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
+    # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
+    # + the structured operator summary; proves the severity ladder RED>DEGRADED>WATCH>GREEN. Pure/offline.
+    ("Run Status DEGRADED QC", "qc_run_status_degraded.py", 60),
+    # Zero-network paid-fetch gate (Oct 24): before spending a credit, classify each sport from the local
+    # schedule + feed ages as PROBE_JUSTIFIED / NO_FETCH / FRESH / NO_SCHEDULE, so a blanket "refetch
+    # everything" can't burn credits on a sport with no in-window events. Pure/offline (temp fixtures).
+    ("Feed Availability Gate QC", "qc_feed_availability.py", 60),
     # Atomic + validated artifact publish (Oct 23 recovery gate): the shared temp->validate->os.replace
     # helper the Odds fetchers (game lines, player props, futures) now publish through -- a crash or bad
     # frame can't truncate an authoritative file and a validation failure preserves last-known-good. Cheap.

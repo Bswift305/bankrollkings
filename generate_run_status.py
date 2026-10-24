@@ -5,12 +5,26 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Odds-feed FAMILY freshness is the signal that was MISSING from Run Status during the Oct 2026
+# incident: these 14 analysis artifacts were all within their age windows, so overall read GREEN while
+# the current-market Odds feeds (props by sport) were days stale. Reuse the same per-family helpers the
+# odds-feed QC uses so the two surfaces agree (file-mtime only; no network call here).
+from qc_odds_feed import (
+    GAME_LINE_FEEDS,
+    PROPS_FEEDS,
+    FUTURES_FEED,
+    STALE_HOURS as ODDS_STALE_HOURS,
+    _age_hours as _odds_age,
+    _state as _odds_state,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
 TRACKING_DIR = BASE_DIR / "data" / "tracking"
 JSON_PATH = TRACKING_DIR / "Run_Status.json"
 CSV_PATH = TRACKING_DIR / "Run_Status.csv"
+OPERATOR_SUMMARY_PATH = TRACKING_DIR / "Last_Operator_Summary.json"
 
 
 CHECKS = [
@@ -176,6 +190,65 @@ def _status_note(status: str) -> str:
     }.get(status, "Unknown")
 
 
+def _odds_family_signals() -> tuple[list[dict], list[str]]:
+    """Per-family Odds-feed freshness rows + the DEGRADED reasons they imply. The truth rule
+    (same as qc_odds_feed): a sport whose GAME LINES are FRESH but whose PROPS are STALE/MISSING has a
+    broken (or not-yet-posted) props pipeline -- that is a current-market staleness the status MUST show,
+    not hide behind GREEN. When game lines are also stale/missing the sport is off-season -> not degraded."""
+    rows: list[dict] = []
+    reasons: list[str] = []
+
+    def _row(name: str, age, note: str) -> dict:
+        state = _odds_state(age)
+        return {
+            "Name": name,
+            "Status": state,
+            "StatusNote": {"FRESH": "Green", "STALE": "Stale feed", "MISSING": "Missing"}.get(state, "Unknown"),
+            "LastRunAt": "",
+            "AgeHours": round(age, 2) if age is not None else "",
+            "Artifact": "",
+            "Note": note,
+        }
+
+    for sport in GAME_LINE_FEEDS:
+        gl_age = _odds_age(BASE_DIR / GAME_LINE_FEEDS[sport])
+        pr_age = _odds_age(BASE_DIR / PROPS_FEEDS[sport])
+        gl_state, pr_state = _odds_state(gl_age), _odds_state(pr_age)
+        rows.append(_row(f"{sport} game lines", gl_age, f"Current {sport} game-line feed (stale>{ODDS_STALE_HOURS}h)."))
+        rows.append(_row(f"{sport} props", pr_age, f"Current {sport} player-prop feed (stale>{ODDS_STALE_HOURS}h)."))
+        if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
+            reasons.append(f"{sport} props {pr_state} while {sport} game lines FRESH (props pipeline broken "
+                           f"or no markets posted)")
+
+    fut_age = _odds_age(BASE_DIR / FUTURES_FEED)
+    rows.append(_row("Futures", fut_age, f"Always-on futures feed (stale>{ODDS_STALE_HOURS}h)."))
+    if _odds_state(fut_age) in ("STALE", "MISSING"):
+        reasons.append(f"Futures feed {_odds_state(fut_age)} (always-on)")
+    return rows, reasons
+
+
+def _operator_signals() -> tuple[list[str], dict]:
+    """Read the structured operator summary (written by run_daily) for blocking failures and provider
+    exhaustion. Machine-readable -- never parse the free-text operator log."""
+    reasons: list[str] = []
+    info: dict = {}
+    try:
+        payload = json.loads(OPERATOR_SUMMARY_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return reasons, info
+    info = {
+        "finished_at": payload.get("finished_at", ""),
+        "blocking_failure": bool(payload.get("blocking_failure")),
+        "failed_steps": list(payload.get("failed_steps") or []),
+        "provider_exhausted_steps": list(payload.get("provider_exhausted_steps") or []),
+    }
+    if info["blocking_failure"] and info["failed_steps"]:
+        reasons.append("operator blocking failure: " + ", ".join(info["failed_steps"]))
+    if info["provider_exhausted_steps"]:
+        reasons.append("provider quota exhausted: " + ", ".join(info["provider_exhausted_steps"]))
+    return reasons, info
+
+
 def build_run_status() -> dict:
     now = datetime.now(timezone.utc)
     rows = []
@@ -198,14 +271,31 @@ def build_run_status() -> dict:
             "Note": check["note"],
         })
 
+    # Fold in the Odds-feed families + the structured operator summary -- the signals whose absence let
+    # the Oct 2026 incident read GREEN while props were days stale and CFBD was quota-exhausted.
+    odds_rows, odds_reasons = _odds_family_signals()
+    op_reasons, op_info = _operator_signals()
+    rows.extend(odds_rows)
+    degraded_reasons = odds_reasons + op_reasons
+
     counts = {status: sum(1 for row in rows if row["Status"] == status) for status in ["FRESH", "AGING", "STALE", "MISSING"]}
-    overall = "GREEN" if counts["STALE"] == 0 and counts["MISSING"] == 0 else "WATCH"
+    # Severity: RED (nothing fresh at all) > DEGRADED (a current-market feed is stale, a required refresh
+    # was skipped by provider exhaustion, or a blocking step failed) > WATCH (aging artifacts) > GREEN.
+    # DEGRADED supersedes a false GREEN/WATCH -- that is the whole point of the incident fix.
     if counts["FRESH"] == 0:
         overall = "RED"
+    elif degraded_reasons:
+        overall = "DEGRADED"
+    elif counts["STALE"] == 0 and counts["MISSING"] == 0:
+        overall = "GREEN"
+    else:
+        overall = "WATCH"
     return {
         "generated_at": now.astimezone().isoformat(timespec="seconds"),
         "overall": overall,
         "counts": counts,
+        "degraded_reasons": degraded_reasons,
+        "operator": op_info,
         "rows": rows,
     }
 
@@ -227,9 +317,11 @@ def main() -> int:
     print("BANKROLL KINGS - RUN STATUS")
     print("=" * 60)
     print(f"Overall: {payload['overall']}")
+    for reason in payload.get("degraded_reasons", []):
+        print(f"  DEGRADED: {reason}")
     print(f"Output: {JSON_PATH}")
     for row in payload["rows"]:
-        print(f"{row['Status']:<7} {row['Name']:<20} {row['AgeHours']}h {row['Artifact']}")
+        print(f"{row['Status']:<7} {row['Name']:<24} {row['AgeHours']}h {row['Artifact']}")
     return 0
 
 

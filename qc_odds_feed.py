@@ -33,12 +33,28 @@ from services.env_loader import load_local_env
 load_local_env(Path(__file__).resolve().parent)
 
 BASE_DIR = Path(__file__).resolve().parent
-ALWAYS_ON_ODDS = {
-    "NFL game lines": "data/odds/NFL_Odds.csv",
-    "NCAAF game lines": "data/odds/NCAAF_Odds.csv",
-    "Futures": "data/futures/Futures_Odds.csv",
-}
+# Feed FAMILIES (incident 2026-10-24): health is reported per family, never as one blanket "odds healthy".
+GAME_LINE_FEEDS = {s: f"data/odds/{s}_Odds.csv" for s in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")}
+PROPS_FEEDS = {s: f"data/props/{s}_Props.csv" for s in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")}
+FUTURES_FEED = "data/futures/Futures_Odds.csv"
+GRADING_FEEDS = {"NFL graded record": "data/tracking/NFL_AllPropResults.csv"}
 STALE_HOURS = 40  # daily refresh cadence + margin
+# Back-compat (other code imports ALWAYS_ON_ODDS).
+ALWAYS_ON_ODDS = {"NFL game lines": GAME_LINE_FEEDS["NFL"], "NCAAF game lines": GAME_LINE_FEEDS["NCAAF"],
+                  "Futures": FUTURES_FEED}
+
+
+def _age_hours(path: Path):
+    try:
+        return (time.time() - path.stat().st_mtime) / 3600.0
+    except OSError:
+        return None
+
+
+def _state(age):
+    if age is None:
+        return "MISSING"
+    return "FRESH" if age <= STALE_HOURS else "STALE"
 
 
 def _odds_api_key() -> str:
@@ -69,28 +85,47 @@ def run_qc(check_key: bool = True) -> dict:
     else:
         key_note = "Key validity check skipped."
 
-    stale: list[str] = []
-    for label, rel in ALWAYS_ON_ODDS.items():
-        path = BASE_DIR / rel
-        if not path.exists():
-            failures.append(f"{label}: file missing ({rel}).")
-            continue
-        age_hours = (time.time() - path.stat().st_mtime) / 3600.0
-        if age_hours > STALE_HOURS:
-            stale.append(f"{label} {age_hours:.0f}h old")
-    if stale:
-        failures.append("Always-on odds feeds are STALE (fetch pipeline likely broken): " + "; ".join(stale))
+    # ---- per-family feed health ----
+    warnings: list[str] = []
+    families: dict[str, str] = {}
+    for sport in GAME_LINE_FEEDS:
+        gl_age = _age_hours(BASE_DIR / GAME_LINE_FEEDS[sport])
+        pr_age = _age_hours(BASE_DIR / PROPS_FEEDS[sport])
+        gl_state, pr_state = _state(gl_age), _state(pr_age)
+        families[f"{sport} game lines"] = f"{gl_state} ({gl_age:.0f}h)" if gl_age is not None else "MISSING"
+        families[f"{sport} props"] = f"{pr_state} ({pr_age:.0f}h)" if pr_age is not None else "MISSING"
+        # TRUTH RULE: if a sport's GAME LINES are FRESH (the sport is active -- games are being lined) but
+        # its PROPS are STALE, the props pipeline is broken (or markets are not posted). Either way the
+        # odds feed is NOT "healthy" for that sport -- flag it. A manifest/availability check classifies
+        # it as a genuine break vs a legitimate NO_MARKETS_POSTED window; this guard just refuses a false
+        # all-clear. When game lines are ALSO stale/missing, the sport is off-season -> not flagged here.
+        if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
+            failures.append(f"{sport} props are {pr_state} while {sport} game lines are FRESH -- props "
+                            f"pipeline broken or no markets posted (verify with the availability report).")
+    # futures (always-on)
+    fut_age = _age_hours(BASE_DIR / FUTURES_FEED)
+    families["Futures"] = f"{_state(fut_age)} ({fut_age:.0f}h)" if fut_age is not None else "MISSING"
+    if _state(fut_age) in ("STALE", "MISSING"):
+        failures.append(f"Futures feed is {_state(fut_age)} (always-on; the Odds-health guard tracks it).")
+    # historical grading (nflverse-fed, NOT Odds API -> informational WARNING, never a hard odds failure)
+    for label, rel in GRADING_FEEDS.items():
+        g_age = _age_hours(BASE_DIR / rel)
+        families[label] = f"{_state(g_age)} ({g_age:.0f}h)" if g_age is not None else "MISSING"
+        if _state(g_age) in ("STALE", "MISSING"):
+            warnings.append(f"{label} is {_state(g_age)} (nflverse grading, separate from the Odds feed).")
 
-    notes = key_note + (" | STALE: " + "; ".join(stale) if stale else " | Always-on odds files are fresh.")
+    fam_line = "; ".join(f"{k}={v}" for k, v in families.items())
+    notes = key_note + " || FAMILIES: " + fam_line
     report = {
         "checked_at": checked_at,
         "clean": len(failures) == 0,
         "pass_count": 0 if failures else 1,
-        "warning_count": 0,
+        "warning_count": len(warnings),
         "failure_count": len(failures),
         "notes": notes,
+        "families": families,
         "failures": failures,
-        "warnings": [],
+        "warnings": warnings,
     }
     append_qc_run_log("odds_feed", report)
     return report
