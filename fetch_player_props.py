@@ -714,14 +714,43 @@ def main() -> int:
     # non-finite lines, timestamp regression, conflicting duplicates, wrong-sport path, empty slice,
     # implausible collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
-    from services.feed_validation import PLAYER_PROPS_SPEC, validate_feed
+    from services.feed_validation import (
+        NBA_PLAYER_PROPS_SLATE_SPEC, PLAYER_PROPS_SPEC, validate_feed, validate_feed_slate,
+    )
     try:
         prior = pd.read_csv(output_path) if output_path.exists() else None
     except Exception:
         prior = None
-    ok, errs = validate_feed(df, PLAYER_PROPS_SPEC, prior_df=prior, path=output_path,
-                             sport_tokens=_sport_tokens(sport),
-                             allow_collapse=bool(getattr(args, "allow_collapse", False)))
+
+    if NBA_PLAYER_PROPS_SLATE_SPEC.slate_aware and sport == "basketball_nba":
+        # Slate-aware validation (incident 2026-10-24): a smaller CURRENT slate must not be rejected by an
+        # absolute collapse test against a STALE larger prior. Build the slate facts from THIS run's
+        # in-process shape receipt so the receipt is linked to this exact candidate.
+        eligible = sum(1 for e in _SHAPE_EVENTS if e.get("any_requested_present"))
+        with_rows = sum(1 for e in _SHAPE_EVENTS if int(e.get("rows_parsed") or 0) > 0)
+        markets_present = sorted({m for e in _SHAPE_EVENTS for m in e.get("present_requested_markets", [])})
+        slate_facts = {
+            "events_found": len(events),
+            "eligible_events": eligible,
+            "events_with_rows": with_rows,
+            "provider_errors": error_count,
+            "candidate_rows": len(df),
+            "requested_markets": markets,
+            "markets_present": markets_present,
+        }
+        ok, errs, vreceipt = validate_feed_slate(df, NBA_PLAYER_PROPS_SLATE_SPEC, prior_df=prior,
+                                                 path=output_path, sport_tokens=_sport_tokens(sport),
+                                                 slate_facts=slate_facts)
+        print("---- VALIDATION RECEIPT (slate-aware) ----")
+        for k in ("baseline_mode", "non_comparable_reason", "prior_age", "prior_rows",
+                  "prior_eligible_events", "candidate_rows", "candidate_eligible_events", "event_coverage",
+                  "requested_markets", "markets_present", "provider_errors", "normalized_rows_per_event",
+                  "decision", "reason_code"):
+            print(f"  {k}: {vreceipt.get(k)}")
+    else:
+        ok, errs = validate_feed(df, PLAYER_PROPS_SPEC, prior_df=prior, path=output_path,
+                                 sport_tokens=_sport_tokens(sport),
+                                 allow_collapse=bool(getattr(args, "allow_collapse", False)))
     if not ok:
         print("Strong validation FAILED, preserving existing props CSV:")
         for e in errs:

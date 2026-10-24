@@ -93,6 +93,12 @@ SCORECARDS = [
     # POST-refresh health check run after every refresh, so a feed that recovered during the run is not
     # left recorded as a blocking failure, while a still-stale feed is. Faked operator, no subprocess.
     ("Operator Post-Refresh Health QC", "qc_operator_post_refresh_health.py", 90),
+    # Slate-aware props validation (Oct 24 authorized): when the prior baseline is not comparable (esp.
+    # stale), the absolute row-count collapse test is replaced by a CURRENT-SLATE COMPLETENESS contract
+    # (linked shape receipt, zero provider errors, full eligible-event coverage, density floor) -- never
+    # "trust any nonempty fetch". Comparable fresh prior keeps the collapse test. NBA props opts in; other
+    # feeds unaffected. Structural checks reject in both modes. Pure/offline (synthetic frames).
+    ("Slate-Aware Validation QC", "qc_slate_validation.py", 90),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

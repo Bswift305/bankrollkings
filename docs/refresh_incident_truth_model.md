@@ -180,6 +180,27 @@ blocking failure. `qc_operator_post_refresh_health.py` proves both paths.
 > conservative default), NOT NO_MARKETS_POSTED — the classifier will only call it NO_MARKETS_POSTED once
 > a receipt proves it.
 
+### Slate-aware props validation (NBA current-slate contract)
+The Oct-24 scheduled run proved NBA VALIDATION_FAILED was a **collapse false-positive**: a complete fresh
+8-game slate (755 rows, all 6 markets, 0 errors) was rejected only because `755 < 50% × 1644`, where the
+1,644-row prior was a **stale 72h larger slate** — an apples-to-oranges comparison. Fixed in
+`services/feed_validation.py` with two baseline modes (opt-in per spec; **only `NBA_PLAYER_PROPS_SLATE_SPEC`
+opts in** — game lines and other props are untouched):
+- **COMPARABLE_PRIOR** — prior is non-empty, within the 30h cadence, with a similar event count and the
+  SAME market + bookmaker sets: the absolute row-count collapse test is KEPT (a real decline still rejects).
+- **CURRENT_SLATE** — prior stale / not comparable: the collapse-vs-stale comparison is invalid, so a
+  **completeness contract** applies instead (never "trust any nonempty fetch"): a linked response-shape
+  receipt (`candidate_rows == frame rows`), zero provider errors, FULL coverage of the eligible
+  (markets-posted) events, and a normalized rows-per-event floor — plus every structural check. Anything
+  missing/partial/contradictory fails closed.
+`validate_feed_slate` returns a receipt (`baseline_mode`, `prior_age/rows/eligible_events`,
+`candidate_rows/eligible_events`, `event_coverage`, `requested/present markets`, `provider_errors`,
+`normalized_rows_per_event`, `decision`, `reason_code`) which the fetcher prints. Reason codes:
+`COMPARABLE_BASELINE_COLLAPSE` / `PRIOR_BASELINE_STALE` / `BASELINES_NOT_COMPARABLE` /
+`CURRENT_SLATE_COMPLETE` / `CURRENT_SLATE_INCOMPLETE` / `RESPONSE_RECEIPT_MISSING`. QC:
+`qc_slate_validation.py` (10 proofs). The next scheduled NBA fetch publishes a complete slate
+automatically — no manual fetch, no `--allow-collapse`, validator never weakened for other feeds.
+
 ## 7. Quota reconciliation (directive #4/#8) — BUILT
 
 - **Append-only ledger:** `services/odds_quota.py` `QuotaRecorder.write_ledger(...)` appends one line per
