@@ -50,17 +50,32 @@ by this data gap — but the gate is procedural: resolve the promoted P0 first.)
    gates, and destination-fetch tests that assert the rendered entity.
 4. Then the design-only **Decision Integrity Architecture Constitution** (returned for approval).
 
-**Active P0 (promoted from Item 5, 2026-10-24):** the graded `NFL_AllPropResults.csv` holds zero current-
-season rows while the Wave correctly fails closed. The candidate archive is **healthy and current** (13,386
-all-2026 NFL candidates), so this is NOT input-starvation — the fault is in the grading→publish lane,
-downstream of the archive. The on-disk file is backfill-shaped (prior-season, `IsBackfill` columns), so it
-is likely the untouched one-off backfill. Decide the fix with `diag_nfl_grading_input.py` v2 (read-only;
-dry-run grade of the current archive):
-- **GRADER_RESOLUTION_GAP** → fix identity resolution in `grade_candidate_archive_rows` (the exact
-  `logs['Player']==player` join fails for short-form 2026 gamelog names; same class as the Nico Collins
-  milestone bug, here in the market-line grader). A CODE fix.
-- **GRADER_OK_NOT_PUBLISHED** → the grader resolves but its write isn't landing (not running in
-  `run_daily` on prod, or the one-off backfill overwrites it). An OPS/pipeline fix.
+**Active P0 (promoted from Item 5) — ROOT CAUSE CONFIRMED on prod 2026-10-24 (`diag_nfl_grading_input.py`
+v2, exit 3 = GRADER_OK_NOT_PUBLISHED):** a **shared-path write collision** between two independent prod
+pipelines corrupts `data/tracking/NFL_AllPropResults.csv`.
+
+- **Not input-starvation, not a resolver bug.** The archive is healthy (13,386 all-2026 NFL candidates);
+  the gamelog reaches 2026 (2,090 players); the guard passes. The read-only **dry-run grade** of the
+  current archive resolves **86 current-season (2026) rows** (Hit 43 / Miss 43) with the rest correctly
+  *Pending* (future games). Every sampled "unresolved" player matches the gamelog **exactly** (`exact=True`,
+  `shortform=False`) — so the earlier Nico-Collins short-form hypothesis is **ruled out**; those are
+  future-week picks, not dropped rows.
+- **The clobber.** `refresh_all_prop_results.py` (run_daily step "All prop results grading", ran 13:06:27,
+  clean) grades the archive into `NFL_AllPropResults.csv`. ~55s later `build_nfl_historical_calibration.py`
+  (whose `OUTPUT_PATH` **is** `NFL_AllPropResults.csv`, a plain `to_csv` replace) runs via
+  `run_bk_edge_engine_pipeline.py` and overwrites it with 34,788 historical 2024/25 rows
+  (`IsBackfill=True`, `Method='Historical Backfill'`, `ModelVersion='NFL_Backfill_v1'`, `SnapshotWrittenAt`
+  13:07:22). Whichever pipeline runs last wins; the Edge-Engine backfill runs last → the published file has
+  **zero** current-season rows → the Wave correctly fails closed.
+- **Fix family (one reversible commit; AWAITING DIRECTION — a shared data-contract change):** give the
+  historical calibration backfill its **own** file (e.g. `NFL_AllPropResults_Backfill.csv` /
+  `NFL_HistoricalCalibration.csv`) so `refresh_all_prop_results.py` owns `NFL_AllPropResults.csv`
+  exclusively. Repoint `build_nfl_historical_calibration.py:OUTPUT_PATH`, `normalize_result_metadata.py`'s
+  NFL target, and every calibration consumer that currently reads the historical rows out of
+  `NFL_AllPropResults.csv` (audit: `calibrate_nfl_model.py`, the calibration-note / drift-alert
+  generators). The live streak + Heating-Up boards already want live-only, so they heal automatically.
+  (Alternatives considered: reorder the pipelines, or merge-on-write keyed by `IsBackfill` — both leave two
+  writers on one file and stay race-prone; single-writer-per-file is the durable fix.)
 This precedes Audit #1.
 
 **Out of scope / untouched:** NBA surface migration (owned by NBA Season Readiness); MLB/WNBA team pages
