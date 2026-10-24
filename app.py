@@ -18023,6 +18023,17 @@ def build_game_market_lookup(odds_df):
     lookup = {}
     if odds_df.empty:
         return lookup
+    # FAIL CLOSED at the shared service boundary: this is THE chokepoint that annotates games with the
+    # current spread/total/ML across every board + command center (NBA/WNBA/MLB/NFL/CFB). When the WHOLE
+    # odds feed is stale (its freshest LastUpdated is older than the live-market window -- the incident
+    # condition, a broken/halted capture), return an empty lookup so no stale current line/price is shown
+    # as live. get_lines_refresh_meta keys on the FRESHEST row, so a normal feed with any recent update is
+    # NOT suppressed -- only a wholesale-stale feed is (incident 2026-10-23).
+    try:
+        if get_lines_refresh_meta(odds_df).get('is_stale'):
+            return lookup
+    except Exception:
+        pass
     for _, row in odds_df.iterrows():
         away = normalize_team_abbr(row.get('Away', '') or row.get('AwayFull', ''))
         home = normalize_team_abbr(row.get('Home', '') or row.get('HomeFull', ''))

@@ -59,6 +59,11 @@ SCORECARDS = [
     # latest snapshot is stale (>12h = 3x the 4h cadence) is suppressed, never shown as a live current
     # line. Populated fixture (fresh surfaces, stale suppressed). app.DATA_DIR redirected; no network.
     ("Market Movers Freshness QC", "qc_market_movers_freshness.py", 120),
+    # build_game_market_lookup wholesale-stale gate (Oct 23 containment): THE shared chokepoint for the
+    # current spread/total/ML across every board + command center (NBA/WNBA/MLB/NFL/CFB) returns an empty
+    # lookup when the whole odds feed is stale -- so no board annotates a stale current line as live. A
+    # feed with any recent update (or no LastUpdated) is not suppressed. Pure.
+    ("Market Lookup Freshness QC", "qc_market_lookup_freshness.py", 60),
     # Atomic + validated artifact publish (Oct 23 recovery gate): the shared temp->validate->os.replace
     # helper the Odds fetchers (game lines, player props, futures) now publish through -- a crash or bad
     # frame can't truncate an authoritative file and a validation failure preserves last-known-good. Cheap.

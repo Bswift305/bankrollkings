@@ -31,15 +31,18 @@ live-market window, same as props `load_*_live_props_feed(require_fresh=True, ma
 |---|---|---|---|
 | NBA/WNBA runtime snapshots | `load_runtime_snapshot` **rejects** NBA/WNBA snapshots by key while `BK_NBA_STATS_ENABLED=0` → a forbidden/stale snapshot cannot surface; callers fall to the live build | `qc_nba_residual_authority` R7-C (seeded forbidden snapshot rejected) | ✅ |
 
+## GREEN — verified (shared current-line chokepoint, all sports)
+| Channel | artifact | clock | thr | stale behavior | cache-key gate | test | status |
+|---|---|---|---|---|---|---|---|
+| **`build_game_market_lookup`** — the shared chokepoint annotating current spread/total/ML on **every** board + command center (NBA/WNBA/MLB/NFL/CFB; 8 callers incl. `/sports/*` command centers) | per-sport `*_Odds.csv` | freshest `LastUpdated` | 6h | empty lookup when the **whole feed** is stale → no board shows a stale current line/price; any recent update (or no `LastUpdated`) is not suppressed | builder-level (request-time); TTL caches re-evaluate | `qc_market_lookup_freshness` | ✅ |
+| NBA/WNBA/MLB command-center game-line annotations | via the chokepoint above | — | 6h | fail closed when feed wholesale-stale | — | same | ✅ |
+
 ## RED — remaining (must close before recovery)
 | Channel | artifact | clock | thr | current behavior | gate needed | status |
 |---|---|---|---|---|---|---|
-| NBA command-center / `/sports/nba` game-line board (non-movers) | `NBA_Odds.csv` | none for lines | — | **lines render regardless of age** (props fail closed at 6h; lines do not) | add `get_lines_refresh_meta` fail-closed to the line board | ⛔ REMAINING |
-| WNBA command-center / `/sports/wnba` game-line board | `WNBA_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
-| MLB command-center / `/sports/mlb` game-line board | `MLB_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
-| **Cached snapshots** (NBA command center prewarm, `refresh_runtime_snapshots`) | `NBA_Odds.csv` | snapshot build time | — | a snapshot built while fresh can be **served after the feed goes stale** | fold lines-freshness/gate state into the snapshot **cache key** (so a stale-era payload can't be served); or re-gate on read | ⛔ REMAINING |
-| JSON / lazy endpoints (`/tools/cfb-ats/games`, `/api/live-ticker`, any `*/games` AJAX) | per-sport odds | per-endpoint | — | **unaudited per endpoint**; most read the same builders | audit each; apply the same fail-closed gate (and to its cache key) | ⛔ REMAINING |
-| Embedded feeds — SGP Workbench, King's Tickets, Matchup Center | per-sport odds / book quotes | per-feed | — | SGP uses book-specific quotes ("price unavailable" never synthesized — partial protection); Matchup Center factual modules — **line freshness unverified** | audit each embedded odds read; fail closed on stale | ⛔ REMAINING |
+| **Cached snapshots** — MLB/WNBA line boards prewarmed via `refresh_runtime_snapshots` (NBA/WNBA already rejected by the stats-gate, R7-C) | per-sport `*_Odds.csv` | snapshot build time | — | a non-NBA/WNBA snapshot built while fresh could be **served after the feed goes stale** | re-gate on read (the chokepoint runs at request time, but a snapshot that pre-rendered the lookup bypasses it) OR fold freshness into the snapshot key | ⛔ REMAINING |
+| JSON / lazy endpoints (`/tools/cfb-ats/games`, `/api/live-ticker`, `*/games` AJAX) | per-sport odds | per-endpoint | — | those that read `build_game_market_lookup` / `build_market_movers_context` / `build_football_*` are **now covered** by the chokepoint gates; any that read odds directly are **unaudited** | audit each; the ones bypassing the chokepoints need the gate | ⚠️ PARTIAL (audit) |
+| Embedded feeds — SGP Workbench, King's Tickets, Matchup Center | per-sport odds / book quotes | per-feed | — | SGP uses book-specific quotes ("price unavailable" never synthesized — partial); Matchup Center + King's Tickets line reads **unverified** | audit each embedded odds read; fail closed on stale | ⛔ REMAINING |
 | Exports (`/bet-review/export`, `/elite/alerts/export`) | user bet/alert data, not a current-odds board | n/a | — | likely **N/A** (not a current-market line export) — **to confirm** | confirm no current line/price is exported stale; else gate | ⚠️ VERIFY |
 
 ## Notes
