@@ -30,6 +30,15 @@ def main() -> int:
             failures.append(f"{c.label} ({c.path}) has no season-neutral '{SEASON_NEUTRAL}' marker; "
                             f"markers={c.markers} would false-fail in-season")
 
+    # NBA board fast routes must accept the restricted-stats CONTAINMENT render (BK_NBA_STATS_ENABLED=0):
+    # a marker that holds whether the full board shows OR the "temporarily unavailable" notice does, so
+    # the smoke never false-fails the intended containment state.
+    nba_props_fast = [c for c in ROUTE_CHECKS if c.fast and c.path.split("?")[0] == "/sports/nba/props"]
+    for c in nba_props_fast:
+        if not any("temporarily unavailable" in m for m in c.markers):
+            failures.append(f"{c.label} ({c.path}) has no containment-aware marker "
+                            f"('temporarily unavailable'); markers={c.markers} false-fail while NBA stats gated")
+
     print("=" * 60)
     print("QC: SMOKE MARKERS SEASON-ROBUST (football command routes)")
     print("=" * 60)

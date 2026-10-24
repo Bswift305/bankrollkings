@@ -31,7 +31,13 @@ ROUTE_CHECKS: tuple[RouteCheck, ...] = (
     RouteCheck("/sports/nba?postseason=1", "NBA Command", ("NBA Data Pulse", "Tonight's Card"), "nba", True),
     RouteCheck("/schedule?postseason=1", "NBA Schedule", ("Schedule", "Upcoming"), "nba"),
     RouteCheck("/game-lines?postseason=1", "NBA Game Lines", ("Game Lines", "Market Read"), "nba"),
-    RouteCheck("/sports/nba/props?postseason=1&sample=current&date=today", "NBA Props", ("Props Screener", "Platform Lens"), "nba", True),
+    # Markers accept EITHER valid NBA props render: the full "Props Screener" board when stats are
+    # enabled, OR the intended restricted-stats containment notice ("temporarily unavailable") while
+    # BK_NBA_STATS_ENABLED=0. The page legitimately 200s in both; the old markers assumed the board was
+    # always shown and false-failed the containment view. (Does NOT lift containment; "Platform Lens" was
+    # not reliably present on this page and was dropped.)
+    RouteCheck("/sports/nba/props?postseason=1&sample=current&date=today", "NBA Props",
+               ("Props Screener", "temporarily unavailable"), "nba", True),
     RouteCheck("/props/floor?postseason=1", "NBA Floor Plays", ("Floor Plays", "How To Use Floor Plays"), "nba"),
     RouteCheck("/market-edge?postseason=1&sample=current&date=today", "NBA Market Edge", ("Platform Lens", "Market Edge"), "nba"),
     RouteCheck("/matchup-lens?postseason=1", "NBA Matchup Lens", ("Tonight's Card", "Matchup Lens"), "nba"),
