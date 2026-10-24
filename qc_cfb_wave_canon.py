@@ -1,9 +1,20 @@
-"""QC: CFB wave-local team canonicalization + COLLISION AUDIT (pre-ship gate).
+"""QC: CFB wave-local team NAME canonicalization -- NON-AUTHORITATIVE overlay/diagnostic (2026-10-24).
 
-Proves `app._cfb_wave_team_key(name) = cff._resolve(normalize_ncaaf_team_name(name))` collapses the CFBD
-short/long name divergence (App State / Appalachian State ...) WITHOUT collapsing distinct teams, before
-it is wired into the Active ATS Wave (docs/cfb_runtime_data_corrective.md, Option 1). Any collision among
-distinct teams fails the gate. Exits 0 on success, 1 otherwise. No network.
+HISTORY: `app._cfb_wave_team_key(name) = cff._resolve(normalize_ncaaf_team_name(name))` was Option 1
+(wave-local name identity). Option 1 was SUPERSEDED as unviable on prod because `cff._resolve` is
+DATA-DEPENDENT prefix matching, so a NAME can never be an authoritative identity (it merges distinct
+teams like Miami (FL)/Miami (OH), Louisiana-Lafayette/UL Monroe, Sam Houston/Sam Houston State). The
+Active ATS Wave now keys on **(GameID, TeamSide)** and the provider conference; `_cfb_wave_team_key` is
+kept ONLY for the non-authoritative presentation overlay + diagnostics (docs/cfb_runtime_data_corrective.md
+"Game-ID reconciliation (SHIPPED)"). Authoritative distinctness/fail-closed is proven by
+`qc_cfb_ats_wave_admission.py` (game-id model).
+
+Therefore this QC is scoped to what the overlay key legitimately OWES:
+  HARD (board-blocking): aliases merge (App State == Appalachian State), idempotent.
+  DIAGNOSTIC (WARN, never board-failing): name-key collisions among distinct teams -- EXPECTED for a
+     data-dependent resolver and HARMLESS because authoritative membership is (GameID, TeamSide), not the
+     name key. A genuine duplicate AUTHORITATIVE id still fails closed -- in the admission QC, not here.
+Exits 0 unless a HARD overlay check fails. No network.
 """
 from __future__ import annotations
 
@@ -85,33 +96,54 @@ def qc_fbs_fcs_side_distinct():
     return issues
 
 
-CHECKS = [("aliases_resolve_identically", qc_aliases_resolve_identically),
-          ("idempotent", qc_idempotent),
-          ("distinct_teams_no_collision", qc_distinct_teams_no_collision),
-          ("ambiguous_families_distinct", qc_ambiguous_families_distinct),
-          ("fbs_fcs_side_distinct", qc_fbs_fcs_side_distinct)]
+# HARD: the overlay key MUST merge short/long aliases and be idempotent (its only authoritative-adjacent
+# job -- presentation grouping of App State/Appalachian State). A failure here is a real overlay bug.
+HARD_CHECKS = [("aliases_resolve_identically", qc_aliases_resolve_identically),
+               ("idempotent", qc_idempotent)]
+# DIAGNOSTIC: name-key collisions among distinct teams. EXPECTED for a data-dependent resolver and
+# HARMLESS -- authoritative membership is (GameID, TeamSide), not this key. Reported as WARN, never fails
+# the board; the authoritative distinctness is enforced/proved by qc_cfb_ats_wave_admission.py.
+DIAGNOSTIC_CHECKS = [("distinct_teams_no_collision", qc_distinct_teams_no_collision),
+                     ("ambiguous_families_distinct", qc_ambiguous_families_distinct),
+                     ("fbs_fcs_side_distinct", qc_fbs_fcs_side_distinct)]
+
+
+def _run(name, fn):
+    try:
+        return fn()
+    except Exception as e:  # noqa
+        import traceback
+        traceback.print_exc()
+        return [f"EXCEPTION {type(e).__name__}: {e}"]
 
 
 def main() -> int:
     print("=" * 60)
-    print("BANKROLL KINGS CFB WAVE CANONICALIZATION + COLLISION AUDIT")
+    print("BANKROLL KINGS CFB WAVE NAME OVERLAY (non-authoritative)")
     print("=" * 60)
     failed = 0
-    for name, fn in CHECKS:
-        try:
-            issues = fn()
-        except Exception as e:  # noqa
-            import traceback
-            issues = [f"EXCEPTION {type(e).__name__}: {e}"]
-            traceback.print_exc()
+    for name, fn in HARD_CHECKS:
+        issues = _run(name, fn)
         if issues:
             failed += 1
             for i in issues:
                 print(f"[FAIL] {name}: {i}")
         else:
             print(f"[PASS] {name}")
+    warns = 0
+    for name, fn in DIAGNOSTIC_CHECKS:
+        issues = _run(name, fn)
+        for i in issues:
+            warns += 1
+            print(f"[WARN] {name}: {i} (non-authoritative name key; membership is (GameID, TeamSide))")
+        if not issues:
+            print(f"[PASS] {name}")
     print("-" * 60)
-    print(f"FAIL: {failed}" if failed else "Wave canonicalization verified; no distinct-team collisions.")
+    if failed:
+        print(f"FAIL: {failed}")
+    else:
+        print(f"Overlay alias-merge verified; {warns} non-authoritative name-key collision(s) noted as "
+              "diagnostics. Authoritative distinctness is proven by qc_cfb_ats_wave_admission.py.")
     return 1 if failed else 0
 
 

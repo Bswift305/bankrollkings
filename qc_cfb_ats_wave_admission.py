@@ -83,22 +83,29 @@ def qc_one_decision_fbs_fcs():
 
 
 def qc_ambiguous_names_distinct_by_gameid():
-    """Miami/Miami (OH), Tennessee/UT Martin, Louisiana/UL Monroe, Southern/Southern Miss stay distinct:
-    different games -> different GameIDs -> separate decisions, never merged by name."""
-    pairs = [('Miami', 'Miami (OH)'), ('Tennessee', 'UT Martin'),
-             ('Louisiana', 'UL Monroe'), ('Southern', 'Southern Miss')]
+    """Similar-name teams stay distinct: different games -> different GameIDs -> separate decisions, never
+    merged by name. Includes the exact families the non-authoritative name key collapses (Miami (FL)/
+    Miami (OH), Louisiana-Lafayette/UL Monroe, Sam Houston/Sam Houston State) -- proving the authoritative
+    (GameID, TeamSide) model keeps them separate where the name key cannot."""
+    pairs = [('Miami', 'Miami (OH)'), ('Miami (FL)', 'Miami (OH)'), ('Tennessee', 'UT Martin'),
+             ('Louisiana', 'UL Monroe'), ('Louisiana-Lafayette', 'UL Monroe'),
+             ('Southern', 'Southern Miss'), ('Sam Houston', 'Sam Houston State')]
     issues, rows, gid = [], [], 420000
+    names = set()
     for a, b in pairs:
+        names.add(a)
+        names.add(b)
+    for name in sorted(names):
         gid += 1
-        rows.append(grow(str(gid), 'HOME', a, f'Xa{gid}', 'Hit', 1, '2026-09-01'))
-        gid += 1
-        rows.append(grow(str(gid), 'HOME', b, f'Xb{gid}', 'Miss', 1, '2026-09-02'))
+        rows.append(grow(str(gid), 'HOME', name, f'X{gid}', 'Hit', 1, '2026-09-01'))
     per = _streaks(rows)['per']
     for a, b in pairs:
         if a not in per or b not in per:
             issues.append(f'{a!r}/{b!r} not both present: {a in per}/{b in per}')
-    if len(per) != 8:
-        issues.append(f'expected 8 distinct teams, got {len(per)}')
+        if a in per and b in per and a == b:
+            issues.append(f'{a!r} and {b!r} merged')
+    if len(per) != len(names):
+        issues.append(f'expected {len(names)} distinct teams, got {len(per)}')
     return issues
 
 
