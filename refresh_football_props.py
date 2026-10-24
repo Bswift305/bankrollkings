@@ -31,9 +31,9 @@ from pathlib import Path
 
 from services.run_outcomes import (
     aggregate_parent,
-    classify_props_child,
     is_alerting,
-    load_shape_receipt,
+    props_step_outcome,
+    record_child_outcomes,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,14 +86,14 @@ def main() -> int:
         # from the child exit code alone. fetch_player_props returns 1 whenever it preserves last-known-
         # good, which happens for a LEGITIMATE NO_MARKETS_POSTED as well as a real failure; only the
         # receipt separates them (directive #2).
-        advanced = _mtime(artifact) > mtime_before
-        receipt = load_shape_receipt(BASE_DIR, sport_slug)
-        outcome, detail = classify_props_child(exit_code, advanced, receipt)
+        outcome, detail, alerting = props_step_outcome(BASE_DIR, sport_slug, artifact, mtime_before,
+                                                       exit_code, timed_out=False)
         outcomes[label] = outcome
-        tag = "ALERT" if is_alerting(outcome) else "ok"
-        print(f"[{outcome}] {label} seconds={elapsed:.1f} exit={exit_code} ({tag}): {detail}", flush=True)
+        print(f"[{outcome}] {label} seconds={elapsed:.1f} exit={exit_code} "
+              f"({'ALERT' if alerting else 'ok'}): {detail}", flush=True)
         print()
 
+    record_child_outcomes(BASE_DIR, "football_props", outcomes)
     summary, degraded = aggregate_parent(outcomes)
     print(f"OUTCOME football_player_props: {summary}")
     if degraded:

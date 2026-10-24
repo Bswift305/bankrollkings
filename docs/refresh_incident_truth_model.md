@@ -151,7 +151,22 @@ file did not advance = `STALE` (a real break).
   QC), and leaves the run DEGRADED (non-zero) only on a non-benign props outcome. This is the direct fix
   for the incident's "NBA daily FAIL aborted injuries+calibration on a benign empty slate."
 
-QCs: `qc_run_outcomes.py`, `qc_football_props_aggregation.py` (both registered).
+- **MLB parent:** `refresh_mlb_daily.py` uses the same classify-and-continue contract as NBA (props
+  never abort the umpires/context/calibration/QC chain; degrade only on a non-benign outcome).
+- **Operator summary records CHILD outcomes:** each parent writes `_child_outcomes_<parent>.json` (the
+  vocabulary per child), `run_daily` folds them into `Last_Operator_Summary.json` as `child_outcomes` +
+  `degraded_child_outcomes`, and Run Status degrades on an alerting child outcome — the operator summary
+  no longer records only the parent exit code.
+
+QCs: `qc_run_outcomes.py`, `qc_football_props_aggregation.py`, `qc_sport_parent_props.py` (NBA+MLB
+no-abort), `qc_atomic_csv.py` (validator rejection preserves the prior artifact byte-for-byte). Registered.
+
+### Two-clock Run Status (Oct-24 follow-up #2)
+Run Status now reports each current-market family on BOTH clocks so a customer-unavailable feed is never
+labeled healthy: **SERVEABLE** (≤6h render window, green/FRESH), **OVERDUE_FOR_LIVE_RENDER** (6h–30h:
+customer renders unavailable but the refresh is on schedule — AGING row, overall WATCH, not GREEN), and
+**REFRESH_MISSED** (>30h cadence — STALE row, a degraded reason). `qc_run_status_degraded.py` covers the
+tiering.
 
 > Until a prod run produces the receipt, the NBA props outcome is **VALIDATION_FAILED** (the
 > conservative default), NOT NO_MARKETS_POSTED — the classifier will only call it NO_MARKETS_POSTED once
@@ -172,7 +187,19 @@ QCs: `qc_run_outcomes.py`, `qc_football_props_aggregation.py` (both registered).
   attribution begins now that the ledger records every paid call. Run with the owner-read endpoints:
   `python reconcile_odds_quota.py --baseline-remaining <start> --final-remaining <end>`.
 
-QC: `qc_quota_reconciliation.py` (registered).
+- **Attribution always auto-baselines from the first recorded row** (its remaining + that call's own
+  cost), so each row is charged only its own step cost — never the account's lifetime usage. A supplied
+  `--baseline-remaining` that is NOT the window-start reading is detected and its excess is reported as
+  unattributed, not mis-charged to the first row. `reconcile_odds_quota.py --since <ts>` (no endpoints)
+  self-attributes a clean window — e.g. the NFL probe's 97 credits → `NFL | player_props`.
+- **Legacy reconstruction (directive #4):** `reconcile_odds_quota.py --from-operator-log <log>` rebuilds
+  ordered rows from the log's own QUOTA RECEIPT blocks (offline, no network). For the incident window,
+  paired with the owner-read `--baseline-remaining/--final-remaining`, it attributes what the receipts
+  show and reports the remainder as a **pre-ledger gap** (the historical 1,040 is NOT reconciled — any
+  credits with no receipt/ledger row cannot be recovered). Marked explicitly as legacy.
+
+QC: `qc_quota_reconciliation.py` (registered) — auto-baseline, operator-log parse, and the lifetime-
+baseline-misuse guard.
 
 ## 8. CFBD isolation (directive #5) — in force
 CFBD stays isolated and honest: `refresh_cfb_data.py` short-circuits a 429 to exit 3 +

@@ -16,7 +16,7 @@ from qc_odds_feed import (
     _age_hours as _odds_age,
     _state as _odds_state,
 )
-from services.freshness_contract import refresh_cadence_hours
+from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS, refresh_cadence_hours
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -190,20 +190,42 @@ def _status_note(status: str) -> str:
     }.get(status, "Unknown")
 
 
+def _render_tier(age, family: str, sport: str | None = None) -> tuple[str, str, str]:
+    """TWO clocks for a current-market feed (directive #2 of the Oct-24 follow-up). Returns
+    (tier, status_chip, note) where tier is one of:
+      SERVEABLE               age <= 6h   -- within the customer live-render window        (chip FRESH)
+      OVERDUE_FOR_LIVE_RENDER 6h < age <= cadence -- customer fails closed, but the refresh
+                              is still on schedule: NOT 'healthy', but not a missed cycle    (chip AGING)
+      REFRESH_MISSED          age > cadence (30h) -- a refresh cycle was actually missed     (chip STALE)
+      MISSING                 no file.
+    The render window is the same LIVE_MARKET_MAX_AGE_HOURS (6h) the customer board uses, so Run Status
+    can never label a customer-unavailable feed 'healthy'."""
+    if age is None:
+        return "MISSING", "MISSING", "Missing"
+    cadence = refresh_cadence_hours(family, sport)
+    if age > cadence:
+        return "REFRESH_MISSED", "STALE", "REFRESH_MISSED (a refresh cycle was missed)"
+    if age > LIVE_MARKET_MAX_AGE_HOURS:
+        return "OVERDUE_FOR_LIVE_RENDER", "AGING", (f"OVERDUE_FOR_LIVE_RENDER (>{LIVE_MARKET_MAX_AGE_HOURS:.0f}h: "
+                                                    "customer renders unavailable; refresh still on schedule)")
+    return "SERVEABLE", "FRESH", f"SERVEABLE (<={LIVE_MARKET_MAX_AGE_HOURS:.0f}h customer live window)"
+
+
 def _odds_family_signals() -> tuple[list[dict], list[str]]:
-    """Per-family Odds-feed freshness rows + the DEGRADED reasons they imply. The truth rule
-    (same as qc_odds_feed): a sport whose GAME LINES are FRESH but whose PROPS are STALE/MISSING has a
-    broken (or not-yet-posted) props pipeline -- that is a current-market staleness the status MUST show,
-    not hide behind GREEN. When game lines are also stale/missing the sport is off-season -> not degraded."""
+    """Per-family Odds-feed rows on the TWO-clock model + the DEGRADED reasons they imply. A
+    current-market feed past its refresh cadence (REFRESH_MISSED) degrades the overall status; a feed
+    only past the 6h render window (OVERDUE_FOR_LIVE_RENDER) is surfaced as AGING (overall WATCH, never
+    GREEN) so a customer-unavailable feed is never reported 'healthy'. When BOTH a sport's game lines and
+    props are REFRESH_MISSED the sport is off-season; when lines are serveable but props are
+    REFRESH_MISSED the props pipeline is broken (or no markets posted)."""
     rows: list[dict] = []
     reasons: list[str] = []
 
-    def _row(name: str, age, note: str, family: str = "props", sport: str | None = None) -> dict:
-        state = _odds_state(age, family, sport)
+    def _row(name: str, status_chip: str, age, note: str) -> dict:
         return {
             "Name": name,
-            "Status": state,
-            "StatusNote": {"FRESH": "Green", "STALE": "Stale feed", "MISSING": "Missing"}.get(state, "Unknown"),
+            "Status": status_chip,
+            "StatusNote": note,
             "LastRunAt": "",
             "AgeHours": round(age, 2) if age is not None else "",
             "Artifact": "",
@@ -213,23 +235,25 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
     for sport in GAME_LINE_FEEDS:
         gl_age = _odds_age(BASE_DIR / GAME_LINE_FEEDS[sport])
         pr_age = _odds_age(BASE_DIR / PROPS_FEEDS[sport])
-        gl_state = _odds_state(gl_age, "game_lines", sport)
-        pr_state = _odds_state(pr_age, "props", sport)
-        gl_thr = refresh_cadence_hours("game_lines", sport)
-        pr_thr = refresh_cadence_hours("props", sport)
-        rows.append(_row(f"{sport} game lines", gl_age, f"Current {sport} game-line feed (stale>{gl_thr:.0f}h).",
-                         "game_lines", sport))
-        rows.append(_row(f"{sport} props", pr_age, f"Current {sport} player-prop feed (stale>{pr_thr:.0f}h).",
-                         "props", sport))
-        if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
-            reasons.append(f"{sport} props {pr_state} while {sport} game lines FRESH (props pipeline broken "
-                           f"or no markets posted)")
+        gl_tier, gl_chip, gl_note = _render_tier(gl_age, "game_lines", sport)
+        pr_tier, pr_chip, pr_note = _render_tier(pr_age, "props", sport)
+        rows.append(_row(f"{sport} game lines", gl_chip, gl_age, gl_note))
+        rows.append(_row(f"{sport} props", pr_chip, pr_age, pr_note))
+        # REFRESH_MISSED on a current-market feed is actionable -> DEGRADED.
+        if gl_tier == "REFRESH_MISSED" and pr_tier != "REFRESH_MISSED":
+            reasons.append(f"{sport} game lines REFRESH_MISSED (refresh cycle missed)")
+        if pr_tier in ("REFRESH_MISSED",):
+            if gl_tier in ("SERVEABLE", "OVERDUE_FOR_LIVE_RENDER"):
+                reasons.append(f"{sport} props REFRESH_MISSED while game lines are current "
+                               "(props pipeline broken or no markets posted)")
+            # when BOTH are REFRESH_MISSED the sport is off-season -> not degraded here.
 
     fut_age = _odds_age(BASE_DIR / FUTURES_FEED)
-    fut_thr = refresh_cadence_hours("futures")
-    rows.append(_row("Futures", fut_age, f"Always-on futures feed (stale>{fut_thr:.0f}h).", "futures"))
-    if _odds_state(fut_age, "futures") in ("STALE", "MISSING"):
-        reasons.append(f"Futures feed {_odds_state(fut_age, 'futures')} (always-on)")
+    fut_state = _odds_state(fut_age, "futures")   # futures: cadence only (not a 6h live-render surface)
+    rows.append(_row("Futures", fut_state if fut_state != "FRESH" else "FRESH", fut_age,
+                     f"Always-on futures feed (stale>{refresh_cadence_hours('futures'):.0f}h)."))
+    if fut_state in ("STALE", "MISSING"):
+        reasons.append(f"Futures feed {fut_state} (always-on)")
     return rows, reasons
 
 
@@ -247,11 +271,14 @@ def _operator_signals() -> tuple[list[str], dict]:
         "blocking_failure": bool(payload.get("blocking_failure")),
         "failed_steps": list(payload.get("failed_steps") or []),
         "provider_exhausted_steps": list(payload.get("provider_exhausted_steps") or []),
+        "degraded_child_outcomes": list(payload.get("degraded_child_outcomes") or []),
     }
     if info["blocking_failure"] and info["failed_steps"]:
         reasons.append("operator blocking failure: " + ", ".join(info["failed_steps"]))
     if info["provider_exhausted_steps"]:
         reasons.append("provider quota exhausted: " + ", ".join(info["provider_exhausted_steps"]))
+    if info["degraded_child_outcomes"]:
+        reasons.append("child outcome(s) alerting: " + ", ".join(info["degraded_child_outcomes"]))
     return reasons, info
 
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -58,18 +59,83 @@ def load_ledger(path: Path, since: str | None = None) -> list[dict]:
     return rows
 
 
+def parse_operator_log(text: str) -> list[dict]:
+    """Legacy best-effort (directive #4): reconstruct ordered pseudo-ledger rows from the operator log's
+    own QUOTA RECEIPT blocks (our format, printed by services/odds_quota.print_receipt). Each receipt
+    becomes one aggregated row carrying its END cumulative used/remaining + the step's last-sum. Only
+    receipts that actually printed x-requests-remaining are usable; the rest are a pre-ledger gap. No
+    network, no secrets -- this parses our own emitted receipt text, not arbitrary free-form."""
+    rows: list[dict] = []
+    # split on the receipt banner, keep each block
+    blocks = re.split(r"-{4}\s*QUOTA RECEIPT\s*-{4}", text)
+    for block in blocks[1:]:
+        def _grab(pat):
+            m = re.search(pat, block)
+            return m.group(1).strip() if m else None
+        fam = _grab(r"endpoint family\s*:\s*(.+)")
+        sport = _grab(r"sport\s*:\s*(.+)")
+        last = _grab(r"x-requests-last[^:]*:\s*(-?\d+)")
+        used = _grab(r"x-requests-used\s*:\s*(-?\d+)")
+        remaining = _grab(r"x-requests-remaining\s*:\s*(-?\d+)")
+        if remaining is None and used is None:
+            continue  # a receipt with no cumulative headers -- unusable, counts as a gap elsewhere
+        rows.append({
+            "ts": "",
+            "sport": sport or "?",
+            "endpoint_family": fam or "?",
+            "last": int(last) if last is not None else None,
+            "used": int(used) if used is not None else None,
+            "remaining": int(remaining) if remaining is not None else None,
+        })
+    return rows
+
+
 def reconcile(rows: list[dict], baseline_remaining: int | None, final_remaining: int | None) -> dict:
-    """Attribute spend from ordered cumulative `remaining` drops. Returns a report dict with ok flag."""
+    """Attribute spend from ordered cumulative `remaining` drops. Returns a report dict with ok flag.
+
+    ATTRIBUTION always auto-baselines from the FIRST usable row (its remaining + that call's own cost),
+    so each row is charged only its OWN step cost -- never the account's lifetime usage. The explicit
+    --baseline-remaining / --final-remaining are used ONLY to compute the account delta and therefore how
+    much spend happened OUTSIDE these rows (the unattributed remainder). This keeps a single operator
+    log's per-step attribution correct while still exposing a pre-ledger gap against the owner-read
+    account window."""
     problems: list[str] = []
-    # Keep ledger order (insertion), which is chronological per append.
     with_remaining = [r for r in rows if r.get("remaining") is not None]
     gaps = len(rows) - len(with_remaining)
     if gaps:
-        problems.append(f"{gaps} ledger call(s) had NO remaining header -- their spend cannot be attributed")
+        problems.append(f"{gaps} call row(s) had NO remaining header -- their spend cannot be attributed")
+
+    # Attribution baseline = the remaining JUST BEFORE the first recorded call. Prefer the owner-supplied
+    # baseline; otherwise derive it from the first row (its remaining + that call's own x-requests-last).
+    # If a supplied baseline is NOT the immediate-prior reading (it sits above remaining[0] by more than
+    # the first call's own cost), the first row's drop would absorb earlier, pre-window spend -- detect
+    # that and warn, so the operator passes a tight window start (or omits it to auto-derive).
+    attr_baseline = None
+    derived_baseline = False
+    if with_remaining:
+        first = with_remaining[0]
+        auto = int(first["remaining"]) + int(first.get("last") or 0)
+        mismatch = (baseline_remaining is not None and first.get("last") is not None
+                    and (baseline_remaining - int(first["remaining"])) != int(first["last"]))
+        if mismatch:
+            # Supplied baseline is NOT the reading just before the first call. Charge the first row only
+            # its own cost (auto) so earlier spend is not mis-attributed to it; the excess becomes
+            # unattributed via the account-delta comparison below.
+            attr_baseline = auto
+            over = baseline_remaining - auto
+            problems.append(f"--baseline-remaining ({baseline_remaining}) is not the reading just before the "
+                            f"first recorded call (its cost was {first['last']}); {over} credit(s) of earlier "
+                            "spend are OUTSIDE these rows and are counted as unattributed, not charged to the "
+                            "first row. Pass the window-start remaining (or omit it) for a tight window.")
+        elif baseline_remaining is not None:
+            attr_baseline = baseline_remaining
+        else:
+            attr_baseline = auto
+            derived_baseline = True
 
     by_key: dict[tuple[str, str], int] = defaultdict(int)
     attributed = 0
-    prev = baseline_remaining
+    prev = attr_baseline
     non_monotonic = 0
     for r in with_remaining:
         rem = int(r["remaining"])
@@ -82,31 +148,32 @@ def reconcile(rows: list[dict], baseline_remaining: int | None, final_remaining:
                 attributed += drop
         prev = rem
     if non_monotonic:
-        problems.append(f"{non_monotonic} non-monotonic step(s) in cumulative remaining (ledger interleaving/corruption)")
+        problems.append(f"{non_monotonic} non-monotonic step(s) in cumulative remaining (interleaving/corruption)")
 
-    ledger_final = with_remaining[-1]["remaining"] if with_remaining else baseline_remaining
-    # The authoritative account delta: baseline -> final (both owner-supplied when known).
-    account_delta = None
+    ledger_final = with_remaining[-1]["remaining"] if with_remaining else None
+    # Account delta (the authoritative spend for the window) from owner-read endpoints when given; else it
+    # is just what these rows attributed (a self-contained window -> nothing unattributed by definition).
     if baseline_remaining is not None and final_remaining is not None:
         account_delta = baseline_remaining - final_remaining
-    elif baseline_remaining is not None and ledger_final is not None:
-        account_delta = baseline_remaining - ledger_final
+    else:
+        account_delta = attributed
 
-    unattributed = None
-    if account_delta is not None:
-        unattributed = account_delta - attributed
-        # a tail gap: the account dropped more than the ledger's last reading shows
-        if final_remaining is not None and ledger_final is not None and final_remaining < ledger_final:
-            problems.append(f"account remaining ({final_remaining}) is below the ledger's last reading "
-                            f"({ledger_final}) -- {ledger_final - final_remaining} credit(s) spent by calls the "
-                            "ledger never recorded")
-        if unattributed != 0:
-            problems.append(f"{unattributed} credit(s) of the {account_delta} account delta are UNATTRIBUTED")
+    unattributed = account_delta - attributed
+    if ledger_final is not None and final_remaining is not None and final_remaining < ledger_final:
+        problems.append(f"account remaining ({final_remaining}) is below the last recorded reading "
+                        f"({ledger_final}) -- {ledger_final - final_remaining} credit(s) spent by calls that "
+                        "were never recorded")
+    if unattributed != 0:
+        problems.append(f"{unattributed} credit(s) of the {account_delta} account delta are UNATTRIBUTED "
+                        "(spent outside the recorded rows -- a pre-ledger / missing-receipt gap)")
+    # report the window baseline we actually used for attribution
+    baseline_remaining = baseline_remaining if baseline_remaining is not None else attr_baseline
 
     ok = (not problems) and (account_delta is not None) and (unattributed == 0)
     return {
         "ok": ok,
         "baseline_remaining": baseline_remaining,
+        "baseline_derived": derived_baseline,
         "final_remaining": final_remaining,
         "ledger_final_remaining": ledger_final,
         "account_delta": account_delta,
@@ -126,18 +193,34 @@ def main() -> int:
                    help="x-requests-remaining at the END of the window (owner-read, e.g. 98960).")
     p.add_argument("--since", default=None, help="Only ledger rows with ts >= this ISO timestamp.")
     p.add_argument("--ledger", default=None, help="Ledger path (default: data/tracking/odds_quota_ledger.jsonl).")
+    p.add_argument("--from-operator-log", default=None,
+                   help="LEGACY best-effort: reconstruct ordered rows from an operator log's QUOTA RECEIPT "
+                        "blocks instead of the ledger (for the pre-ledger incident window). Offline.")
     args = p.parse_args()
 
-    ledger_path = Path(args.ledger) if args.ledger else (BASE_DIR / LEDGER_REL)
-    rows = load_ledger(ledger_path, since=args.since)
+    source = "ledger"
+    if args.from_operator_log:
+        source = f"operator log {args.from_operator_log}"
+        try:
+            rows = parse_operator_log(Path(args.from_operator_log).read_text(encoding="utf-8", errors="replace"))
+        except OSError as exc:
+            print(f"[FAIL] cannot read operator log: {exc}")
+            return 2
+        ledger_path = Path(args.from_operator_log)
+    else:
+        ledger_path = Path(args.ledger) if args.ledger else (BASE_DIR / LEDGER_REL)
+        rows = load_ledger(ledger_path, since=args.since)
     report = reconcile(rows, args.baseline_remaining, args.final_remaining)
 
     print("=" * 70)
     print("ODDS API QUOTA RECONCILIATION (cumulative-delta attribution)")
     print("=" * 70)
-    print(f"ledger            : {ledger_path} ({report['ledger_calls']} call rows"
+    print(f"source            : {source} ({report['ledger_calls']} call rows"
           f"{' since ' + args.since if args.since else ''})")
-    print(f"baseline remaining: {report['baseline_remaining']}")
+    if args.from_operator_log:
+        print("mode              : LEGACY best-effort reconstruction (pre-ledger window)")
+    print(f"baseline remaining: {report['baseline_remaining']}"
+          f"{' (derived from first row)' if report.get('baseline_derived') else ''}")
     print(f"final remaining   : {report['final_remaining']}  (ledger last: {report['ledger_final_remaining']})")
     print(f"account delta     : {report['account_delta']}")
     print(f"attributed total  : {report['attributed_total']}")

@@ -358,6 +358,16 @@ def main() -> int:
     provider_exhausted = sorted({o["label"] for o in step_outcomes
                                  if "PROVIDER_QUOTA_EXHAUSTED" in o["status"]})
     failed_steps = [o["label"] for o in step_outcomes if o["status"] == "FAIL"]
+    # Record the per-sport CHILD OUTCOMES the parents wrote (the vocabulary), not merely the parent exit
+    # code (directive #3): e.g. football_props -> {nfl=..., ncaaf=...}, nba_daily -> {player_props=...}.
+    from services.run_outcomes import load_all_child_outcomes, is_alerting
+    child_outcomes = load_all_child_outcomes(BASE_DIR)
+    degraded_children = sorted({
+        f"{parent}:{label}={o}"
+        for parent, payload in child_outcomes.items()
+        for label, o in (payload.get("outcomes") or {}).items()
+        if is_alerting(o)
+    })
     summary = {
         "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "log": log_path.name,
@@ -365,6 +375,8 @@ def main() -> int:
         "blocking_failure": bool(failed),
         "failed_steps": failed_steps,
         "provider_exhausted_steps": provider_exhausted,
+        "child_outcomes": child_outcomes,
+        "degraded_child_outcomes": degraded_children,
         "steps": step_outcomes,
     }
     summary_path = BASE_DIR / "data" / "tracking" / "Last_Operator_Summary.json"

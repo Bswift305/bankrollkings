@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from services.run_outcomes import classify_props_child, is_alerting, load_shape_receipt
+from services.run_outcomes import props_step_outcome, record_child_outcomes
 
 BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
@@ -70,15 +70,10 @@ def main() -> int:
         if label == PROPS_STEP:
             # Classify from the response-shape receipt (directive #2/#3). Benign -> continue cleanly;
             # alerting -> degrade the run but DO NOT abort the safe downstream steps.
-            if timed_out:
-                print(f"[PROVIDER_ERROR] {label} timed out after {elapsed:.1f}s", flush=True)
-                outcome, detail = "PROVIDER_ERROR", "player-props fetch timed out"
-                advanced = False
-            else:
-                advanced = _mtime(PROPS_ARTIFACT) > props_mtime_before
-                receipt = load_shape_receipt(BASE_DIR, PROPS_SPORT_SLUG)
-                outcome, detail = classify_props_child(result.returncode, advanced, receipt)
-            alerting = is_alerting(outcome)
+            exit_code = result.returncode if not timed_out else 1
+            outcome, detail, alerting = props_step_outcome(BASE_DIR, PROPS_SPORT_SLUG, PROPS_ARTIFACT,
+                                                           props_mtime_before, exit_code, timed_out)
+            record_child_outcomes(BASE_DIR, "nba_daily", {"player_props": outcome})
             print(f"[{outcome}] {label} seconds={elapsed:.1f} "
                   f"({'ALERT' if alerting else 'ok'}): {detail}", flush=True)
             if alerting:

@@ -79,6 +79,10 @@ SCORECARDS = [
     # advance for a non-benign reason, EVEN THOUGH the child exits 1 in both the benign and failing case.
     # Faked fetchers, no network/spend.
     ("Football Props Aggregation QC", "qc_football_props_aggregation.py", 60),
+    # NBA/MLB parent props outcomes (Oct 24 #3): both sport daily parents classify player props with the
+    # shared vocabulary, NEVER abort the chain when props are unavailable (continue injuries/officiating/
+    # calibration/QC), record the child outcome, and degrade only on a non-benign result. Faked children.
+    ("Sport Parent Props QC", "qc_sport_parent_props.py", 90),
     # Odds quota reconciliation (Oct 24 #4): attribute the account credit delta by sport + endpoint
     # family from ORDERED cumulative x-requests-remaining drops (the append-only ledger), which stays
     # correct even when x-requests-last is 0/absent (the NBA probe). The receipt FAILS when any portion

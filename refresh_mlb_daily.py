@@ -4,9 +4,25 @@ import os
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
+from services.run_outcomes import props_step_outcome, record_child_outcomes
 
+BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
+# Player props must NEVER abort the rest of the MLB chain (umpires/context/calibration/QC) just because
+# props are legitimately unavailable (directive #3) -- mirrors NBA. Its true outcome comes from the
+# response-shape receipt; benign finishes the chain, non-benign leaves the run DEGRADED.
+PROPS_STEP = "player_props"
+PROPS_SPORT_SLUG = "baseball_mlb"
+PROPS_ARTIFACT = BASE_DIR / "data" / "props" / "MLB_Props.csv"
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _build_steps() -> list[tuple[str, list[str], int]]:
@@ -48,13 +64,34 @@ def main() -> int:
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
+    degraded = False
     for label, command, timeout in _build_steps():
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
+        props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
         try:
             result = subprocess.run(command, timeout=timeout)
+            timed_out = False
         except subprocess.TimeoutExpired:
-            elapsed = (datetime.now() - started).total_seconds()
+            result = None
+            timed_out = True
+        elapsed = (datetime.now() - started).total_seconds()
+
+        if label == PROPS_STEP:
+            exit_code = result.returncode if not timed_out else 1
+            outcome, detail, alerting = props_step_outcome(BASE_DIR, PROPS_SPORT_SLUG, PROPS_ARTIFACT,
+                                                           props_mtime_before, exit_code, timed_out)
+            record_child_outcomes(BASE_DIR, "mlb_daily", {"player_props": outcome})
+            print(f"[{outcome}] {label} seconds={elapsed:.1f} "
+                  f"({'ALERT' if alerting else 'ok'}): {detail}", flush=True)
+            if alerting:
+                degraded = True
+                print(f"[WARN] MLB props are {outcome}; continuing the rest of the MLB chain "
+                      "(umpires/context/calibration/QC) and leaving the run DEGRADED.", flush=True)
+            print()
+            continue
+
+        if timed_out:
             print()
             print(f"[FAIL] {label} timed out after {elapsed:.1f}s", flush=True)
             if label in NON_BLOCKING_STEPS:
@@ -62,7 +99,6 @@ def main() -> int:
                 print()
                 continue
             return 124
-        elapsed = (datetime.now() - started).total_seconds()
         if result.returncode != 0:
             print()
             print(f"[FAIL] {label} exited with code {result.returncode} after {elapsed:.1f}s", flush=True)
@@ -74,6 +110,10 @@ def main() -> int:
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 
+    if degraded:
+        print("MLB daily refresh completed the safe work but is DEGRADED (player props validation failed "
+              "or unavailable for a non-benign reason).")
+        return 1
     print("MLB daily refresh completed.")
     return 0
 

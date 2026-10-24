@@ -71,6 +71,26 @@ def main() -> int:
             if reasons_clean:
                 failures.append(f"all-fresh feeds should yield no degraded reasons; got {reasons_clean}")
 
+            # Case 1b: TWO-clock tiers. NFL props at 10h = OVERDUE_FOR_LIVE_RENDER (past the 6h render
+            # window but within the 30h cadence): a non-green AGING row, but NOT a degraded reason --
+            # the customer-unavailable feed must not read 'healthy', yet a missed cycle is different.
+            _touch(base / grs.PROPS_FEEDS["NFL"], age_hours=10)
+            rows_o, reasons_o = grs._odds_family_signals()
+            nfl_props_row = next((r for r in rows_o if r["Name"] == "NFL props"), None)
+            if not nfl_props_row or nfl_props_row["Status"] != "AGING" or "OVERDUE_FOR_LIVE_RENDER" not in nfl_props_row["StatusNote"]:
+                failures.append(f"10h props should be AGING/OVERDUE_FOR_LIVE_RENDER; got {nfl_props_row}")
+            if any("NFL props" in r for r in reasons_o):
+                failures.append(f"OVERDUE (10h) must NOT be a degraded reason; got {reasons_o}")
+            # back to 72h = REFRESH_MISSED -> STALE row + degraded reason
+            _touch(base / grs.PROPS_FEEDS["NFL"], age_hours=72)
+            rows_m, reasons_m = grs._odds_family_signals()
+            nfl_props_m = next((r for r in rows_m if r["Name"] == "NFL props"), None)
+            if not nfl_props_m or nfl_props_m["Status"] != "STALE" or "REFRESH_MISSED" not in nfl_props_m["StatusNote"]:
+                failures.append(f"72h props should be STALE/REFRESH_MISSED; got {nfl_props_m}")
+            if not any("NFL props" in r for r in reasons_m):
+                failures.append(f"REFRESH_MISSED must be a degraded reason; got {reasons_m}")
+            _touch(base / grs.PROPS_FEEDS["NFL"], age_hours=1)  # restore for later cases
+
             # Case 3: operator summary with provider exhaustion + blocking failure
             grs.OPERATOR_SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
             grs.OPERATOR_SUMMARY_PATH.write_text(json.dumps({

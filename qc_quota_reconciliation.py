@@ -64,6 +64,33 @@ def main() -> int:
     if r4["ok"]:
         f.append("a ledger call with no remaining header must FAIL reconciliation")
 
+    # 5b. Auto-baseline: a ledger-only probe window (NFL 97) with NO explicit endpoints self-attributes.
+    probe = [
+        _row("americanfootball_nfl", "player_props", used=1061, remaining=98939, last=8),
+        _row("americanfootball_nfl", "player_props", used=1150, remaining=98850, last=89),
+    ]
+    rp = rec.reconcile(probe, baseline_remaining=None, final_remaining=None)
+    if not rp["ok"] or not rp["baseline_derived"] or rp["attributed_total"] != 97:
+        f.append(f"auto-baseline probe should self-attribute 97; got {rp['attributed_total']} ok={rp['ok']}")
+
+    # 5c. Operator-log reconstruction: per-step costs 3 + 97, NOT the cumulative 1053.
+    oplog = (
+        "---- QUOTA RECEIPT ----\n  endpoint family: game_lines /events + /odds\n  sport          : nfl\n"
+        "  x-requests-last (sum = fetch cost): 3\n  x-requests-used: 1053\n  x-requests-remaining              : 98947\n"
+        "---- QUOTA RECEIPT ----\n  endpoint family: player_props /events + /odds\n  sport          : nfl\n"
+        "  x-requests-last (sum = fetch cost): 97\n  x-requests-used: 1150\n  x-requests-remaining              : 98850\n"
+    )
+    prows = rec.parse_operator_log(oplog)
+    rlog = rec.reconcile(prows, baseline_remaining=None, final_remaining=None)
+    if rlog["attributed_total"] != 100 or rlog["by_key"].get("nfl | game_lines /events + /odds") != 3:
+        f.append(f"operator-log per-step attribution wrong: {rlog['by_key']} total={rlog['attributed_total']}")
+
+    # 5d. A lifetime baseline (not the window start) must NOT mis-charge the first row; excess is
+    #     unattributed and flagged.
+    rmis = rec.reconcile(prows, baseline_remaining=100000, final_remaining=98850)
+    if rmis["attributed_total"] != 100 or rmis["unattributed"] != 1050 or rmis["ok"]:
+        f.append(f"lifetime-baseline misuse should attribute 100 / unattributed 1050 / FAIL; got {rmis}")
+
     # 5. QuotaRecorder.write_ledger appends usable rows.
     with tempfile.TemporaryDirectory() as td:
         base = Path(td)
