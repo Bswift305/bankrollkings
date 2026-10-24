@@ -27,11 +27,34 @@ import os
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
+from services.run_outcomes import (
+    aggregate_parent,
+    classify_props_child,
+    is_alerting,
+    load_shape_receipt,
+)
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# (label, command, timeout, sport_slug, artifact) -- sport_slug keys the response-shape receipt and
+# artifact is the file whose mtime advance proves a publish. The parent derives its result from these
+# children's OUTCOMES (directive #3): it never reports a bare PASS when an artifact did not advance
+# without a PROVEN benign outcome (NO_ACTIVE_EVENTS / NO_MARKETS_POSTED).
 STEPS = [
-    ("nfl_player_props", [sys.executable, "fetch_nfl_player_props.py", "--days", "7"], 300),
-    ("ncaaf_player_props", [sys.executable, "fetch_ncaaf_player_props.py", "--days", "7"], 300),
+    ("nfl_player_props", [sys.executable, "fetch_nfl_player_props.py", "--days", "7"], 300,
+     "americanfootball_nfl", BASE_DIR / "data" / "props" / "NFL_Props.csv"),
+    ("ncaaf_player_props", [sys.executable, "fetch_ncaaf_player_props.py", "--days", "7"], 300,
+     "americanfootball_ncaaf", BASE_DIR / "data" / "props" / "NCAAF_Props.csv"),
 ]
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def main() -> int:
@@ -45,30 +68,40 @@ def main() -> int:
         return 0
 
     print()
-    failures = 0
-    for label, command, timeout in STEPS:
+    outcomes: dict[str, str] = {}
+    for label, command, timeout, sport_slug, artifact in STEPS:
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
+        mtime_before = _mtime(artifact)
         try:
             result = subprocess.run(command, timeout=timeout)
+            exit_code = result.returncode
         except subprocess.TimeoutExpired:
             elapsed = (datetime.now() - started).total_seconds()
-            print(f"[FAIL] {label} timed out after {elapsed:.1f}s", flush=True)
-            failures += 1
+            print(f"[PROVIDER_ERROR] {label} timed out after {elapsed:.1f}s", flush=True)
+            outcomes[label] = "PROVIDER_ERROR"
             continue
         elapsed = (datetime.now() - started).total_seconds()
-        if result.returncode != 0:
-            # One sport failing (e.g. NCAAF feed hiccup) must not sink the other.
-            print(f"[FAIL] {label} exited with code {result.returncode} after {elapsed:.1f}s", flush=True)
-            failures += 1
-            continue
-        print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
+        # Derive the TRUE outcome from the response-shape receipt + whether the artifact advanced -- NOT
+        # from the child exit code alone. fetch_player_props returns 1 whenever it preserves last-known-
+        # good, which happens for a LEGITIMATE NO_MARKETS_POSTED as well as a real failure; only the
+        # receipt separates them (directive #2).
+        advanced = _mtime(artifact) > mtime_before
+        receipt = load_shape_receipt(BASE_DIR, sport_slug)
+        outcome, detail = classify_props_child(exit_code, advanced, receipt)
+        outcomes[label] = outcome
+        tag = "ALERT" if is_alerting(outcome) else "ok"
+        print(f"[{outcome}] {label} seconds={elapsed:.1f} exit={exit_code} ({tag}): {detail}", flush=True)
         print()
 
-    if failures:
-        print(f"Football player props refresh finished with {failures} failure(s).")
+    summary, degraded = aggregate_parent(outcomes)
+    print(f"OUTCOME football_player_props: {summary}")
+    if degraded:
+        # At least one child is alerting (VALIDATION_FAILED / PROVIDER_ERROR / STALE). The parent must
+        # NOT report a clean PASS -- exit non-zero so the operator records it and Run Status degrades.
+        print("Football player props refresh is DEGRADED (an artifact did not advance for a non-benign reason).")
         return 1
-    print("Football player props refresh completed.")
+    print("Football player props refresh completed (all children benign).")
     return 0
 
 

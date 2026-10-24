@@ -3,9 +3,27 @@ from __future__ import annotations
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
+from services.run_outcomes import classify_props_child, is_alerting, load_shape_receipt
 
+BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
+# The player-props fetch must NEVER abort the rest of the NBA chain (injuries, officiating, calibration,
+# board QC) just because props are legitimately unavailable early in the season (directive #3). Its
+# true outcome is derived from the response-shape receipt; a benign NO_MARKETS_POSTED / NO_ACTIVE_EVENTS
+# lets the chain finish cleanly, while a VALIDATION_FAILED / PROVIDER_ERROR leaves the run DEGRADED
+# (non-zero exit) WITHOUT skipping the safe downstream work.
+PROPS_STEP = "player_props"
+PROPS_SPORT_SLUG = "basketball_nba"
+PROPS_ARTIFACT = BASE_DIR / "data" / "props" / "NBA_Props.csv"
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 STEPS = [
@@ -36,13 +54,41 @@ def main() -> int:
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
+    degraded = False
     for label, command, timeout in STEPS:
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
+        props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
         try:
             result = subprocess.run(command, timeout=timeout)
+            timed_out = False
         except subprocess.TimeoutExpired:
-            elapsed = (datetime.now() - started).total_seconds()
+            result = None
+            timed_out = True
+        elapsed = (datetime.now() - started).total_seconds()
+
+        if label == PROPS_STEP:
+            # Classify from the response-shape receipt (directive #2/#3). Benign -> continue cleanly;
+            # alerting -> degrade the run but DO NOT abort the safe downstream steps.
+            if timed_out:
+                print(f"[PROVIDER_ERROR] {label} timed out after {elapsed:.1f}s", flush=True)
+                outcome, detail = "PROVIDER_ERROR", "player-props fetch timed out"
+                advanced = False
+            else:
+                advanced = _mtime(PROPS_ARTIFACT) > props_mtime_before
+                receipt = load_shape_receipt(BASE_DIR, PROPS_SPORT_SLUG)
+                outcome, detail = classify_props_child(result.returncode, advanced, receipt)
+            alerting = is_alerting(outcome)
+            print(f"[{outcome}] {label} seconds={elapsed:.1f} "
+                  f"({'ALERT' if alerting else 'ok'}): {detail}", flush=True)
+            if alerting:
+                degraded = True
+                print(f"[WARN] NBA props are {outcome}; continuing the rest of the NBA chain "
+                      "(injuries/officiating/calibration/QC) and leaving the run DEGRADED.", flush=True)
+            print()
+            continue
+
+        if timed_out:
             print()
             print(f"[FAIL] {label} timed out after {elapsed:.1f}s", flush=True)
             if label in NON_BLOCKING_STEPS:
@@ -50,7 +96,6 @@ def main() -> int:
                 print()
                 continue
             return 124
-        elapsed = (datetime.now() - started).total_seconds()
         if result.returncode != 0:
             print()
             print(f"[FAIL] {label} exited with code {result.returncode} after {elapsed:.1f}s", flush=True)
@@ -62,6 +107,10 @@ def main() -> int:
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 
+    if degraded:
+        print("NBA daily refresh completed the safe work but is DEGRADED (player props validation failed "
+              "or unavailable for a non-benign reason).")
+        return 1
     print("NBA daily refresh completed cleanly.")
     return 0
 

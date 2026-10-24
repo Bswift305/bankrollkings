@@ -26,6 +26,72 @@ from services.timeutils import to_eastern_datetime_str
 
 BASE_DIR = Path(__file__).parent.resolve()
 load_local_env(BASE_DIR)
+
+# Response-shape receipt (incident 2026-10-24, directive #2): record, per event, which REQUESTED
+# markets the provider actually returned -- SANITIZED (market keys + counts only, never odds/prices/
+# player names). This is the evidence that distinguishes a legitimate NO_MARKETS_POSTED (books have
+# not posted any requested market on any event) from a VALIDATION_FAILED (markets WERE present but we
+# parsed zero rows: schema drift, parser exclusion, bookmaker filtering). Zero output rows alone must
+# NOT be read as NO_MARKETS_POSTED. Populated by fetch_event_props, written once by main().
+_SHAPE_EVENTS: list[dict] = []
+
+
+def _record_event_shape(event: dict, present_keys: set, requested: list[str], book_count: int,
+                        rows_parsed: int) -> None:
+    req = set(requested)
+    present_requested = sorted(present_keys & req)
+    _SHAPE_EVENTS.append({
+        "game": build_game_label(event),
+        "book_count": int(book_count),
+        "present_requested_markets": present_requested,
+        "any_requested_present": bool(present_requested),
+        "rows_parsed": int(rows_parsed),
+    })
+
+
+def _write_shape_receipt(sport: str, days: int, events: list, rows_fetched: int,
+                         requested_markets: list[str], error_count: int = 0) -> dict:
+    """Write data/tracking/_last_props_fetch_<slug>.json. Returns the receipt dict. The authoritative
+    OUTCOME is derived by services/run_outcomes.py from these FACTS + the exit code + whether the
+    artifact advanced -- this file only records what came back, it does not grade itself."""
+    events_found = len(events)
+    any_market_present = any(e.get("any_requested_present") for e in _SHAPE_EVENTS)
+    markets_present_anywhere = sorted({m for e in _SHAPE_EVENTS for m in e.get("present_requested_markets", [])})
+    # Proof for NO_MARKETS_POSTED: events existed, NO provider errors occurred, nothing was fetched, and
+    # NOT ONE requested market was present on ANY event's response. If any market was present, zero rows
+    # is a parse/validation problem; if a provider error occurred, markets may have been hidden by the
+    # error -- in both cases we have NOT proven an absence of markets.
+    shape_proves_no_markets = bool(events_found > 0 and error_count == 0
+                                   and rows_fetched == 0 and not any_market_present)
+    receipt = {
+        "sport": sport,
+        "at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "days": days,
+        "events_found": events_found,
+        "provider_error_count": int(error_count),
+        "rows_fetched": int(rows_fetched),
+        "requested_markets": list(requested_markets),
+        "markets_present_anywhere": markets_present_anywhere,
+        "any_requested_market_present": any_market_present,
+        "shape_proves_no_markets_posted": shape_proves_no_markets,
+        "events": _SHAPE_EVENTS,
+    }
+    slug = sport.replace("/", "_")
+    path = BASE_DIR / "data" / "tracking" / f"_last_props_fetch_{slug}.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        print(f"Response-shape receipt: {path.name} "
+              f"(events={events_found}, rows_fetched={rows_fetched}, "
+              f"markets_present={markets_present_anywhere or 'NONE'}, "
+              f"proves_no_markets_posted={shape_proves_no_markets})")
+    except OSError as exc:
+        print(f"[WARN] could not write response-shape receipt: {exc}")
+    return receipt
+
+
 SPORT_OUTPUTS = {
     "basketball_nba": BASE_DIR / "data" / "props" / "NBA_Props.csv",
     "basketball_wnba": BASE_DIR / "data" / "props" / "WNBA_Props.csv",
@@ -338,15 +404,23 @@ def fetch_event_props(api_key: str, sport: str, event: dict, bookmakers: str, ma
     try:
         payload = get_json(url)
         all_rows = []
-        for bookmaker in payload.get("bookmakers", []):
+        present_keys: set = set()
+        bookmakers_list = payload.get("bookmakers", [])
+        for bookmaker in bookmakers_list:
+            for market in bookmaker.get("markets", []):
+                if market.get("key"):
+                    present_keys.add(market["key"])
             bookmaker_rows = parse_market_rows(event, bookmaker, markets)
             all_rows.extend(bookmaker_rows)
+        _record_event_shape(event, present_keys, markets, len(bookmakers_list), len(all_rows))
         return infer_teams(all_rows, event)
     except Exception as combined_error:
         # If one future market key is rejected by the provider, do not lose the
         # full slate. Probe each market separately and keep the valid ones.
         fallback_rows: list[dict] = []
         fallback_errors: list[str] = []
+        fb_present: set = set()
+        fb_books = 0
         for market_key in markets:
             single_url = build_url(
                 f"/v4/sports/{sport}/events/{event['id']}/odds",
@@ -362,8 +436,14 @@ def fetch_event_props(api_key: str, sport: str, event: dict, bookmakers: str, ma
             except Exception as market_error:
                 fallback_errors.append(f"{market_key}: {market_error}")
                 continue
-            for bookmaker in single_payload.get("bookmakers", []):
+            books = single_payload.get("bookmakers", [])
+            fb_books = max(fb_books, len(books))
+            for bookmaker in books:
+                for market in bookmaker.get("markets", []):
+                    if market.get("key"):
+                        fb_present.add(market["key"])
                 fallback_rows.extend(parse_market_rows(event, bookmaker, [market_key]))
+        _record_event_shape(event, fb_present, markets, fb_books, len(fallback_rows))
         if fallback_rows:
             if fallback_errors:
                 print(f"  Market key audit fallback kept valid markets; unavailable keys: {len(fallback_errors)}")
@@ -591,6 +671,7 @@ def main() -> int:
     events = fetch_events(api_key, sport, args.days)
     print(f"Found {len(events)} events in the next {args.days} days")
 
+    _SHAPE_EVENTS.clear()  # fresh response-shape capture for this run
     all_rows: list[dict] = []
     error_count = 0
     for event in events:
@@ -605,6 +686,14 @@ def main() -> int:
             error_count += 1
 
     df = build_dataframe(all_rows)
+
+    # Write the sanitized response-shape receipt for EVERY exit path below (events found, rows fetched
+    # this run, which requested markets were actually present). The parent step + services/run_outcomes
+    # read this to tell a legitimate NO_MARKETS_POSTED from a VALIDATION_FAILED -- zero rows alone never
+    # proves "no markets" (directive #2).
+    _write_shape_receipt(sport, args.days, events, rows_fetched=len(df),
+                         requested_markets=markets, error_count=error_count)
+
     if error_count and df.empty:
         print()
         print("No new prop rows were fetched. Preserving existing CSV instead of overwriting with an empty dataset.")

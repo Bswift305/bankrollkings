@@ -69,6 +69,16 @@ SCORECARDS = [
     # CLOCK B refresh cadence (30h props/lines, file mtime). Proves qc_odds_feed, generate_run_status
     # and report_feed_availability can never again call one 39-40h file both FRESH and STALE. Offline.
     ("Freshness Contract QC", "qc_freshness_contract.py", 60),
+    # Per-sport outcome classifier (Oct 24 #2/#3): maps a props child to UPDATED / NO_ACTIVE_EVENTS /
+    # NO_MARKETS_POSTED / VALIDATION_FAILED / PROVIDER_ERROR / STALE from the response-shape receipt +
+    # exit code + artifact advance. Enforces "zero rows is VALIDATION_FAILED until a receipt PROVES no
+    # requested market was posted on any event" -- never inferred from zero rows/zero cost. Pure.
+    ("Run Outcomes Classifier QC", "qc_run_outcomes.py", 60),
+    # Parent child-aggregation (Oct 24 #3): refresh_football_props derives its result from the children's
+    # outcomes -- PASSes only when every child is benign, degrades (non-zero) when an artifact did not
+    # advance for a non-benign reason, EVEN THOUGH the child exits 1 in both the benign and failing case.
+    # Faked fetchers, no network/spend.
+    ("Football Props Aggregation QC", "qc_football_props_aggregation.py", 60),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

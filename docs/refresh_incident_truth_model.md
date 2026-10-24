@@ -131,20 +131,35 @@ file did not advance = `STALE` (a real break).
    last-known-good is preserved on any validation failure. A `NO_MARKETS_POSTED` result at 0 cost is
    a complete, correct answer — not a reason to re-run.
 
-## 6. Deliberately deferred (needs prod verification, do not ship blind)
+## 6. Write-side aggregation + the NBA proof (directives #2/#3) — BUILT
 
-These change the operator's **control flow / exit semantics** and are held for a reviewed, prod-verified
-follow-on rather than shipped unverified during an active incident:
+- **Response-shape receipt (directive #2):** `fetch_player_props.py` now writes a SANITIZED receipt
+  `data/tracking/_last_props_fetch_<slug>.json` (market keys + counts only — never prices/names) with
+  `events_found`, `rows_fetched`, `provider_error_count`, `markets_present_anywhere`, and
+  `shape_proves_no_markets_posted`. The proof requires events in window, zero provider errors, zero
+  rows, and NOT ONE requested market present on ANY event's response. Zero rows / zero cost alone never
+  prove it.
+- **Outcome classifier (directive #3):** `services/run_outcomes.py` maps a child to the §4 vocabulary
+  from (exit code, artifact advanced, receipt). Key rule: zero rows is **VALIDATION_FAILED** unless the
+  receipt proves NO_MARKETS_POSTED.
+- **Football parent:** `refresh_football_props.py` aggregates its two children and PASSes only when both
+  are benign; a non-advancing artifact without proof degrades it (non-zero) — even though the child
+  exits 1 in BOTH the benign and failing cases (the exit code alone cannot tell them apart; the receipt
+  can).
+- **NBA parent:** `refresh_nba_daily.py` no longer aborts the whole chain when props are unavailable —
+  it classifies props from the receipt, continues the safe work (injuries / officiating / calibration /
+  QC), and leaves the run DEGRADED (non-zero) only on a non-benign props outcome. This is the direct fix
+  for the incident's "NBA daily FAIL aborted injuries+calibration on a benign empty slate."
 
-- **Parent-step child aggregation (directive #2/#3):** make `refresh_football_props.py` and the sport
-  daily refreshes emit the §4 outcome per child (verify the child's target artifact advanced, or the
-  child documented NO_ACTIVE_EVENTS / NO_MARKETS_POSTED) and surface it to the operator, so a parent
-  never reports a bare PASS when its child artifact did not advance. Today the monitoring-read side
-  (qc_odds_feed, Run Status) already refuses the false all-clear; this closes the operator-write side.
-  It also means `fetch_player_props.py` should distinguish a `NO_MARKETS_POSTED` exit from a hard
-  error, so a blocking parent (e.g. NBA) stops aborting the whole sport on a benign empty slate.
-- **Quota reconciliation tool (directive #8):** reconcile the account delta (100000 → ~98960) against
-  the per-family/per-sport QUOTA RECEIPT costs in the operator log; fail if the spend is unattributable.
-  Self-contained; builds on `services/odds_quota.py`.
+QCs: `qc_run_outcomes.py`, `qc_football_props_aggregation.py` (both registered).
 
-Both are specced here so they can be built and verified deliberately.
+> Until a prod run produces the receipt, the NBA props outcome is **VALIDATION_FAILED** (the
+> conservative default), NOT NO_MARKETS_POSTED — the classifier will only call it NO_MARKETS_POSTED once
+> a receipt proves it.
+
+## 7. Still open
+
+- **Quota reconciliation tool (directive #8):** reconcile the account delta (100000 → ~98960, 1,040
+  credits) attributed by sport, endpoint family, and ordered cumulative-header deltas; the receipt fails
+  if any portion is unattributable. Must not rely on the `x-requests-last sum` alone (observed 0 for the
+  NBA probe). Self-contained; builds on `services/odds_quota.py`.
