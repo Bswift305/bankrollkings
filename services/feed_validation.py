@@ -9,12 +9,22 @@ leave the previous bytes unchanged.
 """
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+def candidate_sha256(df) -> str:
+    """Deterministic content hash of the exact frame about to be published. Used to bind a response-shape
+    receipt to THIS candidate so a receipt from another fetch can never authorize it."""
+    try:
+        return hashlib.sha256(df.to_csv(index=False).encode("utf-8")).hexdigest()
+    except Exception:
+        return ""
 
 
 @dataclass(frozen=True)
@@ -182,9 +192,14 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
         so instead require a COMPLETE current slate -- a linked response-shape receipt, zero provider
         errors, full coverage of the eligible (markets-posted) events, and a sport-specific normalized
         row-density floor. Missing/contradictory/foreign receipt -> fail closed.
-    `slate_facts` (from the fetcher's in-process shape receipt) carries:
-      events_found, eligible_events (events with >=1 requested market posted), events_with_rows,
-      provider_errors, candidate_rows (== len(df) for receipt linkage), requested_markets, markets_present.
+    `slate_facts` (assembled in-process by the fetcher) must carry, for CURRENT_SLATE:
+      run_id, sport, candidate_sha256 (== hash of THIS frame -- strong binding), provider_errors,
+      candidate_rows, requested_markets, bookmakers, fetch_start, fetch_end,
+      eligible_event_ids  -- the INDEPENDENT manifest (current schedule / game-lines), NOT derived from
+                             the props response (a missing event must stay in the denominator),
+      response_event_ids  -- events the props fetch actually returned,
+      covered_event_ids   -- eligible events that produced >=1 parsed row.
+    Coverage = |covered ∩ eligible| / |eligible|; the denominator is the independent manifest.
     """
     errors = _structural_errors(df, spec, prior_df, path, sport_tokens)
     structural_ok = not errors
@@ -193,43 +208,51 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
     baseline_mode = "COMPARABLE_PRIOR" if comparable else "CURRENT_SLATE"
 
     facts = dict(slate_facts or {})
-    eligible = int(facts.get("eligible_events") or 0)
-    with_rows = int(facts.get("events_with_rows") or 0)
     provider_errors = int(facts.get("provider_errors") or 0)
     candidate_rows = facts.get("candidate_rows")
-    event_coverage = round(with_rows / eligible, 4) if eligible else 0.0
+    eligible_ids = {str(x) for x in (facts.get("eligible_event_ids") or [])}
+    covered_ids = {str(x) for x in (facts.get("covered_event_ids") or [])} & eligible_ids
+    eligible = len(eligible_ids)
+    covered = len(covered_ids)
+    event_coverage = round(covered / eligible, 4) if eligible else 0.0
     normalized_rpe = round(len(df) / eligible, 2) if eligible else 0.0
+    declared_sha = facts.get("candidate_sha256")
+    actual_sha = candidate_sha256(df)
 
     reason_code = None
-    decision = "PUBLISH"
 
     if comparable:
-        # keep the absolute collapse test vs a comparable baseline
         pn = len(prior_df)
         if pn >= 5 and len(df) < spec.collapse_ratio * pn:
             errors.append(f"implausible row-count collapse vs COMPARABLE prior: {len(df)} < "
                           f"{spec.collapse_ratio:.0%} of {pn}")
             reason_code = "COMPARABLE_BASELINE_COLLAPSE"
         elif structural_ok:
-            reason_code = "CURRENT_SLATE_COMPLETE"  # comparable + no collapse + structurally clean
+            reason_code = "CURRENT_SLATE_COMPLETE"
     else:
         # current-slate completeness contract -- never "trust any nonempty fetch".
-        if slate_facts is None or candidate_rows is None:
-            errors.append("no response-shape receipt supplied for CURRENT_SLATE validation")
+        # (1) STRONG receipt binding: it must belong to THIS candidate.
+        if slate_facts is None or not declared_sha or not facts.get("run_id") or not facts.get("sport"):
+            errors.append("no/incomplete response-shape receipt supplied for CURRENT_SLATE validation")
             reason_code = "RESPONSE_RECEIPT_MISSING"
-        elif int(candidate_rows) != len(df):
-            errors.append(f"response-shape receipt not linked to this candidate "
-                          f"(receipt rows {candidate_rows} != frame rows {len(df)})")
+        elif declared_sha != actual_sha:
+            errors.append(f"response-shape receipt not bound to this candidate (declared sha "
+                          f"{str(declared_sha)[:12]} != actual {actual_sha[:12]})")
+            reason_code = "RESPONSE_RECEIPT_MISSING"
+        elif candidate_rows is not None and int(candidate_rows) != len(df):
+            errors.append(f"receipt candidate_rows {candidate_rows} != frame rows {len(df)}")
             reason_code = "RESPONSE_RECEIPT_MISSING"
         elif provider_errors > 0:
             errors.append(f"{provider_errors} provider error(s) during the current-slate fetch")
             reason_code = "CURRENT_SLATE_INCOMPLETE"
         elif eligible <= 0:
-            errors.append("no eligible (markets-posted) events in the current slate")
+            # the INDEPENDENT manifest must exist; without it we cannot prove completeness -> fail closed.
+            errors.append("no independent eligible-event manifest (schedule/game-lines) to reconcile against")
             reason_code = "CURRENT_SLATE_INCOMPLETE"
         elif event_coverage < spec.event_coverage_min:
-            errors.append(f"partial event coverage: {with_rows}/{eligible} eligible events produced rows "
-                          f"(< required {spec.event_coverage_min:.0%}) -- markets posted but rows missing")
+            missing = sorted(eligible_ids - covered_ids)[:6]
+            errors.append(f"partial event coverage: {covered}/{eligible} manifest events produced rows "
+                          f"(< required {spec.event_coverage_min:.0%}); missing e.g. {missing}")
             reason_code = "CURRENT_SLATE_INCOMPLETE"
         elif normalized_rpe < spec.rows_per_event_min:
             errors.append(f"low row density: {normalized_rpe} rows/event < min {spec.rows_per_event_min}")
@@ -238,15 +261,16 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
             reason_code = "CURRENT_SLATE_COMPLETE"
         else:
             reason_code = "CURRENT_SLATE_INCOMPLETE"
-        # name the non-comparability cause when the slate is otherwise fine (informational)
-        if reason_code == "CURRENT_SLATE_COMPLETE" and noncomp_reason:
-            pass  # publish; the receipt still records baseline_mode + why it wasn't comparable
 
     ok = (len(errors) == 0)
     if not ok and reason_code is None:
-        reason_code = "CURRENT_SLATE_INCOMPLETE" if not comparable else "COMPARABLE_BASELINE_COLLAPSE"
+        reason_code = "COMPARABLE_BASELINE_COLLAPSE" if comparable else "CURRENT_SLATE_INCOMPLETE"
     decision = "PUBLISH" if ok else "REJECT"
     receipt = {
+        "run_id": facts.get("run_id"),
+        "sport": facts.get("sport"),
+        "candidate_sha256": actual_sha,
+        "receipt_sha_bound": bool(declared_sha and declared_sha == actual_sha),
         "baseline_mode": baseline_mode,
         "non_comparable_reason": noncomp_reason,
         "prior_age": round(prior_age, 2) if prior_age is not None else None,
@@ -254,9 +278,15 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
         "prior_eligible_events": len(_distinct(prior_df, spec.event_col)) if prior_df is not None else 0,
         "candidate_rows": int(len(df)),
         "candidate_eligible_events": eligible,
+        "eligible_event_ids": sorted(eligible_ids),
+        "response_event_ids": sorted({str(x) for x in (facts.get("response_event_ids") or [])}),
+        "covered_event_ids": sorted(covered_ids),
         "event_coverage": event_coverage,
         "requested_markets": list(facts.get("requested_markets") or []),
         "markets_present": list(facts.get("markets_present") or []),
+        "bookmakers": list(facts.get("bookmakers") or []),
+        "fetch_start": facts.get("fetch_start"),
+        "fetch_end": facts.get("fetch_end"),
         "provider_errors": provider_errors,
         "normalized_rows_per_event": normalized_rpe,
         "decision": decision,

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
@@ -41,6 +42,7 @@ def _record_event_shape(event: dict, present_keys: set, requested: list[str], bo
     req = set(requested)
     present_requested = sorted(present_keys & req)
     _SHAPE_EVENTS.append({
+        "event_id": str(event.get("id") or ""),
         "game": build_game_label(event),
         "book_count": int(book_count),
         "present_requested_markets": present_requested,
@@ -90,6 +92,37 @@ def _write_shape_receipt(sport: str, days: int, events: list, rows_fetched: int,
     except OSError as exc:
         print(f"[WARN] could not write response-shape receipt: {exc}")
     return receipt
+
+
+# INDEPENDENT eligible-event manifest per sport (current schedule / game-lines) -- the denominator for
+# current-slate coverage must NOT be derived from the props response itself, or a missing event would
+# drop from both numerator and denominator and falsely read as full coverage (incident 2026-10-24 #1).
+SPORT_EVENT_MANIFESTS = {
+    "basketball_nba": ["data/odds/NBA_Odds.csv", "data/schedules/NBA_Odds.csv", "data/schedules/NBA_Schedule.csv"],
+}
+
+
+def _eligible_event_keys(sport: str):
+    """Return (set_of_game_keys, source_rel) from the sport's independent manifest -- normalized
+    'away@home' keys, comparable to the props fetch's own game labels. Empty when no manifest exists."""
+    for rel in SPORT_EVENT_MANIFESTS.get(sport, []):
+        p = BASE_DIR / rel
+        if not p.exists():
+            continue
+        try:
+            m = pd.read_csv(p, low_memory=False)
+        except Exception:
+            continue
+        if m is None or m.empty or not {"Away", "Home"}.issubset(m.columns):
+            continue
+        keys = set()
+        for a, h in zip(m["Away"], m["Home"]):
+            an, hn = normalize_team_name(a), normalize_team_name(h)
+            if an and hn:
+                keys.add(f"{an}@{hn}".strip().lower())
+        if keys:
+            return keys, str(p.relative_to(BASE_DIR))
+    return set(), None
 
 
 SPORT_OUTPUTS = {
@@ -668,6 +701,8 @@ def main() -> int:
     print(f"Regions: {args.regions}")
     print(f"Markets: {', '.join(markets)}")
 
+    run_id = uuid.uuid4().hex
+    fetch_start = datetime.now(timezone.utc).isoformat(timespec="seconds")
     events = fetch_events(api_key, sport, args.days)
     print(f"Found {len(events)} events in the next {args.days} days")
 
@@ -715,7 +750,7 @@ def main() -> int:
     # implausible collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
     from services.feed_validation import (
-        NBA_PLAYER_PROPS_SLATE_SPEC, PLAYER_PROPS_SPEC, validate_feed, validate_feed_slate,
+        NBA_PLAYER_PROPS_SLATE_SPEC, PLAYER_PROPS_SPEC, candidate_sha256, validate_feed, validate_feed_slate,
     )
     try:
         prior = pd.read_csv(output_path) if output_path.exists() else None
@@ -724,28 +759,38 @@ def main() -> int:
 
     if NBA_PLAYER_PROPS_SLATE_SPEC.slate_aware and sport == "basketball_nba":
         # Slate-aware validation (incident 2026-10-24): a smaller CURRENT slate must not be rejected by an
-        # absolute collapse test against a STALE larger prior. Build the slate facts from THIS run's
-        # in-process shape receipt so the receipt is linked to this exact candidate.
-        eligible = sum(1 for e in _SHAPE_EVENTS if e.get("any_requested_present"))
-        with_rows = sum(1 for e in _SHAPE_EVENTS if int(e.get("rows_parsed") or 0) > 0)
+        # absolute collapse test against a STALE larger prior. Coverage uses an INDEPENDENT manifest (the
+        # current game-lines/schedule), and the receipt is bound to THIS candidate by sha + run id.
+        eligible_keys, manifest_src = _eligible_event_keys(sport)
+        cand_game_keys = {str(g).strip().lower() for g in df["Game"].dropna().unique()} if "Game" in df.columns else set()
+        covered_keys = sorted(eligible_keys & cand_game_keys)
         markets_present = sorted({m for e in _SHAPE_EVENTS for m in e.get("present_requested_markets", [])})
         slate_facts = {
-            "events_found": len(events),
-            "eligible_events": eligible,
-            "events_with_rows": with_rows,
+            "run_id": run_id,
+            "sport": sport,
+            "candidate_sha256": candidate_sha256(df),
             "provider_errors": error_count,
             "candidate_rows": len(df),
             "requested_markets": markets,
             "markets_present": markets_present,
+            "bookmakers": [b.strip() for b in str(args.bookmakers).split(",") if b.strip()],
+            "fetch_start": fetch_start,
+            "fetch_end": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "eligible_event_ids": sorted(eligible_keys),              # INDEPENDENT manifest denominator
+            "response_event_ids": [e.get("event_id") for e in _SHAPE_EVENTS if e.get("event_id")],
+            "covered_event_ids": covered_keys,
         }
+        print(f"Eligible-event manifest: {manifest_src or '(NONE)'} "
+              f"({len(eligible_keys)} events); candidate covers {len(covered_keys)}")
         ok, errs, vreceipt = validate_feed_slate(df, NBA_PLAYER_PROPS_SLATE_SPEC, prior_df=prior,
                                                  path=output_path, sport_tokens=_sport_tokens(sport),
                                                  slate_facts=slate_facts)
         print("---- VALIDATION RECEIPT (slate-aware) ----")
-        for k in ("baseline_mode", "non_comparable_reason", "prior_age", "prior_rows",
-                  "prior_eligible_events", "candidate_rows", "candidate_eligible_events", "event_coverage",
-                  "requested_markets", "markets_present", "provider_errors", "normalized_rows_per_event",
-                  "decision", "reason_code"):
+        for k in ("run_id", "sport", "candidate_sha256", "receipt_sha_bound", "baseline_mode",
+                  "non_comparable_reason", "prior_age", "prior_rows", "prior_eligible_events",
+                  "candidate_rows", "candidate_eligible_events", "event_coverage", "requested_markets",
+                  "markets_present", "bookmakers", "fetch_start", "fetch_end", "provider_errors",
+                  "normalized_rows_per_event", "decision", "reason_code"):
             print(f"  {k}: {vreceipt.get(k)}")
     else:
         ok, errs = validate_feed(df, PLAYER_PROPS_SPEC, prior_df=prior, path=output_path,

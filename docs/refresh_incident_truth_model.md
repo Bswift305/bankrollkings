@@ -197,9 +197,21 @@ opts in** — game lines and other props are untouched):
 `candidate_rows/eligible_events`, `event_coverage`, `requested/present markets`, `provider_errors`,
 `normalized_rows_per_event`, `decision`, `reason_code`) which the fetcher prints. Reason codes:
 `COMPARABLE_BASELINE_COLLAPSE` / `PRIOR_BASELINE_STALE` / `BASELINES_NOT_COMPARABLE` /
-`CURRENT_SLATE_COMPLETE` / `CURRENT_SLATE_INCOMPLETE` / `RESPONSE_RECEIPT_MISSING`. QC:
-`qc_slate_validation.py` (10 proofs). The next scheduled NBA fetch publishes a complete slate
-automatically — no manual fetch, no `--allow-collapse`, validator never weakened for other feeds.
+`CURRENT_SLATE_COMPLETE` / `CURRENT_SLATE_INCOMPLETE` / `RESPONSE_RECEIPT_MISSING`.
+
+Three hardening refinements (authorized):
+1. **Independent coverage denominator** — eligible events come from the current **game-lines/schedule
+   manifest** (`fetch_player_props._eligible_event_keys`, `data/odds/NBA_Odds.csv` → schedule fallback),
+   NOT from the props response, so an event absent from the response still counts against coverage
+   (can't vanish from both numerator and denominator).
+2. **Strong receipt binding** — the receipt carries run_id, sport, **candidate SHA-256** (recomputed and
+   compared to the exact frame), eligible/response/covered event IDs, requested markets, bookmaker
+   config, and fetch start/end; a receipt from another candidate (sha mismatch) cannot authorize publish.
+3. **Structural checks reject in both modes.**
+QC `qc_slate_validation.py` (11 proofs incl. independent-denominator, foreign-sha, manifest-file source).
+The next scheduled NBA fetch publishes **only if its own candidate satisfies the contract** — no manual
+fetch, no `--allow-collapse`, validator never weakened for other feeds; on failure the prior stays
+byte-identical and status stays degraded.
 
 ## 7. Quota reconciliation (directive #4/#8) — BUILT
 
