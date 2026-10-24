@@ -12,7 +12,10 @@ HISTORICAL_DIR = BASE_DIR / "data" / "historical"
 TRACKING_DIR = BASE_DIR / "data" / "tracking"
 PROPS_PATH = HISTORICAL_DIR / "NFL_Props_History.csv"
 GAMES_PATH = HISTORICAL_DIR / "NFL_Games_nfldata.csv"
-OUTPUT_PATH = TRACKING_DIR / "NFL_AllPropResults.csv"
+# Sole-owner artifact for the historical calibration backfill. It must NOT be NFL_AllPropResults.csv:
+# that file is owned by the in-season grader (refresh_all_prop_results) and read by the live Wave /
+# Heating-Up boards. Sharing it caused the 2026-10-24 clobber. See services/nfl_result_artifacts.py.
+OUTPUT_PATH = TRACKING_DIR / "NFL_AllPropResults_Backfill.csv"
 GAME_SCRIPT_REPORT_PATH = TRACKING_DIR / "NFL_GameScript_Calibration_Report.csv"
 PLAYER_PROFILE_PATH = TRACKING_DIR / "NFL_Player_Hit_Profiles.csv"
 
@@ -522,8 +525,9 @@ def main() -> int:
     props = pd.read_csv(props_path, low_memory=False)
     games = load_games_with_pbp_exports(games_path)
     rows = build_rows(props, games, set(args.season or []))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows.to_csv(output_path, index=False)
+    # Atomic publication (never a half-written artifact).
+    from services.nfl_result_artifacts import write_atomic
+    write_atomic(rows, output_path)
     game_script_report = build_game_script_report(rows)
     game_script_report_path.parent.mkdir(parents=True, exist_ok=True)
     game_script_report.to_csv(game_script_report_path, index=False)

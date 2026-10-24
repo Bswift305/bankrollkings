@@ -165,14 +165,19 @@ def score_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> int:
-    if not INPUT_PATH.exists():
-        raise FileNotFoundError(f"Missing input file: {INPUT_PATH}")
-    df = pd.read_csv(INPUT_PATH, low_memory=False)
+    # Read-time UNION of the live grade (NFL_AllPropResults.csv) + the historical backfill
+    # (NFL_AllPropResults_Backfill.csv). The two populations now live in separate single-writer files
+    # (2026-10-24 clobber fix); the Edge-Engine scoring + downstream calibration need BOTH, so they are
+    # unioned here at read time rather than sharing one file. See services/nfl_result_artifacts.py.
+    from services.nfl_result_artifacts import load_combined, write_atomic
+    tracking_dir = INPUT_PATH.parent
+    df = load_combined(tracking_dir)
     if df.empty:
-        raise ValueError(f"Input file has no rows: {INPUT_PATH}")
+        raise ValueError(
+            f"No NFL result rows to score: neither the live grade nor the historical backfill is "
+            f"present/populated under {tracking_dir}")
     scored = score_rows(df)
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    scored.to_csv(OUTPUT_PATH, index=False)
+    write_atomic(scored, OUTPUT_PATH)
 
     resolved = scored[scored["OutcomeState"].isin(["Hit", "Miss"])].copy()
     print(f"Rows scored: {len(scored):,}")

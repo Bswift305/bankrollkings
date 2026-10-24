@@ -14,7 +14,9 @@ TARGETS = [
     ("WNBA", TRACKING_DIR / "WNBA_AllPropResults.csv", "WNBA_Calibration_v1"),
     ("MLB", TRACKING_DIR / "MLB_AllPropResults.csv", "MLB_ContextScore_v1"),
     ("MLB", TRACKING_DIR / "MLB_AllPropResults_Scored.csv", "MLB_ContextScore_v1"),
-    ("NFL", TRACKING_DIR / "NFL_AllPropResults.csv", "NFL_Backfill_v1"),
+    # The NFL_Backfill_v1 stamp belongs on the BACKFILL artifact, not the live grader's
+    # NFL_AllPropResults.csv (which the Wave/Heating-Up boards read). See the 2026-10-24 clobber fix.
+    ("NFL", TRACKING_DIR / "NFL_AllPropResults_Backfill.csv", "NFL_Backfill_v1"),
     ("NFL", TRACKING_DIR / "NFL_AllPropResults_Scored.csv", "NFL_EdgeScore_v1"),
     ("NCAAF", TRACKING_DIR / "NCAAF_AllPropResults.csv", "NCAAF_Calibration_v1"),
 ]
@@ -90,7 +92,9 @@ def normalize_file(sport: str, path: Path, model_version: str) -> dict:
             prop_model = df["PropModelVersion"].fillna("").astype(str).str.strip()
             df["PropModelVersion"] = prop_model.where(prop_model.ne(""), "NFL_PropScore_v1")
 
-    df.to_csv(path, index=False)
+    # Atomic publication -- a normalize that reads then rewrites must never leave a partial file.
+    from services.nfl_result_artifacts import write_atomic
+    write_atomic(df, path)
     return {
         "Sport": sport,
         "File": str(path.relative_to(BASE_DIR)),

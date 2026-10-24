@@ -24,7 +24,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from services.nfl_result_artifacts import load_combined
+
 BASE = Path(__file__).resolve().parent
+# Hit profiles span all seasons, so read the UNION of the live grade + historical backfill (two
+# single-writer files since the 2026-10-24 clobber fix). RESULTS is the live file's path; its parent is
+# the tracking dir the union loads from. See services/nfl_result_artifacts.load_combined.
 RESULTS = BASE / "data" / "tracking" / "NFL_AllPropResults.csv"
 PROFILES = BASE / "data" / "tracking" / "NFL_Player_Hit_Profiles.csv"
 
@@ -35,7 +40,7 @@ VALUE_TERM_MIN_GAP = 1.0  # calculate_line_value starts paying out past ~1 yd of
 
 
 def line_meta() -> pd.DataFrame:
-    df = pd.read_csv(RESULTS)
+    df = load_combined(RESULTS.parent)
     r = df[df["OutcomeState"].isin(["Hit", "Miss"])].copy()
     r["L"] = pd.to_numeric(r["Line"], errors="coerce")
     r = r.dropna(subset=["L"])
@@ -89,7 +94,7 @@ def report(meta: pd.DataFrame, merged: pd.DataFrame) -> None:
 
     # (b) how much scoring is phantom-driven: among resolved props, which ones would get the
     # calculate_line_value bonus, and of those, how many come from a WIDE profile.
-    res = pd.read_csv(RESULTS)
+    res = load_combined(RESULTS.parent)
     res = res[res["OutcomeState"].isin(["Hit", "Miss"])].copy()
     res["L"] = pd.to_numeric(res["Line"], errors="coerce")
     key = ["Player", "Team", "Stat", "Direction"]

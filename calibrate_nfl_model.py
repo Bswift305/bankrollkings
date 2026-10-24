@@ -44,9 +44,15 @@ def nfl_recommendation(bucket_label: str, classification: str, gap: float | None
 
 
 def main() -> int:
+    # Calibration needs BOTH populations: the historical backfill (preseason formula shape) and the live
+    # in-season grade. Since the 2026-10-24 clobber fix put them in separate single-writer files, read
+    # their union here rather than a single results_path. See services/nfl_result_artifacts.load_combined.
+    from services.nfl_result_artifacts import load_combined, live_path
+    tracking_dir = BASE_DIR / "data" / "tracking"
     config = CalibrationConfig(
         sport="NFL",
-        results_path=BASE_DIR / "data" / "tracking" / "NFL_AllPropResults.csv",
+        results_path=live_path(tracking_dir),  # retained for the empty-fallback message only
+        results_frame=load_combined(tracking_dir),
         output_path=BASE_DIR / "data" / "tracking" / "NFL_Calibration_Report.csv",
         confidence_source_column="Confidence",
         default_method="NFL Historical Backfill",

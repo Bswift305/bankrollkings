@@ -37,6 +37,11 @@ class CalibrationConfig:
     classify_rule_family: Callable[[str], str]
     role_signal_fn: Callable[[str], str]
     recommendation_fn: Callable[[str, str, float | None, int], str]
+    # Optional pre-loaded results. When set, run_calibration uses it INSTEAD of reading results_path --
+    # NFL passes a read-time union of its live-grade + historical-backfill files (two single-writer
+    # artifacts) so calibration sees both populations without the writers sharing a file. Other sports
+    # leave this None and read results_path unchanged. See services/nfl_result_artifacts.load_combined.
+    results_frame: "pd.DataFrame | None" = None
 
 
 def safe_series(df: pd.DataFrame, column: str, default: str = "") -> pd.Series:
@@ -294,31 +299,7 @@ def build_bucket_results(df: pd.DataFrame, config: CalibrationConfig) -> list[Bu
 def run_calibration(config: CalibrationConfig) -> dict:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
-    if not config.results_path.exists():
-        to_dataframe([]).to_csv(config.output_path, index=False)
-        report = {
-            "checked_at": checked_at,
-            "clean": True,
-            "pass_count": 0,
-            "warning_count": 0,
-            "failure_count": 0,
-            "notes": f"No {config.sport} featured-results file available for calibration.",
-            "resolved_rows": 0,
-            "pending_rows": 0,
-            "overall_hit_rate": None,
-            "overall_roi": None,
-            "overall_priced_rows": 0,
-            "lying_buckets": [],
-            "strong_buckets": [],
-            "watch_buckets": [],
-            "top_recommendations": [],
-            "report_path": str(config.output_path),
-        }
-        return report
-
-    try:
-        raw = pd.read_csv(config.results_path)
-    except EmptyDataError:
+    def _empty(notes: str) -> dict:
         to_dataframe([]).to_csv(config.output_path, index=False)
         return {
             "checked_at": checked_at,
@@ -326,7 +307,7 @@ def run_calibration(config: CalibrationConfig) -> dict:
             "pass_count": 0,
             "warning_count": 0,
             "failure_count": 0,
-            "notes": f"No {config.sport} rows available for calibration.",
+            "notes": notes,
             "resolved_rows": 0,
             "pending_rows": 0,
             "overall_hit_rate": None,
@@ -338,6 +319,17 @@ def run_calibration(config: CalibrationConfig) -> dict:
             "top_recommendations": [],
             "report_path": str(config.output_path),
         }
+
+    if config.results_frame is not None:
+        # Explicit read-time union supplied by the caller (NFL: live grade + historical backfill).
+        raw = config.results_frame.copy()
+    elif not config.results_path.exists():
+        return _empty(f"No {config.sport} featured-results file available for calibration.")
+    else:
+        try:
+            raw = pd.read_csv(config.results_path)
+        except EmptyDataError:
+            return _empty(f"No {config.sport} rows available for calibration.")
     if raw.empty:
         to_dataframe([]).to_csv(config.output_path, index=False)
         return {

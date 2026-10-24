@@ -67,16 +67,57 @@ pipelines corrupts `data/tracking/NFL_AllPropResults.csv`.
   (`IsBackfill=True`, `Method='Historical Backfill'`, `ModelVersion='NFL_Backfill_v1'`, `SnapshotWrittenAt`
   13:07:22). Whichever pipeline runs last wins; the Edge-Engine backfill runs last → the published file has
   **zero** current-season rows → the Wave correctly fails closed.
-- **Fix family (one reversible commit; AWAITING DIRECTION — a shared data-contract change):** give the
-  historical calibration backfill its **own** file (e.g. `NFL_AllPropResults_Backfill.csv` /
-  `NFL_HistoricalCalibration.csv`) so `refresh_all_prop_results.py` owns `NFL_AllPropResults.csv`
-  exclusively. Repoint `build_nfl_historical_calibration.py:OUTPUT_PATH`, `normalize_result_metadata.py`'s
-  NFL target, and every calibration consumer that currently reads the historical rows out of
-  `NFL_AllPropResults.csv` (audit: `calibrate_nfl_model.py`, the calibration-note / drift-alert
-  generators). The live streak + Heating-Up boards already want live-only, so they heal automatically.
-  (Alternatives considered: reorder the pipelines, or merge-on-write keyed by `IsBackfill` — both leave two
-  writers on one file and stay race-prone; single-writer-per-file is the durable fix.)
+- **Fix — IMPLEMENTED (single-writer-per-file, authorized 2026-10-24).** See the ownership contract and
+  reader/writer inventory below. The live streak + Heating-Up boards already want live-only, so they heal
+  automatically once the backfill stops clobbering the live file. (Alternatives rejected: reorder the
+  pipelines, or merge-on-write keyed by `IsBackfill` — both leave two writers on one file and stay
+  race-prone.)
 This precedes Audit #1.
 
 **Out of scope / untouched:** NBA surface migration (owned by NBA Season Readiness); MLB/WNBA team pages
 (product decision); the scheduled **NBA props** acceptance run.
+
+## Item-5 fix: NFL result-artifact ownership contract (implemented)
+
+**Contract** (`services/nfl_result_artifacts.py` — single source of paths, union loader, ownership
+registry):
+
+| Authoritative artifact | Sole writer | Population |
+|---|---|---|
+| `NFL_AllPropResults.csv` | `refresh_all_prop_results` (`app.replace_all_prop_results_snapshot_for_sport`) | LIVE / current-season grades |
+| `NFL_AllPropResults_Backfill.csv` | `build_nfl_historical_calibration` | historical calibration only |
+
+No job read-modify-writes another job's file. Consumers needing both populations use
+`load_combined()` (an explicitly owned **read-time union**, backfill + live, live wins dedup).
+
+**Reader/writer inventory (consumers reclassified):**
+
+| Consumer | Before | After |
+|---|---|---|
+| Wave `build_nfl_prop_streaks`, Heating-Up `build_nfl_prop_hot_start`, `build_floor_play_index` | read raw (polluted by backfill) | read raw = **live-only** (unchanged code; heals) |
+| `calculate_nfl_edge_score` (→ `NFL_AllPropResults_Scored.csv`) | read raw | **`load_combined`** (live + backfill) + atomic write |
+| `calibrate_nfl_model` → `services/model_calibration.run_calibration` | read raw via `results_path` | passes **`results_frame=load_combined(...)`** (new optional field; MLB/WNBA/NBA/CFB untouched) |
+| `build_nfl_hit_profile_linemeta` | read raw | **`load_combined`** |
+| `build_nfl_historical_calibration` (writer) | wrote `NFL_AllPropResults.csv` (replace) | writes **`NFL_AllPropResults_Backfill.csv`** atomically |
+| `normalize_result_metadata` (NFL raw target) | stamped `NFL_AllPropResults.csv` | stamps **`NFL_AllPropResults_Backfill.csv`** atomically |
+| freshness/review (`build_phase2_dashboard_context`, `_build_live_promotion_signal_context`, `candidate_review`, `missed_opportunities`, `qc_odds_feed`) | metadata/mtime | unchanged (correctly track the live file) |
+
+**Safeguards:** atomic publication (`write_atomic` = tmp + `os.replace`) for both artifacts and the
+normalize/edge-score rewrites; Edge Engine can no longer overwrite the live artifact and the daily grader
+can no longer overwrite the historical artifact (distinct paths), so **job order no longer affects either
+result**; a failed write preserves each artifact's prior valid file; live-board cache keys already key on
+`NFL_AllPropResults.csv` mtime (the live file) — correct without change.
+
+**QCs (both green locally):** `qc_writer_ownership.py` (fails if two pipelines target one authoritative
+path, or if the backfill writer / normalize target drifts back to the live file) and
+`qc_nfl_result_artifact_isolation.py` (runs the real live + backfill writers against temp paths in both
+orders; proves population isolation, independent hashes, `load_combined` union, and atomic
+failure-preservation).
+
+**STILL OPEN before Item 5 closes — the 86-vs-16,753 reconciliation** (`diag_nfl_grading_completeness.py`,
+read-only, prod). The clobber fix lets the live grade survive, but the dry-run resolved only 86 current-
+season rows; if the live archive cannot yield a full-season population, the board will be thin even
+un-clobbered (a possible second, retention defect). Run the completeness probe on prod to reconcile the
+grain of the earlier 16,753 figure and confirm whether a retention fix is also needed. Item 5 closes only
+when: the live file carries the correct current-season population, the historical file is separate, the
+Wave becomes available **from the live artifact**, and re-running the Edge Engine cannot clobber it.
