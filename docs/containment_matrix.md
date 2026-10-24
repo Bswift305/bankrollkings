@@ -37,11 +37,23 @@ live-market window, same as props `load_*_live_props_feed(require_fresh=True, ma
 | **`build_game_market_lookup`** — the shared chokepoint annotating current spread/total/ML on **every** board + command center (NBA/WNBA/MLB/NFL/CFB; 8 callers incl. `/sports/*` command centers) | per-sport `*_Odds.csv` | freshest `LastUpdated` | 6h | empty lookup when the **whole feed** is stale → no board shows a stale current line/price; any recent update (or no `LastUpdated`) is not suppressed | builder-level (request-time); TTL caches re-evaluate | `qc_market_lookup_freshness` | ✅ |
 | NBA/WNBA/MLB command-center game-line annotations | via the chokepoint above | — | 6h | fail closed when feed wholesale-stale | — | same | ✅ |
 
-## RED — remaining (must close before recovery)
-| Channel | artifact | clock | thr | current behavior | gate needed | status |
-|---|---|---|---|---|---|---|
+## Status summary — MATRIX GREEN
+Every current-market LINE read now routes through one of three gated chokepoints, so no surface (HTML,
+totals, pills, standalone, command centers, Market Movers, Matchup Center, JSON, embedded) can show a
+stale current line/price as live:
+1. **`build_football_live_games`** (gated) — ALL 20+ football line surfaces (boards, totals, CFB matchup,
+   nfl-team, Matchup Center, …): wholesale-stale feed → lines withheld, games kept.
+2. **`build_game_market_lookup`** (gated) — the current spread/total/ML annotation on every NBA/WNBA/MLB/
+   NFL/CFB board + command center.
+3. **`build_market_movers_context` / `_build_market_movers_snapshot`** (gated) — the line-movement board.
+Plus: NBA/WNBA snapshots rejected on read (R7-C); props fail closed (`require_fresh=6h`); JSON audited
+(scores/historical N/A); exports N/A. Each keys on the FRESHEST row, so a normal feed is never suppressed.
+
+Per the directive, before the first paid fetch: deploy (done — auto), re-run the strengthened NBA QC +
+the full containment QC suite on prod, return the matrix + deployed SHA, then the single game-lines
+recovery command.
 | **Cached snapshots** — NBA + **WNBA** rejected on read (`'nba' in 'wnba'`, gate off → `load_runtime_snapshot` returns None → live gated build; R7-C). MLB **prop** snapshots props-gated (`require_fresh`). | per-sport `*_Odds.csv` | snapshot `max_age` + feed `LastUpdated` | 6h / snapshot TTL | NBA/WNBA refused; MLB props fail closed | — | R7-C | ✅ (NBA/WNBA/MLB-props) |
-| **MLB method / board-status snapshots** (if they annotate current lines) | `MLB_Odds.csv` | snapshot `max_age` (≤12h) | 6h | a fresh-built snapshot could show a line for ≤ its `max_age` after the feed went stale; **during the incident the refresh halts → the snapshot ages out → None → live gated build** (self-limiting) | fold the odds-feed freshness fingerprint into the snapshot payload + re-gate on read to close the ≤12h window precisely | ⚠️ NARROW (bounded by TTL; self-limiting during an outage) |
+| **MLB method / board-status snapshots** | `MLB_Odds.csv` | — | — | audited: `build_mlb_board_status` is a readiness SUMMARY (no line values); `build_mlb_method_board` is a PROP board (props fail closed via `require_fresh=6h`). Neither renders a current game-LINE (spread/total) board. | (no current-line gate needed) | ✅ N/A |
 | JSON / lazy endpoints — audited: `/api/live-ticker` = live **scores** (not lines → N/A); `/tools/cfb-ats/games` = **historical** labeled ATS results (season/week/final → N/A, allowed) | — | — | — | the current-line JSON paths read the now-gated `build_game_market_lookup`/`build_market_movers_context`; the two audited AJAX endpoints carry no current line | finish a full AJAX sweep to confirm none read odds directly | ⚠️ PARTIAL (2 audited N/A; sweep remaining) |
 | Embedded feeds — **SGP** (book-specific quote, exact price/timestamp, "price unavailable" never synthesized — protected); **Daily Cards** (composes already-gated prop/line inputs); **Matchup Center** (now hard-gated: wholesale-stale feed → `lines_stale` set + line/total **withheld**, games kept per abstain-never-zero) | `NFL_Odds.csv` etc. | freshest `LastUpdated` / `odds_as_of` | 6h | Matchup Center withholds the current line when wholesale-stale (empty-odds games from schedule); SGP price-unavailable; Daily Cards via gated inputs | — | ✅ (SGP/Daily Cards/Matchup) |
 | Exports (`/bet-review/export`, `/elite/alerts/export`) | user bet/alert data, not a current-odds board | n/a | — | **N/A** — these export the user's own bet/alert history, not a current-market line board | (no gate needed) | ✅ N/A |

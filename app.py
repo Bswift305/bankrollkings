@@ -6636,6 +6636,18 @@ def get_football_stat_family(stat):
 
 
 def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filter=''):
+    # FAIL CLOSED universally: if the odds feed is WHOLESALE stale (freshest LastUpdated older than the 6h
+    # live-market window -- a halted capture, the incident condition), drop the odds so games come from the
+    # SCHEDULE with their line/total fields abstained. No football current-line surface (boards, totals,
+    # CFB matchup, nfl-team, Matchup Center, every build_football_live_games caller) can then show a stale
+    # line as live; the games themselves still list. Keys on the freshest row, so a normal feed with any
+    # recent update (or odds lacking LastUpdated) is never suppressed (incident 2026-10-23).
+    try:
+        if odds_df is not None and not getattr(odds_df, 'empty', True) and \
+                get_lines_refresh_meta(odds_df).get('is_stale'):
+            odds_df = pd.DataFrame(columns=list(odds_df.columns))
+    except Exception:
+        pass
     lookup = build_live_game_lookup(odds_df, schedule_df)
     rows = []
     today = sports_today_ts()
