@@ -297,6 +297,7 @@ def main() -> int:
     ]
     active = active_sports()
     failed = False
+    PRE_REFRESH_HEALTH_LABEL = "Odds feed health"
     # Structured per-step outcomes written to data/tracking/Last_Operator_Summary.json so Run Status
     # and the incident diag read a MACHINE-READABLE record of what each step did -- never re-parse the
     # free-text operator log (which conflated nested child messages with steps during the Oct 2026
@@ -324,6 +325,13 @@ def main() -> int:
         ok, output = _run_step(label, command, timeout)
         if ok:
             status = "PASS"
+        elif label == PRE_REFRESH_HEALTH_LABEL:
+            # The pre-refresh Odds-feed health check runs FIRST, before this run's refresh steps, so a
+            # stale feed here reflects the state BEFORE recovery -- NOT the outcome of this run. It must
+            # not stay recorded as a blocking failure once the refreshes below make the feeds current. It
+            # is a pre-flight WARNING; the authoritative check is "Odds feed health (post-refresh)" after
+            # all refreshes (added below), whose result does block.
+            status = "WARN (pre-refresh; authoritative check runs post-refresh)"
         elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
             # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
             # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
@@ -349,6 +357,22 @@ def main() -> int:
             failed = True
             if not args.continue_on_error:
                 break
+
+    # AUTHORITATIVE post-refresh Odds-feed health. The pre-refresh check above only saw the pre-recovery
+    # state; this one runs AFTER every refresh, so a feed that recovered during the run is no longer a
+    # blocking failure, while a feed that is STILL stale (e.g. NBA props that failed to refresh) is a
+    # real, final-state blocking failure. This is the final-state replacement for the pre-refresh warning.
+    if not args.skip_refresh:
+        post_label = "Odds feed health (post-refresh)"
+        print(f"[RUN] {post_label}")
+        ok, output = _run_step(post_label, _python("qc_odds_feed.py"), 120)
+        status = "PASS" if ok else "FAIL"
+        print(f"[{status}] {post_label}")
+        lines += [f"[{status}] {post_label}", "Command: " + " ".join(_python("qc_odds_feed.py")),
+                  output or "(no output)", ""]
+        step_outcomes.append({"label": post_label, "status": status})
+        if status == "FAIL":
+            failed = True
 
     lines.append(f"Finished: {datetime.now().isoformat(timespec='seconds')}")
     log_path.write_text("\n".join(lines), encoding="utf-8")

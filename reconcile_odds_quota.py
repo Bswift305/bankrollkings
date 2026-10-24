@@ -66,26 +66,39 @@ def parse_operator_log(text: str) -> list[dict]:
     receipts that actually printed x-requests-remaining are usable; the rest are a pre-ledger gap. No
     network, no secrets -- this parses our own emitted receipt text, not arbitrary free-form."""
     rows: list[dict] = []
-    # split on the receipt banner, keep each block
-    blocks = re.split(r"-{4}\s*QUOTA RECEIPT\s*-{4}", text)
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    # Split on the receipt banner -- tolerant of dash count (>=3), case, and surrounding whitespace.
+    blocks = re.split(r"-{3,}\s*QUOTA RECEIPT\s*-{3,}", text, flags=re.I)
     for block in blocks[1:]:
-        def _grab(pat):
-            m = re.search(pat, block)
+        def _grab_int(key_pat):
+            # match the key, skip anything up to the colon (handles "(sum = fetch cost)" and padding),
+            # then the first token after it; None if the token is not an integer (e.g. "None").
+            m = re.search(key_pat + r"[^:\n]*:\s*([^\s]+)", block, flags=re.I)
+            if not m:
+                return None
+            try:
+                return int(float(m.group(1)))
+            except (TypeError, ValueError):
+                return None
+
+        def _grab_str(key_pat):
+            m = re.search(key_pat + r"\s*:\s*(.+)", block, flags=re.I)
             return m.group(1).strip() if m else None
-        fam = _grab(r"endpoint family\s*:\s*(.+)")
-        sport = _grab(r"sport\s*:\s*(.+)")
-        last = _grab(r"x-requests-last[^:]*:\s*(-?\d+)")
-        used = _grab(r"x-requests-used\s*:\s*(-?\d+)")
-        remaining = _grab(r"x-requests-remaining\s*:\s*(-?\d+)")
+
+        fam = _grab_str(r"endpoint family")
+        sport = _grab_str(r"sport")
+        last = _grab_int(r"x-requests-last")
+        used = _grab_int(r"x-requests-used")
+        remaining = _grab_int(r"x-requests-remaining")
         if remaining is None and used is None:
             continue  # a receipt with no cumulative headers -- unusable, counts as a gap elsewhere
         rows.append({
             "ts": "",
             "sport": sport or "?",
             "endpoint_family": fam or "?",
-            "last": int(last) if last is not None else None,
-            "used": int(used) if used is not None else None,
-            "remaining": int(remaining) if remaining is not None else None,
+            "last": last,
+            "used": used,
+            "remaining": remaining,
         })
     return rows
 

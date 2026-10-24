@@ -88,6 +88,11 @@ SCORECARDS = [
     # correct even when x-requests-last is 0/absent (the NBA probe). The receipt FAILS when any portion
     # of the delta is unattributed (a ledger gap or a tail of calls the ledger never saw). Pure/offline.
     ("Quota Reconciliation QC", "qc_quota_reconciliation.py", 60),
+    # Operator post-refresh health (Oct 24 follow-up #2): the pre-refresh Odds-feed-health check is a
+    # non-blocking WARNING (it saw the pre-recovery state); the authoritative blocking signal is a
+    # POST-refresh health check run after every refresh, so a feed that recovered during the run is not
+    # left recorded as a blocking failure, while a still-stale feed is. Faked operator, no subprocess.
+    ("Operator Post-Refresh Health QC", "qc_operator_post_refresh_health.py", 90),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

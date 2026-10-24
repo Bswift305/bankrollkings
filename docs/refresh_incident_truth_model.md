@@ -168,6 +168,14 @@ customer renders unavailable but the refresh is on schedule — AGING row, overa
 **REFRESH_MISSED** (>30h cadence — STALE row, a degraded reason). `qc_run_status_degraded.py` covers the
 tiering.
 
+### Post-refresh operator health (Oct-24 follow-up #2)
+The pre-refresh `Odds feed health` step runs FIRST, before this run's refreshes, so a stale feed there
+reflects the pre-recovery state — it is now a non-blocking **WARN**, not a blocking failure. The operator
+runs an authoritative **`Odds feed health (post-refresh)`** step after every refresh; its result is what
+blocks. So a feed that recovered during the run (NFL/NCAAF/MLB) is no longer left recorded as a blocking
+failure on its pre-refresh condition, while a feed still stale at the end (NBA) is a real final-state
+blocking failure. `qc_operator_post_refresh_health.py` proves both paths.
+
 > Until a prod run produces the receipt, the NBA props outcome is **VALIDATION_FAILED** (the
 > conservative default), NOT NO_MARKETS_POSTED — the classifier will only call it NO_MARKETS_POSTED once
 > a receipt proves it.
@@ -192,11 +200,17 @@ tiering.
   `--baseline-remaining` that is NOT the window-start reading is detected and its excess is reported as
   unattributed, not mis-charged to the first row. `reconcile_odds_quota.py --since <ts>` (no endpoints)
   self-attributes a clean window — e.g. the NFL probe's 97 credits → `NFL | player_props`.
-- **Legacy reconstruction (directive #4):** `reconcile_odds_quota.py --from-operator-log <log>` rebuilds
-  ordered rows from the log's own QUOTA RECEIPT blocks (offline, no network). For the incident window,
-  paired with the owner-read `--baseline-remaining/--final-remaining`, it attributes what the receipts
-  show and reports the remainder as a **pre-ledger gap** (the historical 1,040 is NOT reconciled — any
-  credits with no receipt/ledger row cannot be recovered). Marked explicitly as legacy.
+- **Reconstruction (directive #4):** `reconcile_odds_quota.py --from-operator-log <log>` rebuilds ordered
+  rows from the log's own QUOTA RECEIPT blocks (offline, no network). The parser tolerates dash-count /
+  whitespace / case variants and non-numeric (`None`) header values, and a header-less receipt is skipped
+  (never mis-counted); `qc_quota_reconciliation` feeds it REAL `print_receipt` output as a regression
+  guard against the "silently finds 0 rows" defect class.
+- **The 1,040-credit recovery window** was NOT the receipt-free Oct-23 failed run — it is the Oct-24
+  **03:12 recovery** run (`daily_operator_20261024_031232.log`, 7 receipts), new subscription
+  `100000` → `~98960`. Reconstruct it with:
+  `reconcile_odds_quota.py --from-operator-log logs/daily_operator_20261024_031232.log --baseline-remaining 100000 --final-remaining 98960`.
+  Any residual beyond what the 7 receipts carry is a receipt-free remainder (calls whose receipt lacked
+  cumulative headers), reported as unattributed — never silently folded into the first row.
 
 QC: `qc_quota_reconciliation.py` (registered) — auto-baseline, operator-log parse, and the lifetime-
 baseline-misuse guard.

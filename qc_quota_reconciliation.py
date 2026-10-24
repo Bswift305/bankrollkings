@@ -11,6 +11,8 @@ Offline: synthetic ledger rows + a temp ledger file.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -90,6 +92,39 @@ def main() -> int:
     rmis = rec.reconcile(prows, baseline_remaining=100000, final_remaining=98850)
     if rmis["attributed_total"] != 100 or rmis["unattributed"] != 1050 or rmis["ok"]:
         f.append(f"lifetime-baseline misuse should attribute 100 / unattributed 1050 / FAIL; got {rmis}")
+
+    # 5e. Parser must recognize the REAL print_receipt format (not just hand-written fixtures): build a
+    #     7-receipt recovery log via the actual printer, descending 100000 -> 98960, and reconcile to
+    #     1040 with 0 unattributed. Guards against the "parser silently finds 0 rows" defect class.
+    seq = [
+        ("game_lines /events + /odds", "americanfootball_nfl", ("3", "3", "99997")),
+        ("game_lines /events + /odds", "americanfootball_ncaaf", ("3", "6", "99994")),
+        ("game_lines /events + /odds", "basketball_wnba", ("3", "9", "99991")),
+        ("game_lines /events + /odds", "baseball_mlb", ("3", "12", "99988")),
+        ("player_props /events + /odds", "americanfootball_nfl", ("97", "109", "99891")),
+        ("player_props /events + /odds", "americanfootball_ncaaf", ("830", "939", "99061")),
+        ("futures /sports + /odds(outrights)", "(all)", ("101", "1040", "98960")),
+    ]
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        for fam, sport, (last, used, rem) in seq:
+            q = QuotaRecorder()
+            q.record({"x-requests-last": last, "x-requests-used": used, "x-requests-remaining": rem})
+            q.print_receipt(endpoint_family=fam, sport=sport)
+    parsed = rec.parse_operator_log(buf.getvalue())
+    if len(parsed) != 7:
+        f.append(f"real print_receipt format: parser should find 7 receipts, found {len(parsed)}")
+    rr = rec.reconcile(parsed, baseline_remaining=100000, final_remaining=98960)
+    if not rr["ok"] or rr["attributed_total"] != 1040 or rr["unattributed"] != 0:
+        f.append(f"real 7-receipt log should reconcile 1040/0; got {rr['attributed_total']}/{rr['unattributed']}")
+    if rr["by_key"].get("americanfootball_ncaaf | player_props /events + /odds") != 830:
+        f.append(f"per-family attribution wrong on real format: {rr['by_key']}")
+    # a header-less receipt (no cumulative data) is skipped, never crashes the parser.
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        QuotaRecorder().print_receipt(endpoint_family="x", sport="y")
+    if len(rec.parse_operator_log(buf2.getvalue())) != 0:
+        f.append("a header-less receipt must be skipped, not parsed as a usable row")
 
     # 5. QuotaRecorder.write_ledger appends usable rows.
     with tempfile.TemporaryDirectory() as td:
