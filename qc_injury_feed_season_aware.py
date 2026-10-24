@@ -46,13 +46,13 @@ def _write_schedule(base: Path, prefix: str, game_day_offsets):
         d / f"{prefix}_Schedule.csv", index=False)
 
 
-def _run(base: Path):
+def _run(base: Path, sport: str = "wnba"):
     saved = (ifq.INJURIES_DIR, ifq._SCHED_DIR, ifq._ODDS_DIR)
     ifq.INJURIES_DIR = base / "injuries"
     ifq._SCHED_DIR = base / "schedules"
     ifq._ODDS_DIR = base / "odds"
     try:
-        return ifq.run_injury_feed_qc("wnba", persist=False)
+        return ifq.run_injury_feed_qc(sport, persist=False)
     finally:
         ifq.INJURIES_DIR, ifq._SCHED_DIR, ifq._ODDS_DIR = saved
 
@@ -60,44 +60,86 @@ def _run(base: Path):
 def main() -> int:
     f = []
 
-    # 1. games in window + stale feed -> FAILURE / STALE
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td)
-        _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
-        _write_schedule(base, "WNBA", [0, 1])           # games today/tomorrow
-        r = _run(base)
-        if r["failure_count"] == 0 or r["outcome"] != "STALE":
-            f.append(f"1 in-season stale should FAIL/STALE; got fails={r['failure_count']} outcome={r['outcome']}")
+    # 0. DATA-RIGHTS GATE precedence (NBA/WNBA): while BK_NBA_STATS_ENABLED is OFF, a stale/absent injury
+    #    feed is SKIP_DATA_RIGHTS_GATE -- clean (not a failure), not fresh -- regardless of schedule.
+    #    When the gate is ON, the normal season-aware logic applies.
+    import os as _os
+    saved_flag = _os.environ.get("BK_NBA_STATS_ENABLED")
+    try:
+        for sport in ("wnba", "nba"):
+            _os.environ["BK_NBA_STATS_ENABLED"] = "0"
+            with tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                _write_injuries(base, sport.upper(), updated_age_h=200, file_age_h=200)
+                _write_schedule(base, sport.upper(), [0, 1])  # games present: gate must still win
+                r = _run(base, sport)
+                if r["outcome"] != "SKIP_DATA_RIGHTS_GATE" or r["failure_count"] != 0 or not r["clean"]:
+                    f.append(f"0 gated {sport} should be SKIP_DATA_RIGHTS_GATE/clean; got {r['outcome']} "
+                             f"fails={r['failure_count']} clean={r['clean']}")
+            # gate ON: normal season-aware logic (stale in-season fails)
+            _os.environ["BK_NBA_STATS_ENABLED"] = "1"
+            with tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                _write_injuries(base, sport.upper(), updated_age_h=200, file_age_h=200)
+                _write_schedule(base, sport.upper(), [0, 1])
+                r = _run(base, sport)
+                if r["outcome"] == "SKIP_DATA_RIGHTS_GATE" or r["failure_count"] == 0:
+                    f.append(f"0 gate-ON {sport} in-season stale should FAIL (not gated); got {r['outcome']} "
+                             f"fails={r['failure_count']}")
+    finally:
+        if saved_flag is None:
+            _os.environ.pop("BK_NBA_STATS_ENABLED", None)
+        else:
+            _os.environ["BK_NBA_STATS_ENABLED"] = saved_flag
 
-    # 2. NO games in window + stale feed -> WATCH / NO_ACTIVE_EVENTS
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td)
-        _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
-        _write_schedule(base, "WNBA", [-40, -39])       # last games were weeks ago (season over)
-        r = _run(base)
-        if r["failure_count"] != 0 or r["outcome"] != "NO_ACTIVE_EVENTS":
-            f.append(f"2 offseason stale should WATCH/NO_ACTIVE_EVENTS; got fails={r['failure_count']} "
-                     f"outcome={r['outcome']} warns={r['warning_count']}")
-        if r["warning_count"] == 0:
-            f.append("2 offseason stale should still surface a WATCH (honest, not silent)")
+    # Cases 1-4 exercise the SEASON-AWARE path, which for WNBA only applies when the data-rights gate is
+    # ON (gate OFF -> SKIP_DATA_RIGHTS_GATE, tested in case 0). Force the gate ON here.
+    saved2 = _os.environ.get("BK_NBA_STATS_ENABLED")
+    _os.environ["BK_NBA_STATS_ENABLED"] = "1"
+    try:
+        # 1. games in window + stale feed -> FAILURE / STALE
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
+            _write_schedule(base, "WNBA", [0, 1])           # games today/tomorrow
+            r = _run(base)
+            if r["failure_count"] == 0 or r["outcome"] != "STALE":
+                f.append(f"1 in-season stale should FAIL/STALE; got fails={r['failure_count']} outcome={r['outcome']}")
 
-    # 3. no schedule readable + stale feed -> FAILURE (safe default)
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td)
-        _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
-        # no schedule written
-        r = _run(base)
-        if r["failure_count"] == 0:
-            f.append(f"3 no-schedule stale must keep the strict default FAIL; got fails={r['failure_count']}")
+        # 2. NO games in window + stale feed -> WATCH / NO_ACTIVE_EVENTS
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
+            _write_schedule(base, "WNBA", [-40, -39])       # last games were weeks ago (season over)
+            r = _run(base)
+            if r["failure_count"] != 0 or r["outcome"] != "NO_ACTIVE_EVENTS":
+                f.append(f"2 offseason stale should WATCH/NO_ACTIVE_EVENTS; got fails={r['failure_count']} "
+                         f"outcome={r['outcome']} warns={r['warning_count']}")
+            if r["warning_count"] == 0:
+                f.append("2 offseason stale should still surface a WATCH (honest, not silent)")
 
-    # 4. games in window + fresh feed -> clean / UPDATED
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td)
-        _write_injuries(base, "WNBA", updated_age_h=1, file_age_h=1)
-        _write_schedule(base, "WNBA", [0, 1])
-        r = _run(base)
-        if r["failure_count"] != 0 or r["outcome"] != "UPDATED":
-            f.append(f"4 fresh in-season should be clean/UPDATED; got fails={r['failure_count']} outcome={r['outcome']}")
+        # 3. no schedule readable + stale feed -> FAILURE (safe default)
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            _write_injuries(base, "WNBA", updated_age_h=66, file_age_h=48)
+            # no schedule written
+            r = _run(base)
+            if r["failure_count"] == 0:
+                f.append(f"3 no-schedule stale must keep the strict default FAIL; got fails={r['failure_count']}")
+
+        # 4. games in window + fresh feed -> clean / UPDATED
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            _write_injuries(base, "WNBA", updated_age_h=1, file_age_h=1)
+            _write_schedule(base, "WNBA", [0, 1])
+            r = _run(base)
+            if r["failure_count"] != 0 or r["outcome"] != "UPDATED":
+                f.append(f"4 fresh in-season should be clean/UPDATED; got fails={r['failure_count']} outcome={r['outcome']}")
+    finally:
+        if saved2 is None:
+            _os.environ.pop("BK_NBA_STATS_ENABLED", None)
+        else:
+            _os.environ["BK_NBA_STATS_ENABLED"] = saved2
 
     print("=" * 60)
     print("QC: INJURY FEED SEASON-AWARE")

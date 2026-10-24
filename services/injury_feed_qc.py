@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -121,6 +122,49 @@ def run_injury_feed_qc(sport_key: str, persist: bool = True) -> dict:
     current_path = INJURIES_DIR / f"{config.prefix}_Injuries.csv"
     backup_path = INJURIES_DIR / f"{config.prefix}_Injuries_last_good.csv"
     manual_path = INJURIES_DIR / f"{config.prefix}_Injuries_Manual.csv"
+
+    # DATA-RIGHTS GATE (legal register rows 7 NBA / 15 WNBA): while BK_NBA_STATS_ENABLED is OFF, NBA and
+    # WNBA injury ingestion is INTENTIONALLY disabled (fetch_injuries.py:401 / fetch_sport_injuries.py
+    # skip when gated; the NBA.com header-spoof was removed outright). A stale file is therefore EXPECTED
+    # -- not an authorized feed malfunctioning. Classify SKIP_DATA_RIGHTS_GATE: not reported fresh, and
+    # NOT a readiness failure. The last artifact is preserved and stays UNEXPOSED (app returns an empty
+    # injury lookup when gated; the board shows the containment notice). This never lifts the gate, never
+    # bypasses a provider restriction, and never relaxes a freshness threshold.
+    if sport_key in ("nba", "wnba"):
+        try:
+            from services.nba_source_gate import nba_stats_enabled
+            gated_off = not nba_stats_enabled()
+        except Exception:
+            gated_off = (os.environ.get("BK_NBA_STATS_ENABLED", "") or "").strip().lower() not in ("1", "true", "yes", "on")
+        if gated_off:
+            age_hours = None
+            if current_path.exists():
+                age_hours = round((datetime.now() - datetime.fromtimestamp(current_path.stat().st_mtime)).total_seconds() / 3600.0, 2)
+            report = {
+                "outcome": "SKIP_DATA_RIGHTS_GATE",
+                "events_expected": False,
+                "events_detail": "BK_NBA_STATS_ENABLED off; ingestion intentionally disabled (legal register)",
+                "checked_at": checked_at,
+                "clean": True,
+                "pass_count": 1,
+                "warning_count": 1,
+                "failure_count": 0,
+                "route_count": 0,
+                "notes": (f"SKIP - DATA_RIGHTS_GATE: {config.prefix} injury ingestion is gated OFF "
+                          f"(BK_NBA_STATS_ENABLED). Last artifact preserved, not exposed. "
+                          f"File AgeHours: {age_hours if age_hours is not None else 'n/a'}."),
+                "warnings": [f"{config.prefix} injury feed intentionally not ingested while the data-rights "
+                             "gate is off (expected; substitute requires a licensed feed -- do not re-enable "
+                             "the NBA.com scrape)."],
+                "failures": [],
+                "row_count": 0,
+                "backup_row_count": 0,
+                "manual_row_count": 0,
+                "age_hours": age_hours,
+            }
+            if persist:
+                append_qc_run_log(config.scope, report)
+            return report
 
     current_df = _read_csv(current_path)
     backup_df = _read_csv(backup_path)
