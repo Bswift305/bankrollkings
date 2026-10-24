@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -9,8 +9,46 @@ import pandas as pd
 from app import BASE_DIR, _load_cached_csv
 from services.qc_tracking import append_qc_run_log
 
+try:
+    from zoneinfo import ZoneInfo
+    _EASTERN = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover
+    _EASTERN = None
+
 
 INJURIES_DIR = BASE_DIR / "data" / "injuries"
+_SCHED_DIR = BASE_DIR / "data" / "schedules"
+_ODDS_DIR = BASE_DIR / "data" / "odds"
+_DATE_COLS = ("Date", "CommenceDate", "GameDate", "commence_time", "CommenceTime")
+
+
+def _events_expected(prefix: str, days_back: int = 1, days_fwd: int = 3):
+    """Independent of the injury feed: are there games in the schedule/game-lines manifest within the
+    injury-relevant window [today-days_back, today+days_fwd] (Eastern)? Returns (expected, detail).
+    SAFE DEFAULT: when no manifest is readable we return expected=True, so a missing schedule never
+    masks a real in-season injury-feed failure. Only a readable manifest with ZERO in-window games
+    returns expected=False (-> injuries are NO_ACTIVE_EVENTS, not a board failure)."""
+    today = (datetime.now(_EASTERN) if _EASTERN else datetime.now()).date()
+    lo, hi = today - timedelta(days=days_back), today + timedelta(days=days_fwd)
+    for p in (_SCHED_DIR / f"{prefix}_Schedule.csv", _SCHED_DIR / f"{prefix}_Odds.csv",
+              _ODDS_DIR / f"{prefix}_Odds.csv"):
+        if not p.exists():
+            continue
+        try:
+            df = pd.read_csv(p, low_memory=False)
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        col = next((c for c in _DATE_COLS if c in df.columns), None)
+        if col is None:
+            return True, f"schedule {p.name} has no date column -> assume games expected (safe default)"
+        dates = pd.to_datetime(df[col], errors="coerce").dropna()
+        if dates.empty:
+            return True, f"schedule {p.name} dates unparseable -> assume games expected (safe default)"
+        in_window = int(((dates.dt.date >= lo) & (dates.dt.date <= hi)).sum())
+        return (in_window > 0), f"{in_window} game(s) in [{lo}..{hi}] per {p.name}"
+    return True, "no schedule/game-lines manifest readable -> assume games expected (safe default)"
 
 
 @dataclass(frozen=True)
@@ -95,14 +133,30 @@ def run_injury_feed_qc(sport_key: str, persist: bool = True) -> dict:
     backup_rows = len(backup_df)
     manual_rows = len(manual_df)
 
-    if config.live_expected and not current_path.exists():
-        failures.append(f"{config.prefix} injury file is missing: {current_path.name}")
+    # Are injury updates reasonably expected right now? Decided from the INDEPENDENT schedule/game-lines
+    # manifest, not the injury feed itself. When a sport has no games in the window (offseason / between
+    # slates / season wound down -- e.g. WNBA in late October), a stale/absent injury feed is
+    # NO_ACTIVE_EVENTS, surfaced HONESTLY as a WATCH, never a board failure -- we do not manufacture
+    # freshness, and we do not fail the board for data that is not expected. In-season (games present)
+    # every existing failure condition is unchanged, so a genuinely broken live feed still fails.
+    live = config.live_expected
+    events_expected, events_detail = _events_expected(config.prefix) if live else (False, "feed is manual-only")
+    reasons: list[str] = []  # structured outcome contributors
 
-    if config.live_expected and current_rows < config.min_rows:
-        failures.append(
-            f"{config.prefix} injury feed only has {current_rows} rows; expected at least {config.min_rows}."
+    def _flag(msg: str, reason: str) -> None:
+        """Route an injury-feed concern to a board FAILURE when games are expected, else to a WATCH."""
+        reasons.append(reason)
+        (failures if events_expected else warnings).append(
+            msg if events_expected else f"{msg} [NO_ACTIVE_EVENTS: {events_detail}; not board-failing]"
         )
-    elif not config.live_expected and current_rows == 0:
+
+    if live and not current_path.exists():
+        _flag(f"{config.prefix} injury file is missing: {current_path.name}", "UNAVAILABLE")
+
+    if live and current_rows < config.min_rows:
+        _flag(f"{config.prefix} injury feed only has {current_rows} rows; expected at least {config.min_rows}.",
+              "TOO_FEW_ROWS")
+    elif not live and current_rows == 0:
         warnings.append(f"{config.prefix} injury feed is still manual-only / empty.")
 
     latest_updated = _latest_timestamp(current_df)
@@ -118,32 +172,47 @@ def run_injury_feed_qc(sport_key: str, persist: bool = True) -> dict:
                     f"{config.prefix} injury feed source timestamp is stale at {age_hours}h old, but the local fetch ran {file_age_hours}h ago and preserved last-good rows."
                 )
             else:
-                failures.append(
-                    f"{config.prefix} injury feed is stale at {age_hours}h old (threshold {config.stale_hours:.0f}h)."
-                )
-    elif config.live_expected and current_rows > 0:
+                _flag(f"{config.prefix} injury feed is stale at {age_hours}h old (threshold {config.stale_hours:.0f}h).",
+                      "STALE")
+    elif live and current_rows > 0:
         warnings.append(f"{config.prefix} injury feed has rows but no parseable Updated timestamps.")
 
     if backup_rows > 0 and current_rows > 0:
         drop_ratio = current_rows / max(backup_rows, 1)
         if backup_rows >= max(config.min_rows, 10):
             if drop_ratio <= config.drop_ratio_fail:
-                failures.append(
-                    f"{config.prefix} injury feed dropped sharply versus last good file ({current_rows} vs {backup_rows})."
-                )
+                _flag(f"{config.prefix} injury feed dropped sharply versus last good file ({current_rows} vs {backup_rows}).",
+                      "SHARP_DROP")
             elif drop_ratio <= config.drop_ratio_warn:
                 warnings.append(
                     f"{config.prefix} injury feed is materially lighter than last good file ({current_rows} vs {backup_rows})."
                 )
-    elif backup_rows > 0 and current_rows == 0 and config.live_expected:
-        failures.append(
-            f"{config.prefix} injury feed collapsed to zero rows after last good file had {backup_rows}."
-        )
+    elif backup_rows > 0 and current_rows == 0 and live:
+        _flag(f"{config.prefix} injury feed collapsed to zero rows after last good file had {backup_rows}.",
+              "COLLAPSED_TO_ZERO")
 
     if manual_rows > 0:
         warnings.append(f"{config.prefix} has {manual_rows} manual injury override rows active.")
 
+    # Explicit outcome for the structured record / scorecard surface.
+    if not live:
+        outcome = "SOURCE_NOT_SCHEDULED"
+    elif not events_expected:
+        outcome = "NO_ACTIVE_EVENTS"
+    elif failures:
+        outcome = ("UNAVAILABLE" if "UNAVAILABLE" in reasons
+                   else "VALIDATION_FAILED" if ("COLLAPSED_TO_ZERO" in reasons or "SHARP_DROP" in reasons
+                                                or "TOO_FEW_ROWS" in reasons)
+                   else "STALE")
+    elif age_hours is not None and age_hours > config.stale_hours:
+        outcome = "STALE"
+    else:
+        outcome = "UPDATED"
+
     report = {
+        "outcome": outcome,
+        "events_expected": events_expected,
+        "events_detail": events_detail,
         "checked_at": checked_at,
         "clean": len(failures) == 0,
         "pass_count": 1 if len(failures) == 0 else 0,

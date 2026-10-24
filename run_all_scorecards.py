@@ -192,6 +192,12 @@ SCORECARDS = [
     # must not drop, duplicate, or reorder any record -- paged membership is complete and page-size
     # independent, filters are faithful + order-preserving, and the default page ships one page, not all.
     ("Injury Report Progressive QC", "qc_injury_report_progressive.py", 180),
+    # Injury-feed staleness is SEASON-AWARE (Oct 24 scorecard follow-up): a stale/absent injury feed only
+    # board-FAILS when games are expected (independent schedule/game-lines manifest shows games in the
+    # window). With no games (offseason / season wound down, e.g. WNBA late Oct) it is NO_ACTIVE_EVENTS --
+    # a WATCH, honest, never a failure; a MISSING schedule keeps the strict default so real gaps aren't
+    # masked. In-season behavior unchanged. Pure/offline (temp injuries + schedule dirs).
+    ("Injury Feed Season-Aware QC", "qc_injury_feed_season_aware.py", 60),
     # Prewarm cache lifecycle (Site Performance P0): disk-materialized artifacts invalidate on a source
     # fingerprint change AND on an APP_CACHE_VERSION (deploy) change, reuse on unchanged inputs, fail
     # closed on corruption, and publish atomically (no partial reads, last complete write wins).
