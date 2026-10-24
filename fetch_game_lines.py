@@ -422,7 +422,8 @@ def main() -> int:
     cost_ok, _receipt = _QUOTA.print_receipt(
         endpoint_family="game_lines /events + /odds", sport=sport, markets=markets,
         expected_cost=getattr(args, "expected_cost", None),
-        status="HTTP 200" if not fetch_failed else "fetch error")
+        status="HTTP 200" if not fetch_failed else "fetch error",
+        ledger_base_dir=BASE_DIR)
 
     df = build_dataframe(all_rows)
     if fetch_failed and df.empty:

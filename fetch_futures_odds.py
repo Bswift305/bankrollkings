@@ -295,7 +295,8 @@ def main() -> int:
     markets_req = sorted({str(s.get("key", "")) for s in selected})
     cost_ok, _r = _QUOTA.print_receipt(endpoint_family="futures /sports + /odds(outrights)",
                                        sport=",".join(markets_req) or "(all)", markets=["outrights"],
-                                       expected_cost=getattr(args, "expected_cost", None))
+                                       expected_cost=getattr(args, "expected_cost", None),
+                                       ledger_base_dir=BASE_DIR)
 
     if df.empty and output_path.exists():
         print("No futures rows fetched. Preserving existing latest futures file.")

@@ -12,6 +12,16 @@ Never logs the URL, key, Authorization, or any response identifier. Pure stdlib.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Append-only ledger of EVERY paid call's cumulative usage headers, across all fetch subprocesses. This
+# is what makes true reconciliation possible (incident 2026-10-24 #4): the account's cumulative
+# x-requests-used / -remaining advance by the real cost even when x-requests-last is absent or 0 (as it
+# was for the NBA probe), so reconciliation works off cumulative DELTAS, never the per-request sum.
+LEDGER_REL = "data/tracking/odds_quota_ledger.jsonl"
+
 
 def odds_credit_cost(n_markets, n_regions, n_paid_calls=1):
     """The Odds API DOCUMENTED credit cost (https://the-odds-api.com/liveapi/guides/v4/#usage-quota-costs):
@@ -102,8 +112,36 @@ class QuotaRecorder:
             "reasons": reasons,
         }
 
-    def print_receipt(self, endpoint_family, sport, markets=None, expected_cost=None, status="HTTP 200"):
+    def write_ledger(self, endpoint_family, sport, base_dir, markets=None) -> int:
+        """Append one JSONL line per recorded call (cumulative headers + attribution) to the shared
+        ledger. Append-only and best-effort: a write failure never breaks a fetch. Returns the number
+        of lines appended. Records NO url/key/response id."""
+        path = Path(base_dir) / LEDGER_REL
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        mk = ",".join(markets) if markets else ""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                for seq, c in enumerate(self.calls):
+                    fh.write(json.dumps({
+                        "ts": now,
+                        "sport": sport,
+                        "endpoint_family": endpoint_family,
+                        "markets": mk,
+                        "seq": seq,
+                        "last": c["last"],
+                        "used": c["used"],
+                        "remaining": c["remaining"],
+                    }) + "\n")
+            return len(self.calls)
+        except OSError:
+            return 0
+
+    def print_receipt(self, endpoint_family, sport, markets=None, expected_cost=None, status="HTTP 200",
+                      ledger_base_dir=None):
         ok, r = self.receipt(endpoint_family, sport, markets, expected_cost)
+        if ledger_base_dir is not None:
+            self.write_ledger(endpoint_family, sport, ledger_base_dir, markets=markets)
         print("---- QUOTA RECEIPT ----")
         print(f"  provider       : The Odds API")
         print(f"  endpoint family: {r['endpoint_family']}")

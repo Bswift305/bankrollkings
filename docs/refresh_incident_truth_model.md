@@ -157,9 +157,26 @@ QCs: `qc_run_outcomes.py`, `qc_football_props_aggregation.py` (both registered).
 > conservative default), NOT NO_MARKETS_POSTED — the classifier will only call it NO_MARKETS_POSTED once
 > a receipt proves it.
 
-## 7. Still open
+## 7. Quota reconciliation (directive #4/#8) — BUILT
 
-- **Quota reconciliation tool (directive #8):** reconcile the account delta (100000 → ~98960, 1,040
-  credits) attributed by sport, endpoint family, and ordered cumulative-header deltas; the receipt fails
-  if any portion is unattributable. Must not rely on the `x-requests-last sum` alone (observed 0 for the
-  NBA probe). Self-contained; builds on `services/odds_quota.py`.
+- **Append-only ledger:** `services/odds_quota.py` `QuotaRecorder.write_ledger(...)` appends one line per
+  paid call (cumulative `x-requests-used`/`-remaining` + sport + endpoint family) to
+  `data/tracking/odds_quota_ledger.jsonl`. Wired into the three fetchers (`fetch_game_lines`,
+  `fetch_player_props`, `fetch_futures_odds`) via `print_receipt(..., ledger_base_dir=BASE_DIR)`.
+- **Reconciler:** `reconcile_odds_quota.py` attributes the account delta by sport + endpoint family from
+  the ORDERED cumulative `remaining` drops — correct even when `x-requests-last` is 0/absent (the NBA
+  probe). It **FAILS** when any portion is unattributed: a ledger call missing its `remaining` header, a
+  non-monotonic counter, or a tail of spend below the ledger's last reading (calls the ledger never saw).
+- **Historical window:** for the incident's `100000 → 98960` (1,040 credits) there was no ledger, so the
+  reconciler honestly reports **1,040 unattributed → FAIL**. That is the correct answer — full
+  attribution begins now that the ledger records every paid call. Run with the owner-read endpoints:
+  `python reconcile_odds_quota.py --baseline-remaining <start> --final-remaining <end>`.
+
+QC: `qc_quota_reconciliation.py` (registered).
+
+## 8. CFBD isolation (directive #5) — in force
+CFBD stays isolated and honest: `refresh_cfb_data.py` short-circuits a 429 to exit 3 +
+`PROVIDER_QUOTA_EXHAUSTED` with a persistent backoff (does not call CFBD again until reset/override),
+preserves last-known-good CFB artifacts, and the operator records `SKIP (PROVIDER_QUOTA_EXHAUSTED)` (not
+PASS, not FAIL); Run Status reflects it as DEGRADED. CFB current-market surfaces fail closed per
+`docs/containment_matrix.md`. QC: `qc_cfb_quota_shortcircuit.py`.

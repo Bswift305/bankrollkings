@@ -701,7 +701,8 @@ def main() -> int:
 
     # Per-request quota receipt (prove the cost from usage headers; fail rather than guess).
     cost_ok, _r = _QUOTA.print_receipt(endpoint_family="player_props /events + /odds", sport=sport,
-                                       markets=markets, expected_cost=getattr(args, "expected_cost", None))
+                                       markets=markets, expected_cost=getattr(args, "expected_cost", None),
+                                       ledger_base_dir=BASE_DIR)
     if not cost_ok:
         print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing props.")
         return 1

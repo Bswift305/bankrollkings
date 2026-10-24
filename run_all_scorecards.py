@@ -79,6 +79,11 @@ SCORECARDS = [
     # advance for a non-benign reason, EVEN THOUGH the child exits 1 in both the benign and failing case.
     # Faked fetchers, no network/spend.
     ("Football Props Aggregation QC", "qc_football_props_aggregation.py", 60),
+    # Odds quota reconciliation (Oct 24 #4): attribute the account credit delta by sport + endpoint
+    # family from ORDERED cumulative x-requests-remaining drops (the append-only ledger), which stays
+    # correct even when x-requests-last is 0/absent (the NBA probe). The receipt FAILS when any portion
+    # of the delta is unattributed (a ledger gap or a tail of calls the ledger never saw). Pure/offline.
+    ("Quota Reconciliation QC", "qc_quota_reconciliation.py", 60),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
