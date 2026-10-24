@@ -7,10 +7,16 @@ from datetime import datetime
 from pathlib import Path
 
 from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
+from services.env_loader import load_local_env
 
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
+
+# Load the service .env so EVERY child step inherits the API keys even when the operator is launched by
+# hand (not via the systemd unit that sets EnvironmentFile). Without this, qc_odds_feed and refresh_cfb_data
+# falsely reported keys absent during the 2026-10-24 manual recovery run.
+load_local_env(BASE_DIR)
 
 
 def _python(script: str, *args: str) -> list[str]:
@@ -311,6 +317,11 @@ def main() -> int:
         ok, output = _run_step(label, command, timeout)
         if ok:
             status = "PASS"
+        elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
+            # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
+            # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
+            # SKIP, not PASS and not FAIL. Run Status still reflects it as DEGRADED (provider outage).
+            status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
         else:
             # Same season gate the Edge Engine pipeline and the scorecard runner
             # already use: a sport with no live props has no data for its refresh

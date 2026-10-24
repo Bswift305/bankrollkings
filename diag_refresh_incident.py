@@ -71,10 +71,21 @@ def _provider_for(label: str, command: str) -> str:
         return "Open-Meteo weather"
     if "final scores" in l or "fetch_final_scores" in c:
         return "ESPN scoreboard"
-    if "nflverse" in c or "player_week" in c or "ngs" in c or "gamelogs" in c:
-        return "nflverse"
     if "injur" in l:
         return "Injury feeds"
+    # Sport daily refreshes (Odds API + the sport's own data source) -- map to the SPORT, never nflverse.
+    if "nba daily" in l or "refresh_nba_daily" in c:
+        return "NBA (Odds API + nba_api)"
+    if "mlb daily" in l or "refresh_mlb_daily" in c:
+        return "MLB (Odds API + pybaseball)"
+    if "wnba" in l:
+        return "WNBA"
+    if "nba" in l:
+        return "NBA"
+    if "mlb" in l:
+        return "MLB"
+    if "nflverse" in c or "player_week" in c or "ngs" in c or "gamelogs" in c:
+        return "nflverse"
     return "internal / cross-sport"
 
 
@@ -433,9 +444,14 @@ def main() -> int:
     print(f"  {'STATUS':<24} {'PROVIDER':<34} STEP")
     for s in p["steps"]:
         print(f"  {s['status']:<24} {_provider_for(s['label'], s['command']):<34} {s['label']}")
-    # steps that never appeared (aborted before them) are the stale-cause set:
-    print("\n  Steps AFTER the first FAIL never ran this run (their feeds did not refresh) — see the")
-    print("  feed-age table below for which artifacts are consequently stale.")
+    # Only an ABORT run (not continue-on-error) leaves later steps un-run. On a continue-on-error run
+    # every step ran, so FAILs are independent and the note below would be FALSE -- suppress it.
+    if not (completed and many_after_fail):
+        print("\n  Steps AFTER the first FAIL never ran this run (their feeds did not refresh) — see the")
+        print("  feed-age table below for which artifacts are consequently stale.")
+    else:
+        print("\n  (continue-on-error: every step ran; a stale feed below means THAT step did not advance")
+        print("   its artifact -- read its per-step outcome, not an abort cascade.)")
 
     # ---- 6 + 7. Feed artifact ages + preservation + customer impact ----
     print("\n## 6-7. Feed artifact age / preservation / customer impact")

@@ -26,6 +26,11 @@ from datetime import datetime
 from pathlib import Path
 
 from services.qc_tracking import append_qc_run_log
+from services.env_loader import load_local_env
+
+# Load the service .env so a STANDALONE run (not just the systemd service) has the Odds API key.
+# Without this, running this QC by hand falsely reported "key not set" even though the key exists.
+load_local_env(Path(__file__).resolve().parent)
 
 BASE_DIR = Path(__file__).resolve().parent
 ALWAYS_ON_ODDS = {

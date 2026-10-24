@@ -29,6 +29,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Load the service .env so a STANDALONE or manually-launched run has CFBD_API_KEY. Without this the script
+# took the "CFBD_API_KEY not set -> skip -> exit 0 -> PASS" path and the operator reported PASS even though
+# CFBD is quota-exhausted (incident 2026-10-24). With the key loaded it reaches the 429 -> backoff -> SKIP.
+from services.env_loader import load_local_env  # noqa: E402
+load_local_env(BASE_DIR)
+
 
 # ---- CFBD quota-exhaustion persistent backoff (incident 2026-10-23) ----
 # Once CFBD returns a monthly-quota 429, persist that state so SCHEDULED refreshes SKIP without making
