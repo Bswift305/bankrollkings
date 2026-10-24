@@ -237,11 +237,53 @@ def _r7_added_back(issues, notes):
                      "old 70%+ gate is exactly the sub-70 and non-PLAY rows; UNDER excluded")
 
 
+def _r7_snapshot_rejected(issues, notes):
+    """R7-C: a pre-containment NBA/WNBA runtime snapshot carrying FORBIDDEN authority fields cannot bypass
+    containment. While the stats gate is off, the service boundary (load_runtime_snapshot) REJECTS any
+    NBA/WNBA snapshot by key -- so 'merely avoiding a live builder call' (serving a snapshot) can never
+    surface forbidden authority data. We SEED a forbidden snapshot on disk and prove it is still rejected."""
+    import json as _json
+    from datetime import datetime as _dt, timezone as _tz
+    if app._nba_source_gate.nba_stats_enabled():
+        notes.append("R7-C: stats gate ON -> snapshot-rejection test skipped (product keeps it 0)")
+        return
+    forbidden = {
+        'generated_at': _dt.now(_tz.utc).isoformat(),
+        'payload': {'props': [{'player': 'Sentinel Player', 'stat': 'PTS', 'line': 25.5,
+                               'confidence': 99.9, 'confidence_label': 'LOCK_SENTINEL',
+                               'play_verdict': 'PLAY_SENTINEL', 'method': 'Best Over Plays SENTINEL',
+                               'tier': 'S_SENTINEL', 'rank': 1}]},
+    }
+    seeded = []
+    try:
+        for key in ('nba_props_postseason_today_current', 'nba_floor_props_postseason_today_current'):
+            try:
+                p = app.get_runtime_snapshot_path(key)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(_json.dumps(forbidden), encoding='utf-8')
+                seeded.append(p)
+            except Exception:
+                pass
+            got = app.load_runtime_snapshot(key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
+            if got is not None:
+                issues.append(f"R7-C: forbidden NBA snapshot '{key}' was SERVED while gated (must be rejected)")
+        if not any(i.startswith('R7-C') for i in issues):
+            notes.append("R7-C: a seeded forbidden NBA snapshot is REJECTED at the boundary while gated -> "
+                         "the snapshot path cannot surface 'Best Plays'/PLAY/confidence/tier authority fields")
+    finally:
+        for p in seeded:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
 def run_qc():
     issues, notes = [], []
     _presentation(issues, notes)
     _r7_equivalence(issues, notes)
     _r7_added_back(issues, notes)
+    _r7_snapshot_rejected(issues, notes)
     return {'issues': issues, 'notes': notes}
 
 
