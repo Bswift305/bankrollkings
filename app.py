@@ -19375,6 +19375,17 @@ def _build_market_movers_snapshot():
         for m in present:
             df[m] = pd.to_numeric(df[m], errors='coerce')
         df = df.sort_values('SnapshotAt')
+        # FAIL CLOSED on a stalled capture: the "current" line per game is the latest snapshot; if that
+        # snapshot is older than the movers window (12h = 3x the 4h capture cadence), the capture stalled
+        # and the shown "current" line is stale -> suppress that game rather than present a stale line as
+        # live (incident 2026-10-23). Near-term games have fresh snapshots within a cycle or two.
+        _MM_STALE_HOURS = 12
+        _latest_snap = pd.to_datetime(df.groupby('GameID')['SnapshotAt'].max(), errors='coerce', utc=True)
+        _now_utc = datetime.now(timezone.utc)
+        _fresh_gids = set()
+        for _gid, _ls in _latest_snap.items():
+            if pd.notna(_ls) and (_now_utc - _ls.to_pydatetime()).total_seconds() / 3600.0 <= _MM_STALE_HOURS:
+                _fresh_gids.add(_gid)
         gb = df.groupby(['GameID', 'Book'])
         opens = gb[present].first()
         curs = gb[present].last()
@@ -19386,6 +19397,8 @@ def _build_market_movers_snapshot():
         books_g = df.groupby('GameID')['Book'].nunique()
         meta_g = df.groupby('GameID').agg(Away=('Away', 'first'), Home=('Home', 'first'), Date=('Date', 'first'))
         for gid in delta_g.index:
+            if gid not in _fresh_gids:
+                continue  # stalled capture -> suppress the stale current line
             d = delta_g.loc[gid]
             c = cur_g.loc[gid]
             snap_depth = int(depth_g.loc[gid])

@@ -55,6 +55,10 @@ SCORECARDS = [
     # never as current. get_lines_refresh_meta flags it and the football game-lines/totals board renders
     # a visible "Game Lines Are Stale" banner. Mirrors the props fail-closed protection. Fixture-driven.
     ("Game-Lines Freshness QC", "qc_game_lines_freshness.py", 180),
+    # Market Movers fail-closed on a stalled line-movement capture (Oct 23 containment): a game whose
+    # latest snapshot is stale (>12h = 3x the 4h cadence) is suppressed, never shown as a live current
+    # line. Populated fixture (fresh surfaces, stale suppressed). app.DATA_DIR redirected; no network.
+    ("Market Movers Freshness QC", "qc_market_movers_freshness.py", 120),
     # Atomic + validated artifact publish (Oct 23 recovery gate): the shared temp->validate->os.replace
     # helper the Odds fetchers (game lines, player props, futures) now publish through -- a crash or bad
     # frame can't truncate an authoritative file and a validation failure preserves last-known-good. Cheap.

@@ -21,12 +21,22 @@ live-market window, same as props `load_*_live_props_feed(require_fresh=True, ma
 | Standalone totals `/tools/cfb-totals*`, `/tools/nfl-totals-today` | same | `LastUpdated` | 6h | **builder** returns 0 rows + `tb_stale/nt_stale` (gates every caller) | builder-level gate | `qc_game_lines_freshness` | ✅ |
 | NFL/CFB **props** boards `/sports/*/props` | `*_Props.csv` | `LastUpdated` | 6h | `require_fresh=True` → empty + `is_stale` banner | — (request-time) | existing props gate | ✅ (pre-existing) |
 
+## GREEN — verified (cross-sport Market Movers)
+| Channel | artifact | clock | thr | stale behavior | cache-key gate | test | status |
+|---|---|---|---|---|---|---|---|
+| **Market Movers** (`/tools/market-movers`, the market-edge line-movement board, MLB/WNBA/NFL/CFB) | `*_LineMovementHistory.csv` | latest `SnapshotAt` per game | 12h (3× the 4h capture cadence) | game **suppressed** when its capture stalled (no stale "current" line) | builder-level gate; the 300s TTL cache re-evaluates each cycle | `qc_market_movers_freshness` | ✅ |
+
+## Snapshot path (NBA/WNBA) — already contained
+| Channel | behavior | test | status |
+|---|---|---|---|
+| NBA/WNBA runtime snapshots | `load_runtime_snapshot` **rejects** NBA/WNBA snapshots by key while `BK_NBA_STATS_ENABLED=0` → a forbidden/stale snapshot cannot surface; callers fall to the live build | `qc_nba_residual_authority` R7-C (seeded forbidden snapshot rejected) | ✅ |
+
 ## RED — remaining (must close before recovery)
 | Channel | artifact | clock | thr | current behavior | gate needed | status |
 |---|---|---|---|---|---|---|
-| NBA line board `/sports/nba/market-edge` + command center | `NBA_Odds.csv` | none for lines | — | **lines render regardless of age** (props fail closed at 6h; lines do not) | add `get_lines_refresh_meta` fail-closed to the line board | ⛔ REMAINING |
-| WNBA line board `/sports/wnba/market-edge` | `WNBA_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
-| MLB line board `/sports/mlb/market-edge` | `MLB_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
+| NBA command-center / `/sports/nba` game-line board (non-movers) | `NBA_Odds.csv` | none for lines | — | **lines render regardless of age** (props fail closed at 6h; lines do not) | add `get_lines_refresh_meta` fail-closed to the line board | ⛔ REMAINING |
+| WNBA command-center / `/sports/wnba` game-line board | `WNBA_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
+| MLB command-center / `/sports/mlb` game-line board | `MLB_Odds.csv` | none for lines | — | same | same | ⛔ REMAINING |
 | **Cached snapshots** (NBA command center prewarm, `refresh_runtime_snapshots`) | `NBA_Odds.csv` | snapshot build time | — | a snapshot built while fresh can be **served after the feed goes stale** | fold lines-freshness/gate state into the snapshot **cache key** (so a stale-era payload can't be served); or re-gate on read | ⛔ REMAINING |
 | JSON / lazy endpoints (`/tools/cfb-ats/games`, `/api/live-ticker`, any `*/games` AJAX) | per-sport odds | per-endpoint | — | **unaudited per endpoint**; most read the same builders | audit each; apply the same fail-closed gate (and to its cache key) | ⛔ REMAINING |
 | Embedded feeds — SGP Workbench, King's Tickets, Matchup Center | per-sport odds / book quotes | per-feed | — | SGP uses book-specific quotes ("price unavailable" never synthesized — partial protection); Matchup Center factual modules — **line freshness unverified** | audit each embedded odds read; fail closed on stale | ⛔ REMAINING |
