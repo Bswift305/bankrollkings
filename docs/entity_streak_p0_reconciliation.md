@@ -114,10 +114,31 @@ path, or if the backfill writer / normalize target drifts back to the live file)
 orders; proves population isolation, independent hashes, `load_combined` union, and atomic
 failure-preservation).
 
-**STILL OPEN before Item 5 closes — the 86-vs-16,753 reconciliation** (`diag_nfl_grading_completeness.py`,
-read-only, prod). The clobber fix lets the live grade survive, but the dry-run resolved only 86 current-
-season rows; if the live archive cannot yield a full-season population, the board will be thin even
-un-clobbered (a possible second, retention defect). Run the completeness probe on prod to reconcile the
-grain of the earlier 16,753 figure and confirm whether a retention fix is also needed. Item 5 closes only
-when: the live file carries the correct current-season population, the historical file is separate, the
-Wave becomes available **from the live artifact**, and re-running the Edge Engine cannot clobber it.
+**Clobber fix VERIFIED on prod 2026-10-24 (HEAD `dc9bdb6`):** both contract QCs exit 0; the backfill now
+writes `NFL_AllPropResults_Backfill.csv`; and the clobber-proof (re-run the Edge Engine, compare the live
+file sha) shows the live artifact **byte-unchanged** — the Edge Engine can no longer touch it.
+
+**86-vs-16,753 RECONCILED — a second defect (#2) is confirmed: the candidate archive is transient
+(no retention of completed weeks), so the live grader cannot build a season's graded record.**
+`diag_nfl_grading_completeness.py` on prod: the gamelog reaches 2026-10-16 (Week 6 complete), yet the
+archive's current-season NFL candidates are **1,072 and ALL future** (`completed(<= data-through)=0`),
+SnapshotDate spread only Oct 16–24 (9 days), 990/1072 duplicates; dry-run **0 resolved, 0
+completed-but-unresolved** (correct — nothing to grade). Decisively, between the 13:25 input probe (13,386
+NFL rows, 86 resolvable) and the 20:00 completeness probe (~1,072 current-season, 0 resolvable) the archive
+**shrank and discarded the Week-6 resolvable candidates** — so it is rebuilt/pruned to the rolling
+upcoming slate. `archive_method_candidates` (app.py:11890-11910) appends + dedupes on a key that *includes*
+`SnapshotDate` with **no** date prune, so the pruning is elsewhere (a rebuild/reset of the archive file, or
+a regeneration under `BK_RUNTIME_DIR`), not in that merge. Because `refresh_all_prop_results` *rebuilds*
+`NFL_AllPropResults.csv` from this transient archive by replace, no season history can accumulate. **The
+16,753-through-Week-6 figure therefore cannot have come from this live lane** — it was a different grain
+(the historical backfill, or a persistent graded store that no longer feeds the live record).
+
+**Item 5 remains OPEN** (per the close criteria). The clobber is fixed and proven, but the Wave is still
+unavailable **because there is no graded current-season population to serve** — defect #2 blocks it. Next
+(read-only first): pinpoint WHY completed-week candidates are not retained (a prune/rebuild of the archive,
+NFL archiving started ~Oct 16, or a dormant persistent graded source such as `capture_nfl_prop_lines.py` /
+`grade_nfl_week.py` that should feed the season record), then choose the fix — **retain season candidates
+in the archive** vs **accumulate resolved rows in the graded record** vs **grade a persistent line-capture
+store**. Audit #1 stays held. Close criteria unchanged: live file carries the correct current-season
+population, historical file separate, Wave available **from the live artifact**, Edge Engine cannot clobber
+it (last already met).
