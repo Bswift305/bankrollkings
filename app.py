@@ -49653,8 +49653,14 @@ def build_nfl_matchup_center_context():
             return ''
 
     # ---- membership: EVERY this-week game (do NOT drop games missing a total) ----
+    # FAIL CLOSED on a wholesale-stale odds feed: keep every game (abstain-never-zero) but withhold the
+    # current line/total so a stale line is never shown as live -- pass an EMPTY odds frame so the games
+    # come from the schedule with their market fields abstained (incident 2026-10-23). The games stay.
+    _mc_odds = load_nfl_game_market_odds()
+    _mc_lines_stale = bool(get_lines_refresh_meta(_mc_odds).get('is_stale'))
+    _mc_odds_for_games = pd.DataFrame(columns=getattr(_mc_odds, 'columns', None)) if _mc_lines_stale else _mc_odds
     try:
-        games = build_football_live_games(load_nfl_game_market_odds(), load_nfl_schedule(), date_filter='week')
+        games = build_football_live_games(_mc_odds_for_games, load_nfl_schedule(), date_filter='week')
     except Exception:
         games = []
 
@@ -49808,6 +49814,7 @@ def build_nfl_matchup_center_context():
     data = {
         'games': rows, 'count': len(rows),
         'as_of': odds_as_of, 'season': ou_season,
+        'lines_stale': _mc_lines_stale,   # wholesale-stale odds feed -> current line/total withheld (games kept)
         'module_freshness': {
             'market': odds_as_of, 'injuries': inj_as_of, 'ats_wave': wave_as_of,
             'milestones': ms_as_of, 'weather': odds_as_of,
