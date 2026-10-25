@@ -39,8 +39,10 @@ import hashlib
 import json
 import re
 import unicodedata
+import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -144,10 +146,24 @@ _COMPOSITE_IDENTITY = frozenset(
 
 class IdentityGrain(Enum):
     EVENT = "event"
+    TEAM = "team"            # Rev-2.3a: board-universe entity (one per team)
     TEAM_SIDE = "team_side"
     MARKET_OBS = "market_obs"
     SELECTION = "selection"
     GRADING = "grading"
+
+
+# R14b grain binding: a universe grain implies the identity grain its rows carry.
+# Known pilot universes only; unknown universe grains are not bound here.
+_UNIVERSE_IDENTITY_GRAIN = {
+    "team": IdentityGrain.TEAM,
+    "team_side_decision": IdentityGrain.TEAM_SIDE,
+}
+# Required extension fields per identity grain (§5 + R14b).
+_GRAIN_REQUIRED_EXT = {
+    IdentityGrain.TEAM: ("team",),
+    IdentityGrain.TEAM_SIDE: ("team_side",),
+}
 
 
 class SourceUpdatedStatus(Enum):
@@ -194,6 +210,33 @@ class Projection(Enum):
 
 HASH_ALGORITHMS = frozenset({"sha256"})  # P2A-4 allowlist (agility, not free-form)
 
+# Minimal allowlisted reason-code registry for the NFL ATS pilot (§3). This is the
+# Slice-1 subset of the full registry (owner/definition/param_fields and the
+# leaf `maps_to` field are deferred to the reason-code registry validator slice);
+# it carries the code string and its single semantic_category so a dynamic/
+# unregistered code (e.g. `SORTED_BY_STREAK_DESC`) is rejected and a code used in the
+# wrong context is caught. Codes are stable UPPER_SNAKE identifiers, no interpolated
+# runtime values (R8). SemanticCategory is defined just above.
+REASON_CODES: Dict[str, SemanticCategory] = {
+    # Board leaves (single-category per §3).
+    "BELOW_THRESHOLD": SemanticCategory.LEAF,
+    "QUALIFIED": SemanticCategory.LEAF,
+    "KNOWN_NON_FBS": SemanticCategory.LEAF,
+    "COVER_SHORT": SemanticCategory.LEAF,
+    # Health.
+    "SOURCE_STALE": SemanticCategory.HEALTH,
+    # Decision-stage outcomes.
+    "GRADED": SemanticCategory.STAGE_OUTCOME,
+    "PUSH": SemanticCategory.STAGE_OUTCOME,
+    "VOID": SemanticCategory.STAGE_OUTCOME,
+    "NO_LINE": SemanticCategory.STAGE_OUTCOME,
+    "OVERDUE": SemanticCategory.STAGE_OUTCOME,
+    "MALFORMED": SemanticCategory.STAGE_OUTCOME,
+    "CONFLICT": SemanticCategory.STAGE_OUTCOME,
+    "OUTSIDE_BOUNDARY": SemanticCategory.STAGE_OUTCOME,
+    "SORTED": SemanticCategory.STAGE_OUTCOME,
+}
+
 # Which receipt kinds have a constructible body in Slice 1. The others are part
 # of the frozen vocabulary but not yet constructed.
 SUPPORTED_RECEIPT_KINDS = frozenset(
@@ -213,53 +256,70 @@ class NumericProfileError(ValueError):
     pass
 
 
-def _as_number(value: Union[int, float, str]) -> float:
+def _dec(value: Union[int, float, str]) -> Decimal:
+    """Exact Decimal from the ORIGINAL LEXICAL value (not via binary float). A
+    string is parsed as its literal; an int is exact; a float is converted through
+    its repr lexeme (`str(float)`) so no binary-rounding noise enters arithmetic —
+    callers wanting guaranteed exactness pass a string or int."""
     if isinstance(value, bool):
         raise NumericProfileError("bool is not a governed number")
-    if isinstance(value, (int, float)):
-        f = float(value)
-    elif isinstance(value, str):
-        try:
-            f = float(value)
-        except ValueError as exc:
-            raise NumericProfileError(f"not numeric: {value!r}") from exc
-    else:
-        raise NumericProfileError(f"uncanonicalizable numeric type: {type(value).__name__}")
-    if f != f or f in (float("inf"), float("-inf")):
+    try:
+        if isinstance(value, float):
+            d = Decimal(str(value))
+        elif isinstance(value, (int, str)):
+            d = Decimal(value)
+        else:
+            raise NumericProfileError(f"uncanonicalizable numeric type: {type(value).__name__}")
+    except (InvalidOperation, ValueError) as exc:
+        raise NumericProfileError(f"not a decimal: {value!r}") from exc
+    if not d.is_finite():
         raise NumericProfileError("NaN/Inf is not a governed number")
-    return f
+    return d
+
+
+def _exponent(d: Decimal) -> int:
+    """Number of fractional digits in the Decimal's representation (>=0)."""
+    exp = d.as_tuple().exponent
+    return -exp if exp < 0 else 0
 
 
 def _canon_line(value: Union[int, float, str]) -> str:
-    f = _as_number(value)
-    if abs(round(f * 2) - f * 2) > 1e-9:
-        raise NumericProfileError(f"line must be a half-point multiple: {value!r}")
-    s = f"{f + 0.0:.2f}"
-    return s.replace("-0.00", "0.00")
+    """Half-point profile: value MUST be an exact multiple of 0.5; canonical 2dp."""
+    d = _dec(value)
+    if (d * 2) != (d * 2).to_integral_value():
+        raise NumericProfileError(f"line must be an exact half-point multiple: {value!r}")
+    q = d.quantize(Decimal("0.01"))
+    return "0.00" if q == 0 else f"{q}"
 
 
 def _canon_probability(value: Union[int, float, str]) -> str:
-    f = _as_number(value)
-    if f < 0.0 or f > 1.0:
+    """Fixed 4dp in [0,1]. No silent rounding: MORE than 4 fractional digits is
+    rejected (the profile declares no rounding rule)."""
+    d = _dec(value)
+    if d < 0 or d > 1:
         raise NumericProfileError(f"probability must be in [0,1]: {value!r}")
-    return f"{f:.4f}"
+    if _exponent(d) > 4:
+        raise NumericProfileError(f"probability exceeds 4dp with no rounding rule: {value!r}")
+    return f"{d.quantize(Decimal('0.0001'))}"
 
 
 def _canon_price(value: Union[int, float, str]) -> str:
-    f = _as_number(value)
-    if abs(f - round(f)) > 1e-9:
+    """American price: an integer with magnitude >= 100; explicit sign."""
+    d = _dec(value)
+    if d != d.to_integral_value():
         raise NumericProfileError(f"price must be an American integer: {value!r}")
-    v = int(round(f))
+    v = int(d)
     if abs(v) < 100:
         raise NumericProfileError(f"American price magnitude must be >= 100: {value!r}")
     return f"+{v}" if v > 0 else f"{v}"
 
 
 def _canon_count(value: Union[int, float, str]) -> str:
-    f = _as_number(value)
-    if abs(f - round(f)) > 1e-9 or round(f) < 0:
+    """Non-negative integer."""
+    d = _dec(value)
+    if d != d.to_integral_value() or d < 0:
         raise NumericProfileError(f"count must be a non-negative integer: {value!r}")
-    return str(int(round(f)))
+    return str(int(d))
 
 
 NUMERIC_PROFILES = {
@@ -331,7 +391,12 @@ class Integrity:
     proof: Optional[str] = None
 
 
-def is_tamper_evident(integ: Integrity) -> bool:
+def has_tamper_evidence_metadata(integ: Integrity) -> bool:
+    """True iff the DECLARED metadata is structurally complete for tamper-evidence
+    (a mechanism other than `none` AND some proof material present). This is NOT a
+    verification and does NOT assert `tamper_evident=true` — only a later verifier
+    that actually checks the proof may make that claim. The name says 'metadata'
+    deliberately: structure present, nothing verified."""
     return integ.mechanism != IntegrityMechanism.NONE and bool(integ.proof)
 
 
@@ -525,17 +590,19 @@ def seal_hashes(receipt: Receipt) -> Receipt:
 # Strict UTC instant validation (§ conventions: instant[UTC]).
 # ---------------------------------------------------------------------------
 
-_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|\+00:00)$")
+# The approved instant[UTC] form is EXACTLY `YYYY-MM-DDTHH:MM:SSZ` — canonical `Z`,
+# second precision, no numeric offset, no fractional seconds (§ Conventions).
+_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def _valid_utc(s: Any) -> bool:
     if not isinstance(s, str) or not _UTC_RE.match(s):
         return False
     try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except ValueError:
         return False
-    return dt.tzinfo is not None and dt.utcoffset() == timedelta(0)
+    return True
 
 
 _REASON_CODE_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$")
@@ -626,30 +693,56 @@ def _check_integrity(receipt: Receipt, errs: List[str]) -> None:
         errs.append(f"conclusion canonicalization failed: {type(exc).__name__}: {exc}")
 
 
-def _check_identity(idn: Identity, where: str, errs: List[str]) -> None:
+def _check_identity(idn: Identity, expected_grain: Optional[IdentityGrain],
+                    where: str, errs: List[str]) -> None:
     if not isinstance(idn, Identity):
         errs.append(f"{where}: identity must be an Identity record")
         return
     if not isinstance(idn.grain, IdentityGrain):
         errs.append(f"{where}: identity.grain must be an IdentityGrain")
+    elif expected_grain is not None and idn.grain != expected_grain:
+        errs.append(f"{where}: identity.grain {idn.grain.value} does not match the universe's "
+                    f"bound grain {expected_grain.value} (R14b)")
     if not isinstance(idn.identity_quality, IdentityQuality):
         errs.append(f"{where}: identity.identity_quality must be an IdentityQuality")
     if not idn.key or not isinstance(idn.key, str):
         errs.append(f"{where}: identity.key required")
+    if not isinstance(idn.base, dict) or not idn.base.get("sport") or not idn.base.get("season"):
+        errs.append(f"{where}: identity.base must carry sport + season")
+    # Grain-specific required extension fields (§5 + R14b).
+    if isinstance(idn.grain, IdentityGrain) and idn.grain in _GRAIN_REQUIRED_EXT:
+        if not isinstance(idn.ext, dict) or any(k not in idn.ext for k in _GRAIN_REQUIRED_EXT[idn.grain]):
+            errs.append(f"{where}: {idn.grain.value} identity.ext must carry "
+                        f"{list(_GRAIN_REQUIRED_EXT[idn.grain])}")
+    # Board team identity must be a provider id or a declared composite — never a
+    # bare NAME_ONLY (R14b: "never a bare team name labeled PROVIDER_ID" is enforced
+    # by requiring PROVIDER_ID/DECLARED_COMPOSITE/ALIAS_RESOLVED for an authoritative row).
     if isinstance(idn.identity_quality, IdentityQuality) \
             and idn.identity_quality in _COMPOSITE_IDENTITY and not idn.collision_tested:
         errs.append(f"{where}: {idn.identity_quality.value} requires collision_tested=true (R14)")
 
 
-def _check_reason(code: str, def_version: int, where: str, errs: List[str]) -> None:
+def _check_reason(code: str, def_version: int, expected_category: "SemanticCategory",
+                  where: str, errs: List[str]) -> None:
+    # Shape: stable UPPER_SNAKE identifier (R8). This alone does NOT prove the code
+    # is non-dynamic (e.g. SORTED_BY_STREAK_DESC is well-shaped) — the registry does.
     if not isinstance(code, str) or not _REASON_CODE_RE.match(code or ""):
-        errs.append(f"{where}: reason_code must be UPPER_SNAKE with no interpolated value "
-                    f"(got {code!r})")
+        errs.append(f"{where}: reason_code has an invalid code shape (UPPER_SNAKE only): {code!r}")
+    elif code not in REASON_CODES:
+        errs.append(f"{where}: reason_code {code!r} is not in the allowlisted registry "
+                    "(dynamic/unregistered codes are rejected, R8)")
+    elif REASON_CODES[code] != expected_category:
+        errs.append(f"{where}: reason_code {code!r} is a {REASON_CODES[code].value} code used "
+                    f"where a {expected_category.value} is required")
     if not isinstance(def_version, int) or isinstance(def_version, bool) or def_version < 1:
         errs.append(f"{where}: reason_def_version must be an int >= 1")
 
 
-def _check_entity_disposition_batch(b: EntityDispositionBatch, errs: List[str]) -> None:
+def _check_entity_disposition_batch(b: EntityDispositionBatch, receipt: Receipt,
+                                    errs: List[str]) -> None:
+    # The board/expected universe disposition batch binds to the `team` grain (R14b).
+    if receipt.universe.grain != "team":
+        errs.append("entity_disposition board batch MUST use universe.grain 'team' (R14b)")
     seen = set()
     for i, r in enumerate(b.rows):
         w = f"rows[{i}]"
@@ -668,8 +761,8 @@ def _check_entity_disposition_batch(b: EntityDispositionBatch, errs: List[str]) 
             errs.append(f"{w}: roll-up {r.leaf!r} is not a terminal leaf (R5)")
         elif not isinstance(r.leaf, Leaf):
             errs.append(f"{w}: leaf must be a Leaf")
-        _check_reason(r.reason_code, r.reason_def_version, w, errs)
-        _check_identity(r.identity, w, errs)
+        _check_reason(r.reason_code, r.reason_def_version, SemanticCategory.LEAF, w, errs)
+        _check_identity(r.identity, IdentityGrain.TEAM, w, errs)
         # R13 fail-closed identity → only UNAVAILABLE/INDETERMINATE.
         if isinstance(r.identity, Identity) and isinstance(r.leaf, Leaf) \
                 and r.identity.identity_quality in _FAIL_CLOSED_IDENTITY \
@@ -679,7 +772,11 @@ def _check_entity_disposition_batch(b: EntityDispositionBatch, errs: List[str]) 
         _check_params(r.params, w, errs)
 
 
-def _check_decision_stage_batch(b: DecisionStageBatch, errs: List[str]) -> None:
+def _check_decision_stage_batch(b: DecisionStageBatch, receipt: Receipt,
+                                errs: List[str]) -> None:
+    # The decision universe binds to the `team_side` grain + the decision universe (R14b).
+    if receipt.universe.grain != "team_side_decision":
+        errs.append("decision-stage batch MUST use universe.grain 'team_side_decision' (R14b)")
     seen = set()
     for i, r in enumerate(b.rows):
         w = f"rows[{i}]"
@@ -695,8 +792,8 @@ def _check_decision_stage_batch(b: DecisionStageBatch, errs: List[str]) -> None:
             errs.append(f"{w}: presentation leaf used as a decision-stage outcome")
         elif not isinstance(r.stage_outcome, StageOutcome):
             errs.append(f"{w}: stage_outcome must be a StageOutcome")
-        _check_reason(r.reason_code, r.reason_def_version, w, errs)
-        _check_identity(r.identity, w, errs)
+        _check_reason(r.reason_code, r.reason_def_version, SemanticCategory.STAGE_OUTCOME, w, errs)
+        _check_identity(r.identity, IdentityGrain.TEAM_SIDE, w, errs)
         if isinstance(r.identity, Identity) and isinstance(r.stage_outcome, StageOutcome) \
                 and r.identity.identity_quality in _FAIL_CLOSED_IDENTITY \
                 and r.stage_outcome == StageOutcome.GRADED:
@@ -772,6 +869,11 @@ def _check_replay(receipt: Receipt, errs: List[str]) -> None:
         return
     if receipt.replay_class != ReplayClass.NON_REPLAYABLE and not receipt.input_hashes:
         errs.append(f"replay_class={receipt.replay_class.value} requires input_hashes")
+    # A factual or governed-model authority must be reproducible — it may not be
+    # NON_REPLAYABLE (Constitution §8/§9).
+    if receipt.replay_class == ReplayClass.NON_REPLAYABLE \
+            and receipt.authority_class in (AuthorityClass.FACT, AuthorityClass.GOVERNED_MODEL):
+        errs.append(f"authority_class={receipt.authority_class.value} MUST NOT be NON_REPLAYABLE")
 
 
 def validate_receipt(receipt: Receipt) -> ValidationResult:
@@ -792,14 +894,26 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
                     typ is int and isinstance(getattr(receipt, name), bool)):
                 errs.append(f"{name} must be a {typ.__name__}")
 
-        if isinstance(receipt.receipt_id, str) and not receipt.receipt_id.strip():
-            errs.append("receipt_id must be non-empty")
+        # receipt_id MUST be an opaque UUID (P2A-1), not a human slug.
+        if isinstance(receipt.receipt_id, str):
+            try:
+                uuid.UUID(receipt.receipt_id)
+            except (ValueError, AttributeError, TypeError):
+                errs.append("receipt_id must be an opaque UUID (P2A-1)")
         if isinstance(receipt.surface_id, str) and not receipt.surface_id.strip():
             errs.append("surface_id must be non-empty")
+        if isinstance(receipt.created_seq, int) and not isinstance(receipt.created_seq, bool) \
+                and receipt.created_seq <= 0:
+            errs.append("created_seq must be a positive integer")
         if isinstance(receipt.created_at, str) and not _valid_utc(receipt.created_at):
-            errs.append("created_at must be a tz-aware UTC instant")
-        if isinstance(receipt.universe, Universe) and not receipt.universe.version:
-            errs.append("universe.version required")
+            errs.append("created_at must be a tz-aware UTC instant (YYYY-MM-DDTHH:MM:SSZ)")
+        if isinstance(receipt.universe, Universe):
+            if not receipt.universe.grain or not receipt.universe.grain.strip():
+                errs.append("universe.grain required")
+            if not receipt.universe.id or not receipt.universe.id.strip():
+                errs.append("universe.id required")
+            if not receipt.universe.version or not receipt.universe.version.strip():
+                errs.append("universe.version required")
 
         _check_version(receipt.schema_version, errs)
         _check_versions(receipt.versions, errs)
@@ -817,7 +931,7 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
         elif isinstance(receipt.body, EntityDispositionBatch):
             if receipt.receipt_kind != ReceiptKind.ENTITY_DISPOSITION:
                 errs.append("EntityDispositionBatch requires receipt_kind=entity_disposition")
-            _check_entity_disposition_batch(receipt.body, errs)
+            _check_entity_disposition_batch(receipt.body, receipt, errs)
         elif isinstance(receipt.body, LiveEvidenceBoard):
             if receipt.receipt_kind != ReceiptKind.LIVE_EVIDENCE:
                 errs.append("LiveEvidenceBoard requires receipt_kind=live_evidence")
@@ -826,7 +940,7 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
             if receipt.receipt_kind != ReceiptKind.LIVE_EVIDENCE:
                 errs.append("DecisionStageBatch requires receipt_kind=live_evidence "
                             "(decision-stage evidence)")
-            _check_decision_stage_batch(receipt.body, errs)
+            _check_decision_stage_batch(receipt.body, receipt, errs)
         else:
             errs.append(f"unsupported body type: {type(receipt.body).__name__}")
 
@@ -850,6 +964,14 @@ def reconcile_board(board_receipt: Receipt, batch_receipt: Receipt) -> Validatio
         if board_receipt.refs is None or \
                 board_receipt.refs.entity_dispositions != batch_receipt.receipt_id:
             errs.append("board does not reference this entity_dispositions batch")
+        # Board and its batch MUST share surface / universe / build context.
+        if board_receipt.surface_id != batch_receipt.surface_id:
+            errs.append("board and batch surface_id differ")
+        if board_receipt.universe != batch_receipt.universe:
+            errs.append("board and batch universe differ")
+        if isinstance(board_receipt.versions, Versions) and isinstance(batch_receipt.versions, Versions) \
+                and board_receipt.versions.build_id != batch_receipt.versions.build_id:
+            errs.append("board and batch build_id differ")
         tally: Dict[str, int] = {}
         for r in batch_receipt.body.rows:
             if isinstance(r.leaf, Leaf):
@@ -870,7 +992,8 @@ __all__ = [
     "IdentityGrain", "SourceUpdatedStatus", "IntegrityMechanism", "SemanticCategory",
     "ChangeKind", "Projection", "HASH_ALGORITHMS",
     "NumericProfileError", "NUMERIC_PROFILES", "canonical_number", "GovernedNumber",
-    "Identity", "Clocks", "Versions", "Integrity", "is_tamper_evident", "Universe", "Refs",
+    "Identity", "Clocks", "Versions", "Integrity", "has_tamper_evidence_metadata",
+    "Universe", "Refs", "REASON_CODES",
     "EntityDisposition", "DecisionStageRow",
     "EntityDispositionBatch", "DecisionStageBatch", "LiveEvidenceBoard",
     "Receipt",
