@@ -48,7 +48,9 @@ _COMPOSITE = {"DECLARED_COMPOSITE", "COMPOSITE_NAME_EVENT"}
 
 
 def _canonical(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, default=str, ensure_ascii=False)
+    # No `default=` — an unsupported object raises TypeError rather than being silently
+    # stringified into something that would influence immutable receipt ids.
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False)
 
 
 def _build_fingerprint(bo: Dict[str, Any]) -> str:
@@ -106,6 +108,119 @@ def _require_fingerprints(fps: Any) -> List[str]:
     return digests
 
 
+_LEAF_VALUES = frozenset(l.value for l in Leaf)
+
+
+def _int(v, name):
+    if not isinstance(v, int) or isinstance(v, bool):
+        raise ValueError(f"{name} must be an integer (got {type(v).__name__})")
+    return v
+
+
+def _bool(v, name):
+    if not isinstance(v, bool):
+        raise ValueError(f"{name} must be a boolean (got {type(v).__name__})")
+    return v
+
+
+def _str(v, name):
+    if not isinstance(v, str) or not v.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return v
+
+
+def _validate_identity_shape(idv: Any) -> None:
+    if not isinstance(idv, dict):
+        raise ValueError("row identity must be a mapping")
+    for f in ("quality", "key", "base"):
+        if f not in idv:
+            raise ValueError(f"row identity missing {f}")
+    if idv["quality"] not in IdentityQuality.__members__:
+        raise ValueError(f"unknown identity quality {idv['quality']!r}")
+    _str(idv["key"], "identity.key")
+    base = idv["base"]
+    if not isinstance(base, dict) or not base.get("sport") or not base.get("season"):
+        raise ValueError("identity.base must be a map carrying sport + season")
+    if not isinstance(idv.get("ext", {}), dict):
+        raise ValueError("identity.ext must be a map")
+    _bool(idv.get("collision_tested", False), "identity.collision_tested")
+    if idv["quality"] in _COMPOSITE:
+        if idv.get("collision_tested") is not True:
+            raise ValueError("composite identity requires collision_tested=true")
+        for name in ("profile", "profile_version", "collision_proof"):
+            _str(idv.get(name), f"composite identity.{name}")
+        if not idv.get("ext", {}).get("team"):
+            raise ValueError("team composite identity requires ext.team")
+
+
+def _validate_board_view(bo: Any) -> None:
+    """STRICT input-contract boundary. Runs BEFORE fingerprinting or receipt construction.
+    Every governed field must already be the correct type — nothing is coerced. Any
+    violation raises ValueError, so the shadow fails at the input stage and returns no
+    receipt ids."""
+    if not isinstance(bo, dict):
+        raise ValueError("board view must be a mapping")
+    _str(bo.get("sport"), "sport")
+    _str(bo.get("surface"), "surface")
+    _int(bo.get("season"), "season")
+    _str(bo.get("created_at"), "created_at")
+    uni = bo.get("universe")
+    if not isinstance(uni, (list, tuple)) or len(uni) != 3:
+        raise ValueError("universe must be [grain, id, version]")
+    for i, part in enumerate(uni):
+        _str(part, f"universe[{i}]")
+    # clocks
+    clk = bo.get("clocks")
+    if not isinstance(clk, dict):
+        raise ValueError("clocks must be a mapping")
+    _str(clk.get("bk_captured"), "clocks.bk_captured")
+    if clk.get("source_updated_status") not in SourceUpdatedStatus.__members__:
+        raise ValueError("clocks.source_updated_status must be PRESENT|UNKNOWN|NOT_PROVIDED")
+    for k in ("source_updated", "event_effective"):
+        if clk.get(k) is not None and not isinstance(clk.get(k), str):
+            raise ValueError(f"clocks.{k} must be a string instant or null")
+    # provenance (+ structured fingerprints)
+    _require_provenance(bo)
+    # source health
+    if bo.get("source_health_state") not in HealthState.__members__:
+        raise ValueError("source_health_state must be SYNCHRONIZED|STALE|FAIL_CLOSED")
+    _bool(bo.get("empty_state"), "empty_state")
+    # rows
+    rows = bo.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError("rows must be a list")
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict):
+            raise ValueError(f"rows[{i}] must be a mapping")
+        _str(r.get("team"), f"rows[{i}].team")
+        _str(r.get("leaf"), f"rows[{i}].leaf")
+        if r["leaf"] not in _LEAF_VALUES:
+            raise ValueError(f"rows[{i}].leaf {r['leaf']!r} is not a terminal leaf")
+        _str(r.get("reason"), f"rows[{i}].reason")
+        _int(r.get("def_version"), f"rows[{i}].def_version")
+        if "params" in r and not isinstance(r["params"], dict):
+            raise ValueError(f"rows[{i}].params must be a mapping")
+        _validate_identity_shape(r.get("identity"))
+    # counts: non-negative ints keyed only by terminal leaf values
+    counts = bo.get("counts")
+    if not isinstance(counts, dict):
+        raise ValueError("counts must be a mapping")
+    for k, v in counts.items():
+        if k not in _LEAF_VALUES:
+            raise ValueError(f"counts key {k!r} is not a terminal leaf value")
+        _int(v, f"counts[{k!r}]")
+        if v < 0:
+            raise ValueError(f"counts[{k!r}] must be non-negative")
+    exp = _int(bo.get("expected_count"), "expected_count")
+    if exp != sum(counts.values()):
+        raise ValueError(f"expected_count {exp} != sum(counts) {sum(counts.values())}")
+    # JSON-serializable (no coercion): reject unsupported objects up front.
+    try:
+        _canonical(bo)
+    except TypeError as exc:
+        raise ValueError(f"board view is not JSON-serializable: {exc}")
+
+
 def _clocks_from_view(bo: Dict[str, Any], *, event: bool) -> Clocks:
     """Build Clocks from the view's SEPARATE clock declarations. `as_of`/`created_at` is
     NEVER copied into bk_captured/source_updated/event_effective. Unknown source_updated
@@ -124,40 +239,14 @@ def _clocks_from_view(bo: Dict[str, Any], *, event: bool) -> Clocks:
                   source_updated=clk.get("source_updated"), event_effective=ee)
 
 
-def _identity_from_view(idv: Any) -> Identity:
-    """Build the contract Identity from TYPE-VALIDATED, governed evidence. No coercion:
-    booleans must be booleans, composite profiles must be present. A label-only identity
-    (NAME_ONLY) is accepted structurally but fails closed as an admitted member downstream."""
-    if not isinstance(idv, dict):
-        raise ValueError("row identity must be a mapping")
-    for f in ("quality", "key", "base"):
-        if f not in idv:
-            raise ValueError(f"row identity missing {f}")
-    q = idv["quality"]
-    if q not in IdentityQuality.__members__:
-        raise ValueError(f"unknown identity quality {q!r}")
-    if not isinstance(idv["key"], str) or not idv["key"].strip():
-        raise ValueError("identity.key must be a non-empty string")
-    base = idv["base"]
-    if not isinstance(base, dict) or not base.get("sport") or not base.get("season"):
-        raise ValueError("identity.base must be a map carrying sport + season")
-    ext = idv.get("ext", {})
-    if not isinstance(ext, dict):
-        raise ValueError("identity.ext must be a map")
-    ct = idv.get("collision_tested", False)
-    if not isinstance(ct, bool):  # "false"/1 are NOT booleans — never coerce
-        raise ValueError("identity.collision_tested must be an actual boolean")
-    profile, pver, cproof = idv.get("profile"), idv.get("profile_version"), idv.get("collision_proof")
-    if q in _COMPOSITE:
-        if not ct:
-            raise ValueError("composite identity requires collision_tested=true")
-        for name, val in (("profile", profile), ("profile_version", pver), ("collision_proof", cproof)):
-            if not isinstance(val, str) or not val.strip():
-                raise ValueError(f"composite identity requires a non-empty {name}")
-        if not ext.get("team"):
-            raise ValueError("team composite identity requires ext.team")
-    return Identity(IdentityGrain.TEAM, dict(base), dict(ext), IdentityQuality[q], ct,
-                    idv["key"], profile, pver, cproof)
+def _identity_from_view(idv: Dict[str, Any]) -> Identity:
+    """Build the contract Identity from already-type-validated governed evidence
+    (see _validate_identity_shape). No coercion: values are used as supplied."""
+    _validate_identity_shape(idv)
+    return Identity(IdentityGrain.TEAM, dict(idv["base"]), dict(idv.get("ext", {})),
+                    IdentityQuality[idv["quality"]], idv.get("collision_tested", False),
+                    idv["key"], idv.get("profile"), idv.get("profile_version"),
+                    idv.get("collision_proof"))
 
 
 def _versions(prov: Dict[str, Any]) -> Versions:
@@ -175,10 +264,9 @@ def run_shadow(builder_board_view: Any) -> dict:
     }
     try:
         bo = builder_board_view  # read-only; never assigned into
-        prov = _require_provenance(bo if isinstance(bo, dict) else dict(bo))
+        _validate_board_view(bo)   # strict input contract — before fingerprint/receipts
+        prov = bo["provenance"]
         ih = _require_fingerprints(prov["source_fingerprints"])  # verified digests, used directly
-        if not isinstance(bo.get("created_at"), str):
-            raise ValueError("missing created_at (receipt creation clock)")
         grain, uid, uver = bo["universe"]
         uni = Universe(grain, uid, uver)
         vers = _versions(prov)
@@ -186,7 +274,7 @@ def run_shadow(builder_board_view: Any) -> dict:
         build_fp = _build_fingerprint(bo if isinstance(bo, dict) else dict(bo))
 
         rows = [EntityDisposition(r["team"], _identity_from_view(r["identity"]), Leaf(r["leaf"]),
-                                  r["reason"], int(r["def_version"]), r.get("params"))
+                                  r["reason"], r["def_version"], r.get("params"))
                 for r in bo["rows"]]
         batch = seal_hashes(Receipt(
             receipt_id=_rid(build_fp, "entity_disposition"), receipt_kind=ReceiptKind.ENTITY_DISPOSITION,
@@ -211,7 +299,7 @@ def run_shadow(builder_board_view: Any) -> dict:
             projection=Projection.INTERNAL, clocks=_clocks_from_view(bo, event=True), input_hashes=ih,
             refs=Refs(entity_dispositions=batch.receipt_id, source_health=sh.receipt_id),
             body=LiveEvidenceBoard(compute_membership_hash(batch), dict(bo["counts"]),
-                                   int(bo["expected_count"]), prov["ordering_rule_id"],
+                                   bo["expected_count"], prov["ordering_rule_id"],
                                    prov["ordering_rule_version"])))
         result["receipt_ids"] = {"batch": batch.receipt_id, "board": board.receipt_id,
                                  "source_health": sh.receipt_id}
@@ -241,10 +329,10 @@ def run_shadow(builder_board_view: Any) -> dict:
         p["ordering"] = builder_members == receipt_members
         p["counts"] = ({k: v for k, v in tally.items() if v}
                        == {k: v for k, v in dict(bo["counts"]).items() if v}
-                       and int(bo["expected_count"]) == len(batch.body.rows))
+                       and bo["expected_count"] == len(batch.body.rows))
         p["source_health"] = sh.body.state.value == bo["source_health_state"]
         members_n = len(receipt_members)
-        p["empty_state"] = (members_n == 0) == bool(bo["empty_state"])
+        p["empty_state"] = (members_n == 0) == bo["empty_state"]
         p["all"] = all(v is True for k, v in p.items() if k != "all")
 
         synced = bo["source_health_state"] == HealthState.SYNCHRONIZED.value

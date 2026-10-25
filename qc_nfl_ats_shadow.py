@@ -159,6 +159,44 @@ def run_qc() -> dict:
     present = shadow.run_shadow(_view(clocks=_clocks(su="2026-10-26T12:00:00Z", status="PRESENT")))
     ok(present["ok"], "BLOCKER4: a present source_updated + PRESENT status is valid")
 
+    # BLOCKER (final) — strict input contract: NO coercion. Each must fail at the input
+    # stage, before any receipt ids are returned (receipt_ids stays empty).
+    def _mutate(**over):
+        v = copy.deepcopy(_view())
+        v.update(over)
+        return v
+
+    def _fails_at_contract(v, why):
+        res = shadow.run_shadow(v)
+        ok((not res["ok"]) and res["error"] is not None and res["receipt_ids"] == {},
+           f"strict contract: {why} fails at input stage (no receipt ids)")
+
+    # string/bool numerics
+    sv = _mutate(); sv["rows"][3]["def_version"] = "1"
+    _fails_at_contract(sv, "def_version as string '1'")
+    _fails_at_contract(_mutate(expected_count="5"), "expected_count as string '5'")
+    _fails_at_contract(_mutate(season="2026"), "season as string '2026'")
+    cv = _mutate(); cv["counts"] = {"RENDERED": "2", "SUPPRESSED": 1, "NONMEMBER": 2}
+    _fails_at_contract(cv, "a count value as string '2'")
+    _fails_at_contract(_mutate(provenance=_prov(obs="1001")), "observation_seq as string")
+    _fails_at_contract(_mutate(provenance=_prov(rule_versions={"membership": "3", "ordering": 1})),
+                       "rule version as string")
+    bv = _mutate(); bv["rows"][0]["def_version"] = True
+    _fails_at_contract(bv, "def_version as boolean True")
+    # "false" empty state
+    _fails_at_contract(_mutate(empty_state="false"), "empty_state as string 'false'")
+    # negative count
+    nc = _mutate(); nc["counts"] = {"RENDERED": 2, "SUPPRESSED": 1, "NONMEMBER": 2, "FAILED": -1}
+    _fails_at_contract(nc, "a negative count")
+    # unknown count leaf
+    uc = _mutate(); uc["counts"] = {"RENDERED": 2, "SUPPRESSED": 1, "NONMEMBER": 2, "BOGUS": 0}
+    _fails_at_contract(uc, "a count keyed by a non-leaf value")
+    # inconsistent expected_count
+    _fails_at_contract(_mutate(expected_count=99), "expected_count != sum(counts)")
+    # non-JSON-serializable object
+    js = _mutate(); js["rows"][0]["params"] = {"x": object()}
+    _fails_at_contract(js, "a non-JSON-serializable object in the view")
+
     # Named rule-version keys required.
     nr = shadow.run_shadow(_view(prov=_prov(rule_versions={"ordering": 1})))  # no 'membership'
     ok((not nr["ok"]) and "membership" in (nr["error"] or ""),
