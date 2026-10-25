@@ -1,36 +1,30 @@
-"""QC: build_nfl_ats_wave shadow call-site integration (Phase 2C-dark local wiring).
+"""QC: build_nfl_ats_wave shadow call-site integration (Phase 2C-dark local wiring, Rev 2).
 
-Exercises the EXACT call-site logic (replicated here so app.py / pandas need not be
-imported) against representative builder-result doubles. Proves: the builder return value
-is deep-equal with the shadow OFF and ON; OFF does zero work (no record); shadow exceptions
-are isolated (never raised to the route); the shadow record is inspectable only via the
-internal test hook; and reports local incremental latency OFF vs ON (no assertion).
+Invokes the REAL shared observer (services.nfl_ats_shadow_hook.observe_build_nfl_ats_wave) —
+the exact function app.py calls — against representative builder results for the POPULATED,
+EMPTY, and UNAVAILABLE return paths. It does NOT reimplement the call-site block; instead it
+also statically asserts app.py calls that observer (so drift is caught). Proves: builder
+result deep-equal with shadow OFF and ON; OFF produces no record; parity is against the
+builder's authoritative result['members']; unhealthy sources carry UNAVAILABLE (no factual
+nonmembers); the live governed=None path fails closed (runtime pilot BLOCKED); exceptions are
+isolated; and reports local incremental latency. Injectable created_at keeps it deterministic.
 """
 from __future__ import annotations
 
 import copy
 import os
+import re
 import statistics
 import time
+from pathlib import Path
 
 import services.decision_shadow_boundary as boundary
 import services.nfl_ats_shadow_hook as hook
 
 BK = "2026-10-26T13:05:00Z"
-CA = "2026-10-26T13:05:05Z"
+CREATED = "2026-10-26T13:05:05Z"
 SHA = "ab" * 32
-
-
-def _call_site(result, dec, cur, season):
-    """Byte-for-byte mirror of the app.py build_nfl_ats_wave call site."""
-    try:
-        from services.decision_shadow_boundary import shadow_enabled
-        if shadow_enabled():
-            from services import nfl_ats_shadow_hook as _h
-            _h.observe_nfl_ats_wave(result, dec=dec, cur=cur, season=season)
-    except Exception:
-        pass
-    return result
+APP = Path(hook.__file__).resolve().parents[1] / "app.py"
 
 
 def _flag(on):
@@ -48,9 +42,8 @@ def _cur():
     return {"content_sha256": SHA}
 
 
-def _result(synced=True, members=None):
-    return {"members": members if members is not None else [{"team": "PHI", "streak": 4}],
-            "sync": {"synchronized": synced, "checked_at_utc": BK, "content_fetched_at_utc": CA},
+def _result(members, synced=True):
+    return {"members": members, "sync": {"synchronized": synced, "checked_at_utc": BK},
             "expected_completed_week": 8}
 
 
@@ -62,96 +55,115 @@ def _gov(teams):
                                       "collision_proof": f"ledger#{t}"} for t in teams}}
 
 
+def _obs(result, dec, cur=None, season=2026, governed=None):
+    """Call the REAL shared observer with a deterministic injected creation clock."""
+    return hook.observe_build_nfl_ats_wave(result, dec=dec, cur=cur, season=season,
+                                           governed=governed, created_at=CREATED)
+
+
 def run_qc() -> dict:
     checks, failures = [], []
+    lat = {}
 
     def ok(cond, label):
         (checks if cond else failures).append(label)
 
-    season = 2026
-    per_pop = {"PHI": {"cover_streak": 4}, "DAL": {"cover_streak": 3}, "NYG": {"cover_streak": 1}}
-    per_empty = {"NYG": {"cover_streak": 1}, "WAS": {"cover_streak": 2}}
+    # The builder's authoritative result for a populated board: PHI then DAL (streak-desc).
+    members = [{"team": "PHI", "streak": 4}, {"team": "DAL", "streak": 3}]
+    per_pop = {"PHI": {}, "DAL": {}, "NYG": {}, "WAS": {}}      # decision universe (4 teams)
+    per_empty = {"NYG": {}, "WAS": {}}
 
-    # --- OFF: zero work, no record, output unchanged -------------------------
+    # 0) app.py actually calls the shared observer (static drift guard; no mirror).
+    src = APP.read_text(encoding="utf-8", errors="replace")
+    ok("observe_build_nfl_ats_wave(" in src
+       and "_build_nfl_ats_wave_impl" in src, "app.py calls the shared observer on its return paths")
+
+    # 1) OFF: zero work, no record, output unchanged.
     _flag(False); hook._reset()
-    res = _result(); snap = copy.deepcopy(res)
-    out = _call_site(res, _dec(per_pop), _cur(), season)
-    ok(out == snap and out is res, "OFF: builder return value is unchanged (deep-equal)")
-    ok(hook.last_record() is None, "OFF: no shadow record produced (zero work)")
+    res = _result(members); snap = copy.deepcopy(res)
+    out = _obs(res, _dec(per_pop))
+    ok(out is None and hook.last_record() is None and res == snap,
+       "OFF: no record, no work, builder result unchanged")
 
-    # --- ON: output still unchanged; record produced via the internal hook ---
     try:
         _flag(True)
 
-        # populated board (governed evidence supplied) -> parity passes.
-        hook._reset()
-        res = _result(); snap = copy.deepcopy(res)
-        out = _call_site(res, _dec(per_pop), _cur(), season)
-        rec = hook.last_record()
-        # Observe directly with governed evidence (the call site passes governed=None by
-        # default; here we exercise the conformant mapping a future builder would enable).
-        hook._reset()
-        rec_g = hook.observe_nfl_ats_wave(_result(), dec=_dec(per_pop), cur=_cur(), season=season,
-                                          governed=_gov(["PHI", "DAL", "NYG"]))
-        ok(out == snap and out is res, "ON: builder return value is unchanged (deep-equal)")
-        ok(rec is not None, "ON: a shadow record is produced and inspectable via the hook")
-        ok(rec_g["ok"] and rec_g["parity"]["all"], "ON populated+governed: shadow parity passes")
+        # 2) POPULATED: parity against result['members'] (authoritative), builder order.
+        hook._reset(); res = _result(members); snap = copy.deepcopy(res)
+        rec = _obs(res, _dec(per_pop), _cur(), governed=_gov(["PHI", "DAL", "NYG", "WAS"]))
+        ok(res == snap, "ON populated: builder result unchanged")
+        ok(rec["ok"] and rec["parity"]["all"]
+           and rec["parity"].get("builder_membership") is True
+           and rec["parity"].get("builder_ordering") is True,
+           "ON populated: receipt membership/order match result['members'] (authoritative)")
 
-        # honest-empty board (governed) -> ok, empty-state.
+        # drift: builder board lists a member NOT in the decision universe -> fail closed.
         hook._reset()
-        e = hook.observe_nfl_ats_wave(_result(), dec=_dec(per_empty), cur=_cur(), season=season,
-                                      governed=_gov(["NYG", "WAS"]))
-        ok(e["ok"] and e["parity"]["empty_state"], "ON honest-empty+governed: ok")
+        drift = _obs(_result([{"team": "PHI"}, {"team": "KC"}]), _dec(per_pop), _cur(),
+                     governed=_gov(["PHI", "DAL", "NYG", "WAS", "KC"]))
+        ok((not drift["ok"]) and drift["stage"] == "hook"
+           and "decision universe" in (drift["error"] or ""),
+           "ON drift: a board member absent from the decision universe fails closed")
 
-        # unhealthy source with a member present -> fail closed.
+        # 3) EMPTY (honest, synchronized): zero members, universe are nonmembers.
         hook._reset()
-        u = hook.observe_nfl_ats_wave(_result(synced=False), dec=_dec(per_pop), cur=_cur(),
-                                      season=season, governed=_gov(["PHI", "DAL", "NYG"]))
-        ok((not u["ok"]) and any("source_health_not_synchronized" in f for f in u["fail_closed"]),
-           "ON unhealthy-source: fail-closed source-health finding")
+        e = _obs(_result([]), _dec(per_empty), _cur(), governed=_gov(["NYG", "WAS"]))
+        ok(e["ok"] and e["parity"]["empty_state"] and e["parity"].get("builder_membership") is True,
+           "ON empty: honest-empty parity holds")
 
-        # missing provenance (the CURRENT builder: governed=None) -> fail closed, isolated.
+        # 4) UNAVAILABLE early return as the LIVE call site sees it (synced False, dec/cur None,
+        #    governed=None): the path IS observed and fails closed, isolated.
         hook._reset()
-        res = _result(); snap = copy.deepcopy(res)
-        out = _call_site(res, _dec(per_pop), _cur(), season)  # call site passes governed=None
-        mp = hook.last_record()
-        ok(out == snap, "ON missing-provenance: builder return value still unchanged")
-        ok((not mp["ok"]) and mp["error"] is not None,
-           "ON missing-provenance: shadow fails closed (governed evidence absent)")
-
-        # adapter/hook exception (result without 'sync') -> isolated, never raised.
+        u = _obs(_result([], synced=False), None, None, governed=None)
+        ok((not u["ok"]) and (u.get("error") is not None or u.get("fail_closed")),
+           "ON unavailable (early return, live governed=None): observed and fails closed")
+        # UNAVAILABLE with a known universe + governed: every expected team is UNAVAILABLE and
+        # the source-health failure is recorded — no factual NONMEMBER is emitted.
         hook._reset()
-        bad = {"members": [], "expected_completed_week": 8}  # no 'sync'
-        raised = False
-        try:
-            _call_site(bad, _dec(per_pop), _cur(), season)
-        except Exception:
-            raised = True
-        xr = hook.last_record()
-        ok(not raised, "ON adapter-exception: call site never raises (no 500)")
-        ok(xr is not None and xr["ok"] is False and xr["stage"] == "hook",
-           "ON adapter-exception: failure isolated into the record")
+        u2 = _obs(_result([], synced=False), _dec(per_pop), _cur(), governed=_gov([]))
+        ok((not u2["ok"])
+           and any("source_health_not_synchronized" in f for f in u2["fail_closed"])
+           and not any("eligible_conclusion" in f for f in u2["fail_closed"]),
+           "ON unavailable (known universe): all UNAVAILABLE, source-health fail-closed, no NONMEMBER")
 
-        # --- latency (local incremental; no assertion) -----------------------
+        # 5) LIVE path parity: governed=None (what app.py passes) -> fail closed, result unchanged.
+        hook._reset(); res = _result(members); snap = copy.deepcopy(res)
+        live = _obs(res, _dec(per_pop), _cur(), governed=None)
+        ok(res == snap, "ON live(governed=None): builder result unchanged")
+        ok((not live["ok"]) and live["error"] is not None,
+           "ON live(governed=None): fails closed (runtime pilot BLOCKED — no governed sources)")
+
+        # 6) exception isolation: result without 'sync'.
+        hook._reset()
+        x = hook.observe_build_nfl_ats_wave({"members": []}, dec=_dec(per_pop), cur=_cur(),
+                                            season=2026, created_at=CREATED)
+        ok(x is not None and x["ok"] is False and x["stage"] == "hook",
+           "ON exception: isolated into the record (never raised)")
+
+        # 7) deterministic: same inputs + injected clock -> identical receipt ids/hashes.
+        hook._reset()
+        a = _obs(_result(members), _dec(per_pop), _cur(), governed=_gov(["PHI", "DAL", "NYG", "WAS"]))
+        b = _obs(_result(members), _dec(per_pop), _cur(), governed=_gov(["PHI", "DAL", "NYG", "WAS"]))
+        ok(a["receipt_ids"] == b["receipt_ids"] and a["membership_hash"] == b["membership_hash"],
+           "ON deterministic: identical build + injected clock reproduces ids/hashes")
+
+        # latency (local incremental; no assertion).
         N = 3000
         _flag(False)
         off = []
         for _ in range(N):
-            r = _result(); t = time.perf_counter(); _call_site(r, _dec(per_pop), _cur(), season)
-            off.append((time.perf_counter() - t) * 1e6)
+            r = _result(members); t = time.perf_counter(); _obs(r, _dec(per_pop), _cur()); off.append(
+                (time.perf_counter() - t) * 1e6)
         _flag(True)
         on = []
+        g = _gov(["PHI", "DAL", "NYG", "WAS"])
         for _ in range(N):
-            r = _result(); t = time.perf_counter()
-            hook.observe_nfl_ats_wave(r, dec=_dec(per_pop), cur=_cur(), season=season,
-                                      governed=_gov(["PHI", "DAL", "NYG"]))
+            r = _result(members); t = time.perf_counter(); _obs(r, _dec(per_pop), _cur(), governed=g)
             on.append((time.perf_counter() - t) * 1e6)
         lat = {"off_median_us": round(statistics.median(off), 1), "off_worst_us": round(max(off), 1),
-               "on_median_us": round(statistics.median(on), 1), "on_worst_us": round(max(on), 1),
-               "n": N}
+               "on_median_us": round(statistics.median(on), 1), "on_worst_us": round(max(on), 1), "n": N}
         ok(True, f"latency (local, N={N}): OFF median {lat['off_median_us']}us / worst "
-                 f"{lat['off_worst_us']}us ; ON median {lat['on_median_us']}us / worst "
-                 f"{lat['on_worst_us']}us")
+                 f"{lat['off_worst_us']}us ; ON median {lat['on_median_us']}us / worst {lat['on_worst_us']}us")
     finally:
         _flag(False); hook._reset()
 
@@ -161,7 +173,7 @@ def run_qc() -> dict:
 def main() -> int:
     r = run_qc()
     print("=" * 72)
-    print("BUILD_NFL_ATS_WAVE SHADOW CALL-SITE INTEGRATION QC (Phase 2C-dark)")
+    print("BUILD_NFL_ATS_WAVE SHADOW CALL-SITE INTEGRATION QC (Phase 2C-dark, Rev 2)")
     print("=" * 72)
     for c in r["checks"]:
         print(f"  [ok] {c}")

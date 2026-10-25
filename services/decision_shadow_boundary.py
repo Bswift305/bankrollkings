@@ -27,7 +27,8 @@ def shadow_enabled(env: Optional[dict] = None) -> bool:
     return str(src.get(FLAG, "0")).strip().lower() in _TRUTHY
 
 
-def shadow_if_enabled(builder_board_view: Any, env: Optional[dict] = None) -> Optional[dict]:
+def shadow_if_enabled(builder_board_view: Any, env: Optional[dict] = None,
+                      expected_members: Optional[list] = None) -> Optional[dict]:
     """Report-only shadow entry point.
 
     OFF (default): returns None immediately — imports nothing, does no receipt work,
@@ -41,7 +42,7 @@ def shadow_if_enabled(builder_board_view: Any, env: Optional[dict] = None) -> Op
         return None
     try:
         from services import nfl_ats_shadow  # lazy: only imported when the flag is ON
-        return nfl_ats_shadow.run_shadow(builder_board_view)
+        return nfl_ats_shadow.run_shadow(builder_board_view, expected_members=expected_members)
     except Exception as exc:  # the boundary itself must never raise to the caller
         return {"ok": False, "stage": "boundary",
                 "error": f"{type(exc).__name__}: {exc}", "parity": None, "receipts_valid": None}

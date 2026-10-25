@@ -1,39 +1,47 @@
-"""Decision Integrity — dark NFL ATS pilot: the build_nfl_ats_wave call-site hook
-(Phase 2C-dark local wiring).
+"""Decision Integrity — dark NFL ATS pilot: the build_nfl_ats_wave shadow observer
+(Phase 2C-dark local wiring, Rev 2).
 
-Maps the REAL builder's inputs/results into the shadow adapter's board view and runs the
-shadow in report-only mode. It is the only thing the `build_nfl_ats_wave` call site touches.
+`observe_build_nfl_ats_wave` is the SINGLE shared integration function. `build_nfl_ats_wave`
+calls it on every return path; the QC calls the SAME function (no handwritten mirror).
 
-Boundaries:
-  * Flag OFF (default) => `observe_nfl_ats_wave` returns None immediately: no view is
-    constructed, no fingerprinting, no adapter/receipt import, no work. (The call site
-    also checks the flag before importing this module.)
-  * The view is built EXCLUSIVELY from real builder data. Governed evidence the builder
-    does not provide — collision-proof identity, rule/build versions, observation sequence
-    — is NOT synthesized; its absence makes the shadow fail closed. Teams without a
-    supplied collision proof are honestly classified NAME_ONLY.
-  * The builder's return value is never touched (read-only); shadow exceptions are isolated
-    here and never propagate to the route.
-  * Nothing is logged or persisted. The last shadow record is exposed ONLY through an
-    internal test hook (`last_record`).
+It observes the builder's AUTHORITATIVE result — it does not recompute it:
+  * membership and admitted ORDER come directly from `result['members']` (the builder's
+    already-sorted output), rendered as RENDERED rows in that exact order;
+  * the expected universe comes from `dec['per']`; each result member must resolve into it
+    exactly once (drift between the sorted board and the decision universe fails closed);
+  * remaining nonmembers are emitted in a deterministic canonical order (team-asc);
+  * parity compares the RECEIPT membership/order against `result['members']` (passed to the
+    adapter as `expected_members`), never against hook-derived rows.
 
-`governed` is an optional block a FUTURE builder enhancement would supply (collision
-proofs + versions + observation sequence). The current builder passes it as None, so the
-shadow records the governed-provenance gap rather than faking conformance.
+Fail-closed health (the view itself carries the honest disposition): when the source is not
+synchronized, every expected entity is UNAVAILABLE — no RENDERED/NONMEMBER streak leaves.
+
+Clocks: `bk_captured` is the sidecar check clock; the source exposes no provider update clock
+(null + NOT_PROVIDED); receipt `created_at` is captured SEPARATELY and is injectable for
+deterministic replay. `content_fetched_at_utc` is a source-artifact clock and is NOT used as
+the receipt creation time.
+
+Governed evidence (collision-proof identity, build/config/rule versions, observation
+sequence) is NEVER synthesized. The live call site passes `governed=None`, so the live ON
+path records the governed-provenance gap (the runtime pilot is BLOCKED until those audited
+sources exist). Tests pass a `governed` block to exercise the conformant mapping end to end.
+
+OFF (default): returns None immediately — no view, no fingerprinting, no adapter/receipt
+import, no work. Nothing is logged or persisted; the last record is exposed ONLY via the
+internal test hook `last_record`.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from services.decision_shadow_boundary import shadow_enabled, shadow_if_enabled
 
-_WAVE_MIN_STREAK = 3
 _LAST: Dict[str, Any] = {}   # internal TEST hook only — never a log or a persisted store
 
 
 def last_record() -> Optional[dict]:
-    """Test-only accessor for the most recent shadow record."""
     return _LAST.get("rec")
 
 
@@ -41,73 +49,89 @@ def _reset() -> None:
     _LAST.pop("rec", None)
 
 
-def _board_view(result: dict, dec: Optional[dict], cur: Optional[dict], season: Any,
-                governed: Optional[dict]) -> dict:
-    sync = result["sync"]                                  # KeyError here => isolated upstream
-    health = "SYNCHRONIZED" if bool(sync.get("synchronized")) else "STALE"
-    per = (dec or {}).get("per", {})
-    rows, counts = [], {}
-    gp_all = (governed or {}).get("identity_profiles", {})
-    for team, s in per.items():
-        cover = s.get("cover_streak", 0)
-        leaf, reason = ("RENDERED", "QUALIFIED") if cover >= _WAVE_MIN_STREAK \
-            else ("NONMEMBER", "BELOW_THRESHOLD")
-        gp = gp_all.get(team)
-        if gp:  # governed collision evidence supplied -> authoritative identity
-            identity = {"quality": "DECLARED_COMPOSITE", "key": f"(nfl,{season},{team})",
-                        "base": {"sport": "nfl", "season": season}, "ext": {"team": team},
-                        "collision_tested": True, "profile": gp["profile"],
-                        "profile_version": gp["profile_version"], "collision_proof": gp["collision_proof"]}
-        else:   # no collision proof from the builder -> honest NAME_ONLY (fails closed as a member)
-            identity = {"quality": "NAME_ONLY", "key": team,
-                        "base": {"sport": "nfl", "season": season}, "ext": {"team": team},
-                        "collision_tested": False}
-        row = {"team": team, "leaf": leaf, "reason": reason, "identity": identity}
-        if governed and "reason_def_version" in governed:
-            row["def_version"] = governed["reason_def_version"]
-            if reason == "BELOW_THRESHOLD":
-                row["params"] = {"threshold": governed.get("threshold", _WAVE_MIN_STREAK)}
-        rows.append(row)
-        counts[leaf] = counts.get(leaf, 0) + 1
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+
+def _identity(team: str, season: Any, governed: Optional[dict]) -> dict:
+    gp = (governed or {}).get("identity_profiles", {}).get(team)
+    if gp:  # governed collision evidence -> authoritative identity
+        return {"quality": "DECLARED_COMPOSITE", "key": f"(nfl,{season},{team})",
+                "base": {"sport": "nfl", "season": season}, "ext": {"team": team},
+                "collision_tested": True, "profile": gp["profile"],
+                "profile_version": gp["profile_version"], "collision_proof": gp["collision_proof"]}
+    return {"quality": "NAME_ONLY", "key": team, "base": {"sport": "nfl", "season": season},
+            "ext": {"team": team}, "collision_tested": False}
+
+
+def _row(team, leaf, reason, season, governed):
+    r = {"team": team, "leaf": leaf, "reason": reason, "identity": _identity(team, season, governed)}
+    if governed and "reason_def_version" in governed:
+        r["def_version"] = governed["reason_def_version"]
+        if reason == "BELOW_THRESHOLD":
+            r["params"] = {"threshold": governed.get("threshold", 3)}
+    return r
+
+
+def _board_view(result, dec, cur, season, governed, created_at) -> dict:
+    sync = result["sync"]                                   # KeyError => isolated by caller
+    synced = bool(sync.get("synchronized"))
+    universe_teams = sorted((dec or {}).get("per", {}).keys())
+    rows: List[dict] = []
+    if not synced:
+        # Fail-closed: no factual RENDERED/NONMEMBER under an unhealthy source.
+        rows = [_row(t, "UNAVAILABLE", "SOURCE_UNAVAILABLE", season, governed) for t in universe_teams]
+    else:
+        members = result.get("members") or []              # AUTHORITATIVE order
+        member_teams = [m["team"] for m in members]
+        if len(set(member_teams)) != len(member_teams):
+            raise ValueError("builder returned duplicate members")
+        uni = set(universe_teams)
+        for mt in member_teams:                              # each resolves into the universe once
+            if universe_teams and mt not in uni:
+                raise ValueError(f"builder member {mt!r} is not in the decision universe")
+        rows = [_row(t, "RENDERED", "QUALIFIED", season, governed) for t in member_teams]
+        rows += [_row(t, "NONMEMBER", "BELOW_THRESHOLD", season, governed)
+                 for t in universe_teams if t not in set(member_teams)]
+    counts: Dict[str, int] = {}
+    for r in rows:
+        counts[r["leaf"]] = counts.get(r["leaf"], 0) + 1
     view: Dict[str, Any] = {
         "sport": "nfl", "season": season, "surface": "nfl_ats_wave",
-        "universe": ["team", f"nfl_ats_board_{season}", "v1"],
+        "universe": ["team", f"nfl_ats_board_{season}", "v1"], "created_at": created_at,
         "clocks": {"bk_captured": sync.get("checked_at_utc"), "source_updated": None,
                    "source_updated_status": "NOT_PROVIDED", "event_effective": None},
         "rows": rows, "counts": counts, "expected_count": len(rows),
         "empty_state": not any(r["leaf"] == "RENDERED" for r in rows),
-        "source_health_state": health,
+        "source_health_state": "SYNCHRONIZED" if synced else "STALE",
     }
-    if sync.get("content_fetched_at_utc"):
-        view["created_at"] = sync["content_fetched_at_utc"]   # real receipt-creation clock
-    # Provenance ONLY from real governed inputs — never synthesized. Absent => fail closed.
     if governed:
         view["provenance"] = {
             "build_id": governed["build_id"], "config_version": governed["config_version"],
-            "rule_versions": governed["rule_versions"],
-            "ordering_rule_id": "streak_desc_team_asc",
+            "rule_versions": governed["rule_versions"], "ordering_rule_id": "streak_desc_team_asc",
             "ordering_rule_version": governed["ordering_rule_version"],
             "source_fingerprints": [{"source_id": "nfl_games_parquet", "algorithm": "sha256",
                                      "digest": (cur or {}).get("content_sha256", "")}],
-            "observation_seq": governed["observation_seq"],
-        }
+            "observation_seq": governed["observation_seq"]}
     return view
 
 
-def observe_nfl_ats_wave(result: dict, dec: Optional[dict] = None, cur: Optional[dict] = None,
-                         season: Any = None, governed: Optional[dict] = None) -> Optional[dict]:
-    """Called from build_nfl_ats_wave AFTER it computes its result. OFF => None (no work).
-    Never raises; never mutates `result`."""
+def observe_build_nfl_ats_wave(result: dict, dec: Optional[dict] = None, cur: Optional[dict] = None,
+                               season: Any = None, governed: Optional[dict] = None,
+                               created_at: Optional[str] = None) -> Optional[dict]:
+    """The single shared observer. OFF => None (no work). Never raises; never mutates `result`.
+    `created_at` (receipt creation) is injectable so replay fixtures are deterministic."""
     if not shadow_enabled():
-        return None                                  # zero work / imports when OFF
+        return None
     try:
-        view = _board_view(result, dec, cur, season, governed)
-        rec = shadow_if_enabled(view)
-    except Exception as exc:                          # isolate any hook/mapping failure
+        expected = [m["team"] for m in (result.get("members") or [])] if result.get(
+            "sync", {}).get("synchronized") else []
+        view = _board_view(result, dec, cur, season, governed, created_at or _utc_now())
+        rec = shadow_if_enabled(view, expected_members=expected)
+    except Exception as exc:
         rec = {"ok": False, "stage": "hook", "error": f"{type(exc).__name__}: {exc}"}
     _LAST["rec"] = rec
     return rec
 
 
-__all__ = ["observe_nfl_ats_wave", "last_record"]
+__all__ = ["observe_build_nfl_ats_wave", "last_record"]

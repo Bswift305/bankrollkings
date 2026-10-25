@@ -48651,12 +48651,14 @@ def _nfl_ats_unavailable(season, expected_completed_week, reason):
     return {'members': [], 'sync': sync, 'expected_completed_week': expected_completed_week}
 
 
-def build_nfl_ats_wave(now_et=None, games_root=None):
+def _build_nfl_ats_wave_impl(now_et=None, games_root=None):
     """Current-season NFL ATS wave from the generation store (fetch_nfl_games.resolve_current, which
     VERIFIES the parquet sha256 against its sidecar): explicit active-season gate + the frozen rule +
     event-level completeness + a freshness budget off the sidecar's checked_at, failing closed on a
-    missing/corrupt/mismatched source (no mtime fallback). Returns {'members' (streak-desc, team-asc;
-    empty unless synchronized), 'sync', 'expected_completed_week'}."""
+    missing/corrupt/mismatched source (no mtime fallback). Returns (result, context) where result is
+    {'members' (streak-desc, team-asc; empty unless synchronized), 'sync', 'expected_completed_week'}
+    and context carries the authoritative intermediates (dec, cur, season) for the shadow observer
+    (None on an early unavailable return)."""
     import time as _time
     import fetch_nfl_games as _fgs
     from zoneinfo import ZoneInfo
@@ -48666,15 +48668,18 @@ def build_nfl_ats_wave(now_et=None, games_root=None):
     try:
         cur = _fgs.resolve_current() if games_root is None else _fgs.resolve_current(games_root)
     except _fgs.GamesSourceError as exc:
-        return _nfl_ats_unavailable(season, expected_completed_week, f"games source unavailable: {exc}")
+        return (_nfl_ats_unavailable(season, expected_completed_week, f"games source unavailable: {exc}"),
+                {'dec': None, 'cur': None, 'season': season})
     checked_dt = _fgs._parse_utc(cur.get('checked_at_utc'))
     if checked_dt is None:
-        return _nfl_ats_unavailable(season, expected_completed_week, "sidecar has no parseable checked_at_utc")
+        return (_nfl_ats_unavailable(season, expected_completed_week, "sidecar has no parseable checked_at_utc"),
+                {'dec': None, 'cur': cur, 'season': season})
     try:
         g = pd.read_parquet(cur['parquet_path'])
     except Exception as exc:
-        return _nfl_ats_unavailable(season, expected_completed_week,
-                                    f"games parquet unreadable: {type(exc).__name__}")
+        return (_nfl_ats_unavailable(season, expected_completed_week,
+                                     f"games parquet unreadable: {type(exc).__name__}"),
+                {'dec': None, 'cur': cur, 'season': season})
     dec = _nfl_ats_decisions_from_games(g, season, now_et)
     age_h = (_time.time() - checked_dt.timestamp()) / 3600.0
     last_refresh = datetime.fromtimestamp(checked_dt.timestamp(), ZoneInfo('America/New_York')).strftime(
@@ -48693,20 +48698,25 @@ def build_nfl_ats_wave(now_et=None, games_root=None):
                                 'weeks_label': _compact_weeks(run_weeks), 'pushes': s['pushes'],
                                 'recent': s['recent']})
         members.sort(key=lambda m: (-m['streak'], m['team']))   # factual: streak desc, team asc
-    _ats_wave_result = {'members': members, 'sync': sync,
-                        'expected_completed_week': expected_completed_week}
-    # Decision Integrity dark shadow (flag BK_DECISION_RECEIPTS_SHADOW, default OFF). When
-    # OFF this performs zero work and imports nothing beyond the dependency-free flag check;
-    # when ON it observes in report-only mode. It never touches _ats_wave_result and is fully
-    # isolated, so it can never alter this return or raise into the route.
+    return ({'members': members, 'sync': sync, 'expected_completed_week': expected_completed_week},
+            {'dec': dec, 'cur': cur, 'season': season})
+
+
+def build_nfl_ats_wave(now_et=None, games_root=None):
+    """Public NFL ATS wave builder. Returns the authoritative result dict (unchanged). A dark
+    Decision-Integrity shadow observes EVERY return path in report-only mode via the single shared
+    observer (services.nfl_ats_shadow_hook.observe_build_nfl_ats_wave), gated on the flag
+    BK_DECISION_RECEIPTS_SHADOW (default OFF). When OFF the observer returns immediately and imports
+    no receipt package; it never mutates the result and is fully isolated, so it can neither alter this
+    return nor raise into the route."""
+    result, context = _build_nfl_ats_wave_impl(now_et, games_root)
     try:
-        from services.decision_shadow_boundary import shadow_enabled as _bk_shadow_enabled
-        if _bk_shadow_enabled():
-            from services import nfl_ats_shadow_hook as _bk_hook
-            _bk_hook.observe_nfl_ats_wave(_ats_wave_result, dec=dec, cur=cur, season=season)
+        from services import nfl_ats_shadow_hook as _bk_hook
+        _bk_hook.observe_build_nfl_ats_wave(result, dec=context['dec'], cur=context['cur'],
+                                            season=context['season'])
     except Exception:
         pass
-    return _ats_wave_result
+    return result
 
 
 def build_nfl_wave_context():

@@ -292,8 +292,10 @@ def _versions(prov: Dict[str, Any]) -> Versions:
     return Versions(prov["build_id"], prov["config_version"], dict(prov["rule_versions"]))
 
 
-def run_shadow(builder_board_view: Any) -> dict:
-    """Shadow/report-only. Returns a record; NEVER raises and NEVER mutates the input."""
+def run_shadow(builder_board_view: Any, expected_members: Any = None) -> dict:
+    """Shadow/report-only. Returns a record; NEVER raises and NEVER mutates the input.
+    `expected_members`, when provided, is the builder's AUTHORITATIVE admitted-member order;
+    parity then compares the RECEIPT membership/order against it (not against the view rows)."""
     result = {
         "ok": False, "stage": "start", "error": None,
         "receipt_ids": {}, "membership_hash": None, "receipts_valid": None,
@@ -372,6 +374,11 @@ def run_shadow(builder_board_view: Any) -> dict:
         p["source_health"] = sh.body.state.value == bo["source_health_state"]
         members_n = len(receipt_members)
         p["empty_state"] = (members_n == 0) == bo["empty_state"]
+        # Authoritative parity: the RECEIPT membership/order vs the builder's own members
+        # (closes the circularity — not a comparison against hook-derived rows).
+        if expected_members is not None:
+            p["builder_membership"] = set(receipt_members) == set(expected_members)
+            p["builder_ordering"] = receipt_members == list(expected_members)
         p["all"] = all(v is True for k, v in p.items() if k != "all")
 
         synced = bo["source_health_state"] == HealthState.SYNCHRONIZED.value
