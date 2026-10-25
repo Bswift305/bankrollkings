@@ -1,6 +1,11 @@
-# Decision Integrity — Phase 2A Contracts (DESIGN ONLY)
+# Decision Integrity — Phase 2A Contracts (DESIGN ONLY) — Rev 2
 
-**Status: Phase 2A — contracts-only. Returned for explicit approval before Phase 2B.** Date 2026-10-25.
+**Status: Phase 2A Rev 2 — contracts-only. Returned for formal approval before Phase 2B.** Date 2026-10-25.
+Rev 2 applies nine contract-level corrections (receipt-vs-replay hash split; no self-referential hash;
+immutable render linkage; canonical null handling; per-field numeric profiles; structured versioning;
+hash-algorithm vs integrity-mechanism split; NFL-ATS pilot repaired to its real universe + clocks; three
+typing/linkage fixes), labels the transition envelope **provisional** (not a seventh receipt kind), and
+restates P2A-1…P2A-6 + transition granularity as **proposed defaults for approval**.
 Implements the *contract definitions* called for by the approved Constitution Rev 2.1
 (`docs/decision_integrity_constitution.md`). This document defines shapes, rules, and policies in prose +
 tables. It writes **no code, no schema files, no registries, no DB files, no runtime flags, no routes, and
@@ -28,24 +33,29 @@ Every receipt (Constitution §4) MUST carry a common envelope; kind-specific bod
 |---|---|---|---|---|
 | `receipt_id` | string | req | MUST | Stable unique id for this receipt instance. |
 | `receipt_kind` | enum | req | MUST | One of `live_evidence` \| `entity_disposition` \| `decision_time` \| `correction` \| `render` \| `source_health`. |
-| `schema_version` | int | req | MUST | Envelope+body schema version (registry §3). Integer, monotonically increasing. |
+| `schema_version` | map | req | MUST | Structured `{major:int, minor:int}` (Rev-2 #6). Unknown `major` → reader fails closed; a supported newer `minor` follows the forward-compatibility rule (Versioning policy). |
 | `surface_id` | string | req | MUST | The authoritative surface (e.g. `nfl_ats_wave`). |
 | `universe` | map | req | MUST | `{grain, id, version}` of the universe this receipt reconciles (Constitution §3). |
 | `created_seq` | int | req | MUST | Immutable monotonic BK sequence (Constitution §7/§8); the authority on ordering. |
 | `created_at` | instant[UTC] | req | MUST | Wall-clock creation; **informational only**, never used for correction ordering. |
 | `clocks` | map | cond | MUST when the receipt bears event/observation time | `{source_updated?, bk_captured, event_effective?}` (§5/§6; `bk_captured` req, others opt per grain). |
 | `input_hashes` | list<hash> | cond | MUST when `replay_class != NON_REPLAYABLE` | Canonical input hashes (§4). |
+| `conclusion_hash` | hash | req | MUST | Hash of the authoritative **canonical output** (§4), **excluding** receipt-instance metadata (`receipt_id`, `created_seq`, `created_at`, `integrity`). Two receipts whose conclusions are identical share a `conclusion_hash` even though their `content_hash`/`created_seq` differ (Rev-2 #1). Replay equality (§8 reproducibility) compares `conclusion_hash`. |
 | `versions` | map | req | MUST | `{build_id, config_version, rule_versions{…}}` in force. |
 | `replay_class` | enum | req | MUST | `EXACT_REPLAY` \| `EVIDENCE_EQUIVALENT` \| `NON_REPLAYABLE` (Constitution §8). |
-| `integrity` | map | req | MUST | `{content_hash, mechanism}`; `mechanism ∈ {none, hash_chain, signed, worm, anchored, audit_log}`. **`tamper_evident` is true only when `mechanism != none`** (Constitution L12); otherwise the receipt is integrity-verifiable. |
-| `supersedes` | ref | opt | MUST when this is a correction | Points to the `receipt_id` this supersedes (§6). |
-| `refs` | map | cond | MUST for composite receipts | Hierarchical references (§7), e.g. `{entity_dispositions, source_health, render}`. |
+| `integrity` | map | req | MUST | `{content_hash, hash_algorithm, mechanism}` (Rev-2 #7: `hash_algorithm` — e.g. `sha256` — is separate from `mechanism`). `content_hash` hashes the receipt instance (envelope+body) **excluding its own `integrity.content_hash` and any signature/anchoring proof fields** (Rev-2 #2, §4). `mechanism ∈ {none, hash_chain, signed, worm, anchored, audit_log}`. **`tamper_evident` is true only when `mechanism != none`** (Constitution L12); otherwise integrity-verifiable. |
+| `supersedes` | ref | opt | MUST when this is a correction | The **authoritative** reference: the `receipt_id` this supersedes (§6). The body's `supersedes_seq` MUST equal this receipt's `created_seq` (validated, Rev-2 #9b). |
+| `refs` | map | cond | MUST for composite receipts | Hierarchical references (§7), **forward-only, acyclic** (Rev-2 #3): an `live_evidence` receipt references `{entity_dispositions, source_health}` (NOT render — it is immutable and render comes later). A `render` receipt references the `live_evidence` receipt + its `conclusion_hash`/membership hash. No mutable back-reference. |
 | `authority_class` | enum | req | MUST | `fact` \| `derived_context` \| `descriptive_mismatch` \| `governed_model` \| `user_thesis` (Constitution §9). |
-| `projection` | enum | req | MUST | `internal` \| `user_safe` (§8). A `user_safe` receipt MUST NOT contain fields its `internal` source lacks. |
+| `projection` | enum | req | MUST | `internal` \| `user_safe` (§8). A `user_safe` receipt MUST NOT contain fields its `internal` source lacks (root-and-reference rule, §8). |
 
 **Rules:** R1 A receipt MUST NOT be edited after publication; a change is a new receipt with `supersedes`
-(Constitution L6/L12). R2 `created_seq` MUST be unique and monotonic per surface. R3 `content_hash` MUST
-cover the envelope+body under the canonical serialization (§4).
+(Constitution L6/L12). R2 `created_seq` MUST be unique and monotonic per surface, and MUST be included in
+`content_hash` but **excluded** from `conclusion_hash` (Rev-2 #1). R3 `content_hash` MUST cover the
+envelope+body under the canonical serialization (§4) **excluding `integrity.content_hash` itself and any
+signature/anchoring proof fields** (Rev-2 #2 — a digest cannot cover itself). R3b `conclusion_hash` MUST
+cover only the authoritative canonical output, excluding receipt-instance metadata (`receipt_id`,
+`created_seq`, `created_at`, `integrity`).
 
 ---
 
@@ -87,7 +97,8 @@ as a `leaf`. R6 `UNAVAILABLE` MUST be used for gated/unproven data, never `EXCLU
 | `def_version` | int | req | MUST | Increments when the *meaning* changes. |
 | `owner` | string | req | MUST | Accountable owner. |
 | `stage` | enum | req | MUST | Which stage (Constitution §2) may emit it. |
-| `leaf_or_health` | enum | req | MUST | The leaf (§2) or health state it maps to. |
+| `semantic_category` | enum | req | MUST | What the code describes (Rev-2 #9a): `leaf` \| `health` \| `stage_outcome` \| `transition`. (`SORTED` is a `stage_outcome`, not a leaf/health; `BELOW_THRESHOLD` is a `leaf`; `SOURCE_STALE` is `health`.) |
+| `maps_to` | string | cond | MUST when `semantic_category ∈ {leaf, health}` | The specific leaf (§2) or health state; empty for `stage_outcome`/`transition`. |
 | `param_fields` | list<string> | opt | SHOULD | Names of governed params carried alongside (e.g. `sort_rule_id`). |
 
 **Rules:** R7 A stage MUST emit only registered codes. R8 Codes MUST be stable identifiers; governed
@@ -98,20 +109,22 @@ variation goes in `param_fields` (e.g. `reason_code=SORTED, sort_rule_id=…, so
 
 ## 4. Canonical serialization (for hashing + EXACT_REPLAY)
 
-Equality for `EXACT_REPLAY` and all `content_hash`/`input_hashes` MUST be judged under one canonical form:
+Equality for `EXACT_REPLAY` compares **`conclusion_hash`**; all of `content_hash` / `conclusion_hash` /
+`input_hashes` MUST be computed under one canonical form (two digests, different scopes — Rev-2 #1/#2):
 
 | Rule | Norm | Detail |
 |---|---|---|
 | Field ordering | MUST | Object keys sorted lexicographically; order-independent. |
-| Excluded fields | MUST | Runtime-only fields excluded from the hash: `created_at`, process ids, generation timestamps, any `projection`-specific display text. `created_seq` **is** included. |
-| Number normalization | MUST | Decimals in a fixed precision (e.g. lines to 2 dp); no `-0`; integers not float. |
-| Null handling | MUST | Absent vs explicit-null are equal; a field at its documented default MAY be omitted. |
+| Scope: two digests | MUST | **`content_hash`** hashes the receipt instance (envelope+body) excluding `integrity.content_hash` + signature/anchoring proof fields + runtime-only fields (`created_at`, process/generation ids) — but **includes `created_seq`**. **`conclusion_hash`** additionally excludes the receipt-instance metadata (`receipt_id`, `created_seq`, `created_at`, `integrity`), hashing only the authoritative canonical output (Rev-2 #1/#2). |
+| Number normalization | MUST | **Per-field governed numeric profile** (Rev-2 #5) — NOT one implied precision. Each numeric field declares its profile, e.g. a **canonical decimal-string** at the field's scale: `line` (half-points), `probability` (fixed dp), `price` (American integer), `count` (integer). No `-0`; integers never serialized as floats. |
+| Null handling | MUST | **Required fields are never absent/null** (Rev-2 #4). For an **optional** field, absent ≡ explicit-null **only when that field's schema declares the two identical**; defaults are **schema-declared, never inferred**. |
 | Encoding | MUST | UTF-8; normalized unicode (NFC). |
-| Hash algorithm | MUST | A single declared algorithm (SHA-256 baseline); recorded in `integrity.mechanism` context. |
+| Hash algorithm | MUST | A single declared algorithm recorded in **`integrity.hash_algorithm`** (Rev-2 #7; separate from `mechanism`); `sha256` baseline. |
 
-**Rules:** R10 Two conclusions identical under this canonical form MUST hash identically (so incidental
-formatting never fails replay — Constitution §8). R11 `EXACT_REPLAY` MUST reproduce the canonical form
-byte-for-byte from recorded `input_hashes` + `versions`.
+**Rules:** R10 Two conclusions identical under this canonical form MUST share a `conclusion_hash` (so
+incidental formatting, and differing `created_seq`/`receipt_id`, never fail replay — Rev-2 #1,
+Constitution §8). R11 `EXACT_REPLAY` MUST reproduce the canonical **conclusion** form from recorded
+`input_hashes` + `versions`, matching `conclusion_hash` (not `content_hash`).
 
 ---
 
@@ -146,16 +159,17 @@ Base identity (Constitution §6): `sport + season + EventId + entity + market/st
 
 | Field (correction receipt body) | Type | Null? | Norm | Meaning |
 |---|---|---|---|---|
-| `supersedes_seq` | int | req | MUST | `created_seq` of the superseded receipt. |
+| `supersedes_seq` | int | req | MUST | `created_seq` of the superseded receipt. This is a convenience copy; the **authoritative** reference is the envelope's `supersedes` (receipt_id). `supersedes_seq` MUST equal `envelope.supersedes`'s `created_seq` (Rev-2 #9b consistency validation). |
 | `change_kind` | enum | req | MUST | `regrade` \| `line_correction` \| `reschedule` \| `identity_fix` \| `retraction`. |
 | `before` | map | req | MUST | The prior value(s). |
 | `after` | map | cond | MUST unless `retraction` | The new value(s). |
 | `cause_clock` | map | opt | SHOULD | `{source_updated?, event_effective?}` that motivated it. |
 
-**Rules:** R15 A correction MUST be a new receipt referencing `supersedes_seq`; the superseded receipt MUST
-remain unchanged. R16 Lineage ordering MUST follow `created_seq`, **never** `source_updated` alone
-(Constitution §7/§8). R17 A reader MUST be able to walk `supersedes_seq` to the current head and to every
-prior state.
+**Rules:** R15 A correction MUST be a new receipt whose **authoritative** link is the envelope's
+`supersedes` (receipt_id); the superseded receipt MUST remain unchanged. R15b A validator MUST reject a
+correction whose body `supersedes_seq` does not equal `envelope.supersedes`'s `created_seq` (Rev-2 #9b).
+R16 Lineage ordering MUST follow `created_seq`, **never** `source_updated` alone (Constitution §7/§8).
+R17 A reader MUST be able to walk the `supersedes` chain to the current head and to every prior state.
 
 ---
 
@@ -193,8 +207,12 @@ reconcile against the referenced disposition batch (the §3 equations).
 | `claims` | list | req | MUST | Only claims the `internal` receipt supports (Constitution L10). |
 | `disclosures` | list | SHOULD | Honest unavailable/partial/gated states surfaced to the user. |
 
-**Rules:** R21 A `user_safe` receipt MUST derive from exactly one `internal` receipt and MUST NOT assert
-more than it supports. R22 A `user_safe` receipt MUST NOT contain any internal-only field above.
+**Rules:** R21 **Root-and-reference projection (Rev-2 #9c):** a `user_safe` receipt derives from one
+**root** `internal` receipt and MAY include projections of that root's **referenced** internal receipts
+(§7); each user-safe field MUST trace to a field in the root or a referenced internal receipt, and the
+projection MUST NOT assert more than those internal receipts support. (A composite board projection thus
+spans the root board receipt + its disposition/source-health/render references, not a single receipt.)
+R22 A `user_safe` receipt MUST NOT contain any internal-only field above.
 
 ---
 
@@ -202,6 +220,12 @@ more than it supports. R22 A `user_safe` receipt MUST NOT contain any internal-o
 
 A **transition record** captures a *governed change* in an authoritative conclusion over time (distinct
 from a correction, which fixes a prior receipt; a transition marks that state legitimately moved).
+
+**Provisional status (Rev-2):** `transition` is **NOT one of the six approved receipt kinds** (§1
+`receipt_kind` enum is unchanged). Its envelope shape here is **PROVISIONAL** and MUST NOT be added as a
+seventh kind until the pilot runs and governance decides. During the NFL ATS pilot a transition MAY be
+recorded as a provisional/experimental record outside the approved kind set; promotion to a kind (and to
+law) is a later governance step.
 
 | Warrants a transition record (MUST, when adopted) | Does NOT (MUST NOT emit noise) |
 |---|---|
@@ -226,19 +250,19 @@ How the audited `build_nfl_ats_wave` maps onto these contracts (illustrative; no
 
 | Contract | NFL ATS mapping (from Audit #2/#3 evidence) |
 |---|---|
-| Receipt envelope | `surface_id=nfl_ats_wave`; `universe={grain:"team_side_decision", id:"nfl_ats_2026", version:…}`; `authority_class=fact`; `replay_class=EVIDENCE_EQUIVALENT`; `clocks.source_updated`=sidecar `checked_at_utc`, `bk_captured`=fetch time, `event_effective`=kickoff. |
-| Terminal leaves | the conservation partition already proven: `expected_FBS`→Members/NonMember(by streak), `known_non_FBS`→`EXCLUDED`, `no_line`→`EXCLUDED`, `future_week`/`not_completed`→`OUTSIDE_BOUNDARY` (outside universe), overdue→`UNAVAILABLE`, conflict→`FAILED`. |
-| Reason-code registry | `SORTED` + `sort_rule_id=streak_desc_team_asc`; `BELOW_THRESHOLD` (cover_streak<3); `KNOWN_NON_FBS`; `NO_LINE`; `SOURCE_STALE`; `OVERDUE`. |
+| Receipt envelope | `surface_id=nfl_ats_wave`; `universe={grain:"team_side_decision", id:"nfl_ats_2026", version:…}`; `authority_class=fact`; `replay_class=EVIDENCE_EQUIVALENT`; **clocks (Rev-2 #8):** `bk_captured`=sidecar `checked_at_utc` (a BK observation/check clock) / `content_fetched_at_utc`; **`source_updated=UNKNOWN`** — the nflverse games parquet exposes no provider source-update clock, so it is recorded unknown, **never** substituted by the check clock; `event_effective`=kickoff. |
+| Terminal leaves | the **NFL ATS** conservation partition (Audit #2, no FBS/conference concept — that is CFB only): graded **team-side decisions** → Members (`cover_streak≥3`, `RENDERED`) or `NONMEMBER` (below threshold); a completed game with **no recorded spread** → `EXCLUDED` (`NO_LINE`); a past-grace ungraded game → `UNAVAILABLE` (`OVERDUE`); malformed spread → `FAILED`; future/within-grace games → `OUTSIDE_BOUNDARY` (outside the expected universe, e.g. the 2 finished Week-8 decisions). |
+| Reason-code registry | `SORTED` + `sort_rule_id=streak_desc_team_asc` (`stage_outcome`); `BELOW_THRESHOLD` (cover_streak<3, `leaf`); `NO_LINE` (`leaf`); `OVERDUE` (`leaf`→Unavailable); `SOURCE_STALE` (`health`); `MALFORMED`/`CONFLICT` (`leaf`→Failed). (No FBS/conference codes — those belong to the CFB surface.) |
 | Canonical serialization | the membership hash + sidecar `content_sha256` are the prototypes; member rows serialized sorted, excluding render timestamps. |
 | Grain-specific identity | `team_side_decision` = `(game_id, TeamSide)` — the audited authoritative key; `identity_quality=PROVIDER_ID`. |
 | Correction linkage | a regraded game or a corrected spread → a `correction` receipt (`change_kind=regrade`/`line_correction`) superseding the prior decision receipt. |
-| Hierarchical refs | a board receipt for the wave references entity-disposition records for all expected FBS sides + the source-health receipt (sidecar freshness) + a render receipt. |
+| Hierarchical refs | the wave's `live_evidence` receipt references entity-disposition records for all expected **team-side decisions** + the source-health receipt (sidecar freshness); the **render receipt** separately references that evidence receipt + its `conclusion_hash`/membership hash (forward-only, no cycle — Rev-2 #3). |
 | User-safe projection | user sees members + the honest empty state ("no active 3+ ATS cover streaks") + "sorted by active cover streak"; internal retains sha/lineage. |
 | Transition-event (pilot) | a team crossing to a 3-cover streak, or `synchronized` flipping, emits a transition record; an unchanged rebuild does not. |
 
-**Empty-membership state (Audit #2, `members=0`)** maps to: all expected FBS decisions dispositioned
-(`RENDERED`=0, `NONMEMBER`=all), conservation balanced, render receipt shows the honest empty state — a
-**valid, fully-receipted outcome**, not an error.
+**Empty-membership state (Audit #2, `members=0`)** maps to: all expected **team-side decisions**
+dispositioned (`RENDERED`=0, `NONMEMBER`=all — max cover_streak was 2), conservation balanced, render
+receipt shows the honest empty state — a **valid, fully-receipted outcome**, not an error.
 
 ---
 
@@ -250,7 +274,8 @@ How the audited `build_nfl_ats_wave` maps onto these contracts (illustrative; no
 - A reason-code **definition** change bumps `def_version`; the **code string never changes** (R8/R9).
 - Identity **profiles** are versioned per grain; a profile change that alters the key is MAJOR.
 
-## Unresolved decisions (with recommended defaults)
+## Unresolved decisions — PROPOSED DEFAULTS for approval (Rev-2)
+Each below is a **proposed default awaiting your approval** (adopt as-is, or override):
 - **P2A-1** receipt id scheme (uuid vs content-addressed). *Default:* opaque uuid + separate `content_hash`
   (content-addressing couples id to content, which corrections break).
 - **P2A-2** `created_seq` scope — per surface vs global. *Default:* per surface (simpler monotonicity;
@@ -284,8 +309,27 @@ No database, production integration, surface migration, or runtime enforcement i
 - **INVALID** (R6): a gated NBA injury side with `leaf:EXCLUDED` — gated data MUST be `UNAVAILABLE`.
 - **INVALID** (L12/envelope): `integrity:{mechanism:none}` labeled `tamper_evident:true` — only
   integrity-verifiable without a real mechanism.
-- **VALID** correction: `{receipt_kind:correction, supersedes_seq:1041, change_kind:regrade,
-  before:{result:Miss}, after:{result:Hit}}` with a new `created_seq`.
+- **VALID** correction: `{receipt_kind:correction, supersedes:<rid-1041>, supersedes_seq:1041,
+  change_kind:regrade, before:{result:Miss}, after:{result:Hit}}` with a new `created_seq`;
+  `supersedes_seq` equals the superseded receipt's `created_seq` (R15b).
+- **VALID (two hashes, Rev-2 #1):** two rebuilds of an unchanged NFL ATS board share one `conclusion_hash`
+  but differ in `content_hash` and `created_seq` — they replay-equal (EXACT_REPLAY on `conclusion_hash`)
+  yet are distinct immutable receipts.
+- **INVALID (Rev-2 #2):** `content_hash` computed over a body that includes `integrity.content_hash` — a
+  digest cannot cover itself; it MUST exclude `integrity.content_hash` + proof fields.
+- **VALID (immutable render linkage, Rev-2 #3):** a `live_evidence` receipt refs `{entity_dispositions,
+  source_health}`; later a `render` receipt refs that evidence receipt + its `conclusion_hash`. **INVALID:**
+  publishing the evidence receipt with `render=0` and later mutating it to add the render ref (receipts are
+  immutable; the link is forward-only from render→evidence).
+- **VALID (clocks, Rev-2 #8):** NFL ATS `clocks={bk_captured:<sidecar checked_at>, source_updated:UNKNOWN,
+  event_effective:<kickoff>}`. **INVALID:** `source_updated:<sidecar checked_at>` — the check clock is a BK
+  observation, never the provider source-update clock.
+- **INVALID (NFL ATS universe, Rev-2 #8):** an NFL ATS disposition `reason_code:KNOWN_NON_FBS` — FBS/
+  conference concepts belong to the CFB surface, not NFL ATS.
+- **VALID (numeric profile, Rev-2 #5):** `line` serialized `"-3.00"` (half-point profile), `price` `"-110"`
+  (American integer), `probability` `"0.5000"` (fixed dp) — each per its declared profile, not one implied
+  precision.
+- **INVALID (version, Rev-2 #6):** `schema_version: 3` (bare int) — MUST be `{major:3, minor:0}`.
 
 ---
 
