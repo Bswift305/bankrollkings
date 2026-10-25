@@ -26,9 +26,13 @@ it fails closed to an honest unavailable/indeterminate state (never a guess, nev
 
 - **L1 — Receipts.** Every authoritative conclusion emits a **versioned receipt** recording its inputs,
   stage outputs, reason codes, counts, and the versions that produced it. No receipt → not authoritative.
-- **L2 — Exactly one terminal disposition.** Every entity in the expected universe receives **exactly one**
-  terminal disposition (§3). No entity is silently dropped; none is double-counted. (Proven necessary by
-  the CFB ATS six-row remainder: `graded ⊇ expected` is not conservation.)
+- **L2 — Exactly one terminal LEAF disposition.** Every entity in the expected universe receives **exactly
+  one terminal leaf disposition** from the closed set
+  `{ Excluded | Unavailable | Indeterminate | Failed | NonMember | Rendered | Suppressed }`. The nested
+  conservation intermediates **`Eligible` and `Members` are NOT terminal dispositions** — they are roll-ups
+  (§3), so an implementation must never record both `Eligible` (or `Members`) and `Rendered` as competing
+  terminal states for the same entity. No entity is silently dropped; none is double-counted. (Proven
+  necessary by the CFB ATS six-row remainder: `graded ⊇ expected` is not conservation.)
 - **L3 — The UI never determines reasoning.** Membership, ordering, grading, and explanations are computed
   upstream and **emitted** to the view. Templates render builder-provided evidence; they never recompute
   membership or invent a reason. (Hot Hand F2: the label is builder-emitted, not reconstructed in Jinja.)
@@ -142,15 +146,20 @@ Rules:
 
 ## 4. Receipt taxonomy (design, not implemented)
 
-Six receipt kinds. Each is versioned (§5), immutable, tamper-evident (L12), and has an internal and a
+Six receipt kinds. Each is versioned (§5), immutable, and **integrity-verifiable** — a receipt is called
+**tamper-evident only when its declared mechanism supports that claim** (chaining/signing/WORM/anchoring/
+audit-log; §1 L12), otherwise it is integrity-verifiable (content-hashed). Each has an internal and a
 user-safe projection (L10). No schema is drawn here — only purpose, required content, and lifecycle.
 
 1. **Live evidence receipt** — for an authoritative board state as served. Content: stage counts + health,
    membership hash, ordering label, source-health reference, versions. Lifecycle: produced per build;
    superseded by the next build (prior retained per retention policy).
-2. **Exclusion receipt** — why each expected entity is *not* a member. Content: entity id, identity
-   quality, terminal disposition, reason code + version, the boundary/gate that excluded it. This is where
-   **F3** (defense props, unresolved identities) lives — a governed absence record, not an ad-hoc banner.
+2. **Entity-disposition receipt** (Rev-2.1 #5 — renamed from "exclusion receipt": the dispositions are
+   **not all exclusions** — `NonMember`/`BELOW_THRESHOLD`, `DATA_RIGHTS_GATE`→`Unavailable`, and
+   `Indeterminate` are distinct terminal leaves, §3/L2). Records, per expected entity, its **one terminal
+   leaf disposition** + entity id, identity quality, reason code + version, and the boundary/gate/threshold
+   that produced it. This is where **F3** (defense props, unresolved identities) lives — a governed
+   disposition record, not an ad-hoc banner.
 3. **Decision-time receipt** — what was knowable when a decision/observation was recorded (L9). Content:
    the three clocks (§7), the quote/line/scope, identity, eligibility class, pre-event snapshot. This is the
    capture-precision record generalized.
@@ -216,6 +225,13 @@ Authoritative joins resolve identity in a declared priority and record the quali
   composite** (e.g. `(GameID, TeamSide)`, `(Season, Game, GameDate, Player, Stat)`) → when no stable id;
   (3) **alias table** (explicit, curated) for known renames/short-forms; (4) otherwise `AMBIGUOUS` /
   `UNRESOLVED`.
+- **Grain-specific identity (Rev-2.1 #3).** `sport + season + EventId + entity + market/stat` is the
+  **base** event/entity identity; it does **not** uniquely identify every grain. Phase 2 defines
+  **grain-specific identity profiles** that extend the base with governed dimensions where applicable —
+  e.g. a **market observation** adds `direction/side`, `line`, `book`, `quote_scope`, `captured
+  timestamp/observation id`; a **selection** adds its selection key; a **grading** record keys to the
+  resolved event. **Do not force one universal key across the event, selection, quote-observation, and
+  grading grains** — each grain declares its own profile (and its collision test).
 - **Identity-quality classes (recorded on every resolved entity):** `PROVIDER_ID`, `COMPOSITE_NAME_EVENT`,
   `ALIAS_RESOLVED`, `NAME_ONLY`, `AMBIGUOUS`, `UNRESOLVED`. A `NAME_ONLY`/`AMBIGUOUS`/`UNRESOLVED` entity is
   **ineligible for an authoritative join** (fails closed to an exclusion/indeterminate disposition).
@@ -393,7 +409,7 @@ No big-bang. Each phase is independently reversible and coexists with legacy sur
 3. **Enforcement** — validators + CI rule (initially report-only, then blocking).
 4. **NFL ATS pilot** — the cleanest, already-contract-backed board becomes the first fully receipted
    surface (the enforcement pilot). Prove the whole chain end-to-end on it.
-5. **Hot Hand / Heat Map** — carry the F5/F2 fixes into receipts + the F3 exclusion receipt.
+5. **Hot Hand / Heat Map** — carry the F5/F2 fixes into receipts + F3's entity-disposition records.
 6. **Riding the Wave** — the prop-streak board, once the capture-precision history accrues (`BLOCKED_
    ACCUMULATING_VERIFIED_HISTORY`).
 7. **Green Light** — convergence/lens attribution under the authority classes (§9).
@@ -412,7 +428,7 @@ and legacy surfaces run side by side; the registry records which is which.
 
 1. **Nico expected-but-absent** — a queried player absent from the board. Constitution: §3 queried-absent
    disposition (`UNRESOLVED`/`NOT_IN_UNIVERSE`) + §6 alias resolution for the `N.Collins` short form →
-   explicit, never a silent drop. Exclusion receipt (§4.2) records the reason.
+   explicit, never a silent drop. entity-disposition receipt (§4.2) records the reason.
 2. **CFB identity collision avoided by `(GameID, TeamSide)`** — §6 composite identity + §2 Canonical Events
    conflict handling (exact repeat collapses, conflicting fails closed). Proven live in Audit #3.
 3. **Hot Hand partial-week leakage (F5)** — §2 Eligibility completed-week boundary (filter before
@@ -436,8 +452,9 @@ and legacy surfaces run side by side; the registry records which is which.
 ## Explicit decisions / recommended defaults (summary)
 - Membership + factual sort are **Fact-only**; model is overlay (§9) — **decided**.
 - Stable codes + version fields, never versioned code names (§5) — **decided**.
-- No silent fuzzy resolution for authoritative joins; fuzzy allowed only for non-membership overlays on
-  exact match (§6) — **decided**.
+- Alias policy (§6, frozen): **curated exact aliases may authorize resolution; fuzzy matching may only
+  suggest candidates or support explicitly non-authoritative display, and never authorizes a join** —
+  **decided**.
 - Three clocks never substituted; unknown-tz is ineligible (§7) — **decided**.
 - Fail closed to honest unavailable/indeterminate, never partial/guess (L8) — **decided**.
 - NFL ATS is the enforcement pilot (§12.4) — **decided**.
