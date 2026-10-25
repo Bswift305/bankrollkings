@@ -237,11 +237,14 @@ REASON_CODES: Dict[str, SemanticCategory] = {
     "SORTED": SemanticCategory.STAGE_OUTCOME,
 }
 
-# Which receipt kinds have a constructible body in Slice 1. The others are part
-# of the frozen vocabulary but not yet constructed.
-SUPPORTED_RECEIPT_KINDS = frozenset(
-    {ReceiptKind.ENTITY_DISPOSITION, ReceiptKind.LIVE_EVIDENCE}
-)
+# Which receipt kinds have a constructible body. Slice 2 adds correction /
+# source_health / render (needed to validate lineage + hierarchical references);
+# `decision_time` remains not-yet-constructed and the provisional `transition`
+# envelope is deliberately NOT a receipt kind.
+SUPPORTED_RECEIPT_KINDS = frozenset({
+    ReceiptKind.ENTITY_DISPOSITION, ReceiptKind.LIVE_EVIDENCE,
+    ReceiptKind.CORRECTION, ReceiptKind.SOURCE_HEALTH, ReceiptKind.RENDER,
+})
 NOT_YET_CONSTRUCTED_KINDS = frozenset(ReceiptKind) - SUPPORTED_RECEIPT_KINDS
 
 
@@ -483,6 +486,36 @@ class LiveEvidenceBoard:
     membership_hash: str
     per_leaf_counts: Dict[str, int]
     expected_count: int
+
+
+@dataclass
+class SourceHealthBody:
+    """Body of a `source_health` receipt (§7 ref target): the sidecar freshness /
+    sync state a board evidence receipt references."""
+    synchronized: bool
+    checked_at: str                           # instant[UTC]
+    detail: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class RenderBody:
+    """Body of a `render` receipt: it references the board evidence receipt and
+    pins that evidence's conclusion + membership hash (forward-only render→evidence,
+    Rev-2.1 #2). Render carries no new authoritative conclusion of its own."""
+    evidence_ref: str                         # the board live_evidence receipt_id
+    conclusion_hash: str                      # the evidence receipt's conclusion_hash
+    membership_hash: str                      # the evidence board's membership_hash
+
+
+@dataclass
+class CorrectionBody:
+    """Body of a `correction` receipt (§6). The authoritative link is the envelope's
+    `supersedes` (receipt_id); `supersedes_seq` (envelope) MUST equal the superseded
+    receipt's `created_seq` (R15b, cross-receipt — checked by the lineage validator)."""
+    change_kind: ChangeKind
+    before: Dict[str, Any]
+    after: Optional[Dict[str, Any]] = None    # required unless change_kind == retraction
+    cause_clock: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -967,6 +1000,41 @@ def _check_board(b: LiveEvidenceBoard, receipt: Receipt, errs: List[str]) -> Non
         errs.append("board live_evidence MUST reference a source_health receipt (refs, R18)")
 
 
+def _check_source_health(b: SourceHealthBody, errs: List[str]) -> None:
+    if not isinstance(b.synchronized, bool):
+        errs.append("source_health.synchronized must be a bool")
+    if not _valid_utc(b.checked_at):
+        errs.append("source_health.checked_at must be a tz-aware UTC instant")
+    if not isinstance(b.detail, dict):
+        errs.append("source_health.detail must be a map")
+
+
+def _check_render(b: RenderBody, receipt: Receipt, errs: List[str]) -> None:
+    if not b.evidence_ref or not str(b.evidence_ref).strip():
+        errs.append("render.evidence_ref required (the board evidence receipt_id)")
+    if not _is_hex64(b.conclusion_hash):
+        errs.append("render.conclusion_hash must be a 64-char lowercase hex digest")
+    if not _is_hex64(b.membership_hash):
+        errs.append("render.membership_hash must be a 64-char lowercase hex digest")
+    # Forward-only render→evidence: the envelope ref MUST point at the same evidence.
+    if receipt.refs is None or receipt.refs.evidence != b.evidence_ref:
+        errs.append("render receipt MUST reference its evidence receipt (refs.evidence == "
+                    "body.evidence_ref)")
+
+
+def _check_correction(b: CorrectionBody, receipt: Receipt, errs: List[str]) -> None:
+    if not isinstance(b.change_kind, ChangeKind):
+        errs.append("correction.change_kind must be a ChangeKind")
+    if not isinstance(b.before, dict):
+        errs.append("correction.before must be a map")
+    if isinstance(b.change_kind, ChangeKind) and b.change_kind != ChangeKind.RETRACTION \
+            and b.after is None:
+        errs.append("correction.after is required unless change_kind == retraction")
+    # The envelope's supersedes (receipt_id) + supersedes_seq are required for a
+    # correction (enforced in _check_supersession); R15b equality is cross-receipt
+    # and is checked by validate_correction_lineage.
+
+
 def _check_projection(receipt: Receipt, errs: List[str]) -> None:
     if receipt.projection != Projection.USER_SAFE:
         return
@@ -1058,7 +1126,7 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
         if isinstance(receipt.receipt_kind, ReceiptKind) \
                 and receipt.receipt_kind in NOT_YET_CONSTRUCTED_KINDS:
             errs.append(f"receipt_kind {receipt.receipt_kind.value} is recognized but "
-                        "not-yet-constructed in Slice 1")
+                        "not-yet-constructed")
         elif isinstance(receipt.body, EntityDispositionBatch):
             if receipt.receipt_kind != ReceiptKind.ENTITY_DISPOSITION:
                 errs.append("EntityDispositionBatch requires receipt_kind=entity_disposition")
@@ -1072,6 +1140,18 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
                 errs.append("DecisionStageBatch requires receipt_kind=live_evidence "
                             "(decision-stage evidence)")
             _check_decision_stage_batch(receipt.body, receipt, errs)
+        elif isinstance(receipt.body, SourceHealthBody):
+            if receipt.receipt_kind != ReceiptKind.SOURCE_HEALTH:
+                errs.append("SourceHealthBody requires receipt_kind=source_health")
+            _check_source_health(receipt.body, errs)
+        elif isinstance(receipt.body, RenderBody):
+            if receipt.receipt_kind != ReceiptKind.RENDER:
+                errs.append("RenderBody requires receipt_kind=render")
+            _check_render(receipt.body, receipt, errs)
+        elif isinstance(receipt.body, CorrectionBody):
+            if receipt.receipt_kind != ReceiptKind.CORRECTION:
+                errs.append("CorrectionBody requires receipt_kind=correction")
+            _check_correction(receipt.body, receipt, errs)
         else:
             errs.append(f"unsupported body type: {type(receipt.body).__name__}")
 
@@ -1154,6 +1234,7 @@ __all__ = [
     "Universe", "Refs", "REASON_CODES",
     "EntityDisposition", "DecisionStageRow",
     "EntityDispositionBatch", "DecisionStageBatch", "LiveEvidenceBoard",
+    "SourceHealthBody", "RenderBody", "CorrectionBody",
     "Receipt",
     "canonical_content_bytes", "canonical_conclusion_bytes",
     "compute_content_hash", "compute_conclusion_hash", "compute_membership_hash",
