@@ -233,6 +233,35 @@ def run_qc() -> dict:
     ok(_mh(b_gov) != _mh(b_realdiff),
        "membership_hash changes when the GOVERNED component (team) changes")
 
+    # (2b) ALIAS_RESOLVED must carry a governed RESOLVED canonical identity.
+    def _alias(team="PIT", resolved_id="PIT", key=None, resolved="ok"):
+        ext = {"team": team, "alias_ref": "alias-registry/nfl-teams", "alias_version": "2026.1"}
+        if resolved == "ok":
+            ext["resolved"] = {"provider_namespace": "nflverse", "provider_entity_id": resolved_id}
+        elif resolved == "blank":
+            ext["resolved"] = {"provider_namespace": "", "provider_entity_id": ""}
+        elif resolved == "null":
+            ext["resolved"] = None
+        # resolved == "missing" -> key absent entirely
+        return Identity(IdentityGrain.TEAM, {"sport": "nfl", "season": 2026}, ext,
+                        IdentityQuality.ALIAS_RESOLVED, False, key or f"alias:{team}")
+
+    valid(_batch(rows=[EntityDisposition("PIT", _alias(), Leaf.RENDERED, "QUALIFIED", 1)]),
+          "ALIAS_RESOLVED with a governed resolved identity passes")
+    invalid(_batch(rows=[EntityDisposition("PIT", _alias(resolved="missing"), Leaf.RENDERED, "QUALIFIED", 1)]),
+            "nonempty governed ext.resolved", "ALIAS_RESOLVED with missing resolved is rejected")
+    invalid(_batch(rows=[EntityDisposition("PIT", _alias(resolved="null"), Leaf.RENDERED, "QUALIFIED", 1)]),
+            "nonempty governed ext.resolved", "ALIAS_RESOLVED with null resolved is rejected")
+    invalid(_batch(rows=[EntityDisposition("PIT", _alias(resolved="blank"), Leaf.RENDERED, "QUALIFIED", 1)]),
+            "nonempty governed ext.resolved", "ALIAS_RESOLVED with blank resolved is rejected")
+    b_al1 = _batch(rows=[EntityDisposition("PIT", _alias(key="display-ONE"), Leaf.RENDERED, "QUALIFIED", 1)])
+    b_al2 = _batch(rows=[EntityDisposition("PIT", _alias(key="display-TWO"), Leaf.RENDERED, "QUALIFIED", 1)])
+    ok(_mh(b_al1) == _mh(b_al2),
+       "ALIAS_RESOLVED: changing only the display key does NOT change membership_hash")
+    b_al3 = _batch(rows=[EntityDisposition("PIT", _alias(resolved_id="CLE"), Leaf.RENDERED, "QUALIFIED", 1)])
+    ok(_mh(b_al1) != _mh(b_al3),
+       "ALIAS_RESOLVED: changing the RESOLVED canonical identity DOES change membership_hash")
+
     # reconcile still binds membership end-to-end.
     b_a = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
     b_b = _batch(rows=[_row("B", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])

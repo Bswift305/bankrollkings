@@ -789,6 +789,18 @@ def _check_integrity(receipt: Receipt, errs: List[str]) -> None:
             errs.append(f"conclusion canonicalization failed: {type(exc).__name__}: {exc}")
 
 
+def _valid_resolved_identity(resolved: Any) -> bool:
+    """A resolved canonical identity for ALIAS_RESOLVED: a governed mapping carrying
+    a non-empty provider namespace + provider entity id (the alias actually resolves
+    to a real entity). Format-checked, not merely truthy — a name string or an empty/
+    partial map is not a resolved identity."""
+    if not isinstance(resolved, dict):
+        return False
+    ns = resolved.get("provider_namespace")
+    eid = resolved.get("provider_entity_id")
+    return isinstance(ns, str) and bool(ns.strip()) and isinstance(eid, str) and bool(eid.strip())
+
+
 def _check_identity(idn: Identity, expected_grain: Optional[IdentityGrain],
                     where: str, errs: List[str]) -> None:
     if not isinstance(idn, Identity):
@@ -826,6 +838,11 @@ def _check_identity(idn: Identity, expected_grain: Optional[IdentityGrain],
     elif q == IdentityQuality.ALIAS_RESOLVED:
         if not ext.get("alias_ref") or not ext.get("alias_version"):
             errs.append(f"{where}: ALIAS_RESOLVED requires ext.alias_ref + ext.alias_version")
+        resolved = ext.get("resolved")
+        if not _valid_resolved_identity(resolved):
+            errs.append(f"{where}: ALIAS_RESOLVED requires a nonempty governed ext.resolved "
+                        "canonical identity {provider_namespace, provider_entity_id} "
+                        "(provenance alone is not an identity)")
 
 
 def _check_reason(code: str, def_version: int, expected_category: "SemanticCategory",
