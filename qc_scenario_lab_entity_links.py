@@ -8,10 +8,9 @@ back-mapping is safe. The player-column wiring was therefore REVERTED; unblockin
 stable canonical identity to the export itself (research/nfl_scenarios/build_scenario_export.py),
 collision-tested.
 
-This QC (1) proves the identity mismatch with REAL-SHAPE fixtures incl. a collision, (2) verifies the
-Group-3 wiring is reverted (builder does not wrap, template has no entity wiring), and (3) keeps the
-unit tests for the retained generic `_wrap_entity_board(col_index=)` helper so it is ready for the future
-exact mapping.
+This QC (1) proves the identity mismatch with REAL-SHAPE fixtures incl. a collision, (2) shows the
+resolver fails closed (short form -> None -> plain text), and (3) verifies the Group-3 wiring is reverted
+(builder does not wrap, template has no entity wiring). It does not test any speculative future helper.
 """
 import os
 import sys
@@ -88,31 +87,11 @@ def test_wiring_reverted():
           "scenario_lab.html has NO entity wiring (include / bkEntityCell / data-ent / entity_col)")
 
 
-def test_wrap_helper_col_index_retained():
-    print("\n[C] generic _wrap_entity_board(col_index=) retained + tested (ready for the future mapping)")
-    board = {'columns': [{'label': 'QB', 'fmt': 'text'}, {'label': 'Plays', 'fmt': 'int'}],
-             'rows': [['Brock Purdy', 23]]}
-    snap = [list(r) for r in board['rows']]
-    _orig = app._entity_player_known
-    app._entity_player_known = lambda s, n: (s == 'nfl' and n == 'Brock Purdy') or _orig(s, n)
-    try:
-        out = app._wrap_entity_board(board, 'player', 'nfl', col_index=0)
-    finally:
-        app._entity_player_known = _orig
-    check(out.get('entity_col') == 0 and isinstance(out['rows'][0][0], dict)
-          and out['rows'][0][0]['text'] == 'Brock Purdy',
-          "col_index=0 wraps the header-agnostic name column (would work once export carries full names)")
-    check(board['rows'] == snap and not isinstance(board['rows'][0][0], dict), "input NOT mutated")
-    check('entity_col' not in app._wrap_entity_board(board, 'player', 'nfl', col_index=9),
-          "out-of-range col_index -> unchanged (safe no-op)")
-
-
 if __name__ == '__main__':
     print("=" * 72)
     print("SCENARIO LAB — BLOCKED ON CANONICAL IDENTITY (audit + revert verification)")
     print("=" * 72)
     test_identity_mismatch_blocks()
     test_wiring_reverted()
-    test_wrap_helper_col_index_retained()
     print("\nClean:", not fails)
     sys.exit(1 if fails else 0)

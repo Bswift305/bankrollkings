@@ -176,11 +176,13 @@ current plain text.** Reversing = server stops emitting `url`. No logic moves in
     text — this is **not** "pending deployment verification," it is a structural identity gap. Worse,
     initial+surname is **not unique** (`Aaron Smith` and `Andre Smith` both have short form `A.Smith` →
     `asmith`), so **no fuzzy back-mapping is safe**. The Group-3 builder + template wiring was therefore
-    **reverted** (`col_index` hook on `_wrap_entity_board` is retained for the fix). **Unblock** by adding
-    a stable canonical identity (player id / full name) to the export itself
-    (`research/nfl_scenarios/build_scenario_export.py`), **exact + collision-tested** — never fuzzy
-    matching. QC `qc_scenario_lab_entity_links.py` now proves the mismatch + collision with real-shape
-    fixtures and verifies the revert; `_wrap_entity_board(col_index=)` is unit-tested and ready.
+    **fully reverted** (no speculative scaffolding left behind — `_wrap_entity_board` is back to its
+    `label`-only form). **Unblock is a separately authorized identity-contract effort:** begin with a
+    **read-only audit** of the export's available stable identifiers, then add a canonical identity
+    (player id / full name) to the export itself (`research/nfl_scenarios/build_scenario_export.py`),
+    **exact + collision-tested** — never fuzzy matching, and never immediate export modification. QC
+    `qc_scenario_lab_entity_links.py` proves the mismatch + collision with real-shape fixtures, the
+    resolver's fail-closed behavior, and that Scenario Lab has no entity-link wiring.
 
 ### Batch-1 status — consolidated review point
 
@@ -189,7 +191,7 @@ Authorized work on this branch: **`bk_power` (complete locally)**, **CFB team ta
 (complete locally; production destination verification pending — the MLB keyset is empty here)**, and
 **`scenario_lab` (BLOCKED on canonical player identity; wiring reverted, audit retained)**. One shared
 hardened renderer (`templates/_entity_cell.html`), one server helper family (`_entity_cell` /
-`_wrap_entity_board` with `label` or `col_index`). **Still deferred (unauthorized):** `cfb_ats` (handler
+`_wrap_entity_board` by `label`). **Still deferred (unauthorized):** `cfb_ats` (handler
 collision; also absorbs `cfb_situational`), transient builders (`parlay`, `fantasy_league`), composite
 ticket labels (`menu_board`, `_ticket_editor`), the server-side Jinja reconcile (Batch 2), and the
 Green-Light renderer migration. **No deployment or further conversion group begins until the Scenario Lab
