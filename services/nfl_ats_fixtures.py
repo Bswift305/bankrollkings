@@ -21,6 +21,7 @@ from services.decision_receipts import (
     compute_content_hash, compute_conclusion_hash, compute_membership_hash, seal_hashes,
 )
 
+FIXTURES_VERSION = "nfl-ats-frozen-2026w8-v1"
 SURFACE = "nfl_ats_wave"
 UNI_BOARD = Universe("team", "nfl_ats_board_2026", "v1")
 UNI_DEC = Universe("team_side_decision", "nfl_ats_decisions_2026", "v1")
@@ -239,7 +240,7 @@ def reseal(receipt: Receipt) -> Receipt:
 
 
 __all__ = [
-    "SURFACE", "UNI_BOARD", "UNI_DEC", "BK_AT", "KICK",
+    "FIXTURES_VERSION", "SURFACE", "UNI_BOARD", "UNI_DEC", "BK_AT", "KICK",
     "BATCH_ID", "BOARD_ID", "SH_ID", "RENDER_ID", "DEC_ID", "CORR_ID", "USERSAFE_ID",
     "team_identity", "provider_team_identity", "side_identity",
     "dispositions_batch", "board", "source_health", "render", "decision_stage",
