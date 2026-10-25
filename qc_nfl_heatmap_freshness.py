@@ -124,8 +124,8 @@ def run_qc() -> dict:
                     issues.append("A: Evans not marked active with a clean current run")
                 if ev['streak'] != 4:
                     issues.append(f"A: Evans streak={ev['streak']} (want 4)")
-                if ev['weeks_label'] != 'Wks 1–4':
-                    issues.append(f"A: Evans weeks_label={ev['weeks_label']!r} (want 'Wks 1-4')")
+                if ev['weeks_label'] != 'Appearances: Wks 1–4':
+                    issues.append(f"A: Evans weeks_label={ev['weeks_label']!r} (want 'Appearances: Wks 1–4')")
 
             lag = _row(board_a, 'Lagging Back')
             if lag is None:

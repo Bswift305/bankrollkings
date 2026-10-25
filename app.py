@@ -48055,7 +48055,8 @@ def _wave_trailing_run(signs):
 
 def _compact_weeks(weeks):
     """Format a run's weeks truthfully, collapsing only genuinely consecutive weeks so a run that
-    spans an absence reads honestly: [1,2,16,17,18] -> 'Wks 1-2, 16-18', not a false 'Wks 1-18'."""
+    spans an absence reads honestly: [1,2,16,17,18] -> 'Wks 1–2, 16–18', not a false 'Wks 1–18'.
+    Ranges use an en dash (–) — the established user-facing format across every streak surface."""
     ws = sorted({int(w) for w in weeks})
     if not ws:
         return ''
