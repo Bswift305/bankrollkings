@@ -109,7 +109,8 @@ def board(batch: Optional[Receipt] = None, receipt_id: str = BOARD_ID, **kw) -> 
         replay_class=ReplayClass.EVIDENCE_EQUIVALENT, authority_class=AuthorityClass.FACT,
         projection=Projection.INTERNAL, clocks=_clocks(), input_hashes=list(IH),
         refs=Refs(entity_dispositions=batch.receipt_id, source_health=SH_ID),
-        body=LiveEvidenceBoard(compute_membership_hash(batch), _counts(batch), len(batch.body.rows)),
+        body=LiveEvidenceBoard(compute_membership_hash(batch), _counts(batch), len(batch.body.rows),
+                               sort_rule_id="streak_desc_team_asc", sort_rule_version="1"),
     )
     base.update(kw)
     return seal_hashes(Receipt(**base))
@@ -204,6 +205,32 @@ def user_safe(root: Optional[Receipt] = None, receipt_id: str = USERSAFE_ID, **k
     return seal_hashes(Receipt(**base))
 
 
+def user_safe_render(brd: Optional[Receipt] = None, rnd: Optional[Receipt] = None,
+                     receipt_id: str = "a0000000-0000-4000-8000-000000000008", **kw) -> Receipt:
+    """A user-safe RENDER projection: its root is a render receipt whose evidence
+    chain resolves to the board `brd`."""
+    brd = brd or board()
+    rnd = rnd or render(brd)
+    base = dict(
+        receipt_id=receipt_id, receipt_kind=ReceiptKind.LIVE_EVIDENCE,
+        schema_version=SchemaVersion(1, 0), surface_id=SURFACE, universe=UNI_BOARD,
+        created_seq=104, created_at=BK_AT, versions=_versions(),
+        replay_class=ReplayClass.NON_REPLAYABLE, authority_class=AuthorityClass.DERIVED_CONTEXT,
+        projection=Projection.USER_SAFE, clocks=_clocks(), input_hashes=None,
+        refs=Refs(entity_dispositions=BATCH_ID, source_health=SH_ID, evidence=brd.receipt_id),
+        claims=["rendered board for the client"],
+        projection_root=ProjectionRoot(rnd.receipt_id, rnd.conclusion_hash, "render"),
+        claim_records=[
+            Claim("RENDER_COMPLETE", {}, (rnd.receipt_id,)),
+            Claim("HEALTH", {"state": "SYNCHRONIZED"}, (SH_ID,)),
+        ],
+        body=LiveEvidenceBoard(brd.body.membership_hash, dict(brd.body.per_leaf_counts),
+                               brd.body.expected_count),
+    )
+    base.update(kw)
+    return seal_hashes(Receipt(**base))
+
+
 def reseal(receipt: Receipt) -> Receipt:
     """Re-seal after a structural mutation so digests are self-consistent again."""
     receipt.conclusion_hash = compute_conclusion_hash(receipt)
@@ -216,5 +243,5 @@ __all__ = [
     "BATCH_ID", "BOARD_ID", "SH_ID", "RENDER_ID", "DEC_ID", "CORR_ID", "USERSAFE_ID",
     "team_identity", "provider_team_identity", "side_identity",
     "dispositions_batch", "board", "source_health", "render", "decision_stage",
-    "correction", "user_safe", "reseal",
+    "correction", "user_safe", "user_safe_render", "reseal",
 ]

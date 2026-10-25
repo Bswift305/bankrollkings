@@ -515,6 +515,8 @@ class LiveEvidenceBoard:
     membership_hash: str
     per_leaf_counts: Dict[str, int]
     expected_count: int
+    sort_rule_id: Optional[str] = None       # governed ordering rule in force
+    sort_rule_version: Optional[str] = None   # its version
 
 
 @dataclass

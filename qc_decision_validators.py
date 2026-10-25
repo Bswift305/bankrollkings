@@ -218,9 +218,26 @@ def run_qc() -> dict:
     bad(V.validate_user_safe_projection(us_badcount, brd, graph), "MEMBER_COUNT 9 not derivable",
         "user-safe invalid: invented member-count claim rejected")
     us_badsort = fx.user_safe(brd, claim_records=[fx.Claim("SORTED",
-                 {"sort_rule_id": "x", "sort_rule_version": "1"}, ())])
-    bad(V.validate_user_safe_projection(us_badsort, brd, graph), "SORTED must cite the root",
-        "user-safe invalid: sort claim with no supporting root rejected")
+                 {"sort_rule_id": "streak_desc_team_asc", "sort_rule_version": "1"}, ())])
+    bad(V.validate_user_safe_projection(us_badsort, brd, graph), "SORTED must cite the board",
+        "user-safe invalid: SORTED claim with no supporting board rejected")
+    us_sort_wid = fx.user_safe(brd, claim_records=[fx.Claim("SORTED",
+                  {"sort_rule_id": "WRONG_RULE", "sort_rule_version": "1"}, (brd.receipt_id,))])
+    bad(V.validate_user_safe_projection(us_sort_wid, brd, graph), "!= governed board rule",
+        "user-safe invalid: SORTED wrong sort-rule ID rejected")
+    us_sort_wver = fx.user_safe(brd, claim_records=[fx.Claim("SORTED",
+                   {"sort_rule_id": "streak_desc_team_asc", "sort_rule_version": "9"}, (brd.receipt_id,))])
+    bad(V.validate_user_safe_projection(us_sort_wver, brd, graph), "!= governed board rule",
+        "user-safe invalid: SORTED wrong sort-rule version rejected")
+    us_sort_ok = fx.user_safe(brd, claim_records=[fx.Claim("SORTED",
+                 {"sort_rule_id": "streak_desc_team_asc", "sort_rule_version": "1"}, (brd.receipt_id,))])
+    good(V.validate_user_safe_projection(us_sort_ok, brd, graph),
+         "user-safe valid: SORTED matches the governed board sort rule exactly")
+    us_mc_wrongsupport = fx.user_safe(brd, claim_records=[fx.Claim("MEMBER_COUNT", {"count": 3},
+                         (fx.SH_ID,))])  # cites source_health, not the board that holds the count
+    bad(V.validate_user_safe_projection(us_mc_wrongsupport, brd, graph),
+        "must cite the board that holds per_leaf_counts",
+        "user-safe invalid: claim citing a reachable-but-wrong support receipt rejected")
     us_unrclaim = fx.user_safe(brd, claim_records=[fx.Claim("MEMBER_COUNT", {"count": 3},
                   ("b0000000-0000-4000-8000-0000000000ff",))])
     bad(V.validate_user_safe_projection(us_unrclaim, brd, graph), "is not reachable from the root",
@@ -240,6 +257,35 @@ def run_qc() -> dict:
     bad(V.validate_user_safe_projection(us_unreach, brd, [batch, sh, other]),
         "not reachable from its root",
         "user-safe invalid: references an existing-but-unreachable receipt rejected")
+
+    # === projection_type bound to root kind ===
+    us_render = fx.user_safe_render(brd, rnd)
+    good(V.validate_user_safe_projection(us_render, rnd, [brd, batch, sh]),
+         "user-safe valid: render projection on a render root whose evidence resolves")
+    us_ev_on_render = fx.user_safe(brd, projection_root=fx.ProjectionRoot(
+        rnd.receipt_id, rnd.conclusion_hash, "evidence"))
+    bad(V.validate_user_safe_projection(us_ev_on_render, rnd, [brd, batch, sh]),
+        "evidence requires a LIVE_EVIDENCE board root",
+        "user-safe invalid: evidence projection_type on a render root rejected")
+    us_render_on_board = fx.user_safe(brd, projection_root=fx.ProjectionRoot(
+        brd.receipt_id, brd.conclusion_hash, "render"))
+    bad(V.validate_user_safe_projection(us_render_on_board, brd, graph),
+        "render requires a RENDER root",
+        "user-safe invalid: render projection_type on a board root rejected")
+    rnd_orphan = fx.render(brd)
+    us_r_orphan = fx.user_safe_render(brd, rnd_orphan)
+    bad(V.validate_user_safe_projection(us_r_orphan, rnd_orphan, [batch, sh]),  # brd omitted
+        "evidence chain does not resolve",
+        "user-safe invalid: render projection whose evidence chain does not resolve rejected")
+    us_ev_rc = fx.user_safe(brd, claim_records=[fx.Claim("RENDER_COMPLETE", {}, (brd.receipt_id,))])
+    bad(V.validate_user_safe_projection(us_ev_rc, brd, graph),
+        "not permitted for a evidence projection",
+        "user-safe invalid: evidence projection claiming render completion rejected")
+    us_r_mc = fx.user_safe_render(brd, rnd, claim_records=[
+        fx.Claim("MEMBER_COUNT", {"count": 3}, (brd.receipt_id,))])
+    bad(V.validate_user_safe_projection(us_r_mc, rnd, [brd, batch, sh]),
+        "not permitted for a render projection",
+        "user-safe invalid: render projection inventing an evidence (member-count) claim rejected")
 
     # === source-health one governed state of record ===
     for st in (fx.HealthState.SYNCHRONIZED, fx.HealthState.STALE, fx.HealthState.FAIL_CLOSED):

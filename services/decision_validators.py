@@ -40,6 +40,15 @@ CLAIM_REGISTRY = {
     "SORTED": ("sort_rule_id", "sort_rule_version"),
     "EMPTY_STATE": (),
     "HEALTH": ("state",),
+    "RENDER_COMPLETE": (),
+}
+
+# Which claim codes each projection type may assert. An evidence projection cannot
+# claim render completion; a render projection cannot invent new evidence (member
+# counts / sort are evidence facts, not render facts).
+PROJECTION_CLAIMS = {
+    "evidence": frozenset({"MEMBER_COUNT", "SORTED", "EMPTY_STATE", "HEALTH"}),
+    "render": frozenset({"RENDER_COMPLETE", "HEALTH"}),
 }
 
 
@@ -490,47 +499,74 @@ def _reachable_health_state(reachable: set, by_id: Dict[str, Receipt]) -> Option
     return None
 
 
-def _validate_claims(user_safe: Receipt, root_internal: Receipt, by_id: Dict[str, Receipt],
+def _validate_claims(user_safe: Receipt, root_internal: Receipt, projection_type: str,
+                     effective_board_id: Optional[str], by_id: Dict[str, Receipt],
                      reachable: set, errs: List[str]) -> None:
-    """Every GOVERNED claim carries a registered code + required params, cites only
-    reachable support receipts, and is DERIVABLE from the root/reference graph.
-    Human prose (`claims`) is rendering only and is not validated here."""
+    """Every GOVERNED claim: a registered code permitted for this projection type, with
+    required params, whose cited support receipt is the one that ACTUALLY CONTAINS the
+    supporting governed field (not merely any reachable receipt), and whose value is
+    derivable from that field. Human prose (`claims`) is rendering only."""
     records = user_safe.claim_records
     if not records:
         errs.append("user_safe MUST carry governed claim_records (prose `claims` is not a claim)")
         return
     allowed = {root_internal.receipt_id} | reachable
-    root_board = root_internal.body if isinstance(root_internal.body, LiveEvidenceBoard) else None
-    health_state = _reachable_health_state(reachable, by_id)
+    board = by_id.get(effective_board_id) if effective_board_id else None
+    board_body = board.body if board is not None and isinstance(board.body, LiveEvidenceBoard) else None
+    permitted = PROJECTION_CLAIMS.get(projection_type, frozenset())
+
+    def _cites(c, rid):
+        return rid is not None and rid in c.support_refs
+
     for i, c in enumerate(records):
+        tag = f"claim_records[{i}]"
         if not isinstance(c, Claim):
-            errs.append(f"claim_records[{i}] is not a governed Claim"); continue
+            errs.append(f"{tag} is not a governed Claim"); continue
         if c.claim_code not in CLAIM_REGISTRY:
-            errs.append(f"claim_records[{i}]: unregistered claim_code {c.claim_code!r}"); continue
+            errs.append(f"{tag}: unregistered claim_code {c.claim_code!r}"); continue
+        if c.claim_code not in permitted:
+            errs.append(f"{tag}: claim {c.claim_code!r} is not permitted for a {projection_type} "
+                        "projection"); continue
         missing = [p for p in CLAIM_REGISTRY[c.claim_code] if p not in c.params]
         if missing:
-            errs.append(f"claim_records[{i}] ({c.claim_code}): missing params {missing}")
+            errs.append(f"{tag} ({c.claim_code}): missing params {missing}")
         for ref in c.support_refs:
             if ref not in allowed:
-                errs.append(f"claim_records[{i}] ({c.claim_code}): support ref {ref!r} is not "
-                            "reachable from the root")
-        # Derivation from the governed graph.
-        if c.claim_code == "MEMBER_COUNT" and root_board is not None and "count" in c.params:
-            if c.params["count"] != _members(root_board):
-                errs.append(f"claim_records[{i}] MEMBER_COUNT {c.params['count']} not derivable "
-                            f"(root members={_members(root_board)})")
-        elif c.claim_code == "EMPTY_STATE" and root_board is not None:
-            if _members(root_board) != 0:
-                errs.append(f"claim_records[{i}] EMPTY_STATE not derivable (root has members)")
+                errs.append(f"{tag} ({c.claim_code}): support ref {ref!r} is not reachable from the root")
+        # Derivation against the receipt that actually holds the supporting field.
+        if c.claim_code == "MEMBER_COUNT":
+            if not _cites(c, effective_board_id):
+                errs.append(f"{tag} MEMBER_COUNT must cite the board that holds per_leaf_counts")
+            elif board_body is not None and c.params.get("count") != _members(board_body):
+                errs.append(f"{tag} MEMBER_COUNT {c.params.get('count')} not derivable "
+                            f"(board members={_members(board_body)})")
+        elif c.claim_code == "EMPTY_STATE":
+            if not _cites(c, effective_board_id):
+                errs.append(f"{tag} EMPTY_STATE must cite the board")
+            elif board_body is not None and _members(board_body) != 0:
+                errs.append(f"{tag} EMPTY_STATE not derivable (board has members)")
         elif c.claim_code == "SORTED":
-            if root_internal.receipt_id not in c.support_refs:
-                errs.append(f"claim_records[{i}] SORTED must cite the root board as support")
+            if not _cites(c, effective_board_id):
+                errs.append(f"{tag} SORTED must cite the board that records the sort rule")
+            elif board_body is not None:
+                if board_body.sort_rule_id != c.params.get("sort_rule_id") \
+                        or board_body.sort_rule_version != c.params.get("sort_rule_version"):
+                    errs.append(f"{tag} SORTED {c.params.get('sort_rule_id')!r}/"
+                                f"{c.params.get('sort_rule_version')!r} != governed board rule "
+                                f"{board_body.sort_rule_id!r}/{board_body.sort_rule_version!r}")
         elif c.claim_code == "HEALTH":
-            if health_state is None:
-                errs.append(f"claim_records[{i}] HEALTH has no reachable source_health to support it")
-            elif c.params.get("state") != health_state:
-                errs.append(f"claim_records[{i}] HEALTH state {c.params.get('state')!r} != governed "
-                            f"source-health state {health_state!r}")
+            # The cited support MUST be a source_health receipt holding this state.
+            sh = next((by_id[r] for r in c.support_refs if r in by_id
+                       and by_id[r].receipt_kind == ReceiptKind.SOURCE_HEALTH), None)
+            if sh is None:
+                errs.append(f"{tag} HEALTH must cite a source_health receipt as support")
+            elif not isinstance(sh.body, SourceHealthBody) or sh.body.state.value != c.params.get("state"):
+                errs.append(f"{tag} HEALTH state {c.params.get('state')!r} != the cited source_health "
+                            f"state {getattr(sh.body.state, 'value', None)!r}")
+        elif c.claim_code == "RENDER_COMPLETE":
+            if not _cites(c, root_internal.receipt_id) \
+                    or root_internal.receipt_kind != ReceiptKind.RENDER:
+                errs.append(f"{tag} RENDER_COMPLETE must cite a render root")
 
 
 def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
@@ -570,6 +606,8 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
 
     # Immutable projection-root binding: the receipt itself records its root, so it
     # cannot be re-pointed at a different root by the caller.
+    reachable = {root_internal.receipt_id} | _reachable_from(root_internal, by_id)
+    effective_board_id = None
     pr = user_safe.projection_root
     if not isinstance(pr, ProjectionRoot):
         errs.append("user_safe MUST carry a serialized projection_root reference")
@@ -579,30 +617,51 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
                         f"{root_internal.receipt_id!r} (substituted root)")
         if pr.root_conclusion_hash != root_internal.conclusion_hash:
             errs.append("projection_root.root_conclusion_hash != the root's conclusion_hash")
-        if pr.projection_type not in ("evidence", "render"):
+        # projection_type is BOUND to the root's receipt kind.
+        if pr.projection_type == "evidence":
+            if root_internal.receipt_kind != ReceiptKind.LIVE_EVIDENCE \
+                    or not isinstance(root_internal.body, LiveEvidenceBoard):
+                errs.append("projection_type=evidence requires a LIVE_EVIDENCE board root")
+            else:
+                effective_board_id = root_internal.receipt_id
+        elif pr.projection_type == "render":
+            if root_internal.receipt_kind != ReceiptKind.RENDER \
+                    or not isinstance(root_internal.body, RenderBody):
+                errs.append("projection_type=render requires a RENDER root")
+            else:
+                ev = by_id.get(root_internal.body.evidence_ref)
+                if ev is None or ev.receipt_kind != ReceiptKind.LIVE_EVIDENCE \
+                        or not isinstance(ev.body, LiveEvidenceBoard):
+                    errs.append("render projection's evidence chain does not resolve to a board")
+                else:
+                    effective_board_id = ev.receipt_id
+        else:
             errs.append(f"projection_root.projection_type {pr.projection_type!r} invalid")
 
     # Reachability: referenced ids must be the root or reachable from it.
-    reachable = {root_internal.receipt_id} | _reachable_from(root_internal, by_id)
     refs = user_safe.refs
     if refs is not None:
         for rid in (refs.entity_dispositions, refs.source_health, refs.evidence):
             if rid and rid not in reachable:
                 errs.append(f"user_safe references {rid!r} which is not reachable from its root")
 
-    # Support: the projection cannot assert more than the root board supports.
-    if isinstance(user_safe.body, LiveEvidenceBoard) and isinstance(root_internal.body, LiveEvidenceBoard):
-        if user_safe.body.membership_hash != root_internal.body.membership_hash:
+    # Support: the projection cannot assert more than the EFFECTIVE board supports.
+    eb = by_id.get(effective_board_id) if effective_board_id else None
+    if isinstance(user_safe.body, LiveEvidenceBoard) and eb is not None \
+            and isinstance(eb.body, LiveEvidenceBoard):
+        if user_safe.body.membership_hash != eb.body.membership_hash:
             errs.append("user_safe membership_hash is not supported by the internal root (forged)")
-        if user_safe.body.per_leaf_counts != root_internal.body.per_leaf_counts:
+        if user_safe.body.per_leaf_counts != eb.body.per_leaf_counts:
             errs.append("user_safe per-leaf counts are not supported by the internal root (forged)")
-        if user_safe.body.expected_count != root_internal.body.expected_count:
+        if user_safe.body.expected_count != eb.body.expected_count:
             errs.append("user_safe expected_count is not supported by the internal root (forged)")
 
-    # Governed claims: registered, parameterized, supported, and derivable.
-    _validate_claims(user_safe, root_internal, by_id, reachable, errs)
+    # Governed claims: registered, permitted for the type, supported by the containing
+    # receipt, and derivable.
+    ptype = pr.projection_type if isinstance(pr, ProjectionRoot) else ""
+    _validate_claims(user_safe, root_internal, ptype, effective_board_id, by_id, reachable, errs)
 
-    # Health support (governed state): an unsynchronized reachable source_health
+    # Health support (governed state): a non-synchronized reachable source_health
     # forbids presenting rendered members, even when a board shows zero members.
     hs = _reachable_health_state(reachable, by_id)
     if hs is not None and hs != HealthState.SYNCHRONIZED.value \
@@ -614,7 +673,8 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
 
 
 __all__ = [
-    "ReasonCodeDef", "REASON_REGISTRY", "CLAIM_REGISTRY", "HEALTH_STATES", "rollups",
+    "ReasonCodeDef", "REASON_REGISTRY", "CLAIM_REGISTRY", "PROJECTION_CLAIMS",
+    "HEALTH_STATES", "rollups",
     "validate_reason_registry", "validate_reason_usage",
     "validate_envelope", "validate_stage_leaf_separation", "validate_nested_conservation",
     "validate_canonical_replay", "replay_equal", "validate_identity_collision",
