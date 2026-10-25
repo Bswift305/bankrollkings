@@ -615,22 +615,60 @@ def _is_hex64(s: Any) -> bool:
     return isinstance(s, str) and bool(_HEX64_RE.match(s))
 
 
+def canonical_identity(idn: Identity) -> Dict[str, Any]:
+    """The GOVERNED, presentation-free identity projection used for authoritative
+    membership. It contains only governed fields per quality — never the free-form
+    display `key` or a display name:
+      * PROVIDER_ID → provider namespace + provider entity id;
+      * DECLARED_COMPOSITE/COMPOSITE_NAME_EVENT → profile + version + declared
+        components (+ event_id for team_side);
+      * ALIAS_RESOLVED → alias-registry ref + version + the resolved canonical id.
+    A non-authoritative quality (NAME_ONLY/AMBIGUOUS/UNRESOLVED) has no governed
+    identity; it falls back to the key only so the projection is total (such rows
+    fail closed upstream and are never admitted members)."""
+    base = idn.base if isinstance(idn.base, dict) else {}
+    ext = idn.ext if isinstance(idn.ext, dict) else {}
+    out: Dict[str, Any] = {
+        "grain": idn.grain.value if isinstance(idn.grain, IdentityGrain) else None,
+        "quality": idn.identity_quality.value if isinstance(idn.identity_quality, IdentityQuality) else None,
+        "sport": base.get("sport"), "season": base.get("season"),
+    }
+    q = idn.identity_quality
+    if q == IdentityQuality.PROVIDER_ID:
+        out["provider_namespace"] = ext.get("provider_namespace")
+        out["provider_entity_id"] = ext.get("provider_team_id") or ext.get("provider_entity_id")
+    elif q in _COMPOSITE_IDENTITY:
+        out["profile"] = idn.profile
+        out["profile_version"] = idn.profile_version
+        comps: Dict[str, Any] = {}
+        if isinstance(idn.grain, IdentityGrain) and idn.grain in _GRAIN_REQUIRED_EXT:
+            for k in _GRAIN_REQUIRED_EXT[idn.grain]:
+                comps[k] = ext.get(k)
+        if idn.grain == IdentityGrain.TEAM_SIDE:
+            out["event_id"] = base.get("event_id")
+        out["components"] = comps
+    elif q == IdentityQuality.ALIAS_RESOLVED:
+        out["alias_ref"] = ext.get("alias_ref")
+        out["alias_version"] = ext.get("alias_version")
+        out["resolved"] = ext.get("resolved")
+    else:
+        out["name"] = _norm_str(idn.key) if isinstance(idn.key, str) else None
+    return out
+
+
 def compute_membership_hash(batch_receipt: Receipt) -> str:
-    """The board's membership hash domain: the ORDERED admitted members
-    (`RENDERED`/`SUPPRESSED`) of the referenced disposition batch, each as
-    `{entity_ref, leaf, identity_key}`, in the batch's authoritative order.
-    Non-member rows (NONMEMBER/EXCLUDED/UNAVAILABLE/INDETERMINATE/FAILED) are
-    excluded, so reordering a non-member does not change the hash, while changing a
-    member or the members' order does."""
+    """The board's membership-hash domain: the ORDERED admitted-member IDENTITIES of
+    the referenced disposition batch, in the batch's authoritative order. It hashes
+    ONLY the governed `canonical_identity` of each member (RENDERED or SUPPRESSED) —
+    NOT the leaf and NOT a display label. So RENDERED↔SUPPRESSED (a presentation
+    distinction that belongs to the later render receipt) does not change it, while a
+    member's identity, the membership set, or the members' order does. Non-member
+    rows (NONMEMBER/EXCLUDED/UNAVAILABLE/INDETERMINATE/FAILED) are excluded."""
     body = batch_receipt.body
     if not isinstance(body, EntityDispositionBatch):
         raise TypeError("membership hash requires an EntityDispositionBatch")
-    members = [
-        {"entity_ref": _norm_str(r.entity_ref), "leaf": r.leaf.value,
-         "identity_key": _norm_str(r.identity.key)}
-        for r in body.rows
-        if isinstance(r.leaf, Leaf) and r.leaf in MEMBER_LEAVES
-    ]
+    members = [canonical_identity(r.identity)
+               for r in body.rows if isinstance(r.leaf, Leaf) and r.leaf in MEMBER_LEAVES]
     return hashlib.sha256(_dumps(members)).hexdigest()
 
 
@@ -727,24 +765,28 @@ def _check_integrity(receipt: Receipt, errs: List[str]) -> None:
         if integ.mechanism != IntegrityMechanism.NONE and not integ.proof:
             errs.append(f"integrity.mechanism={integ.mechanism.value} requires proof material "
                         "(structure only; not verified)")
-    # Declared digests MUST be correctly-sized lowercase hex, and MUST match the
-    # recomputed canonical digests (non-throwing).
-    if integ.content_hash is not None and not _is_hex64(integ.content_hash):
+    # BOTH digests are REQUIRED (§1), MUST be correctly-sized lowercase hex, and MUST
+    # match the recomputed canonical digests (non-throwing).
+    if integ.content_hash is None:
+        errs.append("integrity.content_hash is required (seal the receipt)")
+    elif not _is_hex64(integ.content_hash):
         errs.append("integrity.content_hash must be a 64-char lowercase hex digest")
-    if receipt.conclusion_hash is not None and not _is_hex64(receipt.conclusion_hash):
+    else:
+        try:
+            if integ.content_hash != compute_content_hash(receipt):
+                errs.append("declared integrity.content_hash does not match canonical content")
+        except Exception as exc:  # malformed canonicalization → error, never raise
+            errs.append(f"content canonicalization failed: {type(exc).__name__}: {exc}")
+    if receipt.conclusion_hash is None:
+        errs.append("conclusion_hash is required (seal the receipt)")
+    elif not _is_hex64(receipt.conclusion_hash):
         errs.append("conclusion_hash must be a 64-char lowercase hex digest")
-    try:
-        if integ.content_hash is not None and integ.content_hash != compute_content_hash(receipt):
-            errs.append("declared integrity.content_hash does not match canonical content")
-    except Exception as exc:  # malformed canonicalization → validation error, never raise
-        errs.append(f"content canonicalization failed: {type(exc).__name__}: {exc}")
-    try:
-        if receipt.conclusion_hash is None:
-            errs.append("conclusion_hash is required (seal the receipt)")
-        elif receipt.conclusion_hash != compute_conclusion_hash(receipt):
-            errs.append("declared conclusion_hash does not match canonical conclusion")
-    except Exception as exc:
-        errs.append(f"conclusion canonicalization failed: {type(exc).__name__}: {exc}")
+    else:
+        try:
+            if receipt.conclusion_hash != compute_conclusion_hash(receipt):
+                errs.append("declared conclusion_hash does not match canonical conclusion")
+        except Exception as exc:
+            errs.append(f"conclusion canonicalization failed: {type(exc).__name__}: {exc}")
 
 
 def _check_identity(idn: Identity, expected_grain: Optional[IdentityGrain],
@@ -1098,6 +1140,6 @@ __all__ = [
     "Receipt",
     "canonical_content_bytes", "canonical_conclusion_bytes",
     "compute_content_hash", "compute_conclusion_hash", "compute_membership_hash",
-    "MEMBER_LEAVES", "seal_hashes",
+    "canonical_identity", "MEMBER_LEAVES", "seal_hashes",
     "ValidationResult", "validate_receipt", "reconcile_board",
 ]

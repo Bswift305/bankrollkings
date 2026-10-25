@@ -199,23 +199,47 @@ def run_qc() -> dict:
             "PIT"), Leaf.NONMEMBER, "BELOW_THRESHOLD", 1)]),
             "ALIAS_RESOLVED requires ext.alias_ref", "ALIAS_RESOLVED without registry ref is rejected")
 
-    # --- (1) membership_hash is recomputed and bound -------------------------
+    # --- (1) membership_hash = ordered admitted-member identities only -------
+    from services.decision_receipts import compute_membership_hash as _mh
+    b_rendered = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
+    b_suppressed = _batch(rows=[_row("A", Leaf.SUPPRESSED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
+    ok(_mh(b_rendered) == _mh(b_suppressed),
+       "RENDERED<->SUPPRESSED does NOT change membership_hash (presentation, not membership)")
+    b_AB = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("B", Leaf.RENDERED, "QUALIFIED")])
+    b_BA = _batch(rows=[_row("B", Leaf.RENDERED, "QUALIFIED"), _row("A", Leaf.RENDERED, "QUALIFIED")])
+    ok(_mh(b_AB) != _mh(b_BA), "member ORDER changes membership_hash")
+    b_A = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED")])
+    b_C = _batch(rows=[_row("C", Leaf.RENDERED, "QUALIFIED")])
+    ok(_mh(b_A) != _mh(b_AB), "ADDING a member changes membership_hash")
+    ok(_mh(b_AB) != _mh(b_A), "REMOVING a member changes membership_hash")
+    ok(_mh(b_A) != _mh(b_C), "REPLACING a member changes membership_hash")
+    # Non-member reorder must not change it.
+    b_n1 = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD"),
+                        _row("C", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
+    b_n2 = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("C", Leaf.NONMEMBER, "BELOW_THRESHOLD"),
+                        _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
+    ok(_mh(b_n1) == _mh(b_n2), "NON-member reorder does NOT change membership_hash")
+
+    # (2) membership identity is the GOVERNED profile, never a display label.
+    gov = _team_ident("A")  # key "(nfl,2026,A)"
+    disp = Identity(IdentityGrain.TEAM, {"sport": "nfl", "season": 2026}, {"team": "A"},
+                    IdentityQuality.DECLARED_COMPOSITE, True, "A DIFFERENT DISPLAY LABEL",
+                    "team:sport+season", "v1", "unique-in-sport-season")
+    b_gov = _batch(rows=[EntityDisposition("A", gov, Leaf.RENDERED, "QUALIFIED", 1)])
+    b_disp = _batch(rows=[EntityDisposition("A", disp, Leaf.RENDERED, "QUALIFIED", 1)])
+    ok(_mh(b_gov) == _mh(b_disp),
+       "membership_hash ignores the display key (governed identity only)")
+    b_realdiff = _batch(rows=[EntityDisposition("A", _team_ident("Z"), Leaf.RENDERED, "QUALIFIED", 1)])
+    ok(_mh(b_gov) != _mh(b_realdiff),
+       "membership_hash changes when the GOVERNED component (team) changes")
+
+    # reconcile still binds membership end-to-end.
     b_a = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
     b_b = _batch(rows=[_row("B", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
     ok(reconcile_board(seal_hashes(_board_for(b_a)), seal_hashes(b_a)).ok,
        "reconcile ok when membership_hash matches the batch's ordered members")
     ok(not reconcile_board(seal_hashes(_board_for(b_a)), seal_hashes(b_b)).ok,
-       "same counts, DIFFERENT member -> membership_hash mismatch rejected")
-    b_o1 = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("B", Leaf.RENDERED, "QUALIFIED")])
-    b_o2 = _batch(rows=[_row("B", Leaf.RENDERED, "QUALIFIED"), _row("A", Leaf.RENDERED, "QUALIFIED")])
-    ok(not reconcile_board(seal_hashes(_board_for(b_o1)), seal_hashes(b_o2)).ok,
-       "same members, DIFFERENT authoritative order -> membership_hash mismatch rejected")
-    b_n1 = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD"),
-                        _row("C", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
-    b_n2 = _batch(rows=[_row("A", Leaf.RENDERED, "QUALIFIED"), _row("C", Leaf.NONMEMBER, "BELOW_THRESHOLD"),
-                        _row("P", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
-    ok(reconcile_board(seal_hashes(_board_for(b_n1)), seal_hashes(b_n2)).ok,
-       "NON-member reorder does NOT change membership_hash (reconcile ok)")
+       "reconcile: same counts, different member -> membership mismatch rejected")
 
     # --- (2) reconcile validates inputs + full build context -----------------
     dup = _batch(rows=[_row("X", Leaf.RENDERED, "QUALIFIED"), _row("X", Leaf.NONMEMBER, "BELOW_THRESHOLD")])
@@ -351,6 +375,13 @@ def run_qc() -> dict:
             "requires proof material", "mechanism=signed without proof is rejected")
     tampered = seal_hashes(_batch()); tampered.integrity.content_hash = "0" * 64
     ok(not validate_receipt(tampered).ok, "a declared content_hash mismatch is rejected")
+    # (3) content_hash is REQUIRED — conclusion_hash alone must not pass.
+    conc_only = _batch(); conc_only.conclusion_hash = compute_conclusion_hash(conc_only)
+    invalid(conc_only, "integrity.content_hash is required",
+            "a receipt with conclusion_hash but no content_hash is rejected")
+    cont_only = _batch(); cont_only.integrity.content_hash = compute_content_hash(cont_only)
+    invalid(cont_only, "conclusion_hash is required",
+            "a receipt with content_hash but no conclusion_hash is rejected")
     try:
         r = validate_receipt(_batch(rows=[EntityDisposition("PIT", _team_ident("PIT"),
             Leaf.NONMEMBER, "BELOW_THRESHOLD", 1, {"raw": 0.5})]))
