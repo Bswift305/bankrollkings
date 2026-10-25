@@ -88,7 +88,8 @@ def test_destination_fetch():
     url = app.player_url('mlb', REAL_PLAYER)
     if not url:
         notes.append("LOCAL LIMITATION: no MLB player resolves locally -> live destination-fetch skipped; "
-                     "URL shape proven above via fixture. On prod (keyset present) the link fetches 200.")
+                     "URL shape proven above via fixture. Production destination resolution and HTTP 200 "
+                     "remain PENDING DEPLOYMENT VERIFICATION because the local MLB identity keyset is empty.")
         print("  [skip] MLB keyset empty locally — destination-fetch not exercised (stated as a limitation)")
         return
     client = app.app.test_client()

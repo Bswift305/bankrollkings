@@ -168,7 +168,32 @@ current plain text.** Reversing = server stops emitting `url`. No logic moves in
     `entity_col` marked, **Player sort toggles A↔Z and re-fills**, works across role/scenario switches,
     accented names render via `textContent`, **0 nested anchors**, no 375px overflow. `mlb_luck` shows a
     clean empty state locally (no Statcast) — wiring inert when unavailable, covered by parity with
-    `mlb_situational` + QC. **STOP for visual review before Group 3 (`scenario_lab`).**
+    `mlb_situational` + QC.
+  - **GROUP 3 — NFL Scenario Lab: DONE (this branch).** `scenario_lab` (`/tools/scenario-lab`). Wraps
+    **only the NFL player column** of the players boards — column **index 0**, whose header varies
+    `QB`/`RB`/`WR`, so `_wrap_entity_board` gained a `col_index` option (wrap by index, not label).
+    `build_scenario_lab_context` wraps every scope × position players board; the **teamRankings and
+    teamProfile boards are left plain** (player-only scope). The shared `renderTable` (used by both the
+    players and teams tabs) reuses `_entity_cell.html` and gates on `board.entity_col`, so team boards
+    render plain automatically. QC `qc_scenario_lab_entity_links.py` (resolvable-via-fixture +
+    `/tools/player-check` URL shape, unknown→None, hostile-label, no-mutation, `col_index` + out-of-range
+    no-op, **player-only scoping proven on REAL data**, cache-intact, destination behavior, wiring).
+    **Local limitation (honest): the NFL identity keyset is empty in this worktree**, so players
+    fail-closed to plain text locally; production destination resolution + HTTP 200 remain **pending
+    deployment verification** (not predicted). Browser-proven: players render (24 cells, plain/gated,
+    `B.Purdy`…), **player-column sort reorders** (B.Purdy→A.Rodgers), position/scenario switching
+    re-renders, **Teams tab shows plain team names (0 `data-ent`)** confirming player-only scope,
+    **0 nested anchors**, no 375px overflow.
+
+### Batch-1 status — consolidated review point
+
+All three authorized groups are done on this branch (bk_power pilot + Groups 1–3): `bk_power`,
+`cfb_power`, `cfb_regression`, `cfb_totals`, `mlb_luck`, `mlb_situational`, `scenario_lab`. One shared
+hardened renderer (`templates/_entity_cell.html`), one server helper family (`_entity_cell` /
+`_wrap_entity_board` with `label` or `col_index`). **Still deferred (unauthorized):** `cfb_ats` (handler
+collision; also absorbs `cfb_situational`), transient builders (`parlay`, `fantasy_league`), composite
+ticket labels (`menu_board`, `_ticket_editor`), the server-side Jinja reconcile (Batch 2), and the
+Green-Light renderer migration. **Nothing deploys without the normal merge/deploy authorization.**
 
 - **Batch 2 — server-side Jinja reconcile (parallel track, not JS).** Replace the raw
   `/player/` links and plain `{{ player }}` listed above with `entity_anchor(...)` so

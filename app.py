@@ -45454,8 +45454,25 @@ def build_scenario_lab_context():
     except (OSError, ValueError):
         pass  # missing/corrupt export -> template shows an empty-state notice
     meta = data.get('meta', {})
+
+    # Batch-1 Group 3: wrap ONLY the NFL player column (index 0, header varies QB/RB/WR) of each
+    # players board. Team-rankings + team-profile boards are left untouched (player-only wrap).
+    def _wrap_scope_players(scope):
+        players = scope.get('players') if isinstance(scope, dict) else None
+        if not isinstance(players, dict):
+            return scope
+        new_players = {}
+        for pos, pack in players.items():
+            if isinstance(pack, dict) and isinstance(pack.get('boards'), dict):
+                pack = {**pack, 'boards': {k: _wrap_entity_board(b, 'player', 'nfl', col_index=0)
+                                           for k, b in pack['boards'].items()}}
+            new_players[pos] = pack
+        return {**scope, 'players': new_players}
+
+    scenario_data = {**data, 'scopes': {sk: _wrap_scope_players(sv)
+                                        for sk, sv in (data.get('scopes') or {}).items()}}
     return {
-        'scenario_data': data,
+        'scenario_data': scenario_data,
         'scenario_meta': meta,
         'scenario_available': bool(data.get('scopes')),
     }
@@ -49157,18 +49174,22 @@ def _entity_cell(kind, sport, name):
     return {'text': name, 'url': url}
 
 
-def _wrap_entity_board(board, kind, sport, label='Team'):
-    """Return a NEW ``{columns, rows}`` board whose ``label`` column is wrapped as a resolver-produced
-    ``{text, url}`` entity cell, and marked with ``entity_col`` / ``entity_kind`` / ``entity_sport`` for
-    the shared client renderer (templates/_entity_cell.html). Never mutates the input (cached JSON is
-    left intact). A board without that column is returned unchanged — so the change is reversible: drop
-    the wrap and the client renders the column as plain text."""
+def _wrap_entity_board(board, kind, sport, label='Team', col_index=None):
+    """Return a NEW ``{columns, rows}`` board whose entity column is wrapped as a resolver-produced
+    ``{text, url}`` cell, and marked with ``entity_col`` / ``entity_kind`` / ``entity_sport`` for the
+    shared client renderer (templates/_entity_cell.html). The column is chosen by ``col_index`` when
+    given (for boards whose name header varies, e.g. scenario_lab's QB/RB/WR), else by ``label``. Never
+    mutates the input (cached JSON is left intact). A board without that column is returned unchanged —
+    so the change is reversible: drop the wrap and the client renders the column as plain text."""
     if not isinstance(board, dict):
         return board
     cols = board.get('columns') or []
     rows = board.get('rows') or []
-    idx = next((i for i, c in enumerate(cols)
-                if (c.get('label') if isinstance(c, dict) else c) == label), -1)
+    if col_index is not None:
+        idx = col_index if (0 <= col_index < len(cols)) else -1
+    else:
+        idx = next((i for i, c in enumerate(cols)
+                    if (c.get('label') if isinstance(c, dict) else c) == label), -1)
     if idx < 0:
         return board
     new_rows = []
