@@ -49,16 +49,21 @@ def _result(members, synced=True):
 
 def _gov(teams):
     return {"build_id": "build-ats-2026w8", "config_version": "cfg-7",
-            "rule_versions": {"membership": 3, "ordering": 1}, "ordering_rule_version": "1",
-            "observation_seq": 1001, "reason_def_version": 1, "threshold": 3,
+            "rule_versions": {"membership": 3, "ordering": 1},
+            "ordering_rule_id": "streak_desc_team_asc", "ordering_rule_version": "1",
+            "membership_threshold": 3, "observation_seq": 1001, "reason_def_version": 1,
             "identity_profiles": {t: {"profile": "team:sport+season", "profile_version": "v1",
                                       "collision_proof": f"ledger#{t}"} for t in teams}}
 
 
-def _obs(result, dec, cur=None, season=2026, governed=None):
+BUILDER_RULES = {"membership_threshold": 3}   # the real build_nfl_ats_wave _WAVE_MIN_STREAK
+
+
+def _obs(result, dec, cur=None, season=2026, governed=None, builder_rules=BUILDER_RULES):
     """Call the REAL shared observer with a deterministic injected creation clock."""
     return hook.observe_build_nfl_ats_wave(result, dec=dec, cur=cur, season=season,
-                                           governed=governed, created_at=CREATED)
+                                           governed=governed, builder_rules=builder_rules,
+                                           created_at=CREATED)
 
 
 def run_qc() -> dict:
@@ -139,6 +144,34 @@ def run_qc() -> dict:
                                             season=2026, created_at=CREATED)
         ok(x is not None and x["ok"] is False and x["stage"] == "hook",
            "ON exception: isolated into the record (never raised)")
+
+        # (defect) non-boolean health must be rejected (no coercion).
+        hook._reset()
+        bad_health = {"members": [], "sync": {"synchronized": "false", "checked_at_utc": BK},
+                      "expected_completed_week": 8}
+        h = _obs(bad_health, _dec(per_pop), _cur(), governed=_gov(["PHI", "DAL", "NYG", "WAS"]))
+        ok((not h["ok"]) and "boolean" in (h["error"] or ""),
+           "ON health coercion: synchronized='false' is rejected (not coerced to True)")
+
+        # (defect) empty / missing decision universe -> explicit expected_universe_unavailable.
+        hook._reset()
+        eu = _obs(_result(members), _dec({}), _cur(), governed=_gov(["PHI", "DAL"]))
+        ok((not eu["ok"]) and "expected_universe_unavailable" in eu["fail_closed"],
+           "ON empty universe: explicit expected_universe_unavailable finding (no conserved empty board)")
+
+        # (defect) governed must supply the rules; a missing rule fails closed.
+        hook._reset()
+        g_missing = _gov(["PHI", "DAL", "NYG", "WAS"]); del g_missing["ordering_rule_id"]
+        gm = _obs(_result(members), _dec(per_pop), _cur(), governed=g_missing)
+        ok((not gm["ok"]) and "ordering_rule_id" in (gm["error"] or ""),
+           "ON governed: a missing ordering_rule_id fails closed (hook invents nothing)")
+
+        # (defect) governed membership_threshold must match the real builder constant.
+        hook._reset()
+        g_bad = _gov(["PHI", "DAL", "NYG", "WAS"]); g_bad["membership_threshold"] = 5
+        gb = _obs(_result(members), _dec(per_pop), _cur(), governed=g_bad)
+        ok((not gb["ok"]) and "does not match the builder constant" in (gb["error"] or ""),
+           "ON governed: membership_threshold != builder constant fails closed")
 
         # 7) deterministic: same inputs + injected clock -> identical receipt ids/hashes.
         hook._reset()

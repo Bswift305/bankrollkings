@@ -48710,10 +48710,15 @@ def build_nfl_ats_wave(now_et=None, games_root=None):
     no receipt package; it never mutates the result and is fully isolated, so it can neither alter this
     return nor raise into the route."""
     result, context = _build_nfl_ats_wave_impl(now_et, games_root)
+    # OFF boundary: a dependency-free flag check FIRST; the hook/observer is imported ONLY
+    # when the flag is ON, so OFF imports nothing here and does zero work.
     try:
-        from services import nfl_ats_shadow_hook as _bk_hook
-        _bk_hook.observe_build_nfl_ats_wave(result, dec=context['dec'], cur=context['cur'],
-                                            season=context['season'])
+        from services.decision_shadow_boundary import shadow_enabled as _bk_shadow_enabled
+        if _bk_shadow_enabled():
+            from services import nfl_ats_shadow_hook as _bk_hook
+            _bk_hook.observe_build_nfl_ats_wave(result, dec=context['dec'], cur=context['cur'],
+                                                season=context['season'],
+                                                builder_rules={'membership_threshold': _WAVE_MIN_STREAK})
     except Exception:
         pass
     return result
