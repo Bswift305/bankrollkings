@@ -31630,13 +31630,27 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
         return empty
     idx = _nfl_player_index()
-    cur = int(pd.to_numeric(log['season'], errors='coerce').max())
-    # Fix 2: the week the loaded logs actually run THROUGH (current-season max week), and the
-    # real data freshness time = newest mtime of the current-season source files, NOT
-    # datetime.utcnow() (which only said when we rebuilt the cache, never how fresh the data was).
-    cur_weeks = pd.to_numeric(log.loc[pd.to_numeric(log['season'], errors='coerce') == cur, 'week'],
-                              errors='coerce').dropna()
-    through_week = int(cur_weeks.max()) if not cur_weeks.empty else None
+    # F5 (2026-10-25 Hot Hand Audit #1): the AUTHORITATIVE calculation boundary is the schedule resolver's
+    # CURRENT SEASON + COMPLETED WEEK, never max(loaded). An in-progress week (rows ahead of the completed
+    # week) and ALL prior seasons must be excluded BEFORE the streak is computed -- not merely capped in the
+    # label -- so a partial Week N+1 row can never alter membership, streak length, ordering or the hashes
+    # (which had been forcing the whole board to active=0). Fail closed if the resolver can't anchor us.
+    expected_week, expected_season = _nfl_expected_completed_week()
+    if not expected_season or not expected_week:
+        _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
+        return {**empty, 'unavailable_reason': 'resolver_unavailable'}
+    cur = int(expected_season)
+    boundary_week = int(expected_week)
+    log_cur = log[pd.to_numeric(log['season'], errors='coerce') == cur]
+    if log_cur.empty:
+        _NFL_HOTHAND_CACHE.update(sig=sig, data={**empty, 'expected_week': boundary_week})
+        return {**empty, 'expected_week': boundary_week, 'unavailable_reason': 'current_season_absent'}
+    # The week the current-season logs actually reach, capped at the completed week (never past it).
+    data_cur_max_week = int(pd.to_numeric(log_cur['week'], errors='coerce').dropna().max())
+    through_week = min(data_cur_max_week, boundary_week)
+    # pending_latest = the source is BEHIND the calendar (a finished week not yet loaded). The source being
+    # AHEAD (an in-progress week present) is handled by the week<=boundary_week filter, not shown as current.
+    pending_latest = bool(data_cur_max_week < boundary_week)
     _data_mtime = 0.0
     for _src in _nfl_player_log_sources():
         if _src.get('season') == cur:
@@ -31654,10 +31668,8 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
             data_updated = datetime.utcfromtimestamp(_data_mtime).strftime('%Y-%m-%d %H:%M UTC')
     else:
         data_updated = ''
-    # Fix 7: the completed week the calendar says SHOULD be loaded. If it is ahead of what we
-    # have, a finished week is missing -> pending_latest: show the board but never as "current".
-    expected_week, _season_lbl = _nfl_expected_completed_week()
-    pending_latest = bool(expected_week and through_week is not None and through_week < expected_week)
+    # (F5: expected_week / cur / through_week / pending_latest are resolved above from the schedule
+    # resolver -- the completed-week boundary governs the whole calculation, not just the label.)
     # Fixes 4/5: current availability, so an IR/Out player's old run isn't shown as active. Shared
     # injury-source state carries freshness: a stale/missing feed yields STATUS UNKNOWN (fail closed),
     # never a silent "everyone active".
@@ -31694,8 +31706,11 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         s = s.dropna(subset=['season'])
         s['week'] = pd.to_numeric(s.get('week'), errors='coerce')
         s['season'] = pd.to_numeric(s['season'], errors='coerce')
-        s = s.dropna(subset=['week']).sort_values(['season', 'week'], ascending=False)
-        if s.empty or int(s.iloc[0]['season']) != cur:   # most recent LOADED game is current season
+        s = s.dropna(subset=['week'])
+        # F5: restrict to the CURRENT season through the COMPLETED week before walking the run. Prior
+        # seasons and any in-progress week beyond the boundary never enter the streak calculation.
+        s = s[(s['season'] == cur) & (s['week'] <= boundary_week)].sort_values(['season', 'week'], ascending=False)
+        if s.empty:
             continue
         # Walk newest-first; capture the weeks that make up the run (fix 3) and the player's
         # last LOADED game week, so we can tell a games-played streak from calendar recency (fix 5).
@@ -31737,11 +31752,10 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         avail = _availability(str(player))
         weeks_behind = (through_week - last_played_week) if (through_week is not None) else 0
         weeks_behind = max(0, weeks_behind)
-        if streak_weeks:
-            wk_lo, wk_hi = min(streak_weeks), max(streak_weeks)
-            weeks_label = (f"Wk {wk_lo}" if wk_lo == wk_hi else f"Wks {wk_lo}–{wk_hi}")
-        else:
-            weeks_label = ''
+        # F2: appearance-truthful label -- compact ranges that PRESERVE gaps (a bye / non-appearance is
+        # not a played week), prefixed so it is never read as consecutive weeks. The streak counts
+        # consecutive APPEARANCES above the line; _compact_weeks turns [2,3,4,6] into 'Wks 2–4, 6'.
+        weeks_label = (f"Appearances: {_compact_weeks(streak_weeks)}" if streak_weeks else '')
         is_active = bool(avail['available'] and weeks_behind == 0 and not pending_latest)
         if avail['available'] is None:
             status_label = f"{int(streak)} straight — status unknown (injury feed stale)"
