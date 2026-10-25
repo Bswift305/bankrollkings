@@ -24,6 +24,13 @@ def _event(date=None, week=None, opponent=None, value=None, line=None, result=No
             'value': _val(value), 'line': _val(line), 'result': _val(result)}
 
 
+def _ats_result_word(s):
+    """Map a per-game ATS/total result token (builder evidence) to an honest word; an unknown
+    token is passed through as-is (never invented)."""
+    return {'W': 'cover', 'L': 'loss', 'P': 'push', '1': 'cover', '-1': 'loss', '0': 'push',
+            'O': 'over', 'U': 'under'}.get(str(s).strip().upper(), str(s))
+
+
 def normalize(family, row, meta=None):
     """Map a streak builder's `row` into the common explainer model. `meta` carries surface-level context
     (source, data_through, freshness, season) the row may not include. Missing -> UNAVAILABLE, never faked."""
@@ -59,14 +66,25 @@ def normalize(family, row, meta=None):
             (f"{row.get('streak', '?')} straight {row.get('side', '')}").strip()
 
     elif family == 'ats':
-        m['threshold'] = 'the spread'
-        m['direction'] = 'cover'
-        m['current_streak'] = _val(row.get('cover_streak'))
-        results = row.get('results') or []
+        # Generalized across the cover/fade spread boards AND over/under totals boards. The run
+        # field varies by builder (`cover_streak` on the NFL ATS wave, `streak` on the CFB board);
+        # `kind` (meta or row) distinguishes spread vs total. Builder evidence only.
+        kind = str(meta.get('kind') or row.get('kind') or 'cover').lower()
+        m['threshold'] = 'the total' if kind in ('over', 'under') else 'the spread'
+        m['direction'] = kind
+        streak = row.get('cover_streak')
+        if streak is None:
+            streak = row.get('streak')
+        m['current_streak'] = _val(streak)
+        results = row.get('results')
+        if results is None and isinstance(row.get('last'), str):
+            results = [t for t in row['last'].replace(',', ' ').split() if t]
         if results:
-            m['counted_events'] = [_event(result=('cover' if s in (1, 'W') else 'loss' if s in (-1, 'L') else 'push'))
-                                   for s in results]
-        m['membership_reason'] = f"{row.get('cover_streak', '?')} straight covers"
+            m['counted_events'] = [_event(result=_ats_result_word(s)) for s in results]
+        else:
+            m['counted_events'] = UNAVAILABLE   # source carries only the run, not per-game results
+        noun = {'cover': 'covers', 'fade': 'non-covers', 'over': 'overs', 'under': 'unders'}.get(kind, kind)
+        m['membership_reason'] = (f"{streak} straight {noun}" if streak is not None else UNAVAILABLE)
 
     elif family == 'hot_hand':
         m['threshold'] = _val(row.get('line'))

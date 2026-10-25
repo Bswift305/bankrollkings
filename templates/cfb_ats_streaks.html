@@ -21,6 +21,15 @@
     background:#ff9f43;color:#0b1118;border-radius:5px;padding:3px 7px;margin-top:1px;}
   .ats-fwd{display:block;margin-top:2px;font:600 11px/1.5 'Helvetica Neue',Arial,sans-serif;color:#ffb86b;}
   .ats-fwd b{color:#ffd0a0;}
+  .bkn-ex{margin:-4px 0 10px;}
+  .bkn-ex>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px;
+    font:700 10.5px 'Helvetica Neue',Arial,sans-serif;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--text-muted);padding:4px 2px;}
+  .bkn-ex>summary::-webkit-details-marker{display:none;}
+  .bkn-ex>summary::before{content:'\25B8';font-size:9px;transition:transform .15s;}
+  .bkn-ex[open]>summary::before{transform:rotate(90deg);}
+  .bkn-ex>summary:hover{color:var(--text);}
+  .bkn-ex>summary:focus-visible{outline:2px solid var(--bkn-accent,#3fbf7f);outline-offset:2px;border-radius:4px;}
 </style>
 <div class="bkn">
 <div class="page-hero">
@@ -53,6 +62,11 @@
     </span>
     <span class="trail" style="font:700 12px ui-monospace,monospace;">{{ next_ref(r, mode) }}<small>this week</small></span>
   </div>
+  <details class="bkn-ex"><summary>Why this is showing</summary>
+    {% set ex = streak_explainer('ats', r, {'kind': kind, 'source': 'graded ' ~ (mode|upper) ~ ' results (CFBD)',
+       'freshness': 'current-season'}) %}
+    {% include '_streak_explainer.html' %}
+  </details>
   {% else %}<div class="bkn-empty">No active {{ kind }} streaks of 2+ right now.</div>{% endfor %}
   </div>
 {% endmacro %}

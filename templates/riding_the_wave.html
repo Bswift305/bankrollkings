@@ -56,6 +56,11 @@
   .rw-drow[open] .rw-caret{transform:rotate(90deg);}
   .rw-exp{padding:2px 16px 14px 48px;}
   .rw-drow.rw-stale summary{opacity:.6;}
+  .rw-ex>summary.rw-row{cursor:pointer;list-style:none;}
+  .rw-ex>summary.rw-row::-webkit-details-marker{display:none;}
+  .rw-ex[open]>summary.rw-row{background:rgba(91,141,239,.06);}
+  .rw-ex[open] .rw-caret{transform:rotate(90deg);}
+  .rw-ex>summary.rw-row:focus-visible{outline:2px solid #5b8def;outline-offset:-2px;}
 </style>
 
 <div class="rw-wrap">
@@ -191,9 +196,17 @@
     {% endif %}
     {% if not rw_ats_unsynced %}
     {% for r in rw_boards.ats %}
-    <div class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
+    <details class="rw-ex"><summary class="rw-row"><span class="rw-rank">{{ loop.index }}</span>
       <span class="rw-name">{{ r.team }}<small>{{ r.weeks_label }}{% if r.through_week %} &middot; through Wk {{ r.through_week }}{% endif %}</small></span>
-      <span class="rw-badge hot"><span class="n">{{ r.streak }}</span><span class="u">covers</span></span></div>
+      <span class="rw-badge hot"><span class="n">{{ r.streak }}</span><span class="u">covers</span></span><span class="rw-caret">&#9656;</span></summary>
+      <div class="rw-exp">
+        {% set ex = streak_explainer('ats', r, {'kind': 'cover', 'source': 'current-season graded games',
+           'season': rw_meta.ats_season,
+           'data_through': ('through Wk ' ~ rw_meta.ats_through_week) if rw_meta.ats_through_week else 'unavailable',
+           'freshness': ('not synchronized' if rw_ats_unsynced else 'current-season')}) %}
+        {% include '_streak_explainer.html' %}
+      </div>
+    </details>
     {% else %}<div class="rw-empty">No active cover streak of {{ rw_meta.min_streak }}+ right now.</div>{% endfor %}
     {% endif %}
   </div>

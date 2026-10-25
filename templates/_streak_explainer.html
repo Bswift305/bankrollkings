@@ -15,12 +15,19 @@
   {% if ex.counted_events == 'unavailable' %}
     <div class="sx-note">Per-game detail is <b>unavailable</b> from this source.</div>
   {% elif ex.counted_events %}
+    {# A source that carries only per-game RESULTS (e.g. an ATS run's W/L string) renders as a compact
+       sequence, not a table full of 'unavailable' — the table is for sources with per-game context. #}
+    {% set rich = ex.counted_events | rejectattr('week', 'equalto', 'unavailable') | list %}
+    {% if rich %}
     <table class="sx-ev"><thead><tr><th>Wk</th><th>Opp</th><th>Value</th><th>Line</th><th>Result</th></tr></thead>
       <tbody>{% for e in ex.counted_events %}<tr>
         <td>{{ e.week }}</td>
         <td>{% if e.opponent and e.opponent != 'unavailable' %}{{ entity_anchor('team', ex_sport|default('nfl'), e.opponent, label=e.opponent) }}{% else %}{{ e.opponent }}{% endif %}</td>
         <td>{{ e.value }}</td><td>{{ e.line }}</td><td>{{ e.result }}</td>
       </tr>{% endfor %}</tbody></table>
+    {% else %}
+    <div class="sx-seq"><i>Sequence</i> {% for e in ex.counted_events %}<span class="sx-chip">{{ e.result }}</span>{% endfor %}</div>
+    {% endif %}
   {% endif %}
   {% if ex.excluded_events %}
     <div class="sx-note"><b>Excluded:</b> {% for x in ex.excluded_events %}{{ x.reason }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
@@ -37,5 +44,9 @@
   .sx-ev th{font:600 9.5px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);text-align:left;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.1);}
   .sx-ev td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--text-bright);}
   .sx-note{margin:4px 0;}
+  .sx-seq{margin:4px 0;display:flex;flex-wrap:wrap;align-items:center;gap:5px;}
+  .sx-seq i{font-style:normal;color:var(--text-muted);opacity:.7;text-transform:uppercase;font-size:9.5px;letter-spacing:.04em;}
+  .sx-chip{font:700 10.5px ui-monospace,Consolas,monospace;color:var(--text-bright);background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:2px 7px;}
   .sx-model{margin-top:6px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.12);}
 </style>

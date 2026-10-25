@@ -17408,6 +17408,9 @@ def render_matchup_mark(away, home, separator='@', size='sm', extra_class='', sp
 # hand-built href, and never a lowercased display name.
 import services.entity_links as _entity_links
 import services.streak_explainer as _streak_explainer  # shared normalized streak-explainer view-model
+# Also a Jinja GLOBAL (not only the context processor below) so it is reachable inside
+# {% macro %} scopes (e.g. the CFB ATS board macro), which do not see context-processor vars.
+app.jinja_env.globals['streak_explainer'] = _streak_explainer.normalize
 
 _ENTITY_KEYSET_CACHE = {}
 
