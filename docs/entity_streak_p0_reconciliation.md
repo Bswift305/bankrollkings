@@ -165,6 +165,25 @@ provider/network. Rollback = revert the source constant. **QCs before any write:
 integration (Result/Actual map, week dedup, PENDING excluded); through-week freshness gate off Lane 2;
 fail-closed when Lane 2 absent/empty.
 
+**Lane-2 deep grain audit (read-only, prod `diag_nfl_lane2_grain_v2.py`): clean, no defects.**
+(1) Identity collision-free — board key `(Season,Player,Stat,Week)`=4,395 groups, 0 map to >1 (Game,GameDate),
+0 ambiguous players. (2) The 78 invalid-week rows are all `NO_GAMEDATE` + PENDING (unplayed props, e.g.
+A.J. Brown NE@CHI) → `EXCLUDED_INVALID_WEEK`, not lost history. (3) Wk3 missing game named: **ATL–GB**
+(Wks 4–6 complete 16/16, 15/15, 14/14); why ATL–GB is absent needs the props feed. (4) data-through must
+**cap at the completed week**: coverage_begins=Wk3, graded_through=Wk6, Wk7=current/pending (today's builder
+would wrongly say "through Wk7" — a required Stage-1 fix). (5) temporal: 876/10,980 rows at/after-start,
+**19.9% of groups have no pregame snapshot** (closing undefined for them), **7.9% synthetic median**
+(never-quoted value). (6) conflicts: 69 different-line (expected), **0 same-line / 0 actual-inconsistent**.
+(7) median-vs-closing impact: 243 vs 242 streaks, **9 inclusion differences, 0 length/side changes**.
+
+**Frozen-rule recommendation (AWAITING APPROVAL):** weekly **consensus median** (the builders' existing
+method — robust at 100% coverage vs closing's 20% gap), **labeled honestly** ("derived consensus median
+across N book-snapshots, not a single quote; line range min–max; graded from Wk3 · through Wk6 · Wk7 in
+progress"). **Stage-1 (Wave only, awaiting authorization):** shared Lane-2 adapter + repoint
+`build_nfl_prop_streaks`, cap graded-through at the completed week, "graded from Wk3" disclosure, exclude
+invalid-week/pending rows, median labeled + 3 QCs → prod receipt + visual → Heating Up separately. Rollback
+= revert the source constant.
+
 **Item 5 remains OPEN** pending that repoint. Close criteria: the streak boards serve from the **persistent
 graded record** (Lane 2), the historical/backfill file is separate (done), and the Edge Engine cannot
-clobber the live artifact (done). Audit #1 stays held.
+clobber the live artifact (done). `16,753 = LEGACY_RECEIPT_UNRESOLVED`. Audit #1 stays held.
