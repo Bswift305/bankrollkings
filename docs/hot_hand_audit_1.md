@@ -102,8 +102,12 @@ player active; Wk5 player historical; through_week==6; resolver-advance makes Wk
 (contiguous format, gaps preserved, bye not shown as played, label/length same evidence).
 
 **Finding status after F5/F2:** **F1 addressed by F5** (builder is resolver-anchored + fails closed on
-`resolver_unavailable` / `current_season_absent`). **F2, F5 remediated + prod-verified.** **F3** (name-based
-identity; defense-prop "drops" are an expected absent-reason; `_full` collisions mostly legitimate merges) —
-disclosure/hardening, queued for separate review. **F4** (availability doesn't gate membership) — by design.
-Remaining: owner visual pass (`/tools/nfl-heatmap` desktop + 375px) to confirm the rendered page, then the
-shared streak explainer. Not calling F5/F2 "closed" until the visual is confirmed.
+`resolver_unavailable` / `current_season_absent`). **F2, F5 remediated + prod-verified.** **F3 disclosure
+SHIPPED (`a6abb03`, 2026-10-25):** `build_nfl_hot_hand` no longer silently drops an eligible board prop with
+no player-appearance log — it emits `absences={count, by_reason, items}` with a governed reason per prop
+(`defense_no_player_appearance` = expected team D/ST; `no_player_log` = indeterminate; `no_matching_stat_columns`),
+counts always full, item sample capped at 25; streak rows/membership/ordering/through-week unchanged. Name-based;
+true distinct-player collisions remain indeterminate (no id), per the audit. QC `qc_nfl_hot_hand_absence.py`
+(synthetic) green; F5/F2 boundary QC still green. **F4** (availability doesn't gate membership) — by design.
+Remaining: the UI disclosure wiring + owner visual pass (`/tools/nfl-heatmap` desktop + 375px), then the shared
+streak explainer surfacing. Not calling F5/F2/F3 "closed" until the visual is confirmed.
