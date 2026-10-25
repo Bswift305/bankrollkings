@@ -232,6 +232,8 @@ REASON_CODES: Dict[str, SemanticCategory] = {
     "DISPLAY_CAPPED": SemanticCategory.LEAF,
     "KNOWN_NON_FBS": SemanticCategory.LEAF,
     "COVER_SHORT": SemanticCategory.LEAF,
+    "SOURCE_UNAVAILABLE": SemanticCategory.LEAF,
+    "SCHEMA_CONFLICT": SemanticCategory.LEAF,
     # Health.
     "SOURCE_STALE": SemanticCategory.HEALTH,
     # Decision-stage outcomes.
