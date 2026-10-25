@@ -176,14 +176,29 @@ would wrongly say "through Wk7" — a required Stage-1 fix). (5) temporal: 876/1
 (never-quoted value). (6) conflicts: 69 different-line (expected), **0 same-line / 0 actual-inconsistent**.
 (7) median-vs-closing impact: 243 vs 242 streaks, **9 inclusion differences, 0 length/side changes**.
 
-**Frozen-rule recommendation (AWAITING APPROVAL):** weekly **consensus median** (the builders' existing
-method — robust at 100% coverage vs closing's 20% gap), **labeled honestly** ("derived consensus median
-across N book-snapshots, not a single quote; line range min–max; graded from Wk3 · through Wk6 · Wk7 in
-progress"). **Stage-1 (Wave only, awaiting authorization):** shared Lane-2 adapter + repoint
-`build_nfl_prop_streaks`, cap graded-through at the completed week, "graded from Wk3" disclosure, exclude
-invalid-week/pending rows, median labeled + 3 QCs → prod receipt + visual → Heating Up separately. Rollback
-= revert the source constant.
+**v3 receipt (pregame-only + continuity, read-only prod) — DECISIVE: the all-snapshot median is rejected
+and the strict-honest contract yields ZERO streaks.** Of 10,980 rows: PROVABLY_PREGAME (snap day < game
+day) 7,037; TEMPORALLY_INDETERMINATE (same day, unprovable on a date-only field) 2,989; POST_START 876;
+UNKNOWN 78. Only 1,757 player-stat-weeks have a provable pregame reference; **2,067 have none
+(`UNAVAILABLE_NO_PREGAME_QUOTE`)**. Under the frozen contract (consecutive completed appearances with a
+valid pregame quote; missed game pauses; no-pregame-quote appearance = `INDETERMINATE_MISSING_MARKET_
+OBSERVATION`, never bridged): **strict qualifying streaks = 0** (void all-snapshot baseline = 237; 439 runs
+blocked as indeterminate). ATL–GB Wk3 = `UNCLASSIFIED_EVIDENCE_UNAVAILABLE` (completed in gamelog, absent
+from Lane 2). identity_quality = `COMPOSITE_NAME_EVENT`.
 
-**Item 5 remains OPEN** pending that repoint. Close criteria: the streak boards serve from the **persistent
-graded record** (Lane 2), the historical/backfill file is separate (done), and the Edge Engine cannot
-clobber the live artifact (done). `16,753 = LEGACY_RECEIPT_UNRESOLVED`. Audit #1 stays held.
+**Root cause (code-confirmed):** `capture_nfl_prop_lines.py` records `SnapshotDate = _eastern_today()` (a
+DATE) and `GameDate` (a DATE), discarding the intraday capture time and the kickoff/commence time — so
+pregame ordering is unprovable for ~35% of observations by construction.
+
+**Conclusion — the repoint is the WRONG fix; the Wave stays fail-closed for a PRINCIPLED reason.** A Lane-2
+repoint yields an empty board under the honest contract, and counting same-day captures as "pregame" is the
+look-ahead the directive rejected. The Wave remains unavailable — now because the line-capture lacks the
+intraday timestamps needed to prove pregame ordering, not because of the clobber. **Durable fix (upstream,
+forward-looking, awaiting direction):** enhance `capture_nfl_prop_lines.py` to record an intraday UTC
+capture timestamp + the event kickoff (commence) time, so future observations can be proven pregame; this
+accrues over coming weeks and does not retroactively fix Wks 3–7. The honest streak product available TODAY
+is the **Milestone board** (game-stat thresholds, live), which needs no pregame line timestamps.
+
+**Item 5 status:** the single-writer/clobber defect is CLOSED and proven (Edge Engine cannot clobber the
+live artifact; backfill separated). The streak-availability goal is **BLOCKED on capture precision**, not
+on a board change. `16,753 = LEGACY_RECEIPT_UNRESOLVED`. Audit #1 stays held.
