@@ -49097,6 +49097,38 @@ _BK_POWER_CACHE = {}
 _BK_POWER_ATS_CACHE = {}
 
 
+def _bk_power_name_cell(kind, sport, name, sub):
+    """Resolver-produced ``{text, url, sub}`` for a BK Power name cell (Batch-1 entity-link pilot).
+
+    The SERVER performs identity resolution, sport-scoped; the client only renders this cell and
+    never resolves. ``url`` is ``None`` -> the client shows plain text whenever ``(kind, sport,
+    name)`` has no single-entity destination: CFB players and coaches (no page in any sport), and
+    gated / ambiguous / unknown identities (``require_known`` -> the resolver returns ``None``). The
+    label is carried as RAW text; the client sets it via ``textContent`` and assigns ``href`` as a
+    property, so a name (or URL) containing markup can never inject. Reversible: drop ``ent`` on the
+    server and the client falls back to plain text."""
+    name = str(name or '')
+    url = None
+    if kind == 'team':
+        url = team_url(sport, name)
+    elif kind == 'player':
+        url = player_url(sport, name)
+    # coaches have no entity destination in any sport -> url stays None (plain text)
+    return {'text': name, 'url': url, 'sub': sub}
+
+
+def _bk_power_attach_ent(kind, sport, rows, name_key, sub_fn):
+    """Return NEW row dicts (never mutate the cached source) each carrying a resolver-produced
+    ``ent`` cell for the name column. The sport travels with the cell so resolution stays
+    sport-scoped (NFL players link; CFB players never do)."""
+    out = []
+    for r in (rows or []):
+        rr = dict(r)
+        rr['ent'] = _bk_power_name_cell(kind, sport, rr.get(name_key, ''), sub_fn(rr))
+        out.append(rr)
+    return out
+
+
 def build_bk_power_context():
     """BK Power — our own descriptive power rankings from graded results (not picks).
     Teams by how often they actually cover / go over (CFB ATS data); players by how
@@ -49152,10 +49184,20 @@ def build_bk_power_context():
         })
     nfl_teams.sort(key=lambda x: -(x['ats_pct'] or 0))
     nfl_coaches = nfl.get('coaches', [])
+    # Batch-1 entity-link pilot: the server attaches a resolver-produced {text,url,sub} `ent` cell to
+    # each name row (team + player link when resolvable; coach always plain). Client never resolves.
+    team_sub = lambda r: f"{r.get('conf') or ''} · {r.get('games', '')} g"
+    coach_sub = lambda r: f"{r.get('games', '')} g"
+    player_sub = lambda r: (r.get('team') or '')
+    players_src = pdata.get('players', {}) or {}
+    bp_players = {sp: _bk_power_attach_ent('player', sp, rws, 'player', player_sub)
+                  for sp, rws in players_src.items()}
     return {
-        'bp_teams': {'CFB': teams, 'NFL': nfl_teams},
-        'bp_coaches': {'CFB': coaches, 'NFL': nfl_coaches},
-        'bp_players': pdata.get('players', {}),
+        'bp_teams': {'CFB': _bk_power_attach_ent('team', 'CFB', teams, 'team', team_sub),
+                     'NFL': _bk_power_attach_ent('team', 'NFL', nfl_teams, 'team', team_sub)},
+        'bp_coaches': {'CFB': _bk_power_attach_ent('coach', 'CFB', coaches, 'coach', coach_sub),
+                       'NFL': _bk_power_attach_ent('coach', 'NFL', nfl_coaches, 'coach', coach_sub)},
+        'bp_players': bp_players,
         'bp_players_sports': (pdata.get('meta', {}) or {}).get('sports', []),
         'bp_meta': pdata.get('meta', {}),
         'bp_ats_meta': ats.get('meta', {}),

@@ -68,25 +68,45 @@
   const pct = v => (v===null||v===undefined) ? '&mdash;' : (v+'%');
   const cls = (v,base) => v>=base+3 ? 'bp-hot' : (v<=base-3 ? 'bp-cold' : '');
 
+  // Batch-1 entity-link pilot: render a name cell from the server's {text,url,sub} entirely via DOM
+  // (textContent + createElement + assigned href) -- entity label/url are DATA, never interpolated
+  // into innerHTML. Link ONLY when the server supplied a resolver url (same-origin path); the client
+  // performs NO identity resolution. url absent/None -> plain text (CFB players, coaches, gated/
+  // ambiguous/unknown). Reversible: drop `ent` server-side and `plain(r)` gives the old plain cell.
+  function fillEntityCell(td, cell){
+    while(td.firstChild) td.removeChild(td.firstChild);
+    const text = (cell && cell.text) || '';
+    const url = (cell && typeof cell.url==='string' && cell.url.charAt(0)==='/') ? cell.url : null;
+    if(url){
+      const a=document.createElement('a'); a.className='bk-entity-link'; a.href=url; a.textContent=text;
+      td.appendChild(a);
+    } else {
+      td.appendChild(document.createTextNode(text));
+    }
+    if(cell && cell.sub){
+      const s=document.createElement('span'); s.className='sub'; s.textContent=cell.sub; td.appendChild(s);
+    }
+  }
+
   // Teams & Coaches toggle CFB/NFL; Players toggles NFL/NBA/MLB/WNBA.
   const sportsFor = tab => tab==='players' ? (DATA.playerSports||[]) : ['CFB','NFL'];
   const S = {tab:'teams', sport:'CFB', sortKey:null, dir:-1};
 
   // column defs: {key, label, l(eft)?, get(row), sortVal(row), cell(row)}
   const TEAM_COLS = [
-    {key:'team', label:'Team', l:true, sortVal:r=>r.team, cell:r=>'<td class="l">'+r.team+'<span class="sub">'+(r.conf||'')+' &middot; '+r.games+' g</span></td>'},
+    {key:'team', label:'Team', l:true, ent:true, sortVal:r=>r.team, plain:r=>({text:r.team, sub:(r.conf||'')+' · '+r.games+' g'}), cell:r=>'<td class="l" data-ent></td>'},
     {key:'ats_pct', label:'ATS%', sortVal:r=>r.ats_pct, cell:r=>'<td><span class="'+cls(r.ats_pct,50)+'">'+pct(r.ats_pct)+'</span><span class="sub">'+r.ats_rec+'</span></td>'},
     {key:'ou_pct', label:'Over%', sortVal:r=>r.ou_pct, cell:r=>'<td>'+(r.ou_pct===null?'&mdash;':('<span class="'+cls(r.ou_pct,50)+'">'+r.ou_pct+'%</span><span class="sub">'+r.ou_rec+'</span>'))+'</td>'},
     {key:'games', label:'Games', sortVal:r=>r.games, cell:r=>'<td>'+r.games+'</td>'},
   ];
   const COACH_COLS = [
-    {key:'coach', label:'Head Coach', l:true, sortVal:r=>r.coach, cell:r=>'<td class="l">'+r.coach+'<span class="sub">'+r.games+' g</span></td>'},
+    {key:'coach', label:'Head Coach', l:true, ent:true, sortVal:r=>r.coach, plain:r=>({text:r.coach, sub:r.games+' g'}), cell:r=>'<td class="l" data-ent></td>'},
     {key:'ats_pct', label:'ATS%', sortVal:r=>r.ats_pct, cell:r=>'<td><span class="'+cls(r.ats_pct,50)+'">'+pct(r.ats_pct)+'</span><span class="sub">'+r.ats_rec+'</span></td>'},
     {key:'ou_pct', label:'Over%', sortVal:r=>r.ou_pct, cell:r=>'<td>'+(r.ou_pct===null?'&mdash;':('<span class="'+cls(r.ou_pct,50)+'">'+r.ou_pct+'%</span><span class="sub">'+r.ou_rec+'</span>'))+'</td>'},
     {key:'games', label:'Games', sortVal:r=>r.games, cell:r=>'<td>'+r.games+'</td>'},
   ];
   const PLAYER_COLS = [
-    {key:'player', label:'Player', l:true, sortVal:r=>r.player, cell:r=>'<td class="l">'+r.player+'<span class="sub">'+(r.team||'')+'</span></td>'},
+    {key:'player', label:'Player', l:true, ent:true, sortVal:r=>r.player, plain:r=>({text:r.player, sub:(r.team||'')}), cell:r=>'<td class="l" data-ent></td>'},
     {key:'over', label:'Over%', sortVal:r=>r.over, cell:r=>{const p=Math.round(r.over*100); return '<td><span class="'+cls(p,base())+'">'+p+'%</span></td>';}},
     {key:'n', label:'Props', sortVal:r=>r.n, cell:r=>'<td>'+r.n+'</td>'},
     {key:'best', label:'Best Stat', l:true, sortVal:r=>(r.stats&&r.stats[0]?r.stats[0].over:0), cell:r=>{const s=r.stats&&r.stats[0]; return '<td class="l" style="font-family:ui-monospace;font-weight:600;color:var(--text);">'+(s?(s.stat+' <span class="sub" style="display:inline;">'+Math.round(s.over*100)+'% ('+s.n+')</span>'):'&mdash;')+'</td>';}},
@@ -118,6 +138,15 @@
     data.forEach((r,i)=>{ h+='<tr><td class="l bp-rank">'+(i+1)+'</td>'+cs.map(c=>c.cell(r)).join('')+'</tr>'; });
     h+='</tbody></table>';
     $('#bp-body').innerHTML=h;
+    // Fill the name cell (data-ent placeholder) via DOM from the server's resolver cell, in sorted
+    // row order. The name NEVER entered the innerHTML string above -> no escaping concern, no nested
+    // anchor (bare <td>, no row handler), and sorting re-runs this each render.
+    const entCol = cs.find(c=>c.ent);
+    if(entCol && data.length){
+      const trs = $('#bp-body').querySelectorAll('tbody tr');
+      data.forEach((r,i)=>{ const tr=trs[i]; const td=tr&&tr.querySelector('td[data-ent]');
+        if(td) fillEntityCell(td, r.ent || entCol.plain(r)); });
+    }
     $('#bp-body').querySelectorAll('th[data-k]').forEach(th=>{
       th.onclick=()=>{ const k=th.getAttribute('data-k'); if(S.sortKey===k){S.dir*=-1;} else {S.sortKey=k; S.dir=(k==='team'||k==='player'||k==='coach'||k==='best')?1:-1;} render(); };
     });

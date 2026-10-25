@@ -51,6 +51,16 @@ phrased in these terms: the server adds a resolver-backed `url` (or a pre-render
 `anchor`) to each row of the existing payload; the JS wraps the name cell in `<a>` iff
 `url` is present. No eligibility/ordering logic moves into JS.
 
+> ⚠️ **Do NOT copy Green Light's raw `innerHTML` string concatenation verbatim.** That
+> line interpolates `it.label` and `it.url` straight into an HTML string with no
+> escaping guarantee — entity **labels and URLs are data**, and a name containing
+> markup (or a malformed URL) would be a latent injection. The correct pattern (used by
+> the `bk_power` pilot below) is **DOM construction**: emit a structured `{text, url}`
+> cell from the server and have the JS build the node with `textContent` /
+> `createElement` / an **assigned** `href` (never interpolated), gating the link on a
+> same-origin (`/`-prefixed) path. A centralized escaping renderer is the acceptable
+> alternative. Green Light itself should be migrated to this when touched.
+
 ## Architecture
 
 There is **no `static/js/` directory** — all JS is inline in templates. The dominant
@@ -73,7 +83,7 @@ handler risk LOW** for that whole family.
 
 | Surface | Route | Entity (field) | Source payload | Sport | Class | Nested-anchor | Handler | Notes |
 |---|---|---|---|---|---|---|---|---|
-| `bk_power.html` | `/tools/bk-power` | player, team *(td)*; coach *(td)* | embedded `#bp-data` | NFL + CFB | **resolvable** (player/team); coach = **no-destination** | low | low | Generic table. Link player+team; leave coach as text. |
+| `bk_power.html` | `/tools/bk-power` | player, team *(td)*; coach *(td)* | embedded `#bp-data` | teams/coaches CFB+NFL · players NFL/NBA/MLB/WNBA | **sport-dependent:** team resolvable (all); player resolvable **NFL/NBA/MLB/WNBA only, NOT CFB**; coach = **no-destination** | low | low | **Batch-1 pilot DONE** (below). Player links are **sport-scoped** — the row's sport travels in the payload; CFB players (if present) stay plain. Coach always plain. |
 | `cfb_power.html` | `/tools/cfb-power` | team *(td)* | embedded `#pw-data` | CFB | **resolvable** (`cfb-team`) | low | low | Generic table. |
 | `cfb_regression.html` | `/tools/cfb-regression` | team *(td)* | embedded `#cr-data` | CFB | **resolvable** | low | low | Generic table. |
 | `cfb_situational.html` | `/tools/cfb-situational` | team *(td)* | embedded `#si-data` | CFB | **resolvable** | low | low | Generic table. |
@@ -119,14 +129,23 @@ existing payload row; JS renders `<a class="bk-entity-link">` iff `url` present,
 current plain text.** Reversing = server stops emitting `url`. No logic moves into JS.
 
 - **Batch 1 — generic embedded-DATA tables (lowest risk, highest value).**
-  `bk_power`, `cfb_power`, `cfb_regression`, `cfb_situational`, `cfb_totals`,
-  `mlb_luck`, `mlb_situational`, `scenario_lab`. All share the positional-array /
-  column-def `renderTable` with a bare-`<td>` name cell and no row handler. For
-  positional-array payloads (`board.rows` as arrays), the server emits a parallel
-  per-row `url` (or a `{text,url}` cell object) for the name column only; JS wraps that
-  one cell. Coaches in `bk_power` stay text (no destination). This is the cleanest
-  mirror of Green Light and should be proven on **one** surface (suggest `bk_power` or
-  `mlb_luck`) before the rest.
+  `bk_power` *(pilot — DONE)*, `cfb_power`, `cfb_regression`, `cfb_situational`,
+  `cfb_totals`, `mlb_luck`, `mlb_situational`, `scenario_lab`. All share the
+  positional-array / column-def `renderTable` with a bare-`<td>` name cell and no row
+  handler.
+  - **`bk_power` prove-one pilot (SHIPPED on this branch):** the server attaches a
+    resolver-produced **`{text, url, sub}`** cell (`ent`) to each team/player/coach row
+    — `team_url` / `player_url`, **sport-scoped** (the row's sport travels in the
+    payload). Coaches never get a `url`; CFB players never get a `url`; NFL player links
+    only when the resolver confirms exactly one current player; unknown / ambiguous /
+    gated → `url` `None` → plain text. The JS builds the cell **purely via DOM**
+    (`textContent` / `createElement` / assigned `href`, link gated on a `/`-prefixed
+    path) and performs **no** resolution. Reversible (drop `ent` → `plain()` fallback).
+    QC `qc_bk_power_entity_links.py`; proven in-browser: CFB teams link, coaches/players
+    plain where no destination, **0 nested anchors**, no sort regression, no mobile
+    overflow. **Stop here for review before fanning out to the other seven.**
+  - **The `{text, url}` cell object is preferred over a parallel positional URL array**
+    — it keeps the label and the resolver decision together and prevents index drift.
 
 - **Batch 2 — server-side Jinja reconcile (parallel track, not JS).** Replace the raw
   `/player/` links and plain `{{ player }}` listed above with `entity_anchor(...)` so
@@ -162,4 +181,6 @@ current plain text.** Reversing = server stops emitting `url`. No logic moves in
 3. **nfl_ats self-link:** leave unlinked. **Default: defer** (the destination is the
    page itself).
 
-**Stopping here for review per the directive — no conversions made.**
+**Inventory pass was read-only. Batch-1 `bk_power` pilot since authorized and SHIPPED on
+this branch (server `{text,url}` + DOM render; `qc_bk_power_entity_links.py`); stopped
+there for review before fanning out to the remaining Batch-1 surfaces.**
