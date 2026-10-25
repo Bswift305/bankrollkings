@@ -101,7 +101,7 @@
             <div style="font-size:11px; color:var(--text-muted); line-height:1.55; margin-bottom:10px;">How often the player cleared this exact line in simulated games, calibrated against real results. Live Authority reads carry the most weight; use them as support beside Confidence and Tier, not on their own.</div>
             {% for row in board_intelligence.top_sims %}
             <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:6px;">
-                <span style="color:var(--text-bright); font-weight:800;">{{ row.player }}</span>
+                <span style="color:var(--text-bright); font-weight:800;">{{ entity_anchor('player', 'wnba', row.player, css_class='player-link') }}</span>
                 <span style="color:var(--accent); font-weight:800;">{{ row.calibrated_sim_hit_probability }}%</span>
             </div>
             <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">{{ row.stat }} {{ row.direction }} · {{ row.simulation_authority|replace('_', ' ')|title }}</div>
