@@ -26,6 +26,13 @@ from pathlib import Path
 
 import pandas as pd
 
+# Reproduce the prod pandas condition: read_csv infers Arrow-backed string columns, where NA stringifies
+# to '<NA>' and unbound str methods crash. Without this the QC passes on object dtype but prod fails.
+try:
+    pd.set_option("future.infer_string", True)
+except Exception:
+    pass
+
 import capture_nfl_prop_lines as cap
 
 _FUT = "2026-12-01T18:00:00Z"   # future kickoff relative to "now"

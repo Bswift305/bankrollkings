@@ -41,7 +41,20 @@ ALL_COLS = _V1_COLS + _V2_COLS
 
 
 def _nonempty(series) -> list[str]:
-    return [s for s in series.astype(str).map(str.strip).tolist() if s and s.lower() != "nan"]
+    # dtype-robust: never .map(str.strip) (unbound method crashes on a float/NA under Arrow-backed string
+    # columns in the prod pandas). Skip NA FIRST via pd.isna -- a pyarrow NA stringifies to '<NA>', so
+    # stringifying before the NA check would leak garbage. Then drop blanks and nan/none/null sentinels.
+    out = []
+    for v in series.tolist():
+        try:
+            if v is None or pd.isna(v):
+                continue
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        if s and s.lower() not in ("nan", "none", "null", "<na>"):
+            out.append(s)
+    return out
 
 
 def _observation_id(parts: list) -> str:
