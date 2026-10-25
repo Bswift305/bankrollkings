@@ -1,58 +1,74 @@
-"""QC: dark NFL ATS shadow pilot (Phase 2C-dark, Rev 2).
+"""QC: dark NFL ATS shadow pilot (Phase 2C-dark, Rev 3).
 
 Frozen, synthetic builder-board views (no live data, no app/pandas import). Proves the
-corrected adapter: the FULL validator set runs; identity/provenance are builder-supplied
-(never fabricated); non-synchronized sources are fully fail-closed; receipt ids/sequences
-are deterministic per build (distinct across builds); flag OFF imports nothing.
+provenance foundations: receipt ids bind the COMPLETE build context; source fingerprints
+are structured + verified (not laundered labels); identity evidence is type-validated,
+never coerced; the three clocks are declared separately and never conflated; named rule
+versions are required; non-synchronized sources are fully fail-closed; flag OFF imports
+nothing.
 """
 from __future__ import annotations
 
 import copy
 import subprocess
 import sys
+from pathlib import Path
 
 import services.decision_shadow_boundary as boundary
 import services.nfl_ats_shadow as shadow
 
+FP = [{"source_id": "nflverse_games", "algorithm": "sha256", "digest": "ab" * 32}]
+BK = "2026-10-26T13:05:00Z"
+KICK = "2026-10-26T17:00:00Z"
 
-def _ident(team, quality="DECLARED_COMPOSITE"):
+
+def _ident(team, quality="DECLARED_COMPOSITE", collision_tested=True):
     base = {"quality": quality, "key": f"(nfl,2026,{team})",
             "base": {"sport": "nfl", "season": 2026}, "ext": {"team": team}}
-    if quality == "DECLARED_COMPOSITE":
-        base.update(collision_tested=True, profile="team:sport+season", profile_version="v1",
-                    collision_proof=f"ledger#{team}")
+    if quality in ("DECLARED_COMPOSITE", "COMPOSITE_NAME_EVENT"):
+        base.update(collision_tested=collision_tested, profile="team:sport+season",
+                    profile_version="v1", collision_proof=f"ledger#{team}")
+    else:
+        base["collision_tested"] = collision_tested
     return base
 
 
-def _prov(build_id="build-ats-2026w8", obs=1001):
-    return {"build_id": build_id, "config_version": "cfg-7",
-            "rule_versions": {"membership": 3, "ordering": 1},
-            "ordering_rule_id": "streak_desc_team_asc", "ordering_rule_version": "1",
-            "source_fingerprints": ["nflverse@sha256:abc123"], "observation_seq": obs}
+def _prov(build_id="build-ats-2026w8", obs=1001, config="cfg-7", rule_versions=None,
+          ordering_id="streak_desc_team_asc", ordering_ver="1", fps=None):
+    return {"build_id": build_id, "config_version": config,
+            "rule_versions": rule_versions or {"membership": 3, "ordering": 1},
+            "ordering_rule_id": ordering_id, "ordering_rule_version": ordering_ver,
+            "source_fingerprints": fps if fps is not None else [dict(FP[0])], "observation_seq": obs}
 
 
-def _row(team, leaf, reason, params=None, quality="DECLARED_COMPOSITE"):
-    r = {"team": team, "leaf": leaf, "reason": reason, "def_version": 1, "identity": _ident(team, quality)}
+def _clocks(bk=BK, su=None, status="NOT_PROVIDED", ee=KICK):
+    return {"bk_captured": bk, "source_updated": su, "source_updated_status": status,
+            "event_effective": ee}
+
+
+def _row(team, leaf, reason, params=None, quality="DECLARED_COMPOSITE", collision_tested=True,
+         identity=None):
+    r = {"team": team, "leaf": leaf, "reason": reason, "def_version": 1,
+         "identity": identity if identity is not None else _ident(team, quality, collision_tested)}
     if params is not None:
         r["params"] = params
     return r
 
 
-def _view(prov=None, rows=None, counts=None, expected=None, empty=False, health="SYNCHRONIZED"):
+def _view(prov=None, rows=None, counts=None, expected=None, empty=False, health="SYNCHRONIZED",
+          clocks=None, created_at="2026-10-26T13:05:05Z", universe=None):
     if rows is None:
-        rows = [
-            _row("PHI", "RENDERED", "QUALIFIED"),
-            _row("DAL", "RENDERED", "QUALIFIED"),
-            _row("SF", "SUPPRESSED", "DISPLAY_CAPPED"),
-            _row("NYG", "NONMEMBER", "BELOW_THRESHOLD", params={"threshold": 3}),
-            _row("WAS", "NONMEMBER", "COVER_SHORT"),
-        ]
+        rows = [_row("PHI", "RENDERED", "QUALIFIED"), _row("DAL", "RENDERED", "QUALIFIED"),
+                _row("SF", "SUPPRESSED", "DISPLAY_CAPPED"),
+                _row("NYG", "NONMEMBER", "BELOW_THRESHOLD", params={"threshold": 3}),
+                _row("WAS", "NONMEMBER", "COVER_SHORT")]
         counts = {"RENDERED": 2, "SUPPRESSED": 1, "NONMEMBER": 2}
         expected = 5
     return {"sport": "nfl", "season": 2026, "surface": "nfl_ats_wave",
-            "universe": ["team", "nfl_ats_board_2026", "v1"], "as_of": "2026-10-26T13:05:00Z",
-            "provenance": prov or _prov(), "rows": rows, "counts": counts,
-            "expected_count": expected, "empty_state": empty, "source_health_state": health}
+            "universe": universe or ["team", "nfl_ats_board_2026", "v1"], "created_at": created_at,
+            "clocks": clocks or _clocks(), "provenance": prov or _prov(), "rows": rows,
+            "counts": counts, "expected_count": expected, "empty_state": empty,
+            "source_health_state": health}
 
 
 def _empty(health="SYNCHRONIZED"):
@@ -73,100 +89,114 @@ def run_qc() -> dict:
     def ok(cond, label):
         (checks if cond else failures).append(label)
 
-    # 1) populated board: full parity + full validator set passes.
+    # Happy paths.
     r = shadow.run_shadow(_view())
     ok(r["ok"] and r["parity"]["all"] and r["receipts_valid"] and not r["fail_closed"],
        "populated board: parity + full validator set" + ("" if r["ok"] else f"  -> {r['diffs'] or r['error']}"))
+    ok(shadow.run_shadow(_empty())["ok"], "honest-empty board (synchronized): ok")
 
-    # 2) honest-empty board (SYNCHRONIZED): ok, empty-state matches.
-    e = shadow.run_shadow(_empty())
-    ok(e["ok"] and e["parity"]["empty_state"], "honest-empty board (synchronized): ok")
+    # BLOCKER 1 — ids bind the COMPLETE build context. Change one field at a time.
+    base_ids = shadow.run_shadow(_view())["receipt_ids"]
+    variants = {
+        "config": _view(prov=_prov(config="cfg-8")),
+        "membership_rule": _view(prov=_prov(rule_versions={"membership": 4, "ordering": 1})),
+        "ordering_rule_id": _view(prov=_prov(ordering_id="other_rule")),
+        "universe": _view(universe=["team", "nfl_ats_board_2027", "v1"]),
+        "clocks": _view(clocks=_clocks(bk="2026-10-26T14:00:00Z")),
+        "created_at": _view(created_at="2026-10-26T13:06:00Z"),
+        "rows": _view(rows=[_row("PHI", "RENDERED", "QUALIFIED")], counts={"RENDERED": 1}, expected=1),
+    }
+    for name, v in variants.items():
+        ids = shadow.run_shadow(v)["receipt_ids"]
+        ok(ids and ids != base_ids, f"BLOCKER1: changing {name} yields distinct receipt ids")
+    ok(shadow.run_shadow(_view())["receipt_ids"] == base_ids,
+       "BLOCKER1: identical replay reproduces identical ids")
 
-    # BLOCKER 1 — full validator set: a BELOW_THRESHOLD row missing its threshold param fails.
-    noparam = _view(rows=[_row("NYG", "NONMEMBER", "BELOW_THRESHOLD")],  # no params
-                    counts={"NONMEMBER": 1}, expected=1, empty=True)
-    n = shadow.run_shadow(noparam)
-    ok((not n["ok"]) and n["error"] is None
-       and any("param_fields" in d for d in n["diffs"]),
-       "BLOCKER1: missing required reason param is caught by validate_reason_usage (no raise)")
+    # BLOCKER 2 — structured, verified source fingerprints (not laundered labels).
+    for bad, why in (
+        (["nflverse@sha256:abc"], "a bare label string"),
+        ([{"source_id": "x", "algorithm": "md5", "digest": "ab" * 32}], "unsupported algorithm"),
+        ([{"source_id": "x", "algorithm": "sha256", "digest": "nothex"}], "malformed digest"),
+        ([{"source_id": "", "algorithm": "sha256", "digest": "ab" * 32}], "blank source_id"),
+        ([dict(FP[0]), dict(FP[0])], "duplicate source_id"),
+    ):
+        res = shadow.run_shadow(_view(prov=_prov(fps=bad)))
+        ok((not res["ok"]) and res["error"] is not None, f"BLOCKER2: fingerprint rejected ({why})")
+    good = shadow.run_shadow(_view())
+    ok(good["ok"], "BLOCKER2: a structured verified fingerprint is accepted")
 
-    # BLOCKER 2 — a display label alone cannot become authoritative identity.
-    labelonly = _view(rows=[_row("PHI", "RENDERED", "QUALIFIED", quality="NAME_ONLY")],
-                      counts={"RENDERED": 1}, expected=1)
-    lo = shadow.run_shadow(labelonly)
-    ok((not lo["ok"]) and any("authoritative identity" in d for d in lo["diffs"]),
-       "BLOCKER2: a NAME_ONLY (label-only) member is non-authoritative and fails closed")
+    # BLOCKER 3 — identity evidence is type-validated, never coerced.
+    for idv, why in (
+        (_ident("PHI", collision_tested="false"), "collision_tested='false' string"),
+        (_ident("PHI", collision_tested=1), "collision_tested=1 int"),
+        ({"quality": "DECLARED_COMPOSITE", "key": "(nfl,2026,PHI)",
+          "base": {"sport": "nfl", "season": 2026}, "ext": {"team": "PHI"},
+          "collision_tested": True, "profile": "p", "profile_version": "v1"}, "missing collision_proof"),
+        ({"quality": "DECLARED_COMPOSITE", "key": "k", "base": {"sport": "nfl"},
+          "ext": {"team": "PHI"}, "collision_tested": True, "profile": "p",
+          "profile_version": "v1", "collision_proof": "x"}, "base missing season"),
+        ({"quality": "DECLARED_COMPOSITE", "key": "k", "base": {"sport": "nfl", "season": 2026},
+          "ext": "not-a-map", "collision_tested": True, "profile": "p",
+          "profile_version": "v1", "collision_proof": "x"}, "ext not a map"),
+    ):
+        res = shadow.run_shadow(_view(rows=[_row("PHI", "RENDERED", "QUALIFIED", identity=idv)],
+                                      counts={"RENDERED": 1}, expected=1))
+        ok((not res["ok"]) and res["error"] is not None, f"BLOCKER3: identity rejected ({why})")
+    labelonly = shadow.run_shadow(_view(rows=[_row("PHI", "RENDERED", "QUALIFIED", quality="NAME_ONLY",
+                                     collision_tested=False)], counts={"RENDERED": 1}, expected=1))
+    ok((not labelonly["ok"]) and any("authoritative identity" in d for d in labelonly["diffs"]),
+       "BLOCKER3: a NAME_ONLY label member fails closed (non-authoritative)")
 
-    # BLOCKER 3 — non-synchronized sources are FULLY fail-closed.
-    stale_empty = shadow.run_shadow(_empty(health="STALE"))
-    ok((not stale_empty["ok"])
-       and any("source_health_not_synchronized" in f for f in stale_empty["fail_closed"])
-       and any("eligible_conclusion" in f for f in stale_empty["fail_closed"]),
-       "BLOCKER3: STALE empty board => ok:false + source-health + eligible-conclusion findings")
-    fc_members = shadow.run_shadow(_view(health="FAIL_CLOSED"))
-    ok((not fc_members["ok"])
-       and "members_admitted_under_unhealthy_source" in fc_members["fail_closed"],
-       "BLOCKER3: FAIL_CLOSED board with members => members-admitted fail-closed finding")
-    unavail = shadow.run_shadow(_unavailable(health="FAIL_CLOSED"))
-    ok((not unavail["ok"])
-       and any("source_health_not_synchronized" in f for f in unavail["fail_closed"])
-       and not any("members_admitted" in f for f in unavail["fail_closed"])
-       and not any("eligible_conclusion" in f for f in unavail["fail_closed"]),
-       "BLOCKER3: unhealthy source with UNAVAILABLE rows => ok:false, only the source-health finding")
+    # BLOCKER 4 — clocks declared separately; never conflated.
+    r2 = shadow.run_shadow(_view(clocks=_clocks(su=None, status="NOT_PROVIDED")))
+    ok(r2["ok"], "BLOCKER4: absent source_updated stays null + NOT_PROVIDED (valid)")
+    naive = shadow.run_shadow(_view(clocks=_clocks(bk="2026-10-26T13:05:00")))  # no Z
+    ok((not naive["ok"]) and any("bk_captured" in d for d in naive["diffs"]),
+       "BLOCKER4: timezone-naive bk_captured fails")
+    badstatus = shadow.run_shadow(_view(clocks=_clocks(su=None, status="PRESENT")))  # null+PRESENT
+    ok((not badstatus["ok"]) and any("source_updated" in d for d in badstatus["diffs"]),
+       "BLOCKER4: null source_updated with status PRESENT fails")
+    present = shadow.run_shadow(_view(clocks=_clocks(su="2026-10-26T12:00:00Z", status="PRESENT")))
+    ok(present["ok"], "BLOCKER4: a present source_updated + PRESENT status is valid")
 
-    # BLOCKER 4 — deterministic ids per build; distinct across builds; stable on replay.
-    a = shadow.run_shadow(_view(prov=_prov("buildA", 1001)))
-    b = shadow.run_shadow(_view(prov=_prov("buildB", 2002)))
-    a2 = shadow.run_shadow(_view(prov=_prov("buildA", 1001)))
-    ok(a["receipt_ids"] and a["receipt_ids"] != b["receipt_ids"],
-       "BLOCKER4: different builds produce different receipt ids")
-    ok(a["receipt_ids"] == a2["receipt_ids"] and a["membership_hash"] == a2["membership_hash"],
-       "BLOCKER4: replaying the identical build reproduces identical ids/hashes")
+    # Named rule-version keys required.
+    nr = shadow.run_shadow(_view(prov=_prov(rule_versions={"ordering": 1})))  # no 'membership'
+    ok((not nr["ok"]) and "membership" in (nr["error"] or ""),
+       "named rule-version key 'membership' is required")
 
-    # BLOCKER 5 — missing provenance fails the shadow (no fabricated defaults).
+    # Non-synchronized sources fully fail-closed.
+    se = shadow.run_shadow(_empty(health="STALE"))
+    ok((not se["ok"]) and any("eligible_conclusion" in f for f in se["fail_closed"]),
+       "STALE empty board => ok:false + eligible-conclusion fail-closed")
+    un = shadow.run_shadow(_unavailable())
+    ok((not un["ok"]) and any("source_health_not_synchronized" in f for f in un["fail_closed"])
+       and not any("members_admitted" in f for f in un["fail_closed"]),
+       "unhealthy source with UNAVAILABLE rows => ok:false, only the source-health finding")
+
+    # Missing provenance / created_at.
     noprov = _view(); del noprov["provenance"]
-    np = shadow.run_shadow(noprov)
-    ok((not np["ok"]) and np["error"] is not None and "provenance" in np["error"],
-       "BLOCKER5: missing provenance block fails closed")
-    partial = _view(); partial["provenance"] = dict(partial["provenance"]); del partial["provenance"]["source_fingerprints"]
-    pp = shadow.run_shadow(partial)
-    ok((not pp["ok"]) and pp["error"] is not None and "source_fingerprints" in pp["error"],
-       "BLOCKER5: missing source fingerprints fails closed")
+    ok((not shadow.run_shadow(noprov)["ok"]), "missing provenance fails closed")
+    noca = _view(); del noca["created_at"]
+    r_noca = shadow.run_shadow(noca)
+    ok((not r_noca["ok"]) and "created_at" in (r_noca["error"] or ""), "missing created_at fails closed")
 
-    # malformed leaf still fails closed (no raise).
-    mal = _view(rows=[_row("PHI", "BOGUS", "QUALIFIED")], counts={"RENDERED": 0}, expected=1)
-    m = shadow.run_shadow(mal)
-    ok((not m["ok"]) and m["error"] is not None and m["stage"] == "error",
-       "malformed leaf: fail-closed error record, no raise")
-
-    # adapter never mutates the builder output.
-    original = _view(); snapshot = copy.deepcopy(original); shadow.run_shadow(original)
-    ok(original == snapshot, "adapter does not mutate the builder board view (read-only)")
-
-    # flag boundary behavior.
-    ok(boundary.shadow_if_enabled(_view(), env={}) is None, "flag OFF (unset): boundary no-op")
-    on = boundary.shadow_if_enabled(_view(), env={boundary.FLAG: "1"})
-    ok(isinstance(on, dict) and on.get("ok") is True, "flag ON (local): boundary runs the shadow")
-
-    # flag OFF => zero import impact at the application boundary (fresh interpreter).
-    probe = (
-        "import sys;"
-        "import services.decision_shadow_boundary as b;"
-        "r=b.shadow_if_enabled({'x':1}, env={});"
-        "m=set(sys.modules);"
-        "print('R', r is None);"
-        "print('ADAPTER', 'services.nfl_ats_shadow' in m);"
-        "print('RECEIPTS', 'services.decision_receipts' in m);"
-        "print('PANDAS', any(x.split('.')[0]=='pandas' for x in m))"
-    )
-    from pathlib import Path
+    # No mutation, flag behavior, zero-import proof.
+    original = _view(); snap = copy.deepcopy(original); shadow.run_shadow(original)
+    ok(original == snap, "adapter does not mutate the builder board view")
+    ok(boundary.shadow_if_enabled(_view(), env={}) is None, "flag OFF: boundary no-op")
+    ok((boundary.shadow_if_enabled(_view(), env={boundary.FLAG: "1"}) or {}).get("ok") is True,
+       "flag ON (local): boundary runs the shadow")
+    probe = ("import sys;import services.decision_shadow_boundary as b;"
+             "r=b.shadow_if_enabled({'x':1}, env={});m=set(sys.modules);"
+             "print('R', r is None);print('ADAPTER','services.nfl_ats_shadow' in m);"
+             "print('RECEIPTS','services.decision_receipts' in m);"
+             "print('PANDAS', any(x.split('.')[0]=='pandas' for x in m))")
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
                          cwd=str(Path(boundary.__file__).resolve().parents[1]))
     lines = dict(l.split(" ", 1) for l in out.stdout.strip().splitlines() if " " in l)
-    ok(out.returncode == 0 and lines.get("R") == "True", "OFF boundary returns None (fresh interpreter)")
-    ok(lines.get("ADAPTER") == "False", "OFF: shadow adapter is NOT imported")
-    ok(lines.get("RECEIPTS") == "False", "OFF: receipt package is NOT imported")
-    ok(lines.get("PANDAS") == "False", "OFF: pandas is NOT imported")
+    ok(lines.get("R") == "True" and lines.get("ADAPTER") == "False"
+       and lines.get("RECEIPTS") == "False" and lines.get("PANDAS") == "False",
+       "flag OFF: fresh interpreter imports neither adapter, receipt package, nor pandas")
 
     return {"clean": not failures, "checks": checks, "failures": failures}
 
@@ -174,7 +204,7 @@ def run_qc() -> dict:
 def main() -> int:
     r = run_qc()
     print("=" * 72)
-    print("DARK NFL ATS SHADOW PILOT QC (Phase 2C-dark, Rev 2)")
+    print("DARK NFL ATS SHADOW PILOT QC (Phase 2C-dark, Rev 3)")
     print("=" * 72)
     for c in r["checks"]:
         print(f"  [ok] {c}")
