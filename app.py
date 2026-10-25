@@ -48693,7 +48693,20 @@ def build_nfl_ats_wave(now_et=None, games_root=None):
                                 'weeks_label': _compact_weeks(run_weeks), 'pushes': s['pushes'],
                                 'recent': s['recent']})
         members.sort(key=lambda m: (-m['streak'], m['team']))   # factual: streak desc, team asc
-    return {'members': members, 'sync': sync, 'expected_completed_week': expected_completed_week}
+    _ats_wave_result = {'members': members, 'sync': sync,
+                        'expected_completed_week': expected_completed_week}
+    # Decision Integrity dark shadow (flag BK_DECISION_RECEIPTS_SHADOW, default OFF). When
+    # OFF this performs zero work and imports nothing beyond the dependency-free flag check;
+    # when ON it observes in report-only mode. It never touches _ats_wave_result and is fully
+    # isolated, so it can never alter this return or raise into the route.
+    try:
+        from services.decision_shadow_boundary import shadow_enabled as _bk_shadow_enabled
+        if _bk_shadow_enabled():
+            from services import nfl_ats_shadow_hook as _bk_hook
+            _bk_hook.observe_nfl_ats_wave(_ats_wave_result, dec=dec, cur=cur, season=season)
+    except Exception:
+        pass
+    return _ats_wave_result
 
 
 def build_nfl_wave_context():
