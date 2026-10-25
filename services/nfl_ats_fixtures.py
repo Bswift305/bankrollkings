@@ -13,12 +13,12 @@ from dataclasses import replace
 from typing import List, Optional
 
 from services.decision_receipts import (
-    AuthorityClass, Clocks, CorrectionBody, DecisionStageBatch, DecisionStageRow,
-    EntityDisposition, EntityDispositionBatch, GovernedNumber, Identity, IdentityGrain,
+    AuthorityClass, Claim, Clocks, CorrectionBody, DecisionStageBatch, DecisionStageRow,
+    EntityDisposition, EntityDispositionBatch, GovernedNumber, HealthState, Identity, IdentityGrain,
     IdentityQuality, Integrity, IntegrityMechanism, Leaf, LiveEvidenceBoard, Projection,
-    Receipt, ReceiptKind, Refs, RenderBody, ReplayClass, SchemaVersion, SourceHealthBody,
-    SourceUpdatedStatus, StageOutcome, Universe, Versions, ChangeKind, compute_content_hash,
-    compute_conclusion_hash, compute_membership_hash, seal_hashes,
+    ProjectionRoot, Receipt, ReceiptKind, Refs, RenderBody, ReplayClass, SchemaVersion,
+    SourceHealthBody, SourceUpdatedStatus, StageOutcome, Universe, Versions, ChangeKind,
+    compute_content_hash, compute_conclusion_hash, compute_membership_hash, seal_hashes,
 )
 
 SURFACE = "nfl_ats_wave"
@@ -115,14 +115,15 @@ def board(batch: Optional[Receipt] = None, receipt_id: str = BOARD_ID, **kw) -> 
     return seal_hashes(Receipt(**base))
 
 
-def source_health(receipt_id: str = SH_ID, synchronized: bool = True, **kw) -> Receipt:
+def source_health(receipt_id: str = SH_ID, state: HealthState = HealthState.SYNCHRONIZED,
+                  **kw) -> Receipt:
     base = dict(
         receipt_id=receipt_id, receipt_kind=ReceiptKind.SOURCE_HEALTH,
         schema_version=SchemaVersion(1, 0), surface_id=SURFACE, universe=UNI_BOARD,
         created_seq=99, created_at=BK_AT, versions=_versions(),
         replay_class=ReplayClass.NON_REPLAYABLE, authority_class=AuthorityClass.DERIVED_CONTEXT,
         projection=Projection.INTERNAL, clocks=_clocks(), input_hashes=None,
-        body=SourceHealthBody(synchronized, BK_AT, {"state": "SYNCHRONIZED"}),
+        body=SourceHealthBody(state, BK_AT, {"checked_rows": 5}),
     )
     base.update(kw)
     return seal_hashes(Receipt(**base))
@@ -185,7 +186,17 @@ def user_safe(root: Optional[Receipt] = None, receipt_id: str = USERSAFE_ID, **k
         replay_class=ReplayClass.NON_REPLAYABLE, authority_class=AuthorityClass.DERIVED_CONTEXT,
         projection=Projection.USER_SAFE, clocks=_clocks(), input_hashes=None,
         refs=Refs(entity_dispositions=BATCH_ID, source_health=SH_ID),
-        claims=["2 teams on active 3+ ATS cover streaks", "sorted by active cover streak"],
+        # Human prose = rendering only (not the governed claim).
+        claims=["3 teams on active 3+ ATS cover streaks", "sorted by active cover streak"],
+        # Immutable binding to the internal root this projection derives from.
+        projection_root=ProjectionRoot(root.receipt_id, root.conclusion_hash, "evidence"),
+        # Governed claim records.
+        claim_records=[
+            Claim("MEMBER_COUNT", {"count": 3}, (root.receipt_id,)),
+            Claim("SORTED", {"sort_rule_id": "streak_desc_team_asc", "sort_rule_version": "1"},
+                  (root.receipt_id,)),
+            Claim("HEALTH", {"state": "SYNCHRONIZED"}, (SH_ID,)),
+        ],
         body=LiveEvidenceBoard(root.body.membership_hash, {"RENDERED": 2, "SUPPRESSED": 1,
                                "NONMEMBER": 2}, 5),
     )

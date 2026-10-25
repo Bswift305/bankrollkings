@@ -195,6 +195,14 @@ class SemanticCategory(Enum):
     TRANSITION = "transition"
 
 
+class HealthState(Enum):
+    """The single governed state of record for a source_health receipt. There is no
+    second free-form authoritative state."""
+    SYNCHRONIZED = "SYNCHRONIZED"
+    STALE = "STALE"
+    FAIL_CLOSED = "FAIL_CLOSED"
+
+
 class ChangeKind(Enum):
     REGRADE = "regrade"
     LINE_CORRECTION = "line_correction"
@@ -433,6 +441,26 @@ class Refs:
     evidence: Optional[str] = None              # render→evidence / board→decision-stage
 
 
+@dataclass(frozen=True)
+class ProjectionRoot:
+    """Immutable, serialized reference binding a user_safe projection to the internal
+    root it derives from (so a projection cannot be re-pointed at a different root
+    later). Validated against the supplied root by the projection validator."""
+    root_receipt_id: str
+    root_conclusion_hash: str
+    projection_type: str            # "evidence" | "render"
+
+
+@dataclass(frozen=True)
+class Claim:
+    """A GOVERNED user-safe claim: a stable code + governed params + the supporting
+    receipt ids it derives from. Human prose lives separately in `render_prose` and is
+    NOT the governed claim."""
+    claim_code: str
+    params: Dict[str, Any] = field(default_factory=dict)
+    support_refs: tuple = ()
+
+
 # ---------------------------------------------------------------------------
 # Row records (per-row identity + reason definition)
 # ---------------------------------------------------------------------------
@@ -491,11 +519,17 @@ class LiveEvidenceBoard:
 
 @dataclass
 class SourceHealthBody:
-    """Body of a `source_health` receipt (§7 ref target): the sidecar freshness /
-    sync state a board evidence receipt references."""
-    synchronized: bool
+    """Body of a `source_health` receipt (§7 ref target). ONE governed state of
+    record (`state: HealthState`); `synchronized` is derived from it, never a second
+    authoritative field. `detail` is non-authoritative metadata and MUST NOT carry a
+    `state` key (no second source of truth)."""
+    state: HealthState
     checked_at: str                           # instant[UTC]
     detail: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def synchronized(self) -> bool:
+        return self.state == HealthState.SYNCHRONIZED
 
 
 @dataclass
@@ -546,7 +580,9 @@ class Receipt:
     supersedes_seq: Optional[int] = None   # convenience: superseded created_seq
     refs: Optional[Refs] = None
     disclosures: Optional[List[str]] = None
-    claims: Optional[List[str]] = None     # user_safe only
+    claims: Optional[List[str]] = None               # user_safe RENDER PROSE only (not governed)
+    claim_records: Optional[List["Claim"]] = None    # user_safe GOVERNED claims
+    projection_root: Optional["ProjectionRoot"] = None  # user_safe binding to its internal root
 
 
 # ---------------------------------------------------------------------------
@@ -1015,12 +1051,15 @@ def _check_board(b: LiveEvidenceBoard, receipt: Receipt, errs: List[str]) -> Non
 
 
 def _check_source_health(b: SourceHealthBody, errs: List[str]) -> None:
-    if not isinstance(b.synchronized, bool):
-        errs.append("source_health.synchronized must be a bool")
+    if not isinstance(b.state, HealthState):
+        errs.append("source_health.state must be a HealthState (the one governed state)")
     if not _valid_utc(b.checked_at):
         errs.append("source_health.checked_at must be a tz-aware UTC instant")
     if not isinstance(b.detail, dict):
         errs.append("source_health.detail must be a map")
+    elif "state" in b.detail:
+        errs.append("source_health.detail MUST NOT carry a second authoritative 'state' "
+                    "(one governed state of record only)")
 
 
 def _check_render(b: RenderBody, receipt: Receipt, errs: List[str]) -> None:
@@ -1242,10 +1281,10 @@ __all__ = [
     "ReceiptKind", "SUPPORTED_RECEIPT_KINDS", "NOT_YET_CONSTRUCTED_KINDS",
     "AuthorityClass", "ReplayClass", "Leaf", "StageOutcome", "IdentityQuality",
     "IdentityGrain", "SourceUpdatedStatus", "IntegrityMechanism", "SemanticCategory",
-    "ChangeKind", "Projection", "HASH_ALGORITHMS",
+    "ChangeKind", "Projection", "HASH_ALGORITHMS", "HealthState",
     "Decimal", "NumericProfileError", "NUMERIC_PROFILES", "canonical_number", "GovernedNumber",
     "Identity", "Clocks", "Versions", "Integrity", "has_tamper_evidence_metadata",
-    "Universe", "Refs", "REASON_CODES",
+    "Universe", "Refs", "ProjectionRoot", "Claim", "REASON_CODES",
     "EntityDisposition", "DecisionStageRow",
     "EntityDispositionBatch", "DecisionStageBatch", "LiveEvidenceBoard",
     "SourceHealthBody", "RenderBody", "CorrectionBody",

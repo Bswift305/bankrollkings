@@ -26,13 +26,21 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from services.decision_receipts import (
-    ChangeKind, CorrectionBody, DecisionStageRow, EntityDisposition, EntityDispositionBatch,
-    DecisionStageBatch, Identity, IdentityQuality, Leaf, LiveEvidenceBoard, Projection,
-    Receipt, ReceiptKind, RenderBody, ReplayClass, SemanticCategory, SourceHealthBody,
-    StageOutcome, ValidationResult, _LEAF_NAMES, _STAGE_NAMES, _REASON_CODE_RE, _dumps,
-    canonical_identity, compute_conclusion_hash, compute_content_hash, compute_membership_hash,
-    reconcile_board, validate_receipt,
+    ChangeKind, Claim, CorrectionBody, DecisionStageRow, EntityDisposition, EntityDispositionBatch,
+    DecisionStageBatch, HealthState, Identity, IdentityQuality, Leaf, LiveEvidenceBoard,
+    Projection, ProjectionRoot, Receipt, ReceiptKind, RenderBody, ReplayClass, SemanticCategory,
+    SourceHealthBody, StageOutcome, ValidationResult, _LEAF_NAMES, _STAGE_NAMES, _REASON_CODE_RE,
+    _dumps, canonical_identity, compute_conclusion_hash, compute_content_hash,
+    compute_membership_hash, reconcile_board, validate_receipt,
 )
+
+# Governed user-safe claim registry: claim_code -> required governed params.
+CLAIM_REGISTRY = {
+    "MEMBER_COUNT": ("count",),
+    "SORTED": ("sort_rule_id", "sort_rule_version"),
+    "EMPTY_STATE": (),
+    "HEALTH": ("state",),
+}
 
 
 def _gate(receipts, errs: List[str]) -> bool:
@@ -469,6 +477,62 @@ def _reachable_from(root: Receipt, by_id: Dict[str, Receipt]) -> set:
     return out
 
 
+def _members(board_body: LiveEvidenceBoard) -> int:
+    return board_body.per_leaf_counts.get("RENDERED", 0) + board_body.per_leaf_counts.get("SUPPRESSED", 0)
+
+
+def _reachable_health_state(reachable: set, by_id: Dict[str, Receipt]) -> Optional[str]:
+    for rid in reachable:
+        r = by_id.get(rid)
+        if r is not None and r.receipt_kind == ReceiptKind.SOURCE_HEALTH \
+                and isinstance(r.body, SourceHealthBody) and isinstance(r.body.state, HealthState):
+            return r.body.state.value
+    return None
+
+
+def _validate_claims(user_safe: Receipt, root_internal: Receipt, by_id: Dict[str, Receipt],
+                     reachable: set, errs: List[str]) -> None:
+    """Every GOVERNED claim carries a registered code + required params, cites only
+    reachable support receipts, and is DERIVABLE from the root/reference graph.
+    Human prose (`claims`) is rendering only and is not validated here."""
+    records = user_safe.claim_records
+    if not records:
+        errs.append("user_safe MUST carry governed claim_records (prose `claims` is not a claim)")
+        return
+    allowed = {root_internal.receipt_id} | reachable
+    root_board = root_internal.body if isinstance(root_internal.body, LiveEvidenceBoard) else None
+    health_state = _reachable_health_state(reachable, by_id)
+    for i, c in enumerate(records):
+        if not isinstance(c, Claim):
+            errs.append(f"claim_records[{i}] is not a governed Claim"); continue
+        if c.claim_code not in CLAIM_REGISTRY:
+            errs.append(f"claim_records[{i}]: unregistered claim_code {c.claim_code!r}"); continue
+        missing = [p for p in CLAIM_REGISTRY[c.claim_code] if p not in c.params]
+        if missing:
+            errs.append(f"claim_records[{i}] ({c.claim_code}): missing params {missing}")
+        for ref in c.support_refs:
+            if ref not in allowed:
+                errs.append(f"claim_records[{i}] ({c.claim_code}): support ref {ref!r} is not "
+                            "reachable from the root")
+        # Derivation from the governed graph.
+        if c.claim_code == "MEMBER_COUNT" and root_board is not None and "count" in c.params:
+            if c.params["count"] != _members(root_board):
+                errs.append(f"claim_records[{i}] MEMBER_COUNT {c.params['count']} not derivable "
+                            f"(root members={_members(root_board)})")
+        elif c.claim_code == "EMPTY_STATE" and root_board is not None:
+            if _members(root_board) != 0:
+                errs.append(f"claim_records[{i}] EMPTY_STATE not derivable (root has members)")
+        elif c.claim_code == "SORTED":
+            if root_internal.receipt_id not in c.support_refs:
+                errs.append(f"claim_records[{i}] SORTED must cite the root board as support")
+        elif c.claim_code == "HEALTH":
+            if health_state is None:
+                errs.append(f"claim_records[{i}] HEALTH has no reachable source_health to support it")
+            elif c.params.get("state") != health_state:
+                errs.append(f"claim_records[{i}] HEALTH state {c.params.get('state')!r} != governed "
+                            f"source-health state {health_state!r}")
+
+
 def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
                                   internal_graph: Sequence[Receipt] = ()) -> ValidationResult:
     """R21/R22 root-and-reference, strengthened to prove SUPPORT (not just stripping):
@@ -503,8 +567,20 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
         errs.append("user_safe MUST NOT carry input_hashes (internal-only)")
     if user_safe.integrity.proof:
         errs.append("user_safe MUST NOT carry integrity.proof (internal-only)")
-    if not user_safe.claims:
-        errs.append("user_safe MUST carry claims")
+
+    # Immutable projection-root binding: the receipt itself records its root, so it
+    # cannot be re-pointed at a different root by the caller.
+    pr = user_safe.projection_root
+    if not isinstance(pr, ProjectionRoot):
+        errs.append("user_safe MUST carry a serialized projection_root reference")
+    else:
+        if pr.root_receipt_id != root_internal.receipt_id:
+            errs.append(f"projection_root.root_receipt_id {pr.root_receipt_id!r} != supplied root "
+                        f"{root_internal.receipt_id!r} (substituted root)")
+        if pr.root_conclusion_hash != root_internal.conclusion_hash:
+            errs.append("projection_root.root_conclusion_hash != the root's conclusion_hash")
+        if pr.projection_type not in ("evidence", "render"):
+            errs.append(f"projection_root.projection_type {pr.projection_type!r} invalid")
 
     # Reachability: referenced ids must be the root or reachable from it.
     reachable = {root_internal.receipt_id} | _reachable_from(root_internal, by_id)
@@ -520,21 +596,25 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
             errs.append("user_safe membership_hash is not supported by the internal root (forged)")
         if user_safe.body.per_leaf_counts != root_internal.body.per_leaf_counts:
             errs.append("user_safe per-leaf counts are not supported by the internal root (forged)")
+        if user_safe.body.expected_count != root_internal.body.expected_count:
+            errs.append("user_safe expected_count is not supported by the internal root (forged)")
 
-    # Health support: an unsynchronized reachable source_health forbids presenting members.
-    for rid in reachable:
-        r = by_id.get(rid)
-        if r is not None and r.receipt_kind == ReceiptKind.SOURCE_HEALTH \
-                and isinstance(r.body, SourceHealthBody) and not r.body.synchronized:
-            if isinstance(user_safe.body, LiveEvidenceBoard) \
-                    and user_safe.body.per_leaf_counts.get("RENDERED", 0) > 0:
-                errs.append("user_safe presents rendered members on an unsynchronized source "
-                            "(forged health claim)")
+    # Governed claims: registered, parameterized, supported, and derivable.
+    _validate_claims(user_safe, root_internal, by_id, reachable, errs)
+
+    # Health support (governed state): an unsynchronized reachable source_health
+    # forbids presenting rendered members, even when a board shows zero members.
+    hs = _reachable_health_state(reachable, by_id)
+    if hs is not None and hs != HealthState.SYNCHRONIZED.value \
+            and isinstance(user_safe.body, LiveEvidenceBoard) \
+            and user_safe.body.per_leaf_counts.get("RENDERED", 0) > 0:
+        errs.append("user_safe presents rendered members on a non-synchronized source "
+                    "(forged health claim)")
     return ValidationResult(not errs, errs)
 
 
 __all__ = [
-    "ReasonCodeDef", "REASON_REGISTRY", "HEALTH_STATES", "rollups",
+    "ReasonCodeDef", "REASON_REGISTRY", "CLAIM_REGISTRY", "HEALTH_STATES", "rollups",
     "validate_reason_registry", "validate_reason_usage",
     "validate_envelope", "validate_stage_leaf_separation", "validate_nested_conservation",
     "validate_canonical_replay", "replay_equal", "validate_identity_collision",

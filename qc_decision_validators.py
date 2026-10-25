@@ -195,9 +195,44 @@ def run_qc() -> dict:
     fx.reseal(us_forge_c)
     bad(V.validate_user_safe_projection(us_forge_c, brd, graph), "counts are not supported",
         "user-safe invalid: forged (inflated) counts rejected")
-    sh_bad = fx.source_health(synchronized=False)
-    bad(V.validate_user_safe_projection(us, brd, [batch, sh_bad]), "forged health claim",
-        "user-safe invalid: presents members on an unsynchronized source rejected")
+    us_forge_e = fx.user_safe(brd)
+    us_forge_e.body = LiveEvidenceBoard(brd.body.membership_hash,
+                                        dict(brd.body.per_leaf_counts), 99); fx.reseal(us_forge_e)
+    # expected_count is compared at the support layer AND enforced by the envelope
+    # conservation gate (counts must sum to expected_count), which fires first here.
+    bad(V.validate_user_safe_projection(us_forge_e, brd, graph), "expected_count",
+        "user-safe invalid: forged expected_count rejected (conservation gate)")
+    # projection-root binding
+    us_noroot = fx.user_safe(brd, projection_root=None)
+    bad(V.validate_user_safe_projection(us_noroot, brd, graph), "MUST carry a serialized projection_root",
+        "user-safe invalid: missing projection_root rejected")
+    us_subst = fx.user_safe(brd, projection_root=fx.ProjectionRoot("deadbeef-0000-4000-8000-000000000000",
+               brd.conclusion_hash, "evidence"))
+    bad(V.validate_user_safe_projection(us_subst, brd, graph), "substituted root",
+        "user-safe invalid: substituted projection_root receipt_id rejected")
+    us_wrongh = fx.user_safe(brd, projection_root=fx.ProjectionRoot(brd.receipt_id, "0" * 64, "evidence"))
+    bad(V.validate_user_safe_projection(us_wrongh, brd, graph), "root_conclusion_hash",
+        "user-safe invalid: wrong projection_root conclusion_hash rejected")
+    # invented / unsupported governed claims
+    us_badcount = fx.user_safe(brd, claim_records=[fx.Claim("MEMBER_COUNT", {"count": 9}, (brd.receipt_id,))])
+    bad(V.validate_user_safe_projection(us_badcount, brd, graph), "MEMBER_COUNT 9 not derivable",
+        "user-safe invalid: invented member-count claim rejected")
+    us_badsort = fx.user_safe(brd, claim_records=[fx.Claim("SORTED",
+                 {"sort_rule_id": "x", "sort_rule_version": "1"}, ())])
+    bad(V.validate_user_safe_projection(us_badsort, brd, graph), "SORTED must cite the root",
+        "user-safe invalid: sort claim with no supporting root rejected")
+    us_unrclaim = fx.user_safe(brd, claim_records=[fx.Claim("MEMBER_COUNT", {"count": 3},
+                  ("b0000000-0000-4000-8000-0000000000ff",))])
+    bad(V.validate_user_safe_projection(us_unrclaim, brd, graph), "is not reachable from the root",
+        "user-safe invalid: claim citing an unreachable support receipt rejected")
+    # governed health state (even with zero rendered members)
+    sh_fc = fx.source_health(state=fx.HealthState.FAIL_CLOSED)
+    bad(V.validate_user_safe_projection(us, brd, [batch, sh_fc]), "forged health claim",
+        "user-safe invalid: presents rendered members on a FAIL_CLOSED source rejected")
+    us_health_mismatch = fx.user_safe(brd, claim_records=[fx.Claim("HEALTH", {"state": "SYNCHRONIZED"},
+                         (fx.SH_ID,))])
+    bad(V.validate_user_safe_projection(us_health_mismatch, brd, [batch, sh_fc]),
+        "HEALTH state", "user-safe invalid: HEALTH claim not matching governed state rejected")
     other = fx.dispositions_batch(receipt_id="b0000000-0000-4000-8000-0000000000ff")
     us_unreach = fx.user_safe(brd)
     us_unreach.refs = fx.Refs(entity_dispositions=other.receipt_id, source_health=fx.SH_ID)
@@ -205,6 +240,15 @@ def run_qc() -> dict:
     bad(V.validate_user_safe_projection(us_unreach, brd, [batch, sh, other]),
         "not reachable from its root",
         "user-safe invalid: references an existing-but-unreachable receipt rejected")
+
+    # === source-health one governed state of record ===
+    for st in (fx.HealthState.SYNCHRONIZED, fx.HealthState.STALE, fx.HealthState.FAIL_CLOSED):
+        good(V.validate_envelope(fx.source_health(state=st)), f"source_health state {st.value} is valid")
+    contradiction = fx.source_health()
+    contradiction.body = fx.SourceHealthBody(fx.HealthState.SYNCHRONIZED, fx.BK_AT,
+                                             {"state": "FAIL_CLOSED"}); fx.reseal(contradiction)
+    bad(V.validate_envelope(contradiction), "second authoritative 'state'",
+        "source_health invalid: contradictory second state in detail rejected")
 
     # === purity ===
     before = set(os.listdir("."))
