@@ -262,12 +262,15 @@ for the NFL ATS pilot only and is revisited in the post-pilot governance pass; i
 
 **Two linked universes (Rev-2.1 #1 — the rendered members are *teams*, not game decisions, so one equation
 cannot reconcile both):**
-- **Decision universe** — grain `(game_id, TeamSide)`. Its records reconcile grading / `NO_LINE` / `OVERDUE`
-  / `MALFORMED` / out-of-boundary states (the Audit #2/#3 conservation partition). `universe={grain:
-  "team_side_decision", id:"nfl_ats_decisions_2026", version}`.
+- **Decision universe** — grain `(game_id, TeamSide)`. This grain is **supporting stage evidence consumed by
+  calculation — it is never rendered to the user**, so it carries **stage outcomes**, not presentation leaves:
+  `GRADED` (with `PUSH` / `VOID` where the result is a push/void) / `NO_LINE` / `OVERDUE` / `MALFORMED` /
+  `OUTSIDE_BOUNDARY` (the Audit #2/#3 conservation partition). Its counts reconcile **independently**.
+  `universe={grain:"team_side_decision", id:"nfl_ats_decisions_2026", version}`.
 - **Board universe** — grain **one record per NFL team**, each computed from that team's *eligible decision
-  history*, ending in `RENDERED` / `SUPPRESSED` / `NONMEMBER`. `universe={grain:"team", id:
-  "nfl_ats_board_2026", version}`.
+  history*. This is the **terminal-disposition** universe: each expected team ends in exactly one of
+  `RENDERED` / `SUPPRESSED` / `NONMEMBER` / `UNAVAILABLE` / `INDETERMINATE` / `FAILED` / `EXCLUDED` (where
+  applicable). `universe={grain:"team", id:"nfl_ats_board_2026", version}`.
 - The **board receipt MUST reference the decision-universe/calculation receipt** (hierarchical, §7). The two
   equations reconcile **independently** (§3); game decisions and rendered teams are **never** summed in one
   equation.
@@ -277,21 +280,23 @@ How the audited `build_nfl_ats_wave` maps onto these contracts (illustrative; no
 | Contract | NFL ATS mapping (from Audit #2/#3 evidence) |
 |---|---|
 | Receipt envelope | two receipts: a **decision** evidence receipt (`universe` = the decision universe) and a **board** evidence receipt (`universe` = the board universe) that references it. `surface_id=nfl_ats_wave`; `authority_class=fact`; `replay_class=EVIDENCE_EQUIVALENT`; **clocks (Rev-2.1 #5):** `bk_captured`=sidecar `checked_at_utc` (a BK observation/check clock) / `content_fetched_at_utc`; **`source_updated=null`, `source_updated_status=NOT_PROVIDED`** — the nflverse games parquet exposes no provider source-update clock (the check clock is never substituted for it); `event_effective`=kickoff. |
-| Terminal leaves (two universes) | **Decision universe** (`(game_id,TeamSide)`, no FBS/conference concept — that is CFB only): graded decision → feeds the board; completed game with **no recorded spread** → `EXCLUDED`(`NO_LINE`); past-grace ungraded → `UNAVAILABLE`(`OVERDUE`); malformed spread → `FAILED`; future/within-grace → `OUTSIDE_BOUNDARY` out-of-universe tag (e.g. the 2 finished Week-8 decisions). **Board universe** (one record per team, from eligible decision history): `cover_streak≥3` shown → `RENDERED`; admitted but display-capped → `SUPPRESSED`; below threshold → `NONMEMBER`. |
-| Reason-code registry | `SORTED` + `sort_rule_id=streak_desc_team_asc` (`stage_outcome`); `BELOW_THRESHOLD` (cover_streak<3, `leaf`); `NO_LINE` (`leaf`); `OVERDUE` (`leaf`→Unavailable); `SOURCE_STALE` (`health`); `MALFORMED`/`CONFLICT` (`leaf`→Failed). (No FBS/conference codes — those belong to the CFB surface.) |
+| Stage outcomes vs terminal leaves (two universes) | **Decision universe** (`(game_id,TeamSide)`, no FBS/conference concept — that is CFB only) is **stage evidence consumed by calculation, never rendered**, so it carries **stage outcomes, not presentation leaves**: graded → `GRADED` (`PUSH`/`VOID` on a push/void); completed game with **no recorded spread** → `NO_LINE`; past-grace ungraded → `OVERDUE`; malformed spread → `MALFORMED`; future/within-grace → `OUTSIDE_BOUNDARY` out-of-universe tag (e.g. the 2 finished Week-8 decisions). Its counts reconcile independently; it receives **no** presentation leaf. **Board universe** (one record per team, from eligible decision history) is the **terminal-disposition** universe — each expected team gets exactly one: `cover_streak≥3` shown → `RENDERED`; admitted but display-capped → `SUPPRESSED`; below threshold → `NONMEMBER`; history `OVERDUE`/source-stale → `UNAVAILABLE`; not yet gradable → `INDETERMINATE`; `MALFORMED`/`CONFLICT` → `FAILED`; legitimately out → `EXCLUDED`. The **board receipt references the decision-stage receipt as evidence**. |
+| Reason-code registry | **Decision-stage** (`stage_outcome`, never a presentation leaf): `GRADED`/`PUSH`/`VOID`; `NO_LINE`; `OVERDUE`; `MALFORMED`; `OUTSIDE_BOUNDARY`. **Health:** `SOURCE_STALE` (`health`). **Board leaves** (`leaf`, terminal): `BELOW_THRESHOLD` (cover_streak<3 → `NONMEMBER`); `OVERDUE`/`SOURCE_STALE` history → `UNAVAILABLE`; `MALFORMED`/`CONFLICT` → `FAILED`. `SORTED` + `sort_rule_id=streak_desc_team_asc` is a board-stage ordering (`stage_outcome`). (No FBS/conference codes — those belong to the CFB surface.) |
 | Canonical serialization | the membership hash + sidecar `content_sha256` are the prototypes; member rows serialized sorted, excluding render timestamps. |
 | Grain-specific identity | decision universe key `(game_id, TeamSide)` → `identity_quality=DECLARED_COMPOSITE` (Rev-2.1 #6: `game_id` alone is `PROVIDER_ID`, but the `(game_id,TeamSide)` composite is a governed declared key with its profile/version + collision proof recorded). Board universe key = NFL team (provider team name, sport-scoped). |
 | Correction linkage | a regraded game or a corrected spread → a `correction` receipt (`change_kind=regrade`/`line_correction`) superseding the prior decision receipt. |
-| Hierarchical refs | the **decision** evidence receipt references team-side decision dispositions + the source-health receipt (sidecar freshness); the **board** evidence receipt references the decision/calculation receipt + per-team board dispositions; the **render receipt** references the board evidence receipt + its `conclusion_hash`/membership hash (forward-only render→board→decision, acyclic — Rev-2.1 #1/#2). |
+| Hierarchical refs | the **decision-stage** evidence receipt records team-side decision **stage outcomes** + the source-health receipt (sidecar freshness); the **board** evidence receipt references the decision-stage/calculation receipt + per-team board **terminal dispositions**; the **render receipt** references the board evidence receipt + its `conclusion_hash`/membership hash (forward-only render→board→decision, acyclic — Rev-2.1 #1/#2). |
 | User-safe projection | user sees members + the honest empty state ("no active 3+ ATS cover streaks") + "sorted by active cover streak"; internal retains sha/lineage. |
 | Transition-event (pilot) | a team crossing to a 3-cover streak, or `synchronized` flipping, emits a transition record; an unchanged rebuild does not. |
 
 **Empty-membership state (Audit #2, `members=0`)** is a **valid, fully-receipted outcome**, not an
 error, and resolves per universe (Rev-2.2 — the two grains never mix):
-- The **decision universe** reconciles its decision leaves independently (each `(game_id,TeamSide)`
-  graded decision → `RENDERED`/`EXCLUDED`/`UNAVAILABLE`/`FAILED`, future/within-grace →
-  `OUTSIDE_BOUNDARY`), unaffected by board membership.
-- The **board universe** assigns each expected NFL team `RENDERED`, `SUPPRESSED`, or `NONMEMBER`.
+- The **decision universe** reconciles its decision **stage outcomes** independently — each
+  `(game_id,TeamSide)` is `GRADED` (`PUSH`/`VOID` where applicable) / `NO_LINE` / `OVERDUE` / `MALFORMED`,
+  future/within-grace → `OUTSIDE_BOUNDARY`. These are stage outcomes consumed by calculation, **never
+  presentation leaves**, and are unaffected by board membership.
+- The **board universe** assigns each expected NFL team exactly one terminal disposition
+  (`RENDERED`/`SUPPRESSED`/`NONMEMBER`/`UNAVAILABLE`/`INDETERMINATE`/`FAILED`/`EXCLUDED`).
 - With `members=0`, the board universe has `RENDERED=0` and all qualifying expected teams as
   `NONMEMBER` (max cover_streak was 2 — `BELOW_THRESHOLD`), conservation balanced, and the render
   receipt shows the honest empty state.
