@@ -45454,25 +45454,17 @@ def build_scenario_lab_context():
     except (OSError, ValueError):
         pass  # missing/corrupt export -> template shows an empty-state notice
     meta = data.get('meta', {})
-
-    # Batch-1 Group 3: wrap ONLY the NFL player column (index 0, header varies QB/RB/WR) of each
-    # players board. Team-rankings + team-profile boards are left untouched (player-only wrap).
-    def _wrap_scope_players(scope):
-        players = scope.get('players') if isinstance(scope, dict) else None
-        if not isinstance(players, dict):
-            return scope
-        new_players = {}
-        for pos, pack in players.items():
-            if isinstance(pack, dict) and isinstance(pack.get('boards'), dict):
-                pack = {**pack, 'boards': {k: _wrap_entity_board(b, 'player', 'nfl', col_index=0)
-                                           for k, b in pack['boards'].items()}}
-            new_players[pos] = pack
-        return {**scope, 'players': new_players}
-
-    scenario_data = {**data, 'scopes': {sk: _wrap_scope_players(sv)
-                                        for sk, sv in (data.get('scopes') or {}).items()}}
+    # Batch-1 Group 3 entity-linking is BLOCKED on canonical player identity — NOT wired.
+    # The scenario export stores SHORT FORMS (e.g. 'B.Purdy' -> normalizes to 'bpurdy') while the NFL
+    # resolver keys full-name roster identities ('Brock Purdy' -> 'brockpurdy'); those keys cannot match,
+    # so wrapping the player column would only ever render plain text — there is no "pending" resolution.
+    # Unblocking requires adding a stable canonical identity (player id / full name) to the export itself
+    # (research/nfl_scenarios/build_scenario_export.py), collision-tested — never fuzzy initial+surname
+    # matching (initial+surname is not unique). The player-column wiring was reverted; audit finding kept
+    # in docs/entity_link_js_inventory.md. (`_wrap_entity_board` retains its generic `col_index` hook for
+    # that future, exact, collision-tested mapping.)
     return {
-        'scenario_data': scenario_data,
+        'scenario_data': data,
         'scenario_meta': meta,
         'scenario_available': bool(data.get('scopes')),
     }

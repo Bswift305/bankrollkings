@@ -113,11 +113,9 @@
 
 {% if scenario_available %}
 <script id="sl-data" type="application/json">{{ scenario_data|tojson }}</script>
-{% include '_entity_cell.html' %}
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('sl-data').textContent);
-  const EC = window.bkEntityCell;
   const S = {scope:'2025', tab:'players', pos:'qb', scen:'3rd-10plus',
              cat:'third', team:null, side:'off', sortCol:null, sortDir:-1};
   const $ = s => document.querySelector(s);
@@ -149,7 +147,6 @@
     if(sc!==null && sc<cols.length){
       rows.sort((a,b)=>{
         let x=a[sc], y=b[sc];
-        if(sc===board.entity_col){x=EC.text(x);y=EC.text(y);}
         if(x===null) return 1; if(y===null) return -1;
         if(typeof x==='string') return -S.sortDir*x.localeCompare(y);
         return S.sortDir*(x-y);
@@ -163,17 +160,12 @@
       cols.forEach((c,i)=>{
         let cls='';
         if(signed(c.fmt) && typeof r[i]==='number') cls = r[i]>=0?'sl-pos':'sl-neg';
-        if(i===board.entity_col) h+='<td class="'+cls+'" data-ent></td>';
-        else h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
       });
       h+='</tr>';
     });
     h+='</tbody></table>';
     $('#sl-body').innerHTML=h;
-    if(board.entity_col!=null){
-      const trs=$('#sl-body').querySelectorAll('tbody tr');
-      rows.forEach((r,ri)=>{const td=trs[ri]&&trs[ri].querySelector('td[data-ent]'); if(td) EC.fill(td, r[board.entity_col]);});
-    }
     $('#sl-body').querySelectorAll('th[data-col]').forEach(th=>{
       th.onclick=()=>{ const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;} else {S.sortCol=c;S.sortDir=-1;} draw(); };
     });
