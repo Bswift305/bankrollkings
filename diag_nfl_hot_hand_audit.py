@@ -193,13 +193,17 @@ def main() -> int:
     fp1 = _fp(arts)
     changed = sorted(p for p in arts if fp0.get(p) != fp1.get(p))
     print("=" * 92); print("[FINDINGS -- for review, no change made]")
-    print(f"  F1 PRIOR-SEASON GATE: membership season = max(log season)={cur_log}, NOT the resolver "
-          f"current season ({exp_season}). " + ("MATCH (no leak now)." if cur_log == exp_season else
-          "MISMATCH -> prior-season runs would render as current (weaker than build_nfl_prop_streaks, "
-          "which fails closed to the resolver season)."))
-    print(f"  F2 CONTINUITY LABEL: weeks_label uses min-max; {len(bridged)} runs bridge a skipped week, so "
-          "the label can imply consecutive weeks for what are consecutive APPEARANCES.")
-    print(f"  F3 IDENTITY: name-based (COMPOSITE_NAME_LOWERCASE); identity drops reported above; no id.")
+    print(f"  F1 PRIOR-SEASON GATE: ADDRESSED by F5 -- the builder now anchors membership to the RESOLVER "
+          f"current season and fails closed (resolver_unavailable / current_season_absent) if it cannot. "
+          f"This probe's independent cur=max(log season)={cur_log} vs resolver {exp_season} "
+          + ("MATCH." if cur_log == exp_season else "MISMATCH (the builder still uses the resolver, not this max).")
+          + " No separate F1 change outstanding.")
+    print(f"  F2 CONTINUITY LABEL: REMEDIATED -- weeks_label is now gap-truthful + 'Appearances:'-prefixed "
+          f"(see [CONTINUITY] above). {len(bridged)} runs legitimately bridge a bye/missed game and now "
+          "read e.g. 'Appearances: Wks 2–4, 6'.")
+    print(f"  F3 IDENTITY: OPEN (queued). name-based (COMPOSITE_NAME_LOWERCASE); 'drops' are mostly DEFENSE "
+          "props (no player log) + fringe players; '_full collisions' mostly legitimate short/full merges; "
+          "true distinct-player collisions indeterminate without an id.")
     print(f"  F4 AVAILABILITY: does NOT gate membership (unavailable/historical streaks remain members, "
           "sunk in ordering + labeled); only is_active/sort/label change.")
     print("-" * 92)

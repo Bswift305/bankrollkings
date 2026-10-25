@@ -76,3 +76,34 @@ loaded).
 3. **F1** (resolver-anchored season gate, fail closed) — latent-risk hardening.
 4. **F3** disclosure (defense props as an explicit absent-reason).
 F4 left by design. Explainer wiring (shared streak explainer) follows after the semantics are correct.
+
+## Remediation SHIPPED — F5 + F2 (`8a3ff74`), prod-verified 2026-10-25
+
+`build_nfl_hot_hand` now anchors on the resolver's current season + completed week and **filters**
+`(season == resolver_current AND week <= completed_week)` before the streak walk (not merely capping the
+label); the weeks label is gap-truthful + `Appearances:`-prefixed via `_compact_weeks`.
+
+**Before → after (prod `diag_nfl_hot_hand_audit.py`, cache busted):**
+
+| metric | before | after |
+|---|---|---|
+| active streaks | 0 | **102** |
+| through_week | 7 (in-progress) | **6 (completed)** |
+| through_label | "Results through Week 7" | **"Results through Week 6"** |
+| membership_hash | `a11e942b4f5bfc58` | `9e259f56e6d67b09` |
+| render_hash | `563840b0522f99ce` | `a6a6b43bcebbc50a` |
+| members last_season != 2026 | — | **0** |
+| membership size | 133 | 129 (cross-season/Wk7-dependent runs below min_streak dropped) |
+| top fixture | Aaron Jones 11 "Historical" | **Jaylen Warren 6 — Active** |
+| weeks label | "Wks 2–6" (gap masked) | **"Appearances: Wks 1–4, 6"** |
+
+`qc_nfl_hot_hand_boundary.py` (synthetic) green on prod: F5 (in-progress week + prior season excluded; Wk6
+player active; Wk5 player historical; through_week==6; resolver-advance makes Wk7 eligible) and F2
+(contiguous format, gaps preserved, bye not shown as played, label/length same evidence).
+
+**Finding status after F5/F2:** **F1 addressed by F5** (builder is resolver-anchored + fails closed on
+`resolver_unavailable` / `current_season_absent`). **F2, F5 remediated + prod-verified.** **F3** (name-based
+identity; defense-prop "drops" are an expected absent-reason; `_full` collisions mostly legitimate merges) —
+disclosure/hardening, queued for separate review. **F4** (availability doesn't gate membership) — by design.
+Remaining: owner visual pass (`/tools/nfl-heatmap` desktop + 375px) to confirm the rendered page, then the
+shared streak explainer. Not calling F5/F2 "closed" until the visual is confirmed.
