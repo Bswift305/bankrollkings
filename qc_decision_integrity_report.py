@@ -51,9 +51,13 @@ _ALLOWED_IMPORTERS = frozenset({
     "services/decision_receipts.py",
     "services/decision_validators.py",
     "services/nfl_ats_fixtures.py",
+    "services/nfl_ats_shadow.py",            # dark pilot adapter (decision-integrity module)
+    "services/decision_shadow_boundary.py",   # dark pilot flag boundary
     "qc_decision_receipts.py",
     "qc_decision_validators.py",
     "qc_decision_integrity_report.py",
+    "qc_report_guards.py",
+    "qc_nfl_ats_shadow.py",
 })
 _HEAVY = {"pandas", "numpy", "flask", "app", "requests", "openpyxl", "nba_api", "pybaseball"}
 
