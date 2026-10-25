@@ -36,6 +36,28 @@ _LAST: Dict[str, Any] = {}
 _GOV_REQUIRED = ("build_id", "config_version", "rule_versions", "ordering_rule_id",
                  "ordering_rule_version", "membership_threshold", "reason_def_version",
                  "observation_seq", "identity_profiles")
+# The complete governed rule set that MUST match the authoritative builder constants.
+_RULE_KEYS = ("membership_threshold", "membership_rule_version", "ordering_rule_id",
+              "ordering_rule_version", "reason_def_version")
+
+
+def _require_builder_rules(br: Any) -> None:
+    """builder_rules (the real builder's authoritative rule constants) is MANDATORY whenever
+    the observer runs; missing or malformed fails closed."""
+    if not isinstance(br, dict):
+        raise ValueError("builder_rules is required (the authoritative builder rule constants)")
+    missing = [k for k in _RULE_KEYS if k not in br]
+    if missing:
+        raise ValueError(f"builder_rules missing required fields {missing}")
+
+
+def _governed_rule_values(g: dict) -> dict:
+    """The complete governed rule set, projected for comparison against builder_rules."""
+    return {"membership_threshold": g["membership_threshold"],
+            "membership_rule_version": g["rule_versions"]["membership"],
+            "ordering_rule_id": g["ordering_rule_id"],
+            "ordering_rule_version": g["ordering_rule_version"],
+            "reason_def_version": g["reason_def_version"]}
 
 
 def last_record() -> Optional[dict]:
@@ -79,20 +101,22 @@ def _row(team, leaf, reason, season, governed):
 
 
 def _board_view(result, dec, cur, season, governed, builder_rules, created_at,
-                universe_teams) -> dict:
+                universe_teams, synced) -> dict:
     sync = result["sync"]
-    raw = sync.get("synchronized")
-    if not isinstance(raw, bool):   # no coercion — "false"/1 are not booleans
-        raise ValueError("sync.synchronized must be an actual boolean")
-    synced = raw
     uni = set(universe_teams)
     if governed is not None:
         missing = [k for k in _GOV_REQUIRED if k not in governed]
         if missing:
             raise ValueError(f"governed contract missing {missing}")
-        if builder_rules is not None and \
-                governed["membership_threshold"] != builder_rules.get("membership_threshold"):
-            raise ValueError("governed.membership_threshold does not match the builder constant")
+        if not isinstance(governed["rule_versions"], dict) \
+                or any(k not in governed["rule_versions"] for k in ("membership", "ordering")):
+            raise ValueError("governed.rule_versions must carry 'membership' and 'ordering'")
+        # The COMPLETE governed rule set must match the authoritative builder constants.
+        gv = _governed_rule_values(governed)
+        for k in _RULE_KEYS:
+            if gv[k] != builder_rules[k]:
+                raise ValueError(f"governed {k} does not match the builder constant "
+                                 f"({gv[k]!r} != {builder_rules[k]!r})")
     if synced:
         members = result.get("members") or []
         member_teams = [m["team"] for m in members]
@@ -138,15 +162,18 @@ def observe_build_nfl_ats_wave(result: dict, dec: Optional[dict] = None, cur: Op
     if not shadow_enabled():
         return None
     try:
+        _require_builder_rules(builder_rules)                      # mandatory, fail closed
+        raw = (result.get("sync") or {}).get("synchronized")
+        if not isinstance(raw, bool):                              # health validated BEFORE
+            raise ValueError("sync.synchronized must be an actual boolean")  # the universe check
         universe_teams = sorted((dec or {}).get("per", {}).keys())
         if not universe_teams:
             # No audited independent NFL-team universe => cannot be a conserved empty board.
             rec = _finding("expected_universe_unavailable")
         else:
-            synced = result.get("sync", {}).get("synchronized") is True
-            expected = [m["team"] for m in (result.get("members") or [])] if synced else []
+            expected = [m["team"] for m in (result.get("members") or [])] if raw else []
             view = _board_view(result, dec, cur, season, governed, builder_rules,
-                               created_at or _utc_now(), universe_teams)
+                               created_at or _utc_now(), universe_teams, raw)
             rec = shadow_if_enabled(view, expected_members=expected)
     except Exception as exc:
         rec = {"ok": False, "stage": "hook", "error": f"{type(exc).__name__}: {exc}"}

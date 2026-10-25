@@ -47981,6 +47981,20 @@ def nfl_team_tool():
 
 _NFL_WAVE_CACHE = {}
 _WAVE_MIN_STREAK = 3  # a "wave" is 3+ in a row; below that isn't a trend
+# Authoritative NFL ATS wave rule identity (single source of truth, used by the builder's
+# calculation AND passed to the Decision-Integrity shadow as builder_rules — no literal is
+# duplicated in the shadow hook or wrapper).
+_WAVE_MEMBERSHIP_RULE_VERSION = 1                 # int (Versions.rule_versions are integers)
+_WAVE_ORDERING_RULE_ID = 'streak_desc_team_asc'   # the members.sort((-streak, team)) rule below
+_WAVE_ORDERING_RULE_VERSION = '1'                 # str (provenance ordering version is a label)
+_WAVE_REASON_DEF_VERSION = 1
+_WAVE_SHADOW_BUILDER_RULES = {
+    'membership_threshold': _WAVE_MIN_STREAK,
+    'membership_rule_version': _WAVE_MEMBERSHIP_RULE_VERSION,
+    'ordering_rule_id': _WAVE_ORDERING_RULE_ID,
+    'ordering_rule_version': _WAVE_ORDERING_RULE_VERSION,
+    'reason_def_version': _WAVE_REASON_DEF_VERSION,
+}
 
 
 def _wave_trailing_run(signs):
@@ -48718,7 +48732,7 @@ def build_nfl_ats_wave(now_et=None, games_root=None):
             from services import nfl_ats_shadow_hook as _bk_hook
             _bk_hook.observe_build_nfl_ats_wave(result, dec=context['dec'], cur=context['cur'],
                                                 season=context['season'],
-                                                builder_rules={'membership_threshold': _WAVE_MIN_STREAK})
+                                                builder_rules=_WAVE_SHADOW_BUILDER_RULES)
     except Exception:
         pass
     return result

@@ -47,16 +47,19 @@ def _result(members, synced=True):
             "expected_completed_week": 8}
 
 
+# Mirror of app.py's authoritative _WAVE_SHADOW_BUILDER_RULES (threshold 3, all rule versions 1).
+BUILDER_RULES = {"membership_threshold": 3, "membership_rule_version": 1,
+                 "ordering_rule_id": "streak_desc_team_asc", "ordering_rule_version": "1",
+                 "reason_def_version": 1}
+
+
 def _gov(teams):
     return {"build_id": "build-ats-2026w8", "config_version": "cfg-7",
-            "rule_versions": {"membership": 3, "ordering": 1},
+            "rule_versions": {"membership": 1, "ordering": 1},
             "ordering_rule_id": "streak_desc_team_asc", "ordering_rule_version": "1",
             "membership_threshold": 3, "observation_seq": 1001, "reason_def_version": 1,
             "identity_profiles": {t: {"profile": "team:sport+season", "profile_version": "v1",
                                       "collision_proof": f"ledger#{t}"} for t in teams}}
-
-
-BUILDER_RULES = {"membership_threshold": 3}   # the real build_nfl_ats_wave _WAVE_MIN_STREAK
 
 
 def _obs(result, dec, cur=None, season=2026, governed=None, builder_rules=BUILDER_RULES):
@@ -159,19 +162,52 @@ def run_qc() -> dict:
         ok((not eu["ok"]) and "expected_universe_unavailable" in eu["fail_closed"],
            "ON empty universe: explicit expected_universe_unavailable finding (no conserved empty board)")
 
-        # (defect) governed must supply the rules; a missing rule fails closed.
+        # (defect) builder_rules is MANDATORY whenever the observer runs.
         hook._reset()
-        g_missing = _gov(["PHI", "DAL", "NYG", "WAS"]); del g_missing["ordering_rule_id"]
+        nbr = hook.observe_build_nfl_ats_wave(_result(members), dec=_dec(per_pop), cur=_cur(),
+                                              season=2026, governed=_gov(["PHI", "DAL", "NYG", "WAS"]),
+                                              builder_rules=None, created_at=CREATED)
+        ok((not nbr["ok"]) and "builder_rules is required" in (nbr["error"] or ""),
+           "ON governed: missing builder_rules fails closed (mandatory comparison)")
+        hook._reset()
+        mbr = hook.observe_build_nfl_ats_wave(_result(members), dec=_dec(per_pop), cur=_cur(),
+                                              season=2026, governed=_gov(["PHI", "DAL", "NYG", "WAS"]),
+                                              builder_rules={"membership_threshold": 3}, created_at=CREATED)
+        ok((not mbr["ok"]) and "builder_rules missing" in (mbr["error"] or ""),
+           "ON governed: malformed (incomplete) builder_rules fails closed")
+
+        # (defect) a MISMATCH in EVERY governed rule field fails closed.
+        teams = ["PHI", "DAL", "NYG", "WAS"]
+        mismatches = {
+            "membership_threshold": lambda g: g.__setitem__("membership_threshold", 5),
+            "membership_rule_version": lambda g: g["rule_versions"].__setitem__("membership", 9),
+            "ordering_rule_id": lambda g: g.__setitem__("ordering_rule_id", "other_rule"),
+            "ordering_rule_version": lambda g: g.__setitem__("ordering_rule_version", "9"),
+            "reason_def_version": lambda g: g.__setitem__("reason_def_version", 9),
+        }
+        for field, mut in mismatches.items():
+            hook._reset()
+            g = _gov(teams); mut(g)
+            r = _obs(_result(members), _dec(per_pop), _cur(), governed=g)
+            ok((not r["ok"]) and f"governed {field} does not match the builder constant" in (r["error"] or ""),
+               f"ON governed: mismatched {field} fails closed")
+
+        # (defect) governed must supply each rule; a missing one fails closed.
+        hook._reset()
+        g_missing = _gov(teams); del g_missing["ordering_rule_id"]
         gm = _obs(_result(members), _dec(per_pop), _cur(), governed=g_missing)
         ok((not gm["ok"]) and "ordering_rule_id" in (gm["error"] or ""),
            "ON governed: a missing ordering_rule_id fails closed (hook invents nothing)")
 
-        # (defect) governed membership_threshold must match the real builder constant.
+        # (defect) malformed health is validated BEFORE the empty-universe finding.
         hook._reset()
-        g_bad = _gov(["PHI", "DAL", "NYG", "WAS"]); g_bad["membership_threshold"] = 5
-        gb = _obs(_result(members), _dec(per_pop), _cur(), governed=g_bad)
-        ok((not gb["ok"]) and "does not match the builder constant" in (gb["error"] or ""),
-           "ON governed: membership_threshold != builder constant fails closed")
+        hb = hook.observe_build_nfl_ats_wave(
+            {"members": [], "sync": {"synchronized": "false", "checked_at_utc": BK},
+             "expected_completed_week": 8}, dec=_dec({}), cur=_cur(), season=2026,
+            governed=_gov(teams), builder_rules=BUILDER_RULES, created_at=CREATED)
+        ok((not hb["ok"]) and "boolean" in (hb["error"] or "")
+           and "expected_universe_unavailable" not in hb.get("fail_closed", []),
+           "ON: malformed health is caught BEFORE the empty-universe finding (not masked)")
 
         # 7) deterministic: same inputs + injected clock -> identical receipt ids/hashes.
         hook._reset()
