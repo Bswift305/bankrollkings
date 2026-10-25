@@ -1,10 +1,16 @@
 # Research Candidate Contract — DESIGN ONLY
 
-**Status: DESIGN ONLY — Rev 2. Returned for review before anything is built.** Date 2026-10-25.
-Rev 2 applies the reviewer's ten corrections (cardinalities; case-identity vs family-membership;
+**Status: DESIGN ONLY — Rev 2.1. Returned for review before anything is built.** Date 2026-10-25.
+Rev 2 applied the reviewer's ten corrections (cardinalities; case-identity vs family-membership;
 four temporal concepts; invalidation selection-bias guard; continuous endpoint + case states;
 strengthened evidence bar; `ValidatedFinding`→`EvaluatedFinding`; receipt eligibility for evaluation;
-privacy-dependent deletion; corrected Freiermuth example).
+privacy-dependent deletion; corrected Freiermuth example). **Rev 2.1** applies four precision
+corrections: (1) measurement failure is **not** `INVALIDATED` — it is a counted `UNMEASURABLE` state
+subject to missingness analysis; (2) `INCONCLUSIVE` is an **immutable** finding, never a rewind to
+`SAMPLE_ACCUMULATING`; (3) "effect already priced" is removed from `UNSUPPORTED` (this contract measures
+opportunity/usage, not market value); (4) Freiermuth Case #1 is a valid observation + descriptive seed
+but **ineligible** for the evaluated sample because its numeric MEPI was not frozen pre-kickoff (never
+backfilled).
 
 This defines the **object model and lifecycle** for turning a human observation into an honestly
 testable research record. It is a contract, not an implementation. There is:
@@ -106,22 +112,26 @@ effect":
 | `SAMPLE_ACCUMULATING` | family | ≥1 **eligible** captured outcome exists for the family key | the matched sample is below the §7 minimum |
 | `EVALUATED` | family | §7 minimum reached and an evaluation run against the **frozen** endpoint | evaluation uses only frozen endpoints; no endpoint substitution (§5); only §8-eligible cases enter |
 | `SUPPORTED` | family | evaluation clears the §7 bar (direction + minimum effect + uncertainty + out-of-sample + sensitivity) | still **not** an authority grant (§0) |
-| `UNSUPPORTED` | family | evaluation shows no effect of interest / effect already priced | recorded with equal weight to SUPPORTED |
-| `INCONCLUSIVE` | family | evidence insufficient to separate the two | the honest default; re-enters `SAMPLE_ACCUMULATING` as data grows |
+| `UNSUPPORTED` | family | evaluation shows no effect of interest (below MEPI) | recorded with equal weight to SUPPORTED. **"Already priced" is NOT a criterion** here (Rev 2.1 #3): this contract measures opportunity/usage, not market value — whether a real effect is in the price is a separate market-value study |
+| `INCONCLUSIVE` | family | evidence insufficient to separate the two | the honest default, recorded as an **immutable** `EvaluatedFinding(status=INCONCLUSIVE)` (Rev 2.1 #2). It does **not** rewind to `SAMPLE_ACCUMULATING`; more cases accumulate afterward and a **later evaluation creates a new superseding finding** |
 
-**`INVALIDATED` — a per-case side exit, not a terminal verdict, and strictly bounded (Rev 2 #4).** A case
-is `INVALIDATED` **only** for:
-- **objective measurement impossibility** (the primary endpoint genuinely cannot be measured — the data
-  does not exist), or
-- a **frozen eligibility failure** — an eligibility condition recorded *before* the event did not hold
-  (e.g. the player was inactive, the assumed starter did not start).
+**`INVALIDATED` — a per-case side exit, not a terminal verdict, and strictly bounded (Rev 2 / 2.1 #1,
+#4).** A case is `INVALIDATED` **only** when a **frozen pre-event eligibility condition failed** — an
+eligibility condition recorded *before* the event did not hold (e.g. the player was inactive, the assumed
+starter did not start). That is its **sole** meaning.
 
-`INVALIDATED` MUST NOT be used for an **unfavorable downstream condition correlated with the outcome**
-(e.g. "the game script suppressed pass volume"). Excluding cases on outcome-correlated conditions is
-selection bias dressed as rigor. Such conditions are recorded as **context or a predeclared covariate**
-(§3, §4), never as an exit. Invalidated **counts and reasons are reported**, and where exclusion could
-bias results a **sensitivity analysis is required** (§7). An invalidated case is excluded from the
-matched sample and is **never** counted as a negative result.
+- **Measurement failure is NOT `INVALIDATED` (Rev 2.1 #1).** If the outcome data is simply missing or the
+  primary endpoint cannot be measured after an *eligible* event, the case is `PENDING` / `PARTIAL` /
+  `UNMEASURABLE` (§4) — **counted**, and handled by the predeclared **missingness analysis** (§7.7).
+  Routing missing data to `INVALIDATED` would silently drop it and create selection bias; it must stay in
+  the accounting.
+- `INVALIDATED` MUST NOT be used for an **unfavorable downstream condition correlated with the outcome**
+  (e.g. "the game script suppressed pass volume"). Excluding cases on outcome-correlated conditions is
+  selection bias dressed as rigor; such conditions are **context or a predeclared covariate** (§3, §4).
+
+Invalidated **counts and reasons are reported**, and where exclusion (of either kind — eligibility or
+missingness) could bias results a **sensitivity analysis is required** (§7). An invalidated case is
+excluded from the matched sample and is **never** counted as a negative result.
 
 Transitions are forward-only; re-evaluation and corrections are new, superseding records (§6).
 
@@ -143,7 +153,7 @@ and never edited. Freezing before the event is the entire source of the record's
 | **primary endpoint** | the ONE pre-registered measurement, **with its direction and minimum effect of interest** | e.g. within-player matched **target-share lift**, direction = *increase*, MEPI set per §7. Causal/opportunity, **not** a prop result, **not** a bet result. Exactly one; immutable |
 | **baseline method** | how "expected" is computed, incl. **predeclared covariates** | e.g. role/matchup/game-script/team-pass-volume expected usage; game script + team pass volume are **covariates here**, not invalidation triggers; versioned |
 | **assumptions** | what must hold for the test to be valid | e.g. player active, normal snap role, assumed starter plays |
-| **eligibility + invalidation conditions** | frozen pre-event; bounded per §2 (Rev 2 #4) | measurement-impossibility or a frozen eligibility failure only — **never** an outcome-correlated downstream condition |
+| **eligibility + invalidation conditions** | frozen pre-event; bounded per §2 (Rev 2 / 2.1 #1, #4) | a frozen **eligibility failure** only (e.g. inactive, assumed starter benched) — **never** measurement failure (that is `UNMEASURABLE`, §4) and **never** an outcome-correlated downstream condition (that is a covariate) |
 | **whether the user acted** | did the observer take a position? | recorded as **context only**; no effect on the endpoint (§8 link to Decision Journal is by reference) |
 | **pre-event snapshot** | what was knowable at `observed_at` | posted lines/prices + their provider `source_updated`, pregame expected usage, competing-receiver availability; a variable not obtainable pre-event is **pending**, never zero-filled |
 | **sources** | user-supplied provenance | URLs/citations as given; not independently authoritative |
@@ -178,7 +188,7 @@ correction is a **new version** superseding the prior (§6), with exactly one cu
 | **completeness** | per variable `COMPLETE` / `PARTIAL` / `PENDING`; missing variables stay **pending**, never zero-filled |
 | **confounders / covariates** | observed co-causes (snaps, QB change, game script, team pass volume, competing-WR availability) recorded so the matched evaluation can **control** for them — game script lives here, never as an invalidation |
 | **measurement receipt (ref)** | a reference to a Decision-Integrity `decision_time`/`source_health` receipt id, **if** one exists — a pointer, not an embedded receipt (§8). Its presence/quality governs **evaluation** eligibility (§8), not early preservation |
-| **case state** | one of `MEASURED` · `PARTIAL` · `PENDING` · `INVALIDATED` — a **descriptive state of this case's measurement**, NOT a win/loss grade (Rev 2 #5). Whether the evidence supports an effect is decided **only** at family-level evaluation (§7) |
+| **case state** | one of `MEASURED` · `PARTIAL` · `PENDING` · `UNMEASURABLE` · `INVALIDATED` — a **descriptive state of this case's measurement**, NOT a win/loss grade (Rev 2 #5). `UNMEASURABLE` = the event was *eligible* but the endpoint cannot be measured (data does not exist) — it is **counted** and enters the missingness analysis (§7.7), it is **not** `INVALIDATED` (Rev 2.1 #1). `INVALIDATED` is reserved for a frozen eligibility failure (§2). Whether the evidence supports an effect is decided **only** at family-level evaluation (§7) |
 
 There is deliberately **no** `CONFIRMED_LIFT` / `NO_LIFT` per-case label: a single case is never "a hit"
 or "a miss." It is a measured (or partial/pending/invalidated) data point.
@@ -262,10 +272,13 @@ floors are §10 Q3, pending a power/MEPI analysis). **Statistical significance a
 8. **Sensitivity analysis.** Where invalidated/excluded cases could bias the result, a sensitivity
    analysis is **required** and reported (Rev 2 #4).
 
-If the effect holds under all of the above → `SUPPORTED`; if it is absent, trivial, or already priced →
-`UNSUPPORTED`; if the evidence cannot separate the two → `INCONCLUSIVE` (and the family returns to
-`SAMPLE_ACCUMULATING`). **`SUPPORTED` is still `RESEARCH_ONLY`** — promotion to any authority is a
-separate, governed decision outside this contract (Constitution §9).
+If the effect holds under all of the above → `SUPPORTED`; if it is absent or below the MEPI →
+`UNSUPPORTED` (whether a *real* effect is already in the price is **out of scope** — this contract
+measures usage, and "priced" is a separate market-value study, Rev 2.1 #3); if the evidence cannot
+separate the two → `INCONCLUSIVE`, recorded as an **immutable** `EvaluatedFinding` that a **later**
+evaluation may supersede as more cases accumulate — it does not rewind the family (Rev 2.1 #2).
+**`SUPPORTED` is still `RESEARCH_ONLY`** — promotion to any authority is a separate, governed decision
+outside this contract (Constitution §9).
 
 ---
 
@@ -300,27 +313,31 @@ The three systems answer three different questions and keep three different obje
 
 ## 9. Worked examples
 
-### 9.1 VALID — Case #1, Pat Freiermuth `BIRTHDAY` (the preserved pre-kickoff observation)
+### 9.1 Case #1, Pat Freiermuth `BIRTHDAY` — valid observation + descriptive seed, NOT an evaluated-sample case
 
-- **`UserObservation`**: observer = user; `observed_at` = 2026-10-25 08:51 EDT (`2026-10-25T12:51:21Z`),
-  **before kickoff**; subject = Pat Freiermuth (TE, PIT, canonical id); event = PIT vs NO (Paris);
-  thesis = "Rodgers may involve Freiermuth more than his normal role **because it is his birthday**";
-  sources = Steelers bio + schedule; `acted` = (recorded as context).
-- **`ResearchCandidate`** (frozen at `MEASUREMENT_DEFINED`, pre-kickoff): category
-  `PLAYER_MILESTONE_USAGE` / sub_label `BIRTHDAY`; **primary endpoint = within-player matched
-  target-share lift**, **direction = increase**, MEPI per §7; baseline = role/matchup/**game-script**/
-  team-pass-volume expected usage (**game script + team pass volume are predeclared covariates**);
-  **eligibility** = {active, normal snap role, Rodgers starts}; **invalidation** = {player inactive,
-  assumed starter does not play, endpoint not measurable} — **NOT** "pass-volume-killing script" (Rev 2
-  #10: an unfavorable game environment is a covariate, it does not erase the case). Four temporal facts
-  recorded; pre-event snapshot pending until captured. → `MEASUREMENT_DEFINED`, `RESEARCH_ONLY`.
-- **`CandidateOutcome`** (after the game): the **continuous** target-share lift (actual vs expected),
-  with covariates incl. the observed game script and team pass volume; completeness per variable; case
-  **state** ∈ {`MEASURED`, `PARTIAL`, `PENDING`, `INVALIDATED`} — **not** a hit/miss grade. Missing
-  variables stay **pending**.
-- **Why valid:** one endpoint with direction + MEPI, frozen before kickoff, measured on usage not the
-  prop, game script kept as a covariate. It **seeds** the `BIRTHDAY` family; it is explicitly **not**
-  evidence of an effect. The family stays `SAMPLE_ACCUMULATING`.
+- **`UserObservation` (valid, pre-kickoff — this stands).** observer = user; `observed_at` =
+  2026-10-25 08:51 EDT (`2026-10-25T12:51:21Z`), **before kickoff**; subject = Pat Freiermuth (TE, PIT,
+  canonical id); event = PIT vs NO (Paris); thesis = "Rodgers may involve Freiermuth more than his normal
+  role **because it is his birthday**"; sources = Steelers bio + schedule; `acted` = (recorded as context).
+- **`ResearchCandidate` — INELIGIBLE for the governed evaluated sample (Rev 2.1 #4).** The preserved
+  pre-kickoff record froze the endpoint (within-player matched target-share lift, direction = increase),
+  the baseline (**game script + team pass volume are covariates**), the eligibility set {active, normal
+  snap role, Rodgers starts}, and the invalidation set {player inactive, assumed starter does not play}
+  — **not** "pass-volume-killing script" (a covariate, Rev 2 #10), and a non-measurable endpoint would be
+  `UNMEASURABLE`, not invalidation. **But Rev 2 later added a required *numeric MEPI* and the stricter
+  evaluation contract (§7), and those were NOT frozen before kickoff.** So Case #1 is preserved as a
+  **research seed / descriptive candidate** only. It is **ineligible for the evaluated sample** unless
+  every required field — *including the numeric MEPI* — was genuinely recorded before kickoff. **The MEPI
+  MUST NEVER be backfilled** to rescue eligibility; doing so would manufacture the pre-registration the
+  record lacks (and violate §5).
+- **`CandidateOutcome` (as a seed).** If measured: the **continuous** target-share lift (actual vs
+  expected) with covariates incl. the observed game script and team pass volume; case **state** ∈
+  {`MEASURED`, `PARTIAL`, `PENDING`, `UNMEASURABLE`, `INVALIDATED`}. It contributes **context**, not an
+  evaluated data point.
+- **Status:** a valid pre-kickoff observation and the first `BIRTHDAY` seed — explicitly **not** evidence
+  of an effect, and **not** a governed evaluated-sample case. Its lesson is operational: future
+  `BIRTHDAY` candidates must freeze a numeric MEPI (and the full §3 set) **before** the event so they
+  *are* eligible.
 
 ### 9.2 INVALID — hindsight endpoint substitution
 After the game the usage lift is ≈0 but Freiermuth scores a TD; re-labeling the case a "birthday
