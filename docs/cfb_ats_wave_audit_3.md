@@ -37,16 +37,44 @@ Earlier loss + prior-season excluded → cover_streak 3; push interrupts → 1; 
 `(GameID,TeamSide)` conflict detected (fail closed); missing-GameID row ineligible; conference tri-state
 SEC→FBS / Big Sky→NON_FBS / misspelled→UNKNOWN (fails sync closed, never silently non-FBS).
 
-## Notes (not defects)
-1. **`graded_decisions (1732) > expected_decisions (898)` is correct** — graded_keys is all 2026 SPREAD
-   `(GameID,TeamSide)` decisions (FBS + non-FBS + both sides); the contract only requires every *expected
-   FBS* decision to be graded (`missing=0`), i.e. expected ⊆ graded. Not a conservation breach.
-2. **Empty-state / rendered-membership presentation** (owner visual) — same view-level acceptance item
-   noted for the other boards; here the board is non-empty (15 members), so confirm the rows + fades
-   render and the "sorted by active cover streak" label shows.
+## Conservation reconciliation (required before closure) — PROVEN
+`diag_cfb_ats_conservation.py` (prod `553d014`, `ALL UNCHANGED`) partitions all 1,732 graded
+`(GameID,TeamSide)` decisions into exactly one disjoint terminal disposition:
+
+```
+expected_FBS 898 + known_non_FBS 828 + no_line 0 + future_week 6 + not_completed 0
++ outside_manifest 0 + unknown_conference 0  =  1732  (== graded_keys)     conservation: True
+```
+
+The earlier "graded ⊇ expected" framing was loose and is **withdrawn**: `graded = expected + exclusions`
+left 6 unexplained; they are now classified. The **6 remainder rows are all `future_week`** — three
+early-Week-8 games (played 2026-10-20), each × 2 sides, all `manifest completed=True`, `week=8` (beyond
+`completed_week=7`), valid lines, known FBS conferences:
+`401871055` MTSU/FIU (Conference USA), `401871092` Marshall/South Alabama (Sun Belt),
+`401871069` Delaware/Missouri State (Conference USA). They are real completed games counted by the
+game-completeness model but correctly outside the "expected through Week 7" set — a legitimate terminal
+category, **no residual, no overlap, no hidden defect** (0 unknown_conference / malformed / outside_manifest /
+not_completed).
+
+## Presentation-pending (owner visual, not calc failures)
+- **Rendered-membership / hash reconciliation** — confirm the rows the page renders match the
+  `membership_hash` (same as recorded for NFL ATS).
+- **Empty-state / visual** — board is non-empty (15 members, 9 fades); confirm rows + fades render and the
+  "sorted by active cover streak" label shows.
 
 ## Status
-Audit #3 complete, **no remediation**. All three streak audits are now done: Hot Hand (#1, F5+F2 shipped),
-NFL ATS (#2, clean), CFB ATS (#3, clean). Queued per direction: Hot Hand **F3** (identity/absence
-disclosure) and the **shared streak explainer** (to wire onto the now-stable surfaces). Independent gates
-still open: Hot Hand / NFL ATS owner visuals, and the NBA scheduled-acceptance receipt.
+Audit #3 **CLOSED — contract satisfied, conservation proven, no remediation**. All three streak audits are
+done: Hot Hand (#1, F5+F2 shipped + verified), NFL ATS (#2, clean), CFB ATS (#3, clean + conserved).
+Per direction, **F3 is recorded for the future exclusion-receipt work** (not a separate ad-hoc disclosure
+now), and the shared streak explainer is **deferred** until the Decision Integrity Architecture Constitution
+defines the receipt contract (with NFL ATS as the enforcement pilot). Independent gates still open: Hot Hand
+/ NFL ATS owner visuals; the NBA scheduled-acceptance receipt.
+
+## Ordered next steps (per direction, 2026-10-25)
+1. **Finish the already-authorized entity-link + minimal-destination P0:** WNBA player-link batch;
+   `football_method_board` destination defect; schedule team links; minimal MLB/WNBA team destinations;
+   client-rendered resolver payloads, beginning with SGP Workbench.
+2. Owner visuals for Hot Hand + ATS.
+3. **Decision Integrity Architecture Constitution** — design-only.
+4. **NFL ATS as the receipt/enforcement pilot.**
+5. **Shared streak explainer** built from the approved receipt contract.
