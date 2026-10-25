@@ -144,11 +144,11 @@ graded). No code prunes the archive (both `replace_candidate_archive` callers + 
 append+dedupe only) — Lane 1's thinness is inherent to a current-slate pool. **Earlier "shrank 13,386→1,072"
 claim retracted** (apples-to-oranges: total-by-SnapshotDate vs current-season-by-GameDay).
 
-**16,753 lineage:** no current store holds 16,753 rows of 2026-through-Week-6. The persistent 2026 graded
-record is Lane 2 at **10,980 (Wks 3–7)**; `NFL_Props_History.csv` is 17,394 but **2024/25** (the backfill
-input, not 2026). So **no persistent population was lost** — 16,753 was most plausibly a prior-day count of
-a time-varying store (the rolling candidate pool, or a transient `NFL_AllPropResults` state pre-clobber).
-Not forced to a match it does not have.
+**16,753 lineage: `LEGACY_RECEIPT_UNRESOLVED`.** No current store holds 16,753 rows of 2026-through-Week-6
+(the persistent 2026 graded record is Lane 2 at 10,980 / Wks 3–7; `NFL_Props_History.csv` is 17,394 but
+2024/25). The original producer + grain of the 16,753 figure are **not identified**, so it is recorded as
+unresolved — this does **not** block evaluating Lane 2, but we do **not** claim nothing was lost until the
+producer/grain is pinned.
 
 **Your 4-role durable architecture already exists:** (1) replaceable current-slate pool = candidate
 archive; (2) append-only observation history = `NFL_PropLines_Archive.csv`; (3) grader-owned persistent
