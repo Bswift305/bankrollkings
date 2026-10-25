@@ -1,6 +1,9 @@
-# Decision Integrity Architecture Constitution
+# Decision Integrity Architecture Constitution — Rev 2
 
-**Status: DESIGN ONLY — returned for approval before any implementation (Phase 2).** Date 2026-10-25.
+**Status: DESIGN ONLY — Rev 2 (revision pass applied; returned for formal approval before Phase 2).**
+Date 2026-10-25. Rev 2 applies the reviewer's ten constitutional corrections, resolves the six open
+questions with the supplied decisions, and adds hierarchical receipt composition. Still no code, schemas,
+registries, validators, or production changes.
 This is a **platform constitution**, not a feature spec. It defines the laws, contracts, and registries
 every authoritative surface must obey, so that what the product shows can always be explained, reconciled,
 and reproduced. No code, no schema files, no DB/JSON, no production changes accompany this document.
@@ -49,8 +52,13 @@ it fails closed to an honest unavailable/indeterminate state (never a guess, nev
 - **L11 — Replayability is declared.** Every conclusion declares its reproducibility class (§8:
   `EXACT_REPLAY` / `EVIDENCE_EQUIVALENT` / `NON_REPLAYABLE`) and carries the hashes/versions that class
   requires.
-- **L12 — Receipts are immutable and tamper-evident.** A published receipt is append-only and carries a
-  content hash; a correction is a new receipt that references it, never an edit in place.
+- **L12 — Receipts are immutable and integrity-verifiable.** A published receipt is append-only; a
+  correction is a new receipt that references it, never an edit in place. A bare content hash is NOT
+  tamper-evidence (it can be recomputed after modification): a receipt is only called **tamper-evident**
+  when backed by at least one genuine mechanism — **hash chaining**, **signed/keyed checkpoints**,
+  **append-only/WORM storage**, **independently anchored manifests**, or **access-controlled audit logs**.
+  Absent such a mechanism, the receipt is labeled **integrity-verifiable** (content-hashed), not
+  tamper-evident. (Rev-2 correction #4.)
 
 **Recommended default for a non-conforming surface:** render the honest unavailable/indeterminate state
 with its reason code, exactly as the ATS boards and the post-F5 Hot Hand already do. Fail closed, disclose.
@@ -70,52 +78,65 @@ Source → Canonical Events → Identity Resolution → Eligibility → Calculat
 | Stage | Inputs | Outputs | Permissible reason codes (examples) | Counts | Failure behavior |
 |---|---|---|---|---|---|
 | **Source** | provider/runtime artifact + sidecar | validated rows + source-health receipt | `SOURCE_FRESH`, `SOURCE_STALE`, `SOURCE_MISSING`, `SOURCE_CORRUPT`, `SCHEMA_INVALID` | rows, mtime/sidecar age, sha | fail closed on missing/corrupt/mismatch; **no mtime fallback** where a sidecar exists |
-| **Canonical Events** | validated rows | canonical event keys (e.g. `game_id`, `(player,stat,week)`) | `CANONICAL_OK`, `DUPLICATE_COLLAPSED`, `CONFLICT`, `MALFORMED` | unique events, collapsed, conflicts, malformed | conflict/malformed → fail closed |
+| **Canonical Events** | validated rows | canonical event keys — **`sport + season + EventId + entity identity + market/stat`**; a composite key is permitted ONLY when collision-tested and explicitly classified (Rev-2 #2: `(player,stat,week)` is insufficient — the Lane-2 investigation proved it) | `CANONICAL_OK`, `DUPLICATE_COLLAPSED`, `CONFLICT`, `MALFORMED` | unique events, collapsed, conflicts, malformed | conflict/malformed → fail closed |
 | **Identity Resolution** | canonical events + identity registry | resolved entity ids + identity-quality class | `PROVIDER_ID`, `COMPOSITE_NAME_EVENT`, `ALIAS_RESOLVED`, `AMBIGUOUS`, `UNRESOLVED` | resolved, ambiguous, unresolved | ambiguous/unresolved for an authoritative join → ineligible (§6) |
 | **Eligibility** | resolved entities + boundaries (season, completed week, line-bearing, conference, gate) | eligible set + exclusions | `ELIGIBLE`, `OUT_OF_SEASON`, `OUTSIDE_COMPLETED_BOUNDARY`, `NO_LINE`, `KNOWN_NON_FBS`, `UNKNOWN_CONFERENCE`, `DATA_RIGHTS_GATE`, `FUTURE_OR_PENDING` | expected, each exclusion class | UNKNOWN-class (e.g. conference) → fail closed |
 | **Calculation** | eligible set | computed values (streak, grade, ATS sign, probability) | `GRADED`, `PENDING`, `PUSH`, `VOID`, `INDETERMINATE_MISSING_OBSERVATION` | graded/pending/void | uncomputable → `INDETERMINATE`, never fabricated |
 | **Membership** | computed values + factual rule | member set (factual; model may never suppress) | `ADMITTED`, `BELOW_THRESHOLD`, `FAILED_CLOSED` | members, non-members | rule is factual + deterministic; model is overlay only (§9) |
-| **Ordering** | member set + declared sort | ordered members + sort label | `SORTED_BY_<declared>` | — | deterministic tiebreak; model never reorders beyond the declared factual sort |
+| **Ordering** | member set + declared sort | ordered members + sort governance fields | `SORTED` (+ `sort_rule_id`, `sort_rule_version` — Rev-2 #7: stable code + governed fields, never a dynamic `SORTED_BY_<x>` code) | — | deterministic tiebreak; model never reorders beyond the declared factual sort |
 | **Presentation Eligibility** | ordered members + display policy | rendered subset + suppressed | `RENDERED`, `SUPPRESSED_DISPLAY_LIMIT`, `SUPPRESSED_POLICY` | rendered, suppressed | suppression is disclosed + counted, never silent |
-| **Render Reconciliation** | rendered subset | render receipt (hash of what the page shows) | `RENDER_MATCHES_MEMBERSHIP`, `RENDER_MISMATCH` | rendered rows vs membership hash | mismatch → alarm (the page must equal the receipt) |
+| **Render Reconciliation** | rendered subset | render receipt (two levels — Rev-2 #9) | `SERVER_RENDER_MATCHES_MEMBERSHIP`, `SERVER_RENDER_MISMATCH`, `CLIENT_RENDER_VERIFIED`, `CLIENT_RENDER_UNVERIFIED` | server-rendered rows vs membership hash; client/DOM-confirmed rows | **Level 1 (server):** deterministic server-render reconciliation — the server-generated HTML equals the membership/render receipt. **Level 2 (client/DOM):** confirmed only by browser tests or runtime telemetry. Level 1 is NOT claimed as proof of Level 2. Mismatch → alarm |
 
-**Open question (O-2a):** should `Presentation Eligibility` and `Render Reconciliation` be mandatory for
-every surface, or only for authoritative boards? **Recommended default:** mandatory for authoritative
-boards; optional (but encouraged) for chrome.
+**O-2a — RESOLVED:** `Presentation Eligibility` and `Render Reconciliation` are **mandatory for every
+authoritative board** and **optional for non-authoritative chrome**.
 
 ---
 
 ## 3. Expected-universe conservation
 
-Every entity in the expected universe lands in **exactly one** mutually-exclusive terminal bucket:
+Conservation is **nested** (Rev-2 #1 + O-3a): authority conservation and presentation conservation are
+separate equations that each reconcile **independently**. Mixing eligibility, membership, and rendering in
+one equation was the Rev-1 error.
 
 ```
 Expected Universe
-  = Rendered
-  + Excluded        (legitimate, e.g. KNOWN_NON_FBS, NO_LINE, DATA_RIGHTS_GATE)
-  + Suppressed      (display-limit / policy; disclosed + counted)
-  + Unavailable     (fail-closed: source/identity/completeness unproven)
-  + Indeterminate   (completed/expected but evidence missing — never silently a non-event)
+  = Eligible
+  + Excluded        (legitimate, e.g. KNOWN_NON_FBS, NO_LINE)
+  + Unavailable     (fail-closed: source/identity/completeness unproven, incl. DATA_RIGHTS_GATE)
+  + Indeterminate   (expected/completed but evidence missing — never silently a non-event)
   + Failed          (malformed / conflict / schema-invalid)
+
+Eligible
+  = Members
+  + NonMembers      (eligible but did not qualify, e.g. BELOW_THRESHOLD)
+
+Members
+  = Rendered
+  + Suppressed      (display-limit / policy; disclosed + counted)
 ```
 
-Rules:
-- **No overlap, no residual.** `sum(buckets) == |Expected Universe|`. (The CFB ATS conservation probe is
-  the prototype: `expected_FBS + known_non_FBS + no_line + future_week + … = graded`, proven, no residual.)
-- **Entities outside the expected universe** (e.g. a completed game beyond the completed-week boundary, or
-  a different season) are classified in their own terminal category (`OUTSIDE_BOUNDARY`, `OUT_OF_SEASON`)
-  and never counted as Rendered/Excluded; they are reported, not ignored.
-- **Queried absent entities** (a user asks for a player/entity not in the universe — the Nico "expected but
-  absent" case) get an explicit disposition (`NOT_IN_UNIVERSE`, `UNRESOLVED`, `GATED`) with a reason, never
-  a blank or a fabricated zero.
-- **Indeterminate is first-class** and distinct from Excluded/Unavailable: a completed event the system
-  *should* have but cannot prove (e.g. a completed appearance with no valid pregame observation) is
-  `INDETERMINATE_MISSING_OBSERVATION`, not silently bridged and not a legitimate exclusion.
+Placement corrections (Rev-2 #1):
+- **`DATA_RIGHTS_GATE` → `Unavailable`**, not ordinary `Excluded` (a gated datum is withheld because we may
+  not serve it, not because it is legitimately out of scope).
+- **`BELOW_THRESHOLD` → `NonMembers`** (eligible, computed, simply did not qualify) — never `Excluded`.
 
-**Open question (O-3a):** is `Suppressed` (display-limit) part of the Expected Universe conservation, or a
-presentation-layer sub-partition of `Rendered + Suppressed`? **Recommended default:** a sub-partition of
-the admitted members (`Rendered + Suppressed == Members`), itself reconciled, so authority-level
-conservation uses Members while presentation-level conservation uses Rendered/Suppressed.
+Rules:
+- **Each equation reconciles independently, no overlap, no residual.** The authority equation balances the
+  Expected Universe; the membership equation balances Eligible; the presentation equation balances Members.
+  (The CFB ATS conservation probe — `expected_FBS + known_non_FBS + no_line + future_week + … = graded`,
+  proven, no residual — is the prototype for the authority equation.)
+- **Every universe declares its `grain`, `id`, and `version`** (what one row means, which universe it is,
+  and the definition version in force) so two reconciliations are never silently compared across grains
+  (the Lane-2 lesson: SnapshotDate-season vs GameDay-season were apples-to-oranges).
+- **Entities outside the expected universe** (a completed game beyond the completed-week boundary, a
+  different season) are classified in their own terminal category (`OUTSIDE_BOUNDARY`, `OUT_OF_SEASON`) and
+  reported, never folded into Eligible/Excluded. (CFB ATS: the 6 `future_week` rows.)
+- **Queried absent entities** (a user asks for an entity not in the universe — the Nico "expected but
+  absent" case) get an explicit disposition (`NOT_IN_UNIVERSE`, `UNRESOLVED`, `GATED`), never a blank or a
+  fabricated zero.
+- **Indeterminate is first-class**, distinct from Excluded/Unavailable: a completed event the system
+  *should* have but cannot prove (a completed appearance with no valid pregame observation) is
+  `INDETERMINATE_MISSING_OBSERVATION`, not silently bridged and not a legitimate exclusion.
 
 ---
 
@@ -135,15 +156,31 @@ user-safe projection (L10). No schema is drawn here — only purpose, required c
    capture-precision record generalized.
 4. **Correction receipt** — a superseding record (L6/L12). Content: reference to the superseded receipt,
    what changed (kickoff, grade, line), the new value, correction ordering key. Never an in-place edit.
-5. **Render receipt** — what the page actually showed, reconciled to membership (stage 9). Content:
-   rendered entity set + hash, suppressed count, the membership hash it must equal.
+5. **Render receipt** — what was rendered, reconciled to membership (stage 9), at **two levels** (Rev-2
+   #9): *server* (the server-generated HTML equals the membership/render receipt — deterministic) and
+   *client/DOM* (confirmed only by browser tests or runtime telemetry). The server level is never claimed
+   as proof of the client level. Content: rendered entity set + hash, suppressed count, the membership hash
+   it must equal, and the reconciliation level achieved.
 6. **Operational / source-health receipt** — source freshness, sidecar/sha verification, provider state.
    **Must keep the provider dimension separate from the artifact dimension** (CFB: a CFBD quota outage ≠ a
    stale last-known-good artifact; a fresh artifact ≠ provider reachable).
 
-**Open question (O-4a):** live-evidence and render receipts could be one record with two sections, or two
-linked records. **Recommended default:** two linked records (clean separation of "what we computed" vs
-"what we showed"), joined by the membership hash.
+**O-4a — RESOLVED:** **two linked receipts** — an evidence receipt ("what we computed") and a render
+receipt ("what we showed"), joined by the membership hash. Clean separation.
+
+### Hierarchical receipt composition (Rev-2 additional requirement)
+To stay auditable without uncontrolled receipt volume, authoritative output does NOT duplicate a full
+receipt per row. Instead it composes:
+
+- a **board receipt** (the live-evidence receipt for the surface: stage counts/health, membership hash,
+  sort governance, versions) that **references** —
+- **entity-disposition records** (one terminal disposition per expected entity — the exclusion/membership
+  detail; §3), stored once and referenced, not inlined per render;
+- a **source-health receipt** (§4.6), referenced;
+- a **linked render receipt** (above).
+
+A reader walks board → dispositions → source-health → render. Per-row data lives in the referenced
+disposition records, not copied into every board or render receipt.
 
 ---
 
@@ -161,9 +198,13 @@ Centralized, versioned governance so meanings never drift silently.
 - **Stage + authority classification registry** — which stages are authoritative, and each surface's
   authority class (§9).
 
-**Binding rule (naming):** use **stable codes + explicit version fields**, never embedded version names.
-`disposition="EXPECTED_FBS", def_version=3` — **never** `EXPECTED_FBS_v3` as the code. (A code is an
-identity; a version is metadata. Baking the version into the code breaks every downstream match.)
+**Binding rule (naming) — two prohibitions:**
+- **No embedded version names.** Use stable code + version field: `disposition="EXPECTED_FBS",
+  def_version=3` — never `EXPECTED_FBS_v3` as the code. (A code is an identity; a version is metadata.)
+- **No dynamic/interpolated codes** (Rev-2 #7). A reason code is a fixed member of the registry, never a
+  string built from runtime values. Governed parameters go in separate fields:
+  `reason_code="SORTED", sort_rule_id="streak_desc_team_asc", sort_rule_version=1` — **never**
+  `SORTED_BY_streak_desc_team_asc` as the code. The same applies to any `*_BY_<x>` / `*_<entity>` shape.
 
 ---
 
@@ -182,14 +223,20 @@ Authoritative joins resolve identity in a declared priority and record the quali
   excluded from authority until disambiguated. (CFB `(GameID,TeamSide)` identity-conflict → fail closed.)
 - **Cross-sport collisions** (same name across sports/teams): resolution is always **sport-scoped**; names
   never cross-link across sports (the entity-link resolver already enforces this).
-- **Prohibition:** **no silent fuzzy resolution for authoritative joins.** Fuzzy/name-key resolution is
-  permitted only for *presentation overlays that cannot change membership or ordering*, and even then only
-  on an exact match (the CFB overlay rule: exact provider-name or omitted; misattributions 0 by
-  construction). (Nico Collins: a short-form `N.Collins` must resolve via an explicit alias/ID, never a
-  silent fuzzy match that drops or merges a player.)
+- **Alias policy (FROZEN, Rev-2 #10)** — the Rev-1 phrase "fuzzy allowed on exact match" was contradictory
+  and is removed. The policy is three disjoint rules:
+  1. **Curated exact aliases** (explicit, reviewed entries, e.g. `N.Collins → Nico Collins`) **may support
+     authoritative resolution.** An alias hit is an exact match against a governed table, not a fuzzy score.
+  2. **Fuzzy matching may only SUGGEST candidates** for human review or for clearly-labeled
+     **non-authoritative** display — it never changes membership/ordering.
+  3. **Fuzzy matching never automatically authorizes an identity join or link.** An authoritative join uses
+     provider ID, declared composite, or a curated exact alias — full stop.
+  (Nico Collins: `N.Collins` resolves via a curated alias/ID, never a silent fuzzy match that could drop or
+  merge a player. The CFB overlay's exact-provider-name-or-omitted rule — misattributions 0 by construction
+  — is an instance of rule 2.)
 
-**Open question (O-6a):** build a platform-wide alias registry now, or per-sport? **Recommended default:**
-per-sport alias tables feeding one interface, since identity spaces don't cross sports.
+**O-6a — RESOLVED:** **per-sport alias registries behind one platform interface** (identity spaces don't
+cross sports; one interface keeps callers uniform).
 
 ---
 
@@ -207,8 +254,13 @@ Plus:
 - **Timestamp-unknown behavior:** a clock that is absent or not provably tz-aware is **`UNKNOWN`** and
   **ineligible for temporal ordering** — never assumed UTC, never assumed pregame. (Capture-precision:
   date-only `SnapshotDate` → same-day is `TEMPORALLY_INDETERMINATE`, excluded from a pregame reference.)
-- **Correction ordering:** corrections (§8) order by a declared correction key (source update time, then
-  capture time), not by wall-clock of processing.
+- **Correction ordering (Rev-2 #8):** corrections are **never** ordered solely by `source_updated` —
+  provider clocks can regress or arrive late. Four facts are recorded **separately**: `event_effective`
+  (the event's clock), `source_updated` (provider), `bk_captured` (ingestion), and an **immutable receipt
+  sequence** (a monotonic BK-assigned order). The **receipt sequence** preserves true observation history
+  (the order in which BK learned things); the effective/source clocks describe the event itself. A
+  correction references the superseded receipt by sequence, so late/regressing provider clocks can never
+  reorder history.
 - **Timezone requirement:** all stored instants are tz-aware ISO-8601 UTC. Eastern is a *display*
   projection only (via `services/timeutils`), never a stored authoritative instant.
 - **No silent clock substitution:** a missing `source_updated` is never backfilled from `bk_captured`; they
@@ -220,12 +272,17 @@ Plus:
 
 Every authoritative conclusion declares one reproducibility class and carries what it needs to honor it:
 
-- **`EXACT_REPLAY`** — re-running the same inputs + versions yields byte-identical output. Requires
-  canonical input hashes + build/config/rule versions; only for deterministic computations.
+- **`EXACT_REPLAY`** — re-running the same inputs + versions yields an identical output **under a canonical
+  serialization** (Rev-2 #5): equality is judged after normalizing field order and excluding runtime-only
+  fields (generation timestamps, process ids), so two otherwise-identical conclusions never fail replay on
+  incidental formatting. Requires canonical input hashes + build/config/rule versions; deterministic
+  computations only.
 - **`EVIDENCE_EQUIVALENT`** — inputs may have been superseded (regrades, line moves), but the receipt chain
   proves the conclusion was correct *given what was knowable then* (L9). The default for graded records.
 - **`NON_REPLAYABLE`** — a dependency cannot be reconstructed (ephemeral provider state, unretained
-  source). Must be declared, not discovered.
+  source). Must be **declared, not discovered**, and (Rev-2 #5) is **ineligible for governed authority**:
+  it may appear only as explicitly degraded informational context, never as a factual or model-authoritative
+  conclusion.
 - **Canonical input hashes** — a stable hash of the exact inputs (the ATS sidecar sha + the candidate sha
   patterns generalize).
 - **Build / config / rule versions** — code build id, config snapshot, and the rule/definition versions
@@ -246,13 +303,24 @@ Five classes, kept distinct (L7). The registry (§5) records each surface's auth
 | **Fact** | graded result, recorded line, completed game | yes | yes (factual sort) | yes | n/a |
 | **Derived context** | opponent-adjusted, SoS, situational splits | yes (as context) | **no** | **no** | as labeled context only |
 | **Descriptive mismatch** | "model rates above/below the line" overlay | **no** | **no** | **no** | overlay only |
-| **Governed model** | a registered model read with declared authority | only if the model registry grants it authority | only if granted | only if granted | yes, within its grant |
+| **Governed model** | a registered model read with declared authority | **on a factual board: no.** As its OWN product: yes, within its grant | factual board: **no**; own product: yes | factual board: **no**; own product: yes | yes, within its grant |
 | **User thesis** | the user's own angle (SGP thesis, saved view) | yes (their own view) | their own | their own | n/a (theirs) |
 
-**Binding rule:** **membership and the factual sort are Fact-only.** A model/overlay may annotate a row
-but may **never suppress a qualifying entity or reorder beyond the declared factual sort** (the ATS
-contract's firewall, generalized). Governed-model influence requires an explicit authority grant in the
-model registry (`services/model_registry.py` lineage), with its own receipt.
+**Binding rule (FROZEN, Rev-2 #3) — the factual board vs the governed-model product are two different
+conclusions:**
+- **Factual boards** (Hot Hand, both ATS Waves, etc.): membership and ordering are **Fact-only**. A model
+  or overlay may **annotate** a row but may **never remove, reorder, or rewrite** membership on the
+  underlying factual board.
+- **Governed-model products** (a recommendation/selection surface): a model may produce a **separate**
+  recommendation/selection conclusion **under an explicit authority grant** in the model registry
+  (`services/model_registry.py` lineage), with its **own** receipt. That conclusion is a distinct product,
+  not a mutation of the factual board.
+- **The model-product receipt MUST reference the factual-universe receipt it consumed** — so a reader can
+  see exactly which facts the recommendation was built on, and the factual board remains independently
+  reconcilable.
+
+This removes the Rev-1 contradiction (a model could not be both "may influence membership if granted" and
+"membership is Fact-only" — those are two different surfaces, now frozen apart).
 
 ---
 
@@ -265,17 +333,28 @@ model registry (`services/model_registry.py` lineage), with its own receipt.
   CFBD terms, Odds API, NBA data-rights gate). A receipt records the source license; a surface under a
   data-rights gate (NBA stats/injuries) fails closed to the cleared/market-only destination (`DATA_RIGHTS_
   GATE` disposition), never the gated content.
-- **Retention limits:** receipts have a retention class (decision-time + correction receipts retained
-  longest for audit; live-evidence receipts rotate). Define per class in Phase 2.
+- **Retention limits (O-13a):** receipts have a retention class (decision-time + correction receipts
+  retained longest for audit; live-evidence receipts rotate). **Do not set final durations in this design.**
+  Define the retention *classes* in Phase 2, and **require privacy/legal approval before activating any
+  account-linked retention**.
 - **Personal-data minimization:** receipts store player/team *public* identities and market facts; no
   end-user PII beyond what account features require, and none in authoritative receipts.
 - **Proprietary-model protection:** model internals (weights, private formulas) live only in internal
   receipts; user-safe projections expose the governed read + its authority class, not the mechanism.
 - **Secret / raw-payload exclusion:** no API keys, tokens, or raw provider payloads in any published or
   user-safe receipt (the diagnostics already redact; this makes it law).
-- **Account deletion / data access:** a data-access/deletion request must be able to find and remove a
-  user's own data (saved views, journal, theses) without touching immutable *market-fact* receipts (which
-  contain no PII). Define the boundary in Phase 2.
+- **Immutability vs privacy deletion (FROZEN boundary, Rev-2 #6):** the Constitution cannot promise both
+  immutable retention and deletion of the *same* record, so they are split:
+  - the **immutable market/evidence receipt contains no user PII** (public entities + market facts only) —
+    it is retained and never deleted;
+  - a **deletable account-association record** *references* that receipt (so "which user saw/acted on this"
+    is removable without touching the fact);
+  - **user-authored content** (theses, saved views, journal entries) is **deletable**;
+  - a correction/deletion **leaves a non-identifying tombstone** where legally appropriate (so lineage
+    stays walkable without re-exposing deleted data);
+  - **activating account-linked retention requires privacy/legal approval** (ties to O-13a).
+  A data-access/deletion request thus removes the account association + user-authored content, never the
+  PII-free market-fact receipts.
 
 ---
 
@@ -297,9 +376,10 @@ The constitution is enforced by validators + CI, mirroring the QC pattern alread
 - **CI rule:** an authoritative output without a conformant receipt **fails the build**. No receiptless
   authority ships.
 
-**Open question (O-11a):** enforce at runtime (reject a receiptless authoritative response) as well as in
-CI? **Recommended default:** CI-first; add a runtime assertion in the enforcement phase once receipts exist,
-behind a flag, failing closed to unavailable rather than 500.
+**O-11a — RESOLVED:** **CI-first**, then **flagged runtime enforcement**. CI blocks receiptless
+authoritative output at build time. Once receipts exist, add a runtime assertion behind a flag that **fails
+closed to the honest unavailable state — never a 500** — when an authoritative response lacks a conformant
+receipt.
 
 ---
 
@@ -362,13 +442,33 @@ and legacy surfaces run side by side; the registry records which is which.
 - Fail closed to honest unavailable/indeterminate, never partial/guess (L8) — **decided**.
 - NFL ATS is the enforcement pilot (§12.4) — **decided**.
 
-## Open questions (for the approval pass)
-- **O-2a** mandatory presentation-eligibility/render-reconciliation scope.
-- **O-3a** where display-limit suppression sits in conservation.
-- **O-4a** one live+render receipt vs two linked.
-- **O-6a** alias registry platform-wide vs per-sport.
-- **O-11a** runtime enforcement vs CI-only.
-- **O-13a** retention windows per receipt class (Phase 2).
+## Open questions — ALL RESOLVED in Rev 2 (per the supplied decisions)
+- **O-2a** → mandatory for every authoritative board; optional for non-authoritative chrome.
+- **O-3a** → nested conservation equations (§3); `Members = Rendered + Suppressed`.
+- **O-4a** → two linked receipts (evidence + render); + hierarchical composition (§4).
+- **O-6a** → per-sport alias registries behind one platform interface.
+- **O-11a** → CI-first, then flagged runtime enforcement that fails closed (no 500).
+- **O-13a** → no final durations now; define retention classes in Phase 2; privacy/legal approval before
+  activating account-linked retention.
+
+## Rev-2 corrections applied (changelog)
+1. Nested authority/membership/presentation conservation; `DATA_RIGHTS_GATE`→Unavailable,
+   `BELOW_THRESHOLD`→NonMembers; every universe declares grain/id/version (§3).
+2. Canonical-event identity = `sport+season+EventId+entity+market/stat`; `(player,stat,week)` removed (§2).
+3. Authority contradiction frozen: factual boards Fact-only; governed models are a separate product under
+   a grant, referencing the factual-universe receipt; never mutate the factual board (§9).
+4. L12 tamper-evidence requires a real mechanism (chaining/signing/WORM/anchoring/audit-log); otherwise
+   "integrity-verifiable" (§1 L12).
+5. `NON_REPLAYABLE` ineligible for governed authority; `EXACT_REPLAY` judged under canonical serialization
+   (§8).
+6. Immutable (PII-free) market receipt vs deletable account association + user content + tombstone +
+   privacy/legal approval (§10).
+7. No dynamic reason codes (`SORTED` + `sort_rule_id`/`sort_rule_version`, not `SORTED_BY_<x>`) (§5, §2).
+8. Correction ordering uses an immutable receipt sequence, not solely `source_updated` (§7).
+9. Render reconciliation split into server (deterministic) and client/DOM (telemetry/tests) levels (§2, §4).
+10. Alias policy frozen: curated exact aliases authoritative; fuzzy only suggests / non-authoritative;
+    fuzzy never auto-authorizes a join (§6).
++ Hierarchical receipt composition (board → entity-disposition records → source-health → render) (§4).
 
 ## Open items carried (NOT part of this design; not forgotten)
 - **CFB ATS six-row remainder — RECONCILED** (Audit #3: all 6 are `future_week`, conservation proven; no
