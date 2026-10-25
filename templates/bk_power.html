@@ -73,13 +73,23 @@
   // into innerHTML. Link ONLY when the server supplied a resolver url (same-origin path); the client
   // performs NO identity resolution. url absent/None -> plain text (CFB players, coaches, gated/
   // ambiguous/unknown). Reversible: drop `ent` server-side and `plain(r)` gives the old plain cell.
+  // Normalize + verify a server-supplied entity url: link ONLY a same-origin application path. A
+  // character test is not enough -- browsers normalize backslashes ('/\evil.example' -> '//evil.example'
+  // -> off-origin), so parse with URL() and compare origins. Rejects '//host', '/\host', absolute,
+  // javascript:/data:, whitespace-prefixed and malformed values (-> null -> plain text).
+  function safeEntityUrl(value){
+    if(typeof value!=='string' || !value.startsWith('/') || value.startsWith('//')) return null;
+    try{
+      const parsed = new URL(value, window.location.origin);
+      if(parsed.origin !== window.location.origin) return null;
+      return parsed.pathname + parsed.search + parsed.hash;
+    }catch(_){ return null; }
+  }
+
   function fillEntityCell(td, cell){
     while(td.firstChild) td.removeChild(td.firstChild);
     const text = (cell && cell.text) || '';
-    // Link ONLY a single-leading-slash application path. Reject a protocol-relative '//host' (which
-    // would navigate off-origin), absolute URLs, javascript:/data:, and malformed/empty values.
-    const u = cell && cell.url;
-    const url = (typeof u==='string' && u.charAt(0)==='/' && u.charAt(1)!=='/') ? u : null;
+    const url = safeEntityUrl(cell && cell.url);
     if(url){
       const a=document.createElement('a'); a.className='bk-entity-link'; a.href=url; a.textContent=text;
       td.appendChild(a);

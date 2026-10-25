@@ -120,33 +120,23 @@ def test_client_contract_static():
     # client does NOT resolve identity: no resolver/url-building in the template
     check('player_url' not in src and 'team_url' not in src and 'entity_links' not in src,
           "no identity resolution / url building in client JS (server-only)")
-    # only a single-leading-slash application path becomes a link (defensive url guard)
-    check("u.charAt(0)==='/' && u.charAt(1)!=='/'" in src,
-          "url guard rejects protocol-relative '//' (single-leading-slash app path only)")
-    check("cell.url.charAt(0)==='/') ? cell.url" not in src,
-          "the weak charAt(0)-only guard (passes '//host') is gone")
+    # the url guard parses with URL() and verifies same-origin (a char test misses '/\\evil' which
+    # the browser normalizes to '//evil'); hostile-URL SEMANTICS are browser-verified below/in-session.
+    check('function safeEntityUrl(' in src, "safeEntityUrl() guard present")
+    check('new URL(value, window.location.origin)' in src, "guard parses the url against window origin")
+    check('parsed.origin !== window.location.origin' in src, "guard verifies same-origin")
+    check("!value.startsWith('/') || value.startsWith('//')" in src, "pre-filter rejects non-'/' and '//'")
+    check('const url = safeEntityUrl(' in src, "fillEntityCell routes href through safeEntityUrl")
+    check("charAt(1)!=='/'" not in src, "the prior char-only guard (misses backslash) is gone")
     # reversibility: fill falls back to the column's plain() when ent is absent
     check('r.ent || entCol.plain(r)' in src, "reversible: ent absent -> plain() fallback (old plain cell)")
 
 
-def test_url_guard_spec():
-    """The client guard that decides whether a cell.url becomes an <a href>. This mirrors the exact
-    one-liner in bk_power.html (asserted present by test_client_contract_static, and browser-verified
-    against the same hostile inputs) so the hostile-URL fixtures are checked here too: only a
-    single-leading-slash application path links; protocol-relative '//host', absolute URLs,
-    javascript:/data:, and malformed/empty values are rejected (-> plain text)."""
-    print("\n[C] url guard: single-leading-slash app path only (hostile-URL fixtures)")
-
-    def guard(u):  # exact semantics of: typeof u==='string' && u.charAt(0)==='/' && u.charAt(1)!=='/'
-        return u if (isinstance(u, str) and u[:1] == '/' and u[1:2] != '/') else None
-
-    links = ['/tools/player-check?q=A', '/tools/cfb-team?team=Georgia', '/']
-    rejects = ['//evil.example', '//evil.example/path', 'https://evil.example', 'http://x',
-               'javascript:alert(1)', 'data:text/html,x', 'ftp://x', 'tools/x', ' /x', '', None, 123]
-    for u in links:
-        check(guard(u) == u, "links a single-leading-slash path: %r" % u)
-    for u in rejects:
-        check(guard(u) is None, "rejects hostile/malformed url -> plain text: %r" % u)
+#   NOTE: the url guard (safeEntityUrl) depends on the browser's URL() parsing + window.location.origin
+#   — including backslash normalization ('/\evil.example' -> '//evil.example' -> off-origin) — which a
+#   pure-Python reimplementation cannot faithfully model. Its hostile-URL SEMANTICS are therefore
+#   asserted in-browser against the REAL shipped function (extracted from the page source), not here;
+#   this file asserts the guard's PRESENCE + shape statically (test_client_contract_static).
 
 
 if __name__ == '__main__':
@@ -156,6 +146,5 @@ if __name__ == '__main__':
     test_server_contract()
     test_attach_does_not_mutate()
     test_client_contract_static()
-    test_url_guard_spec()
     print("\nClean:", not fails)
     sys.exit(1 if fails else 0)
