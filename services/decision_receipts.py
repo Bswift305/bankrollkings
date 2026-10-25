@@ -256,16 +256,20 @@ class NumericProfileError(ValueError):
     pass
 
 
-def _dec(value: Union[int, float, str]) -> Decimal:
-    """Exact Decimal from the ORIGINAL LEXICAL value (not via binary float). A
-    string is parsed as its literal; an int is exact; a float is converted through
-    its repr lexeme (`str(float)`) so no binary-rounding noise enters arithmetic —
-    callers wanting guaranteed exactness pass a string or int."""
+def _dec(value: Union[int, str, Decimal]) -> Decimal:
+    """Exact Decimal from the ORIGINAL LEXICAL value. A governed authoritative value
+    MUST be a `Decimal`, an `int`, or a canonical decimal STRING — a Python `float`
+    is REJECTED, because `Decimal(str(float))` cannot recover precision already lost
+    to binary before entry (a float is not a lexical decimal)."""
     if isinstance(value, bool):
         raise NumericProfileError("bool is not a governed number")
+    if isinstance(value, float):
+        raise NumericProfileError(
+            "float is not accepted for a governed value — pass Decimal, int, or a "
+            "canonical decimal string")
     try:
-        if isinstance(value, float):
-            d = Decimal(str(value))
+        if isinstance(value, Decimal):
+            d = value
         elif isinstance(value, (int, str)):
             d = Decimal(value)
         else:
@@ -283,7 +287,7 @@ def _exponent(d: Decimal) -> int:
     return -exp if exp < 0 else 0
 
 
-def _canon_line(value: Union[int, float, str]) -> str:
+def _canon_line(value: Union[int, str, Decimal]) -> str:
     """Half-point profile: value MUST be an exact multiple of 0.5; canonical 2dp."""
     d = _dec(value)
     if (d * 2) != (d * 2).to_integral_value():
@@ -292,7 +296,7 @@ def _canon_line(value: Union[int, float, str]) -> str:
     return "0.00" if q == 0 else f"{q}"
 
 
-def _canon_probability(value: Union[int, float, str]) -> str:
+def _canon_probability(value: Union[int, str, Decimal]) -> str:
     """Fixed 4dp in [0,1]. No silent rounding: MORE than 4 fractional digits is
     rejected (the profile declares no rounding rule)."""
     d = _dec(value)
@@ -303,7 +307,7 @@ def _canon_probability(value: Union[int, float, str]) -> str:
     return f"{d.quantize(Decimal('0.0001'))}"
 
 
-def _canon_price(value: Union[int, float, str]) -> str:
+def _canon_price(value: Union[int, str, Decimal]) -> str:
     """American price: an integer with magnitude >= 100; explicit sign."""
     d = _dec(value)
     if d != d.to_integral_value():
@@ -314,7 +318,7 @@ def _canon_price(value: Union[int, float, str]) -> str:
     return f"+{v}" if v > 0 else f"{v}"
 
 
-def _canon_count(value: Union[int, float, str]) -> str:
+def _canon_count(value: Union[int, str, Decimal]) -> str:
     """Non-negative integer."""
     d = _dec(value)
     if d != d.to_integral_value() or d < 0:
@@ -330,7 +334,7 @@ NUMERIC_PROFILES = {
 }
 
 
-def canonical_number(value: Union[int, float, str], profile: str) -> str:
+def canonical_number(value: Union[int, str, Decimal], profile: str) -> str:
     try:
         fn = NUMERIC_PROFILES[profile]
     except KeyError as exc:
@@ -342,7 +346,7 @@ def canonical_number(value: Union[int, float, str], profile: str) -> str:
 class GovernedNumber:
     """A numeric value bound to a governed profile; canonicalizes to a decimal
     string at the profile's scale."""
-    value: Union[int, float, str]
+    value: Union[int, str, Decimal]
     profile: str
 
     def canonical(self) -> str:
@@ -356,13 +360,24 @@ class GovernedNumber:
 
 @dataclass(frozen=True)
 class Identity:
-    """Grain-specific identity, PER ROW (§5). The envelope carries no identity."""
+    """Grain-specific identity, PER ROW (§5). The envelope carries no identity.
+
+    Governed identity-profile fields (§5 + R14b) make each quality auditable:
+      * `PROVIDER_ID`     → `ext.provider_namespace` + `ext.provider_team_id` (a
+        governed provider id, never a bare name).
+      * `DECLARED_COMPOSITE` → `profile` + `profile_version` + `collision_proof`
+        (+ `collision_tested`), plus the grain's declared components.
+      * `ALIAS_RESOLVED`  → `ext.alias_ref` + `ext.alias_version` (curated registry).
+      * `NAME_ONLY`/`AMBIGUOUS`/`UNRESOLVED` → a name alone; fails closed (R13)."""
     grain: IdentityGrain
     base: Dict[str, Any]
     ext: Dict[str, Any]
     identity_quality: IdentityQuality
     collision_tested: bool
     key: str
+    profile: Optional[str] = None            # DECLARED_COMPOSITE: declared key profile
+    profile_version: Optional[str] = None    # DECLARED_COMPOSITE: profile version
+    collision_proof: Optional[str] = None    # DECLARED_COMPOSITE: declared collision proof
 
 
 @dataclass(frozen=True)
@@ -587,6 +602,39 @@ def seal_hashes(receipt: Receipt) -> Receipt:
 
 
 # ---------------------------------------------------------------------------
+# Membership hash + hex-digest shape.
+# ---------------------------------------------------------------------------
+
+# Members are the admitted entities (§2 roll-up Members = RENDERED + SUPPRESSED).
+MEMBER_LEAVES = frozenset({Leaf.RENDERED, Leaf.SUPPRESSED})
+
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _is_hex64(s: Any) -> bool:
+    return isinstance(s, str) and bool(_HEX64_RE.match(s))
+
+
+def compute_membership_hash(batch_receipt: Receipt) -> str:
+    """The board's membership hash domain: the ORDERED admitted members
+    (`RENDERED`/`SUPPRESSED`) of the referenced disposition batch, each as
+    `{entity_ref, leaf, identity_key}`, in the batch's authoritative order.
+    Non-member rows (NONMEMBER/EXCLUDED/UNAVAILABLE/INDETERMINATE/FAILED) are
+    excluded, so reordering a non-member does not change the hash, while changing a
+    member or the members' order does."""
+    body = batch_receipt.body
+    if not isinstance(body, EntityDispositionBatch):
+        raise TypeError("membership hash requires an EntityDispositionBatch")
+    members = [
+        {"entity_ref": _norm_str(r.entity_ref), "leaf": r.leaf.value,
+         "identity_key": _norm_str(r.identity.key)}
+        for r in body.rows
+        if isinstance(r.leaf, Leaf) and r.leaf in MEMBER_LEAVES
+    ]
+    return hashlib.sha256(_dumps(members)).hexdigest()
+
+
+# ---------------------------------------------------------------------------
 # Strict UTC instant validation (§ conventions: instant[UTC]).
 # ---------------------------------------------------------------------------
 
@@ -621,8 +669,9 @@ class ValidationResult:
 
 def _check_version(v: SchemaVersion, errs: List[str]) -> None:
     if not isinstance(v, SchemaVersion) or not isinstance(v.major, int) \
-            or not isinstance(v.minor, int) or isinstance(v.major, bool):
-        errs.append("schema_version must be {major:int, minor:int}")
+            or not isinstance(v.minor, int) or isinstance(v.major, bool) \
+            or isinstance(v.minor, bool):
+        errs.append("schema_version must be {major:int, minor:int} (no booleans)")
         return
     if v.major not in _KNOWN_MAJORS:
         errs.append(f"unknown schema major {v.major} (fail closed)")
@@ -678,7 +727,12 @@ def _check_integrity(receipt: Receipt, errs: List[str]) -> None:
         if integ.mechanism != IntegrityMechanism.NONE and not integ.proof:
             errs.append(f"integrity.mechanism={integ.mechanism.value} requires proof material "
                         "(structure only; not verified)")
-    # Validate DECLARED digests against recomputed canonical digests (non-throwing).
+    # Declared digests MUST be correctly-sized lowercase hex, and MUST match the
+    # recomputed canonical digests (non-throwing).
+    if integ.content_hash is not None and not _is_hex64(integ.content_hash):
+        errs.append("integrity.content_hash must be a 64-char lowercase hex digest")
+    if receipt.conclusion_hash is not None and not _is_hex64(receipt.conclusion_hash):
+        errs.append("conclusion_hash must be a 64-char lowercase hex digest")
     try:
         if integ.content_hash is not None and integ.content_hash != compute_content_hash(receipt):
             errs.append("declared integrity.content_hash does not match canonical content")
@@ -709,17 +763,27 @@ def _check_identity(idn: Identity, expected_grain: Optional[IdentityGrain],
         errs.append(f"{where}: identity.key required")
     if not isinstance(idn.base, dict) or not idn.base.get("sport") or not idn.base.get("season"):
         errs.append(f"{where}: identity.base must carry sport + season")
-    # Grain-specific required extension fields (§5 + R14b).
-    if isinstance(idn.grain, IdentityGrain) and idn.grain in _GRAIN_REQUIRED_EXT:
-        if not isinstance(idn.ext, dict) or any(k not in idn.ext for k in _GRAIN_REQUIRED_EXT[idn.grain]):
-            errs.append(f"{where}: {idn.grain.value} identity.ext must carry "
+    ext = idn.ext if isinstance(idn.ext, dict) else {}
+    q = idn.identity_quality
+    # Per-quality governed identity profiles (§5 + R14b) — makes each quality auditable
+    # so a bare team name cannot masquerade as a PROVIDER_ID.
+    if q == IdentityQuality.PROVIDER_ID:
+        if not ext.get("provider_namespace") or not ext.get("provider_team_id"):
+            errs.append(f"{where}: PROVIDER_ID requires ext.provider_namespace + "
+                        "ext.provider_team_id (a bare name is NAME_ONLY)")
+    elif q in _COMPOSITE_IDENTITY:
+        if not idn.collision_tested:
+            errs.append(f"{where}: {q.value} requires collision_tested=true (R14)")
+        if not idn.profile or not idn.profile_version or not idn.collision_proof:
+            errs.append(f"{where}: {q.value} requires profile + profile_version + collision_proof")
+        # grain-declared components
+        if isinstance(idn.grain, IdentityGrain) and idn.grain in _GRAIN_REQUIRED_EXT \
+                and any(k not in ext for k in _GRAIN_REQUIRED_EXT[idn.grain]):
+            errs.append(f"{where}: {idn.grain.value} {q.value} must declare components "
                         f"{list(_GRAIN_REQUIRED_EXT[idn.grain])}")
-    # Board team identity must be a provider id or a declared composite — never a
-    # bare NAME_ONLY (R14b: "never a bare team name labeled PROVIDER_ID" is enforced
-    # by requiring PROVIDER_ID/DECLARED_COMPOSITE/ALIAS_RESOLVED for an authoritative row).
-    if isinstance(idn.identity_quality, IdentityQuality) \
-            and idn.identity_quality in _COMPOSITE_IDENTITY and not idn.collision_tested:
-        errs.append(f"{where}: {idn.identity_quality.value} requires collision_tested=true (R14)")
+    elif q == IdentityQuality.ALIAS_RESOLVED:
+        if not ext.get("alias_ref") or not ext.get("alias_version"):
+            errs.append(f"{where}: ALIAS_RESOLVED requires ext.alias_ref + ext.alias_version")
 
 
 def _check_reason(code: str, def_version: int, expected_category: "SemanticCategory",
@@ -819,8 +883,8 @@ def _check_params(params: Optional[Dict[str, Any]], where: str, errs: List[str])
 
 
 def _check_board(b: LiveEvidenceBoard, receipt: Receipt, errs: List[str]) -> None:
-    if not b.membership_hash:
-        errs.append("board.membership_hash required")
+    if not _is_hex64(b.membership_hash):
+        errs.append("board.membership_hash must be a 64-char lowercase hex digest")
     if not isinstance(b.per_leaf_counts, dict):
         errs.append("board.per_leaf_counts must be a map")
         return
@@ -829,8 +893,12 @@ def _check_board(b: LiveEvidenceBoard, receipt: Receipt, errs: List[str]) -> Non
             errs.append(f"board.per_leaf_counts key {k!r} is not a leaf")
         if not isinstance(n, int) or isinstance(n, bool) or n < 0:
             errs.append(f"board.per_leaf_counts[{k!r}] must be a non-negative int")
-    total = sum(n for n in b.per_leaf_counts.values() if isinstance(n, int))
-    if isinstance(b.expected_count, int) and total != b.expected_count:
+    if not isinstance(b.expected_count, int) or isinstance(b.expected_count, bool) \
+            or b.expected_count < 0:
+        errs.append("board.expected_count must be a non-negative, non-boolean integer")
+    total = sum(n for n in b.per_leaf_counts.values() if isinstance(n, int) and not isinstance(n, bool))
+    if isinstance(b.expected_count, int) and not isinstance(b.expected_count, bool) \
+            and total != b.expected_count:
         errs.append(f"board conservation: per-leaf counts sum to {total} != expected_count "
                     f"{b.expected_count} (R20)")
     # §7 R18: a board MUST reference its disposition batch + source_health.
@@ -869,6 +937,10 @@ def _check_replay(receipt: Receipt, errs: List[str]) -> None:
         return
     if receipt.replay_class != ReplayClass.NON_REPLAYABLE and not receipt.input_hashes:
         errs.append(f"replay_class={receipt.replay_class.value} requires input_hashes")
+    if receipt.input_hashes is not None:
+        if not isinstance(receipt.input_hashes, list) \
+                or any(not _is_hex64(h) for h in receipt.input_hashes):
+            errs.append("input_hashes must be a list of 64-char lowercase hex digests")
     # A factual or governed-model authority must be reproducible — it may not be
     # NON_REPLAYABLE (Constitution §8/§9).
     if receipt.replay_class == ReplayClass.NON_REPLAYABLE \
@@ -952,26 +1024,50 @@ def validate_receipt(receipt: Receipt) -> ValidationResult:
 
 
 def reconcile_board(board_receipt: Receipt, batch_receipt: Receipt) -> ValidationResult:
-    """Cross-receipt conservation (§3/R20): the board's per-leaf counts MUST equal
-    the referenced entity-disposition batch's actual per-leaf tallies, and the
-    board MUST reference that batch. Non-throwing."""
+    """Cross-receipt binding (§3/§7, R18/R20). Both receipts MUST first pass their
+    own structural validation — reconcile NEVER returns clean on a malformed or
+    duplicate-bearing input. Then the board and its referenced batch MUST share the
+    complete governed build context (schema major, build_id, config_version,
+    rule_versions, surface, universe), the board MUST reference the batch, the board's
+    per-leaf counts MUST equal the batch's actual tally, AND the board's
+    `membership_hash` MUST equal the hash recomputed from the batch's ordered members.
+    Non-throwing."""
     errs: List[str] = []
     try:
         if not isinstance(board_receipt.body, LiveEvidenceBoard):
             return ValidationResult(False, ["board_receipt is not a LiveEvidenceBoard"])
         if not isinstance(batch_receipt.body, EntityDispositionBatch):
             return ValidationResult(False, ["batch_receipt is not an EntityDispositionBatch"])
+        # Gate: neither receipt may be malformed (a duplicate/invalid batch cannot
+        # silently reconcile).
+        vb = validate_receipt(board_receipt)
+        vt = validate_receipt(batch_receipt)
+        if not vb.ok:
+            errs.append(f"board failed structural validation: {vb.errors}")
+        if not vt.ok:
+            errs.append(f"batch failed structural validation: {vt.errors}")
+        if errs:
+            return ValidationResult(False, errs)
+
         if board_receipt.refs is None or \
                 board_receipt.refs.entity_dispositions != batch_receipt.receipt_id:
             errs.append("board does not reference this entity_dispositions batch")
-        # Board and its batch MUST share surface / universe / build context.
+        # Complete governed build context.
         if board_receipt.surface_id != batch_receipt.surface_id:
             errs.append("board and batch surface_id differ")
         if board_receipt.universe != batch_receipt.universe:
             errs.append("board and batch universe differ")
-        if isinstance(board_receipt.versions, Versions) and isinstance(batch_receipt.versions, Versions) \
-                and board_receipt.versions.build_id != batch_receipt.versions.build_id:
-            errs.append("board and batch build_id differ")
+        if board_receipt.schema_version.major != batch_receipt.schema_version.major:
+            errs.append("board and batch schema major differ")
+        bv, tv = board_receipt.versions, batch_receipt.versions
+        if isinstance(bv, Versions) and isinstance(tv, Versions):
+            if bv.build_id != tv.build_id:
+                errs.append("board and batch build_id differ")
+            if bv.config_version != tv.config_version:
+                errs.append("board and batch config_version differ")
+            if bv.rule_versions != tv.rule_versions:
+                errs.append("board and batch rule_versions differ")
+        # Count reconciliation (§3/R20).
         tally: Dict[str, int] = {}
         for r in batch_receipt.body.rows:
             if isinstance(r.leaf, Leaf):
@@ -980,6 +1076,9 @@ def reconcile_board(board_receipt: Receipt, batch_receipt: Receipt) -> Validatio
         actual = {k: v for k, v in tally.items() if v}
         if declared != actual:
             errs.append(f"board per-leaf counts {declared} != batch tally {actual}")
+        # Membership-hash binding (real, not merely counted).
+        if board_receipt.body.membership_hash != compute_membership_hash(batch_receipt):
+            errs.append("board membership_hash does not match the batch's ordered members")
     except Exception as exc:
         errs.append(f"reconcile aborted: {type(exc).__name__}: {exc}")
     return ValidationResult(not errs, errs)
@@ -991,13 +1090,14 @@ __all__ = [
     "AuthorityClass", "ReplayClass", "Leaf", "StageOutcome", "IdentityQuality",
     "IdentityGrain", "SourceUpdatedStatus", "IntegrityMechanism", "SemanticCategory",
     "ChangeKind", "Projection", "HASH_ALGORITHMS",
-    "NumericProfileError", "NUMERIC_PROFILES", "canonical_number", "GovernedNumber",
+    "Decimal", "NumericProfileError", "NUMERIC_PROFILES", "canonical_number", "GovernedNumber",
     "Identity", "Clocks", "Versions", "Integrity", "has_tamper_evidence_metadata",
     "Universe", "Refs", "REASON_CODES",
     "EntityDisposition", "DecisionStageRow",
     "EntityDispositionBatch", "DecisionStageBatch", "LiveEvidenceBoard",
     "Receipt",
     "canonical_content_bytes", "canonical_conclusion_bytes",
-    "compute_content_hash", "compute_conclusion_hash", "seal_hashes",
+    "compute_content_hash", "compute_conclusion_hash", "compute_membership_hash",
+    "MEMBER_LEAVES", "seal_hashes",
     "ValidationResult", "validate_receipt", "reconcile_board",
 ]
