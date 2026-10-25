@@ -339,6 +339,28 @@ def to_iso_local(value: str | None) -> str:
     return to_eastern_datetime_str(value)
 
 
+def to_utc_iso(value: str | None) -> str:
+    """Normalize a timezone-AWARE provider timestamp (Odds API commence_time / bookmaker last_update are
+    UTC ISO-8601 with 'Z') to canonical 'YYYY-MM-DDTHH:MM:SSZ'. A missing or timezone-NAIVE value returns
+    '' -- unknown timezone stays unknown and is ineligible for temporal ordering (never assumed UTC). This
+    is the provable-UTC companion to to_iso_local (which is Eastern display, tz-stripped) and must not be
+    conflated with it. See the 2026-10-24 capture-precision correction."""
+    if not value:
+        return ""
+    s = str(value).strip()
+    if not s:
+        return ""
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return ""
+    if dt.tzinfo is None:
+        return ""  # naive -> unknown tz -> ineligible; do NOT assume UTC
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def build_game_label(event: dict) -> str:
     away = event.get("away_team", "")
     home = event.get("home_team", "")
@@ -352,6 +374,11 @@ def normalize_team_name(team: str) -> str:
 def parse_market_rows(event: dict, bookmaker: dict, allowed_markets: Iterable[str]) -> list[dict]:
     event_game = build_game_label(event)
     commence_time = to_iso_local(event.get("commence_time"))
+    # Provable-UTC provider identity + kickoff, carried additively so a downstream capture can prove
+    # pregame ordering (the existing LastUpdated is Eastern display, tz-stripped, and stays unchanged).
+    event_id = str(event.get("id") or "")
+    commence_utc = to_utc_iso(event.get("commence_time"))
+    source_updated_utc = to_utc_iso(bookmaker.get("last_update"))
     fetched_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
     rows = []
 
@@ -385,6 +412,10 @@ def parse_market_rows(event: dict, bookmaker: dict, allowed_markets: Iterable[st
                     "Game": event_game,
                     "Book": bookmaker.get("title") or BOOKMAKER_TITLES.get(bookmaker.get("key", ""), bookmaker.get("key", "")),
                     "LastUpdated": to_iso_local(bookmaker.get("last_update")) or fetched_at,
+                    # Additive provable-UTC provider identity + clocks (2026-10-24 capture-precision fix).
+                    "EventId": event_id,
+                    "EventCommenceAtUTC": commence_utc,
+                    "SourceUpdatedAtUTC": source_updated_utc,
                     "CurrentLine": float(line),
                     "OverOdds": pd.NA,
                     "UnderOdds": pd.NA,
@@ -489,6 +520,7 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=[
             "Player", "Team", "Stat", "MarketKey", "Line", "Game", "Book", "LastUpdated",
+            "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC",
             "OpenLine", "CurrentLine", "CloseLine", "OpenOverOdds", "OpenUnderOdds",
             "OverOdds", "UnderOdds", "CloseOverOdds", "CloseUnderOdds",
             "BetLine", "BetOverOdds", "BetUnderOdds", "BetBook", "BetTime"
@@ -502,7 +534,8 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
     for column in [
         "OpenLine", "CloseLine", "OpenOverOdds", "OpenUnderOdds",
         "CloseOverOdds", "CloseUnderOdds", "BetLine", "BetOverOdds",
-        "BetUnderOdds", "BetBook", "BetTime"
+        "BetUnderOdds", "BetBook", "BetTime",
+        "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC",
     ]:
         if column not in df.columns:
             df[column] = pd.NA
@@ -514,6 +547,7 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
 
     ordered_columns = [
         "Player", "Team", "Stat", "MarketKey", "Line", "Game", "Book", "LastUpdated",
+        "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC",
         "OpenLine", "CurrentLine", "CloseLine", "OpenOverOdds", "OpenUnderOdds",
         "OverOdds", "UnderOdds", "CloseOverOdds", "CloseUnderOdds",
         "BetLine", "BetOverOdds", "BetUnderOdds", "BetBook", "BetTime"
