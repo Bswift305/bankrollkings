@@ -31589,6 +31589,29 @@ def _nfl_prop_matchup(opp_abbr, stat_key):
         return None
 
 
+_HOTHAND_ABSENCE_SAMPLE = 25   # cap the disclosed per-absence sample (counts are always full)
+
+
+def _is_nfl_defense_prop(player_name):
+    """A team DEFENSE / special-teams prop (e.g. 'Arizona Cardinals D/ST', '... Defense') has no
+    player-appearance streak by nature -- an EXPECTED absence (F3), not a dropped player."""
+    n = str(player_name or '').strip().lower()
+    return ('d/st' in n or n.endswith(' dst') or n.endswith(' defense') or ' defense ' in n)
+
+
+def _nfl_hot_hand_absent_reason(player_name, sub, cols):
+    """Hot Hand F3 disclosure: the GOVERNED reason a board prop produced no player-appearance
+    streak, so the absence is disclosed explicitly rather than silently dropped.
+      * defense_no_player_appearance -- a team D/ST prop (expected; no player log by design)
+      * no_player_log               -- no player-week row resolved for this name (indeterminate)
+      * no_matching_stat_columns    -- player resolved, but the log has no column for this stat"""
+    if _is_nfl_defense_prop(player_name):
+        return 'defense_no_player_appearance'
+    if sub is None:
+        return 'no_player_log'
+    return 'no_matching_stat_columns'
+
+
 def build_nfl_hot_hand(limit=50, min_streak=2):
     """Heat map -- who has the hot hand: players with an ACTIVE over streak intact. For
     every prop on this week's board, walk the player's real game logs newest-first and
@@ -31623,7 +31646,7 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         return _slice(_disk)
     empty = {'streaks': [], 'available': False, 'pending_latest': False,
              'through_week': None, 'through_label': '', 'data_updated': '',
-             'expected_week': None,
+             'expected_week': None, 'absences': {'count': 0, 'by_reason': {}, 'items': []},
              'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     log = _nfl_player_week_data()
     if log.empty or not props_path.exists():
@@ -31686,7 +31709,7 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         _NFL_HOTHAND_CACHE.update(sig=sig, data=empty)
         return empty
     full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()}
-    rows, seen = [], set()
+    rows, seen, absent = [], set(), []
     for (player, statlbl), g in props.groupby(['Player', 'Stat']):
         stat_key = _NFL_PROP_STAT_MAP.get(str(statlbl))
         meta = _NFL_FLOOR_STATS.get(stat_key) if stat_key else None
@@ -31698,6 +31721,10 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
         sub = idx.get(str(player).strip().lower())
         cols = [c for c in meta['cols'] if sub is not None and c in sub.columns]
         if sub is None or not cols:
+            # F3: an eligible board prop with no player-appearance log -- disclose the governed
+            # absent-reason instead of silently dropping it.
+            absent.append({'player': str(player), 'stat': str(statlbl),
+                           'reason': _nfl_hot_hand_absent_reason(player, sub, cols)})
             continue
         s = sub.copy()
         s['_v'] = sum(pd.to_numeric(s[c], errors='coerce').fillna(0) for c in cols)
@@ -31794,10 +31821,18 @@ def build_nfl_hot_hand(limit=50, min_streak=2):
                              + (f" · updated {data_updated}" if data_updated else ''))
     else:
         through_label = ''
+    # F3 disclosure: eligible board props with no player-appearance streak, by governed reason
+    # (defense props are expected; counts are always full, the item sample is capped).
+    absent_by_reason = {}
+    for a in absent:
+        absent_by_reason[a['reason']] = absent_by_reason.get(a['reason'], 0) + 1
+    absences = {'count': len(absent), 'by_reason': absent_by_reason,
+                'items': absent[:_HOTHAND_ABSENCE_SAMPLE]}
     data = {'streaks': rows, 'count': len(rows), 'available': bool(rows),   # cache FULL rows; slice at return
             'active_count': active_count, 'pending_latest': pending_latest,
             'through_week': through_week, 'expected_week': expected_week,
             'through_label': through_label, 'data_updated': data_updated,
+            'absences': absences,
             'season': cur, 'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
     _NFL_HOTHAND_CACHE.update(sig=sig, data=data)
     _nfl_disk_cache_store(_dkey, sig, data)   # cross-process: batch prewarm warms live workers
