@@ -27,6 +27,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -57,13 +58,32 @@ _ALLOWED_IMPORTERS = frozenset({
 _HEAVY = {"pandas", "numpy", "flask", "app", "requests", "openpyxl", "nba_api", "pybaseball"}
 
 
-def _git_commit() -> str:
+# A git object name is 40 hex (sha1) or 64 hex (sha256).
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
+
+
+def _classify_commit(returncode, stdout, exc=None) -> dict:
+    """Map a `git rev-parse HEAD` outcome to a fail-closed repository-identity record.
+    A timeout/exception, nonzero exit, empty output, or malformed SHA => pass False."""
+    if exc is not None:
+        return {"commit": "unknown", "pass": False, "error": f"git invocation failed: {exc}"}
+    if returncode != 0:
+        return {"commit": "unknown", "pass": False, "error": f"git exited {returncode}"}
+    sha = (stdout or "").strip()
+    if not sha:
+        return {"commit": "unknown", "pass": False, "error": "empty git output"}
+    if not _SHA_RE.match(sha):
+        return {"commit": sha, "pass": False, "error": "malformed commit SHA"}
+    return {"commit": sha, "pass": True, "error": None}
+
+
+def _repository_identity() -> dict:
     try:
         out = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
                              timeout=10, cwd=str(REPO_ROOT))
-        return out.stdout.strip() or "unknown"
-    except Exception:
-        return "unknown"
+    except Exception as exc:  # timeout, missing git, etc.
+        return _classify_commit(None, None, exc=exc)
+    return _classify_commit(out.returncode, out.stdout)
 
 
 def imports_receipt_package(source: str) -> bool:
@@ -152,10 +172,11 @@ def build_report() -> dict:
     }
     purity = _import_purity()
     prod = _prohibited_production_imports()
-    all_pass = totals["clean"] and purity["pass"] and prod["pass"]
+    repo = _repository_identity()
+    all_pass = totals["clean"] and purity["pass"] and prod["pass"] and repo["pass"]
     return {
         "report_schema_version": REPORT_SCHEMA_VERSION,
-        "commit": _git_commit(),
+        "repository_identity": repo,
         "blocking": False,
         "status": "pass" if all_pass else "fail",
         "contract": {"major": dr.CONTRACT_MAJOR, "minor": dr.CONTRACT_MINOR},

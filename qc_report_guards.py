@@ -66,6 +66,26 @@ def run_qc() -> dict:
         ok((not r["pass"]) and any("broken.py" in e for e in r["scan_errors"]),
            "an UNPARSABLE file becomes a scan_error and fails the guard (never silent pass)")
 
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d)
+        # Invalid UTF-8 bytes so read_text(encoding='utf-8') raises UnicodeDecodeError —
+        # portable, no reliance on filesystem permission modes.
+        (p / "undecodable.py").write_bytes(b"\xff\xfe import services.decision_receipts\n")
+        r = rep._prohibited_production_imports(p)
+        ok((not r["pass"]) and any("undecodable.py" in e for e in r["scan_errors"]),
+           "an UNREADABLE/undecodable file becomes a scan_error and fails the guard")
+
+    # 2b) repository-identity health is fail-closed (classifier fixtures).
+    ok(rep._classify_commit(0, "a" * 40)["pass"] and rep._classify_commit(0, "b" * 64)["pass"],
+       "repo identity: a valid 40/64-hex SHA passes")
+    ok(not rep._classify_commit(1, "")["pass"], "repo identity: nonzero git exit fails closed")
+    ok(not rep._classify_commit(None, None, exc=RuntimeError("timeout"))["pass"],
+       "repo identity: timeout/exception fails closed")
+    ok(not rep._classify_commit(0, "   ")["pass"], "repo identity: empty git output fails closed")
+    mal = rep._classify_commit(0, "not-a-sha")
+    ok((not mal["pass"]) and mal["error"] == "malformed commit SHA",
+       "repo identity: malformed SHA fails closed")
+
     # 3) cross-directory byte identity: report from the repo root vs an unrelated cwd.
     out_root = subprocess.run([sys.executable, str(SCRIPT)], cwd=str(REPO_ROOT),
                               capture_output=True, text=True)
@@ -84,6 +104,9 @@ def run_qc() -> dict:
     ok(report["purity"]["pass"] and report["production_imports"]["pass"]
        and not report["production_imports"]["scan_errors"],
        "live report: import-purity + prohibited-import guards pass (no scan errors)")
+    ri = report["repository_identity"]
+    ok(ri["pass"] and ri["error"] is None and rep._SHA_RE.match(ri["commit"]),
+       "live report: repository_identity passes with a well-formed commit SHA")
     ok("--strict" not in Path(SCRIPT).read_text(encoding="utf-8"),
        "runner has no --strict / blocking mode in this slice")
 
