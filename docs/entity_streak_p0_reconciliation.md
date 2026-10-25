@@ -133,12 +133,38 @@ a regeneration under `BK_RUNTIME_DIR`), not in that merge. Because `refresh_all_
 16,753-through-Week-6 figure therefore cannot have come from this live lane** — it was a different grain
 (the historical backfill, or a persistent graded store that no longer feeds the live record).
 
-**Item 5 remains OPEN** (per the close criteria). The clobber is fixed and proven, but the Wave is still
-unavailable **because there is no graded current-season population to serve** — defect #2 blocks it. Next
-(read-only first): pinpoint WHY completed-week candidates are not retained (a prune/rebuild of the archive,
-NFL archiving started ~Oct 16, or a dormant persistent graded source such as `capture_nfl_prop_lines.py` /
-`grade_nfl_week.py` that should feed the season record), then choose the fix — **retain season candidates
-in the archive** vs **accumulate resolved rows in the graded record** vs **grade a persistent line-capture
-store**. Audit #1 stays held. Close criteria unchanged: live file carries the correct current-season
-population, historical file separate, Wave available **from the live artifact**, Edge Engine cannot clobber
-it (last already met).
+**Defect #2 ROOT-CAUSE RESOLVED (read-only forensics, prod `diag_nfl_graded_lineage.py`, HEAD `8efd9a9`):
+a source-selection mismatch, not a prune.** The Wave (`build_nfl_prop_streaks`) + Heating-Up
+(`build_nfl_prop_hot_start`) read **Lane 1** (`NFL_AllPropResults.csv`, the transient candidate-pool grade —
+currently backfill residue, 34,788 rows 2024/25 only), while the **persistent, run_daily-designated streak
+record is Lane 2**: `capture_nfl_prop_lines` → append-only `NFL_PropLines_Archive.csv` (10,980 rows, all
+2026, Sep 30–Oct 24) → `grade_nfl_prop_lines` → `NFL_PropLines_Graded.csv` (**10,980 rows, all 2026, Weeks
+3–7** [3:876 4:2695 5:2915 6:2670 7:1746], Result UNDER 4960 / OVER 4094 / PENDING 1902 / PUSH 24, ~9,078
+graded). No code prunes the archive (both `replace_candidate_archive` callers + `archive_daily_candidates`
+append+dedupe only) — Lane 1's thinness is inherent to a current-slate pool. **Earlier "shrank 13,386→1,072"
+claim retracted** (apples-to-oranges: total-by-SnapshotDate vs current-season-by-GameDay).
+
+**16,753 lineage:** no current store holds 16,753 rows of 2026-through-Week-6. The persistent 2026 graded
+record is Lane 2 at **10,980 (Wks 3–7)**; `NFL_Props_History.csv` is 17,394 but **2024/25** (the backfill
+input, not 2026). So **no persistent population was lost** — 16,753 was most plausibly a prior-day count of
+a time-varying store (the rolling candidate pool, or a transient `NFL_AllPropResults` state pre-clobber).
+Not forced to a match it does not have.
+
+**Your 4-role durable architecture already exists:** (1) replaceable current-slate pool = candidate
+archive; (2) append-only observation history = `NFL_PropLines_Archive.csv`; (3) grader-owned persistent
+graded history = `NFL_PropLines_Graded.csv`; (4) separate historical calibration backfill =
+`NFL_AllPropResults_Backfill.csv`. No new store needed.
+
+**Recommended correction (one reversible commit, AWAITING AUTHORIZATION):** repoint `build_nfl_prop_streaks`
++ `build_nfl_prop_hot_start` to `NFL_PropLines_Graded.csv` via a thin schema adapter (`Result` →
+direction/outcome, `Actual` → ResultValue; one canonical observation per player·stat·week; drop
+PENDING/PUSH from streaks), **keeping** the freshness/through-week gates + fail-closed. Lane 1 stays for the
+current-slate candidate boards + the Edge-Engine Scored chain. Weeks 1–2 are genuinely absent (capture
+began Sep 30) and not recoverable from this lane — board discloses "graded from Week 3". Recovery needs no
+provider/network. Rollback = revert the source constant. **QCs before any write:** real-schema streak
+integration (Result/Actual map, week dedup, PENDING excluded); through-week freshness gate off Lane 2;
+fail-closed when Lane 2 absent/empty.
+
+**Item 5 remains OPEN** pending that repoint. Close criteria: the streak boards serve from the **persistent
+graded record** (Lane 2), the historical/backfill file is separate (done), and the Edge Engine cannot
+clobber the live artifact (done). Audit #1 stays held.
