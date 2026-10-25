@@ -32,7 +32,7 @@ from services.decision_receipts import (
     AuthorityClass, Clocks, EntityDisposition, EntityDispositionBatch, Identity, IdentityGrain,
     IdentityQuality, Integrity, Leaf, LiveEvidenceBoard, Projection, Receipt, ReceiptKind, Refs,
     ReplayClass, SchemaVersion, SourceHealthBody, SourceUpdatedStatus, Universe, Versions,
-    HealthState, compute_membership_hash, seal_hashes, validate_receipt,
+    HealthState, canonical_identity, compute_membership_hash, seal_hashes, validate_receipt, _dumps,
 )
 from services.decision_validators import (
     validate_reason_usage, validate_identity_collision, validate_nested_conservation,
@@ -41,6 +41,11 @@ from services.decision_validators import (
 
 _MEMBER = {"RENDERED", "SUPPRESSED"}
 _ELIGIBLE_OR_MEMBER = {"RENDERED", "SUPPRESSED", "NONMEMBER"}
+# This adapter is NFL-ATS-specific: the declared surface/sport/universe profile it binds to.
+_EXPECTED_SPORT = "nfl"
+_EXPECTED_SURFACE = "nfl_ats_wave"
+_EXPECTED_GRAIN = "team"
+_NFL_ATS_BOARD_ID = re.compile(r"^nfl_ats_board_\d{4}$")
 _NS = uuid.UUID("6f9619ff-8b86-4d01-b42d-00cf4fc964ff")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _FP_ALGORITHMS = frozenset({"sha256"})
@@ -162,13 +167,25 @@ def _validate_board_view(bo: Any) -> None:
         raise ValueError("board view must be a mapping")
     _str(bo.get("sport"), "sport")
     _str(bo.get("surface"), "surface")
-    _int(bo.get("season"), "season")
+    board_season = _int(bo.get("season"), "season")
     _str(bo.get("created_at"), "created_at")
     uni = bo.get("universe")
     if not isinstance(uni, (list, tuple)) or len(uni) != 3:
         raise ValueError("universe must be [grain, id, version]")
     for i, part in enumerate(uni):
         _str(part, f"universe[{i}]")
+    # NFL-ATS surface/sport/universe binding (this adapter is surface-specific).
+    if bo["sport"] != _EXPECTED_SPORT:
+        raise ValueError(f"sport must be {_EXPECTED_SPORT!r} for the NFL ATS adapter")
+    if bo["surface"] != _EXPECTED_SURFACE:
+        raise ValueError(f"surface must be {_EXPECTED_SURFACE!r} for the NFL ATS adapter")
+    grain_, uid_, _uver = uni
+    if grain_ != _EXPECTED_GRAIN:
+        raise ValueError(f"NFL ATS universe grain must be {_EXPECTED_GRAIN!r} (got {grain_!r})")
+    if not _NFL_ATS_BOARD_ID.match(uid_):
+        raise ValueError("NFL ATS universe id must be the declared board family nfl_ats_board_<year>")
+    if uid_ != f"nfl_ats_board_{board_season}":
+        raise ValueError(f"universe id {uid_!r} must match the board season {board_season}")
     # clocks
     clk = bo.get("clocks")
     if not isinstance(clk, dict):
@@ -189,6 +206,7 @@ def _validate_board_view(bo: Any) -> None:
     rows = bo.get("rows")
     if not isinstance(rows, list):
         raise ValueError("rows must be a list")
+    seen_identity = {}
     for i, r in enumerate(rows):
         if not isinstance(r, dict):
             raise ValueError(f"rows[{i}] must be a mapping")
@@ -201,6 +219,27 @@ def _validate_board_view(bo: Any) -> None:
         if "params" in r and not isinstance(r["params"], dict):
             raise ValueError(f"rows[{i}].params must be a mapping")
         _validate_identity_shape(r.get("identity"))
+        # Cross-field identity integrity: the identity must describe the SAME entity and
+        # universe as the row/board (not merely be individually well-typed).
+        idv = r["identity"]
+        if idv["base"].get("sport") != bo["sport"]:
+            raise ValueError(f"rows[{i}] identity.base.sport {idv['base'].get('sport')!r} != board "
+                             f"sport {bo['sport']!r}")
+        isn = idv["base"].get("season")
+        if not isinstance(isn, int) or isinstance(isn, bool) or isn != board_season:
+            raise ValueError(f"rows[{i}] identity.base.season must be a non-boolean integer equal to "
+                             f"the board season {board_season}")
+        et = idv.get("ext", {}).get("team")
+        if idv["quality"] in _COMPOSITE or et is not None:
+            if not isinstance(et, str) or not et.strip() or et != r["team"]:
+                raise ValueError(f"rows[{i}] identity.ext.team {et!r} must equal the row team "
+                                 f"{r['team']!r}")
+        # Canonical identity uniqueness across EVERY row (members and nonmembers alike).
+        ci = _dumps(canonical_identity(_identity_from_view(idv)))
+        if ci in seen_identity:
+            raise ValueError(f"rows[{i}] duplicate canonical identity (also rows[{seen_identity[ci]}]) "
+                             "— exactly one row per canonical identity")
+        seen_identity[ci] = i
     # counts: non-negative ints keyed only by terminal leaf values
     counts = bo.get("counts")
     if not isinstance(counts, dict):

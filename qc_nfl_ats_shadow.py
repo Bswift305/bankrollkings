@@ -101,7 +101,7 @@ def run_qc() -> dict:
         "config": _view(prov=_prov(config="cfg-8")),
         "membership_rule": _view(prov=_prov(rule_versions={"membership": 4, "ordering": 1})),
         "ordering_rule_id": _view(prov=_prov(ordering_id="other_rule")),
-        "universe": _view(universe=["team", "nfl_ats_board_2027", "v1"]),
+        "universe": _view(universe=["team", "nfl_ats_board_2026", "v2"]),
         "clocks": _view(clocks=_clocks(bk="2026-10-26T14:00:00Z")),
         "created_at": _view(created_at="2026-10-26T13:06:00Z"),
         "rows": _view(rows=[_row("PHI", "RENDERED", "QUALIFIED")], counts={"RENDERED": 1}, expected=1),
@@ -196,6 +196,34 @@ def run_qc() -> dict:
     # non-JSON-serializable object
     js = _mutate(); js["rows"][0]["params"] = {"x": object()}
     _fails_at_contract(js, "a non-JSON-serializable object in the view")
+
+    # CROSS-FIELD IDENTITY INTEGRITY — identity must describe the same entity/universe as
+    # the row/board. Each must fail before receipt ids are produced.
+    v = copy.deepcopy(_view()); v["rows"][0]["identity"]["base"]["sport"] = "cfb"
+    _fails_at_contract(v, "identity base.sport != board sport")
+    v = copy.deepcopy(_view()); v["rows"][0]["identity"]["base"]["season"] = 2025
+    _fails_at_contract(v, "identity base.season != board season")
+    v = copy.deepcopy(_view()); v["rows"][0]["identity"]["base"]["season"] = "2026"
+    _fails_at_contract(v, "identity base.season as string")
+    v = copy.deepcopy(_view()); v["rows"][0]["identity"]["ext"]["team"] = "DAL"  # row team is PHI
+    _fails_at_contract(v, "member identity.ext.team != row team")
+    v = copy.deepcopy(_view()); v["rows"][3]["identity"]["ext"]["team"] = "CLE"  # NYG nonmember row
+    _fails_at_contract(v, "NONMEMBER identity.ext.team != row team")
+    v = copy.deepcopy(_view()); v["universe"] = ["team_side_decision", "nfl_ats_board_2026", "v1"]
+    _fails_at_contract(v, "non-team universe grain")
+    v = copy.deepcopy(_view()); v["surface"] = "cfb_ats_wave"
+    _fails_at_contract(v, "wrong surface")
+    v = copy.deepcopy(_view()); v["sport"] = "cfb"
+    _fails_at_contract(v, "wrong sport")
+    v = copy.deepcopy(_view()); v["universe"] = ["team", "nfl_ats_board_2027", "v1"]  # season is 2026
+    _fails_at_contract(v, "universe id year != board season")
+    # duplicate canonical identity across rows: the same governed team appears as both a
+    # member (RENDERED) and a NONMEMBER.
+    v = copy.deepcopy(_view())
+    v["rows"] = [_row("PHI", "RENDERED", "QUALIFIED"),
+                 _row("PHI", "NONMEMBER", "BELOW_THRESHOLD", params={"threshold": 3})]
+    v["counts"] = {"RENDERED": 1, "NONMEMBER": 1}; v["expected_count"] = 2
+    _fails_at_contract(v, "duplicate canonical identity across member + nonmember rows")
 
     # Named rule-version keys required.
     nr = shadow.run_shadow(_view(prov=_prov(rule_versions={"ordering": 1})))  # no 'membership'
