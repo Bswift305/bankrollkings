@@ -202,3 +202,24 @@ is the **Milestone board** (game-stat thresholds, live), which needs no pregame 
 **Item 5 status:** the single-writer/clobber defect is CLOSED and proven (Edge Engine cannot clobber the
 live artifact; backfill separated). The streak-availability goal is **BLOCKED on capture precision**, not
 on a board change. `16,753 = LEGACY_RECEIPT_UNRESOLVED`. Audit #1 stays held.
+
+**Capture-precision correction SHIPPED (forward-looking, two additive reversible commits):**
+- **Commit 1 `4f91942` (fetcher):** `fetch_player_props` persists `EventId`, `EventCommenceAtUTC`,
+  `SourceUpdatedAtUTC` (provable UTC via new `to_utc_iso`; naive/malformed → `''`, never assumed UTC). The
+  Eastern-display `LastUpdated` is untouched. Additive columns flow through `merge_market_history` +
+  subset-based `validate_feed`. QC `qc_nfl_props_source_fields.py` (fixture) green.
+- **Commit 2 `6f036ea` (capture):** `capture_nfl_prop_lines` records three clocks
+  (`SourceUpdated{Earliest,Latest}UTC` consensus-aggregated, `BKCapturedAtUTC`, `EventCommenceAtUTC`) +
+  `QuoteScope=CONSENSUS` + `TemporalEligibility` (PROVABLY_PREGAME / POST_START / UNKNOWN_NO_KICKOFF, malformed
+  fails closed) + `SchemaVersion` + deterministic `ObservationId` (immutable quote facts incl. kickoff, NOT
+  the capture clock → idempotent reruns, distinct-on-change, reschedules preserved). Legacy date-only rows
+  unchanged, classified `nfl_proplines_v1` / `TEMPORAL_PRECISION_INSUFFICIENT`; no-identity rows fail closed;
+  atomic publication. QC `qc_nfl_capture_precision.py` (12 invariants) green.
+- Verifier `verify_nfl_capture_precision.py` (read-only receipts, run after the next scheduled fetch/capture).
+  No manual credit spend — precision accrues from the next normal in-season run.
+
+**Item 5 → `BLOCKED_ACCUMULATING_VERIFIED_HISTORY`** (not an active software failure). The Wave stays
+fail-closed and is NOT repointed; a future, separately-reviewed enablement is eligible only after ≥3
+consecutive completed weeks with provable-pregame coverage accrue and prod QC confirms it. Milestone board
+remains the honest currently-usable streak product. Resume the next independent integrity audit rather than
+waiting for history to accrue.
