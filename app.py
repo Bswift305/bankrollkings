@@ -45592,8 +45592,10 @@ def build_cfb_regression_context():
         data = _CFB_REG_CACHE['data']
     except (OSError, ValueError):
         pass
+    # Batch-1 fan-out: wrap each board's Team column as a resolver {text,url} cell (cache untouched).
+    reg_boards = {k: _wrap_entity_board(b, 'team', 'cfb') for k, b in (data.get('boards') or {}).items()}
     return {
-        'cfbreg_data': data,
+        'cfbreg_data': {**data, 'boards': reg_boards},
         'cfbreg_meta': data.get('meta', {}),
         'cfbreg_available': bool(data.get('boards')),
     }
@@ -49078,8 +49080,10 @@ def build_cfb_totals_context():
         to_week.sort(key=lambda r: -r['pace'])
     except Exception:
         to_week = []
+    # Batch-1 fan-out: wrap the Team column for the template AFTER the raw board fed `prof` above.
+    to_data = {**data, 'board': _wrap_entity_board(data.get('board'), 'team', 'cfb')}
     return {
-        'to_data': data,
+        'to_data': to_data,
         'to_meta': data.get('meta', {}),
         'to_available': bool(data.get('board', {}).get('rows')),
         'to_week': to_week,
@@ -49127,6 +49131,48 @@ def _bk_power_attach_ent(kind, sport, rows, name_key, sub_fn):
         rr['ent'] = _bk_power_name_cell(kind, sport, rr.get(name_key, ''), sub_fn(rr))
         out.append(rr)
     return out
+
+
+def _entity_cell(kind, sport, name):
+    """``{text, url}`` for a positional-array board's entity column (Batch-1 fan-out). ``url`` is
+    ``None`` (-> the shared client renderer shows plain text) when the resolver has no single-entity
+    destination for ``(kind, sport, name)``. Resolution is SERVER-side and sport-scoped."""
+    name = '' if name is None else str(name)
+    url = None
+    if name:
+        if kind == 'team':
+            url = team_url(sport, name)
+        elif kind == 'player':
+            url = player_url(sport, name)
+    return {'text': name, 'url': url}
+
+
+def _wrap_entity_board(board, kind, sport, label='Team'):
+    """Return a NEW ``{columns, rows}`` board whose ``label`` column is wrapped as a resolver-produced
+    ``{text, url}`` entity cell, and marked with ``entity_col`` / ``entity_kind`` / ``entity_sport`` for
+    the shared client renderer (templates/_entity_cell.html). Never mutates the input (cached JSON is
+    left intact). A board without that column is returned unchanged — so the change is reversible: drop
+    the wrap and the client renders the column as plain text."""
+    if not isinstance(board, dict):
+        return board
+    cols = board.get('columns') or []
+    rows = board.get('rows') or []
+    idx = next((i for i, c in enumerate(cols)
+                if (c.get('label') if isinstance(c, dict) else c) == label), -1)
+    if idx < 0:
+        return board
+    new_rows = []
+    for r in rows:
+        rr = list(r)
+        if idx < len(rr):
+            rr[idx] = _entity_cell(kind, sport, rr[idx])
+        new_rows.append(rr)
+    nb = dict(board)
+    nb['rows'] = new_rows
+    nb['entity_col'] = idx
+    nb['entity_kind'] = kind
+    nb['entity_sport'] = sport
+    return nb
 
 
 def build_bk_power_context():
@@ -50082,7 +50128,8 @@ def cfb_101_tool():
 def cfb_power_tool():
     """Quick Tool: CFB Power Rankings — SP+ / FPI, who's actually good (2026)."""
     data = _load_scenario_json(_CFB_POWER_CACHE, 'cfb_power.json')
-    return render_template('cfb_power.html', pw_data=data, pw_meta=data.get('meta', {}),
+    pw_data = {**data, 'board': _wrap_entity_board(data.get('board'), 'team', 'cfb')}
+    return render_template('cfb_power.html', pw_data=pw_data, pw_meta=data.get('meta', {}),
                            pw_available=bool(data.get('board', {}).get('rows')))
 
 

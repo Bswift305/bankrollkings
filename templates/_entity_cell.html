@@ -1,0 +1,39 @@
+{# Shared entity-link cell renderer for embedded-DATA table surfaces (Batch-1 fan-out).
+   Exposes window.bkEntityCell = {safeUrl, text, fill}. The SERVER supplies a {text,url} cell on the
+   entity column (board.entity_col); the client links ONLY a same-origin application path (URL() +
+   origin verified -- a char test misses backslash normalization), builds the node via DOM
+   (textContent / createElement / assigned href -- never innerHTML for entity data), and performs NO
+   identity resolution. A plain string/number is rendered as-is, so the change is reversible: drop the
+   server wrap and the column renders as plain text. #}
+<script>
+(function(){
+  if(window.bkEntityCell) return;
+  function safeUrl(value){
+    if(typeof value!=='string' || !value.startsWith('/') || value.startsWith('//')) return null;
+    try{
+      var p = new URL(value, window.location.origin);
+      if(p.origin !== window.location.origin) return null;
+      return p.pathname + p.search + p.hash;
+    }catch(_){ return null; }
+  }
+  // label for a cell that may be a {text,url} object OR a plain string/number (sort + fallback)
+  function text(v){
+    if(v && typeof v==='object' && 'text' in v) return v.text;
+    return (v===null || v===undefined) ? '' : v;
+  }
+  function fill(td, cell){
+    while(td.firstChild) td.removeChild(td.firstChild);
+    var label = text(cell);
+    var url = safeUrl(cell && typeof cell==='object' ? cell.url : null);
+    if(url){
+      var a=document.createElement('a'); a.className='bk-entity-link'; a.href=url; a.textContent=String(label);
+      td.appendChild(a);
+    } else {
+      td.appendChild(document.createTextNode(String(label)));
+    }
+    var sub = (cell && typeof cell==='object') ? cell.sub : null;
+    if(sub){ var s=document.createElement('span'); s.className='sub'; s.textContent=sub; td.appendChild(s); }
+  }
+  window.bkEntityCell = {safeUrl:safeUrl, text:text, fill:fill};
+})();
+</script>

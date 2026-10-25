@@ -59,9 +59,11 @@
 
 {% if pw_available %}
 <script id="pw-data" type="application/json">{{ pw_data|tojson }}</script>
+{% include '_entity_cell.html' %}
 <script>
 (function(){
   const DATA = JSON.parse(document.getElementById('pw-data').textContent);
+  const EC = window.bkEntityCell;
   const S = {sortCol:null, sortDir:-1};
   const $ = s => document.querySelector(s);
   function fmt(v,f){
@@ -77,6 +79,7 @@
     let rows=board.rows.map(r=>r.slice());
     if(S.sortCol!==null && S.sortCol<cols.length){
       rows.sort((a,b)=>{let x=a[S.sortCol],y=b[S.sortCol];
+        if(S.sortCol===board.entity_col){x=EC.text(x);y=EC.text(y);}
         if(x===null)return 1; if(y===null)return -1;
         if(typeof x==='string')return -S.sortDir*x.localeCompare(y);
         return S.sortDir*(x-y);});
@@ -90,12 +93,17 @@
       cols.forEach((c,i)=>{
         let cls = c.label==='Conf'?'conf':'';
         if(i===spIdx && typeof r[i]==='number') cls += r[i]>=0?' pw-hot':' pw-cold';
-        h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
+        if(i===board.entity_col) h+='<td class="'+cls+'" data-ent></td>';
+        else h+='<td class="'+cls+'">'+fmt(r[i],c.fmt)+'</td>';
       });
       h+='</tr>';
     });
     h+='</tbody></table>';
     $('#pw-body').innerHTML=h;
+    if(board.entity_col!=null){
+      const trs=$('#pw-body').querySelectorAll('tbody tr');
+      rows.forEach((r,ri)=>{const td=trs[ri]&&trs[ri].querySelector('td[data-ent]'); if(td) EC.fill(td, r[board.entity_col]);});
+    }
     $('#pw-body').querySelectorAll('th[data-col]').forEach(th=>{
       th.onclick=()=>{const c=+th.dataset.col; if(S.sortCol===c){S.sortDir*=-1;}else{S.sortCol=c;S.sortDir=-1;} render();};
     });

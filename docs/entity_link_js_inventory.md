@@ -86,7 +86,7 @@ handler risk LOW** for that whole family.
 | `bk_power.html` | `/tools/bk-power` | player, team *(td)*; coach *(td)* | embedded `#bp-data` | teams/coaches CFB+NFL · players NFL/NBA/MLB/WNBA | **sport-dependent:** team resolvable (all); player resolvable **NFL/NBA/MLB/WNBA only, NOT CFB**; coach = **no-destination** | low | low | **Batch-1 pilot DONE** (below). Player links are **sport-scoped** — the row's sport travels in the payload; CFB players (if present) stay plain. Coach always plain. |
 | `cfb_power.html` | `/tools/cfb-power` | team *(td)* | embedded `#pw-data` | CFB | **resolvable** (`cfb-team`) | low | low | Generic table. |
 | `cfb_regression.html` | `/tools/cfb-regression` | team *(td)* | embedded `#cr-data` | CFB | **resolvable** | low | low | Generic table. |
-| `cfb_situational.html` | `/tools/cfb-situational` | team *(td)* | embedded `#si-data` | CFB | **resolvable** | low | low | Generic table. |
+| `cfb_situational.html` | ~~`/tools/cfb-situational`~~ | team *(td)* | embedded `#si-data` | CFB | **n/a — folded** | — | — | **CORRECTION:** `/tools/cfb-situational` **redirects** to `cfb-ats?view=situational`; the view is served by `cfb_ats.html` (the DEFERRED handler-collision surface). `cfb_situational.html` + `build_cfb_situational_context` are unused. NOT a standalone Batch-1 surface — it rides with `cfb_ats` (Batch 3). |
 | `cfb_totals.html` | `/tools/cfb-totals` | team *(td)* | embedded `#to-data` | CFB | **resolvable** | low | low | Generic table. |
 | `mlb_luck.html` | `/tools/real-vs-luck` | player *(row[0])* | embedded `#rl-data` (`board.rows`) | MLB | **resolvable** (`/player?sport=mlb`) | low | low | Positional-array cells. |
 | `mlb_situational.html` | `/tools/mlb-situational` | player *(row[0])* | embedded `#ms-data` (`board.rows`) | MLB | **resolvable** | low | low | Positional-array cells. |
@@ -146,6 +146,16 @@ current plain text.** Reversing = server stops emitting `url`. No logic moves in
     overflow. **Stop here for review before fanning out to the other seven.**
   - **The `{text, url}` cell object is preferred over a parallel positional URL array**
     — it keeps the label and the resolver decision together and prevents index drift.
+  - **GROUP 1 — CFB team-only tables: DONE (this branch).** `cfb_power`, `cfb_regression`,
+    `cfb_totals` (the three LIVE surfaces). The server wraps each board's **`Team` column** cell as a
+    resolver `{text,url}` and marks `board.entity_col` (`_wrap_entity_board`, cache-safe, reversible);
+    a **shared client partial `templates/_entity_cell.html`** (`window.bkEntityCell` = `safeUrl` [URL()
+    + origin], `text`, `fill` [DOM-only]) renders that one cell and sorts it by `text`. Positional-array
+    rows keep their shape (the name column becomes a `{text,url}` cell); other columns + sort/`fmt`
+    untouched. QC `qc_cfb_entity_links.py`; browser-proven (cfb_power 138 / cfb_regression 20×boards /
+    cfb_totals 135 team links, all same-origin, 0 nested anchors, sort re-fills, no 375px overflow).
+    **`cfb_situational` dropped from Group 1** — it redirects into the deferred `cfb_ats`. **STOP for
+    visual review before Group 2 (MLB player tables).**
 
 - **Batch 2 — server-side Jinja reconcile (parallel track, not JS).** Replace the raw
   `/player/` links and plain `{{ player }}` listed above with `entity_anchor(...)` so
