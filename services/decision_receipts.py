@@ -221,6 +221,7 @@ REASON_CODES: Dict[str, SemanticCategory] = {
     # Board leaves (single-category per §3).
     "BELOW_THRESHOLD": SemanticCategory.LEAF,
     "QUALIFIED": SemanticCategory.LEAF,
+    "DISPLAY_CAPPED": SemanticCategory.LEAF,
     "KNOWN_NON_FBS": SemanticCategory.LEAF,
     "COVER_SHORT": SemanticCategory.LEAF,
     # Health.
@@ -899,16 +900,23 @@ def _check_entity_disposition_batch(b: EntityDispositionBatch, receipt: Receipt,
     # The board/expected universe disposition batch binds to the `team` grain (R14b).
     if receipt.universe.grain != "team":
         errs.append("entity_disposition board batch MUST use universe.grain 'team' (R14b)")
-    seen = set()
+    seen, seen_ci = set(), set()
     for i, r in enumerate(b.rows):
         w = f"rows[{i}]"
         if not r.entity_ref:
             errs.append(f"{w}: entity_ref required")
-        # Exactly-one: no duplicate entity across the batch (R4).
+        # Exactly-one leaf per CANONICAL IDENTITY (R4) — entity_ref is only a display
+        # handle, so the same governed team under two refs is still a duplicate.
         if r.entity_ref in seen:
             errs.append(f"{w}: duplicate entity_ref {r.entity_ref!r} — an entity MUST carry "
                         "exactly one leaf (R4)")
         seen.add(r.entity_ref)
+        if isinstance(r.identity, Identity):
+            ci = _dumps(canonical_identity(r.identity))
+            if ci in seen_ci:
+                errs.append(f"{w}: duplicate canonical identity — exactly one leaf per canonical "
+                            "identity (R4), not per display entity_ref")
+            seen_ci.add(ci)
         # Firewall: leaf must be a Leaf; a stage outcome / roll-up used as a leaf is rejected.
         if isinstance(r.leaf, StageOutcome) or (
                 isinstance(r.leaf, Enum) and r.leaf.value in _STAGE_NAMES):
@@ -933,7 +941,7 @@ def _check_decision_stage_batch(b: DecisionStageBatch, receipt: Receipt,
     # The decision universe binds to the `team_side` grain + the decision universe (R14b).
     if receipt.universe.grain != "team_side_decision":
         errs.append("decision-stage batch MUST use universe.grain 'team_side_decision' (R14b)")
-    seen = set()
+    seen, seen_ci = set(), set()
     for i, r in enumerate(b.rows):
         w = f"rows[{i}]"
         if not r.entity_ref:
@@ -942,6 +950,12 @@ def _check_decision_stage_batch(b: DecisionStageBatch, receipt: Receipt,
             errs.append(f"{w}: duplicate entity_ref {r.entity_ref!r} — exactly one stage "
                         "outcome per decision")
         seen.add(r.entity_ref)
+        if isinstance(r.identity, Identity):
+            ci = _dumps(canonical_identity(r.identity))
+            if ci in seen_ci:
+                errs.append(f"{w}: duplicate canonical identity — exactly one stage outcome per "
+                            "canonical identity, not per display entity_ref")
+            seen_ci.add(ci)
         # Firewall (other direction): a presentation leaf used as a stage outcome is rejected.
         if isinstance(r.stage_outcome, Leaf) or (
                 isinstance(r.stage_outcome, Enum) and r.stage_outcome.value in _LEAF_NAMES):

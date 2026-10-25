@@ -29,10 +29,43 @@ from services.decision_receipts import (
     ChangeKind, CorrectionBody, DecisionStageRow, EntityDisposition, EntityDispositionBatch,
     DecisionStageBatch, Identity, IdentityQuality, Leaf, LiveEvidenceBoard, Projection,
     Receipt, ReceiptKind, RenderBody, ReplayClass, SemanticCategory, SourceHealthBody,
-    StageOutcome, ValidationResult, _LEAF_NAMES, _STAGE_NAMES, _REASON_CODE_RE,
-    compute_conclusion_hash, compute_content_hash, compute_membership_hash, reconcile_board,
-    validate_receipt,
+    StageOutcome, ValidationResult, _LEAF_NAMES, _STAGE_NAMES, _REASON_CODE_RE, _dumps,
+    canonical_identity, compute_conclusion_hash, compute_content_hash, compute_membership_hash,
+    reconcile_board, validate_receipt,
 )
+
+
+def _gate(receipts, errs: List[str]) -> bool:
+    """Validate every participating receipt before any cross-receipt walk. Returns
+    True if all are structurally valid; otherwise appends errors and returns False so
+    the caller fails closed (an invalid/unsealed receipt never reconciles)."""
+    all_ok = True
+    for r in receipts:
+        if not isinstance(r, Receipt):
+            errs.append("participant is not a Receipt"); all_ok = False; continue
+        vr = validate_receipt(r)
+        if not vr.ok:
+            errs.append(f"{getattr(r, 'receipt_id', '?')}: failed structural validation: {vr.errors}")
+            all_ok = False
+    return all_ok
+
+
+def _index_unique(receipts, errs: List[str], *, require_seq_unique: bool = False):
+    """Index receipts by id, rejecting duplicate receipt_id (and, when required,
+    duplicate created_seq within a surface — P2A-2 monotonic uniqueness)."""
+    by_id: Dict[str, Receipt] = {}
+    seq_seen: Dict[tuple, str] = {}
+    for r in receipts:
+        if r.receipt_id in by_id:
+            errs.append(f"duplicate receipt_id {r.receipt_id!r}")
+        by_id[r.receipt_id] = r
+        if require_seq_unique:
+            key = (r.surface_id, r.created_seq)
+            if key in seq_seen:
+                errs.append(f"duplicate created_seq {r.created_seq} on surface {r.surface_id!r} "
+                            f"({r.receipt_id} vs {seq_seen[key]})")
+            seq_seen[key] = r.receipt_id
+    return by_id
 
 MEMBER_LEAF_NAMES = frozenset({"RENDERED", "SUPPRESSED"})
 _AUTHORITATIVE_IDENTITY = frozenset({
@@ -65,9 +98,13 @@ def _rc(code, cat, owner, definition, maps_to=None, stage="", params=()):
 
 REASON_REGISTRY: Dict[str, ReasonCodeDef] = {
     "BELOW_THRESHOLD": _rc("BELOW_THRESHOLD", SemanticCategory.LEAF, "ats-owner",
-                           "Eligible team below the cover-streak threshold.", "NONMEMBER", "board"),
+                           "Eligible team below the cover-streak threshold.", "NONMEMBER", "board",
+                           ("threshold",)),
     "QUALIFIED": _rc("QUALIFIED", SemanticCategory.LEAF, "ats-owner",
-                     "Admitted member meeting the cover-streak threshold.", "RENDERED", "board"),
+                     "Admitted member (rendered) meeting the cover-streak threshold.", "RENDERED", "board"),
+    "DISPLAY_CAPPED": _rc("DISPLAY_CAPPED", SemanticCategory.LEAF, "ats-owner",
+                          "Admitted member withheld by the display cap (counted + disclosed).",
+                          "SUPPRESSED", "board"),
     "KNOWN_NON_FBS": _rc("KNOWN_NON_FBS", SemanticCategory.LEAF, "ats-owner",
                          "Out of scope for this surface.", "EXCLUDED", "board"),
     "COVER_SHORT": _rc("COVER_SHORT", SemanticCategory.LEAF, "ats-owner",
@@ -123,8 +160,10 @@ def validate_reason_registry(registry: Optional[Dict[str, "ReasonCodeDef"]] = No
 
 
 def validate_reason_usage(receipt: Receipt) -> ValidationResult:
-    """Every row's reason_code is registered and its governed category matches the
-    row's context (leaf row -> leaf; stage row -> stage_outcome)."""
+    """Each row's reason_code is registered; its governed category matches the row's
+    context; for a leaf code its `maps_to` equals the row's actual leaf; its
+    `reason_def_version` equals the registry's current def_version; and every required
+    `param_fields` entry is present in the row's params."""
     errs: List[str] = []
     rows = getattr(receipt.body, "rows", [])
     for i, r in enumerate(rows):
@@ -133,9 +172,22 @@ def validate_reason_usage(receipt: Receipt) -> ValidationResult:
         if d is None:
             errs.append(f"rows[{i}]: reason_code {code!r} is not registered")
             continue
-        want = SemanticCategory.LEAF if isinstance(r, EntityDisposition) else SemanticCategory.STAGE_OUTCOME
+        is_leaf_row = isinstance(r, EntityDisposition)
+        want = SemanticCategory.LEAF if is_leaf_row else SemanticCategory.STAGE_OUTCOME
         if d.semantic_category != want:
             errs.append(f"rows[{i}]: {code!r} is {d.semantic_category.value}, expected {want.value}")
+            continue
+        # maps_to must match the row's actual leaf state (presentation/leaf mapping).
+        if is_leaf_row and isinstance(r.leaf, Leaf) and d.maps_to != r.leaf.value:
+            errs.append(f"rows[{i}]: reason {code!r} maps_to {d.maps_to!r} but the leaf is "
+                        f"{r.leaf.value} (mapping mismatch)")
+        if r.reason_def_version != d.def_version:
+            errs.append(f"rows[{i}]: reason_def_version {r.reason_def_version} != registry "
+                        f"def_version {d.def_version} for {code!r}")
+        params = r.params or {}
+        missing = [p for p in d.param_fields if p not in params]
+        if missing:
+            errs.append(f"rows[{i}]: {code!r} requires param_fields {missing} (missing)")
     return ValidationResult(not errs, errs)
 
 
@@ -194,11 +246,19 @@ def validate_nested_conservation(batch_receipt: Receipt,
     body = batch_receipt.body
     if not isinstance(body, EntityDispositionBatch):
         return ValidationResult(False, ["nested conservation requires an EntityDispositionBatch"])
-    seen = set()
+    # Fail closed on any malformed participant before counting.
+    participants = [batch_receipt] + ([board_receipt] if board_receipt is not None else [])
+    if not _gate(participants, errs):
+        return ValidationResult(False, errs)
+    seen_ci = set()
     for i, r in enumerate(body.rows):
-        if r.entity_ref in seen:
-            errs.append(f"rows[{i}]: duplicate entity_ref {r.entity_ref!r} (exactly one leaf, R4)")
-        seen.add(r.entity_ref)
+        # Exactly one leaf per CANONICAL IDENTITY (entity_ref is only a display handle).
+        ci = _dumps(canonical_identity(r.identity)) if isinstance(r.identity, Identity) else None
+        if ci is not None and ci in seen_ci:
+            errs.append(f"rows[{i}]: duplicate canonical identity — exactly one leaf per canonical "
+                        "identity, not per display entity_ref")
+        if ci is not None:
+            seen_ci.add(ci)
         if not isinstance(r.leaf, Leaf):
             errs.append(f"rows[{i}]: non-leaf disposition breaks conservation")
     ru = rollups(body)
@@ -276,10 +336,17 @@ def validate_correction_lineage(receipts: Sequence[Receipt]) -> ValidationResult
     superseded receipt's created_seq; the correction's created_seq is strictly later;
     the chain is walkable with no cycle and each receipt is superseded at most once."""
     errs: List[str] = []
-    by_id = {r.receipt_id: r for r in receipts}
+    if not _gate(receipts, errs):
+        return ValidationResult(False, errs)
+    by_id = _index_unique(receipts, errs, require_seq_unique=True)
+    if errs:
+        return ValidationResult(False, errs)  # duplicate id / seq → fail before walking
     superseded_by: Dict[str, str] = {}
     for r in receipts:
         if r.receipt_kind != ReceiptKind.CORRECTION:
+            continue
+        if not isinstance(r.body, CorrectionBody):
+            errs.append(f"{r.receipt_id}: correction kind with a non-correction body")
             continue
         if not r.supersedes or r.supersedes not in by_id:
             errs.append(f"{r.receipt_id}: correction supersedes an unknown receipt_id "
@@ -292,12 +359,8 @@ def validate_correction_lineage(receipts: Sequence[Receipt]) -> ValidationResult
         if r.supersedes_seq != target.created_seq:
             errs.append(f"{r.receipt_id}: envelope.supersedes_seq {r.supersedes_seq} != superseded "
                         f"created_seq {target.created_seq} (R15b)")
-        body = r.body
-        if isinstance(body, CorrectionBody):
-            # The body is the §6 record; a correction body has no own supersedes_seq
-            # field here (it lives on the envelope), so R15b is the envelope check above.
-            if body.change_kind != ChangeKind.RETRACTION and body.after is None:
-                errs.append(f"{r.receipt_id}: non-retraction correction missing 'after'")
+        if r.body.change_kind != ChangeKind.RETRACTION and r.body.after is None:
+            errs.append(f"{r.receipt_id}: non-retraction correction missing 'after'")
         if r.created_seq <= target.created_seq:
             errs.append(f"{r.receipt_id}: created_seq {r.created_seq} must be > superseded "
                         f"{target.created_seq} (R16)")
@@ -320,7 +383,11 @@ def validate_hierarchical_references(receipts: Sequence[Receipt]) -> ValidationR
     hashes. Links are forward-only render→evidence→{dispositions, source_health};
     evidence MUST NOT back-reference a render; no cycles."""
     errs: List[str] = []
-    by_id = {r.receipt_id: r for r in receipts}
+    if not _gate(receipts, errs):
+        return ValidationResult(False, errs)
+    by_id = _index_unique(receipts, errs)
+    if errs:
+        return ValidationResult(False, errs)  # duplicate receipt_id → fail before walking
     edges: Dict[str, List[str]] = {}
     for r in receipts:
         outs: List[str] = []
@@ -386,23 +453,48 @@ def validate_count_reconciliation(board_receipt: Receipt, batch_receipt: Receipt
 # 10 user-safe projection
 # ---------------------------------------------------------------------------
 
-_INTERNAL_ONLY_FORBIDDEN = ("input_hashes",)  # structural subset enforced here
+def _reachable_from(root: Receipt, by_id: Dict[str, Receipt]) -> set:
+    """Forward-reachable internal receipt ids from a root, following refs
+    (board→{entity_dispositions, source_health}; render→evidence)."""
+    out, stack = set(), [root.receipt_id]
+    while stack:
+        rid = stack.pop()
+        r = by_id.get(rid)
+        if r is None or r.refs is None:
+            continue
+        for nxt in (r.refs.entity_dispositions, r.refs.source_health, r.refs.evidence):
+            if nxt and nxt in by_id and nxt not in out:
+                out.add(nxt)
+                stack.append(nxt)
+    return out
 
 
 def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
-                                  referenced: Sequence[Receipt] = ()) -> ValidationResult:
-    """R21/R22 root-and-reference: a user_safe receipt derives from one internal root
-    (and optionally that root's referenced internal receipts), shares its surface and
-    universe, carries claims, and strips internal-only material (input_hashes,
-    integrity.proof)."""
+                                  internal_graph: Sequence[Receipt] = ()) -> ValidationResult:
+    """R21/R22 root-and-reference, strengthened to prove SUPPORT (not just stripping):
+      * every participant is structurally valid (fail closed);
+      * projection=user_safe; root + graph are internal; shares root surface/universe;
+      * strips internal-only material (input_hashes, integrity.proof); carries claims;
+      * its referenced ids are an allowlisted subset reachable from the root within
+        the internal graph (an existing-but-unreachable reference fails);
+      * its projected per-leaf counts and membership_hash EQUAL the root board's (it
+        cannot add entities, dispositions, or members);
+      * a health claim is supported: if the reachable source_health is not
+        synchronized, the projection may not present rendered members."""
     errs: List[str] = []
+    if not _gate([user_safe, root_internal, *internal_graph], errs):
+        return ValidationResult(False, errs)
+    by_id = _index_unique([root_internal, *internal_graph], errs)
+    if errs:
+        return ValidationResult(False, errs)
+
     if user_safe.projection != Projection.USER_SAFE:
         errs.append("projection must be user_safe")
     if root_internal.projection != Projection.INTERNAL:
         errs.append("root receipt must be an internal projection")
-    for ref in referenced:
+    for ref in internal_graph:
         if ref.projection != Projection.INTERNAL:
-            errs.append(f"referenced receipt {ref.receipt_id} must be internal")
+            errs.append(f"internal_graph receipt {ref.receipt_id} must be internal")
     if user_safe.surface_id != root_internal.surface_id:
         errs.append("user_safe surface_id must match its internal root")
     if user_safe.universe != root_internal.universe:
@@ -413,6 +505,31 @@ def validate_user_safe_projection(user_safe: Receipt, root_internal: Receipt,
         errs.append("user_safe MUST NOT carry integrity.proof (internal-only)")
     if not user_safe.claims:
         errs.append("user_safe MUST carry claims")
+
+    # Reachability: referenced ids must be the root or reachable from it.
+    reachable = {root_internal.receipt_id} | _reachable_from(root_internal, by_id)
+    refs = user_safe.refs
+    if refs is not None:
+        for rid in (refs.entity_dispositions, refs.source_health, refs.evidence):
+            if rid and rid not in reachable:
+                errs.append(f"user_safe references {rid!r} which is not reachable from its root")
+
+    # Support: the projection cannot assert more than the root board supports.
+    if isinstance(user_safe.body, LiveEvidenceBoard) and isinstance(root_internal.body, LiveEvidenceBoard):
+        if user_safe.body.membership_hash != root_internal.body.membership_hash:
+            errs.append("user_safe membership_hash is not supported by the internal root (forged)")
+        if user_safe.body.per_leaf_counts != root_internal.body.per_leaf_counts:
+            errs.append("user_safe per-leaf counts are not supported by the internal root (forged)")
+
+    # Health support: an unsynchronized reachable source_health forbids presenting members.
+    for rid in reachable:
+        r = by_id.get(rid)
+        if r is not None and r.receipt_kind == ReceiptKind.SOURCE_HEALTH \
+                and isinstance(r.body, SourceHealthBody) and not r.body.synchronized:
+            if isinstance(user_safe.body, LiveEvidenceBoard) \
+                    and user_safe.body.per_leaf_counts.get("RENDERED", 0) > 0:
+                errs.append("user_safe presents rendered members on an unsynchronized source "
+                            "(forged health claim)")
     return ValidationResult(not errs, errs)
 
 

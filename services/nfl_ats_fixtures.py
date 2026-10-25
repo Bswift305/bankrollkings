@@ -72,8 +72,9 @@ def _default_rows() -> List[EntityDisposition]:
                           {"threshold": GovernedNumber(3, "count")}),
         EntityDisposition("DAL", team_identity("DAL"), Leaf.RENDERED, "QUALIFIED", 1,
                           {"threshold": GovernedNumber(3, "count")}),
-        EntityDisposition("SF", team_identity("SF"), Leaf.SUPPRESSED, "QUALIFIED", 1),
-        EntityDisposition("NYG", team_identity("NYG"), Leaf.NONMEMBER, "BELOW_THRESHOLD", 1),
+        EntityDisposition("SF", team_identity("SF"), Leaf.SUPPRESSED, "DISPLAY_CAPPED", 1),
+        EntityDisposition("NYG", team_identity("NYG"), Leaf.NONMEMBER, "BELOW_THRESHOLD", 1,
+                          {"threshold": GovernedNumber(3, "count")}),
         EntityDisposition("WAS", team_identity("WAS"), Leaf.NONMEMBER, "COVER_SHORT", 1),
     ]
 

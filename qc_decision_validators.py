@@ -67,6 +67,12 @@ def run_qc() -> dict:
     nc_bad = fx.board(batch); nc_bad.body.expected_count = 4; fx.reseal(nc_bad)
     bad(V.validate_nested_conservation(batch, nc_bad), "expected_count",
         "nested conservation invalid: wrong expected_count rejected")
+    dup_ci = fx.dispositions_batch(rows=[
+        EntityDisposition("PHI", fx.team_identity("PHI"), Leaf.NONMEMBER, "BELOW_THRESHOLD", 1,
+                          {"threshold": fx.GovernedNumber(3, "count")}),
+        EntityDisposition("PHI-ALT", fx.team_identity("PHI"), Leaf.RENDERED, "QUALIFIED", 1)])
+    bad(V.validate_nested_conservation(dup_ci), "duplicate canonical identity",
+        "nested conservation invalid: same governed identity under two entity_refs rejected")
 
     # === 4. reason-code governance ===
     good(V.validate_reason_registry(), "reason registry is internally consistent")
@@ -84,6 +90,18 @@ def run_qc() -> dict:
              Leaf.NONMEMBER, "GRADED", 1)])
     bad(V.validate_reason_usage(miscat), "expected leaf",
         "reason usage invalid: stage_outcome code on a leaf row rejected")
+    maps_mismatch = fx.dispositions_batch(rows=[EntityDisposition("PHI", fx.team_identity("PHI"),
+        Leaf.RENDERED, "BELOW_THRESHOLD", 1, {"threshold": fx.GovernedNumber(3, "count")})])
+    bad(V.validate_reason_usage(maps_mismatch), "mapping mismatch",
+        "reason usage invalid: maps_to (NONMEMBER) != actual leaf (RENDERED) rejected")
+    wrong_ver = fx.dispositions_batch(rows=[EntityDisposition("NYG", fx.team_identity("NYG"),
+        Leaf.NONMEMBER, "BELOW_THRESHOLD", 2, {"threshold": fx.GovernedNumber(3, "count")})])
+    bad(V.validate_reason_usage(wrong_ver), "reason_def_version",
+        "reason usage invalid: wrong reason_def_version rejected")
+    missing_param = fx.dispositions_batch(rows=[EntityDisposition("NYG", fx.team_identity("NYG"),
+        Leaf.NONMEMBER, "BELOW_THRESHOLD", 1)])  # BELOW_THRESHOLD requires 'threshold'
+    bad(V.validate_reason_usage(missing_param), "requires param_fields",
+        "reason usage invalid: missing required reason param rejected")
 
     # === 5. canonical replay ===
     good(V.validate_canonical_replay(brd), "canonical replay valid: sealed board reproduces")
@@ -106,15 +124,28 @@ def run_qc() -> dict:
 
     # === 7. correction lineage ===
     good(V.validate_correction_lineage([batch, corr]), "correction lineage valid")
-    corr_seq = fx.correction(batch, supersedes_seq=999)
+    # supersedes_seq < created_seq (passes the envelope) but != the superseded
+    # created_seq (100) -> the lineage R15b equality check fires.
+    corr_seq = fx.correction(batch, supersedes_seq=50)
     bad(V.validate_correction_lineage([batch, corr_seq]), "R15b",
-        "correction lineage invalid: supersedes_seq != superseded created_seq rejected")
+        "correction lineage invalid: supersedes_seq != superseded created_seq rejected (R15b)")
+    # created_seq not after the superseded receipt: enforced by the envelope ordering
+    # rule (supersedes_seq must be < created_seq), so the gate fails closed.
     corr_order = fx.correction(batch, created_seq=50)
-    bad(V.validate_correction_lineage([batch, corr_order]), "R16",
-        "correction lineage invalid: created_seq not after superseded rejected")
+    bad(V.validate_correction_lineage([batch, corr_order]), "must be < this created_seq",
+        "correction lineage invalid: created_seq not after superseded rejected (envelope ordering)")
     corr_missing = fx.correction(batch, supersedes="ffffffff-ffff-4fff-8fff-ffffffffffff")
     bad(V.validate_correction_lineage([batch, corr_missing]), "unknown receipt_id",
         "correction lineage invalid: supersedes an unknown receipt rejected")
+    mal = fx.dispositions_batch(); mal.created_at = "nope"; fx.reseal(mal)
+    bad(V.validate_correction_lineage([mal, corr]), "failed structural validation",
+        "correction lineage: a malformed participant fails closed")
+    dup_id = fx.dispositions_batch(receipt_id=batch.receipt_id)  # same id as batch
+    bad(V.validate_correction_lineage([batch, dup_id, corr]), "duplicate receipt_id",
+        "correction lineage: duplicate receipt_id rejected")
+    dup_seq = fx.decision_stage(created_seq=100)  # same surface + created_seq as batch (100)
+    bad(V.validate_correction_lineage([batch, dup_seq, corr]), "duplicate created_seq",
+        "correction lineage: duplicate created_seq on a surface rejected")
 
     # === 8. hierarchical references ===
     good(V.validate_hierarchical_references([batch, brd, sh, rnd]), "hierarchical refs valid")
@@ -128,6 +159,12 @@ def run_qc() -> dict:
             source_health=sh.receipt_id, evidence=rnd.receipt_id); fx.reseal(back)
     bad(V.validate_hierarchical_references([batch, back, sh, rnd]),
         "MUST NOT reference a render", "hierarchical refs invalid: evidence back-ref to render rejected")
+    mal_b = fx.board(batch); mal_b.created_at = "nope"; fx.reseal(mal_b)
+    bad(V.validate_hierarchical_references([batch, mal_b, sh]), "failed structural validation",
+        "hierarchical refs: a malformed participant fails closed")
+    dup_hid = fx.source_health(receipt_id=batch.receipt_id)  # id collides with the batch
+    bad(V.validate_hierarchical_references([batch, dup_hid, brd, sh, rnd]), "duplicate receipt_id",
+        "hierarchical refs: duplicate receipt_id rejected")
 
     # === 9. count reconciliation ===
     good(V.validate_count_reconciliation(brd, batch), "count reconciliation valid")
@@ -135,17 +172,39 @@ def run_qc() -> dict:
     bad(V.validate_count_reconciliation(cr_bad, batch), "",
         "count reconciliation invalid: wrong counts rejected")
 
-    # === 10. user-safe projection ===
-    good(V.validate_user_safe_projection(us, brd), "user-safe projection valid")
-    us_ih = fx.user_safe(brd, input_hashes=["ab" * 32]);
-    bad(V.validate_user_safe_projection(us_ih, brd), "input_hashes",
+    # === 10. user-safe projection (stripping + SUPPORT) ===
+    graph = [batch, sh]
+    good(V.validate_user_safe_projection(us, brd, graph), "user-safe projection valid (supported)")
+    us_ih = fx.user_safe(brd, input_hashes=["ab" * 32])
+    bad(V.validate_user_safe_projection(us_ih, brd, graph), "input_hashes",
         "user-safe invalid: carries input_hashes rejected")
     us_noclaims = fx.user_safe(brd, claims=None)
-    bad(V.validate_user_safe_projection(us_noclaims, brd), "claims",
+    bad(V.validate_user_safe_projection(us_noclaims, brd, graph), "claims",
         "user-safe invalid: missing claims rejected")
     us_surface = fx.user_safe(brd, surface_id="other_surface")
-    bad(V.validate_user_safe_projection(us_surface, brd), "surface",
+    bad(V.validate_user_safe_projection(us_surface, brd, graph), "surface",
         "user-safe invalid: surface mismatch with root rejected")
+    us_forge_m = fx.user_safe(brd)
+    us_forge_m.body = LiveEvidenceBoard("0" * 64, dict(us_forge_m.body.per_leaf_counts),
+                                        us_forge_m.body.expected_count); fx.reseal(us_forge_m)
+    bad(V.validate_user_safe_projection(us_forge_m, brd, graph), "membership_hash is not supported",
+        "user-safe invalid: forged membership_hash rejected")
+    us_forge_c = fx.user_safe(brd)
+    us_forge_c.body = LiveEvidenceBoard(brd.body.membership_hash,
+                                        {"RENDERED": 3, "SUPPRESSED": 1, "NONMEMBER": 2}, 6)
+    fx.reseal(us_forge_c)
+    bad(V.validate_user_safe_projection(us_forge_c, brd, graph), "counts are not supported",
+        "user-safe invalid: forged (inflated) counts rejected")
+    sh_bad = fx.source_health(synchronized=False)
+    bad(V.validate_user_safe_projection(us, brd, [batch, sh_bad]), "forged health claim",
+        "user-safe invalid: presents members on an unsynchronized source rejected")
+    other = fx.dispositions_batch(receipt_id="b0000000-0000-4000-8000-0000000000ff")
+    us_unreach = fx.user_safe(brd)
+    us_unreach.refs = fx.Refs(entity_dispositions=other.receipt_id, source_health=fx.SH_ID)
+    fx.reseal(us_unreach)
+    bad(V.validate_user_safe_projection(us_unreach, brd, [batch, sh, other]),
+        "not reachable from its root",
+        "user-safe invalid: references an existing-but-unreachable receipt rejected")
 
     # === purity ===
     before = set(os.listdir("."))
