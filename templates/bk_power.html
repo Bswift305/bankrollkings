@@ -76,7 +76,10 @@
   function fillEntityCell(td, cell){
     while(td.firstChild) td.removeChild(td.firstChild);
     const text = (cell && cell.text) || '';
-    const url = (cell && typeof cell.url==='string' && cell.url.charAt(0)==='/') ? cell.url : null;
+    // Link ONLY a single-leading-slash application path. Reject a protocol-relative '//host' (which
+    // would navigate off-origin), absolute URLs, javascript:/data:, and malformed/empty values.
+    const u = cell && cell.url;
+    const url = (typeof u==='string' && u.charAt(0)==='/' && u.charAt(1)!=='/') ? u : null;
     if(url){
       const a=document.createElement('a'); a.className='bk-entity-link'; a.href=url; a.textContent=text;
       td.appendChild(a);

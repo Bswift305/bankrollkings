@@ -120,10 +120,33 @@ def test_client_contract_static():
     # client does NOT resolve identity: no resolver/url-building in the template
     check('player_url' not in src and 'team_url' not in src and 'entity_links' not in src,
           "no identity resolution / url building in client JS (server-only)")
-    # only a same-origin path becomes a link (defensive url guard)
-    check("cell.url.charAt(0)==='/'" in src, "url guard: only a leading-'/' path is linked")
+    # only a single-leading-slash application path becomes a link (defensive url guard)
+    check("u.charAt(0)==='/' && u.charAt(1)!=='/'" in src,
+          "url guard rejects protocol-relative '//' (single-leading-slash app path only)")
+    check("cell.url.charAt(0)==='/') ? cell.url" not in src,
+          "the weak charAt(0)-only guard (passes '//host') is gone")
     # reversibility: fill falls back to the column's plain() when ent is absent
     check('r.ent || entCol.plain(r)' in src, "reversible: ent absent -> plain() fallback (old plain cell)")
+
+
+def test_url_guard_spec():
+    """The client guard that decides whether a cell.url becomes an <a href>. This mirrors the exact
+    one-liner in bk_power.html (asserted present by test_client_contract_static, and browser-verified
+    against the same hostile inputs) so the hostile-URL fixtures are checked here too: only a
+    single-leading-slash application path links; protocol-relative '//host', absolute URLs,
+    javascript:/data:, and malformed/empty values are rejected (-> plain text)."""
+    print("\n[C] url guard: single-leading-slash app path only (hostile-URL fixtures)")
+
+    def guard(u):  # exact semantics of: typeof u==='string' && u.charAt(0)==='/' && u.charAt(1)!=='/'
+        return u if (isinstance(u, str) and u[:1] == '/' and u[1:2] != '/') else None
+
+    links = ['/tools/player-check?q=A', '/tools/cfb-team?team=Georgia', '/']
+    rejects = ['//evil.example', '//evil.example/path', 'https://evil.example', 'http://x',
+               'javascript:alert(1)', 'data:text/html,x', 'ftp://x', 'tools/x', ' /x', '', None, 123]
+    for u in links:
+        check(guard(u) == u, "links a single-leading-slash path: %r" % u)
+    for u in rejects:
+        check(guard(u) is None, "rejects hostile/malformed url -> plain text: %r" % u)
 
 
 if __name__ == '__main__':
@@ -133,5 +156,6 @@ if __name__ == '__main__':
     test_server_contract()
     test_attach_does_not_mutate()
     test_client_contract_static()
+    test_url_guard_spec()
     print("\nClean:", not fails)
     sys.exit(1 if fails else 0)
