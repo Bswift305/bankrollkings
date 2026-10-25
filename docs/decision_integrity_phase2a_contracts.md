@@ -1,6 +1,9 @@
 # Decision Integrity — Phase 2A Contracts (DESIGN ONLY) — Rev 2.1
 
 **Status: Phase 2A Rev 2.1 — contracts-only. Returned for formal approval before Phase 2B.** Date 2026-10-25.
+Rev-2.3a (narrow amendment, authorized during Phase 2B Slice 1): adds a governed **`team`** identity grain
+for the board universe (§5 + R14b) — implementation exposed that the board entity is one-per-team but the
+grain enum had no `team`, forcing false `team_side` metadata. No other contract change.
 Rev 2.1 fixes six residual contradictions (NFL ATS decision-vs-board grain → two linked universes; §7
 render-ref removed; `content_hash` covers the whole instance; supersession typo; unknown clock typed as
 null + status, not a literal; `DECLARED_COMPOSITE` identity class), corrects the stale "schema_version is an
@@ -140,6 +143,7 @@ Base identity (Constitution §6): `sport + season + EventId + entity + market/st
 | Grain | Identity key (profile) | Extends base with | NFL ATS example |
 |---|---|---|---|
 | **Event** | `sport, season, EventId` | — | `nfl, 2026, 401...` (nflverse `game_id`) |
+| **Team** (Rev-2.3a) | `sport, season, team` | `team` (sport-scoped provider team identifier; **no `EventId`** — a team is cross-event) | `nfl, 2026, PIT` — the board-universe entity |
 | **Team-side decision** | event + `TeamSide` | `TeamSide ∈ {HOME,AWAY}` | `(game_id, HOME)` — the audited CFB/NFL identity |
 | **Market observation (quote)** | event + entity + market + `side, line, book, quote_scope, captured_obs_id` | direction/side, line, book, quote scope, capture ts/observation id | a captured prop line (Lane-2 shape) |
 | **Selection** | event + entity + market + `selection_key` | the user/model selection id | an SGP leg |
@@ -147,7 +151,7 @@ Base identity (Constitution §6): `sport + season + EventId + entity + market/st
 
 | Field (identity record) | Type | Null? | Norm | Meaning |
 |---|---|---|---|---|
-| `grain` | enum | req | MUST | event \| team_side \| market_obs \| selection \| grading. |
+| `grain` | enum | req | MUST | event \| **team** (Rev-2.3a) \| team_side \| market_obs \| selection \| grading. |
 | `base` | map | req | MUST | `{sport, season, event_id, entity?, market?}`. |
 | `ext` | map | cond | MUST per grain | grain-specific extension fields (table above). |
 | `identity_quality` | enum | req | MUST | `PROVIDER_ID` (a **provider-issued entity identifier**, e.g. a bare `game_id`/`event_id`) \| `DECLARED_COMPOSITE` (a governed multi-field key, e.g. `(game_id, TeamSide)` — records its `profile`+`version`+collision proof; Rev-2.1 #6) \| `COMPOSITE_NAME_EVENT` \| `ALIAS_RESOLVED` \| `NAME_ONLY` \| `AMBIGUOUS` \| `UNRESOLVED`. |
@@ -156,6 +160,11 @@ Base identity (Constitution §6): `sport + season + EventId + entity + market/st
 **Rules:** R12 An authoritative join MUST use `PROVIDER_ID`, a declared composite, or `ALIAS_RESOLVED`
 (curated exact) — never fuzzy (Constitution §6). R13 `AMBIGUOUS`/`UNRESOLVED`/`NAME_ONLY` MUST fail closed
 (leaf `UNAVAILABLE`/`INDETERMINATE`). R14 A composite key MUST set `collision_tested=true` or be ineligible.
+R14b **Grain binding (Rev-2.3a):** team-side **decision** rows MUST use grain `team_side`; **board-universe**
+rows MUST use grain `team`. A board `team` identity MUST be a sport-scoped provider team identifier
+(`PROVIDER_ID`) or a declared composite over `sport+season+team` (`DECLARED_COMPOSITE`, `collision_tested`) —
+**never a bare team name labeled `PROVIDER_ID`**. The `team` grain's `base` is `{sport, season}` (no
+`event_id`; a team is cross-event); its collision test is team-uniqueness within `(sport, season)`.
 
 ---
 
@@ -283,7 +292,7 @@ How the audited `build_nfl_ats_wave` maps onto these contracts (illustrative; no
 | Stage outcomes vs terminal leaves (two universes) | **Decision universe** (`(game_id,TeamSide)`, no FBS/conference concept — that is CFB only) is **stage evidence consumed by calculation, never rendered**, so it carries **stage outcomes, not presentation leaves**: graded → `GRADED` (`PUSH`/`VOID` on a push/void); completed game with **no recorded spread** → `NO_LINE`; past-grace ungraded → `OVERDUE`; malformed spread → `MALFORMED`; future/within-grace → `OUTSIDE_BOUNDARY` out-of-universe tag (e.g. the 2 finished Week-8 decisions). Its counts reconcile independently; it receives **no** presentation leaf. **Board universe** (one record per team, from eligible decision history) is the **terminal-disposition** universe — each expected team gets exactly one: `cover_streak≥3` shown → `RENDERED`; admitted but display-capped → `SUPPRESSED`; below threshold → `NONMEMBER`; history `OVERDUE`/source-stale → `UNAVAILABLE`; not yet gradable → `INDETERMINATE`; `MALFORMED`/`CONFLICT` → `FAILED`; legitimately out → `EXCLUDED`. The **board receipt references the decision-stage receipt as evidence**. |
 | Reason-code registry | **Decision-stage** (`stage_outcome`, never a presentation leaf): `GRADED`/`PUSH`/`VOID`; `NO_LINE`; `OVERDUE`; `MALFORMED`; `OUTSIDE_BOUNDARY`. **Health:** `SOURCE_STALE` (`health`). **Board leaves** (`leaf`, terminal): `BELOW_THRESHOLD` (cover_streak<3 → `NONMEMBER`); `OVERDUE`/`SOURCE_STALE` history → `UNAVAILABLE`; `MALFORMED`/`CONFLICT` → `FAILED`. `SORTED` + `sort_rule_id=streak_desc_team_asc` is a board-stage ordering (`stage_outcome`). (No FBS/conference codes — those belong to the CFB surface.) |
 | Canonical serialization | the membership hash + sidecar `content_sha256` are the prototypes; member rows serialized sorted, excluding render timestamps. |
-| Grain-specific identity | decision universe key `(game_id, TeamSide)` → `identity_quality=DECLARED_COMPOSITE` (Rev-2.1 #6: `game_id` alone is `PROVIDER_ID`, but the `(game_id,TeamSide)` composite is a governed declared key with its profile/version + collision proof recorded). Board universe key = NFL team (provider team name, sport-scoped). |
+| Grain-specific identity | decision universe key `(game_id, TeamSide)` → `identity_quality=DECLARED_COMPOSITE` (Rev-2.1 #6: `game_id` alone is `PROVIDER_ID`, but the `(game_id,TeamSide)` composite is a governed declared key with its profile/version + collision proof recorded). Board universe key = the `team` grain (Rev-2.3a): a sport-scoped provider team identifier (`PROVIDER_ID`) or a declared composite over `sport+season+team` (`DECLARED_COMPOSITE`), never a bare team name labeled `PROVIDER_ID`. |
 | Correction linkage | a regraded game or a corrected spread → a `correction` receipt (`change_kind=regrade`/`line_correction`) superseding the prior decision receipt. |
 | Hierarchical refs | the **decision-stage** evidence receipt records team-side decision **stage outcomes** + the source-health receipt (sidecar freshness); the **board** evidence receipt references the decision-stage/calculation receipt + per-team board **terminal dispositions**; the **render receipt** references the board evidence receipt + its `conclusion_hash`/membership hash (forward-only render→board→decision, acyclic — Rev-2.1 #1/#2). |
 | User-safe projection | user sees members + the honest empty state ("no active 3+ ATS cover streaks") + "sorted by active cover streak"; internal retains sha/lineage. |
