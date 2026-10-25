@@ -154,8 +154,21 @@ current plain text.** Reversing = server stops emitting `url`. No logic moves in
     rows keep their shape (the name column becomes a `{text,url}` cell); other columns + sort/`fmt`
     untouched. QC `qc_cfb_entity_links.py`; browser-proven (cfb_power 138 / cfb_regression 20×boards /
     cfb_totals 135 team links, all same-origin, 0 nested anchors, sort re-fills, no 375px overflow).
-    **`cfb_situational` dropped from Group 1** — it redirects into the deferred `cfb_ats`. **STOP for
-    visual review before Group 2 (MLB player tables).**
+    **`cfb_situational` dropped from Group 1** — it redirects into the deferred `cfb_ats`.
+  - **GROUP 2 — MLB player tables: DONE (this branch).** `mlb_luck` (`/tools/real-vs-luck`) +
+    `mlb_situational` (`/tools/mlb-situational`). Same pattern: the server wraps the **`Player`** column
+    (`_wrap_entity_board(..., 'player', 'mlb', 'Player')`) of each board — `mlb_luck` 4 boards
+    (hitters/pitchers × lucky/unlucky), `mlb_situational` every hitter + pitcher scenario board (cache-safe
+    new structures). Client reuses `_entity_cell.html` (no duplicate renderer). QC
+    `qc_mlb_entity_links.py` (resolvable via fixture + URL shape, unresolved→None, hostile-label encoding,
+    no-mutation, board-wrap, destination-fetch, per-template wiring). **Local limitation (stated honestly):
+    the MLB identity keyset is empty in this worktree**, so players fail-closed to plain text locally and
+    the live destination-fetch is skipped — resolution is proven by fixtures + the `/player/<name>?sport=mlb`
+    URL shape. Browser-proven on `mlb_situational` (has data): 30 player cells render (plain text, gated),
+    `entity_col` marked, **Player sort toggles A↔Z and re-fills**, works across role/scenario switches,
+    accented names render via `textContent`, **0 nested anchors**, no 375px overflow. `mlb_luck` shows a
+    clean empty state locally (no Statcast) — wiring inert when unavailable, covered by parity with
+    `mlb_situational` + QC. **STOP for visual review before Group 3 (`scenario_lab`).**
 
 - **Batch 2 — server-side Jinja reconcile (parallel track, not JS).** Replace the raw
   `/player/` links and plain `{{ player }}` listed above with `entity_anchor(...)` so

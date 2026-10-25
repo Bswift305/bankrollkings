@@ -1,5 +1,6 @@
-"""QC: Batch-1 fan-out Group 1 — CFB team-only tables (cfb_power, cfb_regression, cfb_situational,
-cfb_totals).
+"""QC: Batch-1 fan-out Group 1 — CFB team-only tables (the three LIVE surfaces: cfb_power,
+cfb_regression, cfb_totals). cfb_situational is excluded: /tools/cfb-situational redirects to
+cfb-ats?view=situational (served by the deferred cfb_ats.html), so its template/context are unused.
 
 Contracts:
   (A) SERVER — `_wrap_entity_board` wraps a positional-array board's Team column as a resolver-produced

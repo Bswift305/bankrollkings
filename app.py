@@ -45528,7 +45528,9 @@ def build_mlb_luck_context():
             'pitchers_lucky': p_lucky, 'pitchers_unlucky': p_unlucky,
         },
     }
-    return {'luck_data': data, 'luck_available': bool(h_n or p_n)}
+    # Batch-1 Group 2: wrap each board's Player column as a resolver {text,url} cell (sport-scoped MLB).
+    luck_boards = {k: _wrap_entity_board(b, 'player', 'mlb', 'Player') for k, b in data['boards'].items()}
+    return {'luck_data': {**data, 'boards': luck_boards}, 'luck_available': bool(h_n or p_n)}
 
 
 @app.route('/tools/real-vs-luck')
@@ -45559,8 +45561,16 @@ def build_mlb_situational_context():
         data = _MLB_SITU_CACHE['data']
     except (OSError, ValueError):
         pass
+    # Batch-1 Group 2: wrap each hitter/pitcher board's Player column (cache-safe new structures).
+    def _wrap_group(group):
+        if not isinstance(group, dict) or not isinstance(group.get('boards'), dict):
+            return group
+        return {**group, 'boards': {k: _wrap_entity_board(b, 'player', 'mlb', 'Player')
+                                    for k, b in group['boards'].items()}}
+    situ_data = {**data, 'hitters': _wrap_group(data.get('hitters')),
+                 'pitchers': _wrap_group(data.get('pitchers'))}
     return {
-        'situ_data': data,
+        'situ_data': situ_data,
         'situ_meta': data.get('meta', {}),
         'situ_available': bool(data.get('hitters', {}).get('boards')),
     }
