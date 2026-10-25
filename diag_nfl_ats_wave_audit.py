@@ -197,6 +197,28 @@ def main() -> int:
         print(f"  residual (future / within-grace unplayed) = unique - graded - overdue - malformed - "
               f"excluded - conflicts = {residual}  ({'OK, >=0' if residual >= 0 else 'NEGATIVE -> conservation breach'})")
         print(f"  graded_through_week={dec['graded_through_week']}")
+        # [DISTRIBUTION] -- is members=0 a legitimately empty board or a calc issue? Show the spread.
+        from collections import Counter
+        per = dec["per"]
+        cs = Counter(v["cover_streak"] for v in per.values())
+        ls = Counter(v["loss_streak"] for v in per.values())
+        max_cs = max((v["cover_streak"] for v in per.values()), default=0)
+        last_wk = Counter(v["last_week"] for v in per.values())
+        print(f"  teams with any decision: {len(per)}")
+        print(f"  cover_streak distribution: {dict(sorted(cs.items()))}   (max cover_streak={max_cs})")
+        print(f"  loss_streak  distribution: {dict(sorted(ls.items()))}")
+        print(f"  teams by last graded week: {dict(sorted(last_wk.items(), key=lambda x: (x[0] is None, x[0])))}")
+        # a few teams' recent sign sequences (1=cover, -1=loss, 0=push), newest last
+        sample = sorted(per.values(), key=lambda v: -v["cover_streak"])[:6]
+        for v in sample:
+            print(f"    {v['team']}: recent(old->new)={v['recent']}  cover_streak={v['cover_streak']} "
+                  f"loss_streak={v['loss_streak']} last_wk={v['last_week']} decisions={v['decisions']}")
+        if max_cs >= 3:
+            print(f"  => NOTE: max cover_streak is {max_cs} (>=3) but build_nfl_ats_wave returned 0 members -- "
+                  "INVESTIGATE a membership/sync gating mismatch.")
+        else:
+            print(f"  => members=0 is CONSISTENT with the data: no team has a trailing 3+ cover streak "
+                  f"(max is {max_cs}); the empty board is factual, not a calc bug.")
     except Exception as exc:
         print(f"  [WARN] conservation read failed: {type(exc).__name__}: {exc}")
 
