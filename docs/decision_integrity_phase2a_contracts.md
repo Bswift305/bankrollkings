@@ -218,8 +218,13 @@ reconcile against the referenced disposition batch (the §3 equations).
 **Rules:** R21 **Root-and-reference projection (Rev-2 #9c):** a `user_safe` receipt derives from one
 **root** `internal` receipt and MAY include projections of that root's **referenced** internal receipts
 (§7); each user-safe field MUST trace to a field in the root or a referenced internal receipt, and the
-projection MUST NOT assert more than those internal receipts support. (A composite board projection thus
-spans the root board receipt + its disposition/source-health/render references, not a single receipt.)
+projection MUST NOT assert more than those internal receipts support. Because the board root does **not**
+reference render (Rev-2.1 #2, forward-only render→board→decision), there are two distinct composite
+projections and no backward board→render reference (Rev-2.2):
+- a **user-safe evidence projection** derives from the **board evidence root** and its
+  decision/disposition/source-health references;
+- a **user-safe render projection** derives from the **render root**, which references the board
+  evidence receipt (never the reverse).
 R22 A `user_safe` receipt MUST NOT contain any internal-only field above.
 
 ---
@@ -247,8 +252,9 @@ record for every governed change above, and MUST NOT present a changed state wit
 This is proposed **as a pilot on NFL ATS only**, not yet a constitutional law; promotion to law requires a
 later governance pass after the pilot shows it is noise-free.
 
-**Unresolved (P2A-T1):** transition granularity — per-entity vs per-board-delta. **Recommended default:**
-per-board-delta referencing changed entity dispositions (keeps volume bounded; mirrors §7 hierarchy).
+**Transition granularity (P2A-T1) — ADOPTED (provisional pilot decision, Rev-2.2):** **per-board-delta**,
+referencing the changed entity dispositions (keeps volume bounded; mirrors the §7 hierarchy). This holds
+for the NFL ATS pilot only and is revisited in the post-pilot governance pass; it is not platform law.
 
 ---
 
@@ -280,9 +286,15 @@ How the audited `build_nfl_ats_wave` maps onto these contracts (illustrative; no
 | User-safe projection | user sees members + the honest empty state ("no active 3+ ATS cover streaks") + "sorted by active cover streak"; internal retains sha/lineage. |
 | Transition-event (pilot) | a team crossing to a 3-cover streak, or `synchronized` flipping, emits a transition record; an unchanged rebuild does not. |
 
-**Empty-membership state (Audit #2, `members=0`)** maps to: all expected **team-side decisions**
-dispositioned (`RENDERED`=0, `NONMEMBER`=all — max cover_streak was 2), conservation balanced, render
-receipt shows the honest empty state — a **valid, fully-receipted outcome**, not an error.
+**Empty-membership state (Audit #2, `members=0`)** is a **valid, fully-receipted outcome**, not an
+error, and resolves per universe (Rev-2.2 — the two grains never mix):
+- The **decision universe** reconciles its decision leaves independently (each `(game_id,TeamSide)`
+  graded decision → `RENDERED`/`EXCLUDED`/`UNAVAILABLE`/`FAILED`, future/within-grace →
+  `OUTSIDE_BOUNDARY`), unaffected by board membership.
+- The **board universe** assigns each expected NFL team `RENDERED`, `SUPPRESSED`, or `NONMEMBER`.
+- With `members=0`, the board universe has `RENDERED=0` and all qualifying expected teams as
+  `NONMEMBER` (max cover_streak was 2 — `BELOW_THRESHOLD`), conservation balanced, and the render
+  receipt shows the honest empty state.
 
 ---
 
