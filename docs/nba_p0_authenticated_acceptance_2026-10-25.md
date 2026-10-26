@@ -233,3 +233,60 @@ endpoint.
 missing browser timestamp/path/request-id → **`LEGACY_UNATTRIBUTED_EVIDENCE_GAP`**, and NBA P0 **closes on
 the clean repeated post-deploy acceptance**, with a **separate follow-up**: add per-request-id + client
 network capture (so a future 401 is always attributable) — observability, not a release blocker.
+
+---
+
+## 401 attribution — RESULT (owner ran the runbook 2026-10-26 11:14 UTC)
+
+Server timezone **UTC (`Etc/UTC`, +0000)** — nginx/gunicorn timestamps are already Eastern+4/5; every
+time below is UTC. `nginx -T` showed **no `$request_id`** in `log_format` (combined only), so no
+per-request id exists to pin a specific browser console line — this bounds what "unique correlation" can
+mean. **227** total 401s on Oct 25–26; `/api/live-ticker` appears **zero** times at 401 (every ticker hit
+is **200**).
+
+**Population — fully attributed, all benign.** Every 401 is an **unauthenticated GET of a gated route**:
+- **~221 crawler/bot hits** — PetalBot, MJ12bot, SemrushBot, Baiduspider, Bingbot, Reflectionbot, plus
+  unauth datacenter clients — hitting `/sports/*`, `/player/*`, `/matchup/*`, `/tools/*`, `/parlay`,
+  `/calibration-lab`, `/candidate-review` with no session. The auth gate returning 401 to these is
+  **correct behavior**, not a defect.
+- **The CTP built-in-browser client** `CTP_CLIENT_REDACTED` (a single public IP, redacted here — raw
+  access-log IPs belong in restricted operational logs, not durable Git; UA `Claude/3.6556.2 … MSIX`; its
+  fresh cache-busted tab shows UA `Chrome/155.0.0.0`). Its **entire** 401 footprint: `/sports/nba/props`
+  at `25/Oct 23:34:06`, `23:37:22`, and `26/Oct 02:15:47` — all **pre-sign-in page loads during triage**.
+
+**The two browser observations — correlated and closed.** The CTP client's only 401s are those
+pre-sign-in `/sports/nba/props` loads, and the **same client** then returns **200** on `/api/live-ticker`
+continuously from `26/Oct 02:17:07` onward (referer `/sports/nba/props`), including the post-deploy
+acceptance run at `10:55–10:58` (referers `…?v=deploycheck1` / `?v=deploycheck2`). The
+"same client later got 200 from the endpoint" test therefore **passes**: the 401 → 200 transition is the
+sign-in boundary. **`/api/live-ticker` never returned 401** to this client (or anyone) across two days, so
+there is **no live ticker-auth defect** — the earlier worry that the ticker was 401-ing authenticated is
+disproven by server truth.
+
+**Classification.** Cause of the browser-observed 401s = **unauthenticated access of a gated page before
+sign-in** (benign; the gate working). The specific earlier *console* line cannot be pinned to an exact log
+row by request-id (none is logged) — that precise pairing is a **`LEGACY_UNATTRIBUTED_EVIDENCE_GAP`** — but
+it is **bounded to benign causes**: the only 401s this client ever produced are pre-auth page loads, and no
+ticker 401 exists to attribute. This is explicitly **not** "benign by assertion" and **not** an active
+reproduced failure; it is a benign population with one un-pinnable console artifact.
+
+### NBA P0 — FINAL DETERMINATION: **CLOSED** (2026-10-26)
+- **F13** (CSP `unsafe-eval` EvalErrors / Alpine removed) — fixed, deployed `d09668c`, re-run **green**.
+- **Data Pulse P1** (false "no markets" on the gated board) — fixed, deployed, re-run **green**.
+- **401s** — fully attributed to correct auth-gate behavior on unauthenticated requests (bots + CTP
+  pre-sign-in); no `/api/live-ticker` 401 exists; CTP's 401s flip to 200 at sign-in. No defect; no ticker
+  or config change made.
+
+**Parked as a separate P2 observability item (not started; do NOT change nginx or deploy now):** add
+`$request_id` to the nginx `log_format` and echo it as a response header (and optionally in the app log),
+so any future 401 is attributable to an exact request without this evidence gap recurring. This is an
+enhancement, not a fix for anything open — NBA P0 does not wait on it.
+
+### Preserved distinctions (per reviewer direction, 2026-10-26)
+- **Current production acceptance:** GREEN (desktop + 375px, post-deploy `d09668c`).
+- **401 cause class:** expected pre-authentication gate behavior on unauthenticated requests.
+- **Exact console-line-to-log-row pairing:** `LEGACY_UNATTRIBUTED_EVIDENCE_GAP` (no `$request_id` logged;
+  bounded to benign causes — not an active defect).
+- **`/api/live-ticker`:** no observed 401s in the two-day window.
+- **Ticker + production config:** unchanged.
+- **Raw access-log client IPs:** not copied into this durable document (redacted).
