@@ -135,3 +135,42 @@ is an open **P1** honesty/consistency defect.
   browser-health check is **re-run cleanly on prod**.
 - The analytical-board acceptance (tip-off sort, de-vigged/lean-gap relabels, Legacy-model disclosure) is
   **not verifiable while the gate is OFF** — re-run if/when `BK_NBA_STATS_ENABLED` is turned on.
+
+---
+
+## FINAL PRODUCTION RECEIPT — deployed + re-run (2026-10-26)
+
+**Deployed HEAD:** `master` = **`d09668c`** (fast-forward `ed0bf37..d09668c`; only the authorized NBA
+commits cherry-picked onto master: `70a17c5` receipt · `3b93589` Alpine/CSP · `71ddfa5` Data Pulse ·
+`5a2c66a` doc · `d09668c` counting-contract refinement). Deploy-diff verified = **6 authorized files
+only**; `app.py` compiled + both QCs green on the master base before push; the NFL ATS shadow flag/code
+was **not** included. Deploy confirmed live via prod CSP header (no `unpkg`) + behavioral checks below.
+
+**Authenticated prod re-run** (signed-in All-Access; **fresh tab**, cache-busted, to avoid a stale
+console buffer — the first-tab console retained pre-deploy messages, disproven by the live DOM):
+
+| Check | Desktop | 375px |
+|---|---|---|
+| Alpine / `unpkg` script present | **none** (`window.Alpine` undefined, 0 external scripts) | none |
+| Console errors (Alpine/CSP or any) | **zero** | **zero** |
+| Failed resources (Resource Timing) | **none** | **none** |
+| Page-level horizontal overflow | n/a | **none** (scrollWidth 375 = clientWidth) |
+| Bet-slip tabs keyboard + functional | **yes** — Parlay active → click Singles → ArrowLeft → Round Robin; exactly one active, `aria-selected`/roving `tabindex` correct | — |
+
+**Data Pulse (gate OFF, live 728-quote feed) — labels + counts:**
+`Games 7` · `Teams 14` · `Player-stat markets 291` · `Market quotes 728`.
+Caption (verbatim): *"Licensed sportsbook market quotes (Odds API) across 3 books — factual market quotes
+(a quote may list only one side), not plays, projections, or model output."* Empty-state title: *"728
+licensed market quotes on the board."* **No** false "no markets / board fills closer to tip-off" copy.
+Counts are distinguished (728 quotes ≠ 291 player-stat markets) and agree with the market-only board;
+label is exactly **Player-stat markets**; all counts derived (none Unavailable this load).
+
+**401 attribution:** **NOT attributed** — production access-log / SSM inspection is required and was not
+available to this session. On the fresh post-deploy tab the 2× 401 **did not reproduce** (clean console +
+Resource Timing across desktop + 375px, multiple loads), consistent with a transient, but that is **not
+attribution**. Classification stays **`UNKNOWN_TRANSIENT`**; the ticker was **not** modified.
+
+**NBA P0 status: the deployed authenticated re-run is GREEN.** Closure is pending only the **401
+attribution from production access logs** (exact path, method, timestamp, response status, referrer/UA,
+expected-authenticated?) — once the 401s are attributed to an understood benign request (or repaired +
+reverified), NBA P0 closes.
