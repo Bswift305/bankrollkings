@@ -21,7 +21,6 @@
 
   <!-- ONE theme file styles the entire site -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bk-theme.css') }}?v=20261018-entity-links">
-  <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
 
   <!-- Page-specific extra styles (optional) -->
   {% block extra_css %}{% endblock %}
@@ -225,17 +224,48 @@
        hidden via no-slip class on app div
   ═══════════════════════════════════════ -->
   {% block betslip %}
-  <aside class="bk-slip" x-data="{ slipTab: 'parlay' }">
+  <aside class="bk-slip">
     <div class="bk-slip-header">
       <div class="bk-slip-title">BET SLIP</div>
       <div class="bk-slip-count" id="slip-count">{{ slip_legs | length if slip_legs else 0 }}</div>
     </div>
 
-    <div class="bk-slip-tabs">
-      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'parlay' }" @click="slipTab = 'parlay'">Parlay</button>
-      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'roundrobin' }" @click="slipTab = 'roundrobin'">Round Robin</button>
-      <button type="button" class="bk-slip-tab" :class="{ active: slipTab === 'singles' }" @click="slipTab = 'singles'">Singles</button>
+    <div class="bk-slip-tabs" role="tablist" aria-label="Bet slip mode">
+      <button type="button" class="bk-slip-tab active" role="tab" aria-selected="true" tabindex="0" data-sliptab="parlay">Parlay</button>
+      <button type="button" class="bk-slip-tab" role="tab" aria-selected="false" tabindex="-1" data-sliptab="roundrobin">Round Robin</button>
+      <button type="button" class="bk-slip-tab" role="tab" aria-selected="false" tabindex="-1" data-sliptab="singles">Singles</button>
     </div>
+    <script>
+    /* Bet-slip tab selector — CSP-safe vanilla replacement for the former Alpine component.
+       Keeps the active tab's class + aria-selected, native Enter/Space on the <button>s, and adds
+       ArrowLeft/Right/Home/End roving focus. No eval / no framework. */
+    (function(){
+      var tabs = document.querySelectorAll('.bk-slip-tabs [role="tab"]');
+      if(!tabs.length) return;
+      function activate(tab, moveFocus){
+        tabs.forEach(function(t){
+          var on = (t === tab);
+          t.classList.toggle('active', on);
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+          t.tabIndex = on ? 0 : -1;
+        });
+        if(moveFocus){ tab.focus(); }
+      }
+      tabs.forEach(function(tab, i){
+        tab.addEventListener('click', function(){ activate(tab, false); });
+        tab.addEventListener('keydown', function(e){
+          var idx;
+          if(e.key === 'ArrowRight' || e.key === 'ArrowDown'){ idx = (i + 1) % tabs.length; }
+          else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ idx = (i - 1 + tabs.length) % tabs.length; }
+          else if(e.key === 'Home'){ idx = 0; }
+          else if(e.key === 'End'){ idx = tabs.length - 1; }
+          else { return; }
+          e.preventDefault();
+          activate(tabs[idx], true);
+        });
+      });
+    })();
+    </script>
 
     <div class="bk-slip-legs" id="slip-legs">
       {% if slip_legs %}
