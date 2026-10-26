@@ -1671,6 +1671,30 @@
 </div>
 {% endif %}
 
+{% if nba_gated and nba_market_facts and nba_market_facts.available %}
+{# Data-rights gate OFF: NBA statistics are withheld, but the LICENSED sportsbook market board is live.
+   Show honest Odds-API market FACTS (counts only), clearly distinguished (quote rows != prop markets),
+   never statistics/plays/projections/model output. #}
+<div class="nba-metric-row mb-24">
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ nba_market_facts.games }}</div>
+        <div class="nba-metric-label">Games</div>
+    </div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{% if nba_market_facts.teams is not none %}{{ nba_market_facts.teams }}{% else %}Unavailable{% endif %}</div>
+        <div class="nba-metric-label">Teams</div>
+    </div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ nba_market_facts.prop_markets }}</div>
+        <div class="nba-metric-label">Prop markets</div>
+    </div>
+    <div class="nba-metric-card">
+        <div class="nba-metric-value">{{ nba_market_facts.quote_rows }}</div>
+        <div class="nba-metric-label">Market quotes</div>
+    </div>
+</div>
+<div class="nba-playoff-panel-subtitle" style="margin:-16px 0 20px;">Licensed sportsbook market quotes (Odds API){% if nba_market_facts.books %} across {{ nba_market_facts.books }} books{% endif %} &mdash; factual two-sided quotes, <strong>not</strong> plays, projections, or model output. NBA statistical context is paused for a data-rights review.</div>
+{% else %}
 <div class="nba-metric-row mb-24">
     <div class="nba-metric-card">
         <div class="nba-metric-value">{{ upcoming.today|length + upcoming.tomorrow|length + upcoming.upcoming|length }}</div>
@@ -1689,6 +1713,7 @@
         <div class="nba-metric-label">Live Rows</div>
     </div>
 </div>
+{% endif %}
 
 <div class="card mb-24 nba-playoff-panel">
     <div class="card-header panel-header-gloss">
@@ -1739,10 +1764,17 @@
         </tbody>
     </table>
     {% else %}
+    {% if nba_gated and nba_market_facts and nba_market_facts.available %}
+    <div class="empty-state">
+        <div class="empty-state-title">{{ nba_market_facts.quote_rows }} licensed market quotes on the board</div>
+        <div class="empty-state-copy">Live sportsbook quotes across {{ nba_market_facts.games }} game{{ '' if nba_market_facts.games == 1 else 's' }} are on the <a href="/sports/nba/props">NBA board</a> &mdash; factual market quotes, not plays or projections. NBA statistical context (averages, model reads) is paused for a data-rights review.</div>
+    </div>
+    {% else %}
     <div class="empty-state">
         <div class="empty-state-title">No plays loaded</div>
         <div class="empty-state-copy">NBA markets open closer to tip-off &mdash; the board fills when tonight's lines post.</div>
     </div>
+    {% endif %}
     {% endif %}
 </div>
 
