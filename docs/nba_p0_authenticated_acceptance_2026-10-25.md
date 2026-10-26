@@ -74,7 +74,7 @@ is an open **P1** honesty/consistency defect.
   replace with plain JS and drop both the unpkg `<script>` and its CSP allowance. **Decision needed:**
   CSP-build migration vs. remove Alpine.
 
-### 2. 2× 401 — transient load-race — benign/low — exact request NOT isolable
+### 2. 2× 401 — `UNKNOWN_TRANSIENT` (plausible load-race, UNPROVEN) — exact request NOT isolable
 - Steady state: `/api/live-ticker` returns **200** when authed; a steady-state `fetch` hook caught **no**
   401s; Resource Timing reports 0 failed; the network buffer shows only 200s.
 - The one endpoint that 401s without a valid session is **`/api/live-ticker`** (`app.py:35455`), polled
@@ -114,10 +114,24 @@ is an open **P1** honesty/consistency defect.
 
 ---
 
-## Open items after this acceptance
-- **F13 (OPEN, P0-blocking for this gate):** Alpine/CSP `unsafe-eval` — decision + fix per Attribution #1.
-- **Data-Pulse contradiction (OPEN, P1):** gated stub over-zeroes the licensed market card — Attribution #4.
-- **401 load-race (OPEN, low):** confirm + optionally guard the first ticker poll — Attribution #2.
-- NBA P0 is **not closed**. The analytical-board acceptance (tip-off sort, de-vigged/lean-gap relabels,
-  Legacy-model disclosure) is **not verifiable while the gate is OFF** — it must be re-run if/when
-  `BK_NBA_STATS_ENABLED` is turned on.
+## Fixes landed on the branch (not yet deployed) — 2026-10-25
+
+- **Decision 1 (`3080991`) — Attribution #1 fixed:** removed Alpine.js + `https://unpkg.com` from the
+  CSP; the bet-slip's three tab buttons are now a CSP-safe vanilla tablist (click + keyboard + aria-
+  selected). Local authed desktop + 375px: **zero Alpine/CSP console errors**, tabs behave. QC
+  `qc_no_alpine_csp.py`.
+- **Decision 2 (`82ec268`) — Attribution #4 fixed:** the gated Command Center now shows honest licensed
+  market facts (Games / Teams / Prop markets / Market quotes, labeled "licensed sportsbook market quotes
+  … not plays/projections/model"), recomputed live from the same feed so counts agree with the board;
+  quote rows are distinguished from prop markets; unreliable counts show "Unavailable"; empty feed keeps
+  the honest empty state; gate-ON untouched. QC `qc_nba_gated_market_facts.py`.
+
+## Open items — NBA P0 remains OPEN
+- **401s → `UNKNOWN_TRANSIENT` (Attribution #2):** the ticker load-race is plausible but **unproven**;
+  the ticker is **not** modified. They remain an **F13 acceptance failure** until attributed from
+  production access logs (exact paths/methods/user-agent around an authenticated reload) or eliminated.
+- **Deploy + re-run:** both fixes are on `claude/jolly-ishizaka-c6519a`, **not deployed**. NBA P0 closes
+  only after both fixes deploy, the 401s are attributed or eliminated, and the authenticated
+  browser-health check is **re-run cleanly on prod**.
+- The analytical-board acceptance (tip-off sort, de-vigged/lean-gap relabels, Legacy-model disclosure) is
+  **not verifiable while the gate is OFF** — re-run if/when `BK_NBA_STATS_ENABLED` is turned on.
