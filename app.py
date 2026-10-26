@@ -30391,12 +30391,50 @@ def frontpage():
         streak_heat=streak_heat)
 
 
+def _nba_gated_market_facts():
+    """Licensed Odds-API market FACTS (counts only) for the gated NBA command center. Reads the SAME
+    feed as the market-only board (`build_market_only_board(load_live_props_feed)`) -- a cached-file read,
+    NO provider request / NO paid fetch / NO NBA.com stats. Distinguishes quote rows from unique prop
+    markets / games / teams so 728 sportsbook quote rows are NEVER labeled '728 props'. A count that
+    cannot be derived reliably is `None` -> the template shows 'Unavailable', never a misleading zero.
+    An empty feed -> {'available': False} so the template keeps its honest empty state."""
+    try:
+        board = build_market_only_board(load_live_props_feed)
+    except Exception:
+        return {'available': False}
+    rows = board.get('rows') or []
+    if not rows:
+        return {'available': False}
+    games = sorted({r.get('game') for r in rows if r.get('game')})
+    prop_markets = {(r.get('game'), r.get('player'), r.get('stat'))
+                    for r in rows if r.get('player') and r.get('stat')}
+    books = board.get('books') or sorted({r.get('book') for r in rows if r.get('book')})
+    teams, teams_reliable = set(), True
+    for g in games:
+        parts = [p.strip() for p in str(g).split('@')]
+        if len(parts) == 2 and all(parts):
+            teams.update(parts)
+        else:
+            teams_reliable = False  # a game string without a clean 2-team split -> teams Unavailable
+    return {
+        'available': True,
+        'quote_rows': len(rows),               # one licensed two-sided quote per book
+        'prop_markets': len(prop_markets),     # distinct (game, player, stat) -- NOT the quote count
+        'games': len(games),
+        'teams': (len(teams) if (teams_reliable and teams) else None),
+        'books': (len(books) if books else None),
+        'as_of': board.get('as_of'),
+    }
+
+
 def _nba_command_center_gated_stub(postseason_only):
     """Cheap unavailable-state view model for the NBA command center when the NBA.com data-rights gate
     is OFF. Same keys as the full context so the dashboard + template render unchanged, but built with
-    ZERO loads/boards/model work -- gated builders must not execute, and no pre-gate cached value is
-    served. This is the 47s-cold-dashboard fix: the live build processed props/boards to yield withheld
-    data. Honest: NBA modules show an explicit 'unavailable' rather than fabricated or empty-as-neutral."""
+    ZERO NBA.com-stats loads/boards/model work -- gated builders must not execute, and no pre-gate cached
+    value is served. This is the 47s-cold-dashboard fix: the live build processed props/boards to yield
+    withheld data. Honest: NBA STATISTICS show an explicit 'unavailable'; the LICENSED market board is
+    NOT denied -- `nba_market_facts` carries honest Odds-API quote counts (not plays/projections/model)
+    so the dashboard never claims 'no markets' while the board serves live licensed quotes."""
     mode_labels = get_focus_mode_labels(postseason_only)
     return {
         'upcoming': {'today': [], 'tomorrow': [], 'upcoming': []},
@@ -30404,6 +30442,7 @@ def _nba_command_center_gated_stub(postseason_only):
         'total_props': 0, 'teams': [], 'top_plays': [], 'postseason_only': postseason_only,
         'postseason_matchups': [], 'matchup_lens_board': [], 'tonight_cards': [], 'market_watch': [],
         'nba_data_pulse': {}, 'best_by_series': [], 'role_changes': [], 'nba_gated': True,
+        'nba_market_facts': _nba_gated_market_facts(),
         'nba_summary': {
             'focus_label': (mode_labels['focus_mode_label'] if postseason_only
                             else mode_labels['regular_mode_label']),
@@ -30734,6 +30773,8 @@ def render_nba_matchup_lens_page():
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
+    if nba_context.get('nba_gated'):
+        nba_context = {**nba_context, 'nba_market_facts': _nba_gated_market_facts()}  # fresh; agrees w/ board
     return render_template('dashboard.html', matchup_lens_mode=True, **nba_context)
 
 
@@ -30753,6 +30794,10 @@ def nba_page():
     snapshot_key = 'nba_command_center_postseason' if postseason_only else 'nba_command_center_regular'
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720, allow_stale=True, stale_max_age_minutes=4320)
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
+    if nba_context.get('nba_gated'):
+        # Recompute the licensed market facts LIVE so the counts always agree with the live board, even
+        # when a (possibly stale) snapshot payload is served. Cheap cached-feed read; no provider/paid fetch.
+        nba_context = {**nba_context, 'nba_market_facts': _nba_gated_market_facts()}
     return render_template('dashboard.html', **nba_context)
 
 
