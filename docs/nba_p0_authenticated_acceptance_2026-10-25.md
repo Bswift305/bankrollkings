@@ -174,3 +174,62 @@ attribution**. Classification stays **`UNKNOWN_TRANSIENT`**; the ticker was **no
 attribution from production access logs** (exact path, method, timestamp, response status, referrer/UA,
 expected-authenticated?) — once the 401s are attributed to an understood benign request (or repaired +
 reverified), NBA P0 closes.
+
+---
+
+## 401 read-only log-attribution runbook (owner-run; no writes, no ticker/config change)
+
+**Access:** run in an AWS **SSM Session Manager** session (`ssm-user`, passwordless sudo — the project's
+standard; SSH is source-restricted to a stale /32), or SSH only if the owner's current IP is allowlisted.
+Every command below is **read-only** (zgrep/grep/awk/journalctl). Do **not** modify the ticker or any
+production configuration.
+
+**Important limitation (stated up front):** the original browser receipt captured **no** exact request
+URL, timestamp, request-id, or client IP for the two 401s. Access logs can therefore identify *plausible*
+401s but can only **conclusively attribute** them if a record correlates **uniquely** to the browser
+observations. If no unique correlation is possible, the correct outcome is
+**`LEGACY_UNATTRIBUTED_EVIDENCE_GAP`** — *not* "benign", and *not* an active reproduced failure; the green
+post-deploy acceptance is preserved separately.
+
+```bash
+# 1. Server timezone (to interpret every timestamp). nginx [time_local] also carries the per-line offset.
+timedatectl | grep -iE 'time zone|local time'
+
+# 2. Find the nginx access-log path(s) + whether a request-id is logged, then set ACCESS from the result.
+sudo nginx -T 2>/dev/null | grep -nE 'access_log|log_format|request_id'
+ACCESS=/var/log/nginx/access.log        # adjust to step-2 path if different
+
+# 3. Enumerate EVERY HTTP 401 on 2026-10-25 and 2026-10-26 (current + rotated + .gz).
+sudo zgrep -hE '\[(25|26)/Oct/2026' ${ACCESS}* 2>/dev/null | grep -E '" 401 ' > /tmp/nba401.txt
+wc -l /tmp/nba401.txt
+
+# 4. 401 distribution by METHOD + path (which endpoints 401'd, and how often).
+grep -oE '"[A-Z]+ [^" ]+' /tmp/nba401.txt | sort | uniq -c | sort -rn | head -40
+
+# 5. Isolate the endpoints of interest: ticker, NBA props, and authenticated API/assets.
+grep -E '/api/live-ticker|/sports/nba/props|/api/' /tmp/nba401.txt
+
+# 6. Per candidate, the combined line already carries: time_local(+tz) · "METHOD path?query HTTP" ·
+#    status · client IP · referrer · user-agent. (request-id only if step 2 showed it in log_format.)
+cat /tmp/nba401.txt
+
+# 7. Correlation — did the SAME client IP get a 200 from that endpoint right after the 401?
+IP="<candidate-client-ip>"
+sudo zgrep -hE '\[(25|26)/Oct/2026' ${ACCESS}* 2>/dev/null \
+  | grep -F "$IP" | grep -E '/api/live-ticker|/sports/nba/props' | sort -t'[' -k2
+
+# 8. Application-side view (gunicorn/app 401s + request ids, same window).
+sudo journalctl -u bankrollkings --since '2026-10-25 00:00:00' --until '2026-10-27 00:00:00' --no-pager \
+  | grep -E '401|live-ticker|X-Request-Id' | tail -200
+```
+
+**Per candidate, record:** timestamp + log tz · method · path/query · status · client IP · referrer ·
+user-agent · upstream/app request-id (if logged) · whether authentication was expected (`/api/live-ticker`
+and `/sports/nba/props` **are** authenticated) · whether the same client subsequently got 200 from that
+endpoint.
+
+**Decision rule:** if a 401 correlates **uniquely** to a browser observation → classify the cause and
+**close** (benign/understood) or **repair + reverify**. If unique correlation is impossible due to the
+missing browser timestamp/path/request-id → **`LEGACY_UNATTRIBUTED_EVIDENCE_GAP`**, and NBA P0 **closes on
+the clean repeated post-deploy acceptance**, with a **separate follow-up**: add per-request-id + client
+network capture (so a future 401 is always attributable) — observability, not a release blocker.
