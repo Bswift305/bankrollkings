@@ -30394,9 +30394,19 @@ def frontpage():
 def _nba_gated_market_facts():
     """Licensed Odds-API market FACTS (counts only) for the gated NBA command center. Reads the SAME
     feed as the market-only board (`build_market_only_board(load_live_props_feed)`) -- a cached-file read,
-    NO provider request / NO paid fetch / NO NBA.com stats. Distinguishes quote rows from unique prop
-    markets / games / teams so 728 sportsbook quote rows are NEVER labeled '728 props'. A count that
-    cannot be derived reliably is `None` -> the template shows 'Unavailable', never a misleading zero.
+    NO provider request / NO paid fetch / NO NBA.com stats.
+
+    Honest counting contract:
+      * `quote_rows` -- the RAW number of displayed board rows. A row may have a missing side (labeled,
+        never synthesized), so the copy must not imply every row is two-sided.
+      * `player_stat_markets` -- distinct (game, player, stat) FAMILIES. This is a player-stat market
+        count, NOT a distinct prop-line count (books may post different lines for the same stat), and
+        NEVER the quote-row count.
+      * Every derived count (`games`, `player_stat_markets`, `teams`, `books`) is published ONLY when its
+        required fields are COMPLETE across the displayed rows; otherwise it is `None` ('Unavailable').
+        A partial count is never shown as complete.
+      * `books` is counted from the DISPLAYED rows, not feed metadata (which may list books with no
+        surviving board rows).
     An empty feed -> {'available': False} so the template keeps its honest empty state."""
     try:
         board = build_market_only_board(load_live_props_feed)
@@ -30405,24 +30415,39 @@ def _nba_gated_market_facts():
     rows = board.get('rows') or []
     if not rows:
         return {'available': False}
-    games = sorted({r.get('game') for r in rows if r.get('game')})
-    prop_markets = {(r.get('game'), r.get('player'), r.get('stat'))
-                    for r in rows if r.get('player') and r.get('stat')}
-    books = board.get('books') or sorted({r.get('book') for r in rows if r.get('book')})
-    teams, teams_reliable = set(), True
-    for g in games:
-        parts = [p.strip() for p in str(g).split('@')]
-        if len(parts) == 2 and all(parts):
-            teams.update(parts)
-        else:
-            teams_reliable = False  # a game string without a clean 2-team split -> teams Unavailable
+
+    def _nz(v):   # a present, non-blank field
+        return bool(v) and str(v).strip() != ''
+
+    game_complete = all(_nz(r.get('game')) for r in rows)
+    stat_complete = all(_nz(r.get('stat')) for r in rows)
+    book_complete = all(_nz(r.get('book')) for r in rows)
+    player_complete = all(_nz(r.get('player')) for r in rows)   # build_market_only_board already drops Player-None
+
+    games = len({r['game'] for r in rows}) if game_complete else None
+    # (game, player, stat) family — needs game + player + stat on every row, or it is Unavailable
+    player_stat_markets = (len({(r['game'], r['player'], r['stat']) for r in rows})
+                           if (game_complete and player_complete and stat_complete) else None)
+    # teams only when games are complete AND every game splits cleanly into exactly two team sides
+    teams = None
+    if game_complete:
+        ts, ok = set(), True
+        for g in {r['game'] for r in rows}:
+            parts = [p.strip() for p in str(g).split('@')]
+            if len(parts) == 2 and all(parts):
+                ts.update(parts)
+            else:
+                ok = False
+                break
+        teams = len(ts) if (ok and ts) else None
+    books = len({r['book'] for r in rows}) if book_complete else None   # from displayed rows, not metadata
     return {
         'available': True,
-        'quote_rows': len(rows),               # one licensed two-sided quote per book
-        'prop_markets': len(prop_markets),     # distinct (game, player, stat) -- NOT the quote count
-        'games': len(games),
-        'teams': (len(teams) if (teams_reliable and teams) else None),
-        'books': (len(books) if books else None),
+        'quote_rows': len(rows),
+        'player_stat_markets': player_stat_markets,
+        'games': games,
+        'teams': teams,
+        'books': books,
         'as_of': board.get('as_of'),
     }
 
