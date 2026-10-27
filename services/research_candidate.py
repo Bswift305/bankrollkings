@@ -11,18 +11,32 @@ STRICT BOUNDARY (Slice 1):
   * NO scoring, NO ranking, NO recommendation, NO betting guidance, NO production behavior.
     A Research Candidate is `RESEARCH_ONLY` (module constant `AUTHORITY`): zero authority.
 
-Rev-2.1 hardening (reviewer blockers 1-9, Slice-1 close):
-  1. governed mappings are deep-frozen into immutable structures (caller mutation cannot change
-     a record's content after construction);
-  2. pre-event ordering is complete: `observed_at <= bk_captured < event_effective`, and an
-     outcome may not be captured before its event is effective;
-  3. a candidate is bound to its observation (observer/entity/event/thesis/source lineage/acted);
-  4. candidate supersession has an explicit allow-list — no arbitrary field override;
-  5. candidate storage is append-only (duplicate ids rejected; superseding chain by record_seq);
-  6. only MEASURED enters the matched sample / effective-n; PARTIAL is counted separately;
-  7. evaluation is bound to the frozen family contract (endpoint name/version must match);
-  8. SUPPORTED is direction-aware (works for DECREASE too);
-  9. canonical numeric safety: NaN/inf rejected, mapping keys must be strings (no key coercion).
+GOVERNANCE PRINCIPLE (reviewer round 2): the OBJECTS must be incapable of representing an
+invalid authoritative state. Invariants live in `__post_init__`, not only in helper functions,
+so a direct constructor call cannot bypass `evaluate_family`/`summarize_family`.
+
+Hardening applied (reviewer rounds 1-2):
+  r1.1  governed mappings are deep-frozen (caller mutation cannot change a record);
+  r1.2  pre-event ordering `observed_at <= bk_captured < event_effective`; outcome not before event;
+  r1.3  candidate is bound to its observation's subject;
+  r1.4  candidate supersession has an explicit allow-list;
+  r1.5  candidate storage is append-only;
+  r1.6  only MEASURED enters the matched sample / effective-n; PARTIAL counted separately;
+  r1.7/r2.1  evaluation is bound to the FULL frozen endpoint contract via a content hash in the
+             family identity (not just name/version);
+  r1.8  SUPPORTED is direction-aware;
+  r1.9/r2.B canonical numeric safety: NaN/inf rejected; `canonical_json` itself rejects non-string
+             mapping keys recursively (no reliance on callers entering through `_deep_freeze`);
+  r2.2  `FamilySummary` self-validates (non-neg ints, effective_n<=n_matched, bucket sum==n_eligible,
+         n_eligible<=n_candidates) — fabricated summaries cannot exist;
+  r2.3  `EvaluatedFinding.__post_init__` enforces the full evaluation invariants — direct
+         construction cannot produce SUPPORTED without evidence or a mismatched family/summary;
+  r2.4  candidate supersession is lineage-bound (same observation, prior must be current) and no
+         outcome may attach to a superseded candidate;
+  r2.5  `summarize_family` validates each (candidate, outcome) pair binds the same candidate_id;
+  r2.A  subject/schedule corrections removed from the candidate allow-list (they need governed
+         observation supersession, a later slice);
+  r2.C  `record_seq` is governed store-wide (unique across observations/candidates/outcomes/findings).
 
 The statistical FLOORS of contract §7 (exact MEPI value, power/effective-n, correction method)
 are DEFERRED (contract §10 Q3) and NOT implemented here — only their structural guardrails are.
@@ -64,11 +78,11 @@ class HindsightError(ResearchContractError):
 
 
 class SupersessionError(ResearchContractError):
-    """A correction/supersession linkage rule was violated."""
+    """A correction/supersession/storage linkage rule was violated."""
 
 
 class EvaluationError(ResearchContractError):
-    """A family-evaluation guardrail was violated (e.g. an edge from a single case)."""
+    """A family-summary or family-evaluation invariant was violated."""
 
 
 class BindingError(ResearchContractError):
@@ -112,20 +126,18 @@ class Completeness(enum.Enum):
 
 
 class CaseTrackState(enum.Enum):
-    """Per-case lifecycle (contract §2)."""
     OBSERVED = "OBSERVED"
     MEASUREMENT_DEFINED = "MEASUREMENT_DEFINED"
     OUTCOME_CAPTURED = "OUTCOME_CAPTURED"
-    DESCRIPTIVE_NOTE = "DESCRIPTIVE_NOTE"   # frozen after event / incomplete § 3 — never graded
+    DESCRIPTIVE_NOTE = "DESCRIPTIVE_NOTE"
 
 
 class CaseState(enum.Enum):
-    """Descriptive state of ONE case's measurement (contract §4) — NOT a win/loss grade."""
     MEASURED = "MEASURED"
     PARTIAL = "PARTIAL"
     PENDING = "PENDING"
-    UNMEASURABLE = "UNMEASURABLE"   # eligible event, endpoint cannot be measured — COUNTED (Rev 2.1 #1)
-    INVALIDATED = "INVALIDATED"     # frozen pre-event eligibility failure ONLY (contract §2)
+    UNMEASURABLE = "UNMEASURABLE"
+    INVALIDATED = "INVALIDATED"
 
 
 class FamilyState(enum.Enum):
@@ -155,12 +167,17 @@ def _check_type(value: Any, typ: type, name: str) -> None:
 
 
 def _check_real(value: Any, name: str) -> None:
-    """A strict, FINITE real number: a float (not int, not bool, not a string, not NaN/inf)."""
     _reject_bool(value, name)
     if not isinstance(value, float):
         raise TypeStrictError(f"{name}: expected float, got {type(value).__name__} (no coercion)")
     if not math.isfinite(value):
         raise TypeStrictError(f"{name}: non-finite float (NaN/inf) is not allowed")
+
+
+def _check_nonneg_int(value: Any, name: str) -> None:
+    _check_type(value, int, name)
+    if value < 0:
+        raise TypeStrictError(f"{name}: must be a non-negative integer")
 
 
 def _check_aware(value: Any, name: str) -> None:
@@ -187,20 +204,8 @@ def _str_tuple(value: Any, name: str) -> tuple:
     return tuple(out)
 
 
-def _check_seq_int(value: Any, name: str) -> None:
-    _check_type(value, int, name)
-    if value < 0:
-        raise TypeStrictError(f"{name}: record_seq must be >= 0")
-
-
 def _deep_freeze(value: Any, name: str) -> Any:
-    """Deep-copy + freeze a governed value into an immutable structure (blocker #1, #9).
-
-    Scalars pass through (NaN/inf rejected); lists/tuples become tuples; mappings become
-    read-only `MappingProxyType` over a *fresh* dict whose keys MUST be strings (no key
-    coercion / `1` vs `"1"` collisions). The result shares no reference with the caller's input,
-    so post-construction mutation of the caller's object cannot change the record's content.
-    """
+    """Deep-copy + freeze a governed value into an immutable structure (r1.1, r1.9)."""
     if value is None or isinstance(value, bool):
         return value
     if isinstance(value, float):
@@ -236,8 +241,17 @@ def _canonicalize(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Mapping):
-        # keys are guaranteed strings by _deep_freeze; sort for determinism.
-        return {k: _canonicalize(v) for k, v in sorted(value.items())}
+        out = {}
+        for k, v in value.items():
+            # canonical_json must itself reject non-string keys, recursively (r2.B) — never rely
+            # on the value having passed through _deep_freeze.
+            if not isinstance(k, str):
+                raise TypeStrictError(
+                    f"canonicalize: mapping keys must be strings (no key coercion), "
+                    f"got {type(k).__name__}"
+                )
+            out[k] = _canonicalize(v)
+        return {k: out[k] for k in sorted(out)}
     if isinstance(value, (list, tuple)):
         return [_canonicalize(v) for v in value]
     if hasattr(value, "canonical_dict"):
@@ -246,7 +260,8 @@ def _canonicalize(value: Any) -> Any:
 
 
 def canonical_json(obj: Any) -> str:
-    """Stable JSON: sorted keys, fixed separators, ISO-8601 datetimes, NEVER NaN/Infinity."""
+    """Stable JSON: sorted keys, fixed separators, ISO-8601 datetimes, NEVER NaN/Infinity, and
+    string keys only (rejects non-string keys recursively, independent of _deep_freeze)."""
     return json.dumps(_canonicalize(obj), sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False)
 
@@ -292,7 +307,6 @@ class EventIdentity:
 
 @dataclass(frozen=True)
 class TemporalFacts:
-    """The four distinct temporal concepts (contract §3). No clock substitutes for another."""
     observed_at: datetime
     event_effective: datetime
     bk_captured: datetime
@@ -304,19 +318,17 @@ class TemporalFacts:
         _check_aware(self.observed_at, "observed_at")
         _check_aware(self.event_effective, "event_effective")
         _check_aware(self.bk_captured, "bk_captured")
-        _check_seq_int(self.record_seq, "record_seq")
+        _check_nonneg_int(self.record_seq, "record_seq")
         _check_type(self.source_updated_status, SourceUpdatedStatus, "source_updated_status")
         if self.source_updated_status is SourceUpdatedStatus.PRESENT:
             _check_aware(self.source_updated, "source_updated")
         elif self.source_updated is not None:
             raise TemporalError("source_updated must be None unless status is PRESENT (no backfill)")
-        # capture can never precede the human observation (blocker #2).
         if self.bk_captured < self.observed_at:
             raise TemporalError("bk_captured must be >= observed_at (capture-before-observation)")
 
     @property
     def frozen_before_event(self) -> bool:
-        # the full pre-event ordering: observed_at <= bk_captured < event_effective.
         return self.observed_at <= self.bk_captured < self.event_effective
 
     def canonical_dict(self) -> dict:
@@ -351,6 +363,11 @@ class PrimaryEndpoint:
         return {"name": self.name, "version": self.version, "direction": self.direction.value,
                 "mepi": self.mepi, "unit": self.unit}
 
+    @property
+    def contract_hash(self) -> str:
+        """sha256 over the COMPLETE endpoint contract (name+version+direction+mepi+unit)."""
+        return content_hash(self)
+
 
 @dataclass(frozen=True)
 class BaselineMethod:
@@ -369,28 +386,34 @@ class BaselineMethod:
 
 @dataclass(frozen=True)
 class FamilyKey:
-    """Keyed ONLY by the governed family definition — the entity id is NOT part of it (§1)."""
+    """Keyed by the governed family definition — entity id is NOT part of it (§1). The endpoint is
+    pinned by its COMPLETE contract hash (r2.1), so same name/version with a different direction,
+    MEPI or unit is a DIFFERENT family (different question), never a silent substitution."""
     category: Category
     sub_label: SubLabel
     endpoint_name: str
     endpoint_version: str
+    endpoint_contract_hash: str
     baseline_method: str
     baseline_version: str
 
     def __post_init__(self) -> None:
         _check_type(self.category, Category, "family.category")
         _check_type(self.sub_label, SubLabel, "family.sub_label")
-        for n in ("endpoint_name", "endpoint_version", "baseline_method", "baseline_version"):
+        for n in ("endpoint_name", "endpoint_version", "endpoint_contract_hash",
+                  "baseline_method", "baseline_version"):
             _check_nonempty_str(getattr(self, n), f"family.{n}")
 
     @property
     def key(self) -> str:
         return "|".join([self.category.value, self.sub_label.value, self.endpoint_name,
-                         self.endpoint_version, self.baseline_method, self.baseline_version])
+                         self.endpoint_version, self.endpoint_contract_hash,
+                         self.baseline_method, self.baseline_version])
 
     def canonical_dict(self) -> dict:
         return {"category": self.category.value, "sub_label": self.sub_label.value,
                 "endpoint_name": self.endpoint_name, "endpoint_version": self.endpoint_version,
+                "endpoint_contract_hash": self.endpoint_contract_hash,
                 "baseline_method": self.baseline_method, "baseline_version": self.baseline_version}
 
 
@@ -421,7 +444,7 @@ class UserObservation:
         _check_aware(self.bk_captured, "bk_captured")
         if self.bk_captured < self.observed_at:
             raise TemporalError("bk_captured must be >= observed_at (capture-before-observation)")
-        _check_seq_int(self.record_seq, "record_seq")
+        _check_nonneg_int(self.record_seq, "record_seq")
         object.__setattr__(self, "sources", _str_tuple(self.sources, "sources"))
         _check_type(self.acted, bool, "acted")
         if self.acted_journal_ref is not None:
@@ -429,7 +452,7 @@ class UserObservation:
         if not self.acted and self.acted_journal_ref is not None:
             raise ResearchContractError("acted_journal_ref present but acted is False")
         if self.supersedes is not None:
-            _check_seq_int(self.supersedes, "supersedes")
+            _check_nonneg_int(self.supersedes, "supersedes")
 
     def canonical_dict(self) -> dict:
         return {
@@ -450,7 +473,6 @@ class UserObservation:
 # --------------------------------------------------------------------------- ResearchCandidate
 @dataclass(frozen=True)
 class ResearchCandidate:
-    """The testable form, frozen BEFORE the event. Content-hashed; never edited (§3)."""
     candidate_id: str
     observation_id: str
     observer: str
@@ -494,19 +516,17 @@ class ResearchCandidate:
             _check_type(self.primary_endpoint, PrimaryEndpoint, "primary_endpoint")
         if not isinstance(self.pre_event_snapshot, Mapping):
             raise TypeStrictError("pre_event_snapshot: expected a mapping")
-        # deep-freeze the governed mapping so a mutated caller object cannot change this record.
         object.__setattr__(self, "pre_event_snapshot",
                            _deep_freeze(dict(self.pre_event_snapshot), "pre_event_snapshot"))
         _check_type(self.acted, bool, "acted")
         object.__setattr__(self, "sources", _str_tuple(self.sources, "sources"))
         if self.supersedes is not None:
-            _check_seq_int(self.supersedes, "supersedes")
+            _check_nonneg_int(self.supersedes, "supersedes")
         if self.temporal.event_effective != self.event.event_effective:
             raise TemporalError("temporal.event_effective must equal event.event_effective")
 
-        frozen_before = self.temporal.frozen_before_event  # observed_at <= bk_captured < event
+        frozen_before = self.temporal.frozen_before_event
         object.__setattr__(self, "frozen_before_event", frozen_before)
-
         reasons = []
         if not frozen_before:
             reasons.append("frozen_after_event")
@@ -530,7 +550,8 @@ class ResearchCandidate:
         if self.primary_endpoint is None:
             return None
         return FamilyKey(self.category, self.sub_label, self.primary_endpoint.name,
-                         self.primary_endpoint.version, self.baseline.method, self.baseline.version)
+                         self.primary_endpoint.version, self.primary_endpoint.contract_hash,
+                         self.baseline.method, self.baseline.version)
 
     @property
     def case_identity(self) -> str:
@@ -547,27 +568,21 @@ class ResearchCandidate:
             "eligibility_conditions": list(self.eligibility_conditions),
             "invalidation_conditions": list(self.invalidation_conditions),
             "primary_endpoint": self.primary_endpoint.canonical_dict() if self.primary_endpoint else None,
-            "pre_event_snapshot": {k: _canonicalize(v) for k, v in sorted(self.pre_event_snapshot.items())},
+            "pre_event_snapshot": {k: _canonicalize(v) for k, v in self.pre_event_snapshot.items()},
             "acted": self.acted, "sources": list(self.sources), "supersedes": self.supersedes,
         }
 
 
-# the frozen before-event fields a correction may change — nothing else (blocker #4).
-_SUPERSEDE_ALLOWED = frozenset({"candidate_id", "entity", "event", "baseline", "primary_endpoint"})
+# subject/schedule corrections need governed OBSERVATION supersession (a later slice), so they are
+# NOT in this allow-list — only the measurement plan/baseline may be corrected pre-event (r2.A).
+_SUPERSEDE_ALLOWED = frozenset({"candidate_id", "baseline", "primary_endpoint"})
 
 
 def supersede_candidate(prior: ResearchCandidate, *, new_temporal: TemporalFacts,
                         **changes: Any) -> ResearchCandidate:
-    """Produce a NEW candidate correcting `prior`, linked by record_seq (§6).
-
-    Only an explicit ALLOW-LIST of frozen fields may change (`candidate_id`, `entity`, `event`,
-    `baseline`, `primary_endpoint`); any other key — including `supersedes`, `category`,
-    `thesis`, `temporal` — is rejected, so a correction cannot silently re-aim the record
-    (blocker #4). `supersedes` is set to the prior's record_seq by the engine, never by caller.
-
-    A numeric MEPI may NEVER be backfilled to rescue a seed after the event (Rev 2.1 #4, §5):
-    adding/changing `primary_endpoint` with a capture at/after the (new) event is a HindsightError.
-    """
+    """Produce a NEW candidate correcting `prior`, linked by record_seq (§6). Only the explicit
+    allow-list {candidate_id, baseline, primary_endpoint} may change; any other key is rejected.
+    A numeric MEPI may NEVER be backfilled post-event (Rev 2.1 #4, §5)."""
     _check_type(prior, ResearchCandidate, "prior")
     _check_type(new_temporal, TemporalFacts, "new_temporal")
     unknown = set(changes) - _SUPERSEDE_ALLOWED
@@ -589,10 +604,9 @@ def supersede_candidate(prior: ResearchCandidate, *, new_temporal: TemporalFacts
     return ResearchCandidate(
         candidate_id=changes.get("candidate_id", prior.candidate_id + "+corr"),
         observation_id=prior.observation_id, observer=prior.observer, category=prior.category,
-        sub_label=prior.sub_label, entity=changes.get("entity", prior.entity),
-        event=changes.get("event", prior.event), temporal=new_temporal, thesis=prior.thesis,
-        baseline=changes.get("baseline", prior.baseline), assumptions=prior.assumptions,
-        eligibility_conditions=prior.eligibility_conditions,
+        sub_label=prior.sub_label, entity=prior.entity, event=prior.event, temporal=new_temporal,
+        thesis=prior.thesis, baseline=changes.get("baseline", prior.baseline),
+        assumptions=prior.assumptions, eligibility_conditions=prior.eligibility_conditions,
         invalidation_conditions=prior.invalidation_conditions, primary_endpoint=new_endpoint,
         pre_event_snapshot=dict(prior.pre_event_snapshot), acted=prior.acted, sources=prior.sources,
         supersedes=prior.temporal.record_seq,
@@ -600,11 +614,7 @@ def supersede_candidate(prior: ResearchCandidate, *, new_temporal: TemporalFacts
 
 
 def bind_candidate_to_observation(candidate: ResearchCandidate, observation: UserObservation) -> None:
-    """A candidate must not claim an observation id while changing its subject (blocker #3).
-
-    observer, entity, event, thesis and acted state must match the referenced observation, and
-    the observation's sources must be preserved in the candidate's source lineage.
-    """
+    """A candidate must not claim an observation id while changing its subject (r1.3)."""
     if candidate.observation_id != observation.observation_id:
         raise BindingError("candidate.observation_id does not reference this observation")
     mismatches = []
@@ -630,7 +640,6 @@ def bind_candidate_to_observation(candidate: ResearchCandidate, observation: Use
 # --------------------------------------------------------------------------- CandidateOutcome
 @dataclass(frozen=True)
 class CandidateOutcome:
-    """One measured data point, appended AFTER the event. Append-only, versioned (§4)."""
     outcome_id: str
     candidate_id: str
     version: int
@@ -654,7 +663,7 @@ class CandidateOutcome:
             raise TypeStrictError("version must be >= 1")
         _check_type(self.case_state, CaseState, "case_state")
         _check_aware(self.bk_captured, "bk_captured")
-        _check_seq_int(self.record_seq, "record_seq")
+        _check_nonneg_int(self.record_seq, "record_seq")
         if self.observed_endpoint_value is not None:
             _check_real(self.observed_endpoint_value, "observed_endpoint_value")
         if self.baseline_expected_value is not None:
@@ -665,14 +674,13 @@ class CandidateOutcome:
                 raise TypeStrictError(f"{nm}: expected a mapping")
         for k, v in self.completeness.items():
             _check_type(v, Completeness, f"completeness[{k}]")
-        # deep-freeze the governed mappings (blocker #1, #9).
         object.__setattr__(self, "completeness", _deep_freeze(dict(self.completeness), "completeness"))
         object.__setattr__(self, "covariates", _deep_freeze(dict(self.covariates), "covariates"))
         object.__setattr__(self, "descriptive", _deep_freeze(dict(self.descriptive), "descriptive"))
         if self.measurement_receipt_ref is not None:
             _check_nonempty_str(self.measurement_receipt_ref, "measurement_receipt_ref")
         if self.supersedes is not None:
-            _check_seq_int(self.supersedes, "supersedes")
+            _check_nonneg_int(self.supersedes, "supersedes")
         self._validate_case_state()
 
     def _validate_case_state(self) -> None:
@@ -680,7 +688,6 @@ class CandidateOutcome:
         both_present = (self.observed_endpoint_value is not None
                         and self.baseline_expected_value is not None)
         any_unresolved = any(v is not Completeness.COMPLETE for v in self.completeness.values())
-
         if st is CaseState.MEASURED:
             if not both_present:
                 raise EligibilityError("MEASURED requires observed + baseline endpoint values")
@@ -708,7 +715,6 @@ class CandidateOutcome:
                 raise EligibilityError("INVALIDATED requires an eligibility-failure reason")
 
     def validate_invalidation_against_candidate(self, candidate: "ResearchCandidate") -> None:
-        """INVALIDATED is reserved SOLELY for a frozen pre-event eligibility failure (§2)."""
         if self.case_state is not CaseState.INVALIDATED:
             return
         reason = self.invalidation_reason
@@ -732,7 +738,6 @@ class CandidateOutcome:
 
     @property
     def counts_in_matched_sample(self) -> bool:
-        # ONLY a fully MEASURED case enters the matched sample / effective-n (blocker #6).
         return self.case_state is CaseState.MEASURED
 
     @property
@@ -750,26 +755,44 @@ class CandidateOutcome:
             "bk_captured": self.bk_captured.isoformat(), "record_seq": self.record_seq,
             "observed_endpoint_value": self.observed_endpoint_value,
             "baseline_expected_value": self.baseline_expected_value,
-            "completeness": {k: v.value for k, v in sorted(self.completeness.items())},
-            "covariates": {k: _canonicalize(v) for k, v in sorted(self.covariates.items())},
-            "descriptive": {k: _canonicalize(v) for k, v in sorted(self.descriptive.items())},
+            "completeness": {k: v.value for k, v in self.completeness.items()},
+            "covariates": {k: _canonicalize(v) for k, v in self.covariates.items()},
+            "descriptive": {k: _canonicalize(v) for k, v in self.descriptive.items()},
             "measurement_receipt_ref": self.measurement_receipt_ref,
             "invalidation_reason": self.invalidation_reason, "supersedes": self.supersedes,
         }
 
 
-# --------------------------------------------------------------------------- family evaluation
+# --------------------------------------------------------------------------- family summary
 @dataclass(frozen=True)
 class FamilySummary:
+    """A self-validating count of a family's cases (r2.2). An inconsistent or fabricated summary
+    CANNOT be constructed, so it cannot be passed to an evaluation to manufacture a finding."""
     family_key: FamilyKey
     n_candidates: int
     n_eligible: int
-    effective_n: int           # distinct entities among MEASURED cases only (blocker #6)
+    effective_n: int           # distinct entities among MEASURED cases only
     n_matched: int             # MEASURED only
-    n_partial: int             # PARTIAL — counted separately, NOT in the matched sample
+    n_partial: int
     n_pending: int
     n_unmeasurable: int
     n_invalidated: int
+
+    def __post_init__(self) -> None:
+        _check_type(self.family_key, FamilyKey, "family_key")
+        for n in ("n_candidates", "n_eligible", "effective_n", "n_matched", "n_partial",
+                  "n_pending", "n_unmeasurable", "n_invalidated"):
+            _check_nonneg_int(getattr(self, n), n)
+        if self.effective_n > self.n_matched:
+            raise EvaluationError("effective_n cannot exceed n_matched")
+        bucket_sum = (self.n_matched + self.n_partial + self.n_pending
+                      + self.n_unmeasurable + self.n_invalidated)
+        if bucket_sum != self.n_eligible:
+            raise EvaluationError(
+                f"state buckets ({bucket_sum}) must sum to n_eligible ({self.n_eligible})"
+            )
+        if self.n_eligible > self.n_candidates:
+            raise EvaluationError("n_eligible cannot exceed n_candidates")
 
     def canonical_dict(self) -> dict:
         d = {"family_key": self.family_key.key}
@@ -788,6 +811,12 @@ def summarize_family(family_key: FamilyKey, cases: Sequence[tuple]) -> FamilySum
         _check_type(cand, ResearchCandidate, "case candidate")
         if cand.family_key is None or cand.family_key.key != family_key.key:
             raise EvaluationError("a case does not belong to this family key")
+        if outcome is not None:
+            _check_type(outcome, CandidateOutcome, "case outcome")
+            if outcome.candidate_id != cand.candidate_id:
+                raise EvaluationError(
+                    "case/outcome pairing mismatch: outcome.candidate_id != candidate.candidate_id"
+                )
         n_candidates += 1
         if not cand.eligible_for_sample:
             continue
@@ -795,10 +824,9 @@ def summarize_family(family_key: FamilyKey, cases: Sequence[tuple]) -> FamilySum
         if outcome is None:
             n_pending += 1
             continue
-        _check_type(outcome, CandidateOutcome, "case outcome")
         if outcome.case_state is CaseState.INVALIDATED:
             n_invalidated += 1
-        elif outcome.counts_in_matched_sample:         # MEASURED only
+        elif outcome.counts_in_matched_sample:
             n_matched += 1
             matched_entities.add(cand.entity.canonical_id)
         elif outcome.counts_in_partial:
@@ -841,96 +869,13 @@ class EvidenceBundle:
             "missingness_rule")}
 
 
-@dataclass(frozen=True)
-class EvaluatedFinding:
-    finding_id: str
-    family_key: FamilyKey
-    status: FindingStatus
-    summary: FamilySummary
-    endpoint_mepi: float
-    endpoint_direction: Direction
-    bk_captured: datetime
-    record_seq: int
-    evidence: Optional[EvidenceBundle] = None
-    supersedes: Optional[int] = None
-    authority: str = field(default=AUTHORITY, init=False)
-    content_hash: str = field(default="", init=False)
-
-    def __post_init__(self) -> None:
-        _check_nonempty_str(self.finding_id, "finding_id")
-        _check_type(self.family_key, FamilyKey, "family_key")
-        _check_type(self.status, FindingStatus, "status")
-        _check_type(self.summary, FamilySummary, "summary")
-        _check_real(self.endpoint_mepi, "endpoint_mepi")
-        _check_type(self.endpoint_direction, Direction, "endpoint_direction")
-        _check_aware(self.bk_captured, "bk_captured")
-        _check_seq_int(self.record_seq, "record_seq")
-        if self.supersedes is not None:
-            _check_seq_int(self.supersedes, "supersedes")
-        object.__setattr__(self, "content_hash", content_hash(self))
-
-    def canonical_dict(self) -> dict:
-        return {
-            "finding_id": self.finding_id, "family_key": self.family_key.key,
-            "status": self.status.value, "summary": self.summary.canonical_dict(),
-            "endpoint_mepi": self.endpoint_mepi, "endpoint_direction": self.endpoint_direction.value,
-            "bk_captured": self.bk_captured.isoformat(), "record_seq": self.record_seq,
-            "evidence": self.evidence.canonical_dict() if self.evidence else None,
-            "supersedes": self.supersedes, "authority": self.authority,
-        }
-
-
-def evaluate_family(*, finding_id: str, endpoint: PrimaryEndpoint, summary: FamilySummary,
-                    proposed_status: FindingStatus, bk_captured: datetime, record_seq: int,
-                    evidence: Optional[EvidenceBundle] = None,
-                    supersedes: Optional[int] = None) -> EvaluatedFinding:
-    """Resolve a family to an immutable EvaluatedFinding under the structural guardrails (§7)."""
-    _check_type(endpoint, PrimaryEndpoint, "endpoint")
-    _check_type(summary, FamilySummary, "summary")
-    _check_type(proposed_status, FindingStatus, "proposed_status")
-
-    # bind the evaluation to the FROZEN family contract — no caller endpoint substitution (blocker #7).
-    fk = summary.family_key
-    if endpoint.name != fk.endpoint_name or endpoint.version != fk.endpoint_version:
-        raise EvaluationError(
-            "endpoint name/version must match the family key (no endpoint substitution at evaluation)"
-        )
-
-    def _finding(status: FindingStatus, ev: Optional[EvidenceBundle]) -> EvaluatedFinding:
-        return EvaluatedFinding(
-            finding_id=finding_id, family_key=fk, status=status, summary=summary,
-            endpoint_mepi=endpoint.mepi, endpoint_direction=endpoint.direction,
-            bk_captured=bk_captured, record_seq=record_seq, evidence=ev, supersedes=supersedes,
-        )
-
-    if summary.effective_n < STRUCTURAL_MIN_EFFECTIVE_N:
-        if proposed_status is not FindingStatus.INCONCLUSIVE:
-            raise EvaluationError(
-                f"effective_n={summary.effective_n} < {STRUCTURAL_MIN_EFFECTIVE_N}: below the "
-                f"structural floor a family can only be INCONCLUSIVE (one game cannot make an edge)"
-            )
-        return _finding(FindingStatus.INCONCLUSIVE, None)
-
-    if proposed_status is FindingStatus.INCONCLUSIVE:
-        return _finding(FindingStatus.INCONCLUSIVE, evidence)
-
-    if evidence is None:
-        raise EvaluationError(f"{proposed_status.value} requires a complete EvidenceBundle")
-
-    if proposed_status is FindingStatus.SUPPORTED:
-        _require_supported(endpoint, evidence)
-        return _finding(FindingStatus.SUPPORTED, evidence)
-
-    return _finding(FindingStatus.UNSUPPORTED, evidence)   # recorded with equal weight
-
-
 def _require_supported(endpoint: PrimaryEndpoint, ev: EvidenceBundle) -> None:
-    """Direction-aware SUPPORTED bar (blocker #8). Significance alone never SUPPORTED (§7)."""
+    """Direction-aware SUPPORTED bar (r1.8). Significance alone never SUPPORTED (§7)."""
     if endpoint.direction is Direction.INCREASE:
         signed_effect = ev.effect_estimate
         clears_zero = ev.corrected_interval_low > 0.0
         clears_mepi = ev.corrected_interval_low > endpoint.mepi
-    else:  # DECREASE
+    else:
         signed_effect = -ev.effect_estimate
         clears_zero = ev.corrected_interval_high < 0.0
         clears_mepi = (-ev.corrected_interval_high) > endpoint.mepi
@@ -946,49 +891,145 @@ def _require_supported(endpoint: PrimaryEndpoint, ev: EvidenceBundle) -> None:
         raise EvaluationError("SUPPORTED requires a sensitivity analysis")
 
 
+@dataclass(frozen=True)
+class EvaluatedFinding:
+    """The verdict over a matched sample. IMMUTABLE and self-validating (r2.3): the constructor
+    enforces the full evaluation invariants, so direct construction cannot produce SUPPORTED
+    without evidence, a below-floor SUPPORTED, a mismatched family/summary, or an endpoint that
+    does not match the family's frozen contract. Still RESEARCH_ONLY (§7)."""
+    finding_id: str
+    family_key: FamilyKey
+    status: FindingStatus
+    summary: FamilySummary
+    endpoint: PrimaryEndpoint
+    bk_captured: datetime
+    record_seq: int
+    evidence: Optional[EvidenceBundle] = None
+    supersedes: Optional[int] = None
+    authority: str = field(default=AUTHORITY, init=False)
+    content_hash: str = field(default="", init=False)
+
+    def __post_init__(self) -> None:
+        _check_nonempty_str(self.finding_id, "finding_id")
+        _check_type(self.family_key, FamilyKey, "family_key")
+        _check_type(self.status, FindingStatus, "status")
+        _check_type(self.summary, FamilySummary, "summary")
+        _check_type(self.endpoint, PrimaryEndpoint, "endpoint")
+        _check_aware(self.bk_captured, "bk_captured")
+        _check_nonneg_int(self.record_seq, "record_seq")
+        if self.supersedes is not None:
+            _check_nonneg_int(self.supersedes, "supersedes")
+        if self.evidence is not None:
+            _check_type(self.evidence, EvidenceBundle, "evidence")
+
+        # family identity binding — the finding, its summary and its endpoint must all agree.
+        if self.family_key.key != self.summary.family_key.key:
+            raise EvaluationError("finding.family_key must equal summary.family_key")
+        if self.endpoint.contract_hash != self.family_key.endpoint_contract_hash:
+            raise EvaluationError(
+                "endpoint contract does not match the family identity (no endpoint substitution)"
+            )
+        # status invariants (one game cannot make an edge; SUPPORTED needs the full bar).
+        if self.summary.effective_n < STRUCTURAL_MIN_EFFECTIVE_N and self.status is not FindingStatus.INCONCLUSIVE:
+            raise EvaluationError(
+                f"effective_n={self.summary.effective_n} < {STRUCTURAL_MIN_EFFECTIVE_N}: below the "
+                f"structural floor a family can only be INCONCLUSIVE (one game cannot make an edge)"
+            )
+        if self.status in (FindingStatus.SUPPORTED, FindingStatus.UNSUPPORTED) and self.evidence is None:
+            raise EvaluationError(f"{self.status.value} requires a complete EvidenceBundle")
+        if self.status is FindingStatus.SUPPORTED:
+            _require_supported(self.endpoint, self.evidence)
+        object.__setattr__(self, "content_hash", content_hash(self))
+
+    def canonical_dict(self) -> dict:
+        return {
+            "finding_id": self.finding_id, "family_key": self.family_key.key,
+            "status": self.status.value, "summary": self.summary.canonical_dict(),
+            "endpoint": self.endpoint.canonical_dict(),
+            "bk_captured": self.bk_captured.isoformat(), "record_seq": self.record_seq,
+            "evidence": self.evidence.canonical_dict() if self.evidence else None,
+            "supersedes": self.supersedes, "authority": self.authority,
+        }
+
+
+def evaluate_family(*, finding_id: str, endpoint: PrimaryEndpoint, summary: FamilySummary,
+                    proposed_status: FindingStatus, bk_captured: datetime, record_seq: int,
+                    evidence: Optional[EvidenceBundle] = None,
+                    supersedes: Optional[int] = None) -> EvaluatedFinding:
+    """Ergonomic factory. All governance lives in `EvaluatedFinding.__post_init__`, so this is a
+    thin constructor call — a direct `EvaluatedFinding(...)` is equally safe (r2.3)."""
+    return EvaluatedFinding(
+        finding_id=finding_id, family_key=summary.family_key, status=proposed_status,
+        summary=summary, endpoint=endpoint, bk_captured=bk_captured, record_seq=record_seq,
+        evidence=evidence, supersedes=supersedes,
+    )
+
+
 # --------------------------------------------------------------------------- in-memory store
 class InMemoryResearchStore:
-    """Isolated, process-local store for fixtures/tests ONLY. Writes NOTHING to disk."""
+    """Isolated, process-local store for fixtures/tests ONLY. Writes NOTHING to disk.
+
+    `record_seq` is governed STORE-WIDE (r2.C): it is unique across observations, candidates,
+    outcomes and findings, giving one immutable monotonic ordering key for the whole store.
+    """
 
     def __init__(self) -> None:
         self._seq = 0
+        self._seen_seqs: set = set()
         self.observations: dict = {}
-        self.candidates: dict = {}            # candidate_id -> ResearchCandidate (append-only)
-        self._candidate_by_seq: dict = {}     # record_seq -> ResearchCandidate
+        self.candidates: dict = {}
+        self._candidate_by_seq: dict = {}
         self._superseded_candidate_seqs: set = set()
-        self._outcome_versions: dict = {}     # candidate_id -> list[CandidateOutcome]
-        self._finding_versions: dict = {}     # family key str -> list[EvaluatedFinding]
+        self._outcome_versions: dict = {}
+        self._finding_versions: dict = {}
 
     def next_seq(self) -> int:
         self._seq += 1
+        while self._seq in self._seen_seqs:
+            self._seq += 1
         return self._seq
+
+    def _claim_seq(self, seq: int) -> None:
+        if seq in self._seen_seqs:
+            raise SupersessionError(
+                f"record_seq {seq} already used in this store (store-wide monotonic ordering)"
+            )
+        self._seen_seqs.add(seq)
 
     # observations -----------------------------------------------------------
     def record_observation(self, obs: UserObservation) -> UserObservation:
         _check_type(obs, UserObservation, "obs")
         if obs.observation_id in self.observations:
             raise SupersessionError("observation_id already recorded; corrections supersede by id")
+        self._claim_seq(obs.record_seq)
         self.observations[obs.observation_id] = obs
         return obs
 
-    # candidates (append-only chain, exactly one current per lineage) --------
+    # candidates -------------------------------------------------------------
     def freeze_candidate(self, cand: ResearchCandidate) -> ResearchCandidate:
         _check_type(cand, ResearchCandidate, "cand")
         obs = self.observations.get(cand.observation_id)
         if obs is None:
             raise ResearchContractError("cannot freeze a candidate for an unknown observation")
-        bind_candidate_to_observation(cand, obs)                         # blocker #3
-        if cand.candidate_id in self.candidates:                        # blocker #5
+        bind_candidate_to_observation(cand, obs)
+        if cand.candidate_id in self.candidates:
             raise SupersessionError("duplicate candidate_id (storage is append-only)")
-        if cand.temporal.record_seq in self._candidate_by_seq:
-            raise SupersessionError("duplicate candidate record_seq")
         if cand.supersedes is not None:
             prior = self._candidate_by_seq.get(cand.supersedes)
             if prior is None:
                 raise SupersessionError("superseded candidate record_seq is unknown")
+            # lineage-bound: a candidate may only supersede the CURRENT candidate of the SAME
+            # observation lineage (r2.4).
+            if prior.observation_id != cand.observation_id:
+                raise SupersessionError("supersession must stay within the same observation lineage")
+            if not self.is_current_candidate(prior):
+                raise SupersessionError("can only supersede the current candidate in the lineage")
             if cand.temporal.record_seq <= prior.temporal.record_seq:
                 raise SupersessionError("a superseding candidate needs a greater record_seq")
-            self._superseded_candidate_seqs.add(prior.temporal.record_seq)
+        self._claim_seq(cand.temporal.record_seq)
+        if cand.supersedes is not None:
+            self._superseded_candidate_seqs.add(self._candidate_by_seq[cand.supersedes]
+                                                .temporal.record_seq)
         self.candidates[cand.candidate_id] = cand
         self._candidate_by_seq[cand.temporal.record_seq] = cand
         return cand
@@ -996,13 +1037,14 @@ class InMemoryResearchStore:
     def is_current_candidate(self, cand: ResearchCandidate) -> bool:
         return cand.temporal.record_seq not in self._superseded_candidate_seqs
 
-    # outcomes (append-only version chain, exactly one current) --------------
+    # outcomes ---------------------------------------------------------------
     def append_outcome(self, outcome: CandidateOutcome) -> CandidateOutcome:
         _check_type(outcome, CandidateOutcome, "outcome")
         cand = self.candidates.get(outcome.candidate_id)
         if cand is None:
             raise ResearchContractError("cannot attach an outcome to an unknown candidate")
-        # an outcome may not be captured before its event is effective (blocker #2).
+        if not self.is_current_candidate(cand):
+            raise SupersessionError("cannot attach an outcome to a superseded candidate")
         if outcome.bk_captured < cand.event.event_effective:
             raise TemporalError("outcome bk_captured precedes the event (not yet effective)")
         outcome.validate_invalidation_against_candidate(cand)
@@ -1020,6 +1062,7 @@ class InMemoryResearchStore:
                 raise SupersessionError("first outcome version must be 1")
             if outcome.supersedes is not None:
                 raise SupersessionError("first outcome version supersedes nothing")
+        self._claim_seq(outcome.record_seq)
         chain.append(outcome)
         return outcome
 
@@ -1030,7 +1073,7 @@ class InMemoryResearchStore:
     def outcome_history(self, candidate_id: str) -> tuple:
         return tuple(self._outcome_versions.get(candidate_id, ()))
 
-    # findings (append-only, one current, INCONCLUSIVE never rewinds) --------
+    # findings ---------------------------------------------------------------
     def record_finding(self, finding: EvaluatedFinding) -> EvaluatedFinding:
         _check_type(finding, EvaluatedFinding, "finding")
         chain = self._finding_versions.setdefault(finding.family_key.key, [])
@@ -1043,6 +1086,7 @@ class InMemoryResearchStore:
         else:
             if finding.supersedes is not None:
                 raise SupersessionError("first finding supersedes nothing")
+        self._claim_seq(finding.record_seq)
         chain.append(finding)
         return finding
 
@@ -1051,7 +1095,6 @@ class InMemoryResearchStore:
         return chain[-1] if chain else None
 
     def family_cases(self, family_key: FamilyKey) -> list:
-        """(candidate, current outcome) pairs for CURRENT candidates mapping to this family."""
         out = []
         for cand in self.candidates.values():
             if not self.is_current_candidate(cand):

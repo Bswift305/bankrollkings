@@ -495,27 +495,26 @@ def test_supersession_allowlist_and_chain():
     expect_raises(rc.SupersessionError, lambda: rc.supersede_candidate(
         seed, new_temporal=temporal(event=ev.event_effective), supersedes=None),
         "caller-supplied supersedes rejected")
-    # append-only candidate storage + superseding chain.
+    # append-only candidate storage + superseding chain (high explicit seqs to avoid the shared counter).
     store = rc.InMemoryResearchStore()
     store.record_observation(observation("o-q", ent, ev))
-    prior = mk_candidate("c-q0", store.observations["o-q"], seq=1000)
+    prior = mk_candidate("c-q0", store.observations["o-q"], seq=900000)
     store.freeze_candidate(prior)
     expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(
-        mk_candidate("c-q0", store.observations["o-q"], seq=1001)),
+        mk_candidate("c-q0", store.observations["o-q"], seq=900001)),
         "duplicate candidate_id rejected (append-only storage)")
-    corr = rc.supersede_candidate(prior, new_temporal=temporal(event=ev.event_effective, seq=1002),
+    corr = rc.supersede_candidate(prior, new_temporal=temporal(event=ev.event_effective, seq=900002),
                                   candidate_id="c-q1")
     store.freeze_candidate(corr)
     check(not store.is_current_candidate(prior) and store.is_current_candidate(corr),
           "superseding candidate becomes current; prior is superseded")
     fk = corr.family_key
     check(len(store.family_cases(fk)) == 1, "family_cases returns only the current candidate")
-    bad_seq = mk_candidate("c-q2", store.observations["o-q"], seq=999, supersedes=1002)
+    bad_seq = mk_candidate("c-q2", store.observations["o-q"], seq=899999, supersedes=900002)
     expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(bad_seq),
                   "a superseding candidate with a non-increasing record_seq rejected")
-    primary_via_override_post = rc.supersede_candidate  # adversarial: endpoint via override post-event
-    expect_raises(rc.HindsightError, lambda: primary_via_override_post(
-        prior, new_temporal=temporal(captured=POST, event=ev.event_effective, seq=1003),
+    expect_raises(rc.HindsightError, lambda: rc.supersede_candidate(
+        prior, new_temporal=temporal(captured=POST, event=ev.event_effective, seq=900003),
         primary_endpoint=endpoint(name="target_share_lift", version="v2")),
         "primary_endpoint supplied through supersede post-event rejected (MEPI backfill)")
 
@@ -631,6 +630,137 @@ def test_canonical_numeric_safety():
     check("NaN" not in js and "Infinity" not in js, "canonical JSON emits no NaN/Infinity tokens")
 
 
+def build_two_matched(prefix, ep=None, sub=rc.SubLabel.BIRTHDAY):
+    """A fresh store with two MEASURED cases (distinct entities) -> (store, fk, summary, endpoint)."""
+    store = rc.InMemoryResearchStore()
+    the_ep = ep or endpoint()
+    for i in range(2):
+        ent, ev = entity(f"{prefix}{i}", f"{prefix}{i}"), event(f"g{prefix}{i}")
+        store.record_observation(observation(f"o{prefix}{i}", ent, ev))
+        store.freeze_candidate(candidate(f"c{prefix}{i}", f"o{prefix}{i}", sub, ent, ev, ep=the_ep))
+        store.append_outcome(measured_outcome(f"m{prefix}{i}", f"c{prefix}{i}", 0.30, 0.18))
+    fk = store.candidates[f"c{prefix}0"].family_key
+    return store, fk, rc.summarize_family(fk, store.family_cases(fk)), the_ep
+
+
+# ===== blocker r2.1 =======================================================  V full endpoint contract
+def test_endpoint_full_contract_binding():
+    print("\n[V] evaluation binds the FULL endpoint contract, not just name/version")
+    _, _, s, ep = build_two_matched("v")   # endpoint() default: INCREASE, mepi 0.05
+    for bad, why in ((endpoint(mepi=0.09), "different MEPI"),
+                     (endpoint(direction=rc.Direction.DECREASE), "different direction"),
+                     (rc.PrimaryEndpoint("target_share_lift", "v1", rc.Direction.INCREASE, 0.05, "OTHER"),
+                      "different unit")):
+        expect_raises(rc.EvaluationError, lambda b=bad: rc.evaluate_family(
+            finding_id="v", endpoint=b, summary=s, proposed_status=rc.FindingStatus.SUPPORTED,
+            bk_captured=POST, record_seq=next(SEQ), evidence=full_bundle()),
+            f"same name/version but {why} rejected (no substitution)")
+
+
+# ===== blocker r2.2 =======================================================  W summary self-validation
+def test_family_summary_self_validates():
+    print("\n[W] FamilySummary cannot represent a fabricated/inconsistent count")
+    fk = candidate("c-w", "o", rc.SubLabel.BIRTHDAY, entity("p-w", "W"), event("gW")).family_key
+    expect_raises(rc.EvaluationError, lambda: rc.FamilySummary(fk, 2, 2, 999, 1, 0, 1, 0, 0),
+                  "effective_n > n_matched rejected")
+    expect_raises(rc.TypeStrictError, lambda: rc.FamilySummary(fk, 2, 2, 1, 1, -1, 2, 0, 0),
+                  "negative count rejected")
+    expect_raises(rc.TypeStrictError, lambda: rc.FamilySummary(fk, 2, 2, 1, True, 0, 1, 0, 0),
+                  "boolean count rejected")
+    expect_raises(rc.EvaluationError, lambda: rc.FamilySummary(fk, 5, 3, 1, 1, 0, 0, 0, 0),
+                  "state buckets not summing to n_eligible rejected")
+    expect_raises(rc.EvaluationError, lambda: rc.FamilySummary(fk, 1, 2, 1, 1, 0, 1, 0, 0),
+                  "n_eligible > n_candidates rejected")
+    ok = rc.FamilySummary(fk, 3, 2, 1, 1, 1, 0, 0, 0)
+    check(ok.n_matched == 1 and ok.n_partial == 1, "a consistent summary constructs")
+
+
+# ===== blocker r2.3 =======================================================  X finding governance
+def test_finding_constructor_governed():
+    print("\n[X] EvaluatedFinding constructor enforces full invariants (no evaluator bypass)")
+    _, fk, s2, ep = build_two_matched("x")
+    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
+        finding_id="x1", family_key=fk, status=rc.FindingStatus.SUPPORTED, summary=s2, endpoint=ep,
+        bk_captured=POST, record_seq=next(SEQ), evidence=None),
+        "direct SUPPORTED with no evidence rejected")
+    s1 = rc.FamilySummary(fk, 1, 1, 1, 1, 0, 0, 0, 0)
+    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
+        finding_id="x2", family_key=fk, status=rc.FindingStatus.SUPPORTED, summary=s1, endpoint=ep,
+        bk_captured=POST, record_seq=next(SEQ), evidence=full_bundle()),
+        "direct below-floor SUPPORTED rejected")
+    other_fk = candidate("c-xo", "o", rc.SubLabel.REVENGE_GAME, entity("p-xo", "XO"),
+                         event("gXO")).family_key
+    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
+        finding_id="x3", family_key=other_fk, status=rc.FindingStatus.INCONCLUSIVE, summary=s2,
+        endpoint=ep, bk_captured=POST, record_seq=next(SEQ)),
+        "family_key not matching summary rejected")
+    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
+        finding_id="x4", family_key=fk, status=rc.FindingStatus.INCONCLUSIVE, summary=s2,
+        endpoint=endpoint(mepi=0.09), bk_captured=POST, record_seq=next(SEQ)),
+        "endpoint not matching the family contract rejected")
+
+
+# ===== blocker r2.4 =======================================================  Y lineage supersession
+def test_candidate_supersession_lineage_bound():
+    print("\n[Y] candidate supersession is lineage-bound; no outcome on a superseded candidate")
+    store = rc.InMemoryResearchStore()
+    entA, evA = entity("p-ya", "YA"), event("gYA")
+    entB, evB = entity("p-yb", "YB"), event("gYB")
+    store.record_observation(observation("o-ya", entA, evA))
+    store.record_observation(observation("o-yb", entB, evB))
+    a = mk_candidate("c-ya", store.observations["o-ya"], seq=910000)
+    store.freeze_candidate(a)
+    store.freeze_candidate(mk_candidate("c-yb", store.observations["o-yb"], seq=910001))
+    cross = mk_candidate("c-yb2", store.observations["o-yb"], seq=910002, supersedes=910000)
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(cross),
+                  "a candidate for observation B cannot supersede observation A's candidate")
+    corr1 = rc.supersede_candidate(a, new_temporal=temporal(event=evA.event_effective, seq=910003),
+                                   candidate_id="c-ya1")
+    store.freeze_candidate(corr1)
+    corr2 = rc.supersede_candidate(a, new_temporal=temporal(event=evA.event_effective, seq=910004),
+                                   candidate_id="c-ya2")
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(corr2),
+                  "cannot supersede an already-superseded (non-current) candidate")
+    expect_raises(rc.SupersessionError, lambda: store.append_outcome(
+        measured_outcome("o-ya-late", "c-ya", 0.3, 0.18)),
+        "an outcome cannot be appended to a superseded candidate")
+
+
+# ===== blocker r2.5 =======================================================  Z pairing binding
+def test_summarize_pairing_binding():
+    print("\n[Z] summarize_family validates case/outcome candidate_id binding")
+    ent, ev = entity("p-z", "Z"), event("gZ")
+    c1 = candidate("c-z1", "o", rc.SubLabel.BIRTHDAY, ent, ev)
+    foreign = measured_outcome("o-z2", "c-z2-OTHER", 0.3, 0.18)
+    expect_raises(rc.EvaluationError, lambda: rc.summarize_family(c1.family_key, [(c1, foreign)]),
+                  "an outcome whose candidate_id != the paired candidate is rejected")
+
+
+# ===== cleanups r2.A / r2.B / r2.C ========================================  AA
+def test_contract_cleanups():
+    print("\n[AA] cleanups: subject-correction removed; canonical_json key safety; store-wide seq")
+    ent, ev = entity("p-aa", "AA"), event("gAA")
+    seed = candidate("c-aa", "o", rc.SubLabel.BIRTHDAY, ent, ev)
+    expect_raises(rc.SupersessionError, lambda: rc.supersede_candidate(
+        seed, new_temporal=temporal(event=ev.event_effective), entity=entity("p-new", "New")),
+        "entity correction no longer allowed via supersede (needs governed observation supersession)")
+    expect_raises(rc.SupersessionError, lambda: rc.supersede_candidate(
+        seed, new_temporal=temporal(event=ev.event_effective), event=event("gX")),
+        "event (schedule) correction no longer allowed via supersede")
+    expect_raises(rc.TypeStrictError, lambda: rc.canonical_json({1: "x"}),
+                  "canonical_json rejects a non-string top-level key directly")
+    expect_raises(rc.TypeStrictError, lambda: rc.canonical_json({"a": {2: "x"}}),
+                  "canonical_json rejects a non-string nested key directly")
+    store = rc.InMemoryResearchStore()
+    obs = rc.UserObservation(observation_id="o-aa", observer="owner", entity=ent, event=ev,
+                             thesis=THESIS, observed_at=OBSERVED, bk_captured=PRE, record_seq=777000,
+                             sources=SOURCES)
+    store.record_observation(obs)
+    clash = mk_candidate("c-aa2", obs, seq=777000)
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(clash),
+                  "record_seq reused across observation and candidate rejected (store-wide ordering)")
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE CONTRACT — SLICE 1 QC (domain model + validators, dark/local)")
@@ -643,7 +773,10 @@ if __name__ == "__main__":
               test_frozen_records_immutable, test_pre_event_ordering_complete,
               test_candidate_observation_binding, test_supersession_allowlist_and_chain,
               test_partial_not_in_matched_sample, test_evaluation_bound_to_family,
-              test_direction_aware_support, test_canonical_numeric_safety):
+              test_direction_aware_support, test_canonical_numeric_safety,
+              test_endpoint_full_contract_binding, test_family_summary_self_validates,
+              test_finding_constructor_governed, test_candidate_supersession_lineage_bound,
+              test_summarize_pairing_binding, test_contract_cleanups):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
