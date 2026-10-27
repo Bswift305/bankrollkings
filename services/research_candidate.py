@@ -85,6 +85,14 @@ class EvaluationError(ResearchContractError):
     """A family-summary or family-evaluation invariant was violated."""
 
 
+class EvaluationEngineNotGoverned(EvaluationError):
+    """An evaluated CONCLUSION (SUPPORTED/UNSUPPORTED) was requested, but the governed numeric
+    §7 engine and evidence-provenance layer are deferred (contract §10 Q3/Q8). Slice 1 fails
+    closed: only INCONCLUSIVE may be constructed. The enum keeps SUPPORTED/UNSUPPORTED for the
+    future contract, but they cannot be created until a separately approved engine derives and
+    receipts the effect/interval/correction/out-of-sample/sensitivity/missingness evidence."""
+
+
 class BindingError(ResearchContractError):
     """A candidate's frozen subject does not match its referenced observation."""
 
@@ -873,7 +881,11 @@ class EvidenceBundle:
 
 
 def _require_supported(endpoint: PrimaryEndpoint, ev: EvidenceBundle) -> None:
-    """Direction-aware SUPPORTED bar (r1.8). Significance alone never SUPPORTED (§7)."""
+    """RESERVED for the future governed numeric engine — NOT reachable in Slice 1 (constructing a
+    SUPPORTED finding fails closed with EvaluationEngineNotGoverned). Kept so the direction-aware
+    bar is specified for when the engine and evidence provenance are approved.
+
+    Direction-aware SUPPORTED bar (r1.8). Significance alone never SUPPORTED (§7)."""
     if endpoint.direction is Direction.INCREASE:
         signed_effect = ev.effect_estimate
         clears_zero = ev.corrected_interval_low > 0.0
@@ -897,9 +909,13 @@ def _require_supported(endpoint: PrimaryEndpoint, ev: EvidenceBundle) -> None:
 @dataclass(frozen=True)
 class EvaluatedFinding:
     """The verdict over a matched sample. IMMUTABLE and self-validating (r2.3): the constructor
-    enforces the full evaluation invariants, so direct construction cannot produce SUPPORTED
-    without evidence, a below-floor SUPPORTED, a mismatched family/summary, or an endpoint that
-    does not match the family's frozen contract. Still RESEARCH_ONLY (§7)."""
+    enforces the full evaluation invariants, so direct construction cannot produce a mismatched
+    family/summary or an endpoint that does not match the family's frozen contract. Still
+    RESEARCH_ONLY (§7).
+
+    FAIL CLOSED (r3): because the governed numeric engine + evidence provenance are deferred, an
+    evaluated CONCLUSION cannot be constructed — only `INCONCLUSIVE` is representable. Requesting
+    `SUPPORTED`/`UNSUPPORTED` raises `EvaluationEngineNotGoverned`."""
     finding_id: str
     family_key: FamilyKey
     status: FindingStatus
@@ -932,16 +948,17 @@ class EvaluatedFinding:
             raise EvaluationError(
                 "endpoint contract does not match the family identity (no endpoint substitution)"
             )
-        # status invariants (one game cannot make an edge; SUPPORTED needs the full bar).
-        if self.summary.effective_n < STRUCTURAL_MIN_EFFECTIVE_N and self.status is not FindingStatus.INCONCLUSIVE:
-            raise EvaluationError(
-                f"effective_n={self.summary.effective_n} < {STRUCTURAL_MIN_EFFECTIVE_N}: below the "
-                f"structural floor a family can only be INCONCLUSIVE (one game cannot make an edge)"
+        # FAIL CLOSED: an evaluated conclusion cannot be constructed until the governed numeric
+        # engine + evidence provenance exist (contract §10 Q3/Q8). Caller-supplied EvidenceBundle
+        # values are unverified, so two cases plus a hand-built bundle must NOT yield SUPPORTED.
+        # Only INCONCLUSIVE is representable in Slice 1 (the structural floor, direction-aware bar
+        # and evidence checks live in the future engine, see `_require_supported`).
+        if self.status is not FindingStatus.INCONCLUSIVE:
+            raise EvaluationEngineNotGoverned(
+                f"cannot construct an evaluated conclusion ({self.status.value}) in Slice 1 — the "
+                f"governed numeric evaluation engine and evidence provenance are deferred; only "
+                f"INCONCLUSIVE is permitted"
             )
-        if self.status in (FindingStatus.SUPPORTED, FindingStatus.UNSUPPORTED) and self.evidence is None:
-            raise EvaluationError(f"{self.status.value} requires a complete EvidenceBundle")
-        if self.status is FindingStatus.SUPPORTED:
-            _require_supported(self.endpoint, self.evidence)
         object.__setattr__(self, "content_hash", content_hash(self))
 
     def canonical_dict(self) -> dict:
@@ -977,7 +994,8 @@ class InMemoryResearchStore:
     """
 
     def __init__(self) -> None:
-        self._max_seq = 0
+        self._max_claimed = 0        # highest record_seq actually stored (strict monotonic claim)
+        self._max_allocated = 0      # highest record_seq handed out by next_seq OR claimed
         self.observations: dict = {}
         self.candidates: dict = {}
         self._candidate_by_seq: dict = {}
@@ -987,18 +1005,23 @@ class InMemoryResearchStore:
         self._finding_versions: dict = {}
 
     def next_seq(self) -> int:
-        # advances strictly from the maximum claimed sequence (r2-round3 #1).
-        return self._max_seq + 1
+        # ALLOCATING (r3 #3): reserves and returns a fresh sequence strictly above everything seen,
+        # so two consecutive calls never return the same value; preserves strict monotonicity when
+        # an externally supplied sequence has advanced the maximum.
+        self._max_allocated = max(self._max_allocated, self._max_claimed) + 1
+        return self._max_allocated
 
     def _claim_seq(self, seq: int) -> None:
-        # store-wide record_seq is strictly MONOTONIC (not merely unique): every new record,
-        # of any kind, must carry a sequence greater than every sequence claimed before it.
-        if seq <= self._max_seq:
+        # store-wide record_seq is strictly MONOTONIC among CLAIMED records: every new record, of
+        # any kind, must carry a sequence greater than every sequence claimed before it.
+        if seq <= self._max_claimed:
             raise SupersessionError(
-                f"record_seq {seq} must be strictly greater than the max claimed ({self._max_seq}) "
-                f"— store-wide monotonic ordering"
+                f"record_seq {seq} must be strictly greater than the max claimed "
+                f"({self._max_claimed}) — store-wide monotonic ordering"
             )
-        self._max_seq = seq
+        self._max_claimed = seq
+        if seq > self._max_allocated:
+            self._max_allocated = seq
 
     # observations -----------------------------------------------------------
     def record_observation(self, obs: UserObservation) -> UserObservation:
@@ -1098,7 +1121,15 @@ class InMemoryResearchStore:
         # FINDING PROVENANCE (r2-round3 #3): a self-consistent summary is not enough — it must be
         # the summary the store's OWN current family cases produce right now. Recompute and require
         # exact equality, so a hand-built finding about a fabricated/unknown/empty family is rejected.
-        recomputed = summarize_family(finding.family_key, self.family_cases(finding.family_key))
+        cases = self.family_cases(finding.family_key)
+        # a finding requires a family that actually exists here — an invented research family (no
+        # stored candidate) is different from a genuinely empty rendered board (r3 #2).
+        if not cases:
+            raise EvaluationError(
+                "no stored candidate in this family — a finding cannot be recorded for a "
+                "nonexistent/invented research family"
+            )
+        recomputed = summarize_family(finding.family_key, cases)
         if content_hash(recomputed) != content_hash(finding.summary):
             raise EvaluationError(
                 "finding.summary does not match the store's current family cases "
@@ -1136,7 +1167,8 @@ class InMemoryResearchStore:
 __all__ = [
     "AUTHORITY", "STRUCTURAL_MIN_EFFECTIVE_N",
     "ResearchContractError", "TypeStrictError", "TemporalError", "EligibilityError",
-    "HindsightError", "SupersessionError", "EvaluationError", "BindingError",
+    "HindsightError", "SupersessionError", "EvaluationError", "EvaluationEngineNotGoverned",
+    "BindingError",
     "Category", "SubLabel", "Direction", "SourceUpdatedStatus", "Resolution", "Completeness",
     "CaseTrackState", "CaseState", "FamilyState", "FindingStatus",
     "EntityIdentity", "EventIdentity", "TemporalFacts", "PrimaryEndpoint", "BaselineMethod",

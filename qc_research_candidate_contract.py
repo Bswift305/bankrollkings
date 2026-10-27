@@ -249,27 +249,21 @@ def test_one_case_cannot_be_edge():
     fk = store.candidates["c-f1"].family_key
     s1 = rc.summarize_family(fk, store.family_cases(fk))
     check(s1.effective_n == 1 and s1.n_matched == 1, "single matched case => effective_n 1")
-    expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
-        finding_id="f1", endpoint=endpoint(), summary=s1, proposed_status=rc.FindingStatus.SUPPORTED,
-        bk_captured=POST, record_seq=next(SEQ)), "SUPPORTED from a single case rejected")
     only = rc.evaluate_family(finding_id="f1", endpoint=endpoint(), summary=s1,
                               proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
                               record_seq=next(SEQ))
-    check(only.status is rc.FindingStatus.INCONCLUSIVE, "below floor => only INCONCLUSIVE")
+    check(only.status is rc.FindingStatus.INCONCLUSIVE, "a single-case family is INCONCLUSIVE")
     ent2, ev2 = entity("p-f2", "F2"), event("gF2")
     store.record_observation(observation("o-f2", ent2, ev2))
     store.freeze_candidate(candidate("c-f2", "o-f2", rc.SubLabel.RECORD_CHASE, ent2, ev2))
     store.append_outcome(measured_outcome("o-f2o", "c-f2", 0.30, 0.18))
     s2 = rc.summarize_family(fk, store.family_cases(fk))
     check(s2.effective_n == 2, "two distinct entities => effective_n 2")
-    sup = rc.evaluate_family(finding_id="f2", endpoint=endpoint(), summary=s2,
-                             proposed_status=rc.FindingStatus.SUPPORTED, bk_captured=POST,
-                             record_seq=next(SEQ), evidence=full_bundle())
-    check(sup.status is rc.FindingStatus.SUPPORTED and sup.authority == "RESEARCH_ONLY",
-          "SUPPORTED allowed at floor with a full bundle, still RESEARCH_ONLY")
-    expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
-        finding_id="f3", endpoint=endpoint(), summary=s2, proposed_status=rc.FindingStatus.SUPPORTED,
-        bk_captured=POST, record_seq=next(SEQ)), "SUPPORTED without a bundle rejected")
+    inc2 = rc.evaluate_family(finding_id="f2", endpoint=endpoint(), summary=s2,
+                              proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                              record_seq=next(SEQ))
+    check(inc2.status is rc.FindingStatus.INCONCLUSIVE and inc2.authority == "RESEARCH_ONLY",
+          "even at the floor only INCONCLUSIVE constructs (conclusions fail closed); RESEARCH_ONLY")
 
 
 # =========================================================================== G INCONCLUSIVE immutable
@@ -554,59 +548,49 @@ def test_evaluation_bound_to_family():
     s = rc.summarize_family(fk, store.family_cases(fk))
     expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
         finding_id="s1", endpoint=endpoint(name="SOMETHING_ELSE"), summary=s,
-        proposed_status=rc.FindingStatus.SUPPORTED, bk_captured=POST, record_seq=next(SEQ),
-        evidence=full_bundle()), "endpoint whose name != family key rejected")
+        proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST, record_seq=next(SEQ)),
+        "endpoint whose name != family key rejected")
     expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
         finding_id="s2", endpoint=endpoint(version="v2"), summary=s,
-        proposed_status=rc.FindingStatus.SUPPORTED, bk_captured=POST, record_seq=next(SEQ),
-        evidence=full_bundle()), "endpoint whose version != family key rejected")
+        proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST, record_seq=next(SEQ)),
+        "endpoint whose version != family key rejected")
 
 
-# ===== blocker 8 ==========================================================  T direction-aware
-def test_direction_aware_support():
-    print("\n[T] direction-aware SUPPORTED (INCREASE + DECREASE)")
+# ===== r3 #1 ==============================================================  T evaluated conclusions fail closed
+def test_evaluated_conclusions_fail_closed():
+    print("\n[T] evaluated conclusions FAIL CLOSED until the governed numeric engine exists")
+    _, fk, s2, ep = build_two_matched("t")   # a legitimate 2-case family at the structural floor
+    bundle = full_bundle()                   # caller-built, unverified evidence
+    expect_raises(rc.EvaluationEngineNotGoverned, lambda: rc.evaluate_family(
+        finding_id="t1", endpoint=ep, summary=s2, proposed_status=rc.FindingStatus.SUPPORTED,
+        bk_captured=POST, record_seq=next(SEQ), evidence=bundle),
+        "fabricated-evidence SUPPORTED fails closed (engine/evidence provenance deferred)")
+    expect_raises(rc.EvaluationEngineNotGoverned, lambda: rc.evaluate_family(
+        finding_id="t2", endpoint=ep, summary=s2, proposed_status=rc.FindingStatus.UNSUPPORTED,
+        bk_captured=POST, record_seq=next(SEQ), evidence=bundle),
+        "fabricated-evidence UNSUPPORTED fails closed")
+    inc = rc.evaluate_family(finding_id="t3", endpoint=ep, summary=s2,
+                             proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                             record_seq=next(SEQ))
+    check(inc.status is rc.FindingStatus.INCONCLUSIVE, "INCONCLUSIVE remains the only constructible verdict")
+    check({"SUPPORTED", "UNSUPPORTED"} <= {s.name for s in rc.FindingStatus},
+          "SUPPORTED/UNSUPPORTED stay in the enum for the future contract")
+    check(issubclass(rc.EvaluationEngineNotGoverned, rc.EvaluationError),
+          "EvaluationEngineNotGoverned is an explicit, catchable error type")
 
-    def family(direction, prefix):
-        store = rc.InMemoryResearchStore()
-        ep = endpoint(direction=direction)
-        for i in range(2):
-            ent, ev = entity(f"{prefix}{i}", f"{prefix}{i}"), event(f"g{prefix}{i}")
-            store.record_observation(observation(f"o{prefix}{i}", ent, ev))
-            store.freeze_candidate(candidate(f"c{prefix}{i}", f"o{prefix}{i}",
-                                             rc.SubLabel.BIRTHDAY, ent, ev, ep=ep))
-            store.append_outcome(measured_outcome(f"m{prefix}{i}", f"c{prefix}{i}", 0.30, 0.18))
-        fk = store.candidates[f"c{prefix}0"].family_key
-        return ep, rc.summarize_family(fk, store.family_cases(fk))
 
-    ep_i, s_i = family(rc.Direction.INCREASE, "ti")
-    pos = rc.EvidenceBundle(effect_estimate=0.12, interval_low=0.07, interval_high=0.17,
-                            corrected_interval_low=0.06, corrected_interval_high=0.18,
-                            out_of_sample=True, sensitivity_analysis_done=True, missingness_rule="x")
-    check(rc.evaluate_family(finding_id="ti", endpoint=ep_i, summary=s_i,
-                             proposed_status=rc.FindingStatus.SUPPORTED, bk_captured=POST,
-                             record_seq=next(SEQ), evidence=pos).status is rc.FindingStatus.SUPPORTED,
-          "INCREASE: positive effect clearing zero+MEPI => SUPPORTED")
-    neg_for_increase = rc.EvidenceBundle(effect_estimate=-0.12, interval_low=-0.17, interval_high=-0.07,
-                                         corrected_interval_low=-0.18, corrected_interval_high=-0.06,
-                                         out_of_sample=True, sensitivity_analysis_done=True,
-                                         missingness_rule="x")
-    expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
-        finding_id="ti2", endpoint=ep_i, summary=s_i, proposed_status=rc.FindingStatus.SUPPORTED,
-        bk_captured=POST, record_seq=next(SEQ), evidence=neg_for_increase),
-        "INCREASE: a negative effect cannot be SUPPORTED")
-
-    ep_d, s_d = family(rc.Direction.DECREASE, "td")
-    neg = rc.EvidenceBundle(effect_estimate=-0.12, interval_low=-0.17, interval_high=-0.07,
-                            corrected_interval_low=-0.18, corrected_interval_high=-0.06,
-                            out_of_sample=True, sensitivity_analysis_done=True, missingness_rule="x")
-    check(rc.evaluate_family(finding_id="td", endpoint=ep_d, summary=s_d,
-                             proposed_status=rc.FindingStatus.SUPPORTED, bk_captured=POST,
-                             record_seq=next(SEQ), evidence=neg).status is rc.FindingStatus.SUPPORTED,
-          "DECREASE: negative effect clearing zero+MEPI (directionally) => SUPPORTED")
-    expect_raises(rc.EvaluationError, lambda: rc.evaluate_family(
-        finding_id="td2", endpoint=ep_d, summary=s_d, proposed_status=rc.FindingStatus.SUPPORTED,
-        bk_captured=POST, record_seq=next(SEQ), evidence=pos),
-        "DECREASE: a positive effect cannot be SUPPORTED")
+# ===== r3 #2 ==============================================================  AH nonexistent family
+def test_finding_requires_existing_family():
+    print("\n[AH] a finding requires a REAL stored family (not an invented zero-case one)")
+    store, _, _, _ = build_two_matched("ah")        # the store's only family is 'ah' BIRTHDAY
+    unknown_fk = candidate("c-ahx", "o", rc.SubLabel.CONTRACT_INCENTIVE, entity("p-ahx", "AHX"),
+                           event("gAHX")).family_key
+    zero = rc.FamilySummary(unknown_fk, 0, 0, 0, 0, 0, 0, 0, 0)  # reconciles against zero stored cases
+    finding = rc.evaluate_family(finding_id="ah1", endpoint=endpoint(), summary=zero,
+                                 proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                                 record_seq=next(SEQ))
+    expect_raises(rc.EvaluationError, lambda: store.record_finding(finding),
+                  "a zero-case finding for a family with no stored candidate is rejected")
 
 
 # ===== blocker 9 ==========================================================  U numeric safety
@@ -652,8 +636,8 @@ def test_endpoint_full_contract_binding():
                      (rc.PrimaryEndpoint("target_share_lift", "v1", rc.Direction.INCREASE, 0.05, "OTHER"),
                       "different unit")):
         expect_raises(rc.EvaluationError, lambda b=bad: rc.evaluate_family(
-            finding_id="v", endpoint=b, summary=s, proposed_status=rc.FindingStatus.SUPPORTED,
-            bk_captured=POST, record_seq=next(SEQ), evidence=full_bundle()),
+            finding_id="v", endpoint=b, summary=s, proposed_status=rc.FindingStatus.INCONCLUSIVE,
+            bk_captured=POST, record_seq=next(SEQ)),
             f"same name/version but {why} rejected (no substitution)")
 
 
@@ -679,15 +663,14 @@ def test_family_summary_self_validates():
 def test_finding_constructor_governed():
     print("\n[X] EvaluatedFinding constructor enforces full invariants (no evaluator bypass)")
     _, fk, s2, ep = build_two_matched("x")
-    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
+    expect_raises(rc.EvaluationEngineNotGoverned, lambda: rc.EvaluatedFinding(
         finding_id="x1", family_key=fk, status=rc.FindingStatus.SUPPORTED, summary=s2, endpoint=ep,
-        bk_captured=POST, record_seq=next(SEQ), evidence=None),
-        "direct SUPPORTED with no evidence rejected")
-    s1 = rc.FamilySummary(fk, 1, 1, 1, 1, 0, 0, 0, 0)
-    expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
-        finding_id="x2", family_key=fk, status=rc.FindingStatus.SUPPORTED, summary=s1, endpoint=ep,
         bk_captured=POST, record_seq=next(SEQ), evidence=full_bundle()),
-        "direct below-floor SUPPORTED rejected")
+        "direct SUPPORTED construction fails closed even with a full bundle")
+    expect_raises(rc.EvaluationEngineNotGoverned, lambda: rc.EvaluatedFinding(
+        finding_id="x2", family_key=fk, status=rc.FindingStatus.UNSUPPORTED, summary=s2, endpoint=ep,
+        bk_captured=POST, record_seq=next(SEQ), evidence=full_bundle()),
+        "direct UNSUPPORTED construction fails closed")
     other_fk = candidate("c-xo", "o", rc.SubLabel.REVENGE_GAME, entity("p-xo", "XO"),
                          event("gXO")).family_key
     expect_raises(rc.EvaluationError, lambda: rc.EvaluatedFinding(
@@ -778,6 +761,9 @@ def test_store_seq_strictly_monotonic():
         observation_id="o-ab2", observer="owner", entity=ent, event=ev, thesis=THESIS,
         observed_at=OBSERVED, bk_captured=PRE, record_seq=777000, sources=SOURCES))
     check(store2.next_seq() == 777001, "next_seq() advances strictly from an externally supplied max")
+    store3 = rc.InMemoryResearchStore()
+    a, b = store3.next_seq(), store3.next_seq()
+    check(a != b and b == a + 1, "two consecutive next_seq() calls reserve distinct increasing values")
 
 
 # ===== r3 #2 ==============================================================  AC one current per lineage
@@ -871,13 +857,13 @@ if __name__ == "__main__":
               test_frozen_records_immutable, test_pre_event_ordering_complete,
               test_candidate_observation_binding, test_supersession_allowlist_and_chain,
               test_partial_not_in_matched_sample, test_evaluation_bound_to_family,
-              test_direction_aware_support, test_canonical_numeric_safety,
+              test_evaluated_conclusions_fail_closed, test_canonical_numeric_safety,
               test_endpoint_full_contract_binding, test_family_summary_self_validates,
               test_finding_constructor_governed, test_candidate_supersession_lineage_bound,
               test_summarize_pairing_binding, test_contract_cleanups,
               test_store_seq_strictly_monotonic, test_single_current_candidate_per_lineage,
               test_finding_provenance_reconciled, test_observation_supersession_forbidden,
-              test_baseline_and_eligible_removal_guards):
+              test_baseline_and_eligible_removal_guards, test_finding_requires_existing_family):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
