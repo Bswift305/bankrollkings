@@ -577,6 +577,9 @@ def test_evaluated_conclusions_fail_closed():
           "SUPPORTED/UNSUPPORTED stay in the enum for the future contract")
     check(issubclass(rc.EvaluationEngineNotGoverned, rc.EvaluationError),
           "EvaluationEngineNotGoverned is an explicit, catchable error type")
+    expect_raises(rc.EvaluationEngineNotGoverned,
+                  lambda: rc._require_supported(endpoint(), full_bundle()),
+                  "_require_supported is inert: it refuses on its own, not only behind the gate")
 
 
 # ===== r3 #2 ==============================================================  AH nonexistent family

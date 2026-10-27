@@ -881,29 +881,23 @@ class EvidenceBundle:
 
 
 def _require_supported(endpoint: PrimaryEndpoint, ev: EvidenceBundle) -> None:
-    """RESERVED for the future governed numeric engine — NOT reachable in Slice 1 (constructing a
-    SUPPORTED finding fails closed with EvaluationEngineNotGoverned). Kept so the direction-aware
-    bar is specified for when the engine and evidence provenance are approved.
+    """NON-AUTHORITATIVE SPECIFICATION — refuses on its own (reviewer note, Slice-1 close).
 
-    Direction-aware SUPPORTED bar (r1.8). Significance alone never SUPPORTED (§7)."""
-    if endpoint.direction is Direction.INCREASE:
-        signed_effect = ev.effect_estimate
-        clears_zero = ev.corrected_interval_low > 0.0
-        clears_mepi = ev.corrected_interval_low > endpoint.mepi
-    else:
-        signed_effect = -ev.effect_estimate
-        clears_zero = ev.corrected_interval_high < 0.0
-        clears_mepi = (-ev.corrected_interval_high) > endpoint.mepi
-    if signed_effect < endpoint.mepi:
-        raise EvaluationError("SUPPORTED requires the effect in the frozen direction AND >= the MEPI")
-    if not clears_zero:
-        raise EvaluationError("SUPPORTED requires the corrected interval to clear zero (directionally)")
-    if not clears_mepi:
-        raise EvaluationError("SUPPORTED requires the corrected interval to clear the MEPI")
-    if not ev.out_of_sample:
-        raise EvaluationError("SUPPORTED requires out-of-sample performance")
-    if not ev.sensitivity_analysis_done:
-        raise EvaluationError("SUPPORTED requires a sensitivity analysis")
+    This is reference text for a FUTURE governed engine, not a usable check. It is unreachable in
+    Slice 1 (constructing SUPPORTED/UNSUPPORTED already fails closed in EvaluatedFinding), and it is
+    deliberately NOT independently activatable: removing the fail-closed exception elsewhere must
+    NOT turn this into a working evaluator. The eventual numeric engine MUST arrive as its own
+    versioned policy with an evidence-provenance contract — so this stub raises unconditionally.
+
+    Intended future bar (direction-aware, for reference only): INCREASE requires effect >= MEPI with
+    the corrected interval clearing both zero and the MEPI; DECREASE mirrors it on the upper bound;
+    out-of-sample performance and a sensitivity analysis are required; statistical significance
+    alone never yields SUPPORTED (§7)."""
+    raise EvaluationEngineNotGoverned(
+        "_require_supported is non-authoritative specification code and cannot be used to grade an "
+        "evidence bundle — the governed numeric engine must arrive with its own versioned policy "
+        "and evidence-provenance contract (not by removing a fail-closed exception)"
+    )
 
 
 @dataclass(frozen=True)
