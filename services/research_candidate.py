@@ -431,10 +431,12 @@ class UserObservation:
     sources: tuple = ()
     acted: bool = False
     acted_journal_ref: Optional[str] = None
-    supersedes: Optional[int] = None
     track_state: CaseTrackState = field(default=CaseTrackState.OBSERVED, init=False)
 
     def __post_init__(self) -> None:
+        # NOTE: observation supersession/correction is DEFERRED (contract §10 Q4), so no
+        # `supersedes` field exists on UserObservation — Slice 1 does not expose a fake
+        # correction contract (r2-round3 #4). A correction is a governed future slice.
         _check_nonempty_str(self.observation_id, "observation_id")
         _check_nonempty_str(self.observer, "observer")
         _check_type(self.entity, EntityIdentity, "entity")
@@ -451,8 +453,6 @@ class UserObservation:
             _check_nonempty_str(self.acted_journal_ref, "acted_journal_ref")
         if not self.acted and self.acted_journal_ref is not None:
             raise ResearchContractError("acted_journal_ref present but acted is False")
-        if self.supersedes is not None:
-            _check_nonneg_int(self.supersedes, "supersedes")
 
     def canonical_dict(self) -> dict:
         return {
@@ -461,8 +461,7 @@ class UserObservation:
             "thesis": self.thesis, "observed_at": self.observed_at.isoformat(),
             "bk_captured": self.bk_captured.isoformat(), "record_seq": self.record_seq,
             "sources": list(self.sources), "acted": self.acted,
-            "acted_journal_ref": self.acted_journal_ref, "supersedes": self.supersedes,
-            "track_state": self.track_state.value,
+            "acted_journal_ref": self.acted_journal_ref, "track_state": self.track_state.value,
         }
 
     @property
@@ -592,13 +591,17 @@ def supersede_candidate(prior: ResearchCandidate, *, new_temporal: TemporalFacts
         raise SupersessionError("a superseding candidate needs a strictly greater record_seq")
 
     new_endpoint = changes.get("primary_endpoint", prior.primary_endpoint)
+    new_baseline = changes.get("baseline", prior.baseline)
     adding_or_changing_mepi = (new_endpoint is not None
                                and (prior.primary_endpoint is None
                                     or new_endpoint != prior.primary_endpoint))
-    if adding_or_changing_mepi and new_temporal.bk_captured >= new_temporal.event_effective:
+    changing_plan = adding_or_changing_mepi or (new_baseline != prior.baseline)
+    # the WHOLE frozen measurement plan (endpoint/MEPI AND baseline) is pre-registration; none of
+    # it may be backfilled with a capture at/after the event (r2-round3 hindsight check, §5).
+    if changing_plan and new_temporal.bk_captured >= new_temporal.event_effective:
         raise HindsightError(
-            "MEPI may never be backfilled: a measurement plan cannot be added/changed with a "
-            "capture at/after the event (would manufacture pre-registration, §5)"
+            "the frozen measurement plan (endpoint/MEPI or baseline) cannot be added or changed "
+            "with a capture at/after the event (would manufacture pre-registration, §5)"
         )
 
     return ResearchCandidate(
@@ -974,27 +977,28 @@ class InMemoryResearchStore:
     """
 
     def __init__(self) -> None:
-        self._seq = 0
-        self._seen_seqs: set = set()
+        self._max_seq = 0
         self.observations: dict = {}
         self.candidates: dict = {}
         self._candidate_by_seq: dict = {}
         self._superseded_candidate_seqs: set = set()
+        self._current_by_obs: dict = {}         # observation_id -> current ResearchCandidate
         self._outcome_versions: dict = {}
         self._finding_versions: dict = {}
 
     def next_seq(self) -> int:
-        self._seq += 1
-        while self._seq in self._seen_seqs:
-            self._seq += 1
-        return self._seq
+        # advances strictly from the maximum claimed sequence (r2-round3 #1).
+        return self._max_seq + 1
 
     def _claim_seq(self, seq: int) -> None:
-        if seq in self._seen_seqs:
+        # store-wide record_seq is strictly MONOTONIC (not merely unique): every new record,
+        # of any kind, must carry a sequence greater than every sequence claimed before it.
+        if seq <= self._max_seq:
             raise SupersessionError(
-                f"record_seq {seq} already used in this store (store-wide monotonic ordering)"
+                f"record_seq {seq} must be strictly greater than the max claimed ({self._max_seq}) "
+                f"— store-wide monotonic ordering"
             )
-        self._seen_seqs.add(seq)
+        self._max_seq = seq
 
     # observations -----------------------------------------------------------
     def record_observation(self, obs: UserObservation) -> UserObservation:
@@ -1014,24 +1018,39 @@ class InMemoryResearchStore:
         bind_candidate_to_observation(cand, obs)
         if cand.candidate_id in self.candidates:
             raise SupersessionError("duplicate candidate_id (storage is append-only)")
+        # exactly ONE current candidate per observation lineage (r2-round3 #2): a second candidate
+        # for an observation that already has one MUST supersede the current one.
+        current = self._current_by_obs.get(cand.observation_id)
+        if current is not None and cand.supersedes is None:
+            raise SupersessionError(
+                "a second candidate in this observation lineage must supersede the current one"
+            )
+        prior = None
         if cand.supersedes is not None:
             prior = self._candidate_by_seq.get(cand.supersedes)
             if prior is None:
                 raise SupersessionError("superseded candidate record_seq is unknown")
-            # lineage-bound: a candidate may only supersede the CURRENT candidate of the SAME
-            # observation lineage (r2.4).
             if prior.observation_id != cand.observation_id:
                 raise SupersessionError("supersession must stay within the same observation lineage")
             if not self.is_current_candidate(prior):
                 raise SupersessionError("can only supersede the current candidate in the lineage")
+            if current is not None and prior.temporal.record_seq != current.temporal.record_seq:
+                raise SupersessionError("must supersede the CURRENT candidate of the lineage")
             if cand.temporal.record_seq <= prior.temporal.record_seq:
                 raise SupersessionError("a superseding candidate needs a greater record_seq")
+            # a post-event / ineligible correction must NOT silently replace an eligible candidate
+            # and drop it from the evaluated family (r2-round3 hindsight check).
+            if prior.eligible_for_sample and not cand.eligible_for_sample:
+                raise SupersessionError(
+                    "an ineligible (e.g. post-event) correction cannot supersede an eligible "
+                    "candidate — that would silently remove it from the evaluated family"
+                )
         self._claim_seq(cand.temporal.record_seq)
-        if cand.supersedes is not None:
-            self._superseded_candidate_seqs.add(self._candidate_by_seq[cand.supersedes]
-                                                .temporal.record_seq)
+        if prior is not None:
+            self._superseded_candidate_seqs.add(prior.temporal.record_seq)
         self.candidates[cand.candidate_id] = cand
         self._candidate_by_seq[cand.temporal.record_seq] = cand
+        self._current_by_obs[cand.observation_id] = cand
         return cand
 
     def is_current_candidate(self, cand: ResearchCandidate) -> bool:
@@ -1076,6 +1095,15 @@ class InMemoryResearchStore:
     # findings ---------------------------------------------------------------
     def record_finding(self, finding: EvaluatedFinding) -> EvaluatedFinding:
         _check_type(finding, EvaluatedFinding, "finding")
+        # FINDING PROVENANCE (r2-round3 #3): a self-consistent summary is not enough — it must be
+        # the summary the store's OWN current family cases produce right now. Recompute and require
+        # exact equality, so a hand-built finding about a fabricated/unknown/empty family is rejected.
+        recomputed = summarize_family(finding.family_key, self.family_cases(finding.family_key))
+        if content_hash(recomputed) != content_hash(finding.summary):
+            raise EvaluationError(
+                "finding.summary does not match the store's current family cases "
+                "(finding provenance: counts must be derived from the stored cases)"
+            )
         chain = self._finding_versions.setdefault(finding.family_key.key, [])
         if chain:
             prior = chain[-1]

@@ -761,6 +761,104 @@ def test_contract_cleanups():
                   "record_seq reused across observation and candidate rejected (store-wide ordering)")
 
 
+# ===== r3 #1 ==============================================================  AB monotonic seq
+def test_store_seq_strictly_monotonic():
+    print("\n[AB] store-wide record_seq is strictly MONOTONIC, not merely unique")
+    store = rc.InMemoryResearchStore()
+    ent, ev = entity("p-ab", "AB"), event("gAB")
+    obs = rc.UserObservation(observation_id="o-ab", observer="owner", entity=ent, event=ev,
+                             thesis=THESIS, observed_at=OBSERVED, bk_captured=PRE, record_seq=100,
+                             sources=SOURCES)
+    store.record_observation(obs)
+    descending = mk_candidate("c-ab", obs, seq=50)   # unique (50 != 100) but < max (100)
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(descending),
+                  "a descending-but-unique record_seq across record types is rejected")
+    store2 = rc.InMemoryResearchStore()
+    store2.record_observation(rc.UserObservation(
+        observation_id="o-ab2", observer="owner", entity=ent, event=ev, thesis=THESIS,
+        observed_at=OBSERVED, bk_captured=PRE, record_seq=777000, sources=SOURCES))
+    check(store2.next_seq() == 777001, "next_seq() advances strictly from an externally supplied max")
+
+
+# ===== r3 #2 ==============================================================  AC one current per lineage
+def test_single_current_candidate_per_lineage():
+    print("\n[AC] exactly one current candidate per observation lineage")
+    store = rc.InMemoryResearchStore()
+    ent, ev = entity("p-ac", "AC"), event("gAC")
+    store.record_observation(observation("o-ac", ent, ev))
+    store.freeze_candidate(mk_candidate("c-ac1", store.observations["o-ac"], seq=920000))
+    second = mk_candidate("c-ac2", store.observations["o-ac"], seq=920001)  # supersedes None
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(second),
+                  "a second candidate in the lineage with supersedes=None is rejected")
+    corr = mk_candidate("c-ac3", store.observations["o-ac"], seq=920002, supersedes=920000)
+    store.freeze_candidate(corr)
+    currents = [c for c in store.candidates.values()
+                if c.observation_id == "o-ac" and store.is_current_candidate(c)]
+    check(len(currents) == 1 and currents[0].candidate_id == "c-ac3",
+          "exactly one current candidate remains after a governed supersession")
+
+
+# ===== r3 #3 ==============================================================  AD finding provenance
+def test_finding_provenance_reconciled():
+    print("\n[AD] a finding's summary must be DERIVED from the store's current family cases")
+    store, fk, s2, ep = build_two_matched("ad")
+    genuine = rc.evaluate_family(finding_id="ad-ok", endpoint=ep, summary=s2,
+                                 proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                                 record_seq=next(SEQ))
+    store.record_finding(genuine)
+    check(store.current_finding(fk).finding_id == "ad-ok", "a genuine (recomputed) finding is accepted")
+    fake_summary = rc.FamilySummary(fk, 9, 9, 2, 2, 0, 7, 0, 0)   # self-consistent, but not the store's
+    fabricated = rc.evaluate_family(finding_id="ad-bad", endpoint=ep, summary=fake_summary,
+                                    proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                                    record_seq=next(SEQ), supersedes=genuine.record_seq)
+    expect_raises(rc.EvaluationError, lambda: store.record_finding(fabricated),
+                  "a self-consistent but fabricated summary is rejected at record time")
+    unknown_fk = candidate("c-adx", "o", rc.SubLabel.RECORD_CHASE, entity("p-adx", "ADX"),
+                           event("gADX")).family_key
+    empty_but_claimed = rc.FamilySummary(unknown_fk, 3, 3, 2, 2, 0, 1, 0, 0)
+    claim = rc.evaluate_family(finding_id="ad-empty", endpoint=endpoint(), summary=empty_but_claimed,
+                               proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                               record_seq=next(SEQ))
+    expect_raises(rc.EvaluationError, lambda: store.record_finding(claim),
+                  "a finding about an unknown/empty family with non-empty counts is rejected")
+
+
+# ===== r3 #4 ==============================================================  AE no fake obs correction
+def test_observation_supersession_forbidden():
+    print("\n[AE] observation supersession is NOT exposed (no fake correction contract)")
+    check("supersedes" not in rc.UserObservation.__dataclass_fields__,
+          "UserObservation has no `supersedes` field")
+    expect_raises(TypeError, lambda: rc.UserObservation(
+        observation_id="o", observer="owner", entity=entity("p-ae", "AE"), event=event("gAE"),
+        thesis=THESIS, observed_at=OBSERVED, bk_captured=PRE, record_seq=1, supersedes=5),
+        "passing supersedes= to UserObservation is a TypeError")
+
+
+# ===== r3 hindsight =======================================================  AF baseline/plan backfill
+def test_baseline_and_eligible_removal_guards():
+    print("\n[AF] baseline is part of the frozen plan; no post-event plan change or eligible removal")
+    ent, ev = entity("p-af", "AF"), event("gAF")
+    seed = candidate("c-af", "o", rc.SubLabel.BIRTHDAY, ent, ev)
+    other_baseline = rc.BaselineMethod(method="DIFFERENT_METHOD", version="v1",
+                                       covariates=("game_script",))
+    expect_raises(rc.HindsightError, lambda: rc.supersede_candidate(
+        seed, new_temporal=temporal(captured=POST, event=ev.event_effective), baseline=other_baseline),
+        "a baseline correction captured post-event is rejected (frozen plan backfill)")
+    pre_ok = rc.supersede_candidate(seed, new_temporal=temporal(captured=PRE, event=ev.event_effective),
+                                    baseline=other_baseline)
+    check(pre_ok.baseline.method == "DIFFERENT_METHOD", "a pre-event baseline correction is allowed")
+    # a no-plan-change but post-event (ineligible) correction cannot silently replace an eligible one.
+    store = rc.InMemoryResearchStore()
+    store.record_observation(observation("o-af", ent, ev))
+    prior = mk_candidate("c-af0", store.observations["o-af"], seq=930000)
+    store.freeze_candidate(prior)
+    late = rc.supersede_candidate(prior, new_temporal=temporal(captured=POST, event=ev.event_effective,
+                                                               seq=930001), candidate_id="c-af1")
+    check(not late.eligible_for_sample, "a post-event correction is itself an ineligible DESCRIPTIVE_NOTE")
+    expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(late),
+                  "an ineligible post-event correction cannot supersede an eligible candidate")
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE CONTRACT — SLICE 1 QC (domain model + validators, dark/local)")
@@ -776,7 +874,10 @@ if __name__ == "__main__":
               test_direction_aware_support, test_canonical_numeric_safety,
               test_endpoint_full_contract_binding, test_family_summary_self_validates,
               test_finding_constructor_governed, test_candidate_supersession_lineage_bound,
-              test_summarize_pairing_binding, test_contract_cleanups):
+              test_summarize_pairing_binding, test_contract_cleanups,
+              test_store_seq_strictly_monotonic, test_single_current_candidate_per_lineage,
+              test_finding_provenance_reconciled, test_observation_supersession_forbidden,
+              test_baseline_and_eligible_removal_guards):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
