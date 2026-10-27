@@ -1,203 +1,184 @@
-# Research Candidate — Dark-Store Contract (SLICE 2A, DESIGN ONLY)
+# Research Candidate — Dark-Store Contract (SLICE 2A → Rev 2; 2B AUTHORIZED)
 
-**Status: DESIGN ONLY — returned for approval before anything is built.** Date 2026-10-27.
+**Status: Rev 2 — reviewer decisions frozen; 2B authorized under the boundary in §4.** Date 2026-10-27.
+Rev 1 was the audit + recommendation; Rev 2 freezes the engine choice and corrects the privacy model,
+idempotency, replay, deletion, and path-safety so they cannot conflict with the ledger's transactional
+guarantees.
 
-This slice does a **read-only audit** of how Bankroll Kings already persists governed records, then
-proposes a **dark-store contract** for the Research Candidate ledger (the four objects of
+This slice began as a **read-only audit** of how Bankroll Kings persists governed records and a proposed
+dark-store contract for the Research Candidate ledger (the four objects of
 `docs/research_candidate_contract.md` Rev 2.1, implemented in `services/research_candidate.py` as
-in-memory types in Slice 1). It recommends a storage model **with its reasoning** and a **reversible
-migration plan**, and stops for approval.
+in-memory types in Slice 1).
 
-**Boundary (unchanged):** no route, UI, production data write, migration, deployment, scheduled job,
-or numeric engine is proposed or created here. No storage technology is *chosen* — the recommendation
-is for approval. The domain layer stays `RESEARCH_ONLY` with zero authority.
+**Boundary (unchanged):** the domain layer stays `RESEARCH_ONLY` with zero authority. 2B adds a local
+schema + adapter only — **no** backup system, production path, feature flag, route, UI, job, deployment,
+or deletion implementation (§4).
+
+---
+
+## 0. Rev 2 — frozen decisions (reviewer)
+
+1. **Engine: SQLite-WAL.** Approved.
+2. **One database file**, with logically separated **tables** (not two DB files): (a) private
+   account/observation linkage, (b) de-identified research evidence, (c) the sequence allocator and
+   schema metadata. One DB preserves a single `BEGIN IMMEDIATE` transaction, foreign keys, correction
+   linkage, sequence allocation, consistent `VACUUM INTO` snapshots, and crash recovery. Two independent
+   WAL databases **cannot** provide an atomic cross-store write, FK enforcement, or a consistent backup
+   snapshot. If counsel later requires *physical* separation, that is a separately designed migration
+   (outbox/saga + reconciliation receipts), **not** a transparent 2B option.
+3. **Retention/deletion is UNDECIDED.** Do **not** encode "delete PII but retain tombstone/outcome" as
+   approved behavior. In 2B: provide **no** account-erasure API; use **synthetic fixtures only**; document
+   the future deletion transaction; **fail closed if deletion is requested.** Legal/privacy must decide
+   whether de-identified measurements may survive account deletion.
+4. **Do not refactor the Decision Journal backup code in 2B.** Backup/restore belongs to **2C**, and 2C
+   first audits whether any extraction is behavior-preserving — never risk the existing production ledger
+   merely to reduce duplication.
+5. **Idempotency uses a caller-supplied immutable `idempotency_key`** (a stable capture-request id) per
+   append — **not** `candidate.case_identity` (which includes content/sequence-dependent material and is
+   not a stable retry key). Semantics: exact retry (same key + same content) → **no-op returning the
+   existing record**; same key + different content → **conflict, fail closed**; genuine correction → a
+   **new record with an explicit `supersedes`** (and its own new key).
+6. **Replay follows `record_seq`** and validates ids, content hashes, supersession links and current
+   tips. It must **not** use timestamps or a generic "newest wins" rule.
+7. **Explicit path required.** The 2B repository constructor **requires** an explicit database path; tests
+   use a temporary directory. It must **never** silently default to the checkout, OneDrive, `data/`, or a
+   production runtime path.
+8. **Privacy erasure vs immutability.** Ordinary records are update/delete-protected (DB triggers). A
+   future approved erasure is an explicit **privileged transaction that produces an erasure receipt** —
+   never an ordinary repository delete.
 
 ---
 
 ## 1. Audit — how BK stores records today
 
-The codebase has **two clearly separated storage tiers**, and the Research Candidate ledger belongs
-to the second.
+Two clearly separated storage tiers; the Research Candidate ledger belongs to the second.
 
 ### Tier A — regenerable / bulk data → files (CSV/JSON)
-Boards, gamelogs, odds, scenario outputs. Conventions (`bk_runtime.py`, `services/atomic_csv.py`):
-- **Runtime outputs live OUTSIDE the git checkout.** `BK_RUNTIME_DIR` on prod; the gitignored
-  `.runtime/generated/` locally. A git-tracked runtime file is reverted by the deploy's pre-pull clean
-  and silently un-freshes prod (the documented `cfb_line_moves.json` regression → the deploy dirty-tree
-  trap). **Never write runtime data into the tracked tree.**
-- **Atomic publish:** temp file in the same dir → `flush` → `os.fsync` → `os.replace` (`publish_json`,
-  `write_csv_atomic`). A partial write is never visible; a failed write leaves the prior version intact.
-- **Read-path schema gates fail closed:** a truncated/mixed-schema/hand-edited file returns the
-  *unavailable* state rather than raising or admitting partial data (`validate_graded_schema`,
-  `validate_manifest_schema`). No mutation/repair/refetch on read.
-- **Caches keyed by mtime** (`_build_file_token`, `scenario_source_mtime`), never by `id(df)`.
-
-This tier is right for large, regenerable, non-authoritative data. It is **wrong** for a governed
-research ledger: file-per-record append is not crash-atomic, has no referential integrity, no
-immutability enforcement, and no transactional correction linkage.
+Boards, gamelogs, odds, scenario outputs (`bk_runtime.py`, `services/atomic_csv.py`):
+- Runtime outputs live **outside** the git checkout (`BK_RUNTIME_DIR`; gitignored `.runtime/generated/`
+  locally) — a git-tracked runtime file is reverted by the deploy's pre-pull clean (the deploy dirty-tree
+  trap). **Atomic publish:** temp file → `fsync` → `os.replace`. **Read-path schema gates fail closed.**
+  Caches keyed by mtime. Right for bulk, regenerable, non-authoritative data; **wrong** for a governed
+  ledger (no atomicity across records, no referential integrity, no immutability enforcement).
 
 ### Tier B — governed, immutable, append-only, (often) user-linked ledgers → SQLite (WAL)
-This is the established idiom for exactly the kind of record a Research Candidate is. Five live
-examples, all **dark / flag-gated** and all under `BK_RUNTIME_DIR` (or `/var/lib/bankrollkings/<store>/`,
-outside the checkout):
+The established idiom for exactly this kind of record. Five live, dark/flag-gated examples under
+`BK_RUNTIME_DIR` / `/var/lib/bankrollkings/<store>/` (outside the checkout):
+`model_observations.py` (immutable pre-event snapshot + one later grade — the closest analogue),
+`decision_journal.py` (user-linked append-only with frozen fields + correction linkage + backup/restore),
+`kings_tickets_drafts.py`, `lookup_changes.py`, `trial_eligibility.py`.
 
-| Store | File | Shape |
-|---|---|---|
-| `services/model_observations.py` | `model_observations/observations.db` | **immutable pre-event snapshot + one later grade** — the closest analogue to a candidate+outcome |
-| `services/decision_journal.py` | `decision_journal/journal.db` | user-linked append-only tickets/legs with frozen fields + correction linkage + backup/restore |
-| `services/kings_tickets_drafts.py` | `BK_RUNTIME_DIR/…` | per-user drafts, `SCHEMA_VERSION=2`, `schema_meta` version gate |
-| `services/lookup_changes.py` | `lookup/changes.db` | immutable market-change store, `dedup_key` idempotency |
-| `services/trial_eligibility.py` | `BK_RUNTIME_DIR/…` | per-account one-shot state |
+**Shared conventions:** `journal_mode=WAL` · `foreign_keys=ON` · `synchronous=FULL` · `busy_timeout`;
+`BEGIN IMMEDIATE` txns; a `schema_meta` version table that **fails closed** on an unknown version; DB-level
+immutability via `BEFORE UPDATE … RAISE(ABORT, …)` triggers; idempotency via a `UNIQUE` key with a
+duplicate insert returning a **noop**; `json.dumps(…, sort_keys=True)` + `hashlib` for deterministic
+hashing; one-shot grading via `UPDATE … WHERE … IS NULL`; `PRAGMA integrity_check` + `foreign_key_check`
+on open and in backup; `VACUUM INTO` backups with retention on a timer; verify-then-`os.replace` restore
+clearing stale `-wal`/`-shm`; DB path outside the checkout, dir `0700`, file `0600`, env-overridable.
 
-**The shared SQLite conventions** (observed verbatim across these modules):
-- **Pragmas:** `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=FULL` (durability for
-  user/governed records), `busy_timeout`.
-- **Transactions:** `BEGIN IMMEDIATE` … `COMMIT`/`ROLLBACK` (a context manager in the Journal). Writes
-  are crash-atomic; a failed write rolls back.
-- **Schema version:** a `schema_meta` table holds an integer `SCHEMA_VERSION`; on open, an unknown
-  version **raises / fails closed** (`JournalUnavailable` / `RuntimeError`), never silently migrates.
-- **Immutability enforced in the DB:** a `BEFORE UPDATE` trigger that `RAISE(ABORT, …)` when any frozen
-  column changes (`observations_decision_immutable`). The app cannot mutate a frozen snapshot even by
-  mistake.
-- **Idempotency:** a `UNIQUE` `dedup_key` / `import_fingerprint`; a duplicate insert catches
-  `IntegrityError` and returns a **noop**, not an error.
-- **Determinism / hashing:** `json.dumps(…, sort_keys=True)` for stored JSON; `hashlib` for fingerprints;
-  `uuid4` for surrogate ids.
-- **One-shot grading:** `UPDATE … WHERE grade IS NULL` so a snapshot is graded at most once.
-- **Integrity + recovery:** `PRAGMA integrity_check` + `PRAGMA foreign_key_check` on open and in
-  backup/restore. On failure the store is **disabled (fail closed)**, not served partially.
-- **Backup/retention:** `VACUUM INTO` a new file → verify BOTH integrity checks → `chmod 0600`; daily +
-  monthly snapshots pruned to retention on a timer (`run_scheduled_backup`,
-  `ops/bk-decision-journal-backup.sh`).
-- **Restore:** verify the backup's integrity **first**, copy to a temp file, `os.replace` (atomic), then
-  delete any stale `-wal`/`-shm` so the restored file is authoritative.
-- **Filesystem posture:** DB path **outside** the checkout (never OneDrive, never the repo); dir `0700`,
-  file `0600`; path overridable by env for tests.
-
-### Privacy / account identity today
-Account identity lives in the **app's membership store** (`load_users()` in `app.py`, file-based under
-`data/`), **separate** from the dark SQLite ledgers. The Decision Journal keeps user-linked rows in its
-own DB, reached only through `JournalRepository`, **scoped by the authenticated `user_id`** and never
-cross-joined to other users. This is the separation the Research Candidate contract §6 already requires.
+**Privacy / account identity today.** Account identity lives in the app's membership store
+(`load_users()` in `app.py`, file-based). The Decision Journal keeps user-linked rows in its own DB,
+reached only through a repository **scoped by the authenticated `user_id`**, never cross-joined.
 
 ---
 
-## 2. Recommendation (for approval) — follow the SQLite-WAL dark-store idiom
+## 2. Engine (approved) — SQLite-WAL, the Tier-B idiom
 
-**Adopt the Tier-B SQLite-WAL pattern (the `model_observations.py` / `decision_journal.py` idiom) for
-the Research Candidate ledger — not CSV/JSONL.** Reasoning, compared against project conventions:
-
-| Need (contract) | SQLite WAL (Tier B) | JSONL append | CSV |
-|---|---|---|---|
-| Crash-atomic append | ✅ `BEGIN IMMEDIATE` txn | ⚠️ line append not fsync-atomic across multi-row writes | ❌ |
-| Immutability enforced by the store | ✅ `BEFORE UPDATE` trigger | ❌ app-only | ❌ app-only |
-| Correction/supersession linkage + one current | ✅ FKs + `record_seq` + indexes | ⚠️ hand-rolled scan | ❌ |
-| Idempotency (`dedup_key` UNIQUE) | ✅ UNIQUE + IntegrityError→noop | ⚠️ scan to dedup | ⚠️ |
-| Schema version gate | ✅ `schema_meta` + fail closed | ⚠️ per-line version field | ⚠️ |
-| Integrity check / corruption detection | ✅ `PRAGMA integrity_check` | ❌ | ❌ |
-| Backup/restore already solved | ✅ reuse Journal helpers verbatim | ❌ bespoke | ❌ bespoke |
-| Privacy separation | ✅ separate DB(s) + scoped access | ⚠️ | ⚠️ |
-| **Matches an existing BK idiom** | ✅ five live stores | ❌ none | ❌ (bulk only) |
-
-CSV/JSON is the right tool for **regenerable bulk board data**, not a governed ledger. Every property
-the contract demands — immutability, append-only correction linkage, idempotency, integrity, backup —
-is already *solved once* in Tier B and reused across five stores. Re-deriving them on JSONL/CSV would be
-new, unproven, bespoke code for guarantees SQLite gives for free. **The model-observation store is
-nearly a drop-in template.**
-
-> This is a recommendation, not a decision. If approval prefers a file-based ledger, §3 still defines
-> the same contract; only the engine row changes, and the reversibility plan (§4) is unaffected.
+`model_observations.py` is nearly a drop-in template. Every property the contract needs — crash-atomic
+append, DB-enforced immutability, correction/supersession linkage, idempotency, integrity checks, backup —
+is already solved once in Tier B. CSV/JSON is for regenerable boards, not a governed ledger.
 
 ---
 
-## 3. Proposed dark-store contract (engine-agnostic; maps 1:1 to Slice-1 domain types)
+## 3. Dark-store contract (one DB, logically separated tables)
 
-The store is a thin **persistence adapter** behind the existing frozen domain objects. It serializes and
-reloads the *same* `UserObservation` / `ResearchCandidate` / `CandidateOutcome` / `EvaluatedFinding`
-values; it adds **no** authority, scoring, or logic the domain layer does not already enforce.
+The store is a thin **persistence adapter** behind the frozen Slice-1 domain objects: it serializes and
+reloads the *same* values and adds **no** authority, scoring, or logic the domain layer does not already
+enforce. The semantic invariants (binding, lineage, fail-closed conclusions, summary reconciliation) are
+the Slice-1 ones; the store adds **storage-level** enforcement on top.
 
-1. **Immutable records.** Observation, candidate (frozen before-event fields), outcome version, and
-   finding rows are write-once. Enforced by a `BEFORE UPDATE` trigger on the frozen columns (SQLite),
-   mirroring `observations_decision_immutable`. The row stores the domain object's **`content_hash`**;
-   on reload the hash is recomputed and must match (tamper/corruption detection).
-2. **Store-wide sequence allocation.** One strictly-monotonic `record_seq` across observations/
-   candidates/outcomes/findings (Slice-1 `InMemoryResearchStore` already governs this). Persisted as a
-   single allocator row updated in the same `BEGIN IMMEDIATE` txn as the insert, so a sequence is never
-   reused and never regresses, even across process restarts.
-3. **Append-only correction linkage.** `supersedes` foreign-keys the prior `record_seq`; candidate
+**Table groups in the single DB:**
+- **meta** — `schema_meta(version)` (fail closed on unknown); `seq_allocator(max_claimed)` (one row).
+- **private (account/observation linkage)** — `observation_private`: the observer (account id), thesis,
+  sources, entity/event, `acted`, timestamps, `record_seq`, `content_hash`, `idempotency_key`. This is the
+  only place the observer↔observation linkage and the observer's authored text live.
+- **de-identified research evidence** — `research_candidate`, `candidate_outcome`, `evaluated_finding`:
+  the measurement (category, sub_label, canonical entity/event ids, temporal, baseline, endpoint,
+  eligibility/invalidation, snapshots, states, summaries). These tables carry **no observer column**; a
+  candidate references its observation by `observation_id` (the join key) and the observer/thesis are
+  pulled from the private table on load. Findings expose aggregate, de-identified counts only.
+
+Mapping to the ten required areas:
+
+1. **Immutable records.** Every record table has a `BEFORE UPDATE … RAISE(ABORT)` trigger — records are
+   write-once (corrections are new rows, never updates). Each row stores its `content_hash`; on load the
+   object is rebuilt and its hash must match the stored one (tamper/corruption detection). Only
+   `seq_allocator` is mutable.
+2. **Store-wide sequence allocation.** A single `seq_allocator.max_claimed` row, read-and-advanced in the
+   same `BEGIN IMMEDIATE` txn as each insert, so `record_seq` is strictly monotonic and never reused or
+   regressed across process restarts (the Slice-1 `_max_claimed` persisted).
+3. **Append-only correction linkage.** `supersedes` references the prior `record_seq`; candidate
    supersession is lineage-bound (same `observation_id`, prior must be current); outcomes form a version
-   chain with exactly one current; findings supersede by `record_seq`. Enforced by FKs + a partial
-   unique index on "current" rows. No `UPDATE`/`DELETE` of a superseded row.
-4. **Content hashes + schema version.** Each row carries its `content_hash`; a `schema_meta` table holds
-   `SCHEMA_VERSION`. On open, an unknown version **fails closed** (store disabled), never auto-migrates.
-   Serialization is canonical (`canonical_json`, sorted keys, ISO-8601, no NaN/Inf) so hashes are stable.
-5. **Crash-safe / atomic transactions.** Every public write is one `BEGIN IMMEDIATE` txn
-   (`journal_mode=WAL`, `synchronous=FULL`, `foreign_keys=ON`, `busy_timeout`). A partial write rolls
-   back; readers never see a half-written record.
-6. **Duplicate / idempotency behavior.** A `UNIQUE dedup_key` per record kind (derived from the natural
-   identity — e.g. a candidate's `case_identity`, a finding's `(family_key, supersedes)`); a duplicate
-   insert returns a **noop**, not an error, matching `model_observations.capture`.
-7. **Privacy separation between research evidence and account identity.** **Two stores, not one:**
-   - a **private, user-scoped** store for `UserObservation` (observer id, thesis text, sources, `acted`
-     + any Decision-Journal reference) — reached only through a repository that takes the authenticated
-     user and scopes by it, like `JournalRepository`;
-   - a **de-identified research** store for candidates/outcomes/findings, which carry the sport-canonical
-     `entity_id`/`event_id` and the measurement, **not** the observer's identity or bet activity.
-   The observer linkage lives only in the private store; findings expose **aggregate, de-identified**
-   statistics only (contract §6). No cross-user join.
-8. **Retention / deletion boundaries.** Per contract §6 (deferred, privacy/legal-dependent): deletion of
-   a `UserObservation` removes the account linkage/PII from the private store, **excludes** the case from
-   future evaluations, and retains only a **non-identifying tombstone + recount notice** in the research
-   store so sample accounting stays honest. No de-identified outcome is retained for evaluation without
-   an approved policy. The two-store split makes "remove PII, keep the honest count" a physical operation.
-9. **Export / replay.** Export = the canonical-JSON rows (already the hashed form), newest-wins per
-   current pointer. Replay is deterministic: re-inserting exported rows in `record_seq` order through the
-   same adapter must reproduce identical `content_hash`es and the same current pointers — the Slice-1
-   invariants make this a property test.
-10. **Corruption recovery / rollback.** `PRAGMA integrity_check` + `foreign_key_check` on open and in
-    backup; on failure the store is **disabled (fail closed)**, never served partial. Backup via
-    `VACUUM INTO` + both integrity checks + `0600`, daily/monthly retention on a timer. Restore verifies
-    the backup first, then `os.replace` (atomic) + clears stale `-wal`/`-shm`. These helpers are reused
-    from the Journal, not re-written.
+   chain with one current; findings supersede by `record_seq`. FKs + the Slice-1 guards enforce it.
+4. **Content hashes + schema version.** `schema_meta.version = SCHEMA_VERSION`; unknown → fail closed, no
+   auto-migration. Canonical serialization (`canonical_json`) keeps hashes stable.
+5. **Crash-safe / atomic transactions.** One `BEGIN IMMEDIATE` txn per write
+   (`WAL`/`synchronous=FULL`/`foreign_keys=ON`/`busy_timeout`); partial writes roll back.
+6. **Duplicate / idempotency.** A caller-supplied immutable `idempotency_key` (UNIQUE per table), per Rev-2
+   decision 5: exact retry → noop returning the existing record; same key + different content →
+   conflict/fail closed; a correction is a **new** record + explicit `supersedes` with its own key.
+7. **Privacy separation.** The private table holds the account/observation linkage and authored text; the
+   research tables hold only de-identified measurement, joined by `observation_id`. No cross-user join;
+   findings are aggregate.
+8. **Retention / deletion (UNDECIDED, Rev-2 decision 3).** 2B provides **no** erasure API and **fails
+   closed** if deletion is requested; the future deletion transaction is documented only. No "delete PII,
+   keep tombstone" behavior is encoded.
+9. **Export / replay (Rev-2 decision 6).** Export = canonical rows in `record_seq` order. Replay re-applies
+   rows **in `record_seq` order** through the Slice-1 validation engine, checking ids, content hashes,
+   supersession links and current tips — **never** timestamps or "newest wins". A round-trip (persist →
+   reopen → load) must reproduce identical `content_hash`es and current pointers.
+10. **Corruption recovery / rollback.** `PRAGMA integrity_check` + `foreign_key_check` on open; on failure
+    the store is **disabled (fail closed)**. Backup/restore is **2C**, not 2B (Rev-2 decision 4) — and 2C
+    audits behavior-preserving extraction before touching any shared code.
+
+**Erasure vs immutability (Rev-2 decision 8).** Ordinary records are update/delete-protected by the
+triggers. A future erasure is a separate privileged transaction that produces an **erasure receipt**;
+2B does not implement it and fails closed on any deletion request.
 
 ---
 
-## 4. Reversible migration plan (for approval — nothing starts yet)
+## 4. 2B — AUTHORIZED scope + reversible boundary
 
-Staged, each stage dark and independently revertible; **no** route/UI/job/prod-write/migration/deploy in
-any stage until a later, separately-approved stage explicitly adds it.
+**Authorized now:** one **local** SQLite database, its schema, and the adapter; **synthetic fixtures only**.
+QC gates to pass, then stop: **round-trip, idempotency, immutability, schema-gate, sequence, replay.**
 
-- **2B — adapter + schema, local only.** Add `services/research_candidate_store.py`: `schema_meta` +
-  tables + immutability triggers + the two-store privacy split, and `save`/`load` that round-trip the
-  Slice-1 domain objects. DB path resolves to a test/local dir by default (env-overridable), **never**
-  `data/`, never the checkout. QC: a round-trip + replay property test proving reload reproduces hashes
-  and current pointers, an immutability-trigger test, an idempotency (noop) test, a schema-version
-  fail-closed test. No writer, no job, no flag wired to anything.
-- **2C — integrity + backup/restore, local only.** Reuse the Journal's `VACUUM INTO`/integrity/restore
-  helpers (or lift them into a shared util); QC the corruption-fail-closed and restore paths. Still no
-  prod presence.
-- **2D — dark production store (separately approved).** Only here does the DB path point at
-  `BK_RUNTIME_DIR/research_candidate/…` on prod, behind an OFF feature flag (the
-  `LOOKUP_CHANGE_ENABLED`/`decision_journal` dark pattern: flag OFF → nothing reads or writes). A backup
-  timer unit (`ops/bk-…`) mirrors the Journal's. **No writer job, route, or UI** — those are later,
-  separately-approved slices, exactly as the Decision Journal stayed dark after its store shipped.
+**Explicitly NOT in 2B** (each a later, separately-approved slice): backup/restore system (2C), production
+path, feature flag, route, UI, job, deployment, deletion/erasure implementation. The 2B repository
+constructor **requires an explicit db path** (tests pass a temp dir); it never defaults to the checkout,
+OneDrive, `data/`, or a runtime path.
 
-**Reversibility at every stage:** the store is additive and isolated — revert = delete
-`services/research_candidate_store.py` (+ its QC) and, in 2D, remove the OFF flag and the (empty) DB
-directory. The Slice-1 domain module and the rest of the tree are untouched; master/prod are unaffected
+**Later stages (not started):**
+- **2C — integrity + backup/restore, local only.** First audit whether the Journal's
+  backup/integrity/restore helpers can be extracted behavior-preservingly; QC corruption-fail-closed and
+  restore. No prod presence.
+- **2D — dark production store (separately approved).** DB path points at
+  `BK_RUNTIME_DIR/research_candidate/…` behind an OFF feature flag (the `decision_journal`/`lookup_changes`
+  dark pattern). Still no writer job, route, or UI.
+
+**Reversibility:** the store is additive and isolated — revert = delete `services/research_candidate_store.py`
+(+ its QC). The Slice-1 domain module and the rest of the tree are untouched; master/prod are unaffected
 because nothing is wired until 2D's separate approval.
 
 ---
 
-## 5. Open questions for approval
-1. **Engine:** approve SQLite-WAL (recommended, §2), or direct a file-based ledger?
-2. **One DB with two schemas, or two DB files** for the privacy split (§3.7)? (Two files make the
-   PII/evidence boundary a filesystem boundary; one DB is simpler to back up.)
-3. **Retention/deletion (§3.8 / contract §6 Q4):** still deferred pending a legal decision — confirm the
-   interim "remove PII, keep a non-identifying tombstone" is the 2B/2C behavior to encode.
-4. **Shared backup util:** lift the Journal's backup/restore/integrity helpers into a shared module, or
-   copy the pattern per store?
+## 5. Resolved vs still-open
+- **Resolved (Rev 2):** engine = SQLite-WAL; one DB with separated tables; idempotency = caller key;
+  replay = record_seq; explicit path; erasure = future privileged transaction with a receipt.
+- **Still open (for later approval):** the retention/deletion policy itself (§3.8, legal/privacy); whether
+  2C extracts a shared backup util (§4). Neither blocks 2B.
 
-**STOP — returned for review.** No store, adapter, route, UI, job, migration, flag, or numeric engine
-exists or is proposed to be built yet. This is an audit, a recommendation, and a reversible plan for
-approval.
+**Contradiction check (Rev 2):** the two-file privacy split of Rev 1 is removed — the privacy boundary is
+now table-level inside one DB, so the atomic cross-table write, FK enforcement, and consistent snapshot
+hold. `case_identity` is no longer an idempotency key. No "delete PII, keep tombstone" is encoded.
+Backup/restore is deferred to 2C. Replay is record_seq-ordered, not timestamp/newest-wins. No prod path,
+flag, route, UI, job, deploy, or erasure is proposed for 2B.
