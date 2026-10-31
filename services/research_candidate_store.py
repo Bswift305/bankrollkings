@@ -340,6 +340,13 @@ class ResearchCandidateStore:
 
     # sequence --------------------------------------------------------------
     def next_seq(self) -> int:
+        """ADVISORY allocation: advances a per-process counter above everything seen, so two calls
+        never collide WITHIN a process. The DURABLE, authoritative claim happens at write time
+        (`_claim_seq` inserts into `record_registry` and advances `seq_allocator` in the record's
+        txn). A next_seq value that is never claimed (or a rolled-back write) leaves an INTENTIONAL
+        GAP: it is never reused as a *record* sequence, because the registry PK + the strictly
+        monotonic allocator forbid two records sharing a record_seq. Concurrency-safety across
+        connections is proven by the write path, not by this advisory counter."""
         maxc = int(self.conn.execute("SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])
         self._max_allocated = max(self._max_allocated, maxc) + 1
         return self._max_allocated

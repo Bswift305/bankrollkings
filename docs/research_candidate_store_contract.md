@@ -121,7 +121,9 @@ Mapping to the ten required areas:
    `seq_allocator` is mutable.
 2. **Store-wide sequence allocation.** A single `seq_allocator.max_claimed` row, read-and-advanced in the
    same `BEGIN IMMEDIATE` txn as each insert, so `record_seq` is strictly monotonic and never reused or
-   regressed across process restarts (the Slice-1 `_max_claimed` persisted).
+   regressed across process restarts (the Slice-1 `_max_claimed` persisted). `next_seq()` is ADVISORY (per-process, no durable reservation); the durable claim is the registry
+   insert at write time. An unclaimed `next_seq()` value or a rolled-back write leaves an INTENTIONAL
+   GAP and is never reused as a record sequence (the registry PK + monotonic allocator forbid it).
 3. **Append-only correction linkage.** `supersedes` references the prior `record_seq`; candidate
    supersession is lineage-bound (same `observation_id`, prior must be current); outcomes form a version
    chain with one current; findings supersede by `record_seq`. FKs + the Slice-1 guards enforce it.
