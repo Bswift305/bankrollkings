@@ -791,6 +791,19 @@ class ResearchCandidateStore:
         _cleanup_temp_or_raise(tmp)           # success: surface a temp-cleanup failure (sensitive DB copy)
         return dest_path
 
+    @staticmethod
+    def backup_existing(src_path: str, dest_path: str) -> str:
+        """Back up an EXISTING store WITHOUT ever initializing one (the operator entry point). Opens the
+        source read-only via `create=False` — which fails closed (SchemaVersionError) on a missing /
+        wrong-version source and NEVER creates a DB — then runs the normal consistent-snapshot `backup()`.
+        Proven locally that `VACUUM INTO` succeeds on a `mode=ro` connection, so this cannot mutate or
+        initialize the live store."""
+        s = ResearchCandidateStore(src_path, create=False)
+        try:
+            return s.backup(dest_path)
+        finally:
+            s.close()
+
     # deletion NOT implemented in 2B ---------------------------------------
     def delete_observation(self, *_a, **_k):
         raise DeletionNotPermitted(

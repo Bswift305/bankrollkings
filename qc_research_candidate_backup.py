@@ -305,6 +305,40 @@ def test_try_cleanup_outcomes():
         check(not os.path.exists(p), "the file was actually removed")
 
 
+# =========================================================================== B10 existing-only backup
+def test_backup_existing_only():
+    print("\n[B10] backup_existing opens an EXISTING store read-only and never initializes one")
+    with tmp() as d:
+        live, snap = os.path.join(d, "live.db"), os.path.join(d, "snap.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        store.close()
+        before = _digest(live)                                      # quiescent (post-checkpoint) bytes
+        rcs.ResearchCandidateStore.backup_existing(live, snap)      # read-only VACUUM INTO works
+        check(os.path.exists(snap), "backup_existing produced a validated snapshot")
+        check(_digest(live) == before, "the live store was not mutated by the read-only backup")
+        rcs.ResearchCandidateStore.validate_store(snap)             # the snapshot fully validates
+        check(True, "the snapshot passes full validation")
+    with tmp() as d:
+        missing = os.path.join(d, "missing.db")
+        out = os.path.join(d, "out.db")
+        expect_raises(rcs.SchemaVersionError,
+                      lambda: rcs.ResearchCandidateStore.backup_existing(missing, out),
+                      "backup_existing on a MISSING live store fails closed (never initializes one)")
+        check(not os.path.exists(missing) and not os.path.exists(out),
+              "no live or snapshot DB was created by the failed backup")
+    with tmp() as d:
+        live, out = os.path.join(d, "live.db"), os.path.join(d, "out.db")
+        rcs.ResearchCandidateStore(live).close()
+        raw = sqlite3.connect(live)
+        raw.execute("UPDATE schema_meta SET version=999 WHERE id=1")
+        raw.commit()
+        raw.close()
+        expect_raises(rcs.SchemaVersionError,
+                      lambda: rcs.ResearchCandidateStore.backup_existing(live, out),
+                      "backup_existing on a WRONG-VERSION live store fails closed")
+        check(not os.path.exists(out), "no snapshot produced from a wrong-version live store")
+
+
 # =========================================================================== C fail closed on bad backups
 def test_fail_closed_bad_backups():
     print("\n[C] validation fails closed on corrupt/truncated/foreign/wrong-version/empty backups")
@@ -395,7 +429,7 @@ if __name__ == "__main__":
     for t in (test_backup_restore_round_trip, test_never_overwrites, test_validation_is_read_only,
               test_post_publish_validation_quarantines, test_permissions, test_directory_fsync_after_publish,
               test_error_path_cleanup_aggregates, test_post_link_fsync_failure,
-              test_try_cleanup_outcomes, test_fail_closed_bad_backups,
+              test_try_cleanup_outcomes, test_backup_existing_only, test_fail_closed_bad_backups,
               test_fail_closed_semantic, test_no_journal_coupling):
         t()
     print("\n" + "=" * 80)

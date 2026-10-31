@@ -1,176 +1,170 @@
-# Research Candidate — Slice 2D Integration Audit (READ-ONLY; Rev 2)
+# Research Candidate — Slice 2D Integration Audit (READ-ONLY; Rev 3)
 
-**Status: READ-ONLY AUDIT — Rev 2. Nothing enabled, deployed, or written.** Date 2026-10-31.
-Rev 1 was the wiring map; Rev 2 freezes the reviewer's authority/operational boundaries and stages the
-first production slice as **observation capture only (2D1)**. No code, flag, route, unit file, or
-deployment is created here. Returned for review before any of that is implemented.
+**Status: READ-ONLY AUDIT — Rev 3. Nothing enabled, deployed, or written to production; no route, flag,
+or schema edit.** Date 2026-10-31. Rev 3 resolves the idempotency-intent contradiction, names the exact
+account/identity/event provenance (and where it is **BLOCKED**), proves the existing-only backup path,
+and freezes the remaining small details.
 
-2A/2B/2C are closed: governed domain (`services/research_candidate.py`, 118 checks), the DB-enforced
-local store (`services/research_candidate_store.py`, 52 checks) and its backup/restore/validation
-(43 checks) are built, dark, and undeployed.
+**Headline: 2D1 (observation-only capture) is BLOCKED from implementation** until a separately governed
+NFL **identity + event adapter** exists (§4) and the idempotency **request-fingerprint** schema change is
+landed in the store (§5). The account-observer provenance and the existing-only backup path are resolved.
 
----
-
-## 0. Rev 2 — frozen decisions (reviewer)
-
-1. **Owner authorization is frozen:** `email in OWNER_EMAILS` **or** `role == "owner"`. **`is_admin`
-   alone is INSUFFICIENT.** The `observer` is a **server-derived immutable account id** — never an email,
-   never from the request payload.
-2. **Explicit DB-path env var:** require an absolute **`BK_RESEARCH_CANDIDATE_DB_PATH`**; do **not** derive
-   a default from `BK_RUNTIME_DIR`. Reject missing / relative / outside-approved-runtime paths. Never
-   silently initialize the backup target. Securely create/verify the directory at `0700` and the live DB
-   at `0600`.
-3. **Pilot = observation capture only (2D1).** The first production slice exposes **only** owner-entered
-   `record_observation` under the dark flag. `freeze_candidate` and `append_outcome` are **NOT** exposed
-   until a later slice with their own input/authority contracts and production receipts.
-4. **Observation input contract** (see §4) — server-derived clocks + canonical identity resolution +
-   size-limited, schema-validated human thesis/sources + CSRF + an opaque caller idempotency token.
-5. **Request-scoped connections:** open lazily after flag + auth pass, and close in `finally` per request.
-   No per-worker retained connection until the worker/thread topology is separately proven safe.
-6. **Tiered failure semantics** (see §7): OFF→404, unauthorized→the existing dark-feature response,
-   invalid input→400/422, idempotency conflict→409, unhealthy store→calm 503. **No raw exception text** in
-   any response.
-7. **Tightened observability** (see §7): never log thesis, identity, email, sources, content hash, or full
-   record identifiers — only a request correlation id, the operation kind, a coarse status, and a
-   sanitized error code. Any health/count surface is **owner-only**.
-8. **Retention/rollback do NOT imply deletion.** Daily/monthly retention windows are **not approved**; the
-   backup operator records backup *creation* only and implements **no deletion policy**. Rollback
-   **preserves** the database and backups — the operator is **not** told they may be removed while erasure
-   remains undecided.
-9. **The backup operator fails closed if the live store is absent:** it opens an **existing** store
-   without initializing one, validates it, then backs it up. Missing / wrong-version / corrupt live state
-   makes the unit **FAIL** — it never creates a new empty database.
+2A/2B/2C remain closed and green: domain 118, store 52, backup/restore 50 (now incl. `backup_existing`).
 
 ---
 
-## 1. Exact production call site (2D1: observation only)
+## 0. Frozen decisions
 
-**Today: none.** 2D1 would add exactly **one** owner-only, flag-gated call site: an authenticated POST that
-constructs a `UserObservation` and calls `store.record_observation(obs, idempotency_key=...)`. Gated by
-the dark flag (default OFF → `abort(404)`, the `DECISION_JOURNAL_ENABLED` pattern at `app.py:33822/33916`).
-`freeze_candidate` / `append_outcome` / any `EvaluatedFinding` path are **not** wired in 2D1.
+**From Rev 2 (unchanged):** owner auth = `OWNER_EMAILS` or `role=="owner"` (`is_admin` alone insufficient);
+observer = server-derived immutable account id; explicit absolute DB-path env var; pilot = observation
+capture only; server-derived clocks + canonical identity; request-scoped connections; tiered failures;
+de-identified observability; retention/rollback imply no deletion; backup fails closed if the live store
+is absent.
 
-## 2. Dependency-free flag boundary + OFF-path zero-import
+**New in Rev 3:**
+1. **Idempotency keys on a stable request FINGERPRINT, not the content hash** (§5). The fingerprint covers
+   the semantic intent and EXCLUDES the server-generated `record_seq` and capture clocks. **This requires
+   a store schema change** (a `request_fingerprint` column) and a `SCHEMA_VERSION` bump to **3**,
+   implemented + QC'd as a store (2B-family) change **before** any 2D1 code. Deferred here (no schema edit
+   in this rev).
+2. **Entity/event identity for 2D1 is BLOCKED** (§4): no existing runtime path provides an authoritative
+   player id, canonical display, event id, kickoff, and ambiguity/missing-event behavior. 2D1 waits on a
+   separately governed identity/event adapter. No name-based inference; no user-supplied kickoff.
+3. **Unauthorized dark-route response = 404** (not 401/403) — never reveal the feature's existence.
+4. **Server clocks are timezone-aware UTC** (`services/timeutils.py`); `event_effective` comes from the
+   canonical event source, also tz-aware.
+5. **Approved-root validation uses RESOLVED paths** (`os.path.realpath`) and a `commonpath` containment
+   check, and **rejects symlink escapes**; the **approved root's configuration source is explicit** (its
+   own env var, e.g. `BK_RESEARCH_CANDIDATE_ROOT`), never another inferred default.
+6. **Existing-only backup is PROVEN** (§9): `mode=ro` `VACUUM INTO` works locally, and the store now has a
+   `backup_existing` entry point that opens the source read-only (create=False, fail-closed) and cannot
+   initialize or mutate the live store.
 
-A tiny `services/research_candidate_boundary.py` mirroring `decision_shadow_boundary.py`:
-`FLAG = "BK_RESEARCH_CANDIDATE_ENABLED"`, `enabled()` reads the env (unset ⇒ OFF), and the store (which
-imports `sqlite3` + the domain module) is imported **lazily only inside the ON branch**. `app.py` imports
-only this boundary (which imports just `os`). OFF ⇒ 404, zero import, no connection, no file.
-**Acceptance:** a fresh interpreter with the flag OFF must not load `research_candidate_store` (the
-`qc_nfl_ats_shadow.py` fresh-interpreter proof is the template).
+---
 
-## 3. Production DB path: explicit env var, ownership, permissions, backup operator
+## 1. Call site (2D1: observation only)
+One owner-only, flag-gated POST building a `UserObservation` → `store.record_observation(...)`. OFF ⇒
+`abort(404)`. `freeze_candidate`/`append_outcome`/finding paths are not wired in 2D1.
 
-- **Path:** an absolute **`BK_RESEARCH_CANDIDATE_DB_PATH`** (no `BK_RUNTIME_DIR` derivation). The boundary
-  validates it is **absolute, under the approved runtime root, and not relative** before use; a
-  missing/relative/out-of-root value fails closed (feature unavailable). The store constructor already
-  requires an explicit path and never defaults.
-- **Ownership/permissions:** directory `0700`, live DB `0600`, owned by the app runtime user (`ubuntu` /
-  the gunicorn user), never root; the directory is securely created/verified at `0700` at first ON use.
-- **Backup operator:** a new `ops/bk-research-candidate-backup.{service,timer,sh}` mirroring
-  `bk-decision-journal-backup.*`, **SSM-installed, not auto-installed**. Per §9 it opens the **existing**
-  store (create=False / validate-first), validates, then `VACUUM INTO` a snapshot; it **records creation
-  only** and applies **no deletion/retention policy** (§8). A missing/wrong-version/corrupt live store
-  makes the unit fail, never initializes one.
+## 2. Dependency-free flag boundary + OFF zero-import
+`services/research_candidate_boundary.py` (mirror `decision_shadow_boundary.py`): `FLAG =
+"BK_RESEARCH_CANDIDATE_ENABLED"`; store imported lazily only when ON; `app.py` imports only the boundary
+(`os` only). OFF ⇒ 404, zero import, no connection, no file. Proven by a fresh-interpreter test.
 
-## 4. Observation input contract (2D1)
+## 3. Production DB path (explicit env + resolved-root containment)
+- **`BK_RESEARCH_CANDIDATE_DB_PATH`** — absolute, required, no `BK_RUNTIME_DIR` derivation.
+- **Approved-root containment:** the resolved (`realpath`) DB path must live under the resolved approved
+  root from its **own explicit env var `BK_RESEARCH_CANDIDATE_ROOT`** (not inferred). Validation uses
+  `os.path.commonpath([realpath(db), realpath(root)]) == realpath(root)` and **rejects symlink escapes**;
+  a relative / missing / out-of-root / symlinked-out path fails closed (feature unavailable).
+- **Perms:** dir `0700`, DB `0600`, app-user owned; securely created/verified at first ON use.
+- **Backup operator:** `ops/bk-research-candidate-backup.*` (SSM-installed, not auto) calling
+  `backup_existing` (§9); records creation only, no deletion/retention (§8).
 
-- **Server-derived (never from the client):** `observer` (the authenticated immutable account id),
-  `observed_at`, and `bk_captured` (server clocks, ET/UTC via `services/timeutils.py`).
-- **Canonical identity:** the entity resolves through the sport-scoped resolver
-  (`services/entity_links.py` discipline); the event resolves through the authoritative schedule/event
-  source, and **`event_effective` comes from that canonical source, not user input**. Unresolved /
-  ambiguous identity is **rejected** (not stored `UNKNOWN`), and a capture at or after `event_effective`
-  is **rejected** at submission (the domain's pre-event rule, enforced early at the route).
-- **Human-supplied, bounded:** `thesis` and `sources` are entered by the owner, **size-limited and
-  schema-validated**, and **never fetched automatically**. Enforce a JSON body size cap and **CSRF**
-  protection on the POST.
-- **Idempotency:** a **caller-provided opaque token** (e.g. a client UUID) — **never** derived from thesis
-  content or `case_identity`.
+## 4. Account / identity / event provenance — RESOLVED vs BLOCKED
 
-## 5. Process / concurrency topology (request-scoped)
+**Observer (account id) — RESOLVED.** `UserId` is assigned once at signup as `uuid4().hex`
+(`app.py:41587`) and read as `current_user['user_id']`. It is random (NOT email-derived) and immutable: no
+code path reassigns `UserId` (email/password reset flows change those fields, never `UserId`); it is the
+stable account key. **The observer is set server-side from this id**, never from email or the payload.
 
-gunicorn `preload_app=True`, 2 workers. For the low-volume pilot the store is opened **lazily per request,
-after the flag and authorization pass, and closed in a `finally`** — **no retained per-worker connection**
-until the exact worker/thread topology is separately proven safe. The store is never opened at
-import/preload and never shared across forked workers. WAL + `BEGIN IMMEDIATE` + the durable
-reservation/registry PK keep concurrent requests safe. OFF ⇒ no connection ever opened.
+**NFL player + event identity — BLOCKED.** The first pilot is scoped to **NFL player observations**, which
+require five authoritative facts. Current state:
 
-## 6. Identity source + authorization boundary
+| Needed | Exists? | Where / gap |
+|---|---|---|
+| Immutable player id | ❌ runtime | `player_id` exists only **build-time** in `build_nfl_player_stats_from_pbp.py` / `NFL_GameLogs.csv`; there is NO runtime function mapping an owner's input to a stable id. `services/entity_links.py` is a URL/link resolver, **not** authoritative identity. |
+| Canonical display identity | ⚠️ build-time | `player_display_name` in the gamelogs; no runtime canonical-name resolver. |
+| Event id | ❌ | No governed NFL event-id scheme (only synthetic `nfl_ats_fixtures.event_id`). |
+| Authoritative kickoff | ❌ | Only odds-derived `CommenceTime` (UTC) on the **current slate** (`app.py:7724` etc.) — slate-bound and provider-derived, not an authoritative per-event schedule kickoff. |
+| Ambiguity / missing-event behavior | ❌ | No runtime resolver, so no defined ambiguous/missing handling. |
 
-Identity from `load_users()` (`app.py:10542`) + the authenticated session. Authorization is **owner only**:
-`email in OWNER_EMAILS` **or** `role == "owner"` (`app.py:1483/1486`); **`is_admin` alone is not accepted**.
-The stored `observer` is the server-side immutable account id of that owner — not their email, not any
-request field. Observer/thesis/sources live only in `observation_private` (pseudonymous/linkable, no
-cross-user join).
+**Conclusion:** no existing path provides all five as a runtime, authoritative, ambiguity-handling
+resolver. **2D1 is blocked on a separately governed NFL identity+event adapter** that returns an immutable
+player id, a canonical display, a governed event id, an authoritative kickoff (distinct from odds
+`CommenceTime`), and explicit unresolved/ambiguous/missing-event behavior. **No name-based inference and no
+user-supplied kickoff are permitted.**
+
+## 5. Idempotency-intent contract (fixes the retry→409 contradiction)
+
+**Problem:** `record_seq`, `observed_at`, `bk_captured` are generated per request and feed the observation
+`content_hash`; so an exact retry (same token + same payload) would produce a different hash and 409, not
+a no-op.
+
+**Contract:** idempotency is keyed on a **stable request fingerprint** computed BEFORE allocating a
+sequence or clocks, over exactly:
+- the authenticated immutable observer id;
+- the validated client intent (category/sub_label);
+- the resolved **canonical** entity and event identity;
+- the canonical `event_effective`;
+- the human `thesis`, `sources`, and `acted` state.
+
+It **excludes** the server-generated `record_seq`, `observed_at`, and `bk_captured`. The store stores
+`(idempotency_key, request_fingerprint)`; on a repeat key it compares fingerprints: **same fingerprint →
+return the original record (no-op)**; **different fingerprint → 409**. The store owns setting the clocks +
+sequence after the idempotency decision.
+
+**Schema impact (must land first):** this adds a `request_fingerprint` column to `observation_private`
+(and the canonical-form hash input) — a **`SCHEMA_VERSION` bump to 3**. It is a **store (2B-family) change
+with its own QC**, to be implemented and approved **before** any 2D1 route code. Not done in this rev.
+
+## 6. Authorization boundary
+Owner only: `email in OWNER_EMAILS` **or** `role == "owner"` (`app.py:1483/1486`); **`is_admin` alone is
+rejected.** Unauthorized ⇒ **404** (dark). `observer` = the server-side `UserId` (§4).
 
 ## 7. Failure semantics + observability
+Tiered, no raw exception text: OFF→404, unauthorized→**404**, invalid/oversized/unresolved→400/422,
+idempotency conflict→409, unhealthy/unavailable store→calm 503 (the store's Schema/Integrity/Cleanup
+errors map to 503). Logs carry only a request correlation id, operation kind, coarse status, and a
+sanitized error code — **never** thesis, identity, email, sources, content hash, or a full record id. Any
+health/count surface is **owner-only**.
 
-- **Tiered responses, no raw exception text:** flag OFF → **404**; unauthorized → the existing
-  dark-feature authorization response; invalid/oversized/unresolved input → **400/422**; idempotency
-  conflict → **409**; a store that is unhealthy (schema/integrity/cleanup failure) or unavailable →
-  calm **503**. The store's own `SchemaVersionError`/`StoreIntegrityError`/`CleanupError` map to 503 and
-  are never echoed verbatim.
-- **Observability (de-identified, owner-only surfaces):** logs carry **only** a request correlation id, the
-  operation kind, a coarse status, and a sanitized error code. **Never** the thesis, observer id/email,
-  sources, content hash, or a full record identifier. Any health/count surface is **owner-only**.
+## 8. Retention + rollback (no deletion)
+Backups record creation only; no retention/pruning (not approved). Rollback = flag OFF (zero import) +
+`git revert`; the DB and backups are **preserved**, never removed (erasure undecided); the runtime DB is
+outside the checkout, untouched by deploys.
 
-## 8. Retention + rollback (no deletion implied)
+## 9. Existing-only backup — PROVEN
+A local probe confirmed `VACUUM INTO` succeeds on a `mode=ro` connection. The store now exposes
+**`backup_existing(src, dest)`** (committed with 2C): it opens the source with `create=False` (read-only;
+fails closed with `SchemaVersionError` on a missing/empty/wrong-version/corrupt source and **never creates
+a DB**), then runs the validated consistent-snapshot `backup()` (temp → full validation → fsync → 0600 →
+atomic no-overwrite publish → dir-fsync). QC proves: a healthy store backs up without mutating the live
+bytes; a missing or wrong-version live store fails closed and creates no file. The operator unit calls
+`backup_existing` and **fails (exit non-zero)** on any unhealthy/absent live store.
 
-- **Backups record creation only.** No daily/monthly retention/pruning is implemented or claimed — that
-  window is **not approved** (erasure/retention is the open §6/§10-Q4 legal question).
-- **Rollback preserves data.** Disable = unset/`0` the flag (routes 404, zero import, no writes; restart
-  for `preload_app`). Full rollback = `git revert` the 2D1 wiring commit. The DB and any backups are
-  **preserved**, not removed — the operator is explicitly **not** told to delete them while erasure is
-  undecided. The runtime DB is outside the checkout, so deploys never touch it.
-
-## 9. Backup operator must fail if the live store is absent
-
-The backup unit opens the live store **without initializing it** (existing-only / `create=False`-style
-validate open), runs full validation (schema version + `integrity_check` + `foreign_key_check` + ledger/
-reservation/tip reconcile + replay + hash re-verify), and only then snapshots it. A missing / wrong-version
-/ corrupt live store makes the unit **exit non-zero (failed)** — it must **never** create a new empty
-database at the backup or live path. (Implementation note: the store's `backup()` runs on an open store;
-2D must route the operator through an existing-only open that fails closed, not the creating constructor.)
-
-## 10. Confirmed out of scope for 2D1
-
-No UI beyond a minimal owner-only form (API-first acceptable); **no evaluation engine**
-(`SUPPORTED`/`UNSUPPORTED` stay unconstructible, fail closed); **no automatic thesis generation** (human
-owner entries only); **no** `freeze_candidate`/`append_outcome`/finding path; no board/Green-Light/ranking/
-ticket integration. The domain stays `RESEARCH_ONLY`, zero authority.
+## 10. Out of scope for 2D1
+No UI beyond a minimal owner-only form; no evaluation engine (`SUPPORTED`/`UNSUPPORTED` stay
+unconstructible); no automatic thesis generation; no `freeze_candidate`/`append_outcome`/finding path; no
+board/Green-Light/ranking/ticket integration. `RESEARCH_ONLY`, zero authority.
 
 ---
 
-## 2D1 staged acceptance tests — observation-only capture (pass BEFORE the flag is turned on)
+## 2D1 prerequisites (must be approved/landed BEFORE any route code)
+1. A separately governed **NFL identity+event adapter** (§4) providing all five authoritative facts.
+2. The **`request_fingerprint` store change + `SCHEMA_VERSION` 3** (§5), implemented + QC'd.
 
-1. **OFF zero-import / zero-effect:** fresh interpreter, flag unset → the boundary loads without importing
-   the store or its `sqlite3` usage; the POST route 404s; no DB file created; no connection opened.
-2. **Authorization (frozen):** owner by `OWNER_EMAILS` or `role=="owner"` → accepted; **`is_admin`-only →
-   rejected**; free/paid → rejected (dark-feature auth response). The stored `observer` equals the
-   server-side account id (never the email or a payload field).
-3. **Explicit DB path:** a missing / relative / out-of-approved-root `BK_RESEARCH_CANDIDATE_DB_PATH` →
-   feature unavailable (no file created); a valid absolute path → dir `0700`, DB `0600` (POSIX).
-4. **Input contract:** server sets `observer`/`observed_at`/`bk_captured`; entity/event resolved via the
-   canonical resolvers (unresolved/ambiguous → 400/422); `event_effective` taken from the canonical
-   source; a capture at/after `event_effective` → rejected; oversized/invalid thesis or sources → 400/422;
-   missing CSRF → rejected; sources are never auto-fetched.
-5. **Idempotency:** an opaque caller token — same token + same content → **noop (one row)**; same token +
-   different content → **409**; the token is not derived from thesis content.
-6. **Request-scoped connection:** each request opens the store after flag+auth and closes it in `finally`
-   (no retained/shared connection); two concurrent owner requests get distinct `record_seq`, no duplicate.
-7. **Tiered failures / no leakage:** OFF→404, unauthorized→auth response, invalid→400/422, conflict→409,
-   unhealthy store→503; no response contains raw exception text; logs contain no thesis/identity/email/
-   sources/hash/full-id — only correlation id, kind, coarse status, sanitized code.
-8. **Backup operator fails closed:** with no live store (or a wrong-version/corrupt one), the unit FAILS
-   and creates no empty DB; with a healthy live store it validates then snapshots (`0600`), recording
-   creation only (no deletion/retention).
-9. **Rollback preserves data:** after captures, flag OFF → routes 404, the DB and backups remain
-   untouched; a deploy does not touch the runtime DB; nothing is deleted.
-10. **No-engine / no-promotion / no-auto-thesis guard:** no wired path exposes `freeze_candidate`/
-    `append_outcome`/finding construction; no `SUPPORTED`/`UNSUPPORTED` is constructible; no thesis is
-    generated; no public/board surface references the feature.
+## 2D1 staged acceptance tests (observation-only; run before the flag is turned on)
+1. OFF zero-import / zero-effect (fresh interpreter; 404; no file/connection).
+2. Authorization: owner (`OWNER_EMAILS`/`role=="owner"`) accepted; `is_admin`-only and non-owner → **404**;
+   `observer` equals the server-side `UserId`, never email/payload.
+3. Explicit DB path: missing/relative/out-of-`BK_RESEARCH_CANDIDATE_ROOT`/symlink-escape → unavailable (no
+   file); valid absolute, resolved-contained path → dir `0700`, DB `0600`.
+4. Input contract: server sets observer/`observed_at`/`bk_captured` (tz-aware UTC); entity+event via the
+   governed adapter (unresolved/ambiguous → 400/422); `event_effective` from the adapter; capture at/after
+   `event_effective` → rejected; oversized/invalid thesis/sources → 400/422; missing CSRF → rejected;
+   sources never auto-fetched.
+5. **Idempotency-intent:** same opaque token + same request fingerprint → **no-op (one row)**; same token +
+   different fingerprint → **409**; the fingerprint excludes `record_seq`/`observed_at`/`bk_captured`.
+6. Request-scoped connection: opened after flag+auth, closed in `finally`; two concurrent owner requests →
+   distinct `record_seq`, no duplicate.
+7. Tiered failures / no leakage: 404 / 404 / 400-422 / 409 / 503; no raw exception text; logs carry only
+   correlation id, kind, coarse status, sanitized code.
+8. Backup operator fails closed on an absent/wrong-version/corrupt live store; a healthy store yields a
+   validated `0600` snapshot (creation recorded, no deletion/retention).
+9. Rollback preserves data: flag OFF → 404, DB + backups untouched; deploy does not touch the runtime DB.
+10. No-engine / no-promotion / no-auto-thesis guard.
 
 **STOP — returned for review.** No production flag, route, write path, boundary module, unit file, UI,
-evaluation engine, or deployment is implemented or enabled. This is Rev 2 of the wiring map and the 2D1
-observation-only acceptance tests, for approval.
+evaluation engine, schema edit, or deployment is implemented or enabled. 2D1 stays blocked pending the two
+prerequisites above.
