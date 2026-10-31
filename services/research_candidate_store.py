@@ -1254,25 +1254,44 @@ def _refs_to_evidence(refs) -> ResolutionEvidence:
         enc_id, sep, enc_ver = fields["resolver"].partition("@")
         if not sep:
             raise StoreIntegrityError("malformed resolver reference (no '@')")
-        return ResolutionEvidence(
+        season_raw = fields["roster-season"]
+        if not season_raw.isdigit():     # canonical season is bare ASCII digits — no sign/space/leading zero handling
+            raise StoreIntegrityError(f"non-canonical roster-season encoding {season_raw!r}")
+        ev = ResolutionEvidence(
             resolver_id=unquote(enc_id), resolver_version=unquote(enc_ver),
             props_sha256=fields["props-sha256"], roster_sha256=fields["roster-sha256"],
-            roster_season=int(fields["roster-season"]), event_id=unquote(fields["event"]),
+            roster_season=int(season_raw), event_id=unquote(fields["event"]),
             player_id=unquote(fields["player"]),
             resolved_at=datetime.fromisoformat(unquote(fields["resolved-at"])))
     except StoreIntegrityError:
         raise
     except Exception as exc:   # malformed value / failed domain validation -> fail closed
         raise StoreIntegrityError(f"reserved evidence failed to parse: {exc}") from exc
+    # The stored evidence must name a REGISTERED resolver (the same rule capture enforces) — a tampered,
+    # hash-recomputed store cannot reopen with a rogue resolver.
+    if ev.resolver_id not in REGISTERED_RESOLVER_IDS:
+        raise StoreIntegrityError(f"stored evidence resolver_id {ev.resolver_id!r} is not registered")
+    # CANONICAL round-trip: regenerating the references from the parsed evidence must reproduce the stored
+    # set EXACTLY. This rejects any non-canonical encoding (malformed/unnecessary percent escapes, a signed
+    # or zero-padded season, an alternate UTC timestamp spelling) that parsed but would not serialize back.
+    if sorted(_evidence_to_refs(ev)) != sorted(refs):
+        raise StoreIntegrityError("stored reserved references are not canonical (do not round-trip)")
+    return ev
 
 
 def _current_nfl_season(now_utc: datetime) -> int:
     """The current NFL season label at `now_utc`, via the SHARED Eastern zone (services.timeutils
-    DISPLAY_TZ) + the pure season calendar — never app.py. Fail closed if the governed zone is absent."""
+    DISPLAY_TZ) + the pure season calendar — never app.py. Fail closed if the governed zone is absent OR
+    the calendar has no Week-1 anchor for the derived season (an unsupported/unlisted season — week is
+    None): a capture that cannot be bound to a governed season is refused rather than accepted on the bare
+    derived year."""
     if DISPLAY_TZ is None:
         raise ResearchStoreError("governed Eastern zone (services.timeutils.DISPLAY_TZ) unavailable")
     eastern_date = now_utc.astimezone(DISPLAY_TZ).date()
-    _week, season = _nfl_expected_completed_week(eastern_date)
+    week, season = _nfl_expected_completed_week(eastern_date)
+    if week is None:
+        raise ResearchStoreError(
+            f"no governed Week-1 anchor for season {season} (SEASON_UNAVAILABLE) — capture refused")
     return season
 
 

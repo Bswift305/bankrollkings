@@ -605,6 +605,94 @@ def test_calendar_advancement():
             rcs._current_nfl_season = real
 
 
+# =========================================================================== AY unsupported season refused
+def test_unsupported_season_capture_refused():
+    print("\n[AY] capture fails closed when the season calendar cannot resolve the current season")
+    with tmp() as d:
+        store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
+        e, g = ent("p", "P"), ev("g")
+        evid = evidence_for(e, g)                       # built under the real (listed) season
+        real = rcs._nfl_expected_completed_week
+        try:
+            rcs._nfl_expected_completed_week = lambda day: (None, 9999)   # simulate an unlisted season
+            expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+                observer_id="owner", entity=e, event=g, thesis=THESIS, sources=SOURCES,
+                evidence=evid, idempotency_key="k"),
+                "an unsupported season (week is None) is refused before sequence allocation")
+        finally:
+            rcs._nfl_expected_completed_week = real
+        check(store.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0] == 0
+              and store.conn.execute("SELECT COALESCE(MAX(record_seq),0) FROM seq_reservation").fetchone()[0] == 0,
+              "the refused capture consumed NO reservation and wrote no record")
+        store.close()
+
+
+def _craft_tampered_evidence(path, mutate):
+    """Insert a second observation 'tamp' whose reserved refs are `mutate(original refs)`, with a CORRECT
+    recomputed content hash AND the correct owner-only registry fingerprint — so ONLY the reserved-evidence
+    defect can trip reopen (not the hash check or the fingerprint-parity check)."""
+    store = rcs.ResearchCandidateStore(path)
+    e, g = ent("p", "P"), ev("g")
+    _, o = cap(store, e, g, "K")
+    base = dict(store.conn.execute(
+        "SELECT * FROM observation_private WHERE observation_id=?", (o.observation_id,)).fetchone())
+    srcs = list(rcs._u(base["sources_json"]))
+    owner = [s for s in srcs if not s.startswith("bkres:")]
+    sysrefs = [s for s in srcs if s.startswith("bkres:")]
+    stored = rcs._canon_sources(owner + mutate(sysrefs))
+    ent_obj, evt_obj = rcs._entity(rcs._u(base["entity_json"])), rcs._event(rcs._u(base["event_json"]))
+    s = store.next_seq()
+    tamp = rc.UserObservation(
+        observation_id="tamp", observer=base["observer"], entity=ent_obj, event=evt_obj,
+        thesis=base["thesis"], observed_at=rcs._dt(base["observed_at"]),
+        bk_captured=rcs._dt(base["bk_captured"]), record_seq=s, sources=stored, acted=bool(base["acted"]))
+    store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation','tamp')", (s,))
+    store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,))
+    raw_insert(store, "observation_private", base, observation_id="tamp", record_seq=s,
+               sources_json=rcs._j(list(stored)), content_hash=tamp.content_hash)
+    owner_c, _sys = rcs._partition_sources(stored)
+    fp = rcs._request_fingerprint(base["observer"], ent_obj, evt_obj, base["thesis"], owner_c, bool(base["acted"]))
+    store.conn.execute(
+        "INSERT INTO idempotency_registry(record_kind,observer_id,idempotency_key,request_fingerprint,"
+        "bound_record_seq,bound_record_id,created_at) VALUES ('observation','owner','tk',?,?, 'tamp', ?)",
+        (fp, s, "2026-10-31T00:00:00+00:00"))
+    store.close()
+
+
+# =========================================================================== AZ reopen rejects rogue resolver
+def test_reopen_rejects_rogue_resolver():
+    print("\n[AZ] reopen rejects stored evidence naming an UNREGISTERED resolver (hash recomputed)")
+    with tmp() as d:
+        path = os.path.join(d, "r.db")
+        _craft_tampered_evidence(path, lambda refs: [
+            "bkres:v1:resolver=rogue@v1" if s.startswith("bkres:v1:resolver=") else s for s in refs])
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(path),
+                      "a rogue resolver_id in stored evidence fails closed on reopen")
+
+
+# =========================================================================== BA reopen enforces canonical refs
+def test_reopen_rejects_noncanonical_refs():
+    print("\n[BA] reopen rejects non-canonical reserved-reference encodings (round-trip enforced)")
+    cases = {
+        "signed season": lambda refs: [
+            s.replace("roster-season=", "roster-season=+") if s.startswith("bkres:v1:roster-season=") else s
+            for s in refs],
+        "Z timestamp": lambda refs: [
+            "bkres:v1:resolved-at=2026-11-01T00%3A00%3A00Z" if s.startswith("bkres:v1:resolved-at=") else s
+            for s in refs],
+        "unnecessary pct-encoding": lambda refs: [
+            "bkres:v1:event=%67" if s.startswith("bkres:v1:event=") else s for s in refs],
+        "malformed pct escape": lambda refs: [
+            "bkres:v1:event=%zz" if s.startswith("bkres:v1:event=") else s for s in refs],
+    }
+    for name, mut in cases.items():
+        with tmp() as d:
+            path = os.path.join(d, "r.db")
+            _craft_tampered_evidence(path, mut)
+            expect_raises(rcs.StoreIntegrityError, lambda p=path: rcs.ResearchCandidateStore(p),
+                          f"non-canonical encoding ({name}) fails closed on reopen")
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE STORE — SLICE 2B/v4 QC (DB-enforced ledger, synthetic fixtures)")
@@ -615,7 +703,9 @@ if __name__ == "__main__":
               test_foreign_key_check_disables_store, test_durable_reservation,
               test_pseudonymous_and_guards, test_replay_and_tamper, test_v_prior_schema_rejected,
               test_reservation_integrity_bidirectional, test_evidence_required_and_validated,
-              test_reopen_evidence_and_fingerprint, test_calendar_advancement):
+              test_reopen_evidence_and_fingerprint, test_calendar_advancement,
+              test_unsupported_season_capture_refused, test_reopen_rejects_rogue_resolver,
+              test_reopen_rejects_noncanonical_refs):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
