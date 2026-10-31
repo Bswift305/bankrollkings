@@ -50522,6 +50522,77 @@ def prewarm_caches():
     return warmed
 
 
+# ==================================================================================================
+# RESEARCH CANDIDATE — 2D1 observation-only capture (DARK). Behind BK_RESEARCH_CANDIDATE_ENABLED, default
+# OFF -> the route 404s and NOTHING research-candidate (store/adapter/pandas/sqlite) is imported, opened,
+# or written. Owner-only; is_admin ALONE is NOT sufficient; unauthorized is also 404 (never reveal it).
+# The observation is RESEARCH_ONLY with ZERO authority and is never promoted into any board. All store +
+# adapter work happens in services/research_candidate_boundary.py, imported LAZILY on the ON path only.
+# Observation capture ONLY — no candidate freeze/outcome/evaluation/thesis-generation/deletion/promotion.
+# ==================================================================================================
+RESEARCH_CANDIDATE_ENABLED = (os.environ.get('BK_RESEARCH_CANDIDATE_ENABLED', '') or '').strip().lower() \
+    in ('1', 'true', 'yes', 'on')
+
+
+def _research_candidate_is_owner(user):
+    """Owner-only predicate for the dark 2D1 route: OWNER_EMAILS or role=='owner'. is_admin ALONE is
+    deliberately insufficient (stricter than is_owner_user, which also admits admins)."""
+    if not user:
+        return False
+    email = str(user.get('email', '') or user.get('Email', '') or '').strip().lower()
+    role = str(user.get('role', '') or user.get('Role', '') or '').strip().lower()
+    return email in OWNER_EMAILS or role == 'owner'
+
+
+@app.route('/research-candidate/observe', methods=['POST'])
+def research_candidate_observe():
+    # OFF (default) -> the feature does not exist. Unauthorized is ALSO 404 (dark). CSRF is enforced by the
+    # global before_request hook for this POST.
+    if not RESEARCH_CANDIDATE_ENABLED:
+        abort(404)
+    user = get_current_user()
+    if not _research_candidate_is_owner(user):
+        abort(404)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'ok': False, 'error': 'JSON body required'}), 422
+    player_ref = str(data.get('player_ref', '') or '').strip()
+    event_id = str(data.get('event_id', '') or '').strip()
+    thesis = str(data.get('thesis', '') or '').strip()
+    idempotency_key = str(data.get('idempotency_key', '') or '').strip()
+    acted = data.get('acted', False)
+    sources_in = data.get('sources', [])
+    if not (player_ref and event_id and thesis and idempotency_key):
+        return jsonify({'ok': False, 'error': 'missing required fields'}), 422
+    if len(player_ref) > 200 or len(event_id) > 200 or len(thesis) > 2000 or len(idempotency_key) > 200:
+        return jsonify({'ok': False, 'error': 'field too large'}), 422
+    if not isinstance(acted, bool):      # strict: no truthy coercion (matches the store contract)
+        return jsonify({'ok': False, 'error': 'acted must be a boolean'}), 422
+    if isinstance(sources_in, (str, bytes)) or not isinstance(sources_in, (list, tuple)):
+        return jsonify({'ok': False, 'error': 'sources must be a list'}), 422
+    sources = [str(s).strip() for s in sources_in]
+    if len(sources) > 20 or any((not s or len(s) > 500) for s in sources):
+        return jsonify({'ok': False, 'error': 'invalid sources'}), 422
+    observer_id = str((user or {}).get('user_id', '') or '').strip()   # server-derived account id
+    if not observer_id:
+        return jsonify({'ok': False, 'error': 'no account id'}), 422
+    from services import research_candidate_boundary as rcb   # lazy: ON-path only
+    try:
+        result = rcb.capture(observer_id=observer_id, player_ref=player_ref, event_id=event_id,
+                             thesis=thesis, sources=sources, acted=acted, idempotency_key=idempotency_key)
+    except rcb.Conflict:
+        return jsonify({'ok': False, 'error': 'conflict'}), 409
+    except rcb.InvalidInput as exc:
+        return jsonify({'ok': False, 'reason': str(exc)}), 422
+    except rcb.BoundaryError:             # ConfigError / Unavailable -> calm 503
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    try:
+        app.logger.info('research_candidate.observe status=%s', result.get('status'))  # sanitized: no PII
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'status': result['status'], 'id': result['id']}), 200
+
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("  BANKROLL KINGS - Sports Analytics Platform")

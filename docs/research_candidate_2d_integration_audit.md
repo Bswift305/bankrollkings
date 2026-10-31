@@ -5,9 +5,23 @@ or schema edit.** Date 2026-10-31. Rev 3 resolves the idempotency-intent contrad
 account/identity/event provenance (and where it is **BLOCKED**), proves the existing-only backup path,
 and freezes the remaining small details.
 
-**Headline: 2D1 (observation-only capture) is BLOCKED from implementation** until a separately governed
-NFL **identity + event adapter** exists (§4) and the idempotency **request-fingerprint** schema change is
-landed in the store (§5). The account-observer provenance and the existing-only backup path are resolved.
+**Headline (UPDATE 2026-10-31): 2D1 observation-only capture is BUILT — DARK/LOCAL.** Both prerequisites
+landed (schema-v4 store + evidence, and the governed abstain-first NFL identity/event adapter), so the
+owner-only dark route + dependency-free boundary are implemented: `services/research_candidate_boundary.py`
+(imports only `os` at load; store/adapter imported lazily on the ON path), and the flag-gated POST
+`/research-candidate/observe` in `app.py` (behind `BK_RESEARCH_CANDIDATE_ENABLED`, default OFF → 404 + zero
+import). Owner-only (`OWNER_EMAILS`/`role=='owner'`; **is_admin alone → 404**); unauthorized → 404 (dark);
+CSRF enforced by the global hook; server-derived observer id; explicit contained DB path (realpath +
+commonpath, symlink-escape rejected); request-scoped store connection closed in `finally`; tiered
+404/400/422/409/503 with sanitized bodies. QC: `qc_research_candidate_route.py` (18, incl. a subprocess OFF
+zero-import proof). **STILL EXCLUDED (not implemented): production enablement, deployment, UI, candidate
+freezing, outcomes, evaluation, automatic thesis generation, backup systemd units, deletion, promotion.**
+The original audit below is retained as the design of record.
+
+Original headline: 2D1 (observation-only capture) was BLOCKED from implementation until a separately
+governed NFL **identity + event adapter** existed (§4) and the idempotency **request-fingerprint** schema
+change was landed in the store (§5). The account-observer provenance and the existing-only backup path are
+resolved.
 
 2A/2B/2C remain closed and green: domain 118, store 52, backup/restore 50 (now incl. `backup_existing`).
 
